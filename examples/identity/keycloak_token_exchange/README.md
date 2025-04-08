@@ -6,20 +6,20 @@
 
 If a Podman machine is up and running skip the following step. Else on OSX or Windows, run this command to start the podman machine:
 
-```
+```shell
 podman machine init -m 4096 --rootful=true
 podman machine start
 ```
 
 If you have multiple container runtimes, specify the proper runtime:
 
-```
+```shell
 export KIND_EXPERIMENTAL_PROVIDER=podman
 ```
 
 Now, we can create the Kind clusters. We will add extra port mappings to cluster A because we will set up ingress on that cluster. 
 
-```
+```shell
 kind create cluster --name=cluster --config=resources/cluster/kind_cluster_config.yaml
 ```
 
@@ -29,19 +29,19 @@ On Kind, we can deploy an Nginx Ingress controller to access application service
 
 Set the `APP_DOMAIN` environment variable to contain the subdomain for which all applications can be accessed. On RHEL: 
 
-```
+```shell
 export APP_DOMAIN=$(ip -4 addr show ens192 | ggrep -oP '(?<=inet\s)\d+(\.\d+){3}').nip.io
 ```
 
 On MacOS/Windows:
 
-```
+```shell
 export APP_DOMAIN=$(ipconfig getifaddr en0).nip.io
 ```
 
 Confirm the variable has been populated:
 
-```
+```shell
 echo $APP_DOMAIN
 ```
 
@@ -49,7 +49,7 @@ A value similar to `x.xxx.xxx.xxx.nip.io` indicates the variable has been set pr
 
 Deploy the ingress controller:
 
-```
+```shell
 kubectl apply -f resources/cluster/kind_ingress_deployment.yaml --context=kind-cluster
 kubectl wait --namespace ingress-nginx --context=kind-cluster \
   --for=condition=ready pod \
@@ -61,14 +61,14 @@ kubectl wait --namespace ingress-nginx --context=kind-cluster \
 
 Now, we can deploy SPIRE on the Kind cluster:
 
-```
+```shell
 helm upgrade --install -n spire-mgmt spire-crds spire-crds --repo https://spiffe.github.io/helm-charts-hardened/ --create-namespace --kube-context=kind-cluster
 envsubst < resources/spire/helm_values.yaml | helm upgrade --install -n spire-mgmt spire spire --repo https://spiffe.github.io/helm-charts-hardened/ -f - --kube-context=kind-cluster
 ```
 
 Finally, let's create an ingress for HTTP connection to the SPIRE OIDC service:
 
-```
+```shell
 envsubst < resources/spire/oidc-ingress-http.yaml | kubectl apply --context=kind-cluster -f -
 ```
 
@@ -90,7 +90,7 @@ And we will mimic the flow of access tokens from API to Tool. This involves seve
 
 So to do this, we will deploy three workloads each in their own namespaces: `api`, `agent`, `tool`. 
 
-```
+```shell
 kubectl apply -f resources/spire/workload_api.yaml --context=kind-cluster
 kubectl wait -n api --context=kind-cluster --for=condition=ready pod --selector=app=client --timeout=180s
 kubectl apply -f resources/spire/workload_agent.yaml --context=kind-cluster
@@ -99,7 +99,7 @@ kubectl wait -n agent --context=kind-cluster --for=condition=ready pod --selecto
 
 Once they are running, let's exec into the pod and cat the SVIDs:
 
-```
+```shell
 kubectl exec -n api -it $(kubectl get po -n api -o name -l app=client --context=kind-cluster) --context=kind-cluster -- cat /opt/jwt_svid.token
 kubectl exec -n agent -it $(kubectl get po -n agent -o name -l app=client --context=kind-cluster) --context=kind-cluster -- cat /opt/jwt_svid.token
 ```
@@ -108,9 +108,9 @@ kubectl exec -n agent -it $(kubectl get po -n agent -o name -l app=client --cont
 
 Now that we have deployed SPIRE, let's deploy Keycloak!
 
-We are using a custom-built Keycloak image that enables preview features and also modifies the JWT Bearer Client Authentication Profile. If you would like to build and run Keycloak yourself, please see [our docs](./custom_keycloak.md) on how to do so. 
+We are using a custom-built Keycloak image that enables preview features and also modifies the JWT Bearer Client Authentication Profile. If you would like to build and run Keycloak yourself, please see [our docs](./custom_keycloak.md) on how to do so.
 
-```
+```shell
 kubectl apply -f resources/keycloak/namespace.yaml
 kubectl apply -f resources/keycloak/statefulset.yaml
 kubectl apply -f resources/keycloak/service.yaml
@@ -129,7 +129,7 @@ echo keycloak.$APP_DOMAIN
 
 We require some values from the terminal. Please run the following to print them out and take note of them as we complete Keycloak set up.
 
-```
+```shell
 export SPIFFE_ID_API=spiffe://$APP_DOMAIN/ns/api/sa/default
 export SPIFFE_ID_AGENT=spiffe://$APP_DOMAIN/ns/agent/sa/default
 export JWKS_URL=http://oidc-discovery-http.$APP_DOMAIN/keys
@@ -137,19 +137,45 @@ export JWKS_URL=http://oidc-discovery-http.$APP_DOMAIN/keys
 
 We can print them out here:
 
-```
+```shell
 echo SPIFFE_ID_API=$SPIFFE_ID_API
 echo SPIFFE_ID_AGENT=$SPIFFE_ID_AGENT
 echo JWKS_URL=$JWKS_URL
 ```
 
 ### Initial realm set up
+
+Port forward Keycloak
+```shell
+kubectl port-forward statefulset/keycloak-for-tornjak -n keycloak 8080:8080
+```
+
 1. Access Keycloak (admin/admin)
 2. Create a new realm `Demo` [this is case-sensitive]
 3. Select that realm, go to `Users` on the sidebar, and create a new user. 
 4. Once that user is created, set a password by going to `Users > <username> > Credentials` where Credentials is in the top breadcrumbs. Set the password. Keep note of the credentials you used. 
 
-### Set up Client Profile for API workload
+### Set up clients and client scopes
+
+```shell
+cd config
+```
+
+Create a Python virtual environment
+```shell
+python -m venv venv
+. venv/bin/activate
+```
+
+Recreate the `SPIFFE_ID_API`, `SPIFFE_ID_AGENT`, and `JWKS_URL` environment variables.
+
+Install requirements and run script to set up clients and client scopes.
+```shell
+pip install -r requirements.txt
+python demo_keycloak_config.py
+```
+
+<!-- ### Set up Client Profile for API workload
 
 We are using SPIRE to authenticate the workload to Keycloak. 
 
@@ -180,7 +206,7 @@ In the case of two workloads, there is no need for token exchange. It is only wh
 Thus, we set up a third client profile for the tool workload. Let us suppose the tool is external and has client id `ExampleTool`, and accepts JWTs issued by this Keycloak instance with audience `ExampleTool`. 
 
 1. In the left sidebar, select `Clients`, then `Create client`
-2. We'll name the application the value of `ExampleTool` that you printed in the terminal.
+2. We'll name the application `ExampleTool`.
 3. Select `Client authentication` to false, and de-select all Authentication flows. 
 4. Save
 5. Now go to `Clients > ExampleTool > Client scopes > ExampleTool-dedicated > Scope` and set `Full scope allowed` to `Off`. 
@@ -194,7 +220,7 @@ When an application is asking for an access token, we can elect to have optional
 1. Finally, we will create a client scope that allows the client to request a specified audience. In the left-hand side bar, go to `Client scopes`. 
 2. Click `Create client scope`. Name the client scope `agent-audience`. Set the type to `Optional` and Protocol to `OpenID Connect`. Click `Save`. 
 3. Now that you have saved, you should see a `Mappers` tab near the top. Click on `Mappers > Configure a new mapper > Audience`. 
-4. Enter `agent-audience` as the name, and add the agent SPIFFE ID to the `Included Client Audience` (It should look something like `spiffe://xx.x.xx.xxx.nip.io/ns/agent/sa/default`). Click `Save`. 
+4. Enter `agent-audience` as the name, and add the agent SPIFFE ID, `$SPIFFE_ID_AGENT`, to the `Included Client Audience` (It should look something like `spiffe://xx.x.xx.xxx.nip.io/ns/agent/sa/default`). Click `Save`. 
 5. Finally, let's add the client scope to the API client profile in Keycloak. Go to `Clients > spiffe://.../ns/api/... > Client scopes > Add client scope`. Select `agent-audience`. Add as `Optional`. 
 
 #### Add client scope to Agent client for the ExampleTool as an audience
@@ -203,9 +229,10 @@ When an application is asking for an access token, we can elect to have optional
 9. Click `Create client scope`. Name the client scope `tool-audience`. Set the type to `Optional` and Protocol to `OpenID Connect`. Click `Save`. 
 10. Now that you have saved, you should see a `Mappers` tab near the top. Click on `Mappers > Configure a new mapper > Audience`. 
 11. Enter `tool-audience` as the name, and write a custom string `example-tool` in `Included Custom Audience`. Click `Save`. 
-12. Finally, let's add the client scope to the API client profile in Keycloak. Go to `Clients > spiffe://.../ns/agent/... > Client scopes > Add client scope`. Select `tool-audience`. Add as `Optional`. 
+12. Finally, let's add the client scope to the API client profile in Keycloak. Go to `Clients > spiffe://.../ns/agent/... > Client scopes > Add client scope`. Select `tool-audience`. Add as `Optional`.  -->
 
 ### Enable Token exchange for Agent Workload to obtain an access token for ExampleTool
+
 Note: These steps come from [this documentation](https://www.keycloak.org/securing-apps/token-exchange#_internal-token-to-internal-token-exchange). 
 
 5. Now go to `Clients > ExampleTool > Client details` and in the breadcrumbs at the top, click on `Permissions`
@@ -231,20 +258,20 @@ In practice, note that this grant is removed from OAuth2.1 and is not recommende
 
 In ther terminal, let's simulate a log in for the application. We will use the Password grant for demo purposes only. First, export the credentials of the user you created in this realm. 
 
-```
+```shell
 export USER_NAME=<user name>
 export USER_PASSWORD=<password>
 ```
 
 Now, we will use the application's SPIRE-issued JWT to authenticate to Keycloak. Let's store the JWT in the variable. 
 
-```
+```shell
 export SPIFFE_JWT_API=$(kubectl exec -n api -it $(kubectl get po -n api -o name -l app=client --context=kind-cluster) --context=kind-cluster -- cat /opt/jwt_svid.token)
 ```
 
 If you inspect this token, you should see a payload similar to: 
 
-```
+```json
 {
   "aud": [
     "http://localhost:8080/realms/Demo"
@@ -258,7 +285,7 @@ If you inspect this token, you should see a payload similar to:
 
 Finally, let's obtain our initial access token with the following CURL command: 
 
-```
+```shell
 curl -sX POST -H "Content-Type: application/x-www-form-urlencoded" \
     -d "client_assertion=$SPIFFE_JWT_API" \
     -d "grant_type=password" \
@@ -272,20 +299,22 @@ curl -sX POST -H "Content-Type: application/x-www-form-urlencoded" \
 
 This should return something like the following: 
 
-```
-{"access_token":"ey...",
- "expires_in":300,
- "refresh_expires_in":1800,
- "refresh_token":"ey...",
- "token_type":"Bearer",
- "not-before-policy":0,
- "session_state":"6af3bb4d-abdd-40dc-9df5-960328e683cc",
- "scope":"email profile"}
+```json
+{
+  "access_token":"ey...",
+  "expires_in":300,
+  "refresh_expires_in":1800,
+  "refresh_token":"ey...",
+  "token_type":"Bearer",
+  "not-before-policy":0,
+  "session_state":"6af3bb4d-abdd-40dc-9df5-960328e683cc",
+  "scope":"email profile"
+}
 ```
 
 If you inspect the access token at [jwt.io](https://jwt.io), you should see the payload looking like: 
 
-```
+```json
 {
   "exp": 173...,
   "iat": 173...,
@@ -318,7 +347,7 @@ Notice that the `aud` claim has been specified because we requested the scope to
 
 The access token is the key here. If you were to visit [jwt.io](https://jwt.io), and paste the access token in there, you should see the token has `aud` value with the Agent SPIFFEID. Let's store it in an environment variable:
 
-```
+```shell
 export ACCESS_TOKEN=$(curl -sX POST -H "Content-Type: application/x-www-form-urlencoded" \
     -d "client_assertion=$SPIFFE_JWT_API" \
     -d "grant_type=password" \
@@ -332,13 +361,13 @@ export ACCESS_TOKEN=$(curl -sX POST -H "Content-Type: application/x-www-form-url
 
 Now we can use it in a subsequent call to exchange the token. We now want to simulate the agent workload exchanging the token it received for a new token with `ExampleTool` as its `aud` claim. First let's obtain our SPIRE-issued JWT:
 
-```
+```shell
 export SPIFFE_JWT_AGENT=$(kubectl exec -n agent -it $(kubectl get po -n agent -o name -l app=client --context=kind-cluster) --context=kind-cluster -- cat /opt/jwt_svid.token)
 ```
 
 And finially we can do the token exchange: 
 
-```
+```shell
 curl -sX POST -H "Content-Type: application/x-www-form-urlencoded" \
     -d "client_id=$SPIFFE_ID_AGENT" \
     -d "client_assertion=$SPIFFE_JWT_AGENT" \
