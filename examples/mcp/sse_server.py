@@ -35,6 +35,7 @@ async def fetch(
     if ctx.request_context is not None and ctx.request_context.meta is not None:
         api_key = ctx.request_context.meta.api_key
         print(f"api_key={api_key}")
+        headers["Authorization"] = "Bearer " + api_key
     async with httpx.AsyncClient(follow_redirects=True, headers=headers) as client:
         response = await client.get(url)
         response.raise_for_status()

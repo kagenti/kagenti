@@ -11,7 +11,7 @@ The following proof on concepts have been implemented on Llama Stack.
 - Install [ollama](https://ollama.com/download)
 
 
-###  Setup
+### Setup
 
 Clone this project:
 

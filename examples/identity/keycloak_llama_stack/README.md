@@ -1,6 +1,6 @@
 # Tutorial for Llama Stack and MCP and Access Token propagation
 
-This tutorial is will take us through obtaining an initial access token and sending it through Llama stack to call a tool with this access token. This tool is a Golang server that will be secured via Keycloak. 
+This tutorial is will take us through obtaining an initial access token and sending it through Llama Stack to call a tool with this access token. This tool is a Golang server that will be secured via Keycloak. 
 
 This tutorial is broken down into the following steps:
 
@@ -33,7 +33,7 @@ There are three components involved: Keycloak, the Golang Server, and the MCP Se
 
 First, let's run Keycloak in Docker using the following command: 
 
-```
+```shell
 podman|docker run --name keycloak -p 8080:8080 \
         -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
         quay.io/keycloak/keycloak:latest \
@@ -42,42 +42,61 @@ podman|docker run --name keycloak -p 8080:8080 \
 
 This runs Keycloak at `http://localhost:8080` with admin username and password `admin`. 
 
-Now, let's set up Keycloak. We will set up Keycloak. We will create a demo realm, along with two clients: one for the llama stack client, and one tool client. 
+Create a Keycloak user with password credentials that are not temporary.
 
-[TODO]
+Now, let's set up Keycloak. We will set up Keycloak. We will create a `demo` realm, along with two clients: one for the Llama Stack client named `llama-stack`, and one tool client named `my-external-tool`. For `llama-stack`, enable `Standard flow` and `Direct access grants` authentication flows.
+
+Create a client scope named `my-external-tool-aud`. Configure a new `Audience` mapper with the name `my-external-tool-aud` and included client audience `my-external-tool`.
+
+Go to the `llama-stack` client and add the `my-external-tool-aud` as an optional client scope.
+
+```shell
+USERNAME=<username>
+PASSWORD=<password>
+```
+
+```shell
+curl -sX POST -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "grant_type=password" \
+    -d "username=$USERNAME" \
+    -d "password=$PASSWORD" \
+    -d "client_id=llama-stack" \
+    -d "scope=my-external-tool-aud" \
+    "http://localhost:8080/realms/demo/protocol/openid-connect/token" | jq
+```
 
 ### Step 1b: Run the Golang Server
 
-The implementation of the Golang server can be found [here](./golang-webserver). Run it with the following command:
+The implementation of the Golang server can be found [here](golang_server/). Run it with the following command:
 
-```
-./com.example.webserver -issuer "http://localhost:8080/realms/demo"
+```shell
+./golang_server/com.example.webserver -issuer "http://localhost:8080/realms/demo"
 ```
 
 This runs the server on `http://localhost:10000` and validates received JWTs against the Keycloak we are running. 
 
 ### Step 1c: Run the MCP Server
 
-Finally, we can run the MCP Server so that the Llama stack server can make MCP calls to our running golang server:
+Finally, we can run the MCP Server so that the Llama Stack server can make MCP calls to our running golang server:
 
-```
-cd examples/mcp 
+```shell
+cd ../../mcp
 uv run sse_server.py
 ```
 
 This runs the MCP Server. [TODO: need to add edited code, possibly to this directory]
 
-## Step 2: Setup the llama stack components
+## Step 2: Setup the Llama Stack components
 
-Now that we have the tool components running, we can set up the Llama stack server. 
+Now that we have the tool components running, we can set up the Llama Stack server. 
 
-### Step 2a: Setup and Run the Llama stack Server
+### Step 2a: Setup and Run the Llama Stack Server
 
-We will be running the llama stack server. This particular distribution requires ollama. To set these components up, run the [Setup steps in our pocs document](./docs/pocs.md#setup). 
+We will be running the Llama Stack server. This particular distribution requires ollama. To set these components up, run the [Setup steps in our pocs document](../../../docs/pocs.md). 
 
-Once you do so, you should be ready to run the Llama stack server with the following command: 
+Once you do so, you should be ready to run the Llama Stack server with the following command: 
 
-```
+```shell
 export INFERENCE_MODEL="meta-llama/Llama-3.2-3B-Instruct"
 llama stack run stack/templates/ollama/run.yaml 
 ```
@@ -86,9 +105,16 @@ When running the server on Mac, you might get a pop-up asking to `accept incomin
 
 ## Step 2b: Register the toolgroup with the Llama Stack Server
 
+Activate the environment.
+
+```shell
+cd ../../..
+conda activate stack
+```
+
 To register the tool group with the server, run:
 
-```
+```shell
 python -m examples.clients.mcp.tool-util --host localhost --port 8321 --register_toolgroup
 ```
 
@@ -100,4 +126,6 @@ pip install llama_stack_client==v0.1.6
 
 ## Step 3: Make a tool call
 
-We are
+```shell
+python -m examples.clients.mcp.tool-util --host localhost --port 8321
+```

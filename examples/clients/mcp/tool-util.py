@@ -32,11 +32,12 @@ def run_main(
     toolgroup_id: str,
     mcp_endpoint: str,
 ):
+    api_key = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ3dGRua2FtNk9DdGpLcTRuRmsxcjhscjdCU2l1Q1NjZW4taHE3RC1aZVlJIn0.eyJleHAiOjE3NDU5NDkzMzgsImlhdCI6MTc0NTk0OTAzOCwianRpIjoib25ydHJvOmFiZjIwM2QzLTRiOTAtNGM5Zi05ZDFkLWU0ODg0NDEyOGNhZSIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA4MC9yZWFsbXMvZGVtbyIsImF1ZCI6WyJteS1leHRlcm5hbC10b29sIiwiYWNjb3VudCJdLCJzdWIiOiI5YmI2NTQ1ZS0wN2NmLTRiNzQtOTQxMi1hMmY1MGNiYmRlNmUiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJsbGFtYV9zdGFjayIsInNpZCI6IjE5MmM5MGM5LTFmNTAtNGMwNy1hM2VmLTI0MjdhMzNkYTExNCIsImFjciI6IjEiLCJhbGxvd2VkLW9yaWdpbnMiOlsiLyoiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iLCJkZWZhdWx0LXJvbGVzLWRlbW8iXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6InByb2ZpbGUgZW1haWwiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6ImFsYW4gYWxhbiIsInByZWZlcnJlZF91c2VybmFtZSI6ImFsYW4iLCJnaXZlbl9uYW1lIjoiYWxhbiIsImZhbWlseV9uYW1lIjoiYWxhbiIsImVtYWlsIjoiYWxhbkBhbGFuLmNvbSJ9.em1Pb72g4KAQuQB9bv2SSVeMAUwi1F0BoEQ9qz8k3N0hNckAIXvgKMShe-XilM25KMTGFPEX8J_Ue2OtzFrI4zmFsq7fkm6D4knPMqxjFIvr8PSAgDFKUDqOkc3pRg0a_G7wKPdQ7g9lqOUTBPIbCUJakewNS4XxR0U8IdcRrsqEs-oaWHp7aX2IIS0A-SdSrrmW3ah0zWNTXLb24nSCK0ykt3Q6YRMmYGUCboICa-2SzeIUd9BaqSOr8cXcZ7IBUxwMJth1XSg9DOgwUL-eQ4svJTVbngmWPTetCmnYeC6HmP2qQ5mlc_E7dP4Ux9J2MIMAfrn_Apvj3nlMykLBJA"
 
     client = LlamaStackClient(
         base_url=f"http://{host}:{port}",
         provider_data={
-            "api_key": "some-api-key",
+            "api_key": api_key,
         },
     )
 
@@ -74,7 +75,7 @@ def run_main(
     result = client.tool_runtime.invoke_tool(
         tool_name="fetch",
         kwargs={
-            "url": "https://raw.githubusercontent.com/kubestellar/kubeflex/refs/heads/main/docs/contributors.md"
+            "url": "http://localhost:10000"
         },
     )
     print(result)
