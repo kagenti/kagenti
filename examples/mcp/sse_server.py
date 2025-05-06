@@ -32,9 +32,11 @@ async def fetch(
     headers = {
         "User-Agent": "MCP Test Server (github.com/modelcontextprotocol/python-sdk)"
     }
-    if ctx.request_context is not None and ctx.request_context.meta is not None:
+    if ctx.request_context is not None and ctx.request_context.meta is not None and ctx.request_context.meta.api_key is not None:
         api_key = ctx.request_context.meta.api_key
+        headers["Authorization"] = "Bearer " + api_key
         print(f"api_key={api_key}")
+        headers["Authorization"] = "Bearer " + api_key
     async with httpx.AsyncClient(follow_redirects=True, headers=headers) as client:
         response = await client.get(url)
         response.raise_for_status()

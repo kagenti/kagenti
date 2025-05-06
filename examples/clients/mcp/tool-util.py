@@ -31,12 +31,13 @@ def run_main(
     list_toolgroups: bool,
     toolgroup_id: str,
     mcp_endpoint: str,
+    mcp_fetch_url: str,
+    api_key: str,
 ):
-
     client = LlamaStackClient(
         base_url=f"http://{host}:{port}",
         provider_data={
-            "api_key": "some-api-key",
+            "api_key": api_key,
         },
     )
 
@@ -84,7 +85,7 @@ def run_main(
     result = client.tool_runtime.invoke_tool(
         tool_name="fetch",
         kwargs={
-            "url": "https://raw.githubusercontent.com/kubestellar/kubeflex/refs/heads/main/docs/contributors.md"
+            "url": mcp_fetch_url
         },
     )
     print(result)
@@ -124,6 +125,20 @@ if __name__ == "__main__":
         default="http://localhost:8000/sse",
         help="Specify the MCP endpoint.",
     )
+    parser.add_argument(
+        "--mcp_fetch_url",
+        type=str,
+        required=False,
+        default="https://raw.githubusercontent.com/kubestellar/kubeflex/refs/heads/main/docs/contributors.md",
+        help="Specify where the MCP server fetches",
+    )
+    parser.add_argument(
+        "--access_token",
+        type=str,
+        required=False,
+        default="some-api-key",
+        help="Bearer token for tool at MCP Fetch URL",
+    )
 
     args = parser.parse_args()
 
@@ -135,4 +150,6 @@ if __name__ == "__main__":
         register_toolgroup=args.register_toolgroup,
         toolgroup_id=args.toolgroup_id,
         mcp_endpoint=args.mcp_endpoint,
+        mcp_fetch_url=args.mcp_fetch_url,
+        api_key=args.access_token,
     )
