@@ -1,12 +1,13 @@
 # Demonstrating Keycloak Token Exchange
 
-## Steps to set up SPIRE
+## Steps to set up Kind Cluster
 
-### Step 1.1: Create the Kind Clusters
+### Step 1.1: Create the Kind Cluster
 
-If a Podman machine is up and running skip the following step. Else on OSX or Windows, run this command to start the podman machine:
+If a Podman machine is up and running skip the following step. Else on OSX or Windows, run this command to cleanup and then start a new podman machine:
 
 ```shell
+podman machine rm -f
 podman machine init -m 4096 --rootful=true
 podman machine start
 ```
@@ -17,20 +18,20 @@ If you have multiple container runtimes, specify the proper runtime:
 export KIND_EXPERIMENTAL_PROVIDER=podman
 ```
 
-Now, we can create the Kind clusters. We will add extra port mappings to cluster A because we will set up ingress on that cluster. 
+Now, we can create the Kind cluster. We will add extra port mappings to cluster A because we will set up ingress on that cluster.
 
 ```shell
 kind create cluster --name=cluster --config=resources/cluster/kind_cluster_config.yaml
 ```
 
-### Step 1.2: Set up Ingress on Cluster A
+### Step 1.2: Set up Ingress on Kind Cluster
 
 On Kind, we can deploy an Nginx Ingress controller to access application services running within the environment.
 
-Set the `APP_DOMAIN` environment variable to contain the subdomain for which all applications can be accessed. On RHEL: 
+Set the `APP_DOMAIN` environment variable to contain the subdomain for which all applications can be accessed. On RHEL:
 
 ```shell
-export APP_DOMAIN=$(ip -4 addr show ens192 | ggrep -oP '(?<=inet\s)\d+(\.\d+){3}').nip.io
+export APP_DOMAIN=$(ip -4 addr show ens192 | grep -oP '(?<=inet\s)\d+(\.\d+){3}').nip.io
 ```
 
 On MacOS/Windows:
@@ -57,7 +58,9 @@ kubectl wait --namespace ingress-nginx --context=kind-cluster \
   --timeout=90s
 ```
 
-### Step 1.3: Deploy SPIRE on the Kind cluster
+## Steps to setup SPIRE
+
+### Step 2.1: Deploy SPIRE on the Kind cluster
 
 Now, we can deploy SPIRE on the Kind cluster:
 
@@ -72,11 +75,11 @@ Finally, let's create an ingress for HTTP connection to the SPIRE OIDC service:
 envsubst < resources/spire/oidc-ingress-http.yaml | kubectl apply --context=kind-cluster -f -
 ```
 
-### Step 1.4: Deploy SPIRE-enabled workloads on the cluster
+### Step 2.2: Deploy SPIRE-enabled workloads on the cluster
 
 Let's deploy our workloads into the cluster. For this demo, we have a three-tiered architecture:
 
-```
+```text
  -------      -------      ------
 |  API  | -> | Agent | -> | Tool |
  -------      -------      ------
@@ -84,11 +87,11 @@ Let's deploy our workloads into the cluster. For this demo, we have a three-tier
 
 And we will mimic the flow of access tokens from API to Tool. This involves several steps:
 
-1. Simulate user login with API workload. We will use the password grant for demonstration purposes only. This will end in the issuance of a token to the API workload. 
-2. Simulate the exchange of the access token for the API to the access token for the Agent. 
-3. [todo] Simulate the token exchange of the access token for the Agent to the access token for the Tool. 
+1. Simulate user login with API workload. We will use the password grant for demonstration purposes only. This will end in the issuance of a token to the API workload.
+2. Simulate the exchange of the access token for the API to the access token for the Agent.
+3. [todo] Simulate the token exchange of the access token for the Agent to the access token for the Tool.
 
-So to do this, we will deploy three workloads each in their own namespaces: `api`, `agent`, `tool`. 
+So to do this, we will deploy three workloads each in their own namespaces: `api`, `agent`, `tool`.
 
 ```shell
 kubectl apply -f resources/spire/workload_api.yaml --context=kind-cluster
@@ -104,9 +107,11 @@ kubectl exec -n api -it $(kubectl get po -n api -o name -l app=client --context=
 kubectl exec -n agent -it $(kubectl get po -n agent -o name -l app=client --context=kind-cluster) --context=kind-cluster -- cat /opt/jwt_svid.token
 ```
 
+Now that we have deployed SPIRE, let's deploy Keycloak!
+
 ## Steps to set up Keycloak
 
-Now that we have deployed SPIRE, let's deploy Keycloak!
+### Step 3.1 Deploy Keycloak
 
 We are using a custom-built Keycloak image that enables preview features and also modifies the JWT Bearer Client Authentication Profile. If you would like to build and run Keycloak yourself, please see [our docs](./custom_keycloak.md) on how to do so.
 
@@ -117,15 +122,15 @@ kubectl apply -f resources/keycloak/service.yaml
 envsubst < resources/keycloak/ingress.yaml | kubectl apply -f - 
 ```
 
-Then, we can access keycloak at the URL printed here: 
+Then, we can access keycloak at the URL printed here:
 
-```
+```console
 echo keycloak.$APP_DOMAIN
 ```
 
-## Keycloak Set up:
+### Step 3.2 Keycloak Set up
 
-### Required values
+#### Required values
 
 We require some values from the terminal. Please run the following to print them out and take note of them as we complete Keycloak set up.
 
@@ -143,19 +148,19 @@ echo SPIFFE_ID_AGENT=$SPIFFE_ID_AGENT
 echo JWKS_URL=$JWKS_URL
 ```
 
-### Initial realm set up
+### Step 3.3 Initial realm set up
 
 Port forward Keycloak
 ```shell
-kubectl port-forward statefulset/keycloak-for-tornjak -n keycloak 8080:8080
+kubectl port-forward statefulset/keycloak -n keycloak 8080:8080
 ```
 
-1. Access Keycloak (admin/admin)
+1. Access Keycloak `http://localhost:8080` (admin/admin)
 2. Create a new realm `Demo` [this is case-sensitive]
 3. Select that realm, go to `Users` on the sidebar, and create a new user. 
 4. Once that user is created, set a password by going to `Users > <username> > Credentials` where Credentials is in the top breadcrumbs. Set the password. Keep note of the credentials you used. 
 
-### Set up clients and client scopes
+### Step 3.4 Set up clients and client scopes
 
 ```shell
 cd config
