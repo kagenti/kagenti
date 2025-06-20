@@ -54,7 +54,19 @@ cd kagenti/installer
 uv run kagenti-installer
 ```
 
-The installer creates a kind cluster for the agent platform and then deploys all platform components.
+The installer creates a kind cluster named `agent-platform` and then deploys all platform components.
+
+To skip installation of the specific component issue, e.g. keycloak:
+
+```shell
+uv run kagenti-installer --skip-install keycloak
+```
+
+To get a full list of components and available install parameters issue:
+
+```shell
+uv run kagenti-installer --help
+```
 
 ## Run the demo
 
@@ -85,6 +97,17 @@ kubectl rollout restart daemonset -n istio-system  ztunnel
 
 ```shell
 export DOCKER_HOST="unix://$HOME/.colima/docker.sock"
+```
+
+### Need to change ENV values
+
+If you need to update the values in `.env` file, e.g., `GITHUB_TOKEN`
+delete the secret in all your auto-created namespaces, then re-run the install
+
+```shell
+kubectl get secret --all-namespaces
+kubectl -n my-namespace delete github-token-secret 
+uv run kagenti-installer
 ```
 
 ### Using Podman instead of Docker

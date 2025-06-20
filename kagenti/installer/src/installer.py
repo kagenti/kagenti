@@ -741,7 +741,7 @@ def install_keycloak():
                             },
                             "startupProbe": {
                                 "periodSeconds": 30,
-                                "timeoutSeconds": 10
+                                "timeoutSeconds": 60
                             }
                         }
                     ]
