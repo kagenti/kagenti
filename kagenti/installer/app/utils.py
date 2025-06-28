@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import re
+import time
 import shutil
 import subprocess
 from typing import Optional
@@ -111,3 +112,20 @@ def secret_exists(v1_api: client.CoreV1Api, name: str, namespace: str) -> bool:
             f"[bold red]Error checking for secret '{name}' in '{namespace}': {e}[/bold red]"
         )
         raise typer.Exit(1)
+
+def wait_for_deployment(namespace, deployment_name, retries=30, delay=10):
+    """Waits for a deployment to be created."""
+    for _ in range(retries):
+        try:
+            # Check if the deployment exists
+            subprocess.run(
+                ["kubectl", "get", "deployment", deployment_name, "-n", namespace],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            return True
+        except subprocess.CalledProcessError:
+            # Deployment does not exist yet; wait and retry
+            time.sleep(delay)
+    return False

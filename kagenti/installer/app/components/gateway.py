@@ -14,8 +14,9 @@
 # limitations under the License.
 
 from .. import config
-from ..utils import run_command
+from ..utils import run_command, wait_for_deployment
 
+# TODO - configure namespace(s) where this should be deployed - currently is in default
 
 def install():
     """Installs the Istio ingress and egress gateways."""
@@ -43,7 +44,12 @@ def install():
         ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "gateway-waypoint.yaml")],
         "Adding egress waypoint gateway",
     )
-    run_command(
-        ["kubectl", "rollout", "status", "-n", "default", "deployment/waypoint"],
-        "Waiting for waypoint gateway rollout",
-    )
+
+    # Wait for deployment to be created and ready
+    if wait_for_deployment("default", "waypoint"):
+        run_command(
+            ["kubectl", "rollout", "status", "-n", "default", "deployment/waypoint"],
+            "Waiting for waypoint gateway rollout",
+        )
+    else:
+        print("Failed to find the 'waypoint' deployment within the expected time frame.")
