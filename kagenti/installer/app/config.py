@@ -63,6 +63,7 @@ class InstallableComponent(str, Enum):
     ADDONS = "addons"  # Prometheus, Kiali & Phoenix
     UI = "ui"
     GATEWAY = "gateway"
+    SPIRE = "spire"
     KEYCLOAK = "keycloak"
     AGENTS = "agents"
     METRICS_SERVER= "metrics_server"    
