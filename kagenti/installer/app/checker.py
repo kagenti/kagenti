@@ -16,7 +16,6 @@
 import os
 import time
 
-import docker
 import typer
 from dotenv import load_dotenv
 from packaging.version import parse
@@ -93,17 +92,3 @@ def check_env_vars():
             "[bold green]✓[/bold green] All required environment variables are set."
         )
     console.print()
-
-
-def kind_cluster_exists() -> bool:
-    """Checks if the Kind cluster is already running via the Docker daemon."""
-    try:
-        docker_client = docker.from_env()
-        return any(
-            config.CLUSTER_NAME in c.name for c in docker_client.containers.list()
-        )
-    except docker.errors.DockerException:
-        console.log(
-            "[bold red]✗ Docker is not running. Please start the Docker daemon.[/bold red]"
-        )
-        raise typer.Exit(1)

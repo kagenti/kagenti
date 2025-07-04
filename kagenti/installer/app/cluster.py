@@ -17,7 +17,6 @@ import os
 import shutil
 import subprocess
 
-import docker
 import typer
 from kubernetes import client, config as kube_config
 from rich.prompt import Confirm
@@ -29,16 +28,34 @@ from .utils import console, run_command
 
 
 def kind_cluster_exists():
+    """Checks if the Kind cluster exists."""
+    try:
+        result = subprocess.run(
+            ["kind", "get", "clusters"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return config.CLUSTER_NAME in result.stdout.split()
+    except subprocess.CalledProcessError as e:
+        console.log(f"[bold red]✗ Failed to run kind command.[/bold red]")
+        console.log(f"[red]{e.stderr.strip()}[/red]")
+        raise typer.Exit(1)
+
+
+def kind_cluster_running():
     """Checks if the Kind cluster is already running."""
     try:
-        docker_client = docker.from_env()
-        return any(
-            config.CLUSTER_NAME in c.name for c in docker_client.containers.list()
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            check=True,
         )
-    except docker.errors.DockerException:
-        console.log(
-            "[bold red]✗ Docker is not running. Please start the Docker daemon.[/bold red]"
-        )
+        return f"{config.CLUSTER_NAME}-control-plane" in result.stdout.split()
+    except subprocess.CalledProcessError as e:
+        console.log(f"[bold red]✗ Failed to run docker ps.[/bold red]")
+        console.log(f"[red]{e.stderr.strip()}[/red]")
         raise typer.Exit(1)
 
 
@@ -50,10 +67,17 @@ def create_kind_cluster(install_registry: bool):
         )
     )
     if kind_cluster_exists():
-        console.log(
-            f"[bold green]✓[/bold green] Kind cluster '{config.CLUSTER_NAME}' already exists. Skipping creation."
-        )
-        return
+        if kind_cluster_running():
+            console.log(
+                f"[bold green]✓[/bold green] Kind cluster '{config.CLUSTER_NAME}' already running. Skipping creation."
+            )
+            return
+        else:
+            console.log(
+                f"[bold red]x Kind cluster '{config.CLUSTER_NAME}' exists but is not running."
+            )
+            console.print("[bold red]Cannot proceed. Exiting.[/bold red]")
+            raise typer.Exit(1)
 
     if not Confirm.ask(
         f"[bold yellow]?[/bold yellow] Kind cluster '{config.CLUSTER_NAME}' not found. Create it now?",

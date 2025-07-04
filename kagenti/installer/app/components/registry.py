@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import docker
+import subprocess
+
 from kubernetes import client, config as kube_config
 import typer
 
@@ -41,13 +42,10 @@ def install():
             )
             registry_ip = service.spec.cluster_ip
 
-            docker_client = docker.from_env()
-            container = docker_client.containers.get(
-                f"{config.CLUSTER_NAME}-control-plane"
-            )
-            container.exec_run(
-                f"sh -c 'echo {registry_ip} registry.cr-system.svc.cluster.local >> /etc/hosts'"
-            )
+            container = f"{config.CLUSTER_NAME}-control-plane"
+            subprocess.run(
+                ["docker", "exec", container, "sh", "-c",
+                 f"echo {registry_ip} registry.cr-system.svc.cluster.local >> /etc/hosts"])
 
             console.log(
                 "[bold green]✓[/bold green] Registry DNS configured in Kind container."
