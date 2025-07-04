@@ -19,6 +19,7 @@ from . import (
     gateway,
     istio,
     keycloak,
+    spire,
     operator,
     registry,
     tekton,
