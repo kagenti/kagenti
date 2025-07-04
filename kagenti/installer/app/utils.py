@@ -48,7 +48,7 @@ def get_command_version(command: str) -> Optional[Version]:
             result = subprocess.run(
                 [executable_path, "version"], capture_output=True, text=True, check=True
             )
-            match = re.search(r'Version:"v([^"]+)"', result.stdout)
+            match = re.search(r'Version:"v?([^"]+)"', result.stdout)
             version_str = match.group(1) if match else ""
         else:
             result = subprocess.run(
