@@ -26,3 +26,7 @@ data:
     [
       {"name": "MCP_URL", "value": "http://weather-tool:8000/sse"}
     ]
+  KEYCLOAK_URL: "http://keycloak.keycloak:8080"
+  KEYCLOAK_REALM: "master"
+  KEYCLOAK_ADMIN_USERNAME: "admin"
+  KEYCLOAK_ADMIN_PASSWORD: "admin"

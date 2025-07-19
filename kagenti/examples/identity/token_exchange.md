@@ -13,9 +13,9 @@ attestation, all while avoiding the pitfalls of static credentials and over-perm
 The flow of this use case is following:
 
 1. The Agent Orchestrator deploys an agent.
-1. A user initiates a request to the Agent Orchestrator.
-1. The Agent Orchestrator redirects the request to an appropriate Agent
-1. The Agent needs to access a third-party tool (like an API) on the user’s behalf.
+2. A user initiates a request to the Agent Orchestrator.
+3. The Agent Orchestrator redirects the request to an appropriate Agent
+4. The Agent needs to access a third-party tool (like an API) on the user’s behalf.
 
 (Picture of a basic agentic flow.)
 
