@@ -10,15 +10,15 @@ A diagram and description of the demo architecture is provided [here](./tech-det
 Before running the demo setup script, ensure you have the following prerequisites in place:
 
 * **Python:** Python versionn >=3.9
-* **uv** [uv](https://docs.astral.sh/uv/getting-started/installation) must be installed (e.g. `pip install uv`)
-* **Docker:** Docker Desktop, Rancher Desktop or Podman Machine. On MacOS, you will need also to do `brew install docker-credential-helper`
+* **uv:** [uv](https://docs.astral.sh/uv/getting-started/installation) must be installed (e.g. `pip install uv`)
+* **Docker:** Docker Desktop, Rancher Desktop or Podman Machine. You must alias it to `docker` (e.g. `sudo ln -s /opt/homebrew/bin/podman /usr/local/bin/docker`). On MacOS, you will need also to do `brew install docker-credential-helper`
   * In Rancher Decktop, configure VM size to at least 8GB of memory and 4 cores
-* **Kind:** A [tool](https://kind.sigs.k8s.io) to run a Kubernetes cluster in docker.
-* **kubectl:** The Kubernetes command-line tool.
-* **Helm:** A package manager for Kubernetes.
+* **Kind:** A [tool](https://kind.sigs.k8s.io) to run a Kubernetes cluster in docker (e.g. `brew install kind`).
+* **kubectl:** The Kubernetes command-line tool (installs with **kind**).
+* **Helm:** A package manager for Kubernetes (e.g. `brew install helm`).
+* **[ollama](https://ollama.com/download)** to run LLMs locally (e.g. `brew install ollama`). Then start the **ollama* service in the background (e.g.`ollama serve`).
 * **GitHub Token:** Your [GitHub token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) to allow fetching source and then to push docker image to ghcr.io repository. Make sure to grant: `repo(all), read/write packages`. Make sure to choose the "classic" token instead of the "fine-grained" token.
 * **OpenAI API Key:** The [OpenAI API Key](https://platform.openai.com/api-keys) for accessing A2A agents. Select `read only`.
-* **[ollama](https://ollama.com/download)** to run LLMs locally.
 
 At this time the demo has only been tested on MacOS with M1 processor.
 
@@ -120,6 +120,43 @@ kubectl get secret --all-namespaces
 kubectl -n my-namespace delete github-token-secret 
 uv run kagenti-installer
 ```
+
+### Agent log shows communication errors
+
+Kagenti UI shows Connection errors:
+
+```console
+Error: Failed to process weather request. Connection error.
+```
+
+Agent log shows errors:
+
+```console
+kagenti$ kubectl -n teams logs -f acp-weather-service-7f984f478d-4jzv9
+.
+.
+ERROR:    Graph execution error: Connection error.
+ERROR:acp:Run failed
+Traceback (most recent call last):
+  File "/app/.venv/lib/python3.11/site-packages/acp_sdk/server/bundle.py", line 151, in _execute
+    generic = AnyModel.model_validate(next)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/.venv/lib/python3.11/site-packages/pydantic/main.py", line 703, in model_validate
+    return cls.__pydantic_validator__.validate_python(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for AnyModel
+  Input should be a valid dictionary or instance of AnyModel [type=model_type, input_value=ACPError(), input_type=ACPError]
+```
+
+Most likely the ACP protocol is failing because *ollama* service is not installed or running.
+
+Start *ollama* service in the terminal and keep it running:
+
+```console
+ollama serve
+```
+
+Then try the prompt again.
 
 ### Using Podman instead of Docker
 

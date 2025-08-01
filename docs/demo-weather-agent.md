@@ -145,6 +145,8 @@ Once the deployment is complete and the Agent is authorized to access the Tool, 
 
 6. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
 
+If you encounter any errors, check the [Troubleshooting section](./demos.md#troubleshooting).
+
 ## Cleanup
 
 Currently, the Kagenti UI does not provide built-in cleanup capabilities for agents or tools.
