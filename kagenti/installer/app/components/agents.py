@@ -44,6 +44,7 @@ def install():
     github_user = os.getenv("GITHUB_USER")
     github_token = os.getenv("GITHUB_TOKEN")
     openai_api_key = os.getenv("OPENAI_API_KEY")
+    slack_bot_token = os.getenv("SLACK_BOT_TOKEN")
 
     for ns in agent_namespaces:
         console.print(f"\n[cyan]Configuring namespace: {ns}[/cyan]")
@@ -94,6 +95,20 @@ def install():
                     ns,
                 ],
                 f"Creating 'openai-secret' in '{ns}'",
+            )
+        if not secret_exists(v1_api, "slack-secret", ns):
+            run_command(
+                [
+                    "kubectl",
+                    "create",
+                    "secret",
+                    "generic",
+                    "slack-secret",
+                    f"--from-literal=bot-token={slack_bot_token}",
+                    "-n",
+                    ns,
+                ],
+                f"Creating 'slack-secret' in '{ns}'",
             )
         # if user operating system is linux, do some special config to enable ollama
         if platform.system() == "Linux":
