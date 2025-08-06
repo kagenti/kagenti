@@ -33,7 +33,7 @@ data:
   mcp-slack-config: |
     [
       {
-        "name": "SLACK_BOT_TOKEN", 
+        "name": "SLACK_BOT_TOKEN",
         "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "bot-token"}}
       }
     ]
