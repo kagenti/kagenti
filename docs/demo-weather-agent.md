@@ -73,7 +73,7 @@ To verify that both the agent and tool are running:
 2. Use the namespace you selected during deployment to check the status of the pods:
 
    ```console
-   installer$ kubectl -n team1 get po
+   installer$ kubectl -n team1 get pods
    NAME                                  READY   STATUS    RESTARTS   AGE
    acp-weather-service-8bb4644fc-4d65d   1/1     Running   0          1m
    weather-tool-5bb675dd7c-ccmlp         1/1     Running   0          1m
@@ -83,7 +83,7 @@ To verify that both the agent and tool are running:
    For the agent:
 
    ```console
-    installer$ kubectl -n team1 logs -f acp-weather-service-8bb4644fc-4d65d
+    installer$ kubectl -n team1 logs -f deployment/acp-weather-service
     Defaulted container "acp-weather-service" out of: acp-weather-service, kagenti-client-registration (init)
     INFO:     Started server process [18]
     INFO:     Waiting for application startup.
@@ -93,7 +93,7 @@ To verify that both the agent and tool are running:
 
     For the tool:
     ```console
-    installer$ kubectl -n team1 logs -f weather-tool-5bb675dd7c-ccmlp
+    installer$ kubectl -n team1 logs -f deployment/weather-tool
     Defaulted container "weather-tool" out of: weather-tool, kagenti-client-registration (init)
     INFO:     Started server process [19]
     INFO:     Waiting for application startup.
@@ -176,3 +176,4 @@ However, you can manually remove them by deleting their Custom Resources (CRs) f
 ```
 
 The Kagenti Operator will automatically clean up all related Kubernetes resources.
+o
