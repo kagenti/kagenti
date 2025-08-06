@@ -24,7 +24,18 @@ data:
     ]
   mcp-weather: |
     [
-      {"name": "MCP_URL", "value": "http://weather-tool:8000/sse"}
+      {"name": "MCP_URL", "value": "http://weather-tool:8000/mcp"}
+    ]
+  mcp-slack: |
+    [
+      {"name": "MCP_URL", "value": "http://slack-tool:8000/mcp"}
+    ]
+  mcp-slack-config: |
+    [
+      {
+        "name": "SLACK_BOT_TOKEN", 
+        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "bot-token"}}
+      }
     ]
   KEYCLOAK_URL: "http://keycloak.keycloak:8080"
   KEYCLOAK_REALM: "master"

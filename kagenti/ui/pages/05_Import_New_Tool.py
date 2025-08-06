@@ -20,6 +20,7 @@ from lib.kube import get_kube_api_client_cached
 # --- Define Tool-Specific Settings for the Import Form ---
 TOOL_EXAMPLE_SUBFOLDERS = [
     "mcp/weather_tool",
+    "mcp/slack_tool"
 ]
 TOOL_PROTOCOL_OPTIONS = ["MCP", "gRPC", "HTTP"] 
 
