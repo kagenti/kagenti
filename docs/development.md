@@ -38,15 +38,11 @@ python3 -m venv myenv
 ```bash
 source myenv/bin/activate
 ```
-### 4. Install Dependencies
+### 4. Launch the Kagenti UI
 ```bash
-pip install -r requirements.txt
+uv run streamlit run Home.py
 ```
-### 5. Launch the Kagenti UI
-```bash
-streamlit run Home.py
-```
-### 6. Deactivate the environment
+### 5. Deactivate the environment
 ```bash
 deactivate
 ```
