@@ -1,0 +1,8 @@
+
+streamlit
+kubernetes
+python-keycloak
+acp_sdk
+a2a
+a2a-sdk
+mcp
