@@ -126,7 +126,7 @@ Once the deployment is complete, you can run the demo:
    What are the channels in the slack? 
    ```
 
-5. You will see the *Agent Thinking...* message. Depending on the speed of your hosting environment, the agent will return a slack response. For example:
+5. You will see the *Agent Thinking...* message. Depending on the speed of your hosting environment, the agent will return a Slack response. For example:
 
    ```console
      The current weather in NY is mostly sunny with a temperature of 22.6 degrees Celsius (73.07 degrees Fahrenheit). There is a gentle breeze blowing at 6.8 km/h (4.2 mph) from the northwest. It's currently daytime, and the weather code indicates fair weather with no precipitation.

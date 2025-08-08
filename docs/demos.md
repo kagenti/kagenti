@@ -47,7 +47,7 @@ GITHUB_USER=<Your public Github User ID>
 GITHUB_TOKEN=<Your GitHub Token, as explained above>
 OPENAI_API_KEY=<This is required only for A2A agents, if only using the ACP agents can just put a placeholder>
 AGENT_NAMESPACES=<comma separated list of Kubernetes namespaces to set up in Kind for agents deployment e.g., `team1,team2`>
-SLACK_BOT_TOKEN=<This is required only if you wish to use the slack tool example.>
+SLACK_BOT_TOKEN=<This is required only if you wish to use the Slack tool example.>
 ```
 
 Run the installer.
