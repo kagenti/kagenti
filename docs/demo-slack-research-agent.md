@@ -26,9 +26,9 @@ Here's a breakdown of the sections:
 - In [**Run the Weather Agent Demo**](#run-the-weather-agent-demo), you'll interact with the agent and confirm it responds correctly using real-time slack data.
 
 > **Prerequisites:**  
-> Ensure you've completed the Kagenti platform setup as described in the [Installation](../demos.md#installation) section. This demo uses `ACP` protocol, so you will not need `OPENAI_API_KEY` in your environment setup.
+> Ensure you've completed the Kagenti platform setup as described in the [Installation](../demos.md#installation) section. This demo uses `SLACK_BOT_TOKEN` so please include this. 
 
-You should also open the Agent Platform Demo Dashboard as instructed in the [Run the Demo](../demos.md#run-the-demo) section.
+You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Kagenti UI](../demos.md#connect-to-the-kagenti-ui) section.
 
 ---
 
@@ -81,7 +81,7 @@ To verify that both the agent and tool are running:
 2. Use the namespace you selected during deployment to check the status of the pods:
 
    ```console
-   installer$ kubectl -n team1 get po
+   installer$ kubectl -n <namespace> get po
    NAME                                  READY   STATUS    RESTARTS   AGE
    acp-weather-service-8bb4644fc-4d65d   1/1     Running   0          1m
    slack-tool-5bb675dd7c-ccmlp         1/1     Running   0          1m
@@ -91,7 +91,7 @@ To verify that both the agent and tool are running:
    For the agent:
 
    ```console
-    installer$ kubectl -n team1 logs -f acp-weather-service-8bb4644fc-4d65d
+    installer$ kubectl -n <namespace> logs -f acp-weather-service-8bb4644fc-4d65d
     Defaulted container "acp-weather-service" out of: acp-weather-service, kagenti-client-registration (init)
     INFO:     Started server process [18]
     INFO:     Waiting for application startup.
@@ -101,7 +101,7 @@ To verify that both the agent and tool are running:
 
     For the tool:
     ```console
-    installer$ kubectl -n team1 logs -f slack-tool-5bb675dd7c-ccmlp
+    installer$ kubectl -n <namespace> logs -f slack-tool-5bb675dd7c-ccmlp
     Defaulted container "slack-tool" out of: slack-tool, kagenti-client-registration (init)
     INFO:     Started server process [19]
     INFO:     Waiting for application startup.
@@ -152,7 +152,7 @@ However, you can manually remove them by deleting their Custom Resources (CRs) f
 ### Step 2: List deployed components in your namespace
 
 ```console
-    installer$ kubectl get components.kagenti.operator.dev -n team1
+    installer$ kubectl get components.kagenti.operator.dev -n <namespace>
     NAME                  SUSPEND
     acp-weather-service   false
     slack-tool          false
@@ -161,7 +161,7 @@ However, you can manually remove them by deleting their Custom Resources (CRs) f
 ### Step 3: Delete the Agent and the Tool
 
 ```console
-   installer$ kubectl delete components.kagenti.operator.dev acp-weather-service slack-tool -n team1
+   installer$ kubectl delete components.kagenti.operator.dev acp-weather-service slack-tool -n <namespace>
 ```
 
 The Kagenti Operator will automatically clean up all related Kubernetes resources.
