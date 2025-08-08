@@ -26,7 +26,7 @@ Here's a breakdown of the sections:
 - In [**Run the Weather Agent Demo**](#run-the-weather-agent-demo), you'll interact with the agent and confirm it responds correctly using real-time slack data.
 
 > **Prerequisites:**  
-> Ensure you've completed the Kagenti platform setup as described in the [Installation](../demos.md#installation) section. This demo uses `SLACK_BOT_TOKEN` so please include this. 
+> Ensure you've completed the Kagenti platform setup as described in the [Installation](./demos.md#installation) section. This demo uses `SLACK_BOT_TOKEN` so please include this. 
 
 You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Kagenti UI](../demos.md#connect-to-the-kagenti-ui) section.
 
