@@ -9,7 +9,7 @@ A diagram and description of the demo architecture is provided [here](./tech-det
 
 Before running the demo setup script, ensure you have the following prerequisites in place:
 
-* **Python:** Python versionn >=3.9
+* **Python:** Python version >=3.9
 * **uv:** [uv](https://docs.astral.sh/uv/getting-started/installation) must be installed (e.g. `pip install uv`)
 * **Docker:** Docker Desktop, Rancher Desktop or Podman Machine. You must alias it to `docker` (e.g. `sudo ln -s /opt/homebrew/bin/podman /usr/local/bin/docker`). On MacOS, you will need also to do `brew install docker-credential-helper`
   * In Rancher Decktop, configure VM size to at least 8GB of memory and 4 cores

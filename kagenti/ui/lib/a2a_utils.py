@@ -318,6 +318,7 @@ async def run_agent_chat_stream_a2a(
     agent_url: str,
     message_placeholder,
     log_container,
+    access_token: dict = None,
 ) -> str:
     """
     Asynchronously runs an agent-to-agent chat stream with error handling and logging.
