@@ -176,4 +176,3 @@ However, you can manually remove them by deleting their Custom Resources (CRs) f
 ```
 
 The Kagenti Operator will automatically clean up all related Kubernetes resources.
-o
