@@ -21,7 +21,7 @@ jobs:
     steps:
       # 1. Checkout the repository code
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # 2. Set up QEMU for multi-architecture builds
       - name: Set up QEMU
