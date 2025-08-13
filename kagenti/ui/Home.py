@@ -106,18 +106,18 @@ if ENABLE_AUTH == "true":
     st.session_state[ENABLE_AUTH_STRING] = True
 
 # Example
-# CLIENT_ID="streamlit-oauth"
+# CLIENT_ID="kagenti"
 # CLIENT_SECRET="xFPc7EPVV..."
 # AUTH_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/auth"
 # TOKEN_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/token"
 # REDIRECT_URI="http://localhost:8502/oauth2/callback"
 # SCOPE="openid profile email"
-CLIENT_ID = os.environ.get('CLIENT_ID')
+CLIENT_ID = os.environ.get('CLIENT_ID', 'kagenti')
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 AUTH_ENDPOINT = os.environ.get('AUTH_ENDPOINT')
 TOKEN_ENDPOINT = os.environ.get('TOKEN_ENDPOINT')
 REDIRECT_URI = os.environ.get('REDIRECT_URI')
-SCOPE = os.environ.get('SCOPE')
+SCOPE = os.environ.get('SCOPE', 'openid profile email')
 
 oauth2 = OAuth2Component(CLIENT_ID, CLIENT_SECRET, AUTH_ENDPOINT, TOKEN_ENDPOINT)
 
