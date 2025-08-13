@@ -8,7 +8,7 @@ docker run -p 127.0.0.1:8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOO
 
 ### Create `kagenti` client in Keycloak
 
-Go to Keycloak at [http://keycloak.localtest.me:8080](http://keycloak.localtest.me:8080).
+Go to Keycloak at [http://localhost:8080](http://localhost:8080).
 
 Login with username `admin` and password `admin`.
 
