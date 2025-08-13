@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from lib.constants import ENABLE_AUTH_STRING, TOKEN_STRING
 import streamlit as st
 from streamlit_oauth import OAuth2Component
 
@@ -66,50 +67,12 @@ st.title("🚀 Welcome to the Cloud Native Agent Platform")
 st.caption("Manage, deploy, and observe your AI agents and tools with ease.")
 st.markdown("---")
 
-
 # --- Home Page Content ---
 st.subheader("Overview")
 st.write(
     "This dashboard supports the deployment, management and observability of agents and tools on the Kagenti platform. "
     "Navigate through the sections using the sidebar to explore different functionalities."
 )
-
-# --- Login Redirect ---
-
-# Example
-# CLIENT_ID="streamlit-oauth"
-# CLIENT_SECRET="xFPc7EPVV..."
-# AUTH_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/auth"
-# TOKEN_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/token"
-# REDIRECT_URI="http://localhost:8502/oauth2/callback"
-# SCOPE="openid profile email"
-CLIENT_ID = os.environ.get('CLIENT_ID')
-CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
-AUTH_ENDPOINT = os.environ.get('AUTH_ENDPOINT')
-TOKEN_ENDPOINT = os.environ.get('TOKEN_ENDPOINT')
-REDIRECT_URI = os.environ.get('REDIRECT_URI')
-SCOPE = os.environ.get('SCOPE')
-
-oauth2 = OAuth2Component(CLIENT_ID, CLIENT_SECRET, AUTH_ENDPOINT, TOKEN_ENDPOINT)
-
-# Check if token exists in session state
-if 'token' not in st.session_state:
-    # If not, show authorize button
-    result = oauth2.authorize_button("Click to login", REDIRECT_URI, SCOPE)
-    if result and 'token' in result:
-        # If authorization successful, save token in session state
-        st.session_state.token = result.get('token')
-        st.rerun()
-
-    # User is not logged in
-    st.warning("User not logged in")
-    if not result:
-        print("call_streamlit_oauth: user not logged in; no result")
-    elif 'token' not in result:
-        print("call_streamlit_oauth: user not logged in; no token")
-    st.stop()
-    
-# access_token = st.session_state['token']['access_token']
 
 col1, col2 = st.columns(2)
 
@@ -134,4 +97,48 @@ with col2:
     )
 
 st.markdown("---")
+st.subheader("Login")
+
+# --- Login Redirect ---
+
+ENABLE_AUTH = os.environ.get('ENABLE_AUTH')
+if ENABLE_AUTH == "true":
+    st.session_state[ENABLE_AUTH_STRING] = True
+else:
+    st.session_state[ENABLE_AUTH_STRING] = False
+
+# Example
+# CLIENT_ID="streamlit-oauth"
+# CLIENT_SECRET="xFPc7EPVV..."
+# AUTH_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/auth"
+# TOKEN_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/token"
+# REDIRECT_URI="http://localhost:8502/oauth2/callback"
+# SCOPE="openid profile email"
+CLIENT_ID = os.environ.get('CLIENT_ID')
+CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
+AUTH_ENDPOINT = os.environ.get('AUTH_ENDPOINT')
+TOKEN_ENDPOINT = os.environ.get('TOKEN_ENDPOINT')
+REDIRECT_URI = os.environ.get('REDIRECT_URI')
+SCOPE = os.environ.get('SCOPE')
+
+oauth2 = OAuth2Component(CLIENT_ID, CLIENT_SECRET, AUTH_ENDPOINT, TOKEN_ENDPOINT)
+
+# Check if token exists in session state
+if TOKEN_STRING in st.session_state:
+    # User is not logged in
+    st.info("User is logged in")
+    if st.button("Logout"):
+        del st.session_state[TOKEN_STRING]
+        st.rerun()
+else:
+    # If not, show authorize button
+    st.warning("User is not logged in")
+    result = oauth2.authorize_button("Click to login", REDIRECT_URI, SCOPE)
+    if result and TOKEN_STRING in result:
+        # If authorization successful, save token in session state
+        st.session_state.token = result.get(TOKEN_STRING)
+        st.rerun()
+
+st.markdown("---")
+
 st.info("💡 **Tip:** Use the sidebar on the left to navigate to the desired section.")

@@ -21,9 +21,9 @@ from lib.kube import (
     delete_custom_resource,
 )
 from lib.agent_details_page import render_agent_details_content
-from lib.common_ui import render_resource_catalog
-from lib import constants
-import kubernetes 
+from lib.common_ui import check_auth, render_resource_catalog
+
+check_auth()
 
 # --- Main Agent Catalog Page Rendering ---
 
@@ -42,7 +42,7 @@ def delete_agent_resource(custom_obj_api, name, namespace):
         st_object=st,
         custom_obj_api=custom_obj_api,
         group="kagenti.operator.dev",
-        version="v1alpha1",   
+        version="v1alpha1",
         namespace=namespace,
         plural="components",
         name=name
@@ -57,5 +57,5 @@ render_resource_catalog(
     custom_obj_api=custom_obj_api,  # Pass the CustomObjectsApi
     generic_api_client=generic_api_client,  # Pass the generic ApiClient
     session_state_key_selected_resource="selected_agent_name",
-    delete_resource_func=delete_agent_resource, 
+    delete_resource_func=delete_agent_resource,
 )

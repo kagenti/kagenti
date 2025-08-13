@@ -36,7 +36,6 @@ from . import constants
 
 logger = logging.getLogger(__name__)
 
-
 def _handle_chat_interaction(
     st_object,
     agent_k8s_name: str,
@@ -220,6 +219,9 @@ def render_agent_details_content(agent_k8s_name: str):
         display_log_history(st, session_key_prefix)
 
     agent_chat_name_for_sdk = agent_k8s_name
+
+    # Show access token
+    st.session_state['token']['access_token']
 
     if agent_url and protocol in ["acp", "a2a"]:
         _handle_chat_interaction(

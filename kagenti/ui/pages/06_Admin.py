@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.common_ui import check_auth
 import streamlit as st
 from lib import constants  # For Keycloak URL
 
 # --- Page Configuration (Optional) ---
 # st.set_page_config(page_title="Admin Console", layout="wide")
+
+check_auth()
 
 # --- Main Page Content ---
 st.header("🔑 Administration & Identity Management")

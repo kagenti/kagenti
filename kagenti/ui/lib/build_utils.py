@@ -76,7 +76,6 @@ def _get_keycloak_client_secret(st_object, client_name: str) -> str:
         )
         return ""
 
-
 def _construct_tool_resource_body(
     st_object,
     core_v1_api: Optional[kubernetes.client.CoreV1Api],
@@ -144,7 +143,7 @@ def _construct_tool_resource_body(
         final_env_vars.extend(additional_env_vars)
     if client_secret_for_env:
         final_env_vars.append({"name": "CLIENT_SECRET", "value": client_secret_for_env})
-    
+
     # Build the spec dictionary
     spec = {
         "description": description,
@@ -181,8 +180,8 @@ def _construct_tool_resource_body(
                 "resources": {
                     "limits": constants.DEFAULT_RESOURCE_LIMITS,
                     "requests": constants.DEFAULT_RESOURCE_REQUESTS,
-                },    
-                
+                },
+
             },
             "env": final_env_vars,
         },
@@ -214,11 +213,11 @@ def _construct_tool_resource_body(
                             "name": "image",
                             "value":  f"{image_registry_prefix}/{image_name}:{image_tag}"
                         },
-                    ], 
-                "cleanupAfterBuild": True,    
+                    ],
+                "cleanupAfterBuild": True,
                 },
             },
-        }                
+        }
     body = {
         "apiVersion": f"{constants.CRD_GROUP}/{constants.CRD_VERSION}",
         "kind": "Component",
@@ -326,7 +325,7 @@ def _construct_agent_resource_body(
         final_env_vars.extend(additional_env_vars)
     if client_secret_for_env:
         final_env_vars.append({"name": "CLIENT_SECRET", "value": client_secret_for_env})
-    final_env_vars.append({"name": "GITHUB_SECRET_NAME", "value": constants.GIT_USER_SECRET_NAME})     
+    final_env_vars.append({"name": "GITHUB_SECRET_NAME", "value": constants.GIT_USER_SECRET_NAME})
     body = {
         "apiVersion": f"{constants.CRD_GROUP}/{constants.CRD_VERSION}",
         "kind": "Component",
@@ -342,7 +341,7 @@ def _construct_agent_resource_body(
             },
         },
         "spec": {
-            "description": description,            
+            "description": description,
             "suspend": False,
             "agent": {
             },
@@ -375,8 +374,8 @@ def _construct_agent_resource_body(
                     "resources": {
                         "limits": constants.DEFAULT_RESOURCE_LIMITS,
                         "requests": constants.DEFAULT_RESOURCE_REQUESTS,
-                    },    
-                    
+                    },
+
                 },
                 "env": final_env_vars,
             },
@@ -408,14 +407,13 @@ def _construct_agent_resource_body(
                             "name": "image",
                             "value":  f"{image_registry_prefix}/{image_name}:{image_tag}"
                         },
-                    ], 
-                "cleanupAfterBuild": True,    
+                    ],
+                "cleanupAfterBuild": True,
                 },
             },
-        }        
+        }
 
     return body
-
 
 def trigger_and_monitor_build(
     st_object,
@@ -430,7 +428,7 @@ def trigger_and_monitor_build(
     protocol: str,
     framework: str,
     build_from_source: bool,
-    description: str = "",  
+    description: str = "",
     additional_env_vars: Optional[List[Dict[str, Any]]] = None,
 ):
     """
@@ -498,9 +496,9 @@ def trigger_and_monitor_build(
            protocol=protocol,
            framework=framework,
            description=description,
-           build_from_source=True,           
+           build_from_source=True,
            additional_env_vars=additional_env_vars,
-        )            
+        )
     if not build_cr_body:
         st_object.error(
             f"Failed to construct build resource body for '{k8s_resource_name}'. Check previous errors."
@@ -597,13 +595,13 @@ def trigger_and_monitor_build(
                 f"Timeout waiting for build of '{k8s_resource_name}' to complete."
             )
             return False
-        
+
     if current_build_status == "Succeeded":
         # Now wait for deployment to complete
         deployment_retries = 0
         max_deployment_retries = 120
         final_deployment_phase = "Unknown"
-    
+
         with st_object.spinner(
            f"Build succeeded. Waiting for {resource_type} '{k8s_resource_name}' to deploy..."
         ):
@@ -621,28 +619,28 @@ def trigger_and_monitor_build(
                       plural=constants.COMPONENTS_PLURAL,
                       name=k8s_resource_name,
                     )
-                
+
                     final_deployment_status = build_obj.get("status", {}).get(
                        "deploymentStatus", {}
                     )
                     final_deployment_phase = final_deployment_status.get("phase", "Unknown")
                     deployment_message = final_deployment_status.get("deploymentMessage", "")
-                
+
                     # Update status display
                     status_placeholder.info(
                        f"Deployment Status for '{k8s_resource_name}': **{final_deployment_phase}**\n"
                        f"Message: {deployment_message}"
                     )
-                
+
                     if final_deployment_phase in ["Ready", "Failed", "Error"]:
                        break
-                    
+
                     time.sleep(constants.POLL_INTERVAL_SECONDS)
-                
+
                 except Exception as e:
                    st_object.warning(f"Error checking deployment status: {str(e)}")
                    time.sleep(constants.POLL_INTERVAL_SECONDS)
-    
+
         # Handle final deployment status
         if final_deployment_phase == "Ready":
             st_object.success(
@@ -661,14 +659,12 @@ def trigger_and_monitor_build(
                f"Last status: {final_deployment_phase}. Manual check might be needed."
             )
             return False
-        
+
     else:
         st_object.error(
           f"{resource_type.capitalize()} build for '{k8s_resource_name}' in '{build_namespace}' finished with status: {current_build_status}. Check operator logs."
         )
     return False
-
-
 
 def trigger_and_monitor_deployment_from_image(
     st_object,
@@ -748,7 +744,7 @@ def trigger_and_monitor_deployment_from_image(
            description=description,
            build_from_source=False,
            additional_env_vars=additional_env_vars,
-        )            
+        )
     if not cr_body:
         st_object.error(
             f"Failed to construct resource body for '{k8s_resource_name}'. Check previous errors."
@@ -783,7 +779,7 @@ def trigger_and_monitor_deployment_from_image(
                 f"An unexpected error occurred creating deployment for '{k8s_resource_name}': {e}"
             )
             return False
-        
+
     status_placeholder = st_object.empty()
     # Now wait for deployment to complete
     deployment_retries = 0
@@ -807,24 +803,24 @@ def trigger_and_monitor_deployment_from_image(
                     plural=constants.COMPONENTS_PLURAL,
                     name=k8s_resource_name,
                 )
-            
+
                 final_deployment_status = build_obj.get("status", {}).get(
                     "deploymentStatus", {}
                 )
                 final_deployment_phase = final_deployment_status.get("phase", "Unknown")
                 deployment_message = final_deployment_status.get("deploymentMessage", "")
-            
+
                 # Update status display
                 status_placeholder.info(
                     f"Deployment Status for '{k8s_resource_name}': **{final_deployment_phase}**\n"
                     f"Message: {deployment_message}"
                 )
-            
+
                 if final_deployment_phase in ["Ready", "Failed", "Error"]:
                     break
-                
+
                 time.sleep(constants.POLL_INTERVAL_SECONDS)
-            
+
             except Exception as e:
                 st_object.warning(f"Error checking deployment status: {str(e)}")
                 time.sleep(constants.POLL_INTERVAL_SECONDS)
@@ -847,7 +843,6 @@ def trigger_and_monitor_deployment_from_image(
             f"Last status: {final_deployment_phase}. Manual check might be needed."
         )
         return False
-        
 
 def render_import_form(
     st_object,
@@ -969,19 +964,19 @@ def render_import_form(
             st.session_state[custom_env_key] = []
 
         def add_env_var():
-            st.session_state[custom_env_key].append({"name": "", "value": ""})   
+            st.session_state[custom_env_key].append({"name": "", "value": ""})
 
         def remove_env_var(index):
             if 0 <= index < len(st.session_state[custom_env_key]):
-                st.session_state[custom_env_key].pop(index)    
-        
+                st.session_state[custom_env_key].pop(index)
+
         # takes as input content of the .env file from remote repo and
         # parses each line to extract name-value pair and adds them to
-        # a list 
+        # a list
         def parse_env_file(content):
             env_vars = []
             lines = content.strip().split('\n')
-            
+
             for line_num, line in enumerate(lines, 1):
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -1001,7 +996,7 @@ def render_import_form(
                 if name:
                     env_vars.append({"name": name, "value": value})
                 else:
-                    st_object.warning(f"⚠️ Line {line_num}: Empty variable name")        
+                    st_object.warning(f"⚠️ Line {line_num}: Empty variable name")
             return env_vars
 
         custom_env_vars = st.session_state[custom_env_key]
@@ -1015,13 +1010,13 @@ def render_import_form(
                                                     value=env_var["name"],
                                                     key=f"{resource_type.lower()}_env_name_{i}",
                                                     placeholder="example: API_KEY",
-                                                    label_visibility="collapsed" if i > 0 else "visible")    
+                                                    label_visibility="collapsed" if i > 0 else "visible")
                 with col2:
                     env_var["value"] = st.text_input("Value",
                                                      value=env_var["value"],
                                                     key=f"{resource_type.lower()}_env_value_{i}",
                                                     placeholder="example: AAAA_BBBB_CCCC",
-                                                    label_visibility="collapsed" if i > 0 else "visible")    
+                                                    label_visibility="collapsed" if i > 0 else "visible")
 
                 with col3:
                     if i == 0:
@@ -1058,7 +1053,7 @@ def render_import_form(
                                         placeholder="http://github.com/username/repository",
                                         key=f"{resource_type.lower()}_repo_url",
                                         help="Enter the Github repository URL")
-        
+
         file_path = st_object.text_input("Path to .env file:",
                                         placeholder=". env or config/.env or path/to/your/.env",
                                         key=f"{resource_type.lower()}_env_file_path",
@@ -1099,14 +1094,14 @@ def render_import_form(
                             new_vars = [var for var in imported_vars if var["name"] not in existing_names]
                             duplicate_vars = [var for var in imported_vars if var["name"] in existing_names]
                             st.session_state[custom_env_key].extend(new_vars)
-                            
+
                             st_object.success(f"Successfully imported env vars from the .env file")
                             if duplicate_vars:
                                 st_object.warning(f"⚠️ Skipped {len(duplicate_vars)} duplicate variables {', '.join([var['name'] for var in duplicate_vars])}")
                             st.session_state[import_dialog_key] = False
                             st.rerun()
                         else:
-                            st_object.error(f"❌ No valid environment variables found in the file")        
+                            st_object.error(f"❌ No valid environment variables found in the file")
                 except requests.RequestException as e:
                     st_object.error(f"❌ Failed to fetch file: {str(e)}")
                 except Exception as e:
@@ -1132,8 +1127,8 @@ def render_import_form(
         if invalid_custom_env_vars:
             st_object.warning(f"{len(invalid_custom_env_vars)} environment variable(s) have missing name or value and will be ignored")
 
-    st_object.markdown("---")       
-    
+    st_object.markdown("---")
+
     if not k8s_api_client:
         st_object.error(
             "Kubernetes client not available. Cannot proceed with build."
@@ -1158,14 +1153,14 @@ def render_import_form(
             "K8s API clients not initialized correctly. Cannot trigger build."
         )
         return
-    
+
     deployment_method = st_object.radio(
        "Deployment Method",
        ("Build from Source", "Deploy from Existing Image"),
         key=f"{resource_type.lower()}_deployment_method",)
 
 
-    if deployment_method == "Build from Source":     
+    if deployment_method == "Build from Source":
         st_object.write(
             f"Provide source details to build and deploy a new {resource_type.lower()}."
         )
@@ -1260,14 +1255,14 @@ def render_import_form(
                 description=f"{resource_type} '{resource_name_suggestion}' built from UI.",
                 additional_env_vars=final_additional_envs,
             )
-    
+
     elif deployment_method == "Deploy from Existing Image":
         # You can deploy using a Docker image from either a public or private repository.
-        # *** If you're using a private repository, make sure the .env file in the installer/app folder 
+        # *** If you're using a private repository, make sure the .env file in the installer/app folder
         #     is set up correctly.
-        # *** One key setting in that file is AGENT_NAMESPACES, which lists the Kubernetes namespaces where 
+        # *** One key setting in that file is AGENT_NAMESPACES, which lists the Kubernetes namespaces where
         #     agents and tools should be deployed.
-        # *** The Kagenti installer will only copy the necessary configuration (like ConfigMaps and Secrets) for those specific 
+        # *** The Kagenti installer will only copy the necessary configuration (like ConfigMaps and Secrets) for those specific
         #     namespaces.
         st_object.write(
             f"Provide Docker image details to deploy a new {resource_type.lower()}."
@@ -1279,7 +1274,7 @@ def render_import_form(
 
         selected_framework = default_framework
         selected_protocol = ""
-       
+
         if st_object.button(
             f"Deploy {resource_type} from Image",
             key=f"deploy_{resource_type.lower()}_from_image_btn"
@@ -1309,26 +1304,25 @@ def render_import_form(
                 resource_type=resource_type.lower(),
                 repo_url=docker_image_url,
                 protocol=selected_protocol,
-                framework=selected_framework,              
+                framework=selected_framework,
                 description=f"{resource_type} '{resource_name_suggestion}' built from UI.",
                 additional_env_vars=final_additional_envs,
             )
-        
-    st_object.markdown("---")
 
+    st_object.markdown("---")
 
 def parse_image_url(url: str):
     # Split off the tag
     if ':' not in url:
         raise ValueError("URL must contain a tag (e.g., :latest)")
-    
+
     base, tag = url.rsplit(':', 1)
     parts = base.strip('/').split('/')
-    
+
     if len(parts) < 2:
         raise ValueError("URL must contain at least a repo and image name")
-    
+
     image_name = parts[-1]
     repo = '/'.join(parts[:-1])
-    
+
     return repo, image_name, tag

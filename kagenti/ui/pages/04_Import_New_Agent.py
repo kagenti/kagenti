@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from lib.common_ui import check_auth
 import streamlit as st
 from lib.build_utils import render_import_form
 from lib import constants
@@ -25,6 +26,8 @@ AGENT_EXAMPLE_SUBFOLDERS = [
     "a2a/a2a_currency_converter",
 ]
 AGENT_PROTOCOL_OPTIONS = ["acp", "a2a"]
+
+check_auth()
 
 # Get the generic ApiClient and status details
 k8s_api_client, k8s_client_msg, k8s_client_icon = get_kube_api_client_cached()

@@ -29,7 +29,6 @@ from typing import Callable, List, Dict, Any, Optional
 from . import constants
 import kubernetes
 
-
 def render_resource_catalog(
     st_object,
     resource_type_name: str,
@@ -274,7 +273,6 @@ def render_resource_catalog(
                 f"No '{resource_type_name}' custom resources with the required labels found in the '{namespace_to_use}' namespace."
             )
 
-
 def display_resource_metadata(st_object, resource_details: dict):
     """
     Displays common metadata for a Kubernetes resource (Agent or Tool).
@@ -305,3 +303,13 @@ def display_resource_metadata(st_object, resource_details: dict):
     display_tags(st_object, tags)
     st_object.markdown("---")
     return tags
+
+def check_auth():
+    '''If authentication is enabled, display content only if the user is logged in'''
+    if constants.ENABLE_AUTH_STRING in st.session_state and \
+        st.session_state[constants.ENABLE_AUTH_STRING] and \
+        constants.TOKEN_STRING not in st.session_state:
+            st.page_link("Home.py", label="Click here to login", icon="🏠")
+            
+            # Stop rendering other content
+            st.stop()
