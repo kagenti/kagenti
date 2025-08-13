@@ -35,6 +35,7 @@ async def run_agent_chat_stream_acp(
     agent_url: str,
     message_placeholder,
     log_container,
+    access_token: dict = None,
 ) -> str:
     """
     Runs the ACP SDK client to chat with the agent and collects the streamed response.

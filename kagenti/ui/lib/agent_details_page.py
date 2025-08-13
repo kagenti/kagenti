@@ -16,6 +16,7 @@
 import streamlit as st
 import asyncio
 import logging
+import jwt
 from .utils import (
     sanitize_for_session_state_key,
     initialize_chat_session_state,
@@ -45,6 +46,7 @@ def _handle_chat_interaction(
     session_key_prefix: str,
     log_display_container,
     protocol: str,
+    access_token: dict = None,
 ):
     """
     Manages the chat input, agent interaction, and updates chat history.
@@ -222,6 +224,13 @@ def render_agent_details_content(agent_k8s_name: str):
     agent_chat_name_for_sdk = agent_k8s_name
 
     if agent_url and protocol in ["acp", "a2a"]:
+        access_token = None
+        # When using https://github.com/oauth2-proxy/oauth2-proxy with the --pass-access-token
+        # parameter, the reverse-proxy will add a header containing the access token.
+        if st.context.headers.get("X-Forwarded-Access-Token"):
+            access_jwt = st.context.headers.get("X-Forwarded-Access-Token")
+            access_token = jwt.decode(access_jwt, algorithms=["RS256"], options={"verify_signature": False})
+
         _handle_chat_interaction(
             st,
             agent_k8s_name,
@@ -230,6 +239,7 @@ def render_agent_details_content(agent_k8s_name: str):
             session_key_prefix,
             log_display_container,
             protocol,
+            access_token,
         )
     elif not agent_url:
         st.info("Chat not enabled: Agent URL could not be determined.")
