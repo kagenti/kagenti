@@ -13,12 +13,12 @@ Go to Keycloak at [http://keycloak.localtest.me:8080](http://keycloak.localtest.
 Login with username `admin` and password `admin`.
 
 Create a new client 
-    * General settings
-        * Set Client ID to `kagenti`
-    * Capatibility confg
-        * Enable Client Authentication
-    * Login settings
-        * Set Root URL to `http://localhost:8502`
+  * General settings
+    * Set Client ID to `kagenti`
+  * Capatibility confg
+    * Enable Client Authentication
+  * Login settings
+    * Set Root URL to `http://localhost:8502`
 
 After creating the client, go to Credentials tab and get the client secret.
 
@@ -69,12 +69,12 @@ Go to Keycloak at [http://keycloak.localtest.me:8080](http://keycloak.localtest.
 Login with username `admin` and password `admin`.
 
 Create a new client 
-    * General settings
-        * Set Client ID to `kagenti`
-    * Capatibility confg
-        * Enable Client Authentication
-    * Login settings
-        * Set Root URL to `http://kagenti-ui.localtest.me:8080/`
+  * General settings
+    * Set Client ID to `kagenti`
+  * Capatibility confg
+    * Enable Client Authentication
+  * Login settings
+    * Set Root URL to `http://kagenti-ui.localtest.me:8080/`
 
 After creating the client, go to Credentials tab and get the client secret.
 
