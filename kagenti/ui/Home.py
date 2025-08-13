@@ -100,12 +100,10 @@ st.markdown("---")
 st.subheader("Login")
 
 # --- Login Redirect ---
-
+st.session_state[ENABLE_AUTH_STRING] = False
 ENABLE_AUTH = os.environ.get('ENABLE_AUTH')
 if ENABLE_AUTH == "true":
     st.session_state[ENABLE_AUTH_STRING] = True
-else:
-    st.session_state[ENABLE_AUTH_STRING] = False
 
 # Example
 # CLIENT_ID="streamlit-oauth"
