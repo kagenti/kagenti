@@ -90,6 +90,10 @@ For step-by-step instructions for importing and running agents and tools, see
 
 * [How to Build, Deploy, and Run the Weather Agent Demo](./demo-weather-agent.md)
 
+## Importing Your Own Agent to Kagenti
+
+See the document: [Importing Your Own Agent to Kagenti](new-agent.md)
+
 ## Troubleshooting
 
 ### kagenti-installer reports "exceeded its progress deadline"
