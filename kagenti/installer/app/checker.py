@@ -72,7 +72,7 @@ def check_env_vars():
     )
     with console.status("[cyan]Checking for .env file and variables..."):
         time.sleep(0.5)
-        load_dotenv(dotenv_path=config.ENV_FILE)
+        load_dotenv(dotenv_path=config.ENV_FILE, override=True)
         required_vars = [
             "GITHUB_USER",
             "GITHUB_TOKEN",
