@@ -48,7 +48,10 @@ PRELOADABLE_IMAGES = [
     "arizephoenix/phoenix:version-8.32.1",
     "postgres:12",
     "prom/prometheus:v3.1.0",
-    "registry.k8s.io/metrics-server/metrics-server:v0.7.2",    
+    "registry.k8s.io/metrics-server/metrics-server:v0.7.2",
+    "ghcr.io/spiffe/oidc-discovery-provider:1.12.4",
+    "docker.io/nginxinc/nginx-unprivileged:1.29.0-alpine",
+    "docker.io/nginx/nginx-prometheus-exporter:1.4.2"
 ]
 
 
