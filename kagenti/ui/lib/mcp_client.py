@@ -26,7 +26,6 @@ DEFAULT_AUTH_TOKEN = "my_token"
 
 logger = logging.getLogger(__name__)
 
-
 class MCPClientWrapper:
     """
     A wrapper class for interacting with the MCP server.
