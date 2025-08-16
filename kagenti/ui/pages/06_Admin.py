@@ -53,7 +53,7 @@ st.markdown("---")
 # Placeholder for other admin functionalities
 st.subheader("Platform Configuration (Placeholder)")
 st.info(
-    "Placeholder for other administrative settings"
+    "Placeholder for other administrative settings "
     "(e.g., global agent settings, resource quotas) could be managed here."
 )
 # Example:

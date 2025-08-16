@@ -1,4 +1,4 @@
-# Assisted by watsonx Code Assistant 
+# Assisted by watsonx Code Assistant
 # Copyright 2025 IBM Corp.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -212,11 +212,11 @@ def render_resource_catalog(
                         # Enable the Delete button if delete function is provided in arg list
                         if delete_resource_func:
                             delete_confirm_key = f"delete_confirm_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
-                            
+
                             # Initialize delete confirmation state for the delete key
                             if delete_confirm_key not in st.session_state:
                                 st.session_state[delete_confirm_key] = False
-                            
+
                             if not st.session_state[delete_confirm_key]:
                                 delete_button_key = f"delete_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
                                 if st.button(
@@ -231,9 +231,9 @@ def render_resource_catalog(
                             else:
                                 # Confirmation buttons
                                 st.write("⚠️ **Confirm delete?**")
-                                
+
                                 col_confirm, col_cancel = st.columns([1, 1])
-                                
+
                                 with col_confirm:
                                     confirm_button_key = f"confirm_delete_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
                                     if st.button(
@@ -245,20 +245,20 @@ def render_resource_catalog(
                                         try:
                                             # Call the delete function
                                             delete_resource_func(
-                                                custom_obj_api, 
-                                                item_name, 
+                                                custom_obj_api,
+                                                item_name,
                                                 namespace_to_use
                                             )
                                             st.success(f"Successfully deleted {resource_type_name} '{item_name}'")
-                                            
+
                                             # Reset confirmation state
                                             st.session_state[delete_confirm_key] = False
                                             st.rerun()
-                                            
+
                                         except Exception as e:
                                             st.error(f"Failed to delete {resource_type_name}: {str(e)}")
                                             st.session_state[delete_confirm_key] = False
-                                
+
                                 with col_cancel:
                                     cancel_button_key = f"cancel_delete_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
                                     if st.button(
@@ -267,7 +267,7 @@ def render_resource_catalog(
                                         help="Cancel deletion"
                                     ):
                                         st.session_state[delete_confirm_key] = False
-                                        st.rerun()                            
+                                        st.rerun()
         else:
             st_object.info(
                 f"No '{resource_type_name}' custom resources with the required labels found in the '{namespace_to_use}' namespace."
@@ -310,6 +310,6 @@ def check_auth():
         st.session_state[constants.ENABLE_AUTH_STRING] and \
         constants.TOKEN_STRING not in st.session_state:
             st.page_link("Home.py", label="Click here to login", icon="🏠")
-            
+
             # Stop rendering other content
             st.stop()

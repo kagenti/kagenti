@@ -96,46 +96,47 @@ with col2:
         """
     )
 
-st.markdown("---")
-st.subheader("Login")
-
 # --- Login Redirect ---
 st.session_state[ENABLE_AUTH_STRING] = False
 ENABLE_AUTH = os.environ.get('ENABLE_AUTH')
 if ENABLE_AUTH == "true":
     st.session_state[ENABLE_AUTH_STRING] = True
 
-# Example
-# CLIENT_ID="kagenti"
-# CLIENT_SECRET="xFPc7EPVV..."
-# AUTH_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/auth"
-# TOKEN_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/token"
-# REDIRECT_URI="http://localhost:8502/oauth2/callback"
-# SCOPE="openid profile email"
-CLIENT_ID = os.environ.get('CLIENT_ID', 'kagenti')
-CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
-AUTH_ENDPOINT = os.environ.get('AUTH_ENDPOINT')
-TOKEN_ENDPOINT = os.environ.get('TOKEN_ENDPOINT')
-REDIRECT_URI = os.environ.get('REDIRECT_URI')
-SCOPE = os.environ.get('SCOPE', 'openid profile email')
+if ENABLE_AUTH:
+    st.markdown("---")
+    st.subheader("Login")
 
-oauth2 = OAuth2Component(CLIENT_ID, CLIENT_SECRET, AUTH_ENDPOINT, TOKEN_ENDPOINT)
+    # Example
+    # CLIENT_ID="kagenti"
+    # CLIENT_SECRET="xFPc7EPVV..."
+    # AUTH_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/auth"
+    # TOKEN_ENDPOINT="http://localhost:8080/realms/master/protocol/openid-connect/token"
+    # REDIRECT_URI="http://localhost:8502/oauth2/callback"
+    # SCOPE="openid profile email"
+    CLIENT_ID = os.environ.get('CLIENT_ID', 'kagenti')
+    CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
+    AUTH_ENDPOINT = os.environ.get('AUTH_ENDPOINT')
+    TOKEN_ENDPOINT = os.environ.get('TOKEN_ENDPOINT')
+    REDIRECT_URI = os.environ.get('REDIRECT_URI')
+    SCOPE = os.environ.get('SCOPE', 'openid profile email')
 
-# Check if token exists in session state
-if TOKEN_STRING in st.session_state:
-    # User is not logged in
-    st.info("User is logged in")
-    if st.button("Logout"):
-        del st.session_state[TOKEN_STRING]
-        st.rerun()
-else:
-    # If not, show authorize button
-    st.warning("User is not logged in")
-    result = oauth2.authorize_button("Click to login", REDIRECT_URI, SCOPE)
-    if result and TOKEN_STRING in result:
-        # If authorization successful, save token in session state
-        st.session_state.token = result.get(TOKEN_STRING)
-        st.rerun()
+    oauth2 = OAuth2Component(CLIENT_ID, CLIENT_SECRET, AUTH_ENDPOINT, TOKEN_ENDPOINT)
+
+    # Check if token exists in session state
+    if TOKEN_STRING in st.session_state:
+        # User is not logged in
+        st.info("User is logged in")
+        if st.button("Logout"):
+            del st.session_state[TOKEN_STRING]
+            st.rerun()
+    else:
+        # If not, show authorize button
+        st.warning("User is not logged in")
+        result = oauth2.authorize_button("Click to login", REDIRECT_URI, SCOPE)
+        if result and TOKEN_STRING in result:
+            # If authorization successful, save token in session state
+            st.session_state.token = result.get(TOKEN_STRING)
+            st.rerun()
 
 st.markdown("---")
 
