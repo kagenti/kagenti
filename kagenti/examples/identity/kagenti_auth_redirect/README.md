@@ -95,7 +95,7 @@ export CLIENT_ID="kagenti"
 export CLIENT_SECRET="..."
 export AUTH_ENDPOINT="..."
 export TOKEN_ENDPOINT="..."
-export REDIRECT_URI="https://kagenti-ui.localtest.me:8080/oauth2/callback"
+export REDIRECT_URI="http://kagenti-ui.localtest.me:8080/oauth2/callback"
 export SCOPE="openid profile email"
 
 kubectl create secret generic auth \
