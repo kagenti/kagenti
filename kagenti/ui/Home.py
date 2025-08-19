@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from lib.constants import ENABLE_AUTH_STRING, TOKEN_STRING
+from lib.constants import ACCESS_TOKEN_STRING, ENABLE_AUTH_STRING, TOKEN_STRING
 import streamlit as st
 from streamlit_oauth import OAuth2Component
 
@@ -102,7 +102,6 @@ ENABLE_AUTH = os.environ.get('ENABLE_AUTH')
 if ENABLE_AUTH == "true":
     st.session_state[ENABLE_AUTH_STRING] = True
 
-if ENABLE_AUTH:
     st.markdown("---")
     st.subheader("Login")
 
@@ -126,6 +125,10 @@ if ENABLE_AUTH:
     if TOKEN_STRING in st.session_state:
         # User is not logged in
         st.info("User is logged in")
+        
+        # Show access token
+        st.markdown(st.session_state[TOKEN_STRING][ACCESS_TOKEN_STRING])
+        
         if st.button("Logout"):
             del st.session_state[TOKEN_STRING]
             st.rerun()
@@ -136,6 +139,7 @@ if ENABLE_AUTH:
         if result and TOKEN_STRING in result:
             # If authorization successful, save token in session state
             st.session_state.token = result.get(TOKEN_STRING)
+
             st.rerun()
 
 st.markdown("---")

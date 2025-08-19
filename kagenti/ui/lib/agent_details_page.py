@@ -221,7 +221,7 @@ def render_agent_details_content(agent_k8s_name: str):
     agent_chat_name_for_sdk = agent_k8s_name
 
     # Show access token
-    st.session_state['token']['access_token']
+    st.session_state[constants.TOKEN_STRING][constants.ACCESS_TOKEN_STRING]
 
     if agent_url and protocol in ["acp", "a2a"]:
         _handle_chat_interaction(

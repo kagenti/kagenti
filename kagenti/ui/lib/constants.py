@@ -85,8 +85,9 @@ STREAMLIT_UI_CREATOR_LABEL = "streamlit-ui"
 KAGENTI_OPERATOR_LABEL_NAME = "kagenti-operator"
 POLL_INTERVAL_SECONDS = 2
 AGENT_NAME_SEPARATOR = "-"
-TOKEN_STRING = "token"
 ENABLE_AUTH_STRING = "enable_auth"
+TOKEN_STRING = "token"
+ACCESS_TOKEN_STRING = 'access_token'
 
 # --- Default Ports for Agent/Tool Services ---
 DEFAULT_IN_CLUSTER_PORT = 8000
