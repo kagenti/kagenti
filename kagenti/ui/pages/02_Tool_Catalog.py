@@ -20,11 +20,10 @@ from lib.kube import (
     get_kube_api_client_cached,
     delete_custom_resource,
 )
-from lib.common_ui import render_resource_catalog
+from lib.common_ui import check_auth, render_resource_catalog
 from lib.tool_details_page import render_mcp_tool_details_content
-from lib import constants
-import kubernetes
 
+check_auth()
 
 # --- Main Tool Catalog Page Rendering ---
 

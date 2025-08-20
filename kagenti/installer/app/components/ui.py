@@ -21,6 +21,27 @@ from ..utils import console, run_command
 
 def install():
     """Installs the Kagent UI from its deployment YAML."""
+    # Create the auth secret, containing the Keycloak client secret
+    run_command(
+        [
+            "kubectl",
+            "apply",
+            "-f",
+            str(config.RESOURCES_DIR / "auth-secret.yaml"),
+        ],
+        "Creating auth secret",
+    )
+    run_command(
+        [
+            "kubectl",
+            "wait",
+            "--for=condition=complete",
+            "job/auth-secret",
+            "-n", "kagenti",
+            "--timeout=300s",
+        ],
+        "Waiting for auth secret job to complete",
+    )
     ui_yaml_path = config.PROJECT_ROOT / "deployments" / "ui" / "kagenti-ui.yaml"
     if not ui_yaml_path.exists():
         console.log(

@@ -171,6 +171,23 @@ def install():
         ],
         "Deploying Keycloak statefulset",
     )
+
+    # Configure Keycloak to start with dev mode
+    run_command(
+        [
+            "kubectl",
+            "patch",
+            "statefulset",
+            "keycloak",
+            "-n",
+            "keycloak",
+            "--type=json",
+            "-p",
+            '[{"op": "replace", "path": "/spec/template/spec/containers/0/args", "value":["start-dev"]}]',
+        ],
+        "Updating Keycloak statefulset to enable OAuth",
+    )
+
     run_command(
         [
             "kubectl",
