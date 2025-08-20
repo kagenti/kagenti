@@ -26,13 +26,22 @@ from . import config
 from .utils import console, get_command_version
 
 
-def check_dependencies():
+def check_dependencies(use_existing_cluster: bool = False):
     """Checks if required command-line tools are installed and meet version requirements."""
     console.print(
         Panel(Text("1. Checking Dependencies", justify="center", style="bold yellow"))
     )
     all_ok = True
-    for tool, versions in config.REQ_VERSIONS.items():
+    
+    # Filter out tools not needed for existing clusters
+    required_tools = config.REQ_VERSIONS.copy()
+    if use_existing_cluster:
+        # Remove kind and docker requirements when using existing cluster
+        required_tools.pop('kind', None)
+        required_tools.pop('docker', None)
+        console.log("[yellow]Using existing cluster - skipping kind and docker checks.[/yellow]")
+    
+    for tool, versions in required_tools.items():
         with console.status(f"[cyan]Checking for {tool}..."):
             time.sleep(0.5)
             version = get_command_version(tool)

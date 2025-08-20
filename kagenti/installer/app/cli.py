@@ -40,7 +40,7 @@ from .config import InstallableComponent
 from .utils import console
 
 app = typer.Typer(
-    help="A CLI tool to install the Agent Platform on a local Kind cluster.",
+    help="A CLI tool to install the Agent Platform on a Kubernetes cluster (Kind or existing).",
     add_completion=False,
 )
 
@@ -103,9 +103,14 @@ def main(
         "--preload-images",
         help="Flag to enable preloading of images in kind.",
     ),
+    use_existing_cluster: bool = typer.Option(
+        False,
+        "--use-existing-cluster",
+        help="Use existing Kubernetes cluster defined in KUBECONFIG instead of creating a kind cluster.",
+    ),
 ):
     """
-    Installer for the Agent Platform. Checks dependencies and sets up a Kind cluster with optional components.
+    Installer for the Agent Platform. Checks dependencies and sets up a Kubernetes cluster (either Kind or existing) with optional components.
     """
     try:
         console.print(
@@ -116,14 +121,16 @@ def main(
         )
 
         # --- Setup and Pre-flight Checks ---
-        checker.check_dependencies()
+        checker.check_dependencies(use_existing_cluster=use_existing_cluster)
         checker.check_env_vars()
 
         should_install_registry = InstallableComponent.REGISTRY not in skip_install
-        cluster.create_kind_cluster(install_registry=should_install_registry)
+        cluster.setup_cluster(install_registry=should_install_registry, use_existing_cluster=use_existing_cluster)
 
-        if preload_images:
+        if preload_images and not use_existing_cluster:
             cluster.preload_images_in_kind(config.PRELOADABLE_IMAGES)
+        elif preload_images and use_existing_cluster:
+            console.print("[yellow]Warning: --preload-images flag is only supported with kind clusters. Skipping image preloading.[/yellow]\n")
 
         if InstallableComponent.AGENTS not in skip_install:
             cluster.check_and_create_agent_namespaces()
@@ -168,10 +175,16 @@ def main(
             "\n",
         )
 
-        console.print(
-            "To open Kagenti UI in your browser: open http://kagenti-ui.localtest.me:8080",
-            "\n",
-        )
+        if use_existing_cluster:
+            console.print(
+                "To open Kagenti UI in your browser, you may need to set up port forwarding or ingress depending on your cluster configuration.",
+                "\n",
+            )
+        else:
+            console.print(
+                "To open Kagenti UI in your browser: open http://kagenti-ui.localtest.me:8080",
+                "\n",
+            )
 
     except typer.Exit:
         console.print("\n[bold yellow]Installation aborted.[/bold yellow]")
