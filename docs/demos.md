@@ -11,9 +11,9 @@ Before running the demo setup script, ensure you have the following prerequisite
 
 * **Python:** Python versionn >=3.9
 * **uv:** [uv](https://docs.astral.sh/uv/getting-started/installation) must be installed (e.g. `pip install uv`)
-* **Docker:** Docker Desktop, Rancher Desktop or Podman Machine. You must alias it to `docker` (e.g. `sudo ln -s /opt/homebrew/bin/podman /usr/local/bin/docker`). On MacOS, you will need also to do `brew install docker-credential-helper`
+* **Docker:** Docker Desktop, Rancher Desktop or Podman Machine. You must alias it to `docker` (e.g. `sudo ln -s /opt/homebrew/bin/podman /usr/local/bin/docker`). On MacOS, you will need also to do `brew install docker-credential-helper`. *Not required if using `--use-existing-cluster`*.
   * In Rancher Decktop, configure VM size to at least 8GB of memory and 4 cores
-* **Kind:** A [tool](https://kind.sigs.k8s.io) to run a Kubernetes cluster in docker (e.g. `brew install kind`).
+* **Kind:** A [tool](https://kind.sigs.k8s.io) to run a Kubernetes cluster in docker (e.g. `brew install kind`). *Not required if using `--use-existing-cluster`*.
 * **kubectl:** The Kubernetes command-line tool (installs with **kind**).
 * **Helm:** A package manager for Kubernetes (e.g. `brew install helm`).
 * **[ollama](https://ollama.com/download)** to run LLMs locally (e.g. `brew install ollama`). Then start the **ollama* service in the background (e.g.`ollama serve`).
@@ -56,6 +56,28 @@ uv run kagenti-installer
 ```
 
 The installer creates a kind cluster named `agent-platform` and then deploys all platform components.
+
+### Using an Existing Kubernetes Cluster
+
+If you already have a Kubernetes cluster configured and want to skip the kind cluster creation, you can use the `--use-existing-cluster` flag:
+
+```shell
+uv run kagenti-installer --use-existing-cluster
+```
+
+This option will:
+- Skip the kind and Docker dependency checks
+- Use the cluster defined in your `KUBECONFIG` environment variable
+- Skip kind-specific operations like image preloading
+- Deploy all platform components to your existing cluster
+
+Make sure your `KUBECONFIG` is properly set and points to a cluster where you have admin privileges before using this option.
+
+**Note:** When using an existing cluster, you may want to skip the registry component as it's primarily designed for kind clusters:
+
+```shell
+uv run kagenti-installer --use-existing-cluster --skip-install registry
+```
 
 To skip installation of the specific component e.g. keycloak and SPIRE, issue:
 
