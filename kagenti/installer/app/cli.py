@@ -125,8 +125,10 @@ def main(
         checker.check_env_vars()
 
         should_install_registry = InstallableComponent.REGISTRY not in skip_install
-        cluster.create_kind_cluster(install_registry=should_install_registry)
-        cluster.check_kube_connection(install_registry=should_install_registry, use_existing_cluster=use_existing_cluster)
+        using_kind_cluster = cluster.create_kind_cluster(install_registry=should_install_registry)
+        # If create_kind_cluster returns None/False, we're not using a kind cluster
+        using_kind_cluster = bool(using_kind_cluster)
+        cluster.check_kube_connection(install_registry=should_install_registry, use_existing_cluster=use_existing_cluster, using_kind_cluster=using_kind_cluster)
 
         if preload_images and not use_existing_cluster:
             cluster.preload_images_in_kind(config.PRELOADABLE_IMAGES)

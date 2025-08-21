@@ -59,32 +59,41 @@ def kind_cluster_running():
         raise typer.Exit(1)
 
 
-def check_kube_connection(install_registry: bool, use_existing_cluster: bool):
+def check_kube_connection(install_registry: bool, use_existing_cluster: bool, using_kind_cluster: bool):
     """Sets up the Kubernetes cluster - either creates a kind cluster or uses existing cluster."""
-    if use_existing_cluster:
+    # Check if KUBECONFIG is set or if a cluster is accessible from the default kubeconfig location ~/.kube/config
+    kubeconfig_path = os.getenv("KUBECONFIG") or os.path.expanduser("~/.kube/config")
+    if not kubeconfig_path:
         console.print(
-            Panel(
-                Text("3. Using Kubernetes Cluster", justify="center", style="bold yellow")
-            )
+            "[bold red]Unable to find an existing KUBECONFIG. Please set it to your cluster's kubeconfig file.[/bold red]"
         )
-        try:
-            kube_config.load_kube_config()
-            v1_api = client.CoreV1Api()
-            # Test connection by getting cluster info
-            v1_api.list_namespace(limit=1)
-            console.log(
-                "[bold green]✓[/bold green] Successfully connected the Kubernetes cluster."
-            )
-        except Exception as e:
-            console.log(
-                f"[bold red]✗ Failed to connect to existing Kubernetes cluster: {e}[/bold red]"
-            )
-            console.print(
-                "[red]Please ensure KUBECONFIG is set and points to a valid cluster.[/red]"
-            )
+        raise typer.Exit(1)
+
+    # Ask for confirmation so we don't add to an existing cluster by mistake
+    if not use_existing_cluster and not using_kind_cluster:
+        console.print(f"[yellow]Found Kubernetes cluster configuration in KUBECONFIG: {kubeconfig_path}[/yellow]")
+        if not Confirm.ask(
+            "[bold yellow]?[/bold yellow] Do you want to proceed with this Kubernetes cluster?",
+            default=True,
+        ):
+            console.print("[bold red]Installation cancelled by user.[/bold red]")
             raise typer.Exit(1)
 
-        console.print()
+    try:
+        kube_config.load_kube_config()
+        v1_api = client.CoreV1Api()
+        # Test connection by getting cluster info
+        v1_api.list_namespace(limit=1)
+        console.log(
+            "[bold green]✓[/bold green] Successfully connected to existing Kubernetes cluster."
+        )
+
+    except Exception as e:
+        console.log(
+            f"[bold red]✗ Failed to connect to existing Kubernetes cluster: {e}[/bold red]"
+            )
+        raise typer.Exit(1)
+    console.print()
 
 
 def create_kind_cluster(install_registry: bool):
@@ -99,7 +108,7 @@ def create_kind_cluster(install_registry: bool):
             console.log(
                 f"[bold green]✓[/bold green] Kind cluster '{config.CLUSTER_NAME}' already running. Skipping creation."
             )
-            return
+            return True
         else:
             console.log(
                 f"[bold red]x Kind cluster '{config.CLUSTER_NAME}' exists but is not running."
@@ -111,43 +120,7 @@ def create_kind_cluster(install_registry: bool):
         f"[bold yellow]?[/bold yellow] Kind cluster '{config.CLUSTER_NAME}' not found. Create it now?",
         default=True,
     ):
-        # Ask if they want to use an existing cluster instead
-        if Confirm.ask(
-            "[bold yellow]?[/bold yellow] Would you like to use an existing Kubernetes cluster defined in your KUBECONFIG?",
-            default=True,
-        ):
-            console.print(
-                "[bold green]Switching to existing cluster mode...[/bold green]"
-            )
-            # Test connection to existing cluster
-            try:
-                kube_config.load_kube_config()
-                v1_api = client.CoreV1Api()
-                # Test connection by getting cluster info
-                v1_api.list_namespace(limit=1)
-                console.log(
-                    "[bold green]✓[/bold green] Successfully connected to existing Kubernetes cluster."
-                )
-
-                if install_registry:
-                    console.print(
-                        "[yellow]Warning: Registry installation is not recommended for existing clusters. "
-                        "Consider using --skip-install registry if you encounter issues.[/yellow]\n"
-                    )
-                console.print()
-                return  # Exit without creating kind cluster
-
-            except Exception as e:
-                console.log(
-                    f"[bold red]✗ Failed to connect to existing Kubernetes cluster: {e}[/bold red]"
-                )
-                console.print(
-                    "[red]Please ensure KUBECONFIG is set and points to a valid cluster.[/red]"
-                )
-                raise typer.Exit(1)
-        else:
-            console.print("[bold red]Cannot proceed without a cluster. Exiting.[/bold red]")
-            raise typer.Exit()
+        return False
 
     base_config = """
 kind: Cluster
@@ -196,6 +169,7 @@ containerdConfigPatches:
             console.log(f"[red]{e.stderr.strip()}[/red]")
             raise typer.Exit(1)
     console.print()
+    return True
 
 
 def preload_images_in_kind(images: list[str]):
