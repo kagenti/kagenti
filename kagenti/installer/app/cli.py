@@ -47,7 +47,7 @@ app = typer.Typer(
 INSTALLERS = {
     InstallableComponent.REGISTRY: registry.install,
     InstallableComponent.TEKTON: tekton.install,
-    InstallableComponent.CERT_MANAGER: cert_manager.install, 
+    InstallableComponent.CERT_MANAGER: cert_manager.install,
     InstallableComponent.OPERATOR: operator.install,
     InstallableComponent.ISTIO: istio.install,
     InstallableComponent.SPIRE: spire.install,
@@ -58,7 +58,7 @@ INSTALLERS = {
     InstallableComponent.KEYCLOAK: keycloak.install,
     InstallableComponent.AGENTS: agents.install,
     InstallableComponent.METRICS_SERVER: metrics_server.install,
-    InstallableComponent.INSPECTOR: inspector.install,  
+    InstallableComponent.INSPECTOR: inspector.install,
 }
 
 
@@ -125,7 +125,8 @@ def main(
         checker.check_env_vars()
 
         should_install_registry = InstallableComponent.REGISTRY not in skip_install
-        cluster.setup_cluster(install_registry=should_install_registry, use_existing_cluster=use_existing_cluster)
+        cluster.create_kind_cluster(install_registry=should_install_registry)
+        cluster.check_kube_connection(install_registry=should_install_registry, use_existing_cluster=use_existing_cluster)
 
         if preload_images and not use_existing_cluster:
             cluster.preload_images_in_kind(config.PRELOADABLE_IMAGES)
@@ -148,11 +149,11 @@ def main(
 
         deploy_component(InstallableComponent.REGISTRY, skip_install)
         deploy_component(InstallableComponent.TEKTON, skip_install)
-        deploy_component(InstallableComponent.CERT_MANAGER, skip_install)          
+        deploy_component(InstallableComponent.CERT_MANAGER, skip_install)
         deploy_component(InstallableComponent.OPERATOR, skip_install)
         deploy_component(InstallableComponent.ISTIO, skip_install)
-        deploy_component(InstallableComponent.METRICS_SERVER, skip_install)        
-            
+        deploy_component(InstallableComponent.METRICS_SERVER, skip_install)
+
 
         # Components that depend on Istio
         if InstallableComponent.ISTIO not in skip_install:
