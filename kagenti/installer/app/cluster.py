@@ -64,12 +64,12 @@ def kind_cluster_running():
         raise typer.Exit(1)
 
 
-def setup_cluster(install_registry: bool, use_existing_cluster: bool):
+def check_kube_connection(install_registry: bool, use_existing_cluster: bool):
     """Sets up the Kubernetes cluster - either creates a kind cluster or uses existing cluster."""
     if use_existing_cluster:
         console.print(
             Panel(
-                Text("3. Using Existing Kubernetes Cluster", justify="center", style="bold yellow")
+                Text("3. Using Kubernetes Cluster", justify="center", style="bold yellow")
             )
         )
         try:
@@ -78,7 +78,7 @@ def setup_cluster(install_registry: bool, use_existing_cluster: bool):
             # Test connection by getting cluster info
             v1_api.list_namespace(limit=1)
             console.log(
-                "[bold green]✓[/bold green] Successfully connected to existing Kubernetes cluster."
+                "[bold green]✓[/bold green] Successfully connected the Kubernetes cluster."
             )
         except Exception as e:
             console.log(
@@ -88,15 +88,8 @@ def setup_cluster(install_registry: bool, use_existing_cluster: bool):
                 "[red]Please ensure KUBECONFIG is set and points to a valid cluster.[/red]"
             )
             raise typer.Exit(1)
-        
-        if install_registry:
-            console.print(
-                "[yellow]Warning: Registry installation is not recommended for existing clusters. "
-                "Consider using --skip-install registry if you encounter issues.[/yellow]\n"
-            )
+
         console.print()
-    else:
-        create_kind_cluster(install_registry)
 
 
 def confirm_ask(prompt: str, default: bool, silent: bool):
@@ -149,7 +142,7 @@ def create_kind_cluster(install_registry: bool, silent: bool):
                 console.log(
                     "[bold green]✓[/bold green] Successfully connected to existing Kubernetes cluster."
                 )
-                
+
                 if install_registry:
                     console.print(
                         "[yellow]Warning: Registry installation is not recommended for existing clusters. "
@@ -157,7 +150,7 @@ def create_kind_cluster(install_registry: bool, silent: bool):
                     )
                 console.print()
                 return  # Exit without creating kind cluster
-                
+
             except Exception as e:
                 console.log(
                     f"[bold red]✗ Failed to connect to existing Kubernetes cluster: {e}[/bold red]"
