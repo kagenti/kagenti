@@ -160,6 +160,7 @@ def install():
         ],
         "Creating Keycloak namespace",
     )
+
     run_command(
         [
             "kubectl",
@@ -171,7 +172,23 @@ def install():
         ],
         "Deploying Keycloak with Postgres DB",
     )
-    
+
+    # Configure Keycloak to start with dev mode
+    run_command(
+        [
+            "kubectl",
+            "patch",
+            "statefulset",
+            "keycloak",
+            "-n",
+            "keycloak",
+            "--type=json",
+            "-p",
+            '[{"op": "replace", "path": "/spec/template/spec/containers/0/args", "value":["start-dev"]}]',
+        ],
+        "Updating Keycloak statefulset to enable OAuth",
+    )
+
     run_command(
         ["kubectl", "rollout", "status", "-n", "keycloak", "statefulset/postgres"],
         "Waiting for Postgres rollout",
