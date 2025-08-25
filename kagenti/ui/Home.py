@@ -66,9 +66,9 @@ def render_login():
             logging.error(error_message)
             st.error("Expected CLIENT_SECRET env var but none exists.")
         if AUTH_ENDPOINT is None:
-            error_message = "Expected CLIENT_SECRET env var but none exists."
+            error_message = "Expected AUTH_ENDPOINT env var but none exists."
             logging.error(error_message)
-            st.error("Expected CLIENT_SECRET env var but none exists.")
+            st.error("Expected AUTH_ENDPOINT env var but none exists.")
         if TOKEN_ENDPOINT is None:
             error_message = "Expected TOKEN_ENDPOINT env var but none exists."
             logging.error(error_message)

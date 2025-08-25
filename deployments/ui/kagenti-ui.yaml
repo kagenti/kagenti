@@ -27,7 +27,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: "ENABLE_AUTH"
-              value: "false"
+              value: "true"
             - name: "CLIENT_ID"
               valueFrom:
                 secretKeyRef:

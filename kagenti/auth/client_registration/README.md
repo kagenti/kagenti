@@ -2,7 +2,7 @@
 
 `kagenti-client-registration` is the image that enables Kagenti to automatically register a client (agent or tool) in Keycloak.
 
-## Usage
+# Local development
 
 ### Build the image
 
@@ -49,3 +49,10 @@ The default username and password are `admin`.
 Go to `Clients` tab on the sidebar.
 
 After a while, a new client `kagenti/acp-ollama-researcher` should appear.
+
+# Publish image
+
+```sh
+docker -D build  --no-cache -t ghcr.io/kagenti/kagenti-ui-oauth-secret:latest -f Dockerfile .
+docker push ghcr.io/kagenti/kagenti-ui-oauth-secret:latest 
+```

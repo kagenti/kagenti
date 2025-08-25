@@ -42,7 +42,7 @@ def register_client(
 
     # Create client
     try:
-        llama_stack_client_id = keycloak_admin.create_client(
+        internal_client_id = keycloak_admin.create_client(
             {
                 "name": client_name,
                 "clientId": clientId,
@@ -53,7 +53,7 @@ def register_client(
             }
         )
 
-        print(f'Created Keycloak client "{clientId}": {llama_stack_client_id}')
+        print(f'Created Keycloak client "{clientId}": {internal_client_id}')
     except KeycloakPostError as e:
         print(f'Could not create Keycloak client "{clientId}": {e}')
 
