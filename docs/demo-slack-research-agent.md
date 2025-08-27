@@ -1,8 +1,8 @@
 # Slack Research Agent Demo
 
-### NOTE: This demo is currently under ACTIVE development! 
+## NOTE: This demo is currently under ACTIVE development
 
------
+---
 This document provides detailed steps for running the **Slack Research Agent** proof-of-concept (PoC) demo.
 
 In this demo, we will use the Kagenti UI to import and deploy both the **Slack Research Agent** and the **Slack Tool**.  
@@ -20,8 +20,8 @@ Here's a breakdown of the sections:
 - In [**Chat with the Agent**](#chat-with-the-agent), you'll interact with the agent and confirm it responds correctly using real-time Slack data.
 
 > **Prerequisites:**  
-> Ensure you've completed the Kagenti platform setup as described in the [Installation](./demos.md#installation) section. This demo uses `SLACK_BOT_TOKEN` so please include this. 
-
+> Ensure you've completed the Kagenti platform setup as described in the [Installation](./demos.md#installation) section. This demo uses `SLACK_BOT_TOKEN` so please include this.
+>
 > **Note:**
 > This demo has been tested skipping the install of mcp-gateway:
 > `uv run kagenti-installer --skip-install mcp_gateway`
@@ -37,20 +37,34 @@ To deploy the Slack Research Agent:
 1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
 3. Under [**Select Environment Variable Sets**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#select-environment-variable-sets), select:
-  * `mcp-slack`
-  * `slack-researcher-config`
-  * `ollama` or `openai`
-    * If using `ollama`, note that it uses `granite3.3:8b` so you may need to `ollama pull granite3.3:8b` locally
-    * If using `openai`, you will need to specify a different `TASK_MODEL_ID`, and can do so in the `Custom Environment Variables` section. This demo has been tested with `openai` environment with `TASK_MODEL_ID=gpt-4o-mini-2024-07-18`
-4. In the **Agent Source Repository URL** field, use the default:
+
+   - `mcp-slack`
+   - `slack-researcher-config`
+   - `ollama` or `openai`
+
+4. Depending on the provider you need to do a following:
+
+   - If using `ollama`, note that it uses `granite3.3:8b`, so you may need to run locally:
+
+     ```console
+     ollama serve
+     ```
+
+     ```console
+     ollama pull granite3.3:8b
+     ```
+
+   - If using `openai`, you will need to specify a different `TASK_MODEL_ID`, and can do so in the `Custom Environment Variables` section. This demo has been tested with `openai` environment with `TASK_MODEL_ID=gpt-4o-mini-2024-07-18`
+
+5. In the **Agent Source Repository URL** field, use the default:
    <https://github.com/kagenti/agent-examples>
    Or use a custom repository accessible using the GitHub ID specified in your `.env` file.
-5. For **Git Branch or Tag**, use the default `main` branch (or select another as needed).
-6. Set **Protocol** to `a2a`.
-7. Under [**Specify Source Subfolder**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
+6. For **Git Branch or Tag**, use the default `main` branch (or select another as needed).
+7. Set **Protocol** to `a2a`.
+8. Under [**Specify Source Subfolder**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
    - Click `Select from examples`
    - Choose: `a2a/slack_researcher`
-8. Click **Build New Agent** to deploy.
+9. Click **Build & Deploy New Agent** button.
 
 ---
 
@@ -68,7 +82,7 @@ To deploy the Slack Tool:
 6. Set **Select Protocol** to `streamable-http`.
 7. Under **Specify Source Subfolder**:
    - Select: `mcp/slack_tool`
-8. Click **Build New Tool** to deploy.
+8. Click **Build & Deploy New Tool** button.
 
 ---
 
@@ -101,6 +115,7 @@ To verify that both the agent and tool are running:
     ```
 
     For the tool:
+
     ```console
     installer$ kubectl logs -f deployment/slack-tool -n <namespace>
     Defaulted container "slack-tool" out of: slack-tool, kagenti-client-registration (init)
@@ -151,4 +166,3 @@ You may navigate to the **Agent Catalog** and **Tool Catalog** in the UI and del
 ```
 
 The Kagenti Operator will automatically clean up all related Kubernetes resources.
-
