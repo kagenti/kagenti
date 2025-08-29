@@ -1,4 +1,4 @@
-# Slack Research Agent Demo
+# Authorized Slack Research Agent Demo
 
 ### NOTE: This demo is currently under ACTIVE development! 
 
@@ -39,6 +39,7 @@ To deploy the Slack Research Agent:
 3. Under [**Select Environment Variable Sets**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#select-environment-variable-sets), select:
   * `mcp-slack`
   * `slack-researcher-config`
+  * `slack-researcher-auth-config`
   * `ollama` or `openai`
     * If using `ollama`, note that it uses `granite3.3:8b` so you may need to `ollama pull granite3.3:8b` locally
     * If using `openai`, you will need to specify a different `TASK_MODEL_ID`, and can do so in the `Custom Environment Variables` section. This demo has been tested with `openai` environment with `TASK_MODEL_ID=gpt-4o-mini-2024-07-18`
@@ -62,6 +63,7 @@ To deploy the Slack Tool:
 2. Select the same `<namespace>` as used for the agent.
 3. In the **Select Environment Variable Sets** section, select:
    - `mcp-slack-config`
+   - `mcp-slack-auth-config`
 4. Use the same source repository:
    <https://github.com/kagenti/agent-examples>
 5. Choose the `main` branch or your preferred branch.
@@ -111,6 +113,16 @@ To verify that both the agent and tool are running:
     ```
 
 4. Once you see the logs indicating that both services are up and running, you're ready to proceed to [Chat with the Agent](#chat-with-the-agent).
+
+---
+
+## Configure Keycloak
+
+Now that the agent and tool have been deployed, the Keycloak Administrator must configure the policies to give the UI delegated access to the tool. We have automated these steps in a script. Simply run:
+
+```
+<insert command to run keycloak automation>
+```
 
 ---
 

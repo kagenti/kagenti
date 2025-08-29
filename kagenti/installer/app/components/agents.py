@@ -45,6 +45,7 @@ def install():
     github_token = os.getenv("GITHUB_TOKEN")
     openai_api_key = os.getenv("OPENAI_API_KEY")
     slack_bot_token = os.getenv("SLACK_BOT_TOKEN")
+    admin_slack_bot_token = os.getenv("ADMIN_SLACK_BOT_TOKEN")
 
     for ns in agent_namespaces:
         console.print(f"\n[cyan]Configuring namespace: {ns}[/cyan]")
@@ -105,6 +106,7 @@ def install():
                     "generic",
                     "slack-secret",
                     f"--from-literal=bot-token={slack_bot_token}",
+                    f"--from-literal=admin-bot-token={admin_slack_bot_token}",
                     "-n",
                     ns,
                 ],

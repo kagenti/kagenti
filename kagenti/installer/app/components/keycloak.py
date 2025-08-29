@@ -33,7 +33,6 @@ class KeycloakSetup:
         self.admin_username = admin_username
         self.admin_password = admin_password
         self.realm_name = realm_name
-        self.client_id = ""
 
     def connect(self, timeout=120, interval=5):
         """
@@ -108,25 +107,28 @@ class KeycloakSetup:
         except KeycloakPostError:
             print(f'User "{username}" already exists')
 
-    def create_client(self, client_name):
+    def create_client(self, app_name):
         try:
-            self.client_id = self.keycloak_admin.create_client(
+            client_name = f"spiffe://localtest.me/sa/{app_name}"
+            client_id = self.keycloak_admin.create_client(
                 {
                     "clientId": client_name,
                     "standardFlowEnabled": True,
                     "directAccessGrantsEnabled": True,
                     "fullScopeAllowed": True,
-                    "enabled": False,
+                    "enabled": True,
                 }
             )
             print(f'Created client "{client_name}"')
+            return client_id
         except KeycloakPostError:
             print(f'Client "{client_name}" already exists. Retrieving its ID.')
-            self.client_id = self.keycloak_admin.get_client_id(client_id=client_name)
+            client_id = self.keycloak_admin.get_client_id(client_id=client_name)
             print(f'Successfully retrieved ID for existing client "{client_name}".')
+            return client_id
 
-    def get_client_secret(self):
-        return self.keycloak_admin.get_client_secrets(self.client_id)["value"]
+    def get_client_secret(self, client_id):
+        return self.keycloak_admin.get_client_secrets(client_id)["value"]
 
 
 def setup_keycloak() -> str:
@@ -143,10 +145,12 @@ def setup_keycloak() -> str:
     test_user_name = "test-user"
     setup.create_user(test_user_name)
 
-    external_tool_client_name = "weather-agent"
-    setup.create_client(external_tool_client_name)
+    external_agent_client_name = "slack-researcher"
+    external_tool_client_name = "slack-tool"
+    slack_agent_client_id = setup.create_client(external_agent_client_name)
+    slack_tool_client_id = setup.create_client(external_tool_client_name)
 
-    return setup.get_client_secret()
+    return (setup.get_client_secret(slack_agent_client_id), setup.get_client_secret(slack_tool_client_id))
 
 
 def install():
@@ -207,7 +211,7 @@ def install():
     )
 
     # Setup Keycloak demo realm, user, and agent client
-    client_secret = setup_keycloak()
+    (slack_agent_client_secret, slack_tool_client_secret) = setup_keycloak()
 
     # Distribute client secret to agent namespaces
     namespaces_str = os.getenv("AGENT_NAMESPACES", "")
@@ -225,17 +229,31 @@ def install():
         raise typer.Exit(1)
 
     for ns in agent_namespaces:
-        if not secret_exists(v1_api, "keycloak-client-secret", ns):
+        if not secret_exists(v1_api, "slack-agent-client-secret", ns):
             run_command(
                 [
                     "kubectl",
                     "create",
                     "secret",
                     "generic",
-                    "keycloak-client-secret",
-                    f"--from-literal=client-secret={client_secret}",
+                    "slack-agent-client-secret",
+                    f"--from-literal=client-secret={slack_agent_client_secret}",
                     "-n",
                     ns,
                 ],
-                f"Creating 'keycloak-client-secret' in '{ns}'",
+                f"Creating 'slack-agent-client-secret' in '{ns}'",
+            )
+        if not secret_exists(v1_api, "slack-tool-client-secret", ns):
+            run_command(
+                [
+                    "kubectl",
+                    "create",
+                    "secret",
+                    "generic",
+                    "slack-tool-client-secret",
+                    f"--from-literal=client-secret={slack_tool_client_secret}",
+                    "-n",
+                    ns,
+                ],
+                f"Creating 'slack-tool-client-secret' in '{ns}'",
             )

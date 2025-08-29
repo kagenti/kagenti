@@ -69,10 +69,6 @@ DEFAULT_ENV_VARS = [
         "name": "KEYCLOAK_URL",
         "value": "http://keycloak.keycloak.svc.cluster.local:8080",
     },
-    {
-        "name": "CLIENT_SECRET",
-        "valueFrom": {"secretKeyRef": {"name": "keycloak-client-secret", "key": "client-secret"}},
-    },
 ]
 
 # --- Resource Limits and Requests ---
