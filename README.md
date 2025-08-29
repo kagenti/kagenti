@@ -51,7 +51,7 @@ To achieve the objectives outlined above, we are developing this technology thro
 These demos are built on the following core technologies:
 
 - Cloud-native infrastructure including [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io), [Istio Ambient Mesh](https://istio.io/latest/docs/ambient/), and [Kiali](https://kiali.io).
-- [Kagenti Operator](https://github.com/kagenti/kagenti-operator/blob/main/beeai/INSTALL.md): an operator for building agents and tools from source, managing their lifecycle, and coordinating platform components.
+- [Kagenti Operator](https://github.com/kagenti/kagenti-operator/blob/main/platform-operator/INSTALL.md): an operator for building agents and tools from source, managing their lifecycle, and coordinating platform components.
 - Tool-side communication via [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
 - Agent-side communication via [A2A](https://google.github.io/A2A) and [Agent Communication Protocol (ACP)](https://agentcommunicationprotocol.dev/introduction/welcome)
 
