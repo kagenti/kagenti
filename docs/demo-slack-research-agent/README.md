@@ -5,7 +5,7 @@
 ---
 This document provides detailed steps for running the **Slack Research Agent** proof-of-concept (PoC) demo.
 
-In this demo, we will use the Kagenti UI to import and deploy both the **Slack Research Agent** and the **Slack Tool**.  
+In this demo, we will use the Kagenti UI to import and deploy both the **Slack Research Agent** and the **Slack Tool**.
 During deployment, we'll configure the **A2A protocol** for managing agent calls and **MCP** for enabling communication between the agent and the Slack tool.
 
 Once deployed, we will query the agent using a natural language prompt. The agent will then invoke the tool and return the Slack data as a response.
@@ -19,7 +19,7 @@ Here's a breakdown of the sections:
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the Agent**](#chat-with-the-agent), you'll interact with the agent and confirm it responds correctly using real-time Slack data.
 
-> **Prerequisites:**  
+> **Prerequisites:**
 > Ensure you've completed the Kagenti platform setup as described in the [Installation](./demos.md#installation) section.
 >
 > This demo uses `SLACK_BOT_TOKEN` and `ADMIN_SLACK_BOT_TOKEN` env. variables. See the section
@@ -29,10 +29,10 @@ You should also open the Agent Platform Demo Dashboard as instructed in the [Con
 
 #### Slack Tokens
 
-In this demo, the Slack MCP Server will access the Slack API using Slack bot tokens. We will be using two bot tokens: a general `SLACK_BOT_TOKEN` that is used by default and an `ADMIN_SLACK_BOT_TOKEN` that is used when the access token has the `slack-full-access` scope. 
+In this demo, the Slack MCP Server will access the Slack API using Slack bot tokens. We will be using two bot tokens: a general `SLACK_BOT_TOKEN` that is used by default and an `ADMIN_SLACK_BOT_TOKEN` that is used when the access token has the `slack-full-access` scope.
 
 For this demo, prior to installing Kagenti, you need to add two variables to the `kagenti/installer/app/.env` file. Visit
-[Slack Bot Token](https://api.slack.com/tutorials/tracks/getting-a-token) page and follow instructions to generate the bot token:
+[Slack Bot Token](https://docs.slack.dev/quickstart) page and follow instructions to generate the bot token:
 
 1. Create a pre-configured app
 1. Select the Slack workspace (e.g. [kagenti-dev](https://kagenti-dev.slack.com) reach out to us to be added.)
@@ -46,7 +46,7 @@ For this demo, prior to installing Kagenti, you need to add two variables to the
 > To demonstrate finer-grained authorization, each of the tokens must have different scopes. This demo has been tested where:
 > - `ADMIN_SLACK_BOT_TOKEN` has at least `channels:history` and `channels:read`
 > - `SLACK_BOT_TOKEN` has only `channels:read`
-> This way, a user that can access Slack will be able to list channels, but not read the conversations, and a user with "admin" access will be able to read channels as well. 
+> This way, a user that can access Slack will be able to list channels, but not read the conversations, and a user with "admin" access will be able to read channels as well.
 
 Repeat the above for another app with a new name. This time limit the scope to `connections:write` only. This will be your `SLACK_BOT_TOKEN`.
 
@@ -56,9 +56,25 @@ Add both variables into `kagenti/installer/app/.env` before executing Kagenti in
 
 ## Import New Agent
 
+### Pre-requisite: Pick an LLM provider
+
+The Slack Researcher agent supports any OpenAI-compatible backend. The following models have been tested:
+
+*Ollama*
+- granite3.3:8b
+This has been tested with an Apple M3 processor and 64 GB of RAM. You will likely need at least 32GB of RAM to run this example locally.
+
+*OpenAI*
+The agent will work with a variety of OpenAI models. The following have been tested:
+- gpt-4.1-nano
+- gpt-4.1-mini
+- gpt-4.1
+- gpt-4o
+- gpt-4o-mini
+
 To log in and import agents you can use [default Kagenti userid](../demos.md#default-kagenti-userid). Log in to the Kagenti UI. 
 
-To deploy the Slack Research Agent:
+### To deploy the Slack Research Agent:
 
 1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
@@ -81,7 +97,9 @@ To deploy the Slack Research Agent:
      ollama pull granite3.3:8b
      ```
 
-   - If using `openai`, you will need to specify a different `TASK_MODEL_ID`, and can do so in the `Custom Environment Variables` section. This demo has been tested with `openai` environment with `TASK_MODEL_ID=gpt-4o-mini-2024-07-18`
+     **IMPORTANT**: The default context length in Ollama is 4k; However we need a 128k context length. Go to Ollama -> Settings and adjust the context length to 128k.
+
+   - If using `openai`, you will need to specify a different `TASK_MODEL_ID`, and can do so in the `Custom Environment Variables` section. i.e. `TASK_MODEL_ID=gpt-4.1-nano`
 
 5. In the **Agent Source Repository URL** field, use the default:
    <https://github.com/kagenti/agent-examples>
@@ -216,7 +234,7 @@ Try each userid for the following interactions with the Slack agent:
 1. Scroll to the bottom of the page. In the input field labeled *Say something to the agent...*, enter:
 
    ```console
-   What are the channels in the Slack? 
+   What are the channels in the Slack?
    ```
 
 1. You will see the *Agent Thinking...* message and a series of `Task Status Update`. Depending on the speed of your hosting environment, and the userid Slack access level, the agent will return a Slack response. For example:
@@ -229,7 +247,7 @@ Try each userid for the following interactions with the Slack agent:
    ```
 
 1. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
-1. To demonstrate finer-grained access, another query to try is `What's going on in the general slack channel?`. This query should result in more detail for the `slack-full-access-user` but should result in less detail for the `slack-partial-access-user`. 
+1. To demonstrate finer-grained access, another query to try is `What's going on in the general slack channel?`. This query should result in more detail for the `slack-full-access-user` but should result in less detail for the `slack-partial-access-user`.
 
 If you encounter any errors, check the [Troubleshooting section](./demos.md#troubleshooting).
 
