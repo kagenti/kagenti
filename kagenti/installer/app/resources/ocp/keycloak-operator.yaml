@@ -1,0 +1,13 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/servicemeshoperator3.openshift-operators: ""
+  name: rhbk-operator
+spec:
+  channel: stable-v26.2
+  installPlanApproval: Automatic
+  name: rhbk-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  startingCSV: rhbk-operator.v26.2.8-opr.1

@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-kc
+  namespace: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-kc
+  serviceName: postgres-kc
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: postgres-kc
+    spec:
+      containers:
+      - env:
+        - name: POSTGRESQL_DATABASE
+          value: postgres
+        - name: POSTGRESQL_USERNAME
+          value: testuser
+        - name: POSTGRESQL_PASSWORD
+          value: thisisonly4testingNOT4prod
+        - name: POSTGRESQL_PGAUDIT_LOG
+          value: none
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        image: docker.io/bitnami/postgresql:12
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U postgres -d postgresdb
+        volumeMounts:
+        - mountPath: /bitnami/postgresql
+          name: postgres-data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: postgres-kc
+  name: postgres-kc
+spec:
+  ports:
+  - name: postgres
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: postgres-kc
+  type: ClusterIP
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: keycloak-db-secret
+  namespace: keycloak
+stringData:
+  password: thisisonly4testingNOT4prod 
+  username: testuser
+type: Opaque  

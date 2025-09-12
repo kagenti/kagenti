@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: phoenix
+  namespace: kagenti-system
+spec:
+  path: /
+  port:
+    targetPort: 6006
+  to:
+    kind: Service
+    name: phoenix
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

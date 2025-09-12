@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: kagenti-ui
+  namespace: kagenti-system
+spec:
+  path: /
+  port:
+    targetPort: 8501
+  to:
+    kind: Service
+    name: kagenti-ui
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

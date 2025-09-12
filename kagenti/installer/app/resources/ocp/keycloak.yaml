@@ -1,0 +1,36 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  labels:
+    app: kagenti
+  name: keycloak
+  namespace: keycloak
+spec:
+  hostname:
+    hostname: keycloak-keycloak.edgeplatform-test-wec2-9ca4d14d48413d18ce61b80811ba4308-0000.us-south.containers.appdomain.cloud
+  http:
+    httpEnabled: true
+    httpPort: 8080
+  instances: 1
+  networkPolicy:
+    enabled: true
+  update:
+    strategy: RecreateOnImageChange
+  db: 
+    host: postgres-kc
+    database: postgres
+    passwordSecret:
+      key: password
+      name: keycloak-db-secret
+    usernameSecret:
+      key: username
+      name: keycloak-db-secret
+    vendor: postgres  
+  unsupported:
+      podTemplate:
+        spec:
+          containers:
+            - name: keycloak
+              env:
+                - name: KC_PROXY_HEADERS
+                  value: "forwarded" 
