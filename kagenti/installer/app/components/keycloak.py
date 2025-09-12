@@ -146,12 +146,10 @@ def setup_keycloak() -> str:
     test_user_name = "test-user"
     setup.create_user(test_user_name)
 
-    external_agent_client_name = "slack-researcher"
-    external_tool_client_name = "slack-tool"
-    slack_agent_client_id = setup.create_client(external_agent_client_name)
-    slack_tool_client_id = setup.create_client(external_tool_client_name)
-
-    return (setup.get_client_secret(slack_agent_client_id), setup.get_client_secret(slack_tool_client_id))
+    kagenti_keycloak_client_name = "kagenti-keycloak-client"
+    kagenti_keycloak_client_id = setup.create_client(kagenti_keycloak_client_name)
+ 
+    return (setup.get_client_secret(kagenti_keycloak_client_id))
 
 
 def install():
@@ -212,7 +210,7 @@ def install():
     )
 
     # Setup Keycloak demo realm, user, and agent client
-    (slack_agent_client_secret, slack_tool_client_secret) = setup_keycloak()
+    (kagenti_keycloak_client_secret) = setup_keycloak()
 
     # Distribute client secret to agent namespaces
     namespaces_str = os.getenv("AGENT_NAMESPACES", "")
@@ -230,49 +228,35 @@ def install():
         raise typer.Exit(1)
 
     for ns in agent_namespaces:
-        if not secret_exists(v1_api, "slack-agent-client-secret", ns):
+        if not secret_exists(v1_api, "kagenti-keycloak-client-secret", ns):
             run_command(
                 [
                     "kubectl",
                     "create",
                     "secret",
                     "generic",
-                    "slack-agent-client-secret",
-                    f"--from-literal=client-secret={slack_agent_client_secret}",
+                    "kagenti-keycloak-client-secret",
+                    f"--from-literal=client-secret={kagenti_keycloak_client_secret}",
                     "-n",
                     ns,
                 ],
-                f"Creating 'slack-agent-client-secret' in '{ns}'",
-            )
-        if not secret_exists(v1_api, "slack-tool-client-secret", ns):
-            run_command(
-                [
-                    "kubectl",
-                    "create",
-                    "secret",
-                    "generic",
-                    "slack-tool-client-secret",
-                    f"--from-literal=client-secret={slack_tool_client_secret}",
-                    "-n",
-                    ns,
-                ],
-                f"Creating 'slack-tool-client-secret' in '{ns}'",
+                f"Creating 'kagenti-keycloak-client-secret' in '{ns}'",
             )
         else:
             # The secret value MUST be base64 encoded for the patch data.
-            encoded_secret = base64.b64encode(slack_tool_client_secret.encode("utf-8")).decode("utf-8")
+            encoded_secret = base64.b64encode(kagenti_keycloak_client_secret.encode("utf-8")).decode("utf-8")
             patch_string = f'{{"data":{{"client-secret":"{encoded_secret}"}}}}'
             run_command(
                 [
                     "kubectl",
                     "patch",
                     "secret",
-                    "slack-tool-client-secret",
+                    "kagenti_keycloak_client_secret",
                     "--type=merge",
                     "-p",
                     patch_string,
                     "-n",
                     ns,
                 ],
-                f"🔄 Patching 'slack-tool-client-secret' in namespace '{ns}'",
+                f"🔄 Patching 'kagenti_keycloak_client_secret' in namespace '{ns}'",
             )    

@@ -42,7 +42,7 @@ data:
     [
       {
         "name": "CLIENT_SECRET",
-        "valueFrom": {"secretKeyRef": {"name": "slack-agent-client-secret", "key": "client-secret"}}
+        "valueFrom": {"secretKeyRef": {"name": "kagenti-keycloak-client-secret", "key": "client-secret"}}
       }
     ]
   mcp-slack-config: |
@@ -56,7 +56,7 @@ data:
     [
       {
         "name": "CLIENT_SECRET",
-        "valueFrom": {"secretKeyRef": {"name": "slack-tool-client-secret", "key": "client-secret"}}
+        "valueFrom": {"secretKeyRef": {"name": "kagenti-keycloak-client-secret", "key": "client-secret"}}
       }, 
       {
         "name": "ISSUER",
