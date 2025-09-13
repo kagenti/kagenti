@@ -16,7 +16,7 @@
 from .. import config
 from ..utils import run_command
 
-def install():
+def install(**kwargs):
     """Installs the Kubernetes metrics server."""
     # Install metrics server
     run_command(

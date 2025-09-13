@@ -17,7 +17,7 @@ from .. import config
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
     """Installs all SPIRE components using the official Helm charts."""
     # This command sets up SPIRE CRDs
     run_command(

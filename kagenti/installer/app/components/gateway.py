@@ -18,7 +18,7 @@ from ..utils import run_command, wait_for_deployment
 
 # TODO - configure namespace(s) where this should be deployed - currently is in default
 
-def install():
+def install(**kwargs):
     """Installs the Istio ingress and egress gateways."""
     run_command(
         ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "http-gateway.yaml")],

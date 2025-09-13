@@ -55,7 +55,7 @@ def get_latest_operator_version(fallback="0.2.0-alpha.4") -> str:
         return fallback
     
 
-def install():
+def install(**kwargs):
     """Installs the Platform Operator using its Helm chart."""
 
     operator_version = get_latest_operator_version()

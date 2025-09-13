@@ -24,7 +24,7 @@ from .. import config
 from ..utils import console, run_command, create_or_update_secret
 
 
-def install():
+def install(**kwargs):
     """Applies required secrets and labels to the agent namespaces defined in .env."""
     namespaces_str = os.getenv("AGENT_NAMESPACES")
     if not namespaces_str:
