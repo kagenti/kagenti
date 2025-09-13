@@ -19,7 +19,7 @@ from .. import config
 from ..utils import console, run_command
 
 
-def install():
+def install(**kwargs):
     """Installs the Kagenti UI from its deployment YAML."""
     run_command(
         [

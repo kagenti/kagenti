@@ -23,7 +23,7 @@ from ..config import ContainerEngine
 from ..utils import console, run_command
 
 
-def install():
+def install(**kwargs):
     """Deploys the internal container registry and configures its DNS."""
     run_command(
         ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "registry.yaml")],

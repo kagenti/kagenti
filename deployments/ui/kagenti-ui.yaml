@@ -23,9 +23,8 @@ spec:
       serviceAccountName: kagenti-ui-service-account
       containers:
         - name: kagenti-ui-container
-#          image: ghcr.io/kagenti/kagenti/ui:latest
-          image: kagenti-demo-ui:latest
-          imagePullPolicy: Never
+          image: ghcr.io/kagenti/kagenti/ui:latest
+          imagePullPolicy: IfNotPresent
           env:
             - name: UV_CACHE_DIR
               value: "/app/.cache/uv"

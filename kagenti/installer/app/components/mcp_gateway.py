@@ -17,7 +17,7 @@ from .. import config
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
 
     """Install K8s Gateway CRDs."""
     # This command installs K8s Gateway CRDs

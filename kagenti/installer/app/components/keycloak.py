@@ -154,7 +154,7 @@ def setup_keycloak() -> str:
     return (setup.get_client_secret(slack_agent_client_id), setup.get_client_secret(slack_tool_client_id))
 
 
-def install():
+def install(use_existing_cluster: bool = False, **kwargs):
     """Installs Keycloak, patches it for proxy headers, and runs initial setup."""
     run_command(
         [
@@ -211,68 +211,74 @@ def install():
         "Adding Keycloak to Istio ambient mesh",
     )
 
-    # Setup Keycloak demo realm, user, and agent client
-    (slack_agent_client_secret, slack_tool_client_secret) = setup_keycloak()
+    if not use_existing_cluster:
+        # Setup Keycloak demo realm, user, and agent client
+        (slack_agent_client_secret, slack_tool_client_secret) = setup_keycloak()
 
-    # Distribute client secret to agent namespaces
-    namespaces_str = os.getenv("AGENT_NAMESPACES", "")
-    if not namespaces_str:
-        return
+        # Distribute client secret to agent namespaces
+        namespaces_str = os.getenv("AGENT_NAMESPACES", "")
+        if not namespaces_str:
+            return
 
-    agent_namespaces = [ns.strip() for ns in namespaces_str.split(",") if ns.strip()]
-    try:
-        kube_config.load_kube_config()
-        v1_api = client.CoreV1Api()
-    except Exception as e:
-        console.log(
-            f"[bold red]✗ Could not connect to Kubernetes to create secrets: {e}[/bold red]"
-        )
-        raise typer.Exit(1)
-
-    for ns in agent_namespaces:
-        if not secret_exists(v1_api, "slack-agent-client-secret", ns):
-            run_command(
-                [
-                    "kubectl",
-                    "create",
-                    "secret",
-                    "generic",
-                    "slack-agent-client-secret",
-                    f"--from-literal=client-secret={slack_agent_client_secret}",
-                    "-n",
-                    ns,
-                ],
-                f"Creating 'slack-agent-client-secret' in '{ns}'",
+        agent_namespaces = [ns.strip() for ns in namespaces_str.split(",") if ns.strip()]
+        try:
+            kube_config.load_kube_config()
+            v1_api = client.CoreV1Api()
+        except Exception as e:
+            console.log(
+                f"[bold red]✗ Could not connect to Kubernetes to create secrets: {e}[/bold red]"
             )
-        if not secret_exists(v1_api, "slack-tool-client-secret", ns):
-            run_command(
-                [
-                    "kubectl",
-                    "create",
-                    "secret",
-                    "generic",
-                    "slack-tool-client-secret",
-                    f"--from-literal=client-secret={slack_tool_client_secret}",
-                    "-n",
-                    ns,
-                ],
-                f"Creating 'slack-tool-client-secret' in '{ns}'",
-            )
-        else:
-            # The secret value MUST be base64 encoded for the patch data.
-            encoded_secret = base64.b64encode(slack_tool_client_secret.encode("utf-8")).decode("utf-8")
-            patch_string = f'{{"data":{{"client-secret":"{encoded_secret}"}}}}'
-            run_command(
-                [
-                    "kubectl",
-                    "patch",
-                    "secret",
-                    "slack-tool-client-secret",
-                    "--type=merge",
-                    "-p",
-                    patch_string,
-                    "-n",
-                    ns,
-                ],
-                f"🔄 Patching 'slack-tool-client-secret' in namespace '{ns}'",
-            )    
+            raise typer.Exit(1)
+
+        for ns in agent_namespaces:
+            if not secret_exists(v1_api, "slack-agent-client-secret", ns):
+                run_command(
+                    [
+                        "kubectl",
+                        "create",
+                        "secret",
+                        "generic",
+                        "slack-agent-client-secret",
+                        f"--from-literal=client-secret={slack_agent_client_secret}",
+                        "-n",
+                        ns,
+                    ],
+                    f"Creating 'slack-agent-client-secret' in '{ns}'",
+                )
+            if not secret_exists(v1_api, "slack-tool-client-secret", ns):
+                run_command(
+                    [
+                        "kubectl",
+                        "create",
+                        "secret",
+                        "generic",
+                        "slack-tool-client-secret",
+                        f"--from-literal=client-secret={slack_tool_client_secret}",
+                        "-n",
+                        ns,
+                    ],
+                    f"Creating 'slack-tool-client-secret' in '{ns}'",
+                )
+            else:
+                # The secret value MUST be base64 encoded for the patch data.
+                encoded_secret = base64.b64encode(slack_tool_client_secret.encode("utf-8")).decode("utf-8")
+                patch_string = f'{{"data":{{"client-secret":"{encoded_secret}"}}}}'
+                run_command(
+                    [
+                        "kubectl",
+                        "patch",
+                        "secret",
+                        "slack-tool-client-secret",
+                        "--type=merge",
+                        "-p",
+                        patch_string,
+                        "-n",
+                        ns,
+                    ],
+                    f"🔄 Patching 'slack-tool-client-secret' in namespace '{ns}'",
+                )
+    else:
+         console.log(
+                # TODO - make keycloak URL configurable, for now just make it so installation can proceed
+                f"[bold yellow]✗ Skipping Keycloak config because using existing cluster. Need to provide ingress URL to Keycloak instance and run again installer [/bold yellow]"
+            )               

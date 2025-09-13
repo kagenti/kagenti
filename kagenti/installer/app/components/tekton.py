@@ -17,7 +17,7 @@ from .. import config
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
     """Installs Tekton Pipelines from its official release YAML."""
     tekton_url = f"https://storage.googleapis.com/tekton-releases/pipeline/previous/{config.TEKTON_VERSION}/release.yaml"
     run_command(

@@ -17,7 +17,7 @@ from .. import config
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
     """Installs cert-manager into the Kubernetes cluster."""
     # Install cert-manager
     run_command(

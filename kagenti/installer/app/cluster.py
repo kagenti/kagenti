@@ -64,6 +64,43 @@ def kind_cluster_running():
         raise typer.Exit(1)
 
 
+def check_kube_connection(install_registry: bool, use_existing_cluster: bool, using_kind_cluster: bool):
+    """Sets up the Kubernetes cluster - either creates a kind cluster or uses existing cluster."""
+    # Check if KUBECONFIG is set or if a cluster is accessible from the default kubeconfig location ~/.kube/config
+    kubeconfig_path = os.getenv("KUBECONFIG") or os.path.expanduser("~/.kube/config")
+    if not kubeconfig_path:
+        console.print(
+            "[bold red]Unable to find an existing KUBECONFIG. Please set it to your cluster's kubeconfig file.[/bold red]"
+        )
+        raise typer.Exit(1)
+
+    # Ask for confirmation so we don't add to an existing cluster by mistake
+    if not use_existing_cluster and not using_kind_cluster:
+        console.print(f"[yellow]Found Kubernetes cluster configuration in KUBECONFIG: {kubeconfig_path}[/yellow]")
+        if not Confirm.ask(
+            "[bold yellow]?[/bold yellow] Do you want to proceed with this Kubernetes cluster?",
+            default=True,
+        ):
+            console.print("[bold red]Installation cancelled by user.[/bold red]")
+            raise typer.Exit(1)
+
+    try:
+        kube_config.load_kube_config()
+        v1_api = client.CoreV1Api()
+        # Test connection by getting cluster info
+        v1_api.list_namespace(limit=1)
+        console.log(
+            "[bold green]✓[/bold green] Successfully connected to existing Kubernetes cluster."
+        )
+
+    except Exception as e:
+        console.log(
+            f"[bold red]✗ Failed to connect to existing Kubernetes cluster: {e}[/bold red]"
+            )
+        raise typer.Exit(1)
+    console.print()
+
+
 def confirm_ask(prompt: str, default: bool, silent: bool):
     """Prompt the user unless silent mode is enabled."""
     if silent:
@@ -84,7 +121,7 @@ def create_kind_cluster(install_registry: bool, silent: bool):
             console.log(
                 f"[bold green]✓[/bold green] Kind cluster '{config.CLUSTER_NAME}' already running. Skipping creation."
             )
-            return
+            return True
         else:
             console.log(
                 f"[bold red]x Kind cluster '{config.CLUSTER_NAME}' exists but is not running."
@@ -97,8 +134,7 @@ def create_kind_cluster(install_registry: bool, silent: bool):
         default=True,
         silent=silent,
     ):
-        console.print("[bold red]Cannot proceed without a cluster. Exiting.[/bold red]")
-        raise typer.Exit()
+        return False
 
     base_config = """
 kind: Cluster
@@ -147,6 +183,7 @@ containerdConfigPatches:
             console.log(f"[red]{e.stderr.strip()}[/red]")
             raise typer.Exit(1)
     console.print()
+    return True
 
 
 def preload_images_in_kind(images: list[str]):

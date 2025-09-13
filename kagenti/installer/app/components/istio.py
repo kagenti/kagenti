@@ -16,7 +16,7 @@
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
     """Installs all Istio components using the official Helm charts."""
     run_command(
         [
