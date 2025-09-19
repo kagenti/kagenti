@@ -24,7 +24,11 @@ data:
     ]
   mcp-weather: |
     [
-      {"name": "MCP_URL", "value": "http://weather-tool:8000/mcp"}
+      {"name": "MCP_URL", "value": "http://weather-tool:8000/mcp"},
+      {
+        "name": "CLIENT_SECRET",
+        "valueFrom": {"secretKeyRef": {"name": "kagenti-keycloak-client-secret", "key": "client-secret"}}
+      }
     ]
   mcp-slack: |
     [
