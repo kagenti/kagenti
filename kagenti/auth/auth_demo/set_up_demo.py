@@ -32,13 +32,15 @@ def assign_realm_role_to_client_scope(admin: KeycloakAdmin, scope_id: str, role_
     ).text
 
 
-
 slack_partial_access_string = "slack-partial-access"
 slack_full_access_string = "slack-full-access"
 slack_partial_access_user_string = f"{slack_partial_access_string}-user"
 slack_full_access_user_string = f"{slack_full_access_string}-user"
 slack_client_id = "spiffe://localtest.me/sa/slack-tool"
 kagenti_client_id = "kagenti"
+
+slack_agent_access_string = "slack-agent-access"
+slack_agent_client_id = "spiffe://localtest.me/sa/slack-researcher"
 
 
 
@@ -139,12 +141,67 @@ except Exception as e:
     print(f'Could not set slack-full-access client scope to a default client scope: {e}')
 
 
+# Create the slack-agent-access client scope
+agent_access_client_scope_id = keycloak_admin.create_client_scope(
+    {
+        "name": slack_agent_access_string,
+        "protocol": "openid-connect",
+        "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true",
+        }
+    },
+    True
+)
 
-# Add slack-partial-access and slack-full-access client scopes to the kagenti client
+keycloak_admin.create_realm_role(
+    {
+        "name": slack_agent_access_string,
+        "composite": True,
+        "clientRole": True
+    },
+    True
+)
+
+# Assign the slack-agent-access realm role to slack-agent-access client scope
+assign_realm_role_to_client_scope(keycloak_admin, agent_access_client_scope_id, slack_agent_access_string)
+
+try:
+    # Create and assign the slack-agent-audience audience protocol mapper to slack-agent-access client scope
+    keycloak_admin.add_mapper_to_client_scope(
+        agent_access_client_scope_id,
+        {
+            "name": "slack-agent-audience",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-audience-mapper",
+            "consentRequired": False,
+            "config": {
+                "included.client.audience": "spiffe://localtest.me/sa/slack-researcher",
+                "introspection.token.claim": "true",
+                "userinfo.token.claim": "false",
+                "id.token.claim": "false",
+                "lightweight.claim": "false",
+                "access.token.claim": "true",
+                "lightweight.access.token.claim": "false"
+            }
+        }
+    )
+except Exception as e:
+    print(f'Could not create and assign the slack-agent-audience audience protocol mapper to slack-agent-access client scope: {e}')
+
+# Set slack-agent-access client scope to a default client scope
+try:
+    keycloak_admin.add_default_default_client_scope(agent_access_client_scope_id)
+except Exception as e:
+    print(f'Could not set slack-agent-access client scope to a default client scope: {e}')
+
+
+# Add slack-partial-access and slack-full-access and slack-agent-access client scopes to the kagenti client
 try:
     internal_kagenti_client_id = keycloak_admin.get_client_id(kagenti_client_id)
     keycloak_admin.add_client_default_client_scope(internal_kagenti_client_id, partial_client_scope_id, {})
     keycloak_admin.add_client_default_client_scope(internal_kagenti_client_id, full_client_scope_id, {})
+    keycloak_admin.add_client_default_client_scope(internal_kagenti_client_id, agent_access_client_scope_id, {})
 except Exception as e:
     print(f'Could not enable service accounts for client {slack_client_id}: {e}')
 
@@ -162,7 +219,8 @@ partial_user_id = keycloak_admin.create_user(
 keycloak_admin.set_user_password(partial_user_id, "password", temporary=False)
 
 slack_partial_access_role = keycloak_admin.get_realm_role(slack_partial_access_string)
-partial_user_roles = [slack_partial_access_role]
+slack_agent_access_role = keycloak_admin.get_realm_role(slack_agent_access_string)
+partial_user_roles = [slack_partial_access_role, slack_agent_access_role]
 try:
     keycloak_admin.assign_realm_roles(
         partial_user_id,
@@ -184,7 +242,7 @@ full_user_id = keycloak_admin.create_user(
 keycloak_admin.set_user_password(full_user_id, "password", temporary=False)
 
 slack_full_access_role = keycloak_admin.get_realm_role(slack_full_access_string)
-full_user_roles = [slack_partial_access_role, slack_full_access_role]
+full_user_roles = [slack_partial_access_role, slack_full_access_role, slack_agent_access_role]
 try:
     keycloak_admin.assign_realm_roles(
         full_user_id,
@@ -193,24 +251,6 @@ try:
 except Exception as e:
     print(f'Could not add "{full_user_roles}" realm roles to user "{slack_full_access_user_string}": {e}')
 
-
-
-# Enable service accounts for the slack client
-internal_slack_client_id = keycloak_admin.get_client_id(slack_client_id)
-try:
-    client = keycloak_admin.get_client(internal_slack_client_id)
-    client["serviceAccountsEnabled"] = True
-    keycloak_admin.update_client(internal_slack_client_id, client)
-except Exception as e:
-    print(f'Could not enable service accounts for client {slack_client_id}: {e}')
-
-
-
-# Assign view-clients (master realm) client role to slack client
-slack_service_account_user_id = keycloak_admin.get_client_service_account_user(internal_slack_client_id)
-internal_master_realm_client_id = keycloak_admin.get_client_id("master-realm")
-role = keycloak_admin.get_client_role(internal_master_realm_client_id, "view-clients")
-keycloak_admin.assign_client_role(user_id=slack_service_account_user_id["id"], client_id=internal_master_realm_client_id, roles=[role])
 
 
 
