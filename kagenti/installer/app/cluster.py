@@ -19,6 +19,7 @@ import subprocess
 
 import typer
 from kubernetes import client, config as kube_config
+from kubernetes.client.rest import ApiException
 from rich.prompt import Confirm
 from rich.panel import Panel
 from rich.text import Text
@@ -257,3 +258,54 @@ def check_and_create_agent_namespaces(silent: bool):
             "[bold green]✓ All required agent namespaces already exist.[/bold green]"
         )
     console.print()
+
+
+def is_openshift_cluster() -> bool:
+    """
+    Detects if the current Kubernetes cluster is an OpenShift cluster.
+
+    This function checks for the presence of the 'project.openshift.io/v1' API,
+    which is a standard and reliable indicator of an OpenShift environment.
+
+    Returns:
+        bool: True if the cluster is OpenShift, False otherwise.
+
+    Raises:
+        Exception: Re-raises exceptions related to authentication or
+                   connectivity problems, as the check cannot be completed.
+    """
+    try:
+        kube_config.load_kube_config()
+    except kube_config.ConfigException:
+        try:
+            kube_config.load_incluster_config()
+        except kube_config.ConfigException:
+            print("Could not load Kubernetes configuration. Ensure you are running")
+            print("this from within a cluster or have a valid kubeconfig file.")
+            return False
+
+    # Use the CustomObjectsApi to query for a known OpenShift API
+    api = client.CustomObjectsApi()
+
+    try:
+        # We query for the 'projects' resource in the 'project.openshift.io' group.
+        api.list_cluster_custom_object(
+            group="project.openshift.io",
+            version="v1",
+            plural="projects",
+            limit=1
+        )
+        return True
+    except ApiException as e:
+        # A 404 Not Found error means the API group doesn't exist, so it's not OpenShift.
+        if e.status == 404:
+            return False
+        # For other errors (e.g., 401 Unauthorized, 403 Forbidden), we can't be sure.
+        # It's better to re-raise the exception as it indicates a configuration
+        # or permission issue, not the absence of the API.
+        else:
+            print(f"An API error occurred: {e.reason}")
+            raise
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        raise

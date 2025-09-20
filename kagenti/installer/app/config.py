@@ -79,13 +79,14 @@ class InstallableComponent(str, Enum):
     TEKTON = "tekton"
     OPERATOR = "operator"
     ISTIO = "istio"
-    ADDONS = "addons"  # Prometheus, Kiali & Phoenix
+    ADDONS = "addons"  #  Kiali & Phoenix
+    OTEL = "otel"
     UI = "ui"
     GATEWAY = "gateway"
     SPIRE = "spire"
     MCP_GATEWAY = "mcp_gateway"
     KEYCLOAK = "keycloak"
-    AGENTS = "agents"
+    AGENT_NAMESPACES = "agent_namespaces"
     METRICS_SERVER= "metrics_server"
     INSPECTOR = "inspector"
     CERT_MANAGER = "cert_manager"

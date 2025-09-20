@@ -99,3 +99,7 @@ def install(**kwargs):
         ],
         "Adding Spire to Istio ambient mesh",
     )
+
+
+    import sys
+    sys.exit(0)

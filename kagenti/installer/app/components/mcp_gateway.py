@@ -17,19 +17,22 @@ from .. import config
 from ..utils import run_command
 
 
-def install(**kwargs):
+def install(use_openshift_cluster: bool = False,**kwargs):
 
-    """Install K8s Gateway CRDs."""
-    # This command installs K8s Gateway CRDs
-    run_command(
-        [
-            "kubectl",
-            "apply",
-            "-k",
-            "https://github.com/kubernetes-sigs/gateway-api/config/crd?ref=v1.3.0",
-        ],
-        "Installing K8s Gateway CRDs",
-    )
+    if not use_openshift_cluster:
+        # These are installed by the Istio component in OCP
+        # TODO - consolidate also for the non-ocp case
+        """Install K8s Gateway CRDs."""
+        # This command installs K8s Gateway CRDs
+        run_command(
+            [
+                "kubectl",
+                "apply",
+                "-k",
+                "https://github.com/kubernetes-sigs/gateway-api/config/crd?ref=v1.3.0",
+            ],
+            "Installing K8s Gateway CRDs",
+        )
 
     """Create MCPGateway namespaces."""
     # This command creates namespaces for MCP gateway components

@@ -1,3 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ztunnel
+  labels:
+    istio-discovery: enabled
+---
 apiVersion: sailoperator.io/v1alpha1
 kind: ZTunnel
 metadata:

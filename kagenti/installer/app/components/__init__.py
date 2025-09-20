@@ -15,7 +15,7 @@
 
 from . import (
     addons,
-    agents,
+    agent_namespaces,
     gateway,
     istio,
     keycloak,

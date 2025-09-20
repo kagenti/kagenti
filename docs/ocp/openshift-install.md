@@ -45,7 +45,7 @@ kubectl wait --for=condition=Ready istios/default --timeout=3m
 kubectl create namespace istio-cni
 kubectl label namespace istio-cni istio-discovery=enabled
 kubectl apply -f app/resources/ocp/istio-cni.yaml 
-kubectl wait --for=condition=Ready istios/default --timeout=3m
+kubectl wait --for=condition=Ready istiocnis/default --timeout=3m
 ```
 
 3. Install the Ztunnel proxy

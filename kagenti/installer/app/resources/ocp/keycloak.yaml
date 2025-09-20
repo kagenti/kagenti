@@ -7,7 +7,7 @@ metadata:
   namespace: keycloak
 spec:
   hostname:
-    hostname: keycloak-keycloak.edgeplatform-test-wec2-9ca4d14d48413d18ce61b80811ba4308-0000.us-south.containers.appdomain.cloud
+    strict: false
   http:
     httpEnabled: true
     httpPort: 8080
@@ -33,4 +33,23 @@ spec:
             - name: keycloak
               env:
                 - name: KC_PROXY_HEADERS
-                  value: "forwarded" 
+                  value: "forwarded"
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: keycloak
+  namespace: keycloak
+spec:
+  path: /
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: keycloak-service
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

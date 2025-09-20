@@ -13,11 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 from .. import config
 from ..utils import run_command
+from ..ocp_utils import verify_operator_installation
+
+def install(use_openshift_cluster: bool = False, **kwargs):
+    if use_openshift_cluster:
+        _install_on_openshift()
+    else:
+        _install_on_k8s()
 
 
-def install(**kwargs):
+def _install_on_k8s():
     """Installs cert-manager into the Kubernetes cluster."""
     # Install cert-manager
     run_command(
@@ -57,3 +65,20 @@ def _wait_for_cert_manager_deployments():
             ],
             f"Waiting for deployment/{deployment} in namespace cert-manager",
         )
+
+def _install_on_openshift():
+    """Installs Cert Manager using OpenShift Cert Manager Operator."""
+    namespace = "cert-manager-operator"
+    subscription = "openshift-cert-manager-operator"
+    deploy_path: Path = config.RESOURCES_DIR / "ocp" / "cert-manager-operator.yaml"
+
+    run_command(
+        ["kubectl", "apply", "-n", namespace, "-f", deploy_path],
+        "Installing OpenShift Cert Manager Operator"
+    )
+
+    verify_operator_installation(
+        subscription_name=subscription,
+        namespace=namespace,
+    )
+

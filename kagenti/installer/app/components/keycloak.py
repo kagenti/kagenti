@@ -18,15 +18,13 @@ import time
 import typer
 import requests
 import base64
+import time
+from pathlib import Path
 from kubernetes import client, config as kube_config
-
 from .. import config
 from ..utils import console, run_command, secret_exists
-
-
-import time
 from keycloak import KeycloakAdmin, KeycloakPostError
-
+from ..ocp_utils import verify_operator_installation, get_admitted_openshift_route_host
 
 class KeycloakSetup:
     def __init__(self, server_url, admin_username, admin_password, realm_name):
@@ -152,8 +150,15 @@ def setup_keycloak() -> str:
     return (setup.get_client_secret(kagenti_keycloak_client_id))
 
 
-def install(use_existing_cluster: bool = False, **kwargs):
-    """Installs Keycloak, patches it for proxy headers, and runs initial setup."""
+def install(use_openshift_cluster: bool = False, **kwargs):
+    if use_openshift_cluster:
+        _install_on_openshift()
+    else:
+        _install_on_k8s()
+
+
+def _install_on_k8s(use_existing_cluster: bool = False, **kwargs):
+    """Installs Keycloak on k8s cluster, patches it for proxy headers, and runs initial setup."""
     run_command(
         [
             "kubectl",
@@ -262,6 +267,52 @@ def install(use_existing_cluster: bool = False, **kwargs):
                     f"🔄 Patching 'kagenti_keycloak_client_secret' in namespace '{ns}'",
                 )
     else:
-        console.log(
+        console.print(
                 f"[bold yellow]Skipping initial Keycloak setup because existing cluster is used.[/bold yellow]"
             )                
+
+def _install_on_openshift():
+    """Installs Keycloak on OpenShift using the Keycloak operator."""
+
+    postgres_path: Path = config.RESOURCES_DIR / "ocp" / "keycloak-postgres.yaml"
+    namespace = "keycloak"
+    run_command(
+        ["kubectl", "apply", "-n", namespace, "-f", postgres_path],
+        "Creating Postgres Instance for Keycloak"
+    )
+
+    operator_path: Path = config.RESOURCES_DIR / "ocp" / "keycloak-operator.yaml"
+    subscription = "rhbk-operator"
+    run_command(
+        ["kubectl", "apply", "-n", namespace, "-f", operator_path],
+        "Installing Keycloak Operator"
+    )
+
+    verify_operator_installation(
+        subscription_name=subscription,
+        namespace=namespace,
+    )
+
+    # setup keycloak instance
+    keycloak_path: Path = config.RESOURCES_DIR / "ocp" / "keycloak.yaml"
+    run_command(
+        ["kubectl", "apply", "-n", namespace, "-f", keycloak_path],
+        "Creating Keycloak Instance"
+    )
+
+    run_command(
+        ["kubectl", "wait", "--for=condition=Ready", "-n", "keycloak", "keycloaks/keycloak", "--timeout=180s"],
+        "Waiting for Keycloak Instance rollout",
+    )
+
+    run_command(
+        ["kubectl", "rollout", "status", "-n", "keycloak", "statefulset/keycloak"],
+        "Waiting for Keycloak StatefulSet rollout",
+    )
+
+    keycloak_url = get_admitted_openshift_route_host("keycloak","keycloak")
+
+    print(f"Keycloak is available at https://{keycloak_url}")
+
+    import sys
+    sys.exit(0) 
