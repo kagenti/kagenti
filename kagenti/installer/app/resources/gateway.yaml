@@ -24,3 +24,10 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: mcp-mcp # gateway listener
+      hostname: 'mcp.127-0-0-1.sslip.io' #public accessibly MCP host one used by client
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
