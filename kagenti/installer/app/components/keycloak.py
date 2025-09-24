@@ -252,16 +252,16 @@ def install(use_existing_cluster: bool = False, **kwargs):
                         "kubectl",
                         "patch",
                         "secret",
-                        "kagenti_keycloak_client_secret",
+                        "kagenti-keycloak-client-secret",
                         "--type=merge",
                         "-p",
                         patch_string,
                         "-n",
                         ns,
                     ],
-                    f"🔄 Patching 'kagenti_keycloak_client_secret' in namespace '{ns}'",
+                    f"🔄 Patching 'kagenti-keycloak-client-secret' in namespace '{ns}'",
                 )
     else:
         console.log(
-                f"[bold yellow]Skipping initial Keycloak setup because existing cluster is used.[/bold yellow]"
-            )                
+            f"[bold yellow]Skipping initial Keycloak setup because existing cluster is used.[/bold yellow]"
+        )                
