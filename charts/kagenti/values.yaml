@@ -1,0 +1,142 @@
+# Global settings
+openshift: true
+
+# ------------------------------------------------------------------
+#  Control Panel: Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: true
+  certManager:
+    enabled: true
+  ingressGateway:
+    enabled: false
+  mcpInspector:
+    enabled: true
+  istio:
+    enabled: true
+  kiali:
+    enabled: true  
+  gatewayApi:
+    enabled: false  
+  keycloak:
+    enabled: true
+  mcpGateway:
+    enabled: true
+  metricsServer:
+    enabled: false
+  platformOperator:
+    enabled: true
+  otel:
+    enabled: true
+  registry:
+    enabled: false
+  spire:
+    enabled: false
+  tekton:
+    enabled: true
+  ui:
+    enabled: true  
+
+# Environment variables for secrets - they should be overriden by a .secrets.yaml file
+# or by using --set secrets.githubUser="" etc.
+secrets:
+  githubUser: ""
+  githubToken: ""
+  openaiApiKey: ""
+  slackBotToken: ""
+  adminSlackBotToken: ""
+
+common:
+  kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+
+# ------------------------------------------------------------------
+#  Components Configurations
+# ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+#  Agents Namespaces
+# ------------------------------------------------------------------
+agentNamespaces:
+- team1
+- team2
+
+# ------------------------------------------------------------------
+#  UI Configuration
+# ------------------------------------------------------------------
+ui:
+  auth:
+    enabled: false
+  namespace: kagenti-system
+  image: ghcr.io/kagenti/kagenti/ui:v0.0.4-alpha.16
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  namespace: keycloak
+  auth:
+    adminUser: keycloakadmin
+    adminPassword: your-secret-password
+
+# ------------------------------------------------------------------
+#  Istio Configuration
+# ------------------------------------------------------------------
+istio:
+  communityCharts:
+    enabled: false
+  namespace: "istio-system"
+  gatewayApiVersion: "v1.1.0"
+  cni:
+    profile: ambient
+    namespace: istio-cni
+  ztunnel:
+    namespace: istio-ztunnel  
+  base: {}
+  istiod: 
+    profile: ambient
+    namespace: '{{ .Values.istio.namespace | quote }}'
+
+# ------------------------------------------------------------------
+#  Gateway API Configuration
+# ------------------------------------------------------------------
+gatewayApi:
+  manifestUrl: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml
+  installer:
+    image: quay.io/kubestellar/kubectl:1.30.14
+
+# ------------------------------------------------------------------
+#  Cert Manager Configuration
+# ------------------------------------------------------------------
+certManager:
+  namespace: cert-manager-operator
+
+# ------------------------------------------------------------------
+#  Platform Operator Configuration
+# ------------------------------------------------------------------
+kagentiPlatformOperator:
+  controllerManager:
+    container:
+      args:
+      - "--leader-elect"
+      - "--metrics-bind-address=:8443"
+      - "--health-probe-bind-address=:8081"
+      - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
+      - "--enable-client-registration=false"
+      resources:
+        limits:
+          memory: 512Mi
+
+# ------------------------------------------------------------------
+#  Spire Configuration
+# ------------------------------------------------------------------
+spire:
+  namespace: zero-trust-workload-identity-manager
+
+# ------------------------------------------------------------------
+#  MCP Gateway Configuration
+# ------------------------------------------------------------------
+mcpGateway:
+  namespaces:
+    mcpSystem: mcp-system
+    gatewaySystem: gateway-system

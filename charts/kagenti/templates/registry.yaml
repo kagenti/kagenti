@@ -1,0 +1,8 @@
+{{- if and .Values.components.registry.enabled (not .Values.openshift) }}
+# ------------------------------------------------------------------
+#  OpenShift has built-in container image registry 
+#  so no need for a separate registry component
+#  This is only needed for non-OpenShift clusters 
+# ------------------------------------------------------------------
+
+{{- end }}

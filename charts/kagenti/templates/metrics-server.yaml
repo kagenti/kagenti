@@ -1,0 +1,7 @@
+{{- if and .Values.components.metricsServer.enabled (not .Values.openshift) }}
+# ------------------------------------------------------------------
+#  OpenShift has built-in monitoring for resource usage 
+#  so no need for metrics server
+# ------------------------------------------------------------------
+
+{{- end }}

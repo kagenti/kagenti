@@ -1,0 +1,6 @@
+{{- if and .Values.components.ingressGateway.enabled (not .Values.openshift) }}
+# ------------------------------------------------------------------
+#  We use routes for OpenShift, so no need for ingress gateway
+#  This is only needed for non-OpenShift clusters
+# ------------------------------------------------------------------
+{{- end }}

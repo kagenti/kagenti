@@ -1,0 +1,9 @@
+
+Kiali
+
+The route for kiali can be found with the command:
+
+```
+kubectl get routes -n istio-system kiali 
+```
+

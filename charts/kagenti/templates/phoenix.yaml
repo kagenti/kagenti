@@ -1,3 +1,4 @@
+{{- if .Values.components.otel.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -156,20 +157,23 @@ spec:
     app: phoenix
   type: ClusterIP
 ---
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
 metadata:
+  annotations:
+    openshift.io/host.generated: "true"
   name: phoenix
-  namespace: kagenti-system
-  labels:
-    app: phoenix
 spec:
-  parentRefs:
-    - name: http
-      namespace: kagenti-system
-  hostnames:
-    - "phoenix.localtest.me"
-  rules:
-    - backendRefs:
-        - name: phoenix
-          port: 6006
+  path: /
+  port:
+    targetPort: 6006
+  to:
+    kind: Service
+    name: phoenix
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- end }}

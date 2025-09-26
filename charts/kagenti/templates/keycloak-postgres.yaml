@@ -1,0 +1,134 @@
+{{- if .Values.components.keycloak.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-kc-init-script
+  namespace: {{ .Values.keycloak.namespace }}
+data:
+  set_passwords.sh: |
+    #!/bin/bash
+
+    _psql () { psql --set ON_ERROR_STOP=1 "$@" ; }
+
+    if [[ ",$postinitdb_actions," = *,simple_db,* ]]; then
+    _psql --set=username="$POSTGRESQL_USER" \
+          --set=password="$POSTGRESQL_PASSWORD" \
+    <<< "ALTER USER :\"username\" WITH ENCRYPTED PASSWORD :'password';"
+    fi
+
+    if [ -v POSTGRESQL_MASTER_USER ]; then
+    _psql --set=masteruser="$POSTGRESQL_MASTER_USER" \
+          --set=masterpass="$POSTGRESQL_MASTER_PASSWORD" \
+    <<'EOF'
+    ALTER USER :"masteruser" WITH REPLICATION;
+    ALTER USER :"masteruser" WITH ENCRYPTED PASSWORD :'masterpass';
+    EOF
+    fi
+
+    if [ -v POSTGRESQL_ADMIN_PASSWORD ]; then
+    _psql --set=adminpass="$POSTGRESQL_ADMIN_PASSWORD" \
+    <<<"ALTER USER \"postgres\" WITH ENCRYPTED PASSWORD :'adminpass';"
+    fi
+  init.sh: |
+    #!/bin/bash
+    set -e
+    
+    psql -v ON_ERROR_STOP=1  <<-EOSQL
+        ALTER DATABASE postgres OWNER TO testuser;
+    EOSQL
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-kc
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-kc
+  serviceName: postgres-kc
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: postgres-kc
+    spec:
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-kc-init-script
+          defaultMode: 0755 
+      containers:
+      - env:
+        - name: POSTGRESQL_DATABASE
+          value: postgres
+        - name: POSTGRESQL_USER
+          value: testuser
+        - name: POSTGRESQL_PASSWORD
+          value: thisisonly4testingNOT4prod
+        image: quay.io/fedora/postgresql-15
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U postgres -d postgres
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault    
+        volumeMounts:
+        - mountPath: /var/lib/pgsql/data
+          name: postgres-data
+        - name: init-script
+          mountPath: /usr/share/container-scripts/postgresql/start/ 
+          readOnly: false
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: postgres-kc
+  name: postgres-kc
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  ports:
+  - name: postgres
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: postgres-kc
+  type: ClusterIP
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: keycloak-db-secret
+  namespace: {{ .Values.keycloak.namespace }}
+stringData:
+  password: thisisonly4testingNOT4prod 
+  username: testuser
+type: Opaque  
+{{- end }}

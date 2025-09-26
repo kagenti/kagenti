@@ -1,3 +1,4 @@
+{{- if .Values.components.otel.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,3 +110,4 @@ data:
           receivers: [ otlp ]
           processors: [ memory_limiter, filter/phoenix, batch ]
           exporters: [ otlp/phoenix ]
+{{- end }}          

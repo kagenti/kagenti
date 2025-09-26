@@ -1,0 +1,61 @@
+{{- if and .Values.components.keycloak.enabled .Values.openshift }}
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  labels:
+    app: kagenti
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+  name: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  hostname:
+    strict: false
+  http:
+    httpEnabled: true
+    httpPort: 8080
+  instances: 1
+  networkPolicy:
+    enabled: true
+  update:
+    strategy: RecreateOnImageChange
+  db: 
+    host: postgres-kc
+    database: postgres
+    passwordSecret:
+      key: password
+      name: keycloak-db-secret
+    usernameSecret:
+      key: username
+      name: keycloak-db-secret
+    vendor: postgres  
+  unsupported:
+      podTemplate:
+        spec:
+          containers:
+            - name: keycloak
+              env:
+                - name: KC_PROXY_HEADERS
+                  value: "forwarded"
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  path: /
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: keycloak-service
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}

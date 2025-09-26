@@ -1,0 +1,44 @@
+{{- if and .Values.components.istio.enabled .Values.openshift }}
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  namespace:  "{{ .Values.istio.namespace }}"
+  values:
+    pilot:
+      trustedZtunnelNamespace: "{{ .Values.istio.ztunnel.namespace }}"
+    profile: ambient
+    meshConfig:
+      discoverySelectors:
+      - matchLabels:
+          istio-discovery: enabled
+---
+apiVersion: sailoperator.io/v1
+kind: IstioCNI
+metadata:
+  name: default
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  namespace:  "{{ .Values.istio.cni.namespace }}"
+  profile: ambient
+---
+apiVersion: sailoperator.io/v1alpha1
+kind: ZTunnel
+metadata:
+  name: default
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  namespace: "{{ .Values.istio.ztunnel.namespace }}"
+  profile: ambient      
+{{- end }}
