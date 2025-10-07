@@ -2,5 +2,26 @@ dependencies:
 - name: gateway-api
   repository: file://../gateway-api
   version: 1.3.0
-digest: sha256:4cf4e92ca99a236e20395d0467b2dffb5bf18cbaf4f11f41ac493f5491a6a947
-generated: "2025-10-05T21:04:35.726951-04:00"
+- name: cert-manager
+  repository: https://charts.jetstack.io
+  version: v1.19.0
+- name: base
+  repository: https://istio-release.storage.googleapis.com/charts
+  version: 1.27.1
+- name: istiod
+  repository: https://istio-release.storage.googleapis.com/charts
+  version: 1.27.1
+- name: cni
+  repository: https://istio-release.storage.googleapis.com/charts
+  version: 1.27.1
+- name: kiali-server
+  repository: https://kiali.org/helm-charts
+  version: 2.15.0
+- name: tekton-pipelines
+  repository: file://../tekton-pipelines
+  version: 0.1.0
+- name: spire
+  repository: https://spiffe.github.io/helm-charts-hardened
+  version: 0.24.5
+digest: sha256:94e88dc25abd1c939fac8efbead2c49ffe5c385a232a53ee7f571f872d8cd747
+generated: "2025-10-07T18:28:20.404743-04:00"
