@@ -31,7 +31,7 @@ components:
   certManager:
     enabled: true  
   gatewayApi:  
-    enabled: false
+    enabled: true
   ingressGateway:
     enabled: false 
 
@@ -49,6 +49,7 @@ common:
 # ------------------------------------------------------------------
 keycloak:
   namespace: keycloak
+  installCRDs: true
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
@@ -75,6 +76,11 @@ istio:
 #  Cert Manager Configuration
 # ------------------------------------------------------------------
 certManager:
+  namespace: cert-manager-operator
+  installCRDs: true
+
+cert-manager:
+  installCRDs: true
   namespace: cert-manager-operator
 
 # ------------------------------------------------------------------

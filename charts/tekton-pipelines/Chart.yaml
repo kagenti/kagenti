@@ -3,4 +3,4 @@ name: tekton-pipelines
 description: Tekton Pipelines installation for vanilla Kubernetes
 type: application
 version: 0.1.0
-appVersion: "latest"
+appVersion: "0.1.0"

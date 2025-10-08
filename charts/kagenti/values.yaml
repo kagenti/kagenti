@@ -1,5 +1,5 @@
 # Global settings
-openshift: true
+openshift: false
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -51,6 +51,13 @@ ui:
   namespace: kagenti-system
   image: ghcr.io/kagenti/kagenti/ui
   tag: v0.1.0-alpha.1
+  ingress:
+    className: "nginx"
+    host: "kagenti.local"
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /
+    tls:
+      enabled: false
 
 # ------------------------------------------------------------------
 #  Platform Operator Configuration

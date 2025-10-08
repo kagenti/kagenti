@@ -62,6 +62,21 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Platform-specific UI host detection
+*/}}
+{{- define "kagenti.ui.host" -}}
+{{- if .Values.openshift }}
+{{- if .Values.ui.route.host }}
+{{- .Values.ui.route.host }}
+{{- else }}
+{{- printf "kagenti-ui-%s.apps.cluster.local" .Release.Namespace }}
+{{- end }}
+{{- else }}
+{{- printf "kagenti-ui-%s.apps.cluster.local" .Release.Namespace }}
+{{- end }}
+{{- end }}
+
+{{/*
 Determines if the community Istio charts should be enabled.
 This becomes the single source of truth for the complex logic.
 It will be enabled if:
