@@ -1,0 +1,281 @@
+{{- if .Values.components.mcpGateway.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-broker-router
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-controller
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp-controller
+rules:
+  - apiGroups: ["mcp.kagenti.com"]
+    resources: ["mcpservers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["mcp.kagenti.com"]
+    resources: ["mcpservers/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["mcp.kagenti.com"]
+    resources: ["mcpvirtualservers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mcp-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mcp-controller
+subjects:
+  - kind: ServiceAccount
+    name: mcp-controller
+    namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-broker-router
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["mcp-gateway-config"]
+    verbs: ["get", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-broker-router
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mcp-broker-router
+subjects:
+  - kind: ServiceAccount
+    name: mcp-broker-router
+    namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-broker
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+spec:
+  selector:
+    app: mcp-broker-router
+    component: broker-router
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-broker-router
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+  labels:
+    app: mcp-broker-router
+    component: broker-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-broker-router
+      component: broker-router
+  template:
+    metadata:
+      labels:
+        app: mcp-broker-router
+        component: broker-router
+    spec:
+      serviceAccountName: mcp-broker-router
+      volumes:
+        - name: config-volume
+          configMap:
+            name: mcp-gateway-config
+        - name: mcp-credentials
+          secret:
+            secretName: mcp-aggregated-credentials
+            defaultMode: 0400
+            optional: true  # broker can still work without credentials
+      containers:
+        - name: mcp-broker-router
+          image: ghcr.io/kagenti/mcp-gateway:v0.1.2
+          imagePullPolicy: Always
+          command:
+            - ./mcp_gateway
+            - --mcp-gateway-config=/config/config.yaml
+            - --mcp-broker-public-address=0.0.0.0:8080
+            - --mcp-router-address=0.0.0.0:50051
+            - --log-level=-4  # info level
+          envFrom:
+            - secretRef:
+                name: mcp-aggregated-credentials
+                optional: true  # broker can still work without credentials
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config
+            - name: mcp-credentials
+              mountPath: /etc/mcp-credentials
+              readOnly: true
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-config
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+  labels:
+    app: mcp-broker-router
+    component: config-api
+spec:
+  selector:
+    app: mcp-broker-router
+    component: broker-router
+  ports:
+    - name: http
+      port: 8181
+      targetPort: 8181
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-controller
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+  labels:
+    app: mcp-controller
+    component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-controller
+      component: controller
+  template:
+    metadata:
+      labels:
+        app: mcp-controller
+        component: controller
+    spec:
+      serviceAccountName: mcp-controller
+      containers:
+        - name: mcp-controller
+          image: ghcr.io/kagenti/mcp-gateway:v0.1.2
+          imagePullPolicy: Always
+          command:
+            - ./mcp_gateway
+            - --controller
+            - --log-level=0  # info level
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 8082
+              protocol: TCP
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+  name: mcp-route
+spec:
+  parentRefs:
+    - name: mcp-gateway
+      namespace: "{{ .Values.mcpGateway.namespaces.gatewaySystem }}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - name: mcp-broker
+          port: 8080
+{{- end }}
