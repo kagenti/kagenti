@@ -1,0 +1,17 @@
+{{- if .Values.components.mcpGateway.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.mcpGateway.namespaces.gatewaySystem }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+{{- end }}  
