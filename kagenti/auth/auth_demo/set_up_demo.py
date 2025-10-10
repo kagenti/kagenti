@@ -1,13 +1,13 @@
 import json
 import os
-import logging
 
-from keycloak import KeycloakAdmin, KeycloakPostError
+from keycloak import KeycloakAdmin
 
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL")
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM")
 KEYCLOAK_ADMIN_USERNAME = os.environ.get("KEYCLOAK_ADMIN_USERNAME")
 KEYCLOAK_ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD")
+NAMESPACE = os.environ.get("NAMESPACE")
 
 if KEYCLOAK_URL is None:
     raise Exception('Expected environment variable "KEYCLOAK_URL"')
@@ -17,6 +17,8 @@ if KEYCLOAK_ADMIN_USERNAME is None:
     raise Exception('Expected environment variable "KEYCLOAK_ADMIN_USERNAME"')
 if KEYCLOAK_ADMIN_PASSWORD is None:
     raise Exception('Expected environment variable "KEYCLOAK_ADMIN_PASSWORD"')
+if NAMESPACE is None:
+    raise Exception('Expected environment variable "NAMESPACE"')
 
 
 def assign_realm_role_to_client_scope(
@@ -36,11 +38,11 @@ slack_partial_access_string = "slack-partial-access"
 slack_full_access_string = "slack-full-access"
 slack_partial_access_user_string = f"{slack_partial_access_string}-user"
 slack_full_access_user_string = f"{slack_full_access_string}-user"
-slack_client_id = "spiffe://localtest.me/sa/slack-tool"
+slack_client_id = f"spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-tool"
 kagenti_client_id = "kagenti"
 
 slack_agent_access_string = "slack-agent-access"
-slack_agent_client_id = "spiffe://localtest.me/sa/slack-researcher"
+slack_agent_client_id = f"spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-researcher"
 
 
 keycloak_admin = KeycloakAdmin(
@@ -84,7 +86,7 @@ try:
             "protocolMapper": "oidc-audience-mapper",
             "consentRequired": False,
             "config": {
-                "included.client.audience": "spiffe://localtest.me/sa/slack-tool",
+                "included.client.audience": slack_client_id,
                 "introspection.token.claim": "true",
                 "userinfo.token.claim": "false",
                 "id.token.claim": "false",
@@ -171,7 +173,7 @@ try:
             "protocolMapper": "oidc-audience-mapper",
             "consentRequired": False,
             "config": {
-                "included.client.audience": "spiffe://localtest.me/sa/slack-researcher",
+                "included.client.audience": slack_agent_client_id,
                 "introspection.token.claim": "true",
                 "userinfo.token.claim": "false",
                 "id.token.claim": "false",
@@ -212,15 +214,17 @@ except Exception as e:
 
 # Add slack-partial-access and slack-full-access client scopes to the agent client
 try:
-    agent_client_id = keycloak_admin.get_client_id(slack_agent_client_id)
+    internal_slack_agent_client_id = keycloak_admin.get_client_id(slack_agent_client_id)
     keycloak_admin.add_client_optional_client_scope(
-        agent_client_id, partial_client_scope_id, {}
+        internal_slack_agent_client_id, partial_client_scope_id, {}
     )
     keycloak_admin.add_client_optional_client_scope(
-        agent_client_id, full_client_scope_id, {}
+        internal_slack_agent_client_id, full_client_scope_id, {}
     )
 except Exception as e:
-    print(f"Could not enable service accounts for client {agent_client_id}: {e}")
+    print(
+        f"Could not enable service accounts for client {internal_slack_agent_client_id}: {e}"
+    )
 
 # Create the partial access user and add the realm roles
 partial_user_id = keycloak_admin.create_user(

@@ -160,6 +160,7 @@ export KEYCLOAK_URL="http://keycloak.localtest.me:8080"
 export KEYCLOAK_REALM=master
 export KEYCLOAK_ADMIN_USERNAME=admin
 export KEYCLOAK_ADMIN_PASSWORD=admin
+export NAMESPACE=<namespace>
 ```
 
 Now run the configuration script:

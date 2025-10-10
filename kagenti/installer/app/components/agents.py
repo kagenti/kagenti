@@ -133,6 +133,17 @@ def install(**kwargs):
             f"Applying environments configmap in '{ns}'",
         )
         run_command(
+            [
+                "kubectl",
+                "apply",
+                "-n",
+                ns,
+                "-f",
+                str(config.RESOURCES_DIR / "spiffe_helper_config.yaml"),
+            ],
+            f"Applying spiffe_helper_config configmap in '{ns}'",
+        )
+        run_command(
             ["kubectl", "label", "ns", ns, "shared-gateway-access=true", "--overwrite"],
             f"Applying shared-gateway-access label to '{ns}'",
         )
