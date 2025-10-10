@@ -14,7 +14,7 @@ dependencies:
   # Kubernetes-specific dependencies (community charts)
   - name: keycloak
     version: "*"
-    repository: oci://registry-1.docker.io/bitnamicharts/keycloak
+    repository: "file://../keycloak"
     condition: components.keycloak.enabled
     tags:
       - kubernetes
