@@ -73,8 +73,8 @@ spec:
               value: "http://keycloak.localtest.me:8080/"
             - name: KC_HEALTH_ENABLED
               value: "true"
-            - name: 'KC_CACHE'
-              value: 'ispn'
+            - name: "KC_CACHE"
+              value: "ispn"
             # Passing the Pod's IP primary address to the JGroups clustering as this is required in IPv6 only setups
             - name: POD_IP
               valueFrom:
@@ -83,18 +83,18 @@ spec:
             # Instruct JGroups which DNS hostname to use to discover other Keycloak nodes
             # Needs to be unique for each Keycloak cluster
             - name: JAVA_OPTS_APPEND
-              value: '-Djgroups.bind.address=$(POD_IP)'
-            - name: 'KC_DB_URL_DATABASE'
-              value: 'keycloak'
-            - name: 'KC_DB_URL_HOST'
-              value: 'postgres'
-            - name: 'KC_DB'
-              value: 'postgres'
+              value: "-Djgroups.bind.address=$(POD_IP)"
+            - name: "KC_DB_URL_DATABASE"
+              value: "keycloak"
+            - name: "KC_DB_URL_HOST"
+              value: "postgres"
+            - name: "KC_DB"
+              value: "postgres"
             # In a production environment, use a secret to store username and password to the database
-            - name: 'KC_DB_PASSWORD'
-              value: 'keycloak'
-            - name: 'KC_DB_USERNAME'
-              value: 'keycloak'
+            - name: "KC_DB_PASSWORD"
+              value: "keycloak"
+            - name: "KC_DB_USERNAME"
+              value: "keycloak"
             - name: KC_DB_URL_PROPERTIES
               value: ?sslmode=disable
             - name: KC_DB_POOL_INITIAL_SIZE
@@ -112,19 +112,19 @@ spec:
               port: 9000
             periodSeconds: 30
             timeoutSeconds: 60
-            failureThreshold: 600              
+            failureThreshold: 600
           readinessProbe:
             httpGet:
               path: /health/ready
               port: 9000
             periodSeconds: 10
-            failureThreshold: 3              
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health/live
               port: 9000
             periodSeconds: 10
-            failureThreshold: 3              
+            failureThreshold: 3
           resources:
             limits:
               cpu: 2000m
@@ -169,7 +169,7 @@ spec:
               cpu: "250m"
             limits:
               memory: "1Gi"
-              cpu: "500m"    
+              cpu: "500m"
           ports:
             - name: postgres
               containerPort: 5432
@@ -177,14 +177,14 @@ spec:
             - name: postgres-data
               mountPath: /var/lib/postgresql
   volumeClaimTemplates:
-  - metadata:
-      name: postgres-data
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 1Gi  
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
 ---
 apiVersion: v1
 kind: Service

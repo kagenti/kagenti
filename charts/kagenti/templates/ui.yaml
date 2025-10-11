@@ -183,5 +183,46 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+{{- end }}    
+
+
+{{- if not .Values.openshift }}
+---
+# Kubernetes Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kagenti-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+  {{- with .Values.ui.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ui.ingress.className }}
+  ingressClassName: {{ .Values.ui.ingress.className }}
+  {{- end }}
+  {{- if .Values.ui.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ include "kagenti.ui.host" . }}
+      {{- if .Values.ui.ingress.tls.secretName }}
+      secretName: {{ .Values.ui.ingress.tls.secretName }}
+      {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ include "kagenti.ui.host" . }}
+      http:
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: kagenti-ui
+              port:
+                number: 8501 
 {{- end }}
 {{- end }}

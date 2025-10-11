@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "kagenti.name" -}}
+{{- define "keycloak.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "kagenti.fullname" -}}
+{{- define "keycloak.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,17 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "kagenti.chart" -}}
+{{- define "keycloak.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "kagenti.labels" -}}
-helm.sh/chart: {{ include "kagenti.chart" . }}
-{{ include "kagenti.selectorLabels" . }}
+{{- define "keycloak.labels" -}}
+helm.sh/chart: {{ include "keycloak.chart" . }}
+{{ include "keycloak.selectorLabels" . }}
+{{ include "keycloak.namespaceLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,41 +46,26 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "kagenti.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "kagenti.name" . }}
+{{- define "keycloak.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "keycloak.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Namespace labels
+*/}}
+{{- define "keycloak.namespaceLabels" -}}
+istio.io/dataplane-mode: "ambient"
+shared-gateway-access: "true"
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "kagenti.serviceAccountName" -}}
+{{- define "keycloak.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "kagenti.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "keycloak.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
-
-{{/*
-Determines if the community Istio charts should be enabled.
-This becomes the single source of truth for the complex logic.
-It will be enabled if:
-  - The main 'istio' component is enabled AND
-  - The 'openshift' flag is NOT true.
-*/}}
-{{- define "kagenti.istio.communityCharts.enabled" -}}
-{{- tpl "{{ and .Values.components.istio.enabled (not .Values.openshift) }}" . | toString -}}
-{{- end -}}
-
-
-{{/*
-Determines if the ingress gateway should be enabled.
-This becomes the single source of truth for the ingress gateway logic.
-It will be enabled if:
-  - We are NOT on OpenShift (uses Gateway API instead of Routes).
-*/}}
-{{- define "kagenti.ingressGateway.enabled" -}}
-{{- and .Values.components.ingressGateway.enabled (not .Values.openshift) | toString -}}
-{{- end -}}
-

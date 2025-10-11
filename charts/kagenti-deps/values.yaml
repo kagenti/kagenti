@@ -1,6 +1,9 @@
 # Global settings
 openshift: true
 
+tags:
+  kubernetes: false
+
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
 # ------------------------------------------------------------------
@@ -28,7 +31,7 @@ components:
   certManager:
     enabled: true  
   gatewayApi:  
-    enabled: false
+    enabled: true
   ingressGateway:
     enabled: false 
 
@@ -50,6 +53,7 @@ keycloak:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
 
+
 # ------------------------------------------------------------------
 #  Istio Configuration
 # ------------------------------------------------------------------
@@ -60,18 +64,32 @@ istio:
   gatewayApiVersion: "v1.1.0"
   cni:
     profile: ambient
-    namespace: istio-cni
+    namespace: istio-system
   ztunnel:
-    namespace: istio-ztunnel  
+    namespace: istio-system  
   base: {}
   istiod: 
     profile: ambient
-    namespace: '{{ .Values.istio.namespace | quote }}'
+    namespace: istio-system 
+  ingressGateway:
+    name: istio-ingressgateway
+    namespace: istio-system
+    selector: ingressgateway
+    
+
+httpGateway:
+  name: 
+  namespace: "kagenti-system"
+  
 
 # ------------------------------------------------------------------
 #  Cert Manager Configuration
 # ------------------------------------------------------------------
 certManager:
+  namespace: cert-manager-operator
+
+cert-manager:
+  installCRDs: true
   namespace: cert-manager-operator
 
 # ------------------------------------------------------------------

@@ -1,0 +1,27 @@
+{{- if and .Values.components.keycloak.enabled (not .Values.openshift) }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app: keycloak
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  parentRefs:
+    - name: http
+      namespace: kagenti-system
+  hostnames:
+    - "keycloak.localtest.me"
+    - "www.keycloak.localtest.me"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: keycloak
+          port: 8080
+{{- end }}
