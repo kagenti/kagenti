@@ -49,10 +49,10 @@ common:
 # ------------------------------------------------------------------
 keycloak:
   namespace: keycloak
-  installCRDs: true
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
+
 
 # ------------------------------------------------------------------
 #  Istio Configuration
@@ -64,20 +64,29 @@ istio:
   gatewayApiVersion: "v1.1.0"
   cni:
     profile: ambient
-    namespace: istio-cni
+    namespace: istio-system
   ztunnel:
-    namespace: istio-ztunnel  
+    namespace: istio-system  
   base: {}
   istiod: 
     profile: ambient
-    namespace: '{{ .Values.istio.namespace | quote }}'
+    namespace: istio-system 
+  ingressGateway:
+    name: istio-ingressgateway
+    namespace: istio-system
+    selector: ingressgateway
+    
+
+httpGateway:
+  name: 
+  namespace: "kagenti-system"
+  
 
 # ------------------------------------------------------------------
 #  Cert Manager Configuration
 # ------------------------------------------------------------------
 certManager:
   namespace: cert-manager-operator
-  installCRDs: true
 
 cert-manager:
   installCRDs: true

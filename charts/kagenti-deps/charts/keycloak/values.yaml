@@ -1,0 +1,93 @@
+replicaCount: 1
+
+# kept separate to not interfere with keys in parent chart
+namespace: keycloak
+
+image:
+  repository: quay.io/keycloak/keycloak
+  tag: "26.3.3"
+  pullPolicy: IfNotPresent
+
+auth:
+  adminUser: keycloakadmin
+  adminPassword: your-secret-password
+
+cache: 
+  type: ispn
+
+proxy: 
+  headers: forwarded
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: http
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 3000Mi
+  requests:
+    cpu: 500m
+    memory: 1700Mi
+
+database:
+  type: postgres
+  host: postgres
+  name: keycloak
+  username: keycloak
+  password: keycloak
+  urlProperties: "?sslmode=disable"
+  pool:
+    initialSize: 5
+    minSize: 5
+    maxSize: 20
+
+
+probes:
+  port: 9000
+  startup:
+    periodSeconds: 30
+    timeoutSeconds: 60
+    failureThreshold: 600
+  readiness:
+    periodSeconds: 10
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+
+health:
+  enabled: false
+
+hostname:
+  url: "http://keycloak.localtest.me:8080/"
+  strict: false
+
+httpRoute:
+  # HTTPRoute enabled.
+  enabled: true
+  # HTTPRoute annotations.
+  annotations: {}
+  # Which Gateways this Route is attached to.
+  parentRefs:
+  - name: http
+    sectionName: http
+    namespace: kagenti-system
+  # Hostnames matching HTTP header.
+  hostnames:
+    - "keycloak.localtest.me"
+    - "www.keycloak.localtest.me"
+  # List of rules and filters applied.
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /headers
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80

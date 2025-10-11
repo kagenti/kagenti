@@ -106,33 +106,32 @@ spec:
 
               echo "Route is ready. Fetching hostnames..."
 
-              # Get hostnames from the route
+               # Get hostnames from the route
               INSPECTOR_HOST=$(kubectl get route mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
               {{- else }}
-              # Function to wait for a specific ingress to have a hostname
-              wait_for_ingress() {
-                INGRESS_NAME=$1
+              # Function to wait for HTTPRoute to be accepted
+              wait_for_httproute() {
+                ROUTE_NAME=$1
                 NAMESPACE=$2
-                echo "Waiting for ingress '$INGRESS_NAME' in namespace '$NAMESPACE' to have a hostname..."
-                until [ -n "$(kubectl get ingress $INGRESS_NAME -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].hostname}{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)" ]; do
-                  echo "Ingress '$INGRESS_NAME' not ready yet. Retrying in 15 seconds..."
+                echo "Waiting for HTTPRoute '$ROUTE_NAME' in namespace '$NAMESPACE' to be accepted..."
+                until [ "$(kubectl get httproute $ROUTE_NAME -n $NAMESPACE -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null)" = "True" ]; do
+                  echo "HTTPRoute '$ROUTE_NAME' not accepted yet. Retrying in 15 seconds..."
                   sleep 15
                 done
-                echo "Ingress '$INGRESS_NAME' is ready."
+                echo "HTTPRoute '$ROUTE_NAME' is accepted."
               }
 
-              # Wait for ingress
-              wait_for_ingress mcp-inspector {{ .Release.Namespace }}
+              # Wait for HTTPRoute
+              wait_for_httproute mcp-inspector {{ .Release.Namespace }}
 
-              echo "Ingress is ready. Fetching hostnames..."
+              echo "HTTPRoute is ready. Fetching hostnames..."
 
-              # Get hostname from the ingress (try hostname first, then IP, then from rules)
-              INSPECTOR_HOST=$(kubectl get ingress mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+              # Get hostname from the HTTPRoute hostnames
+              INSPECTOR_HOST=$(kubectl get httproute mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.hostnames[0]}')
+              
+              # If no hostname in HTTPRoute, construct from domain
               if [ -z "$INSPECTOR_HOST" ]; then
-                INSPECTOR_HOST=$(kubectl get ingress mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-              fi
-              if [ -z "$INSPECTOR_HOST" ]; then
-                INSPECTOR_HOST=$(kubectl get ingress mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.rules[0].host}')
+                INSPECTOR_HOST="mcp-inspector.{{ .Values.domain | default "localhost" }}"
               fi
               {{- end }}
 

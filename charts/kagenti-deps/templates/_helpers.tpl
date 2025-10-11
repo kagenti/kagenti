@@ -71,3 +71,15 @@ It will be enabled if:
 {{- define "kagenti.istio.communityCharts.enabled" -}}
 {{- tpl "{{ and .Values.components.istio.enabled (not .Values.openshift) }}" . | toString -}}
 {{- end -}}
+
+
+{{/*
+Determines if the ingress gateway should be enabled.
+This becomes the single source of truth for the ingress gateway logic.
+It will be enabled if:
+  - We are NOT on OpenShift (uses Gateway API instead of Routes).
+*/}}
+{{- define "kagenti.ingressGateway.enabled" -}}
+{{- and .Values.components.ingressGateway.enabled (not .Values.openshift) | toString -}}
+{{- end -}}
+

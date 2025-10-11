@@ -21,13 +21,13 @@ spec:
           args: ["start"]
           env:
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
-              value: {{ .Values.admin.username | quote }}
+              value: {{ .Values.auth.adminUser | quote }}
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
-              value: {{ .Values.admin.password | quote }}
+              value: {{ .Values.auth.adminPassword | quote }}
             - name: KC_PROXY_HEADERS
-              value: {{ .Values.proxy.headers | quote }}
+              value: {{ .Values.proxyHeaders | quote }}
             - name: KC_HTTP_ENABLED
-              value: {{ .Values.http.enabled | quote }}
+              value: {{ .Values.httpRoute.enabled | quote }}
             - name: KC_HOSTNAME_STRICT
               value: {{ .Values.hostname.strict | quote }}
             - name: KC_HOSTNAME
@@ -62,7 +62,7 @@ spec:
               value: {{ .Values.database.pool.maxSize | quote }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.targetPort }}
+              containerPort: {{ .Values.service.port }}
           startupProbe:
             httpGet:
               path: /health/started

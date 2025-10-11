@@ -36,6 +36,7 @@ Common labels
 {{- define "keycloak.labels" -}}
 helm.sh/chart: {{ include "keycloak.chart" . }}
 {{ include "keycloak.selectorLabels" . }}
+{{ include "keycloak.namespaceLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -48,6 +49,14 @@ Selector labels
 {{- define "keycloak.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "keycloak.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Namespace labels
+*/}}
+{{- define "keycloak.namespaceLabels" -}}
+istio.io/dataplane-mode: "ambient"
+shared-gateway-access: "true"
 {{- end }}
 
 {{/*

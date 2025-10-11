@@ -14,7 +14,7 @@ dependencies:
   # Kubernetes-specific dependencies (community charts)
   - name: keycloak
     version: "*"
-    repository: "file://../keycloak"
+    repository: "file://./charts/keycloak"
     condition: components.keycloak.enabled
     tags:
       - kubernetes
@@ -57,7 +57,7 @@ dependencies:
 
   - name: tekton-pipelines
     version: "~0.1.0"
-    repository: "file://../tekton-pipelines"
+    repository: "file://./charts/tekton-pipelines"
     condition: components.tekton.enabled
     tags:
       - kubernetes
