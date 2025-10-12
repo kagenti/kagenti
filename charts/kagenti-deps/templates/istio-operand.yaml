@@ -1,4 +1,4 @@
-{{- if and .Values.components.istio.enabled .Values.openshift }}
+{{- if and .Values.components.istio.enabled }}
 apiVersion: sailoperator.io/v1
 kind: Istio
 metadata:

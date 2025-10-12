@@ -3,6 +3,7 @@ openshift: true
 
 tags:
   kubernetes: false
+  openshift: true
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -64,18 +65,26 @@ istio:
   gatewayApiVersion: "v1.1.0"
   cni:
     profile: ambient
-    namespace: istio-system
+    namespace: istio-cni
   ztunnel:
-    namespace: istio-system  
+    namespace: istio-ztunnel  
   base: {}
   istiod: 
     profile: ambient
-    namespace: istio-system 
+    namespace: '{{ .Values.istio.namespace | quote }}'
   ingressGateway:
-    name: istio-ingressgateway
+    selector: istio-ingressgateway
     namespace: istio-system
-    selector: ingressgateway
-    
+
+sail-operator:
+  namespace: sail-operator
+# istio-base: {}
+#
+# istio-istiod:
+#   profile: ambient
+#
+# istio-cni:
+#   profile: ambient
 
 httpGateway:
   name: 

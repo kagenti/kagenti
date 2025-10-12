@@ -1,0 +1,23 @@
+apiVersion: v2
+name: istio-ambient
+description: A Helm chart for Istio in ambient mode with gateway
+type: application
+version: 0.1.0
+appVersion: "1.27.1"
+
+dependencies:
+  - name: base
+    repository: https://istio-release.storage.googleapis.com/charts
+    version: ~1.27.1
+  - name: istiod
+    repository: https://istio-release.storage.googleapis.com/charts
+    version: ~1.27.1
+  - name: ztunnel
+    repository: https://istio-release.storage.googleapis.com/charts
+    version: ~1.27.1
+  - name: cni
+    repository: https://istio-release.storage.googleapis.com/charts
+    version: ~1.27.1
+  - name: gateway
+    repository: https://istio-release.storage.googleapis.com/charts
+    version: ~1.27.1

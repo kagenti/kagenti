@@ -8,14 +8,8 @@ dependencies:
 - name: cert-manager
   repository: oci://quay.io/jetstack/charts
   version: 1.19.0
-- name: base
-  repository: https://istio-release.storage.googleapis.com/charts
-  version: 1.27.1
-- name: istiod
-  repository: https://istio-release.storage.googleapis.com/charts
-  version: 1.27.1
-- name: cni
-  repository: https://istio-release.storage.googleapis.com/charts
+- name: sail-operator
+  repository: https://istio-ecosystem.github.io/sail-operator
   version: 1.27.1
 - name: kiali-server
   repository: https://kiali.org/helm-charts
@@ -29,5 +23,5 @@ dependencies:
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.13.3
-digest: sha256:b957f91952386a426bc4cb3eff904ea672c77cd61db241e640b344a866245204
-generated: "2025-10-10T15:17:00.419149714-04:00"
+digest: sha256:7d622f24cae6d789c168eb29c102497dd6b80e1d5bd427437ffa6a04a4406849
+generated: "2025-10-11T00:34:56.591515-04:00"

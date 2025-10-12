@@ -1,4 +1,4 @@
-{{- if and "kagenti.ingressGateway.enabled" (not .Values.openshift) }}
+{{- if and .Values.components.ingressGateway.enabled (not .Values.openshift) }}
 apiVersion: v1
 kind: Service
 metadata:
