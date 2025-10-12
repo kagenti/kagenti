@@ -27,13 +27,13 @@ dependencies:
     tags:
       - kubernetes
 
-  - name: sail-operator
-    version: "*"
-    repository: "https://istio-ecosystem.github.io/sail-operator"
-    condition: components.istio.enabled
-    tags:
-      - kubernetes
-      - openshift
+  # - name: sail-operator
+  #   version: "*"
+  #   repository: "https://istio-ecosystem.github.io/sail-operator"
+  #   condition: components.istio.enabled
+  #   tags:
+  #     - kubernetes
+  #     - openshift
 
   # - name: base # istio-base
   #   alias: istio-base
@@ -77,11 +77,5 @@ dependencies:
     version: "~0.24.0"
     repository: "https://spiffe.github.io/helm-charts-hardened"
     condition: components.spire.enabled
-    tags:
-      - kubernetes
-
-  - name: ingress-nginx
-    version: "*"
-    repository: https://kubernetes.github.io/ingress-nginx
     tags:
       - kubernetes

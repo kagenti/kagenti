@@ -12,11 +12,14 @@ spec:
     port: 80
     protocol: HTTP
     allowedRoutes:
-      namespaces:
-        from: Selector
-        selector:
-          matchLabels:
-            shared-gateway-access: "true"
+      namespaces: 
+        from: All
+    # allowedRoutes:
+    #   namespaces:
+    #     from: Selector
+    #     selector:
+    #       matchLabels:
+    #         shared-gateway-access: "true"
   - name: https
     hostname: "*.localtest.me"
     port: 443

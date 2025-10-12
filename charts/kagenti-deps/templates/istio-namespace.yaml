@@ -13,6 +13,7 @@ metadata:
     istio-discovery: enabled
 
 ---
+{{ if .Values.openshift }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -20,5 +21,6 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     istio-discovery: enabled
+{{- end }}
 {{- end }}
 

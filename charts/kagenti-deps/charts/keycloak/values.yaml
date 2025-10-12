@@ -34,9 +34,9 @@ resources:
 database:
   type: postgres
   host: postgres
-  name: keycloak
-  username: keycloak
-  password: keycloak
+  name: postgres
+  username: testuser
+  password: thisisonly4testingNOT4prod
   urlProperties: "?sslmode=disable"
   pool:
     initialSize: 5
@@ -65,20 +65,15 @@ hostname:
   strict: false
 
 httpRoute:
-  # HTTPRoute enabled.
   enabled: true
-  # HTTPRoute annotations.
   annotations: {}
-  # Which Gateways this Route is attached to.
   parentRefs:
   - name: http
     sectionName: http
     namespace: kagenti-system
-  # Hostnames matching HTTP header.
   hostnames:
     - "keycloak.localtest.me"
     - "www.keycloak.localtest.me"
-  # List of rules and filters applied.
   rules:
   - matches:
     - path:

@@ -8,9 +8,6 @@ dependencies:
 - name: cert-manager
   repository: oci://quay.io/jetstack/charts
   version: 1.19.0
-- name: sail-operator
-  repository: https://istio-ecosystem.github.io/sail-operator
-  version: 1.27.1
 - name: kiali-server
   repository: https://kiali.org/helm-charts
   version: 2.15.0
@@ -20,8 +17,5 @@ dependencies:
 - name: spire
   repository: https://spiffe.github.io/helm-charts-hardened
   version: 0.24.5
-- name: ingress-nginx
-  repository: https://kubernetes.github.io/ingress-nginx
-  version: 4.13.3
-digest: sha256:7d622f24cae6d789c168eb29c102497dd6b80e1d5bd427437ffa6a04a4406849
-generated: "2025-10-11T00:34:56.591515-04:00"
+digest: sha256:f39d3c84e63e1d56a909b861fd25db2e75f491a9d806fe0320e1d760bf0f7ce6
+generated: "2025-10-12T16:31:44.931515118-04:00"

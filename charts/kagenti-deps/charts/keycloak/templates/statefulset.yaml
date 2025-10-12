@@ -3,17 +3,17 @@ kind: StatefulSet
 metadata:
   name: {{ include "keycloak.fullname" . }}
   labels:
-    {{- include "keycloak.labels" . | nindent 4 }}
+    {{ include "keycloak.labels" . | nindent 4 }}
 spec:
   serviceName: {{ include "keycloak.fullname" . }}-discovery
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "keycloak.selectorLabels" . | nindent 6 }}
+      {{ include "keycloak.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "keycloak.selectorLabels" . | nindent 8 }}
+        {{ include "keycloak.selectorLabels" . | nindent 8 }}
     spec:
       containers:
         - name: keycloak
@@ -25,7 +25,7 @@ spec:
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
               value: {{ .Values.auth.adminPassword | quote }}
             - name: KC_PROXY_HEADERS
-              value: {{ .Values.proxyHeaders | quote }}
+              value: {{ .Values.proxy.headers | quote }}
             - name: KC_HTTP_ENABLED
               value: {{ .Values.httpRoute.enabled | quote }}
             - name: KC_HOSTNAME_STRICT

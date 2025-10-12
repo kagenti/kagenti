@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: {{ include "keycloak.fullname" . }}
   labels:
-    {{- include "keycloak.labels" . | nindent 4 }}
+    {{ include "keycloak.labels" . | nindent 4 }}
 spec:
   ports:
     - protocol: TCP
@@ -11,7 +11,7 @@ spec:
       targetPort: {{ .Values.service.targetPort }}
       name: http
   selector:
-    {{- include "keycloak.selectorLabels" . | nindent 4 }}
+    {{ include "keycloak.selectorLabels" . | nindent 4 }}
   type: {{ .Values.service.type }}
 ---
 apiVersion: v1
@@ -19,9 +19,9 @@ kind: Service
 metadata:
   name: {{ include "keycloak.fullname" . }}-discovery
   labels:
-    {{- include "keycloak.labels" . | nindent 4 }}
+    {{ include "keycloak.labels" . | nindent 4 }}
 spec:
   selector:
-    {{- include "keycloak.selectorLabels" . | nindent 4 }}
+    {{ include "keycloak.selectorLabels" . | nindent 4 }}
   clusterIP: None
   type: ClusterIP

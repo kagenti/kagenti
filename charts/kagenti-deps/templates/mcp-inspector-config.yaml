@@ -35,6 +35,9 @@ rules:
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["httproutes"]
+  verbs: ["get", "list", "watch"]
 {{- end }}
 - apiGroups: [""]
   resources: ["configmaps"]
@@ -110,25 +113,24 @@ spec:
               INSPECTOR_HOST=$(kubectl get route mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
               {{- else }}
               # Function to wait for HTTPRoute to be accepted
-              wait_for_httproute() {
-                ROUTE_NAME=$1
-                NAMESPACE=$2
-                echo "Waiting for HTTPRoute '$ROUTE_NAME' in namespace '$NAMESPACE' to be accepted..."
-                until [ "$(kubectl get httproute $ROUTE_NAME -n $NAMESPACE -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null)" = "True" ]; do
-                  echo "HTTPRoute '$ROUTE_NAME' not accepted yet. Retrying in 15 seconds..."
-                  sleep 15
-                done
-                echo "HTTPRoute '$ROUTE_NAME' is accepted."
-              }
-
-              # Wait for HTTPRoute
-              wait_for_httproute mcp-inspector {{ .Release.Namespace }}
-
+              # wait_for_httproute() {
+              #   ROUTE_NAME=$1
+              #   NAMESPACE=$2
+              #   echo "Waiting for HTTPRoute '$ROUTE_NAME' in namespace '$NAMESPACE' to be accepted..."
+              #   until [ "$(kubectl get httproute $ROUTE_NAME -n $NAMESPACE -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null)" = "True" ]; do
+              #     echo "HTTPRoute '$ROUTE_NAME' not accepted yet. Retrying in 15 seconds..."
+              #     sleep 15
+              #   done
+              #   echo "HTTPRoute '$ROUTE_NAME' is accepted."
+              # }
+              #
+              # # Wait for HTTPRoute
+              # wait_for_httproute mcp-inspector {{ .Release.Namespace }}
               echo "HTTPRoute is ready. Fetching hostnames..."
 
               # Get hostname from the HTTPRoute hostnames
               INSPECTOR_HOST=$(kubectl get httproute mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.hostnames[0]}')
-              
+
               # If no hostname in HTTPRoute, construct from domain
               if [ -z "$INSPECTOR_HOST" ]; then
                 INSPECTOR_HOST="mcp-inspector.{{ .Values.domain | default "localhost" }}"
