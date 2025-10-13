@@ -32,9 +32,9 @@ components:
   certManager:
     enabled: true  
   gatewayApi:  
-    enabled: true
+    enabled: false
   ingressGateway:
-    enabled: true 
+    enabled: false
 
 
 common:
@@ -72,9 +72,6 @@ istio:
   istiod: 
     profile: ambient
     namespace: '{{ .Values.istio.namespace | quote }}'
-  ingressGateway:
-    selector: istio-ingressgateway
-    namespace: istio-system
 
 sail-operator: {}
 # istio-base: {}
@@ -96,6 +93,7 @@ httpGateway:
 certManager:
   namespace: cert-manager-operator
 
+# added since subchart uses alias for routes which cannot have camel-case
 cert-manager:
   installCRDs: true
   namespace: cert-manager-operator

@@ -63,23 +63,29 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
+            - name: startup
+              containerPort: {{ default 9000 .Values.probes.startup.port }}
+            - name: readiness
+              containerPort: {{ default 9000 .Values.probes.readiness.port }}
+            - name: liveness
+              containerPort: {{ default 9000 .Values.probes.liveness.port }}
           startupProbe:
             httpGet:
               path: /health/started
-              port: {{ .Values.probes.port }}
+              port: startup 
             periodSeconds: {{ .Values.probes.startup.periodSeconds }}
             timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
             failureThreshold: {{ .Values.probes.startup.failureThreshold }}
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: {{ .Values.probes.port }}
+              port: readiness
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
             failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
           livenessProbe:
             httpGet:
               path: /health/live
-              port: {{ .Values.probes.port }}
+              port: liveness
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           resources:
