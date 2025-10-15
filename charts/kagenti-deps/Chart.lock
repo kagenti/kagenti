@@ -4,9 +4,6 @@ dependencies:
   version: 1.3.0
 - name: cert-manager
   repository: oci://quay.io/jetstack/charts
-  version: 1.19.0
-- name: spire
-  repository: https://spiffe.github.io/helm-charts-hardened
-  version: 0.24.5
-digest: sha256:f8643693f4a89d6cd5a41568d8df177a08822f931a07caf560f3384bb2810e97
-generated: "2025-10-14T17:00:46.914138-04:00"
+  version: 1.19.1
+digest: sha256:96490b3f960b16e12b89e0b7a423cefb581bec700b626af21c4f6b69381972ad
+generated: "2025-10-15T19:21:58.609069-04:00"

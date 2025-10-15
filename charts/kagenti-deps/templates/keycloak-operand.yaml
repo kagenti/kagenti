@@ -74,7 +74,7 @@ kind: HTTPRoute
 metadata:
   name: keycloak 
   labels:
-    {{- include "keycloak.labels" . | nindent 4 }}
+    {{- include "kagenti.labels" . | nindent 4 }}
   {{- with .Values.keycloak.httpRoute.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

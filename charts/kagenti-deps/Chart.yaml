@@ -17,24 +17,3 @@ dependencies:
     condition: components.certManager.enabled
     tags:
       - kubernetes
-
-  # - name: kiali-server
-  #   version: "~2.15.0"
-  #   repository: "https://kiali.org/helm-charts"
-  #   condition: components.kiali.enabled
-  #   tags:
-  #     - kubernetes
-  #
-  # - name: tekton-pipelines
-  #   version: "~0.1.0"
-  #   repository: "file://./charts/tekton-pipelines"
-  #   condition: components.tekton.enabled
-  #   tags:
-  #     - kubernetes
-
-  - name: spire
-    version: "~0.24.0"
-    repository: "https://spiffe.github.io/helm-charts-hardened"
-    condition: components.spire.enabled
-    tags:
-      - kubernetes
