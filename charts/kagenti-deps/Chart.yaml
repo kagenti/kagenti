@@ -11,35 +11,26 @@ dependencies:
     repository: "file://../gateway-api"
     condition: components.gatewayApi.enabled
 
-  # Kubernetes-specific dependencies (community charts)
-  - name: keycloak
-    version: "*"
-    repository: "file://./charts/keycloak"
-    condition: components.keycloak.enabled
-    tags:
-      - kubernetes
-
   - name: cert-manager
     version: "~1.19.0"
-    # repository: "https://charts.jetstack.io"
     repository: oci://quay.io/jetstack/charts
     condition: components.certManager.enabled
     tags:
       - kubernetes
 
-  - name: kiali-server
-    version: "~2.15.0"
-    repository: "https://kiali.org/helm-charts"
-    condition: components.kiali.enabled
-    tags:
-      - kubernetes
-
-  - name: tekton-pipelines
-    version: "~0.1.0"
-    repository: "file://./charts/tekton-pipelines"
-    condition: components.tekton.enabled
-    tags:
-      - kubernetes
+  # - name: kiali-server
+  #   version: "~2.15.0"
+  #   repository: "https://kiali.org/helm-charts"
+  #   condition: components.kiali.enabled
+  #   tags:
+  #     - kubernetes
+  #
+  # - name: tekton-pipelines
+  #   version: "~0.1.0"
+  #   repository: "file://./charts/tekton-pipelines"
+  #   condition: components.tekton.enabled
+  #   tags:
+  #     - kubernetes
 
   - name: spire
     version: "~0.24.0"

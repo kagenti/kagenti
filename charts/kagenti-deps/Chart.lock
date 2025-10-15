@@ -2,20 +2,11 @@ dependencies:
 - name: gateway-api
   repository: file://../gateway-api
   version: 1.3.0
-- name: keycloak
-  repository: file://./charts/keycloak
-  version: 0.1.0
 - name: cert-manager
   repository: oci://quay.io/jetstack/charts
   version: 1.19.0
-- name: kiali-server
-  repository: https://kiali.org/helm-charts
-  version: 2.15.0
-- name: tekton-pipelines
-  repository: file://./charts/tekton-pipelines
-  version: 0.1.0
 - name: spire
   repository: https://spiffe.github.io/helm-charts-hardened
   version: 0.24.5
-digest: sha256:f39d3c84e63e1d56a909b861fd25db2e75f491a9d806fe0320e1d760bf0f7ce6
-generated: "2025-10-12T16:31:44.931515118-04:00"
+digest: sha256:f8643693f4a89d6cd5a41568d8df177a08822f931a07caf560f3384bb2810e97
+generated: "2025-10-14T17:00:46.914138-04:00"

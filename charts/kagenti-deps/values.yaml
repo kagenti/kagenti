@@ -53,6 +53,20 @@ keycloak:
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
+  httpRoute:
+    annotations: {}
+    parentRefs:
+    - name: http
+      sectionName: http
+      namespace: kagenti-system
+    hostnames:
+      - "keycloak.localtest.me"
+      - "www.keycloak.localtest.me"
+    rules:
+    - matches:
+      - path:
+          type: PathPrefix
+          value: /headers
 
 
 # ------------------------------------------------------------------
