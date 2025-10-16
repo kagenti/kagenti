@@ -27,6 +27,7 @@ CLUSTER_NAME = "agent-platform"
 OPERATOR_NAMESPACE = "kagenti-system"
 TEKTON_VERSION = "v0.66.0"
 KEYCLOAK_URL = "http://keycloak.localtest.me:8080/realms/master"
+DEFAULT_SECRET_FILE_PATH = "/shared/secret.txt"
 
 
 # --- Container Engine Options ---

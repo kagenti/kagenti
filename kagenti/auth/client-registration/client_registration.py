@@ -132,7 +132,7 @@ write_client_secret(
     keycloak_admin,
     internal_client_id,
     client_name,
-    secret_file_path="/shared/secret.txt",
+    secret_file_path=os.environ.get("SECRET_FILE_PATH", "/shared/secret.txt"),
 )
 
 print("Client registration complete.")
