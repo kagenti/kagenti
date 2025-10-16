@@ -150,15 +150,9 @@ def _construct_tool_resource_body(
     resource_name: str,
     resource_type: str,
     repo_url: str,
-    repo_branch: str,
-    source_subfolder: str,
     protocol: str,
     framework: str,
-    description: str,
-    build_from_source: bool,
-    registry_config: Optional[dict] = None,
     additional_env_vars: Optional[list] = None,
-    image_tag: str = constants.DEFAULT_IMAGE_TAG,
     pod_config: Optional[dict] = None,
 ) -> Optional[dict]:
     """
@@ -198,25 +192,13 @@ def _construct_tool_resource_body(
         )
         return None
     st_object.info(f"Using GitHub username '{repo_user}' from secret for build.")
-    # image_registry_prefix = f"ghcr.io/{repo_user}"
-    image_name = k8s_resource_name
-    if build_from_source:
-        # Use configured registry or fall back to local
-        if registry_config and registry_config.get("registry_url"):
-            image_registry_prefix = registry_config["registry_url"]
-        else:
-            image_registry_prefix = "registry.cr-system.svc.cluster.local:5000"
-    else:
-        image_registry_prefix, image_name, _tag = parse_image_url(repo_url)
-        if _tag:
-            image_tag = _tag
 
     client_secret_for_env = _get_keycloak_client_secret(
         st_object, f"{k8s_resource_name}-client"
     )
-    #final_env_vars = list(constants.DEFAULT_ENV_VARS)
-    client_id = "example-client-id"  # Replace with actual value
-    clientId = build_namespace + "/" + k8s_resource_name
+    final_env_vars = list(constants.DEFAULT_ENV_VARS)
+
+    client_id = build_namespace + "/" + k8s_resource_name
 
     env_dict = {}
 
@@ -225,17 +207,21 @@ def _construct_tool_resource_body(
         if isinstance(var, dict) and "name" in var:
             env_dict[var["name"]] = var
 
-    # Add/override with additional vars from UI    
+    # Add/override with additional vars from UI
     if client_secret_for_env:
         final_env_vars.append({"name": "CLIENT_SECRET", "value": client_secret_for_env})
 
     env_dict["CLIENT_NAME"] = {"name": "CLIENT_NAME", "value": client_id}
-    env_dict["CLIENT_ID"] = {"name": "CLIENT_ID", "value": f"spiffe://localtest.me/sa/{k8s_resource_name}"}
+    env_dict["CLIENT_ID"] = {
+        "name": "CLIENT_ID",
+        "value": f"spiffe://localtest.me/sa/{k8s_resource_name}",
+    }
     env_dict["NAMESPACE"] = {"name": "NAMESPACE", "value": build_namespace}
 
     # Convert back to list
     final_env_vars = list(env_dict.values())
-
+    if additional_env_vars:
+        final_env_vars.extend(additional_env_vars)
 
     # Extract service ports from pod_config or use defaults
     if pod_config and pod_config.get("service_ports"):
@@ -250,7 +236,7 @@ def _construct_tool_resource_body(
                 "protocol": "TCP",
             }
         ]
-    full_image_url = f"{image_registry_prefix}/{image_name}:{image_tag}"
+
     body = {
         "apiVersion": f"{constants.TOOLHIVE_CRD_GROUP}/{constants.TOOLHIVE_CRD_VERSION}",
         "kind": "MCPServer",
@@ -259,21 +245,21 @@ def _construct_tool_resource_body(
             "namespace": build_namespace,
             "labels": {
                 constants.APP_KUBERNETES_IO_CREATED_BY: constants.STREAMLIT_UI_CREATOR_LABEL,
-               constants.APP_KUBERNETES_IO_NAME: constants.TOOLHIVE_OPERATOR_LABEL_NAME,
+                constants.APP_KUBERNETES_IO_NAME: constants.TOOLHIVE_OPERATOR_LABEL_NAME,
                 constants.KAGENTI_TYPE_LABEL: resource_type,
                 constants.KAGENTI_PROTOCOL_LABEL: protocol,
                 constants.KAGENTI_FRAMEWORK_LABEL: framework,
             },
         },
         "spec": {
-           "image": repo_url,
-           "transport": "streamable-http",
-           "port": constants.DEFAULT_IN_CLUSTER_PORT,
-           "targetPort": constants.DEFAULT_IN_CLUSTER_PORT,
-           "podTemplateSpec": {
-               "spec": {
-                   "serviceAccountName": k8s_resource_name,
-                   "securityContext": {
+            "image": repo_url,
+            "transport": "streamable-http",
+            "port": service_ports[0]["port"],
+            "targetPort": service_ports[0]["targetPort"],
+            "podTemplateSpec": {
+                "spec": {
+                    "serviceAccountName": k8s_resource_name,
+                    "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},
                     },
@@ -306,10 +292,9 @@ def _construct_tool_resource_body(
                         }
                     ],
                 },
-           },    
-        },   
+            },
+        },
     }
-
 
     st_object.subheader(f"DEBUG: MCPServer Resource Body for {resource_type} Build")
     st_object.write("MCPServer def:", body)
@@ -635,13 +620,8 @@ def trigger_and_monitor_build(
             resource_name=k8s_resource_name,
             resource_type=resource_type,
             repo_url=repo_url,
-            repo_branch=repo_branch,
-            source_subfolder=source_subfolder,
             protocol=protocol,
             framework=framework,
-            description=description,
-            build_from_source=True,
-            registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
@@ -897,12 +877,8 @@ def trigger_and_monitor_deployment_from_image(
             resource_name=k8s_resource_name,
             resource_type=resource_type,
             repo_url=repo_url,
-            repo_branch="",
-            source_subfolder="",
             protocol=protocol,
             framework=framework,
-            description=description,
-            build_from_source=False,
             pod_config=pod_config,
             additional_env_vars=additional_env_vars,
         )
@@ -934,7 +910,7 @@ def trigger_and_monitor_deployment_from_image(
                     namespace=deployment_namespace,
                     plural=constants.TOOLHIVE_MCP_PLURAL,
                     body=cr_body,
-                )                
+                )
 
             st_object.success(
                 f"{resource_type.capitalize()} '{k8s_resource_name}' creation request sent to namespace '{deployment_namespace}'."
@@ -1198,7 +1174,7 @@ def render_import_form(
             if config_map_data:
                 # Parse configmap data into env vars
                 all_configmap_vars = parse_configmap_data_to_env_vars(config_map_data)
-                configmap_names = set()  # Track names we've seen                
+                configmap_names = set()  # Track names we've seen
                 configmap = []
                 for var in all_configmap_vars:
                     var_name = var["name"].strip()
@@ -1212,7 +1188,7 @@ def render_import_form(
                                 "configmap_section": var.get("section", ""),
                                 "configmap_type": var.get("type", "configmap"),
                             }
-                        )                    
+                        )
                 st.session_state[custom_env_key] = configmap + user_custom_vars
                 st.session_state[configmap_loaded_key] = True
                 return
@@ -1498,14 +1474,22 @@ def render_import_form(
     final_additional_envs = []
     if selected_env_sets and env_options:
         for key in selected_env_sets:
-            if key in env_options and isinstance(env_options[key], list):
-                for env_var in env_options[key]:
-                    if isinstance(env_var, dict):
-                        name = env_var.get("name", "").strip()
-                        if name and name not in seen_env_names:
-                           seen_env_names.add(name)
-                           final_additional_envs.append(env_var)
+            # Skip if key not found or not a list
+            if key not in env_options or not isinstance(env_options[key], list):
+                continue
 
+            for env_var in env_options[key]:
+                # Skip if not a dict
+                if not isinstance(env_var, dict):
+                    continue
+
+                name = env_var.get("name", "").strip()
+                # Skip if no name or already seen
+                if not name or name in seen_env_names:
+                    continue
+
+                seen_env_names.add(name)
+                final_additional_envs.append(env_var)
 
     if custom_env_vars:
         for env_var in custom_env_vars:
@@ -1526,11 +1510,15 @@ def render_import_form(
 
     pod_config = render_k8s_pod_configuration(st_object, resource_type)
 
-    deployment_method = st_object.radio(
-        "Deployment Method",
-        ("Build from Source", "Deploy from Existing Image"),
-        key=f"{resource_type.lower()}_deployment_method",
-    )
+    # Tools can only be deployed from existing images, Agents can be built from source
+    if resource_type.lower() == "tool":
+        deployment_method = "Deploy from Existing Image"
+    else:
+        deployment_method = st_object.radio(
+            "Deployment Method",
+            ("Build from Source", "Deploy from Existing Image"),
+            key=f"{resource_type.lower()}_deployment_method",
+        )
 
     if example_subfolders is None:
         example_subfolders = []
@@ -1741,6 +1729,7 @@ def render_import_form(
 
     st_object.markdown("---")
 
+
 def merge_env_variables(global_envs, custom_envs):
     """Merge global env vars from configmap with custom env vars, giving precedence to custom vars."""
     final_envs = {}
@@ -1769,6 +1758,7 @@ def merge_env_variables(global_envs, custom_envs):
     ]
     return merged_env_list
 
+
 def convert_secret_string_to_k8s_format(env_var_dict):
     """
     Convert secret reference strings like '<slack-secret:bot-token>'
@@ -1780,7 +1770,6 @@ def convert_secret_string_to_k8s_format(env_var_dict):
     Returns:
         Dictionary with proper Kubernetes format
     """
-    import re
 
     name = env_var_dict.get("name", "")
     value = env_var_dict.get("value", "")
@@ -1789,29 +1778,18 @@ def convert_secret_string_to_k8s_format(env_var_dict):
         return env_var_dict
 
     # Check if value is a secret reference in format <secret-name:key>
-    secret_pattern = r'^<([^:]+):([^>]+)>$'
+    secret_pattern = r"^<([^:]+):([^>]+)>$"
     match = re.match(secret_pattern, str(value))
     if match:
         secret_name = match.group(1)
         secret_key = match.group(2)
         return {
             "name": name,
-            "valueFrom": {
-                "secretKeyRef": {
-                    "name": secret_name,
-                    "key": secret_key
-                }
-            }
+            "valueFrom": {"secretKeyRef": {"name": secret_name, "key": secret_key}},
         }
 
     # Regular value
-    return {
-        "name": name,
-        "value": value
-    }
-
-
-
+    return {"name": name, "value": value}
 
 
 def render_k8s_pod_configuration(st_object, resource_type: str) -> Optional[dict]:
