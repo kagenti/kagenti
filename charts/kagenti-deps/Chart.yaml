@@ -6,7 +6,14 @@ version: 0.1.0
 appVersion: "1.0"
 
 dependencies:
-- name: gateway-api
-  version: "1.3.0"
-  repository: "file://../gateway-api"
-  condition: components.gatewayApi.enabled
+  - name: gateway-api
+    version: "~1.3.0"
+    repository: "file://../gateway-api"
+    condition: components.gatewayApi.enabled
+
+  - name: cert-manager
+    version: "~1.19.0"
+    repository: oci://quay.io/jetstack/charts
+    condition: components.certManager.enabled
+    tags:
+      - kubernetes

@@ -1,0 +1,74 @@
+{{- if and .Values.components.spire.enabled (not .Values.openshift) }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: spire-oidc
+  namespace: {{ .Values.spire.namespace }}
+
+  labels:
+    app: spire-oidc
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/component: spire-oidc
+spec:
+  parentRefs:
+    - name: http
+      namespace: kagenti-system
+  hostnames:
+    - "spire-oidc.localtest.me"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: spire-spiffe-oidc-discovery-provider
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: spire-tornjak-api
+  namespace: {{ .Values.spire.namespace }}
+  labels:
+    app: spire-tornjak-api
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/component: spire-tornjak-api
+spec:
+  parentRefs:
+    - name: http
+      namespace: kagenti-system
+  hostnames:
+    - "spire-tornjak-api.localtest.me"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: spire-tornjak-backend
+          port: 10000
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: spire-tornjak-ui
+  namespace: {{ .Values.spire.namespace }}
+  labels:
+    app: spire-tornjak-ui
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app.kubernetes.io/component: spire-tornjak-ui
+spec:
+  parentRefs:
+    - name: http
+      namespace: kagenti-system
+  hostnames:
+    - "spire-tornjak-ui.localtest.me"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: spire-tornjak-frontend
+          port: 3000
+{{- end }}

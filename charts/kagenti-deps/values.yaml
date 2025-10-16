@@ -1,6 +1,10 @@
 # Global settings
 openshift: true
 
+tags:
+  kubernetes: false
+  openshift: true
+
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
 # ------------------------------------------------------------------
@@ -30,7 +34,7 @@ components:
   gatewayApi:  
     enabled: false
   ingressGateway:
-    enabled: false 
+    enabled: false
 
 
 common:
@@ -49,6 +53,21 @@ keycloak:
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
+  httpRoute:
+    annotations: {}
+    parentRefs:
+    - name: http
+      sectionName: http
+      namespace: kagenti-system
+    hostnames:
+      - "keycloak.localtest.me"
+      - "www.keycloak.localtest.me"
+    rules:
+    - matches:
+      - path:
+          type: PathPrefix
+          value: /headers
+
 
 # ------------------------------------------------------------------
 #  Istio Configuration
@@ -68,10 +87,29 @@ istio:
     profile: ambient
     namespace: '{{ .Values.istio.namespace | quote }}'
 
+sail-operator: {}
+# istio-base: {}
+#
+# istio-istiod:
+#   profile: ambient
+#
+# istio-cni:
+#   profile: ambient
+
+httpGateway:
+  name: http
+  namespace: "kagenti-system"
+  
+
 # ------------------------------------------------------------------
 #  Cert Manager Configuration
 # ------------------------------------------------------------------
 certManager:
+  namespace: cert-manager-operator
+
+# added since subchart uses alias for routes which cannot have camel-case
+cert-manager:
+  installCRDs: true
   namespace: cert-manager-operator
 
 # ------------------------------------------------------------------

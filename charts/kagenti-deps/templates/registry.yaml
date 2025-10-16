@@ -1,8 +1,52 @@
 {{- if and .Values.components.registry.enabled (not .Values.openshift) }}
-# ------------------------------------------------------------------
-#  OpenShift has built-in container image registry 
-#  so no need for a separate registry component
-#  This is only needed for non-OpenShift clusters 
-# ------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.components.registry.namespace | default "cr-system" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.components.registry.name | default "registry" }}
+  namespace: {{ .Values.components.registry.namespace | default "cr-system" }}
+spec:
+  replicas: {{ .Values.components.registry.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.components.registry.name | default "registry" }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.components.registry.name | default "registry" }}
+    spec:
+      containers:
+      - name: registry
+        image: {{ .Values.components.registry.image.repository }}:{{ .Values.components.registry.image.tag }}
+        ports:
+        - containerPort: {{ .Values.components.registry.service.port | default 5000 }}
+          name: registry
+        env:
+        - name: OTEL_TRACES_EXPORTER
+          value: {{ .Values.components.registry.env.otelTracesExporter | default "none" | quote }}
+        - name: REGISTRY_LOG_LEVEL
+          value: {{ .Values.components.registry.env.registryLogLevel | default "info" | quote }}
+        {{- if .Values.components.registry.resources }}
+        resources:
+          {{- toYaml .Values.components.registry.resources | nindent 10 }}
+        {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.components.registry.name | default "registry" }}
+  namespace: {{ .Values.components.registry.namespace | default "cr-system" }}
+spec:
+  ports:
+  - port: {{ .Values.components.registry.service.port | default 5000 }}
+    targetPort: {{ .Values.components.registry.service.port | default 5000 }}
+  selector:
+    app: {{ .Values.components.registry.name | default "registry" }}
 
 {{- end }}
+

@@ -1,7 +1,7 @@
-# This template creates a post-install job that waits for OpenShift routes to be
-# admitted and then creates a ConfigMap with their hostnames.
+# This template creates a post-install job that waits for OpenShift routes or Kubernetes ingresses to be
+# ready and then creates a ConfigMap with their hostnames.
 # To enable it, set 'mcpConfigJob.enabled: true' in your values.yaml
-{{- if and .Values.components.mcpInspector.enabled .Values.openshift }}
+{{- if .Values.components.mcpInspector.enabled }}
 # ——————————————————————————————————————————————————————————————————————————————
 #  RBAC for the MCP Config Job
 #  These resources are also created as hooks to ensure they exist before the
@@ -27,9 +27,18 @@ metadata:
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
+{{- if .Values.openshift }}
 - apiGroups: ["route.openshift.io"]
   resources: ["routes"]
   verbs: ["get", "list", "watch"]
+{{- else }}
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["httproutes"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
 - apiGroups: [""]
   resources: ["configmaps"]
   verbs: ["get", "create", "update", "patch"]
@@ -53,7 +62,7 @@ subjects:
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  Configuration Job (Post-Install Hook)
-#  This job waits for routes and creates the mcp-inspector-config ConfigMap.
+#  This job waits for routes/ingresses and creates the mcp-inspector-config ConfigMap.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: batch/v1
 kind: Job
@@ -82,6 +91,7 @@ spec:
               set -e
               echo "Starting MCP config job..."
 
+              {{- if .Values.openshift }}
               # Function to wait for a specific route to be admitted
               wait_for_route() {
                 ROUTE_NAME=$1
@@ -99,8 +109,17 @@ spec:
 
               echo "Route is ready. Fetching hostnames..."
 
-              # Get hostnames from the route
+               # Get hostnames from the route
               INSPECTOR_HOST=$(kubectl get route mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
+              {{- else }}
+              # Get hostname from the HTTPRoute hostnames
+              INSPECTOR_HOST=$(kubectl get httproute mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.hostnames[0]}')
+
+              # If no hostname in HTTPRoute, construct from domain
+              if [ -z "$INSPECTOR_HOST" ]; then
+                INSPECTOR_HOST="mcp-inspector.{{ .Values.domain | default "localhost" }}"
+              fi
+              {{- end }}
 
               if [ -z "$INSPECTOR_HOST" ]; then
                 echo "Error: Could not retrieve hostname."
