@@ -19,7 +19,10 @@ Useful constants.
 # --- Kubernetes CRD Definitions ---
 CRD_GROUP = "kagenti.operator.dev"
 CRD_VERSION = "v1alpha1"
+TOOLHIVE_CRD_GROUP = "toolhive.stacklok.dev"
+TOOLHIVE_CRD_VERSION = "v1alpha1"
 AGENTS_PLURAL = "agents"
+TOOLHIVE_MCP_PLURAL = "mcpservers"
 COMPONENTS_PLURAL = "components"
 OPERATOR_NS = "kagenti-system"
 
@@ -89,6 +92,7 @@ A2A_DUMMY_AUTH_TOKEN = "Bearer dummy-token-for-extended-card"
 # --- UI ---
 STREAMLIT_UI_CREATOR_LABEL = "streamlit-ui"
 KAGENTI_OPERATOR_LABEL_NAME = "kagenti-operator"
+TOOLHIVE_OPERATOR_LABEL_NAME = "toolhive-operator"
 POLL_INTERVAL_SECONDS = 2
 AGENT_NAME_SEPARATOR = "-"
 ENABLE_AUTH_STRING = "enable_auth"
