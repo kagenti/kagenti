@@ -47,10 +47,10 @@ def delete_tool_resource(custom_obj_api, name, namespace):
     return delete_custom_resource(
         st_object=st,
         custom_obj_api=custom_obj_api,
-        group="kagenti.operator.dev",
+        group="toolhive.stacklok.dev",
         version="v1alpha1",
         namespace=namespace,
-        plural="components",
+        plural="mcpservers",
         name=name,
     )
 
