@@ -8,11 +8,11 @@ global:
     ingressControllerType: "" # If not openshift, and want to expose services, set to a supported option [ingress-nginx]
     # Update these
     clusterName: agent-platform
-    trustDomain: localhost.me 
+    trustDomain: localtest.me 
     caSubject:
       country: US
       organization: AgenticPlatformDemo
-      commonName: localhost.me
+      commonName: localtest.me
 
 spire-server:
   #ingress:

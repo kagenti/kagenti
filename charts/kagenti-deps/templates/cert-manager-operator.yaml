@@ -1,0 +1,31 @@
+{{- if and .Values.components.certManager.enabled .Values.openshift}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.certManager.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-cert-manager-operatorgroup
+  namespace: {{ .Values.certManager.namespace }}
+spec:
+  targetNamespaces:
+    - {{ .Values.certManager.namespace }}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator: ""
+  name: openshift-cert-manager-operator
+  namespace: {{ .Values.certManager.namespace }}
+spec:
+  channel: stable-v1
+  installPlanApproval: Automatic
+  name: openshift-cert-manager-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace      
+{{- end }}

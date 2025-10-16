@@ -1,4 +1,4 @@
-# Assisted by watsonx Code Assistant 
+# Assisted by watsonx Code Assistant
 # Copyright 2025 IBM Corp.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,11 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import streamlit as st
+"""
+Tool details.
+"""
+
 import asyncio
 import json
 import logging
-from urllib.parse import urljoin
+import os
+from urllib.parse import urljoin, quote
+import streamlit as st
 from .utils import sanitize_for_session_state_key
 from .kube import (
     get_custom_objects_api,
@@ -52,6 +57,7 @@ def get_mcp_client_from_session(session_key: str, mcp_url: str) -> MCPClientWrap
         client: MCPClientWrapper = st.session_state[session_key]
         if client.mcp_server_url != mcp_url:
             logger.info(
+                # pylint: disable=line-too-long
                 f"MCP URL changed for '{session_key}'. Re-initializing MCPClientWrapper from {client.mcp_server_url} to {mcp_url}."
             )
             st.session_state[session_key] = MCPClientWrapper(mcp_server_url=mcp_url)
@@ -62,6 +68,7 @@ def get_mcp_client_from_session(session_key: str, mcp_url: str) -> MCPClientWrap
     return st.session_state[session_key]
 
 
+# pylint: disable=too-many-locals, too-many-branches, too-many-statements
 def render_mcp_tool_details_content(tool_k8s_name: str):
     """
     Renders the detailed view for a specific MCP-enabled Tool.
@@ -71,6 +78,11 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
     """
     st.header(f"MCP Tool: {tool_k8s_name}")
 
+    mcp_inspector_url = os.environ.get("MCP_INSPECTOR_URL", constants.MCP_INSPECTOR_URL)
+    mcp_proxy_url = os.environ.get(
+        "MCP_PROXY_FULL_ADDRESS", constants.MCP_PROXY_FULL_ADDRESS
+    )
+
     custom_obj_api = get_custom_objects_api()
     if not custom_obj_api:
         st.error(
@@ -79,9 +91,7 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
         return
 
     namespace = get_kubernetes_namespace()
-    tool_details_data = get_tool_details(
-        st, custom_obj_api, tool_k8s_name, namespace
-    )
+    tool_details_data = get_tool_details(st, custom_obj_api, tool_k8s_name, namespace)
 
     if not tool_details_data:
         st.warning(f"Could not load K8s details for tool '{tool_k8s_name}'.")
@@ -90,7 +100,7 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
     session_key_prefix = sanitize_for_session_state_key(tool_k8s_name)
     mcp_client_session_key = f"mcp_client_{session_key_prefix}"
 
-    tags = display_resource_metadata(st, tool_details_data)
+    _tags = display_resource_metadata(st, tool_details_data)
     st.markdown("---")
 
     # TODO - should use service info
@@ -106,7 +116,7 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
 
     # TODO - should use service info
     mcp_tool_service_port = default_port
-    mcp_sse_path = constants.DEFAULT_MCP_SSE_PATH
+    mcp_path = constants.DEFAULT_MCP_STREAMABLE_HTTP_PATH
 
     if tool_service_name:
         scheme = "http://"
@@ -115,18 +125,17 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
         if running_in_cluster:
             base_host_port = f"{tool_service_name}.{namespace}.svc.cluster.local:{mcp_tool_service_port}"
         else:
-            base_host_port = (
-                f"{tool_service_name}.localtest.me:{mcp_tool_service_port}"
-            )
+            base_host_port = f"{tool_service_name}.localtest.me:{mcp_tool_service_port}"
 
         base_url_with_scheme = scheme + base_host_port
 
         if not base_url_with_scheme.endswith("/"):
             base_url_with_scheme += "/"
 
-        mcp_server_url = urljoin(base_url_with_scheme, mcp_sse_path)
+        mcp_server_url = urljoin(base_url_with_scheme, mcp_path)
 
         logger.info(
+            # pylint: disable=line-too-long
             f"Constructed MCP server URL for '{tool_k8s_name}': {mcp_server_url} (port: {mcp_tool_service_port}, in-cluster: {running_in_cluster})"
         )
     else:
@@ -142,16 +151,25 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
         )
         return
 
+    # setup MCP inspector URL
+    encoded_server_url = quote(mcp_server_url, safe="")
+    encoded_proxy_url = quote(mcp_proxy_url, safe="")
+    console_url = (
+        f"{mcp_inspector_url}?"
+        f"serverUrl={encoded_server_url}&"
+        f"transport=streamable_http&"
+        f"MCP_PROXY_FULL_ADDRESS={encoded_proxy_url}"
+    )
+
     st.subheader("MCP Inspector")
     st.link_button(
-    "Connect with MCP Inspector",
-    # TODO - transport should be a property of MCP server
-    url=f"{constants.MCP_INSPECTOR_URL}?serverUrl={mcp_server_url}&transport=sse",
-    help="Click to open the MCP Inspector in a new tab.",
-    use_container_width=True,
+        "Connect with MCP Inspector",
+        # TODO - transport should be a property of MCP server
+        url=console_url,
+        help="Click to open the MCP Inspector in a new tab.",
+        use_container_width=True,
     )
-    st.caption(f"Access MCP inspector: `{constants.MCP_INSPECTOR_URL}`")
-
+    st.caption(f"Access MCP inspector: `{mcp_inspector_url}`")
 
     st.subheader("MCP Server Interaction")
     st.caption(f"Target MCP Server URL: `{mcp_server_url}`")
@@ -217,7 +235,7 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
                 tool_name_on_mcp = mcp_tool_data.get("name", f"Unnamed Tool {i+1}")
                 with st.expander(
                     f"Tool: {tool_name_on_mcp}",
-                    expanded=True if len(mcp_tools_list) == 1 else False,
+                    expanded=len(mcp_tools_list) == 1,
                 ):
                     st.markdown(
                         f"**Description:** {mcp_tool_data.get('description', 'N/A')}"

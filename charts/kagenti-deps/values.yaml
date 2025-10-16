@@ -1,0 +1,81 @@
+# Global settings
+openshift: true
+
+# ------------------------------------------------------------------
+#  Control Panel: Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: true
+  mcpInspector:
+    enabled: true
+  istio:
+    enabled: true
+  kiali:
+    enabled: true  
+  keycloak:
+    enabled: true
+  metricsServer:
+    enabled: false
+  otel:
+    enabled: true
+  registry:
+    enabled: false
+  spire:
+    enabled: false
+  tekton:
+    enabled: true
+  certManager:
+    enabled: true  
+  gatewayApi:  
+    enabled: false
+  ingressGateway:
+    enabled: false 
+
+
+common:
+  kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+
+# ------------------------------------------------------------------
+#  Components Configurations
+# ------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  namespace: keycloak
+  auth:
+    adminUser: keycloakadmin
+    adminPassword: your-secret-password
+
+# ------------------------------------------------------------------
+#  Istio Configuration
+# ------------------------------------------------------------------
+istio:
+  communityCharts:
+    enabled: false
+  namespace: "istio-system"
+  gatewayApiVersion: "v1.1.0"
+  cni:
+    profile: ambient
+    namespace: istio-cni
+  ztunnel:
+    namespace: istio-ztunnel  
+  base: {}
+  istiod: 
+    profile: ambient
+    namespace: '{{ .Values.istio.namespace | quote }}'
+
+# ------------------------------------------------------------------
+#  Cert Manager Configuration
+# ------------------------------------------------------------------
+certManager:
+  namespace: cert-manager-operator
+
+# ------------------------------------------------------------------
+#  Spire Configuration
+# ------------------------------------------------------------------
+spire:
+  namespace: zero-trust-workload-identity-manager

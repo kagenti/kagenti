@@ -17,33 +17,29 @@ from .. import config
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
     """Installs cert-manager into the Kubernetes cluster."""
     # Install cert-manager
     run_command(
         [
-            "kubectl", 
-            "apply", 
-            "-f", 
-            "https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml"
+            "kubectl",
+            "apply",
+            "-f",
+            "https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml",
         ],
         "Installing Cert Manager",
     )
-    
+
     # Wait for cert-manager deployments to be ready
     _wait_for_cert_manager_deployments()
 
 
 def _wait_for_cert_manager_deployments():
     """Wait for all cert-manager deployments to be ready."""
-    deployments = [
-        "cert-manager",
-        "cert-manager-cainjector", 
-        "cert-manager-webhook"
-    ]
-    
+    deployments = ["cert-manager", "cert-manager-cainjector", "cert-manager-webhook"]
+
     wait_timeout_seconds = 300
-    
+
     for deployment in deployments:
         run_command(
             [
@@ -53,7 +49,7 @@ def _wait_for_cert_manager_deployments():
                 f"deployment/{deployment}",
                 "-n",
                 "cert-manager",
-                f"--timeout={wait_timeout_seconds}s"
+                f"--timeout={wait_timeout_seconds}s",
             ],
             f"Waiting for deployment/{deployment} in namespace cert-manager",
         )

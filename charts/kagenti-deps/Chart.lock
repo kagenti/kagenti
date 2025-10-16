@@ -1,0 +1,6 @@
+dependencies:
+- name: gateway-api
+  repository: file://../gateway-api
+  version: 1.3.0
+digest: sha256:4cf4e92ca99a236e20395d0467b2dffb5bf18cbaf4f11f41ac493f5491a6a947
+generated: "2025-10-05T21:04:35.726951-04:00"

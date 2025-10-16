@@ -26,19 +26,30 @@ RESOURCES_DIR = SCRIPT_DIR / "resources"
 CLUSTER_NAME = "agent-platform"
 OPERATOR_NAMESPACE = "kagenti-system"
 TEKTON_VERSION = "v0.66.0"
-LATEST_TAG = "0.2.0-alpha.3"
 KEYCLOAK_URL = "http://keycloak.localtest.me:8080/realms/master"
+
+
+# --- Container Engine Options ---
+class ContainerEngine(str, Enum):
+    PODMAN = "podman"
+    DOCKER = "docker"
+
+
+CONTAINER_ENGINE = "docker"
 
 # --- Dependency Version Requirements ---
 # Defines the minimum (inclusive) and maximum (exclusive) required versions for tools.
 REQ_VERSIONS = {
     "kind": {"min": "0.20.0", "max": "0.99.0"},
     "docker": {"min": "5.0.0", "max": "29.0.0"},
-    "kubectl": {"min": "1.29.0", "max": "1.34.0"},
+    "podman": {"min": "5.0.0", "max": "5.6.0"},
+    "kubectl": {"min": "1.29.0", "max": "1.35.0"},
     "helm": {"min": "3.14.0", "max": "3.19.0"},
+    "git": {"min": "2.30.0", "max": "3.0.0"},
 }
 
-# --- Images to preload in the kind cluster ---
+# --- Images to preload in the kind cluster                                                         ---
+# --- Note - this should only be required for images from dockerhub where rate limiting was observed --
 PRELOADABLE_IMAGES = [
     "docker.io/istio/proxyv2:1.26.1-distroless",
     "docker.io/istio/install-cni:1.26.1-distroless",
@@ -46,16 +57,17 @@ PRELOADABLE_IMAGES = [
     "docker.io/istio/ztunnel:1.26.1",
     "otel/opentelemetry-collector-contrib:0.122.1",
     "arizephoenix/phoenix:version-8.32.1",
-    "postgres:12",
     "prom/prometheus:v3.1.0",
-    "registry.k8s.io/metrics-server/metrics-server:v0.7.2",
-    "ghcr.io/spiffe/oidc-discovery-provider:1.12.4",
     "docker.io/nginxinc/nginx-unprivileged:1.29.0-alpine",
-    "docker.io/nginx/nginx-prometheus-exporter:1.4.2",
-    "ghcr.io/kagenti/mcp:latest",
-    "ghcr.io/kagenti/mcp-gateway-wasm:latest",
-    "ghcr.io/modelcontextprotocol/inspector:0.15.0"
+    "docker.io/bitnamilegacy/postgresql:12",
 ]
+
+
+# --- Git Repos and fallback tag versions ---
+OPERATOR_FALLBACK_VERSION = "0.2.0-alpha.4"
+OPERATOR_GIT_REPO = "https://github.com/kagenti/kagenti-operator.git"
+UI_FALLBACK_VERSION = "v0.0.4-alpha.13"
+UI_GIT_REPO = "https://github.com/kagenti/kagenti.git"
 
 
 # --- Enum for Skippable Components ---
@@ -73,6 +85,11 @@ class InstallableComponent(str, Enum):
     MCP_GATEWAY = "mcp_gateway"
     KEYCLOAK = "keycloak"
     AGENTS = "agents"
-    METRICS_SERVER= "metrics_server"    
+    METRICS_SERVER = "metrics_server"
     INSPECTOR = "inspector"
     CERT_MANAGER = "cert_manager"
+
+
+## Kubernetes Labels and Selectors
+ENABLED_NAMESPACE_LABEL_KEY = "kagenti-enabled"
+ENABLED_NAMESPACE_LABEL_VALUE = "true"

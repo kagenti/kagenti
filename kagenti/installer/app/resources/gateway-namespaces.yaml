@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway-system

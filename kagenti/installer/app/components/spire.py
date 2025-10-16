@@ -17,7 +17,7 @@ from .. import config
 from ..utils import run_command
 
 
-def install():
+def install(**kwargs):
     """Installs all SPIRE components using the official Helm charts."""
     # This command sets up SPIRE CRDs
     run_command(
@@ -67,12 +67,22 @@ def install():
     )
     # Setup Tornjak backend route
     run_command(
-        ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "spire-tornjak-api-route.yaml")],
+        [
+            "kubectl",
+            "apply",
+            "-f",
+            str(config.RESOURCES_DIR / "spire-tornjak-api-route.yaml"),
+        ],
         "Applying Spire Tornjak api route",
     )
     # Setup Tornjak frontend route
     run_command(
-        ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "spire-tornjak-ui-route.yaml")],
+        [
+            "kubectl",
+            "apply",
+            "-f",
+            str(config.RESOURCES_DIR / "spire-tornjak-ui-route.yaml"),
+        ],
         "Applying Spire Tornjak UI route",
     )
     # Add SPIRE namespace to shared gateway access

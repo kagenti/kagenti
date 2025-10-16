@@ -12,11 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+User interface for Admin Catalog page.
+"""
+
+import os
 import streamlit as st
+from lib.common_ui import check_auth
 from lib import constants  # For Keycloak URL
 
 # --- Page Configuration (Optional) ---
 # st.set_page_config(page_title="Admin Console", layout="wide")
+
+check_auth()
+
+keycloak__console_url = os.environ.get(
+    "KEYCLOAK_CONSOLE_URL", constants.KEYCLOAK_CONSOLE_URL_OFF_CLUSTER
+)
 
 # --- Main Page Content ---
 st.header("🔑 Administration & Identity Management")
@@ -34,23 +46,21 @@ st.write(
 
 st.link_button(
     "Go to Identity Management Console",
-    url=constants.KEYCLOAK_CONSOLE_URL_OFF_CLUSTER,
+    url=keycloak__console_url,
     help=(
         "Click to open the Keycloak Admin Console in a new tab. "
         "You may need appropriate credentials to log in."
     ),
     use_container_width=True,
 )
-st.caption(
-    f"Keycloak admin console accessible at: `{constants.KEYCLOAK_CONSOLE_URL_OFF_CLUSTER}`"
-)
+st.caption(f"Keycloak admin console accessible at: `{keycloak__console_url}`")
 
 st.markdown("---")
 
 # Placeholder for other admin functionalities
 st.subheader("Platform Configuration (Placeholder)")
 st.info(
-    "Placeholder for other administrative settings"
+    "Placeholder for other administrative settings "
     "(e.g., global agent settings, resource quotas) could be managed here."
 )
 # Example:

@@ -1,0 +1,187 @@
+{{- if and .Values.components.ui.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagenti-ui-service-account
+  namespace: "{{ .Values.ui.namespace }}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-ui
+  namespace: "{{ .Values.ui.namespace }}"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kagenti-ui
+  template:
+    metadata:
+      labels:
+        app: kagenti-ui
+    spec:
+      serviceAccountName: kagenti-ui-service-account
+      containers:
+        - name: kagenti-ui-container
+          image: "{{ .Values.ui.image }}:{{ .Values.ui.tag }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: UV_CACHE_DIR
+              value: "/app/.cache/uv"
+            - name: "ENABLE_AUTH"
+              value: "{{- .Values.ui.auth.enabled }}"
+            - name: "CLIENT_ID"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "CLIENT_ID"
+                  optional: true
+            - name: "CLIENT_SECRET"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "CLIENT_SECRET"
+                  optional: true
+            - name: "AUTH_ENDPOINT"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "AUTH_ENDPOINT"
+                  optional: true
+            - name: "TOKEN_ENDPOINT"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "TOKEN_ENDPOINT"
+                  optional: true
+            - name: "REDIRECT_URI"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "REDIRECT_URI"
+                  optional: true
+            - name: "SCOPE"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "SCOPE"
+                  optional: true
+            - name: TRACES_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "TRACES_DASHBOARD_URL"
+                  optional: {{ (not .Values.openshift) }}
+            - name: NETWORK_TRAFFIC_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "NETWORK_TRAFFIC_DASHBOARD_URL"
+                  optional: {{ (not .Values.openshift) }}
+            - name: MCP_INSPECTOR_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "MCP_INSPECTOR_URL"
+                  optional: {{ (not .Values.openshift) }}
+            - name: MCP_PROXY_FULL_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "MCP_PROXY_FULL_ADDRESS"
+                  optional: {{ (not .Values.openshift) }}      
+            - name: KEYCLOAK_CONSOLE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "KEYCLOAK_CONSOLE_URL"
+                  optional: {{ (not .Values.openshift) }}        
+          volumeMounts:
+            - name: cache
+              mountPath: /app/.cache
+            - name: streamlit
+              mountPath: /.streamlit
+          ports:
+            - containerPort: 8501
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: streamlit
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagenti-ui
+  namespace: "{{ .Values.ui.namespace }}"
+spec:
+  selector:
+    app: kagenti-ui
+  ports:
+    - protocol: TCP
+      port: 8501
+      targetPort: 8501
+  type: ClusterIP
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kagenti-ui-role
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kagenti.operator.dev"]
+    resources: ["components"]
+    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagenti-ui-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kagenti-ui-role
+subjects:
+  - kind: ServiceAccount
+    name: kagenti-ui-service-account
+    namespace: "{{ .Values.ui.namespace }}"
+
+{{- if .Values.openshift }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: kagenti-ui
+  namespace: "{{ .Values.ui.namespace }}"
+spec:
+  path: /
+  port:
+    targetPort: 8501
+  to:
+    kind: Service
+    name: kagenti-ui
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- end }}

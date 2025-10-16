@@ -16,7 +16,8 @@
 from .. import config
 from ..utils import run_command
 
-def install():
+
+def install(**kwargs):
     """Installs the Kubernetes metrics server."""
     # Install metrics server
     run_command(
@@ -24,11 +25,11 @@ def install():
             "kubectl",
             "apply",
             "-f",
-            "https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml"
+            "https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml",
         ],
         "Installing Kubernetes metrics server",
     )
-    
+
     # Patch metrics server to allow insecure TLS (needed for local development)
     run_command(
         [
@@ -40,11 +41,11 @@ def install():
             "metrics-server",
             "--type=json",
             "-p",
-            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+            '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]',
         ],
         "Patching metrics server to allow insecure TLS for kubelet communication",
     )
-    
+
     # Wait for metrics server deployment to be ready
     run_command(
         [
@@ -54,8 +55,7 @@ def install():
             "deployment/metrics-server",
             "-n",
             "kube-system",
-            "--timeout=300s"
+            "--timeout=300s",
         ],
         "Waiting for metrics server deployment to be ready",
     )
-    

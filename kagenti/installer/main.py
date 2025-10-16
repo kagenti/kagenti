@@ -16,6 +16,7 @@
 """
 Main entrypoint to run the Agent Platform Installer CLI.
 """
+
 from installer import cli
 
 if __name__ == "__main__":

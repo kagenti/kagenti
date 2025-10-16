@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Useful constants.
+"""
+
 # --- Kubernetes CRD Definitions ---
 CRD_GROUP = "kagenti.operator.dev"
 CRD_VERSION = "v1alpha1"
@@ -30,6 +34,9 @@ APP_KUBERNETES_IO_NAME = "app.kubernetes.io/name"
 RESOURCE_TYPE_AGENT = "agent"
 RESOURCE_TYPE_TOOL = "tool"
 
+ENABLED_NAMESPACE_LABEL_KEY = "kagenti-enabled"
+ENABLED_NAMESPACE_LABEL_VALUE = "true"
+
 # --- External Service URLs ---
 KEYCLOAK_CONSOLE_URL_OFF_CLUSTER = (
     "http://keycloak.localtest.me:8080/admin/master/console/"
@@ -40,6 +47,7 @@ KEYCLOAK_CONSOLE_URL_IN_CLUSTER = (
 TRACES_DASHBOARD_URL = "http://phoenix.localtest.me:8080"
 NETWORK_TRAFFIC_DASHBOARD_URL = "http://kiali.localtest.me:8080"
 MCP_INSPECTOR_URL = "http://mcp-inspector.localtest.me:8080"
+MCP_PROXY_FULL_ADDRESS = "http://mcp-proxy.localtest.me:8080"
 
 # --- Default Values for Import Forms ---
 DEFAULT_REPO_URL = "https://github.com/kagenti/agent-examples"
@@ -65,11 +73,9 @@ DEFAULT_ENV_VARS = [
         "name": "KEYCLOAK_URL",
         "value": "http://keycloak.keycloak.svc.cluster.local:8080",
     },
-    {
-        "name": "CLIENT_SECRET",
-        "valueFrom": {"secretKeyRef": {"name": "keycloak-client-secret", "key": "client-secret"}},
-    },
+    {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
 ]
+
 
 # --- Resource Limits and Requests ---
 DEFAULT_RESOURCE_LIMITS = {"cpu": "500m", "memory": "1Gi"}
@@ -85,6 +91,9 @@ STREAMLIT_UI_CREATOR_LABEL = "streamlit-ui"
 KAGENTI_OPERATOR_LABEL_NAME = "kagenti-operator"
 POLL_INTERVAL_SECONDS = 2
 AGENT_NAME_SEPARATOR = "-"
+ENABLE_AUTH_STRING = "enable_auth"
+TOKEN_STRING = "token"
+ACCESS_TOKEN_STRING = "access_token"
 
 # --- Default Ports for Agent/Tool Services ---
 DEFAULT_IN_CLUSTER_PORT = 8000
@@ -94,3 +103,7 @@ DEFAULT_OFF_CLUSTER_PORT = 8080
 DEFAULT_MCP_PORT = DEFAULT_IN_CLUSTER_PORT
 DEFAULT_MCP_OFF_CLUSTER_PORT = DEFAULT_OFF_CLUSTER_PORT
 DEFAULT_MCP_SSE_PATH = "/sse"
+DEFAULT_MCP_STREAMABLE_HTTP_PATH = "/mcp"
+MCP_GATEWAY_IN_CLUSTER_URL = (
+    "http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp"
+)

@@ -23,16 +23,39 @@ from rich.panel import Panel
 from rich.text import Text
 
 from . import config
+from .config import ContainerEngine
 from .utils import console, get_command_version
 
 
-def check_dependencies():
+def check_dependencies(use_existing_cluster: bool = False):
     """Checks if required command-line tools are installed and meet version requirements."""
     console.print(
         Panel(Text("1. Checking Dependencies", justify="center", style="bold yellow"))
     )
     all_ok = True
-    for tool, versions in config.REQ_VERSIONS.items():
+    try:
+        container_engine = ContainerEngine(config.CONTAINER_ENGINE)
+    except ValueError:
+        console.log(
+            f"[bold red]✗ Container engine must be either 'docker' or 'podman'[/bold red]"
+        )
+        raise typer.Exit(1)
+
+    # Filter out tools not needed for existing clusters
+    required_tools = config.REQ_VERSIONS.copy()
+    if use_existing_cluster:
+        # Remove kind and docker requirements when using existing cluster
+        required_tools.pop("kind", None)
+        required_tools.pop("docker", None)
+        console.log(
+            "[yellow]Using existing cluster - skipping kind and docker checks.[/yellow]"
+        )
+
+    for tool, versions in required_tools.items():
+        if tool == "docker" and tool != container_engine.value:
+            continue
+        if tool == "podman" and tool != container_engine.value:
+            continue
         with console.status(f"[cyan]Checking for {tool}..."):
             time.sleep(0.5)
             version = get_command_version(tool)
@@ -42,7 +65,7 @@ def check_dependencies():
                     f"[bold red]✗ {tool}[/bold red] is not installed or not in PATH."
                 )
                 all_ok = False
-            elif not (min_ver <= version < max_ver):
+            elif not (min_ver <= version <= max_ver):
                 console.log(
                     f"[bold red]✗ {tool}[/bold red] version [bold yellow]{version}[/bold yellow] not in range ({min_ver} - {max_ver})."
                 )
@@ -76,7 +99,6 @@ def check_env_vars():
         required_vars = [
             "GITHUB_USER",
             "GITHUB_TOKEN",
-            "OPENAI_API_KEY",
             "AGENT_NAMESPACES",
         ]
         missing = [v for v in required_vars if not os.getenv(v)]

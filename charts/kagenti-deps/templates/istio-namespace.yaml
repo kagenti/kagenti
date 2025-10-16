@@ -1,0 +1,30 @@
+# templates/istio-namespace.yaml
+
+{{- if .Values.components.istio.enabled }}
+# ------------------------------------------------------------------
+#  Creates the Namespaces for all Istio components.
+# ------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.istio.namespace }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.istio.cni.namespace }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.istio.ztunnel.namespace }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled    
+{{- end }}

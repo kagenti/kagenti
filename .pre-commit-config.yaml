@@ -1,0 +1,14 @@
+repos:
+- repo: local
+  hooks:
+    # Run the linter
+    - id: make-lint
+      name: Run make lint
+      entry: make lint
+      language: system
+      pass_filenames: false
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.4.7
+  hooks:
+    # Run the formatter.
+    - id: ruff-format

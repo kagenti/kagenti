@@ -1,0 +1,14 @@
+apiVersion: v2
+name: kagenti
+description: A Helm chart for deploying the kagenti platform
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+- name: kagenti-platform-operator-chart
+  version: 0.2.0-alpha.8        
+  repository: oci://ghcr.io/kagenti/kagenti-operator
+  condition: components.platformOperator.enabled
+  alias: kagentiPlatformOperator
+

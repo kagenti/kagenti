@@ -19,10 +19,12 @@ from .. import config
 from ..utils import console, run_command
 
 
-def install():
-    """Installs the MCP inspector """
-    deploy_path = str(config.RESOURCES_DIR /  "mcp-inspector.yaml")
-    run_command(["kubectl", "apply", "-f", str(deploy_path)], "Installing MCP Inspector")
+def install(**kwargs):
+    """Installs the MCP inspector"""
+    deploy_path = str(config.RESOURCES_DIR / "mcp-inspector.yaml")
+    run_command(
+        ["kubectl", "apply", "-f", str(deploy_path)], "Installing MCP Inspector"
+    )
     run_command(
         [
             "kubectl",

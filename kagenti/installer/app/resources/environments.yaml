@@ -26,6 +26,75 @@ data:
     [
       {"name": "MCP_URL", "value": "http://weather-tool:8000/mcp"}
     ]
+  mcp-slack: |
+    [
+      {"name": "MCP_URL", "value": "http://slack-tool:8000/mcp"}
+    ]
+  slack-researcher-config: |
+    [
+      {"name": "EXTRA_HEADERS", "value": "{}"},
+      {"name": "MODEL_TEMPERATURE", "value": "0"},
+      {"name": "MAX_PLAN_STEPS", "value": "6"},
+      {"name": "SERVICE_PORT", "value": "8000"},
+      {"name": "LOG_LEVEL", "value": "INFO"}
+    ]
+  slack-researcher-auth-config: |
+    [
+      {
+        "name": "ISSUER",
+        "value": "http://keycloak.localtest.me:8080/realms/master"
+      },
+      {
+        "name": "JWKS_URI",
+        "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+      },
+      {
+        "name": "AUDIENCE",
+        "value": "spiffe://localtest.me/sa/slack-researcher"
+      },
+      {
+        "name": "TOKEN_URL",
+        "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/token"
+      },
+      {
+        "name": "TARGET_AUDIENCE",
+        "value": "spiffe://localtest.me/sa/slack-tool"
+      },
+      {
+        "name": "TARGET_SCOPES",
+        "value": "slack-full-access slack-partial-access"
+      }
+    ]
+  mcp-slack-config: |
+    [
+      {
+        "name": "SLACK_BOT_TOKEN",
+        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "bot-token"}}
+      }
+    ]
+  mcp-slack-auth-config: |
+    [
+      {
+        "name": "ISSUER",
+        "value": "http://keycloak.localtest.me:8080/realms/master"
+      },
+      {
+        "name": "JWKS_URI",
+        "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+      },
+      {
+        "name": "AUDIENCE",
+        "value": "spiffe://localtest.me/sa/slack-tool"
+      },
+      {
+        "name": "ADMIN_SLACK_BOT_TOKEN",
+        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "admin-bot-token"}}
+      },
+      {
+        "name": "ADMIN_SCOPE_NAME",
+        "value": "slack-full-access"
+      }
+    ]
   KEYCLOAK_URL: "http://keycloak.keycloak:8080"
   KEYCLOAK_REALM: "master"
   KEYCLOAK_ADMIN_USERNAME: "admin"

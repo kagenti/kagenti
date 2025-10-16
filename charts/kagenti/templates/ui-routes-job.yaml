@@ -1,0 +1,195 @@
+{{- if and .Values.components.ui.enabled .Values.openshift }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kagenti.fullname" . }}-route-processor-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade, pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kagenti.fullname" . }}-route-processor-role
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade, pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+- apiGroups: ["route.openshift.io"]
+  resources: ["routes"]
+  verbs: ["get", "list"]
+- apiGroups: [""] 
+  resources: ["configmaps"]
+  verbs: ["create", "get", "patch", "update"] 
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kagenti.fullname" . }}-route-processor-binding
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade, pre-delete
+    "helm.sh/hook-weight": "-4" # Runs after the SA and Role are created
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kagenti.fullname" . }}-route-processor-sa
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "kagenti.fullname" . }}-route-processor-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kagenti.fullname" . }}-process-routes-script
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade, pre-delete
+    "helm.sh/hook-weight": "-5" 
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  process_routes.sh: |
+    #!/bin/bash
+
+    # A script that iterates over a list of routes, retrieves the host for each enabled route,
+    # and creates a ConfigMap with the results.
+    # This script is self-contained and includes the function to poll for the route host.
+
+    # --- Function Definition ---
+    get_route_host() {
+        local TIMEOUT_SECONDS=5
+        local CHECK_INTERVAL_SECONDS=1
+        local NAMESPACE="$1"
+        local ROUTE_NAME="$2"
+        local ELAPSED_TIME=0
+
+        echo "--> Waiting for route '$ROUTE_NAME' in namespace '$NAMESPACE'..." >&2
+        while true; do
+            local HOST
+            HOST=$(kubectl get route "$ROUTE_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null)
+            if [[ $? -eq 0 && ! -z "$HOST" ]]; then
+                echo "--> Route found. Host is: $HOST" >&2
+                printf "https://%s" "$HOST"
+                return 0
+            fi
+            # if route not found it should mean component was not installed - return empty host
+            if [[ $ELAPSED_TIME -ge $TIMEOUT_SECONDS ]]; then
+                #echo "!! Error: Timed out after $TIMEOUT_SECONDS seconds." >&2
+                #return 1
+                printf ""
+            fi
+            sleep $CHECK_INTERVAL_SECONDS
+            ELAPSED_TIME=$((ELAPSED_TIME + CHECK_INTERVAL_SECONDS))
+            echo "    (elapsed: ${ELAPSED_TIME}s) Still waiting..." >&2
+        done
+    }
+
+    # --- Main Script ---
+    CONFIGMAP_NAME="kagenti-ui-config"
+    CONFIGMAP_NAMESPACE="kagenti-system"
+
+    if ! command -v kubectl &> /dev/null; then
+        echo "Error: 'kubectl' command not found."
+        exit 1
+    fi
+
+    # Define the list of routes to process.
+    ROUTES_DATA=(
+      "kagenti-system,mcp-inspector,true,MCP_INSPECTOR_URL"
+      "kagenti-system,mcp-proxy,true,MCP_PROXY_FULL_ADDRESS"
+      "kagenti-system,phoenix,true,TRACES_DASHBOARD_URL"
+      "istio-system,kiali,true,NETWORK_TRAFFIC_DASHBOARD_URL"
+      "keycloak,keycloak,true,KEYCLOAK_CONSOLE_URL"
+    )
+    
+    output_keys=()
+    output_values=()
+
+    echo "--- Starting Route Processing ---"
+    for item in "${ROUTES_DATA[@]}"; do
+      IFS=',' read -r namespace route_name enabled key <<< "$item"
+      echo
+      echo "Checking: namespace='$namespace', route='$route_name', enabled='$enabled', key='$key'"
+      if [[ "$enabled" == "true" ]]; then
+        echo "-> Enabled. Attempting to get host URL..."
+        route_url=$(get_route_host "$namespace" "$route_name")
+        if [[ $? -eq 0 && -n "$route_url" ]]; then
+          echo "   Success. Found URL: $route_url"
+          output_keys+=("$key")
+          output_values+=("$route_url")
+        else
+          echo "!! Warning: Failed to retrieve a valid host for '$route_name'. Setting URL to empty."
+          output_keys+=("$key")
+          output_values+=("")
+        fi
+      else
+        echo "-> Disabled. Setting URL to empty string."
+        output_keys+=("$key")
+        output_values+=("")
+      fi
+    done
+
+    echo
+    echo "--- Completed Route Processing ---"
+    
+    # --- Generate and Apply ConfigMap ---
+    echo "--- Generating and Applying ConfigMap ---"
+    
+    configmap_yaml=$(cat <<EOF
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: $CONFIGMAP_NAME
+      namespace: $CONFIGMAP_NAMESPACE
+    data:
+    EOF
+    )
+    for i in "${!output_keys[@]}"; do
+      key="${output_keys[i]}"
+      value="${output_values[i]}"
+      configmap_yaml+=$'\n'
+      configmap_yaml+="  $key: \"$value\""
+    done
+    
+    echo "$configmap_yaml" | kubectl apply -f -
+    if [[ $? -eq 0 ]]; then
+        echo "ConfigMap '$CONFIGMAP_NAME' applied successfully in namespace '$CONFIGMAP_NAMESPACE'."
+    else
+        echo "!! Error applying ConfigMap '$CONFIGMAP_NAME'."
+    fi
+    exit 0
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kagenti.fullname" . }}-process-routes-job
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": hook-succeeded
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  template:
+    spec:
+      serviceAccountName: {{ include "kagenti.fullname" . }}-route-processor-sa
+      containers:
+      - name: script-runner
+        image: registry.redhat.io/openshift4/ose-cli:latest
+        command: ["/bin/bash", "-c", "/scripts/process_routes.sh"]
+        volumeMounts:
+        - name: script-volume
+          mountPath: /scripts
+      volumes:
+      - name: script-volume
+        configMap:
+          name: {{ include "kagenti.fullname" . }}-process-routes-script
+          defaultMode: 0755 # Makes the script executable
+      restartPolicy: Never
+  backoffLimit: 4
+{{- end }}

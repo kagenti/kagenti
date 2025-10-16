@@ -3,6 +3,7 @@
 
 **Kagenti** is a Cloud-native middleware providing a *framework-neutral*, *scalable* and *secure* platform for deploying and orchestrating AI agents through a standardized REST API. It includes key services such as:
 
+- Authentication and Authorization
 - Trusted identity
 - Deployment
 - Configuration
@@ -24,7 +25,7 @@ Despite the extensive variety of frameworks available for developing agent-based
 
 In the open-source community, several frameworks are emerging for developing agent-based applications. These include **LangGraph**, **CrewAI**, **AG2**, **Llama Stack**, and **BeeAI**. The selection of a specific framework is often driven by the use case requirements. For scenarios requiring complex orchestration with a high degree of control over the agent workflow, frameworks like LangGraph are usually a better fit. They allow explicit graph creation where nodes perform LLM model inference and tool calls, with routing that can be either predefined or dynamically influenced by LLM decisions. On the other hand, frameworks such as CrewAI are designed to assign roles and tasks to agents, enabling them to autonomously work towards achieving predefined goals. Llama Stack agents are primarily pre-built state machines focused on ReAct-style patterns. Users configure the system’s prompts, tools, models, and then simply input data and prompts, allowing the agent to execute without the need for backend code development.
 
-**Kagenti** provides a unified platform to deploy, scale, configure, and orchestrate agents created across these various frameworks by supporting APIs based on emerging standards such as [ACP](https://agentcommunicationprotocol.dev) and [A2A](https://google.github.io/A2A/#/documentation).
+**Kagenti** provides a unified platform to deploy, scale, configure, and orchestrate agents created across these various frameworks by supporting APIs based on emerging standards such as  [A2A](https://google.github.io/A2A/#/documentation).
 
 ## Kubernetes Operator
 
@@ -42,6 +43,8 @@ In practice, the Authorization Pattern within the Agentic Platform enables:
 - Secure Delegation – enforcing token exchange to propagate identity across services without excessive permissions.
 - Continuous Verification – ensuring authentication and authorization at each step, preventing privilege escalation.
 
+More detailed overview of the identity concepts are covered in the [Kagenti Identity PDF document](./docs/2025-10.Kagenti-Identity.pdf).
+
 This end-to-end approach aligns agentic workflows with security best practice principles, making them secure, scalable, and eventually production-ready.
 
 ## Components
@@ -51,9 +54,9 @@ To achieve the objectives outlined above, we are developing this technology thro
 These demos are built on the following core technologies:
 
 - Cloud-native infrastructure including [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io), [Istio Ambient Mesh](https://istio.io/latest/docs/ambient/), and [Kiali](https://kiali.io).
-- [Kagenti Operator](https://github.com/kagenti/kagenti-operator/blob/main/beeai/INSTALL.md): an operator for building agents and tools from source, managing their lifecycle, and coordinating platform components.
+- [Kagenti Operator](https://github.com/kagenti/kagenti-operator/tree/main/platform-operator): an operator for building agents and tools from source, managing their lifecycle, and coordinating platform components.
 - Tool-side communication via [Model Context Protocol (MCP)](https://modelcontextprotocol.io)
-- Agent-side communication via [A2A](https://google.github.io/A2A) and [Agent Communication Protocol (ACP)](https://agentcommunicationprotocol.dev/introduction/welcome)
+- Agent-side communication via [A2A](https://google.github.io/A2A)
 
 ---
 
@@ -61,19 +64,7 @@ These demos are built on the following core technologies:
 
 We provide a quick way to deploy various relevant open source technologies to set up an agentic platform on your local cluster. This demonstrates how agents, tools, and protocols interoperate to fulfill end-to-end application flows in cloud-native environments.
 
-See the [documentation](./docs/demos.md) here for deploying a Cloud-Native Agent Platform with A2A and ACP Multi-Framework Agents.
-
----
-
-### Legacy and Reference Demos
-
-The following demos were developed during earlier phases of the Kagenti project. While no longer actively supported, they remain available for reference or to demonstrate specific functionalities:
-
-- [Llama Stack Demos – Installation Guide](./docs/demos-llama-stack.md#installation)
-- [API Key Propagation from LS Client to MCP Tool Server](./docs/demos-llama-stack.md#api-key-propagation-from-ls-client-to-mcp-tool-server)
-- [Agent-as-Tool Demo (LLM Agent as MCP Tool)](./docs/demos-llama-stack.md#agent-as-tool)
-- [Identity and Token Exchange Workflows](./kagenti/examples/identity/)
-- [Keycloak Client Registration](./kagenti/examples/identity/kagenti_client_registration)
+See the **[Demo Documentation](./docs/demos.md)** for deploying a Cloud-Native Agent Platform with A2A Multi-Framework Agents.
 
 ## Blogs
 

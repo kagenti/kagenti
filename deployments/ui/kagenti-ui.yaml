@@ -25,6 +25,82 @@ spec:
         - name: kagenti-ui-container
           image: ghcr.io/kagenti/kagenti/ui:latest
           imagePullPolicy: IfNotPresent
+          env:
+            - name: UV_CACHE_DIR
+              value: "/app/.cache/uv"
+            - name: TRACES_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "kagenti-ui-config"
+                  key: "TRACES_DASHBOARD_URL"
+                  optional: true
+            - name: NETWORK_TRAFFIC_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "kagenti-ui-config"
+                  key: "NETWORK_TRAFFIC_DASHBOARD_URL"
+                  optional: true
+            - name: MCP_INSPECTOR_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "kagenti-ui-config"
+                  key: "MCP_INSPECTOR_URL"
+                  optional: true
+            - name: KEYCLOAK_CONSOLE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "kagenti-ui-config"
+                  key: "KEYCLOAK_CONSOLE_URL"
+                  optional: true              
+            - name: "ENABLE_AUTH"
+              value: "true"
+            - name: "CLIENT_ID"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "CLIENT_ID"
+                  optional: true
+            - name: "CLIENT_SECRET"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "CLIENT_SECRET"
+                  optional: true
+            - name: "AUTH_ENDPOINT"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "AUTH_ENDPOINT"
+                  optional: true
+            - name: "TOKEN_ENDPOINT"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "TOKEN_ENDPOINT"
+                  optional: true
+            - name: "REDIRECT_URI"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "REDIRECT_URI"
+                  optional: true
+            - name: "SCOPE"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "SCOPE"
+                  optional: true
+            - name: "MCP_PROXY_FULL_ADDRESS"
+              valueFrom:
+                 configMapKeyRef:
+                  name: "kagenti-ui-config"
+                  key: "MCP_PROXY_FULL_ADDRESS"
+                  optional: true      
+          volumeMounts:
+            - name: cache
+              mountPath: /app/.cache
+            - name: streamlit
+              mountPath: /.streamlit
           ports:
             - containerPort: 8501
           resources:
@@ -33,8 +109,12 @@ spec:
               memory: 1Gi
             requests:
               cpu: 100m
-              memory: 256Mi  
-
+              memory: 256Mi
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: streamlit
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -67,7 +147,7 @@ spec:
   rules:
     - backendRefs:
         - name: kagenti-ui
-          port: 8501 
+          port: 8501
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -99,4 +179,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: kagenti-ui-service-account
-    namespace: kagenti-system  
+    namespace: kagenti-system

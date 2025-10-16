@@ -19,6 +19,7 @@ kind: StatefulSet
 metadata:
   name: phoenix
 spec:
+  serviceName: phoenix
   replicas: 1
   selector:
     matchLabels:
@@ -89,22 +90,20 @@ spec:
     spec:
       containers:
       - env:
-        - name: POSTGRES_DB
+        - name: POSTGRESQL_DATABASE
           value: postgresdb
-        - name: POSTGRES_USER
+        - name: POSTGRESQL_USERNAME
           value: postgres
-        - name: PGUSER
-          value: postgres
-        - name: PGDATA
-          value: /var/lib/postgresql/data
-        - name: POSTGRES_PASSWORD
+        - name: POSTGRESQL_PASSWORD
           value: postgres123
+        - name: POSTGRESQL_PGAUDIT_LOG
+          value: none
         - name: POD_IP
           valueFrom:
             fieldRef:
               apiVersion: v1
               fieldPath: status.podIP
-        image: postgres:12
+        image: docker.io/bitnamilegacy/postgresql:12
         imagePullPolicy: IfNotPresent
         name: postgres
         ports:
@@ -112,9 +111,21 @@ spec:
         readinessProbe:
           exec:
             command:
-            - sh
+            - /bin/sh
             - -c
-            - exec pg_isready --host $POD_IP
+            - exec pg_isready -U postgres -d postgresdb
+        volumeMounts:
+        - mountPath: /bitnami/postgresql
+          name: postgres-data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -140,7 +151,7 @@ spec:
     name: grpc
     port: 4317
     protocol: TCP
-    targetPort: 4317    
+    targetPort: 4317
   selector:
     app: phoenix
   type: ClusterIP
@@ -160,5 +171,5 @@ spec:
     - "phoenix.localtest.me"
   rules:
     - backendRefs:
-        - name: phoenix 
-          port: 6006 
+        - name: phoenix
+          port: 6006

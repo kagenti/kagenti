@@ -1,0 +1,11 @@
+[MAIN]
+
+disable=
+  logging-fstring-interpolation,
+  broad-exception-caught,
+  invalid-name,
+  duplicate-code,
+  fixme
+
+[FORMAT]
+max-line-length=130

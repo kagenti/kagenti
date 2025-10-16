@@ -1,0 +1,121 @@
+{{- if .Values.components.otel.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: phoenix
+spec:
+  serviceName: phoenix
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phoenix
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: phoenix
+    spec:
+      containers:
+      - args:
+        - -m
+        - phoenix.server.main
+        - serve
+        command:
+        - python
+        env:
+        # - name: PHOENIX_SQL_DATABASE_URL
+        #   value: postgresql://testuser:thisisonly4testingNOT4prod@postgres:5432/postgres
+        - name: PHOENIX_POSTGRES_HOST
+          value: postgres
+        - name: PHOENIX_POSTGRES_PORT
+          value: "5432"
+        - name: PHOENIX_POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: PHOENIX_POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+        - name: PHOENIX_POSTGRES_DB
+          value: postgres       
+        - name: PHOENIX_WORKING_DIR
+          value: /mnt/data
+        - name: PHOENIX_PORT
+          value: "6006"
+        image: arizephoenix/phoenix:version-8.32.1
+        name: phoenix
+        ports:
+        - containerPort: 6006
+        - containerPort: 9090
+        - containerPort: 4317
+        readinessProbe:
+          httpGet:
+            port: 6006
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: phoenix
+  volumeClaimTemplates:
+  - metadata:
+      name: phoenix
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: phoenix
+    app.kubernetes.io/instance: phoenix
+    app.kubernetes.io/name: phoenix
+  name: phoenix
+spec:
+  ports:
+  - appProtocol: http
+    name: http
+    port: 6006
+    protocol: TCP
+    targetPort: 6006
+  - appProtocol: http
+    name: http2
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  - appProtocol: grpc
+    name: grpc
+    port: 4317
+    protocol: TCP
+    targetPort: 4317
+  selector:
+    app: phoenix
+  type: ClusterIP
+---
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: phoenix
+spec:
+  path: /
+  port:
+    targetPort: 6006
+  to:
+    kind: Service
+    name: phoenix
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+{{- end }}

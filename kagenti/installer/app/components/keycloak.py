@@ -16,7 +16,7 @@
 import os
 import time
 import typer
-import requests
+import base64
 from kubernetes import client, config as kube_config
 
 from .. import config
@@ -33,7 +33,6 @@ class KeycloakSetup:
         self.admin_username = admin_username
         self.admin_password = admin_password
         self.realm_name = realm_name
-        self.client_id = ""
 
     def connect(self, timeout=120, interval=5):
         """
@@ -108,25 +107,28 @@ class KeycloakSetup:
         except KeycloakPostError:
             print(f'User "{username}" already exists')
 
-    def create_client(self, client_name):
+    def create_client(self, app_name):
         try:
-            self.client_id = self.keycloak_admin.create_client(
+            client_name = f"spiffe://localtest.me/sa/{app_name}"
+            client_id = self.keycloak_admin.create_client(
                 {
                     "clientId": client_name,
                     "standardFlowEnabled": True,
                     "directAccessGrantsEnabled": True,
                     "fullScopeAllowed": True,
-                    "enabled": False,
+                    "enabled": True,
                 }
             )
             print(f'Created client "{client_name}"')
+            return client_id
         except KeycloakPostError:
             print(f'Client "{client_name}" already exists. Retrieving its ID.')
-            self.client_id = self.keycloak_admin.get_client_id(client_id=client_name)
+            client_id = self.keycloak_admin.get_client_id(client_id=client_name)
             print(f'Successfully retrieved ID for existing client "{client_name}".')
+            return client_id
 
-    def get_client_secret(self):
-        return self.keycloak_admin.get_client_secrets(self.client_id)["value"]
+    def get_client_secret(self, client_id):
+        return self.keycloak_admin.get_client_secrets(client_id)["value"]
 
 
 def setup_keycloak() -> str:
@@ -143,13 +145,13 @@ def setup_keycloak() -> str:
     test_user_name = "test-user"
     setup.create_user(test_user_name)
 
-    external_tool_client_name = "weather-agent"
-    setup.create_client(external_tool_client_name)
+    kagenti_keycloak_client_name = "kagenti-keycloak-client"
+    kagenti_keycloak_client_id = setup.create_client(kagenti_keycloak_client_name)
 
-    return setup.get_client_secret()
+    return setup.get_client_secret(kagenti_keycloak_client_id)
 
 
-def install():
+def install(use_existing_cluster: bool = False, **kwargs):
     """Installs Keycloak, patches it for proxy headers, and runs initial setup."""
     run_command(
         [
@@ -167,69 +169,14 @@ def install():
             "-n",
             "keycloak",
             "-f",
-            "https://raw.githubusercontent.com/keycloak/keycloak-quickstarts/refs/heads/main/kubernetes/keycloak.yaml",
+            str(config.RESOURCES_DIR / "keycloak.yaml"),
         ],
-        "Deploying Keycloak statefulset",
+        "Deploying Keycloak with Postgres DB",
     )
     run_command(
-        [
-            "kubectl",
-            "scale",
-            "-n",
-            "keycloak",
-            "statefulset",
-            "keycloak",
-            "--replicas=1",
-        ],
-        "Scaling Keycloak to 1 replica",
+        ["kubectl", "rollout", "status", "-n", "keycloak", "statefulset/postgres"],
+        "Waiting for Postgres rollout",
     )
-
-    patch_str = """
-    {
-        "spec": {
-            "template": {
-                "spec": {
-                    "containers": [
-                        {
-                            "name": "keycloak",
-                            "env": [
-                                {
-                                    "name": "KC_PROXY_HEADERS",
-                                    "value": "forwarded"
-                                }
-                            ],
-                            "resources": {
-                                "limits": {
-                                    "memory": "3000Mi"
-                                }
-                            },
-                            "startupProbe": {
-                                "periodSeconds": 30,
-                                "timeoutSeconds": 60
-                            }
-                        }
-                    ]
-                }
-            }
-        }
-    }
-    """
-    run_command(
-        [
-            "kubectl",
-            "patch",
-            "statefulset",
-            "keycloak",
-            "-n",
-            "keycloak",
-            "--type",
-            "strategic",
-            "--patch",
-            patch_str,
-        ],
-        "Patching Keycloak for proxy headers",
-    )
-
     run_command(
         ["kubectl", "rollout", "status", "-n", "keycloak", "statefulset/keycloak"],
         "Waiting for Keycloak rollout",
@@ -261,36 +208,65 @@ def install():
         "Adding Keycloak to Istio ambient mesh",
     )
 
-    # Setup Keycloak demo realm, user, and agent client
-    client_secret = setup_keycloak()
+    if not use_existing_cluster:
+        # Setup Keycloak demo realm, user, and agent client
+        kagenti_keycloak_client_secret = setup_keycloak()
 
-    # Distribute client secret to agent namespaces
-    namespaces_str = os.getenv("AGENT_NAMESPACES", "")
-    if not namespaces_str:
-        return
+        # Distribute client secret to agent namespaces
+        namespaces_str = os.getenv("AGENT_NAMESPACES", "")
+        if not namespaces_str:
+            return
 
-    agent_namespaces = [ns.strip() for ns in namespaces_str.split(",") if ns.strip()]
-    try:
-        kube_config.load_kube_config()
-        v1_api = client.CoreV1Api()
-    except Exception as e:
-        console.log(
-            f"[bold red]✗ Could not connect to Kubernetes to create secrets: {e}[/bold red]"
-        )
-        raise typer.Exit(1)
-
-    for ns in agent_namespaces:
-        if not secret_exists(v1_api, "keycloak-client-secret", ns):
-            run_command(
-                [
-                    "kubectl",
-                    "create",
-                    "secret",
-                    "generic",
-                    "keycloak-client-secret",
-                    f"--from-literal=client-secret={client_secret}",
-                    "-n",
-                    ns,
-                ],
-                f"Creating 'keycloak-client-secret' in '{ns}'",
+        agent_namespaces = [
+            ns.strip() for ns in namespaces_str.split(",") if ns.strip()
+        ]
+        try:
+            kube_config.load_kube_config()
+            v1_api = client.CoreV1Api()
+        except Exception as e:
+            console.log(
+                f"[bold red]✗ Could not connect to Kubernetes to create secrets: {e}[/bold red]"
             )
+            raise typer.Exit(1)
+
+        kagenti_keycloak_secret_name = "kagenti-keycloak-client-secret"
+
+        for ns in agent_namespaces:
+            if not secret_exists(v1_api, kagenti_keycloak_secret_name, ns):
+                run_command(
+                    [
+                        "kubectl",
+                        "create",
+                        "secret",
+                        "generic",
+                        kagenti_keycloak_secret_name,
+                        f"--from-literal=client-secret={kagenti_keycloak_client_secret}",
+                        "-n",
+                        ns,
+                    ],
+                    f"Creating '{kagenti_keycloak_secret_name}' in '{ns}'",
+                )
+            else:
+                # The secret value MUST be base64 encoded for the patch data.
+                encoded_secret = base64.b64encode(
+                    kagenti_keycloak_client_secret.encode("utf-8")
+                ).decode("utf-8")
+                patch_string = f'{{"data":{{"client-secret":"{encoded_secret}"}}}}'
+                run_command(
+                    [
+                        "kubectl",
+                        "patch",
+                        "secret",
+                        kagenti_keycloak_secret_name,
+                        "--type=merge",
+                        "-p",
+                        patch_string,
+                        "-n",
+                        ns,
+                    ],
+                    f"🔄 Patching '{kagenti_keycloak_secret_name}' in namespace '{ns}'",
+                )
+    else:
+        console.log(
+            f"[bold yellow]Skipping initial Keycloak setup because existing cluster is used.[/bold yellow]"
+        )

@@ -1,0 +1,15 @@
+# templates/keycloak-namespace.yaml
+
+{{- if .Values.components.keycloak.enabled }}
+# ------------------------------------------------------------------
+#  Creates the Namespace for all Keycloak-related resources.
+#  This is created during the main install, before any hooks.
+# ------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.keycloak.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+{{- end }}

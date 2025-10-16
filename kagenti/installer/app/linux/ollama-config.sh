@@ -14,7 +14,7 @@ metadata:
 addressType: IPv4
 endpoints:
 - addresses:
-  - $(docker network inspect kind | jq .[0].IPAM.Config[0].Gateway | sed s/\"//g)
+  - $(docker network inspect kind | jq -r '.[] | .IPAM.Config[] | select(.Gateway) | .Gateway')
   conditions:
     ready: true
 ports:

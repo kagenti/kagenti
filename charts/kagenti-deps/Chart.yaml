@@ -1,0 +1,12 @@
+apiVersion: v2
+name: kagenti-deps
+description: A Helm chart for deploying the kagenti dependencies
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+dependencies:
+- name: gateway-api
+  version: "1.3.0"
+  repository: "file://../gateway-api"
+  condition: components.gatewayApi.enabled

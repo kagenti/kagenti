@@ -26,5 +26,5 @@ from . import (
     registry,
     tekton,
     ui,
-    metrics_server
+    metrics_server,
 )

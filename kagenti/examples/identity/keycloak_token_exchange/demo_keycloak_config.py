@@ -1,5 +1,9 @@
 import os
-from keycloak_wrapper import create_keycloak_client, create_keycloak_client_scope, get_keycloak_access_token
+from keycloak_wrapper import (
+    create_keycloak_client,
+    create_keycloak_client_scope,
+    get_keycloak_access_token,
+)
 
 base_url = "http://localhost:8080"
 admin_username = "admin"
@@ -39,11 +43,9 @@ if len(access_token) > 0:
                     "name": "agent-audience",
                     "protocol": "openid-connect",
                     "protocolMapper": "oidc-audience-mapper",
-                    "config": {
-                        "included.client.audience": SPIFFE_ID_AGENT
-                    }
+                    "config": {"included.client.audience": SPIFFE_ID_AGENT},
                 }
-            ]
+            ],
         },
         {
             "name": "tool-audience",
@@ -53,17 +55,15 @@ if len(access_token) > 0:
                     "name": "tool-audience",
                     "protocol": "openid-connect",
                     "protocolMapper": "oidc-audience-mapper",
-                    "config": {
-                        "included.custom.audience": "example-tool"
-                    }
+                    "config": {"included.custom.audience": "example-tool"},
                 }
-            ]
-        }
+            ],
+        },
     ]
 
     for client_scope in client_scopes:
         print(f'Creating client scope "{client_scope["name"]}"')
-        
+
         create_keycloak_client_scope(client_scope, base_url, realm, access_token)
 
     # Create clients
@@ -85,10 +85,7 @@ if len(access_token) > 0:
             "standardFlowEnabled": True,
             "directAccessGrantsEnabled": True,
             # "protocol": "openid-connect",
-            "attributes": {
-                "jwks.url": JWKS_URL,
-                "use.jwks.url": "True"
-            },
+            "attributes": {"jwks.url": JWKS_URL, "use.jwks.url": "True"},
             "fullScopeAllowed": False,
             "optionalClientScopes": [
                 # "address",
@@ -97,7 +94,7 @@ if len(access_token) > 0:
                 # "offline_access",
                 # "microprofile-jwt",
                 "agent-audience"
-            ]
+            ],
         },
         {
             "clientId": SPIFFE_ID_AGENT,
@@ -105,10 +102,7 @@ if len(access_token) > 0:
             "standardFlowEnabled": True,
             "directAccessGrantsEnabled": True,
             # "protocol": "openid-connect",
-            "attributes": {
-                "jwks.url": JWKS_URL,
-                "use.jwks.url": "True"
-            },
+            "attributes": {"jwks.url": JWKS_URL, "use.jwks.url": "True"},
             "fullScopeAllowed": False,
             "optionalClientScopes": [
                 "tool-audience",
@@ -117,15 +111,15 @@ if len(access_token) > 0:
                 # "organization",
                 # "offline_access",
                 # "microprofile-jwt"
-            ]
-        }
+            ],
+        },
     ]
 
     for client in clients:
         print(f'Creating client "{client["clientId"]}"')
-        
+
         create_keycloak_client(client, base_url, realm, access_token)
-        
+
     # # TODO: Set up token exchange
     # # 1) create token exchange policy
     # # 2) enable permissions for ExampleTool

@@ -1,0 +1,78 @@
+# Global settings
+openshift: true
+
+# ------------------------------------------------------------------
+#  Control Panel: Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: true
+  mcpGateway:
+    enabled: true
+  platformOperator:
+    enabled: true
+  ui:
+    enabled: true
+  istio:
+    enabled: true  
+
+# Environment variables for secrets - they should be overriden by a .secrets.yaml file
+# or by using --set secrets.githubUser="" etc.
+secrets:
+  githubUser: ""
+  githubToken: ""
+  openaiApiKey: ""
+  slackBotToken: ""
+  adminSlackBotToken: ""
+  quayUser: ""
+  quayToken: ""
+
+common:
+  kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+
+# ------------------------------------------------------------------
+#  Components Configurations
+# ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+#  Agents Namespaces
+# ------------------------------------------------------------------
+agentNamespaces:
+- team1
+- team2
+
+# ------------------------------------------------------------------
+#  UI Configuration
+# ------------------------------------------------------------------
+ui:
+  configmap: kagenti-ui-config
+  auth:
+    enabled: false
+  namespace: kagenti-system
+  image: ghcr.io/kagenti/kagenti/ui
+  tag: v0.1.0-alpha.1
+
+# ------------------------------------------------------------------
+#  Platform Operator Configuration
+# ------------------------------------------------------------------
+kagentiPlatformOperator:
+  controllerManager:
+    container:
+      args:
+      - "--leader-elect"
+      - "--metrics-bind-address=:8443"
+      - "--health-probe-bind-address=:8081"
+      - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
+      - "--enable-client-registration=false"
+      resources:
+        limits:
+          memory: 512Mi
+
+# ------------------------------------------------------------------
+#  MCP Gateway Configuration
+# ------------------------------------------------------------------
+mcpGateway:
+  namespaces:
+    mcpSystem: mcp-system
+    gatewaySystem: gateway-system
+    istioNamespace: istio-system

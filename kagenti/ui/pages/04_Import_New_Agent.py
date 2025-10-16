@@ -12,19 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+User interface for Import New Agent page.
+"""
+
 import streamlit as st
+from lib.common_ui import check_auth
 from lib.build_utils import render_import_form
-from lib import constants
 from lib.kube import get_kube_api_client_cached
 
 # --- Define Agent-Specific Settings for the Import Form ---
 AGENT_EXAMPLE_SUBFOLDERS = [
-    "acp/acp_ollama_researcher",
-    "acp/acp_weather_service",
+    "a2a/weather_service",
     "a2a/a2a_contact_extractor",
     "a2a/a2a_currency_converter",
+    "a2a/slack_researcher",
 ]
-AGENT_PROTOCOL_OPTIONS = ["acp", "a2a"]
+AGENT_PROTOCOL_OPTIONS = ["a2a"]
+
+check_auth()
 
 # Get the generic ApiClient and status details
 k8s_api_client, k8s_client_msg, k8s_client_icon = get_kube_api_client_cached()
@@ -33,10 +39,11 @@ render_import_form(
     st_object=st,
     resource_type="Agent",
     example_subfolders=AGENT_EXAMPLE_SUBFOLDERS,
-    default_protocol="acp",
+    default_protocol="a2a",
     protocol_options=AGENT_PROTOCOL_OPTIONS,
     default_framework="LangGraph",
     k8s_api_client=k8s_api_client,
     k8s_client_status_msg=k8s_client_msg,
     k8s_client_status_icon=k8s_client_icon,
+    show_enabled_namespaces_only=True,
 )

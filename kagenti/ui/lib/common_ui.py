@@ -1,4 +1,4 @@
-# Assisted by watsonx Code Assistant 
+# Assisted by watsonx Code Assistant
 # Copyright 2025 IBM Corp.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Common utilities for UI.
+"""
+
+from typing import Callable, Optional
 import streamlit as st
+import kubernetes
 from .utils import (
     display_tags,
     extract_tags_from_labels,
@@ -22,27 +28,27 @@ from .utils import (
 from .kube import (
     is_deployment_ready,
     get_kubernetes_namespace,
+    get_enabled_namespaces,
     get_all_namespaces,
-    get_kube_api_client_cached,
 )
-from typing import Callable, List, Dict, Any, Optional
 from . import constants
-import kubernetes
 
 
+# pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, too-many-branches, too-many-statements
 def render_resource_catalog(
     st_object,
     resource_type_name: str,
     list_resources_func: Callable,
+    # pylint: disable=unused-argument
     get_details_func: Callable,
     render_details_func: Callable,
-    custom_obj_api: Optional[
-        kubernetes.client.CustomObjectsApi
-    ],
+    custom_obj_api: Optional[kubernetes.client.CustomObjectsApi],
     generic_api_client: Optional[kubernetes.client.ApiClient],
     session_state_key_selected_resource: str,
     delete_resource_func: Optional[Callable] = None,
+    show_enabled_namespaces_only: bool = False,
 ):
+    # pylint: disable=line-too-long
     """
     Renders a catalog page for a given type of Kubernetes resource.
     Manages selection and navigation between list and detail views.
@@ -58,7 +64,7 @@ def render_resource_catalog(
         generic_api_client (Optional[kubernetes.client.ApiClient]): The Kubernetes API client for generic resources.
         session_state_key_selected_resource (str): The Streamlit session state key for the selected resource.
         delete_resource_func (Optional[Callable]): A function to delete a resource. Should accept (api_client, resource_name, namespace).
-
+        enabled_namespaces_only (bool): If True, only list enabled namespaces in the selector.
 
     Returns:
         None
@@ -66,7 +72,11 @@ def render_resource_catalog(
     st_object.header(f"{resource_type_name} Catalog")
 
     # --- Namespace Selector ---
-    available_namespaces = get_all_namespaces(generic_api_client)
+    available_namespaces = []
+    if show_enabled_namespaces_only:
+        available_namespaces = get_enabled_namespaces(generic_api_client)
+    else:
+        available_namespaces = get_all_namespaces(generic_api_client)
 
     # Get the initial/current namespace
     current_namespace_from_kube_lib = get_kubernetes_namespace()
@@ -209,22 +219,22 @@ def render_resource_catalog(
                             )
                             st.rerun()
 
-
                         # Enable the Delete button if delete function is provided in arg list
                         if delete_resource_func:
+                            # pylint: disable=line-too-long
                             delete_confirm_key = f"delete_confirm_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
-                            
+
                             # Initialize delete confirmation state for the delete key
                             if delete_confirm_key not in st.session_state:
                                 st.session_state[delete_confirm_key] = False
-                            
+
                             if not st.session_state[delete_confirm_key]:
                                 delete_button_key = f"delete_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
                                 if st.button(
                                     "🗑️ Delete",
                                     key=delete_button_key,
                                     type="secondary",
-                                    help=f"Delete {resource_type_name} '{item_name}'"
+                                    help=f"Delete {resource_type_name} '{item_name}'",
                                 ):
                                     st.session_state[delete_confirm_key] = True
                                     # Refresh screen to show confirmation buttons
@@ -232,43 +242,47 @@ def render_resource_catalog(
                             else:
                                 # Confirmation buttons
                                 st.write("⚠️ **Confirm delete?**")
-                                
+
                                 col_confirm, col_cancel = st.columns([1, 1])
-                                
+
                                 with col_confirm:
                                     confirm_button_key = f"confirm_delete_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
                                     if st.button(
                                         "✅ Yes",
                                         key=confirm_button_key,
                                         type="primary",
-                                        help="Confirm deletion"
+                                        help="Confirm deletion",
                                     ):
                                         try:
                                             # Call the delete function
                                             delete_resource_func(
-                                                custom_obj_api, 
-                                                item_name, 
-                                                namespace_to_use
+                                                custom_obj_api,
+                                                item_name,
+                                                namespace_to_use,
                                             )
-                                            st.success(f"Successfully deleted {resource_type_name} '{item_name}'")
-                                            
+                                            st.success(
+                                                f"Successfully deleted {resource_type_name} '{item_name}'"
+                                            )
+
                                             # Reset confirmation state
                                             st.session_state[delete_confirm_key] = False
                                             st.rerun()
-                                            
+
                                         except Exception as e:
-                                            st.error(f"Failed to delete {resource_type_name}: {str(e)}")
+                                            st.error(
+                                                f"Failed to delete {resource_type_name}: {str(e)}"
+                                            )
                                             st.session_state[delete_confirm_key] = False
-                                
+
                                 with col_cancel:
                                     cancel_button_key = f"cancel_delete_{sanitize_for_session_state_key(item_name)}_{resource_type_name.lower()}"
                                     if st.button(
                                         "❌ No",
                                         key=cancel_button_key,
-                                        help="Cancel deletion"
+                                        help="Cancel deletion",
                                     ):
                                         st.session_state[delete_confirm_key] = False
-                                        st.rerun()                            
+                                        st.rerun()
         else:
             st_object.info(
                 f"No '{resource_type_name}' custom resources with the required labels found in the '{namespace_to_use}' namespace."
@@ -305,3 +319,16 @@ def display_resource_metadata(st_object, resource_details: dict):
     display_tags(st_object, tags)
     st_object.markdown("---")
     return tags
+
+
+def check_auth():
+    """If authentication is enabled, display content only if the user is logged in"""
+    if (
+        constants.ENABLE_AUTH_STRING in st.session_state
+        and st.session_state[constants.ENABLE_AUTH_STRING]
+        and constants.TOKEN_STRING not in st.session_state
+    ):
+        st.page_link("Home.py", label="Click here to login", icon="🏠")
+
+        # Stop rendering other content
+        st.stop()

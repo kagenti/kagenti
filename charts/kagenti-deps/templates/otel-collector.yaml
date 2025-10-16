@@ -1,0 +1,113 @@
+{{- if .Values.components.otel.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.122.1 
+          command:
+          - /otelcol-contrib
+          - --config=/etc/otelcol-config/base.yaml
+          #- --config=/etc/otelcol-config/beeai.yaml # use only base config for now
+          - --set
+          - receivers::otlp::protocols::http::endpoint=0.0.0.0:8335
+          volumeMounts:
+            - name: otel-collector-config
+              mountPath: /etc/otelcol-config
+          ports:
+            - containerPort: 4317
+              name: otlp-grpc
+              protocol: TCP
+            - containerPort: 4318
+              name: otlp-http
+              protocol: TCP
+            - containerPort: 8335
+              name: otlp-receiver
+              protocol: TCP  
+      volumes:
+        - name: otel-collector-config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      protocol: TCP
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      protocol: TCP
+      port: 4318
+      targetPort: 4318
+    - name: otlp-receiver
+      protocol: TCP
+      port: 8335
+      targetPort: 8335  
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+data:
+  base.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318 # overriden by the server
+
+    exporters:
+      debug:
+        verbosity: detailed
+      otlp/phoenix:
+        endpoint: phoenix:4317
+        tls:
+          insecure: true
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 1000
+      batch:
+      filter/phoenix:
+        traces:
+          span:
+            ## Filter for openinference packages
+            #### Python format `openinference.instrumentation.${package_name}`
+            #### - crewAI exception `crewai.telemetry`
+            #### Javascript format `@arizeai/openinference-instrumentation-${packageName}`
+            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry")
+
+    extensions:
+      health_check:
+
+    service:
+      extensions: [ health_check ]
+      pipelines:
+        traces/phoenix:
+          receivers: [ otlp ]
+          processors: [ memory_limiter, filter/phoenix, batch ]
+          exporters: [ otlp/phoenix ]
+{{- end }}          

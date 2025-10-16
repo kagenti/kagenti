@@ -1,0 +1,8 @@
+apiVersion: mcp.kagenti.com/v1alpha1
+kind: MCPServer
+metadata:
+  name: mcpserver
+  namespace: mcp-system
+spec:
+  # Default prefix for targetRefs without explicit toolPrefix
+  toolPrefix: kagenti_

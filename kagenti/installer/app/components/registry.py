@@ -19,10 +19,11 @@ from kubernetes import client, config as kube_config
 import typer
 
 from .. import config
+from ..config import ContainerEngine
 from ..utils import console, run_command
 
 
-def install():
+def install(**kwargs):
     """Deploys the internal container registry and configures its DNS."""
     run_command(
         ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "registry.yaml")],
@@ -43,13 +44,28 @@ def install():
             registry_ip = service.spec.cluster_ip
 
             container = f"{config.CLUSTER_NAME}-control-plane"
+            container_engine = ContainerEngine(config.CONTAINER_ENGINE)
+
             subprocess.run(
-                ["docker", "exec", container, "sh", "-c",
-                 f"echo {registry_ip} registry.cr-system.svc.cluster.local >> /etc/hosts"])
+                [
+                    container_engine.value,
+                    "exec",
+                    container,
+                    "sh",
+                    "-c",
+                    f"echo {registry_ip} registry.cr-system.svc.cluster.local >> /etc/hosts",
+                ]
+            )
 
             console.log(
                 "[bold green]✓[/bold green] Registry DNS configured in Kind container."
             )
+        except ValueError as e:
+            console.log(
+                f"[bold red]✗ Container engine must be either 'docker' or 'podman'[/bold red]"
+            )
+            raise typer.Exit(1)
+
         except Exception as e:
             console.log(f"[bold red]✗[/bold red] Failed to configure registry DNS: {e}")
             raise typer.Exit(1)

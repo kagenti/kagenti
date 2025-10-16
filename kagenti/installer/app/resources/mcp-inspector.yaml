@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: mcp-inspector
-          image: ghcr.io/modelcontextprotocol/inspector:0.15.0
+          image: ghcr.io/modelcontextprotocol/inspector:0.17.0
           ports:
             - containerPort: 6274
             - containerPort: 6277

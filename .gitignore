@@ -162,3 +162,9 @@ cython_debug/
 #.idea/
 
 **/.DS_Store
+
+.vscode
+
+.secrets.yaml
+
+*.tgz

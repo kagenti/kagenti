@@ -1,0 +1,25 @@
+{{- if and .Values.components.spire.enabled .Values.openshift }}
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: zero-trust-workload-identity-manager
+  namespace: zero-trust-workload-identity-manager
+spec:
+    upgradeStrategy: Default
+    targetNamespaces:
+    - {{ .Values.spire.namespace }}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/openshift-zero-trust-workload-identity-manager.zero-trust-workl: ''
+  name: openshift-zero-trust-workload-identity-manager
+  namespace: {{ .Values.spire.namespace }}
+spec:
+  channel: tech-preview-v0.1
+  installPlanApproval: Automatic
+  name: openshift-zero-trust-workload-identity-manager
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+{{- end }}  

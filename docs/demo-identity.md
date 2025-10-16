@@ -6,6 +6,7 @@ This document contains all considerations related to Identity in Agentic Platfor
 
 There are already several documents specific to identity:
 
+* [Kagenti Identity Overview](./2025-10.Kagenti-Identity.pdf)
 * [Client Registration](../kagenti/examples/identity/kagenti_client_registration/README.md)
 * [Token Exchange](../kagenti/examples/identity/token_exchange.md)
 
@@ -41,6 +42,6 @@ open http://spire-tornjak-ui.localtest.me:8080/
 Agents and Tools get SPIFFE Id as follow:
 
 ```console
-spiffe://localhost.me/ns/team/sa/acp-weather-service
+spiffe://localhost.me/ns/team/sa/weather-service
 spiffe://localhost.me/ns/team/sa/weather-tool
 ```

@@ -1,0 +1,170 @@
+# This template configures the agent namespaces based on the list provided in values.yaml.
+# For each namespace, it creates the namespace itself, applies necessary labels,
+# and creates secrets for GitHub, OpenAI, and Slack.
+{{- if .Values.agentNamespaces }}
+{{- range .Values.agentNamespaces }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  Namespace: {{ . }}
+#  Creates the namespace and applies Istio/Gateway labels.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  #labels:
+    # These labels correspond to the 'kubectl label' commands in the script
+    # shared-gateway-access: "true"
+    # istio.io/use-waypoint: waypoint
+    # istio.io/dataplane-mode: ambient
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  Secrets for Namespace: {{ . }}
+# ——————————————————————————————————————————————————————————————————————————————
+# 1. GitHub Token Secret (for general use)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-token-secret
+  namespace: {{ . }}
+type: Opaque
+stringData:
+  user: {{ $.Values.secrets.githubUser | quote }}
+  token: {{ $.Values.secrets.githubToken | quote }}
+---
+# 2. GHCR Docker Registry Secret (for pulling private images)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ghcr-secret
+  namespace: {{ . }}
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ (printf "{\"auths\":{\"ghcr.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.githubUser $.Values.secrets.githubToken (printf "%s:%s" $.Values.secrets.githubUser $.Values.secrets.githubToken | b64enc)) | b64enc }}
+---
+# 3. OpenAI API Key Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openai-secret
+  namespace: {{ . }}
+type: Opaque
+stringData:
+  apikey: {{ $.Values.secrets.openaiApiKey | quote }}
+---
+# 4. Slack Bot Tokens Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: slack-secret
+  namespace: {{ . }}
+type: Opaque
+stringData:
+  bot-token: {{ $.Values.secrets.slackBotToken | quote }}
+  admin-bot-token: {{ $.Values.secrets.adminSlackBotToken | quote }}
+---
+# 5. Quay.io Docker Registry Secret (for pushing images)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: quay-registry-secret
+  namespace: {{ . }}
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  ConfigMap for Environment Variables in Namespace: {{ . }}
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: environments
+  namespace: {{ . }}
+data:
+  ollama: |
+    [
+      {"name": "LLM_API_BASE", "value": "http://host.docker.internal:11434/v1"},
+      {"name": "LLM_API_KEY", "value": "dummy"},
+      {"name": "LLM_MODEL", "value": "llama3.2:3b-instruct-fp16"}
+    ]
+  openai: |
+    [
+      {
+        "name": "OPENAI_API_KEY",
+        "valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}
+      },
+      {
+        "name": "LLM_API_KEY",
+        "valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}
+      },
+      {"name": "LLM_API_BASE", "value": "https://api.openai.com/v1"},
+      {"name": "LLM_MODEL", "value": "gpt-4o-mini-2024-07-18"}
+    ]
+  mcp-weather: |
+    [
+      {"name": "MCP_URL", "value": "http://weather-tool:8000/mcp"}
+    ]
+  mcp-slack: |
+    [
+      {"name": "MCP_URL", "value": "http://slack-tool:8000/mcp"}
+    ]
+  slack-researcher-config: |
+    [
+      {"name": "EXTRA_HEADERS", "value": "{}"},
+      {"name": "MODEL_TEMPERATURE", "value": "0"},
+      {"name": "MAX_PLAN_STEPS", "value": "6"},
+      {"name": "SERVICE_PORT", "value": "8000"},
+      {"name": "LOG_LEVEL", "value": "INFO"}
+    ]
+  slack-researcher-auth-config: |
+    [
+      {
+        "name": "CLIENT_SECRET",
+        "valueFrom": {"secretKeyRef": {"name": "kagenti-keycloak-client-secret", "key": "client-secret"}}
+      },
+      {
+        "name": "ISSUER",
+        "value": "http://keycloak.localtest.me:8080/realms/master"
+      },
+      {
+        "name": "JWKS_URI",
+        "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+      },
+      {
+        "name": "AUDIENCE",
+        "value": "spiffe://localtest.me/sa/slack-researcher"
+      }
+    ]
+  mcp-slack-config: |
+    [
+      {
+        "name": "SLACK_BOT_TOKEN",
+        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "bot-token"}}
+      }
+    ]
+  mcp-slack-auth-config: |
+    [
+      {
+        "name": "ISSUER",
+        "value": "http://keycloak.localtest.me:8080/realms/master"
+      },
+      {
+        "name": "JWKS_URI",
+        "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+      },
+      {
+        "name": "AUDIENCE",
+        "value": "spiffe://localtest.me/sa/slack-tool"
+      },
+      {
+        "name": "ADMIN_SLACK_BOT_TOKEN",
+        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "admin-bot-token"}}
+      },
+      {
+        "name": "ADMIN_SCOPE_NAME",
+        "value": "slack-full-access"
+      }
+    ]
+{{- end }}
+{{- end }}

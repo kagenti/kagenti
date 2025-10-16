@@ -1,0 +1,65 @@
+# This workflow builds and pushes Docker images to the GitHub Container Registry (ghcr.io).
+# It uses a strategy matrix to build multiple images with specific tags in parallel.
+
+name: Build-Dependencies
+
+on:
+  # This allows the workflow to be run manually from the Actions tab in GitHub.
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    # The job will run on the latest version of Ubuntu.
+    runs-on: ubuntu-latest
+
+    # These permissions are necessary to read the repository content and push packages to ghcr.io.
+    permissions:
+      contents: read
+      packages: write
+
+    # A strategy matrix allows running the job multiple times with different configurations.
+    strategy:
+      matrix:
+        image_config:
+          - name: postgres
+            path: ./.github/dockerfiles/postgres
+            tag: '17.6'
+          - name: python
+            path: ./.github/dockerfiles/python12
+            tag: '3.12-slim'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5 # Using latest major version
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata for ${{ matrix.image_config.name }}
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/kagenti/${{ matrix.image_config.name }}
+          tags: |
+            # This creates a tag using the value from the strategy matrix.
+            type=raw,value=${{ matrix.image_config.tag }}
+
+      - name: Build and push ${{ matrix.image_config.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image_config.path }}
+          file: ${{ matrix.image_config.path }}/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

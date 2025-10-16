@@ -1,0 +1,98 @@
+{{- if .Values.components.mcpInspector.enabled  }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-inspector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-inspector
+  template:
+    metadata:
+      labels:
+        app: mcp-inspector
+    spec:
+      containers:
+        - name: mcp-inspector
+          image: ghcr.io/modelcontextprotocol/inspector:0.16.8
+          ports:
+            - containerPort: 6274
+            - containerPort: 6277
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          env:
+          - name: DANGEROUSLY_OMIT_AUTH
+            value: "true"
+          - name: ALLOWED_ORIGINS
+            valueFrom:
+              configMapKeyRef:
+                name: mcp-inspector-config
+                key: ALLOWED_ORIGINS
+          - name: HOST
+            value: 0.0.0.0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-inspector
+  namespace: kagenti-system
+spec:
+  selector:
+    app: mcp-inspector
+  ports:
+  - name: ui
+    port: 6274
+    protocol: TCP
+    targetPort: 6274
+  - name: proxy
+    port: 6277
+    protocol: TCP
+    targetPort: 6277
+  type: ClusterIP
+---
+{{- if  .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: mcp-inspector
+  namespace: kagenti-system
+spec:
+  path: /
+  port:
+    targetPort: ui
+  to:
+    kind: Service
+    name: mcp-inspector
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: mcp-proxy
+  namespace: kagenti-system
+spec:
+  path: /
+  port:
+    targetPort: proxy
+  to:
+    kind: Service
+    name: mcp-inspector
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}  
+{{- end }}  

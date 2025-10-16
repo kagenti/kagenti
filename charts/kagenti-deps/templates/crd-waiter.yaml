@@ -1,0 +1,75 @@
+{{- if and .Values.components.keycloak.enabled .Values.openshift }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kagenti.fullname" . }}-crd-waiter-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kagenti.fullname" . }}-crd-waiter-role
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kagenti.fullname" . }}-crd-waiter-binding
+  annotations:
+    "helm.sh/hook": pre-install, pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kagenti.fullname" . }}-crd-waiter-sa
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "kagenti.fullname" . }}-crd-waiter-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-crd-waiter
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      serviceAccountName: {{ include "kagenti.fullname" . }}-crd-waiter-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: kubectl
+          image: "{{ .Values.common.kubectlImage }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              CRDS_TO_WAIT_FOR="keycloaks.k8s.keycloak.org istios.sailoperator.io kialis.kiali.io"
+              
+              for crd in $CRDS_TO_WAIT_FOR; do
+                echo "Waiting for CRD '$crd' to be available..."
+                until kubectl get crd $crd -o name > /dev/null 2>&1; do
+                  echo -n "."
+                  sleep 3
+                done
+                echo "✅ CRD '$crd' is available."
+              done
+
+              echo "All required CRDs are now available. Proceeding."
+{{- end }}

@@ -24,6 +24,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from . import config
+from .config import ContainerEngine
 from .utils import console, run_command
 
 
@@ -46,20 +47,77 @@ def kind_cluster_exists():
 def kind_cluster_running():
     """Checks if the Kind cluster is already running."""
     try:
+        container_engine = ContainerEngine(config.CONTAINER_ENGINE)
         result = subprocess.run(
-            ["docker", "ps", "--format", "{{.Names}}"],
+            [container_engine.value, "ps", "--format", "{{.Names}}"],
             capture_output=True,
             text=True,
             check=True,
         )
         return f"{config.CLUSTER_NAME}-control-plane" in result.stdout.split()
+    except ValueError as e:
+        console.log(
+            f"[bold red]✗ Container engine must be set to either 'docker' or 'podman' in config.py [/bold red]"
+        )
+        raise typer.Exit(1)
     except subprocess.CalledProcessError as e:
-        console.log(f"[bold red]✗ Failed to run docker ps.[/bold red]")
+        console.log(
+            f"[bold red]✗ Failed to run {config.CONTAINER_ENGINE} ps.[/bold red]"
+        )
         console.log(f"[red]{e.stderr.strip()}[/red]")
         raise typer.Exit(1)
 
 
-def create_kind_cluster(install_registry: bool):
+def check_kube_connection(
+    install_registry: bool, use_existing_cluster: bool, using_kind_cluster: bool
+):
+    """Sets up the Kubernetes cluster - either creates a kind cluster or uses existing cluster."""
+    # Check if KUBECONFIG is set or if a cluster is accessible from the default kubeconfig location ~/.kube/config
+    kubeconfig_path = os.getenv("KUBECONFIG") or os.path.expanduser("~/.kube/config")
+    if not kubeconfig_path:
+        console.print(
+            "[bold red]Unable to find an existing KUBECONFIG. Please set it to your cluster's kubeconfig file.[/bold red]"
+        )
+        raise typer.Exit(1)
+
+    # Ask for confirmation so we don't add to an existing cluster by mistake
+    if not use_existing_cluster and not using_kind_cluster:
+        console.print(
+            f"[yellow]Found Kubernetes cluster configuration in KUBECONFIG: {kubeconfig_path}[/yellow]"
+        )
+        if not Confirm.ask(
+            "[bold yellow]?[/bold yellow] Do you want to proceed with this Kubernetes cluster?",
+            default=True,
+        ):
+            console.print("[bold red]Installation cancelled by user.[/bold red]")
+            raise typer.Exit(1)
+
+    try:
+        kube_config.load_kube_config()
+        v1_api = client.CoreV1Api()
+        # Test connection by getting cluster info
+        v1_api.list_namespace(limit=1)
+        console.log(
+            "[bold green]✓[/bold green] Successfully connected to existing Kubernetes cluster."
+        )
+
+    except Exception as e:
+        console.log(
+            f"[bold red]✗ Failed to connect to existing Kubernetes cluster: {e}[/bold red]"
+        )
+        raise typer.Exit(1)
+    console.print()
+
+
+def confirm_ask(prompt: str, default: bool, silent: bool):
+    """Prompt the user unless silent mode is enabled."""
+    if silent:
+        return default
+    else:
+        return Confirm.ask(prompt, default=default)
+
+
+def create_kind_cluster(install_registry: bool, silent: bool):
     """Creates a Kind cluster if it doesn't already exist."""
     console.print(
         Panel(
@@ -71,7 +129,7 @@ def create_kind_cluster(install_registry: bool):
             console.log(
                 f"[bold green]✓[/bold green] Kind cluster '{config.CLUSTER_NAME}' already running. Skipping creation."
             )
-            return
+            return True
         else:
             console.log(
                 f"[bold red]x Kind cluster '{config.CLUSTER_NAME}' exists but is not running."
@@ -79,12 +137,12 @@ def create_kind_cluster(install_registry: bool):
             console.print("[bold red]Cannot proceed. Exiting.[/bold red]")
             raise typer.Exit(1)
 
-    if not Confirm.ask(
+    if not confirm_ask(
         f"[bold yellow]?[/bold yellow] Kind cluster '{config.CLUSTER_NAME}' not found. Create it now?",
         default=True,
+        silent=silent,
     ):
-        console.print("[bold red]Cannot proceed without a cluster. Exiting.[/bold red]")
-        raise typer.Exit()
+        return False
 
     base_config = """
 kind: Cluster
@@ -133,17 +191,26 @@ containerdConfigPatches:
             console.log(f"[red]{e.stderr.strip()}[/red]")
             raise typer.Exit(1)
     console.print()
+    return True
 
 
 def preload_images_in_kind(images: list[str]):
-    """Pulls and preloads a list of Docker images into the Kind cluster."""
+    """Pulls and preloads a list of Container images into the Kind cluster."""
     console.print(
         Panel(
             Text("Preloading Images into Kind", justify="center", style="bold yellow")
         )
     )
+    try:
+        container_engine = config.ContainerEngine(config.CONTAINER_ENGINE)
+    except ValueError as e:
+        console.log(
+            f"[bold red]✗ Container engine must be set to either 'docker' or 'podman' in config.py[/bold red]"
+        )
+        raise typer.Exit(1)
+
     for image in images:
-        run_command(["docker", "pull", image], f"Pulling image {image}")
+        run_command([container_engine.value, "pull", image], f"Pulling image {image}")
         run_command(
             ["kind", "load", "docker-image", image, "--name", config.CLUSTER_NAME],
             f"Loading image {image} into kind",
@@ -151,7 +218,7 @@ def preload_images_in_kind(images: list[str]):
     console.print()
 
 
-def check_and_create_agent_namespaces():
+def check_and_create_agent_namespaces(silent: bool):
     """Checks for agent namespaces and creates them if they are missing."""
     console.print(
         Panel(
@@ -185,11 +252,22 @@ def check_and_create_agent_namespaces():
         console.print(
             f"The following required agent namespaces do not exist: [bold yellow]{', '.join(missing_namespaces)}[/bold yellow]"
         )
-        if Confirm.ask("Do you want to create them now?", default=True):
+        if confirm_ask("Do you want to create them now?", default=True, silent=silent):
             for ns in missing_namespaces:
                 run_command(
                     ["kubectl", "create", "namespace", ns], f"Creating namespace '{ns}'"
                 )
+                run_command(
+                    [
+                        "kubectl",
+                        "wait",
+                        "--for=jsonpath={.status.phase}=Active",
+                        f"namespace/{ns}",
+                        "--timeout=60s",
+                    ],
+                    f"Waiting for namespace '{ns}' to become active",
+                )
+                existing_namespaces.add(ns)
         else:
             console.print(
                 "[bold red]Cannot proceed without agent namespaces. Exiting.[/bold red]"
@@ -199,4 +277,19 @@ def check_and_create_agent_namespaces():
         console.log(
             "[bold green]✓ All required agent namespaces already exist.[/bold green]"
         )
+
+    for ns in agent_namespaces:
+        if ns in existing_namespaces:
+            run_command(
+                [
+                    "kubectl",
+                    "label",
+                    "namespace",
+                    ns,
+                    f"{config.ENABLED_NAMESPACE_LABEL_KEY}={config.ENABLED_NAMESPACE_LABEL_VALUE}",
+                    "--overwrite",
+                ],
+                f"Labeling namespace '{ns}' as enabled for agents/tools",
+            )
+
     console.print()

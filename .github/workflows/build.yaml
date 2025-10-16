@@ -8,6 +8,15 @@ on:
   # Allows also to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  REPO: kagenti/kagenti
+  CHARTS_PATH: ./charts
+
 jobs:
   build-and-push:
     # The type of runner that the job will run on
@@ -17,6 +26,16 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        image_config:
+          - name: ui
+            path: ./kagenti
+          - name: ui-oauth-secret
+            path: ./kagenti/auth
+          - name: client-registration
+            path: ./kagenti/auth
 
     steps:
       # 1. Checkout the repository code
@@ -39,25 +58,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 5. Extract metadata (tags and labels) for Docker
       # This action automatically creates useful tags based on the Git event.
       # In this case, it will use the Git tag as the Docker image tag.
-      - name: Extract Docker metadata
+      - name: Extract Docker metadata for ${{ matrix.image_config.name }}
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/ui
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}
           tags: |
             # extract tag from git ref, e.g., v1.0.0 -> 1.0.0
             type=ref,event=tag
 
-      # 6. Build and push the Docker image
-      - name: Build and push Docker image
+      - name: Build and push ${{ matrix.image_config.name }}
         uses: docker/build-push-action@v6
         with:
-          context: ./kagenti/ui
-          file: ./kagenti/ui/Dockerfile
+          context: ${{ matrix.image_config.path }}/${{ matrix.image_config.name }}
+          file: ${{ matrix.image_config.path }}/${{ matrix.image_config.name }}/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Package and push kagenti chart
+        run: |
+          chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
+          chartPackageName="kagenti-${chartVersion}.tgz"
+          cd ${{ env.CHARTS_PATH }}//kagenti
+          echo "Fetching Helm chart dependencies..."
+          helm dependency update
+          yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
+          helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
+          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}   
+      
+      - name: Package and push kagenti-deps chart
+        run: |
+          chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
+          chartPackageName="kagenti-deps-${chartVersion}.tgz"
+          cd ${{ env.CHARTS_PATH }}//kagenti-deps
+          echo "Fetching Helm chart dependencies..."
+          helm dependency update
+          yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
+          helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
+          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}       

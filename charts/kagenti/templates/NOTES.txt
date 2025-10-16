@@ -1,0 +1,15 @@
+Kagenti UI
+
+The route for kagenti UI can be found with the command:
+
+```
+echo https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')
+```
+
+The initial credentials for Keycloak can be shown with the command:
+
+```
+{{- $command := `kubectl get secret keycloak-initial-admin -n keycloak -o go-template='Username: {{.data.username | base64decode}}  password: {{.data.password | base64decode}}{{"\n"}}'` -}}
+{{ $command | indent 2 }}
+```
+

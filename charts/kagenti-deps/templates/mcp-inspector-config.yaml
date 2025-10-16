@@ -1,0 +1,124 @@
+# This template creates a post-install job that waits for OpenShift routes to be
+# admitted and then creates a ConfigMap with their hostnames.
+# To enable it, set 'mcpConfigJob.enabled: true' in your values.yaml
+{{- if and .Values.components.mcpInspector.enabled .Values.openshift }}
+# ——————————————————————————————————————————————————————————————————————————————
+#  RBAC for the MCP Config Job
+#  These resources are also created as hooks to ensure they exist before the
+#  job runs and are cleaned up appropriately.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kagenti.fullname" . }}-mcp-config-sa
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "-5" # Very low weight to ensure it's created first
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kagenti.fullname" . }}-mcp-config-role
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+- apiGroups: ["route.openshift.io"]
+  resources: ["routes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kagenti.fullname" . }}-mcp-config-binding
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "-4" # Runs after the SA and Role are created
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kagenti.fullname" . }}-mcp-config-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kagenti.fullname" . }}-mcp-config-sa
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  Configuration Job (Post-Install Hook)
+#  This job waits for routes and creates the mcp-inspector-config ConfigMap.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kagenti.fullname" . }}-mcp-config-job
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": hook-succeeded
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      serviceAccountName: {{ include "kagenti.fullname" . }}-mcp-config-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: route-checker-and-config-creator
+          image: "{{ .Values.common.kubectlImage }}"
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              set -e
+              echo "Starting MCP config job..."
+
+              # Function to wait for a specific route to be admitted
+              wait_for_route() {
+                ROUTE_NAME=$1
+                NAMESPACE=$2
+                echo "Waiting for route '$ROUTE_NAME' in namespace '$NAMESPACE' to be admitted..."
+                until [ "$(kubectl get route $ROUTE_NAME -n $NAMESPACE -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}' 2>/dev/null)" = "True" ]; do
+                  echo "Route '$ROUTE_NAME' not admitted yet. Retrying in 15 seconds..."
+                  sleep 15
+                done
+                echo "Route '$ROUTE_NAME' is admitted."
+              }
+
+              # Wait for route
+              wait_for_route mcp-inspector {{ .Release.Namespace }}
+
+              echo "Route is ready. Fetching hostnames..."
+
+              # Get hostnames from the route
+              INSPECTOR_HOST=$(kubectl get route mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
+
+              if [ -z "$INSPECTOR_HOST" ]; then
+                echo "Error: Could not retrieve hostname."
+                exit 1
+              fi
+
+              echo "Inspector host: $INSPECTOR_HOST"
+
+              # Create the ConfigMap using a heredoc and apply it
+              echo "Creating/updating mcp-inspector-config ConfigMap..."
+              kubectl apply -n {{ .Release.Namespace }} -f - <<EOF
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: mcp-inspector-config
+              data:
+                ALLOWED_ORIGINS: "https://${INSPECTOR_HOST}"
+              EOF
+
+              echo "ConfigMap 'mcp-inspector-config' applied successfully."
+{{- end }}
