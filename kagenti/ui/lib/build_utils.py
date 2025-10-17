@@ -40,7 +40,7 @@ from .kube import (
     _handle_kube_api_exception,
     _display_kube_config_status_once,
 )
-from .utils import sanitize_for_k8s_name, remove_url_prefix, get_resource_name_from_path
+from .utils import sanitize_for_k8s_name, get_resource_name_from_path
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,6 @@ def _construct_tool_resource_body(
         Optional[dict]: The constructed Kubernetes resource body, or None if an error occurred.
     """
     k8s_resource_name = sanitize_for_k8s_name(resource_name)
-    #   image_name = k8s_resource_name
     repo_user = get_secret_data(
         core_v1_api,
         build_namespace,
@@ -333,15 +332,10 @@ def _construct_agent_resource_body(
     resource_name: str,
     resource_type: str,
     repo_url: str,
-    repo_branch: str,
-    source_subfolder: str,
     protocol: str,
     framework: str,
     description: str,
-    build_from_source: bool,
-    registry_config: Optional[dict] = None,
     additional_env_vars: Optional[list] = None,
-    image_tag: str = constants.DEFAULT_IMAGE_TAG,
     pod_config: Optional[dict] = None,
 ) -> Optional[dict]:
     """
@@ -382,29 +376,36 @@ def _construct_agent_resource_body(
         return None
     st_object.info(f"Using GitHub username '{repo_user}' from secret for build.")
 
-    image_name = k8s_resource_name
-    if build_from_source:
-        # Use configured registry or fall back to local
-        if registry_config and registry_config.get("registry_url"):
-            image_registry_prefix = registry_config["registry_url"]
-        else:
-            image_registry_prefix = "registry.cr-system.svc.cluster.local:5000"
-    else:
-        image_registry_prefix, image_name, _tag = parse_image_url(repo_url)
-        if _tag:
-            image_tag = _tag
-
     client_secret_for_env = _get_keycloak_client_secret(
         st_object, f"{k8s_resource_name}-client"
     )
     final_env_vars = list(constants.DEFAULT_ENV_VARS)
     if additional_env_vars:
         final_env_vars.extend(additional_env_vars)
+
+    client_id = build_namespace + "/" + k8s_resource_name
+
+    env_dict = {}
+    # Add default vars
+    for var in constants.DEFAULT_ENV_VARS:
+        if isinstance(var, dict) and "name" in var:
+            env_dict[var["name"]] = var
+
+    # Add/override with additional vars from UI
     if client_secret_for_env:
         final_env_vars.append({"name": "CLIENT_SECRET", "value": client_secret_for_env})
-    final_env_vars.append(
-        {"name": "GITHUB_SECRET_NAME", "value": constants.GIT_USER_SECRET_NAME}
-    )
+
+    env_dict["CLIENT_NAME"] = {"name": "CLIENT_NAME", "value": client_id}
+    env_dict["CLIENT_ID"] = {
+        "name": "CLIENT_ID",
+        "value": f"spiffe://localtest.me/sa/{k8s_resource_name}",
+    }
+    env_dict["NAMESPACE"] = {"name": "NAMESPACE", "value": build_namespace}
+
+    # Convert back to list
+    final_env_vars = list(env_dict.values())
+    if additional_env_vars:
+        final_env_vars.extend(additional_env_vars)
 
     # Extract service ports from pod_config or use defaults
     if pod_config and pod_config.get("service_ports"):
@@ -421,7 +422,7 @@ def _construct_agent_resource_body(
         ]
     body = {
         "apiVersion": f"{constants.CRD_GROUP}/{constants.CRD_VERSION}",
-        "kind": "Component",
+        "kind": "Agent",
         "metadata": {
             "name": k8s_resource_name,
             "namespace": build_namespace,
@@ -435,31 +436,46 @@ def _construct_agent_resource_body(
         },
         "spec": {
             "description": description,
-            "suspend": False,
-            "agent": {},
-            "deployer": {
-                "name": k8s_resource_name,
-                "namespace": build_namespace,
-                "deployAfterBuild": True,
-                "kubernetes": {
-                    "imageSpec": {
-                        "image": image_name,
-                        "imageTag": image_tag,
-                        "imageRegistry": image_registry_prefix,
-                        "imagePullPolicy": constants.DEFAULT_IMAGE_POLICY,
-                    },
-                    "containerPorts": [
+            "replicas": 1,
+            "imageSource": {
+                "image": repo_url,
+            },
+            "servicePorts": service_ports,
+            "podTemplateSpec": {
+                "spec": {
+                    "containers": [
                         {
-                            "name": "http",
-                            "containerPort": constants.DEFAULT_IN_CLUSTER_PORT,
-                            "protocol": "TCP",
-                        },
+                            "name": "agent",
+                            "image": repo_url,
+                            "imagePullPolicy": constants.DEFAULT_IMAGE_POLICY,
+                            "resources": {
+                                "limits": constants.DEFAULT_RESOURCE_LIMITS,
+                                "requests": constants.DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "env": final_env_vars,
+                            "ports": [
+                                {
+                                    "name": "http",
+                                    "containerPort": constants.DEFAULT_IN_CLUSTER_PORT,
+                                    "protocol": "TCP",
+                                },
+                            ],
+                            "volumeMounts": [
+                                {
+                                    "name": "cache",
+                                    "mountPath": "/app/.cache",
+                                },
+                                {
+                                    "name": "marvin",
+                                    "mountPath": "/.marvin",
+                                },
+                                {
+                                    "name": "shared-data",
+                                    "mountPath": "/shared",
+                                },
+                            ],
+                        }
                     ],
-                    "servicePorts": service_ports,
-                    "resources": {
-                        "limits": constants.DEFAULT_RESOURCE_LIMITS,
-                        "requests": constants.DEFAULT_RESOURCE_REQUESTS,
-                    },
                     "volumes": [
                         {
                             "name": "cache",
@@ -469,70 +485,15 @@ def _construct_agent_resource_body(
                             "name": "marvin",
                             "emptyDir": {},
                         },
-                    ],
-                    "volumeMounts": [
                         {
-                            "name": "cache",
-                            "mountPath": "/app/.cache",
-                        },
-                        {
-                            "name": "marvin",
-                            "mountPath": "/.marvin",
+                            "name": "shared-data",
+                            "emptyDir": {},
                         },
                     ],
                 },
-                "env": final_env_vars,
             },
         },
     }
-    if build_from_source:
-        build_params = [
-            {
-                "name": "SOURCE_REPO_SECRET",
-                "value": "github-token-secret",
-            },
-            {
-                "name": "repo-url",
-                "value": remove_url_prefix(repo_url),
-            },
-            {
-                "name": "revision",
-                "value": repo_branch,
-            },
-            {
-                "name": "subfolder-path",
-                "value": source_subfolder,
-            },
-            {
-                "name": "image",
-                "value": f"{image_registry_prefix}/{image_name}:{image_tag}",
-            },
-        ]
-
-        # Add registry credentials for external registries
-        if (
-            registry_config
-            and registry_config.get("requires_auth")
-            and registry_config.get("credentials_secret")
-        ):
-            build_params.append(
-                {
-                    "name": "registry-secret",  # Use the parameter name expected by kaniko task
-                    "value": registry_config["credentials_secret"],
-                }
-            )
-
-        body["spec"]["agent"] = {
-            "build": {
-                "mode": DEV_EXTERNAL_MODE
-                if (registry_config and registry_config.get("requires_auth"))
-                else DEV_LOCAL_MODE,
-                "pipeline": {
-                    "parameters": build_params,
-                    "cleanupAfterBuild": True,
-                },
-            },
-        }
 
     return body
 
@@ -602,13 +563,9 @@ def trigger_and_monitor_build(
             resource_name=k8s_resource_name,
             resource_type=resource_type,
             repo_url=repo_url,
-            repo_branch=repo_branch,
-            source_subfolder=source_subfolder,
             protocol=protocol,
             framework=framework,
             description=description,
-            build_from_source=True,
-            registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
@@ -641,7 +598,7 @@ def trigger_and_monitor_build(
                 group=constants.CRD_GROUP,
                 version=constants.CRD_VERSION,
                 namespace=build_namespace,
-                plural=constants.COMPONENTS_PLURAL,
+                plural=constants.AGENTS_PLURAL,
                 body=build_cr_body,
             )
             st_object.success(
@@ -677,7 +634,7 @@ def trigger_and_monitor_build(
                     group=constants.CRD_GROUP,
                     version=constants.CRD_VERSION,
                     namespace=build_namespace,
-                    plural=constants.COMPONENTS_PLURAL,
+                    plural=constants.AGENTS_PLURAL,
                     name=k8s_resource_name,
                 )
                 status_data = build_obj.get("status", {})
@@ -744,7 +701,7 @@ def trigger_and_monitor_build(
                         group=constants.CRD_GROUP,
                         version=constants.CRD_VERSION,
                         namespace=build_namespace,
-                        plural=constants.COMPONENTS_PLURAL,
+                        plural=constants.AGENTS_PLURAL,
                         name=k8s_resource_name,
                     )
 
@@ -860,12 +817,9 @@ def trigger_and_monitor_deployment_from_image(
             resource_name=k8s_resource_name,
             resource_type=resource_type,
             repo_url=repo_url,
-            repo_branch="",
-            source_subfolder="",
             protocol=protocol,
             framework=framework,
             description=description,
-            build_from_source=False,
             pod_config=pod_config,
             additional_env_vars=additional_env_vars,
         )
@@ -900,7 +854,7 @@ def trigger_and_monitor_deployment_from_image(
                     group=constants.CRD_GROUP,
                     version=constants.CRD_VERSION,
                     namespace=deployment_namespace,
-                    plural=constants.COMPONENTS_PLURAL,
+                    plural=constants.AGENTS_PLURAL,
                     body=cr_body,
                 )
             elif resource_type.lower() == "tool":
@@ -949,7 +903,7 @@ def trigger_and_monitor_deployment_from_image(
                         group=constants.CRD_GROUP,
                         version=constants.CRD_VERSION,
                         namespace=deployment_namespace,
-                        plural=constants.COMPONENTS_PLURAL,
+                        plural=constants.AGENTS_PLURAL,
                         name=k8s_resource_name,
                     )
                     final_deployment_status = build_obj.get("status", {}).get(
