@@ -2,7 +2,7 @@
 
 **This document is work in progress**
 
-## Current limitations 
+## Current limitations
 
 These limitations will be addressed in successive PRs.
 
@@ -14,7 +14,7 @@ These limitations will be addressed in successive PRs.
 - MCP inspector integration in tools details page is not enabled yet
 - MCP Gateway integration has not been tested yet
 
-## Requirements 
+## Requirements
 
 - helm >= v3.18.0
 - kubectl >= v1.32.1 or oc >= 4.16.0
@@ -65,7 +65,7 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 
 3. **Update Helm Charts dependencies:**
 
-   These commands need to be run only the first time you clone 
+   These commands need to be run only the first time you clone
    the repository or when there are updates to the charts.
 
    ```shell
@@ -75,7 +75,7 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 
 4. **Install Dependencies:**
    ```shell
-   helm install kagenti-deps ./charts/kagenti-deps/ -n kagenti-system --create-namespace 
+   helm install kagenti-deps ./charts/kagenti-deps/ -n kagenti-system --create-namespace
    ```
 
 5. **Install the Kagenti Chart:**
@@ -85,7 +85,7 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 
 ## Access the UI
 
-After the chart installs, you may access the UI following the instructions in the notes; the URL to UI can be found 
+After the chart installs, you may access the UI following the instructions in the notes; the URL to UI can be found
 running this command:
 
 ```shell
@@ -99,22 +99,32 @@ You may use the pre-built images available at https://github.com/orgs/kagenti/pa
 or build from source. Building from source has been tested only with `quay.io`, and requires setting up a robot account on [quay.io](https://quay.io), creating empty repos in your organization for the repos to build (e.g.`a2a-contact-extractor` and `a2a-currency-converter`) and granting the robot account write access to those repos.
 
 Finally, you may get the Kubernetes secret from the robot account you created, and apply the secret to the namespaces
-you enabled for agents and tools (e.g. `team1` and `team2`). 
+you enabled for agents and tools (e.g. `team1` and `team2`).
 
 You should now be able to use the UI to:
 
 - Import an agent
 - List the agent
 - Interact with the agent from the agent details page
-- Import a MCP tool 
-- List the tool 
+- Import a MCP tool
+- List the tool
 - Interact with the tool from the tool details page
 
 
 # 🚀 Running the Demo
-
 > **Note**
 > At this time, only the OpenAI API-backed agents have been tested: `a2a-content-extractor` and `a2a-currency-converter`.
+
+# Setup a Namespace
+The namespace must have the two following labels attached to be able to be used by Kagenti and Kiali.
+
+```
+  labels:
+    kagenti-enabled: 'true'
+    istio-injection: enabled
+```
+
+Once those labels are attached to a namespace it will become visible with the Kagenti UI.
 
 There are two ways to get the agent images for the demo: using pre-built images (recommended for a quick start) or building them from source.
 
@@ -181,6 +191,3 @@ running the command:
 ```shell
 kubectl get secret keycloak-initial-admin -n keycloak -o go-template='Username: {{.data.username | base64decode}}  password: {{.data.password | base64decode}}{{"\n"}}'
 ```
-
-
-
