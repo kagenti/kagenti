@@ -72,25 +72,31 @@ def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payloa
         raise
 
 
-# Read SVID JWT from file to get client ID
-jwt_file_path = "/opt/jwt_svid.token"
-try:
-    with open(jwt_file_path, "r") as file:
-        content = file.read()
+def get_client_id() -> str:
+    """
+    Read the SVID JWT from file and extract the client ID from the "sub" claim.
+    """
+    # Read SVID JWT from file to get client ID
+    jwt_file_path = "/opt/jwt_svid.token"
+    try:
+        with open(jwt_file_path, "r") as file:
+            content = file.read()
 
-except FileNotFoundError:
-    print(f"Error: The file {jwt_file_path} was not found.")
-except Exception as e:
-    print(f"An error occurred: {e}")
+    except FileNotFoundError:
+        print(f"Error: The file {jwt_file_path} was not found.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
-if content is None or content.strip() == "":
-    raise Exception(f"No content read from SVID JWT.")
+    if content is None or content.strip() == "":
+        raise Exception(f"No content read from SVID JWT.")
 
-decoded = jwt.decode(content, options={"verify_signature": False})
-if "sub" not in decoded:
-    raise Exception('SVID JWT does not contain a "sub" claim.')
-client_id = decoded["sub"]
+    decoded = jwt.decode(content, options={"verify_signature": False})
+    if "sub" not in decoded:
+        raise Exception('SVID JWT does not contain a "sub" claim.')
+    return decoded["sub"]
 
+
+client_id = get_client_id()
 
 # The Keycloak URL is handled differently from the other env vars because unlike the others, it's intended to be optional
 try:

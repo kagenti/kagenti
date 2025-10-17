@@ -210,7 +210,7 @@ try:
         internal_kagenti_client_id, agent_access_client_scope_id, {}
     )
 except Exception as e:
-    print(f"Could not enable service accounts for client {slack_client_id}: {e}")
+    print(f"Could not enable service accounts for client {kagenti_client_id}: {e}")
 
 # Add slack-partial-access and slack-full-access client scopes to the agent client
 try:
@@ -222,9 +222,7 @@ try:
         internal_slack_agent_client_id, full_client_scope_id, {}
     )
 except Exception as e:
-    print(
-        f"Could not enable service accounts for client {internal_slack_agent_client_id}: {e}"
-    )
+    print(f"Could not enable service accounts for client {slack_agent_client_id}: {e}")
 
 # Create the partial access user and add the realm roles
 partial_user_id = keycloak_admin.create_user(

@@ -139,9 +139,9 @@ def install(**kwargs):
                 "-n",
                 ns,
                 "-f",
-                str(config.RESOURCES_DIR / "spiffe_helper_config.yaml"),
+                str(config.RESOURCES_DIR / "spiffe-helper-config.yaml"),
             ],
-            f"Applying spiffe_helper_config configmap in '{ns}'",
+            f"Applying spiffe-helper-config configmap in '{ns}'",
         )
         run_command(
             ["kubectl", "label", "ns", ns, "shared-gateway-access=true", "--overwrite"],
