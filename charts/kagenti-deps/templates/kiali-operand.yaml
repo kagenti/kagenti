@@ -31,9 +31,13 @@ spec:
       auth:
         type: bearer
         use_kiali_token: true
+      {{- if .Values.openshift }}
       thanos_proxy:
         enabled: true
       url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+      {{- else }}
+      url: http://kagenti-prometheus-kube-pr-prometheus.monitoring:9090
+      {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

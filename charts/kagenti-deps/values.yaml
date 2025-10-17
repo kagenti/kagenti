@@ -117,3 +117,22 @@ cert-manager:
 # ------------------------------------------------------------------
 spire:
   namespace: zero-trust-workload-identity-manager
+
+
+registry:
+  namespace: cr-system
+  name: registry
+  replicaCount: 1
+  image:
+    repository: ghcr.io/distribution/distribution
+    tag: "3.0.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 5000
+    targetPort: 5000
+  
+  env:
+    otelTracesExporter: "none"
+    logLevel: "info"

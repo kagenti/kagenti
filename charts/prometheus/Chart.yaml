@@ -1,0 +1,16 @@
+apiVersion: v2
+name: prometheus
+description: A Helm chart for Kubernetes
+
+type: application
+
+version: 0.1.0
+
+appVersion: "v0.86.0"
+
+dependencies:
+  - name: kube-prometheus-stack
+    version: "~78.3.0"
+    repository: https://prometheus-community.github.io/helm-charts
+    tags:
+      - kubernetes
