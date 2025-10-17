@@ -18,66 +18,67 @@ from ..utils import run_command
 
 
 def install(**kwargs):
-    """Install K8s Gateway CRDs."""
-    # This command installs K8s Gateway CRDs
+
+    """Install MCP Gateway Helm chart"""
+    # This command installs MCP Gateway
     run_command(
         [
-            "kubectl",
-            "apply",
-            "-k",
-            "https://github.com/kubernetes-sigs/gateway-api/config/crd?ref=v1.3.0",
+            "helm",
+            "upgrade",
+            "--install",
+            "mcp-gateway",
+            "oci://ghcr.io/kagenti/charts/mcp-gateway",
+            "--version",
+            "0.2.0",
         ],
-        "Installing K8s Gateway CRDs",
+        "Installing MCP Gateway",
     )
 
-    """Create MCPGateway namespaces."""
-    # This command creates namespaces for MCP gateway components
+    """Add Kuadrant Helm repo"""
+    # This command adds Kuadrant helm chart
     run_command(
         [
-            "kubectl",
-            "apply",
-            "-f",
-            str(config.RESOURCES_DIR / "gateway-namespaces.yaml"),
+            "helm",
+            "repo",
+            "add",
+            "kuadrant",
+            "https://kuadrant.io/helm-charts",
         ],
-        "Creating MCPGateway namespaces",
+        "Adding Kuadrant Helm repo",
     )
 
-    """Create Gateway listeners."""
-    # This command installs listeners on the Gateway
-    run_command(
-        ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "gateway.yaml")],
-        "Creating Gateway listeners",
-    )
-
-    """Enable ext-proc filter on the Gateway."""
-    # This command enables ext-proc based filter on the Gateway
-    run_command(
-        ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "envoyfilter.yaml")],
-        "Enabling ext-proc filter on the Gateway",
-    )
-
-    """Install MCPGateway CRDs."""
-    # This command installs MCPGateway CRDs
-    run_command(
-        ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "gateway-crd.yaml")],
-        "Installing MCPGateway CRDs",
-    )
-
-    """Deploy MCPGateway Broker, Router, and Controller."""
-    # This command installs MCPGateway components
+    """Update Kuadrant Helm repo"""
+    # This command updates Kuadrant chart
     run_command(
         [
-            "kubectl",
-            "apply",
-            "-f",
-            str(config.RESOURCES_DIR / "gateway-deployment.yaml"),
+            "helm",
+            "repo",
+            "update",
         ],
-        "Deploying MCPGateway Broker, Router, and Controller",
+        "Updating Kuadrant Helm chart",
+    )
+    
+    """Install Kuadrant Operator"""
+    # This command installs Kuadrant operator
+    run_command(
+        [
+            "helm",
+            "upgrade",
+            "--install",
+            "kuadrant-operator",
+            "kuadrant/kuadrant-operator",
+            "--create-namespace",
+            "--wait",
+            "--timeout=600s",
+            "--namespace",
+            "kuadrant-system",
+        ],
+        "Installing Kuadrant operator",
     )
 
-    # """Init MCPServer CR."""
-    # This command creates an empty MCPServer resource
-    # run_command(
-    #    ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "gateway-mcpserver.yaml")],
-    #    "Initing MCPServer CR",
-    # )
+    """Installs Kudrant"""
+    # This command installs Kuadrant
+    run_command(
+        ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "kuadrant.yaml")],
+        "Installing Kuadrant",
+    )
