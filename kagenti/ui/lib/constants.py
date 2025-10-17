@@ -17,13 +17,13 @@ Useful constants.
 """
 
 # --- Kubernetes CRD Definitions ---
-CRD_GROUP = "kagenti.operator.dev"
+CRD_GROUP = "agent.kagenti.dev"
 CRD_VERSION = "v1alpha1"
 TOOLHIVE_CRD_GROUP = "toolhive.stacklok.dev"
 TOOLHIVE_CRD_VERSION = "v1alpha1"
 AGENTS_PLURAL = "agents"
 TOOLHIVE_MCP_PLURAL = "mcpservers"
-COMPONENTS_PLURAL = "components"
+# COMPONENTS_PLURAL = "components"
 OPERATOR_NS = "kagenti-system"
 
 # --- Kubernetes Labels and Selectors ---
