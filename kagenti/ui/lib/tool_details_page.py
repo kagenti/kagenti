@@ -26,11 +26,13 @@ import streamlit as st
 from .utils import sanitize_for_session_state_key
 from .kube import (
     get_custom_objects_api,
+    get_core_v1_api,
     get_tool_details,
     get_kubernetes_namespace,
+    get_pod_environment_variables,
     is_running_in_cluster,
 )  # Changed to get_custom_objects_api
-from .common_ui import display_resource_metadata
+from .common_ui import display_resource_metadata, display_environment_variables
 from .mcp_client import MCPClientWrapper
 from . import constants  # Import constants
 
@@ -101,6 +103,13 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
     mcp_client_session_key = f"mcp_client_{session_key_prefix}"
 
     _tags = display_resource_metadata(st, tool_details_data)
+
+    # Display environment variables
+    core_v1_api = get_core_v1_api()
+    if core_v1_api:
+        env_vars = get_pod_environment_variables(core_v1_api, tool_k8s_name, namespace)
+        display_environment_variables(st, env_vars)
+
     st.markdown("---")
 
     # TODO - should use service info
