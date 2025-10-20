@@ -10,5 +10,5 @@ data:
     svid_file_name = "/opt/svid.pem"
     svid_key_file_name = "/opt/svid_key.pem"
     svid_bundle_file_name = "/opt/svid_bundle.pem"
-    jwt_svids = [{jwt_audience="kagenti", jwt_svid_file_name="/opt/jwt_svid.token"}]
+    jwt_svids = [{jwt_audience="http://keycloak.localtest.me:8080/realms/master", jwt_svid_file_name="/opt/jwt_svid.token"}]
     include_federated_domains = true

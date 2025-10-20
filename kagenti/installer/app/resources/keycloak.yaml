@@ -48,7 +48,7 @@ spec:
     spec:
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.3.3
+          image: quay.io/keycloak/keycloak:nightly
           args: ["start"]
           env:
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
@@ -75,6 +75,8 @@ spec:
               value: "true"
             - name: 'KC_CACHE'
               value: 'ispn'
+            - name: KC_LOG_LEVEL
+              value: TRACE
             # Passing the Pod's IP primary address to the JGroups clustering as this is required in IPv6 only setups
             - name: POD_IP
               valueFrom:
@@ -103,6 +105,8 @@ spec:
               value: "5"
             - name: KC_DB_POOL_MAX_SIZE
               value: "20"
+            - name: KC_FEATURES
+              value: client-auth-federated:v1,spiffe:v1
           ports:
             - name: http
               containerPort: 8080

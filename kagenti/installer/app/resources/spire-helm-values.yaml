@@ -15,12 +15,13 @@ global:
       commonName: localtest.me
 
 spire-server:
+  defaultJwtSvidTTL: 5m
   #ingress:
   #  enabled: true
     #annotations:
     #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-  #federation:
-  #  enabled: true
+  federation:
+    enabled: true
   #  ingress:
   #    enabled: true
       #annotations:
