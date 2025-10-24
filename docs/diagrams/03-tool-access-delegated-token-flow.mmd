@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Agent as Slack Agent
+    participant Tool as Slack Tool
+    participant API as Slack API
+    participant KC as Keycloak
+    
+    Agent->>Tool: Call tool with delegated token
+    Tool->>KC: Validate token
+    KC->>Tool: Confirm token + scopes
+    Tool->>API: Make Slack API call
+    API->>Tool: Return data
+    Tool->>Agent: Return processed result
