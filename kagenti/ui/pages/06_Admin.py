@@ -32,8 +32,10 @@ keycloak__console_url = os.environ.get(
 
 # --- Main Page Content ---
 st.header("🔑 Administration & Identity Management")
-st.info("👥 **Admin Role**: As an administrator, you manage multiple personas across the platform. "
-        "Learn about all user types in our [Personas and Roles Documentation](../PERSONAS_AND_ROLES.md).")
+st.info(
+    "👥 **Admin Role**: As an administrator, you manage multiple personas across the platform. "
+    "Learn about all user types in our [Personas and Roles Documentation](../PERSONAS_AND_ROLES.md)."
+)
 st.write(
     "This section provides access to administrative functions, including identity and "
     "access management via the Keycloak console."
