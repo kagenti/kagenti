@@ -4,7 +4,7 @@ This document provides detailed steps for running the **GitHub Issue Agent** pro
 
 In this demo, we will use the Kagenti UI to import and deploy the **GitHub Issue Agent**.
 
-During deployment, we'll configure the **A2A protocol** for managing agent calls to the LLM and the publicly accessible GitHub tool. 
+During deployment, we'll configure the **A2A protocol** for managing agent calls to the LLM and the publicly accessible GitHub tool.
 
 Once deployed, we will query the agent using a natural language prompt. The agent will then invoke the public GitHub tool and return the responses related to issues.
 
@@ -13,8 +13,8 @@ This demo illustrates how Kagenti agent can access public tool.
 Here's a breakdown of the sections:
 
 - In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`git_issue_agent`](https://github.com/kagenti/agent-examples/tree/main/a2a/git_issue_agent).
-- In [**Import New Tool**](#import-new-tool), you'll build and deploy the ['github_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/github_tool). 
-- In [**Configure Keycloak**](#configure-keycloak), you'll configure Keycloak to provide access tokens with proper permissions to each component. 
+- In [**Import New Tool**](#import-new-tool), you'll build and deploy the ['github_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/github_tool).
+- In [**Configure Keycloak**](#configure-keycloak), you'll configure Keycloak to provide access tokens with proper permissions to each component.
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the GitHub Issue Agent**](#chat-with-the-github-issue-agent), you'll interact with the agent and confirm it responds correctly using GitHub issue data from selected repository.
 
@@ -23,19 +23,22 @@ Here's a breakdown of the sections:
 
 You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Kagenti UI](./demos.md#connect-to-the-kagenti-ui) section.
 
+> **🎭 User Roles**: This demo involves multiple personas including **Agent Developers**, **Tool Developers**, **Security Administrators**, and **End Users**. See our [Personas Documentation](../PERSONAS_AND_ROLES.md) to understand which parts are relevant to your role.
+
 #### Required GitHub PAT Tokens
 
-In this demo, the GitHub MCP Server will require two GitHub Personal Access tokens with different permissions. You may follow [these instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token) to create fine-grained GitHub PAT tokens. 
+In this demo, the GitHub MCP Server will require two GitHub Personal Access tokens with different permissions. You may follow [these instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token) to create fine-grained GitHub PAT tokens.
 
 We will refer to the two tokens as `<PUBLIC_ACCESS_PAT>` and `<PRIVILEGED_ACCESS_PAT>`. The `<PRIVILEGED_ACCESS_PAT>` will be used upon initialization of the MCP Server as well as whenever a request with `github-full-access` scope is received. Otherwise, the `<PUBLIC_ACCESS_PAT>` will be used.  
 
 > **Note on required access**
 > To demonstrate finer-grained authorization, each of the tokens may have different scopes. This demo has been tested where:
+>
 > - `<PUBLIC_ACCESS_PAT>` only `Public repositories` access
 > - `<PRIVILEGED_ACCESS_PAT>` has `All repositories` access
-> This way, a user with full access can access issue information on all repositories, and a user with partial access can see information only related to public repositories. 
+> This way, a user with full access can access issue information on all repositories, and a user with partial access can see information only related to public repositories.
 
-We will use the PATs when we deploy the MCP Server. 
+We will use the PATs when we deploy the MCP Server.
 
 ---
 
@@ -49,7 +52,7 @@ To deploy the GitHub Issue Agent:
    - `ollama` or `openai`
 1. Next select `Import .env File` button, then provide:
    - GitHub Repository URL: `https://github.com/kagenti/agent-examples/`
-   - Path to .env file: 
+   - Path to .env file:
      - If you are using `ollama`, use `a2a/git_issue_agent/.env.ollama`
      - If you are using `openai`, use `a2a/git_issue_agent/.env.openai`
    - Press "Import", this will populate environment variables for this agent.
@@ -76,10 +79,10 @@ To deploy the tool:
 1. In the **Select Environment Variable Sets** section, select `Import .env File` button, then provide:
    - GitHub Repository URL: `https://github.com/kagenti/agent-examples/`
    - Path to .env file: `mcp/github_tool/.env.template`
-   - Populate the `INIT_AUTH_HEADER` and `UPSTREAM_HEADER_TO_USE_IF_IN_AUDIENCE` with `Bearer <PRIVILEGED_ACCESS_PAT>`, substituting for the `<PRIVILEGED_ACCESS_PAT>` you generated earlier with fewer permissions. 
-   - Populate the `UPSTREAM_HEADER_TO_USE_IF_NOT_IN_AUDIENCE` with `Bearer <PUBLIC_ACCESS_PAT>`, substituting for the `<PUBLIC_ACCESS_PAT>` you generated earlier with fewer permissions. 
+   - Populate the `INIT_AUTH_HEADER` and `UPSTREAM_HEADER_TO_USE_IF_IN_AUDIENCE` with `Bearer <PRIVILEGED_ACCESS_PAT>`, substituting for the `<PRIVILEGED_ACCESS_PAT>` you generated earlier with fewer permissions.
+   - Populate the `UPSTREAM_HEADER_TO_USE_IF_NOT_IN_AUDIENCE` with `Bearer <PUBLIC_ACCESS_PAT>`, substituting for the `<PUBLIC_ACCESS_PAT>` you generated earlier with fewer permissions.
    - Press "Import", this will populate environment variables for this agent.
-1. Under `Tool Kubernetes Pod Configuration` set `Target Port` to `9090`. 
+1. Under `Tool Kubernetes Pod Configuration` set `Target Port` to `9090`.
 1. Use the same source repository:
    <https://github.com/kagenti/agent-examples>
 1. Choose the `main` branch or your preferred branch.
