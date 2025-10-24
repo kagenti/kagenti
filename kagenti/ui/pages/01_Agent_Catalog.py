@@ -36,6 +36,9 @@ custom_obj_api = get_custom_objects_api()  # Use the correct function name
 # Get the generic ApiClient (for listing namespaces - returned by the cached function)
 generic_api_client, _, _ = get_kube_api_client_cached()
 
+# Add info about user roles and access levels
+help_text=("Different user personas have different access levels to agents. "
+           "Learn more about [user roles and permissions](../PERSONAS_AND_ROLES.md#user-access-levels).")
 
 # Wrapper function to call delete_custom_resource with agent-specific parameters
 # pylint: disable=redefined-outer-name
