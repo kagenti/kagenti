@@ -1,0 +1,94 @@
+apiVersion: kagenti.operator.dev/v1alpha1
+kind: Component
+metadata:
+  name: slack-researcher
+  labels:
+    app.kubernetes.io/created-by: streamlit-ui
+    app.kubernetes.io/name: kagenti-operator
+    kagenti.io/framework: LangGraph
+    kagenti.io/protocol: a2a
+    kagenti.io/type: agent
+spec:
+  agent:
+    build:
+      mode: dev-local
+      pipeline:
+        parameters:
+        - name: SOURCE_REPO_SECRET
+          value: github-token-secret
+        - name: repo-url
+          value: github.com/kagenti/agent-examples
+        - name: revision
+          value: main
+        - name: subfolder-path
+          value: a2a/slack_researcher
+        - name: image
+          value: registry.cr-system.svc.cluster.local:5000/slack-researcher:v0.0.1
+        steps:
+        - configMap: github-clone-step
+          enabled: true
+          name: github-clone
+        - configMap: check-subfolder-step
+          enabled: true
+          name: folder-verification
+        - configMap: kaniko-docker-build-step-local
+          enabled: true
+          name: kaniko-build
+  deployer:
+    deployAfterBuild: true
+    env:
+    - name: PORT
+      value: "8000"
+    - name: HOST
+      value: 0.0.0.0
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector.kagenti-system.svc.cluster.local:8335
+    - name: KEYCLOAK_URL
+      value: http://keycloak.keycloak.svc.cluster.local:8080
+    - name: UV_CACHE_DIR
+      value: /app/.cache/uv
+    - name: MCP_URL
+      value: http://slack-tool:8000/mcp
+    - name: LLM_API_BASE
+      value: http://host.docker.internal:11434/v1
+    - name: LLM_API_KEY
+      value: dummy
+    - name: TASK_MODEL_ID
+      value: granite3.3:8b
+    - name: GITHUB_SECRET_NAME
+      value: github-token-secret
+    kubernetes:
+      containerPorts:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      imageSpec:
+        image: slack-researcher
+        imagePullPolicy: Always
+        imageRegistry: registry.cr-system.svc.cluster.local:5000
+        imageTag: v0.0.1
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      servicePorts:
+      - name: http
+        port: 8000
+        protocol: TCP
+        targetPort: 8000
+      volumeMounts:
+      - mountPath: /app/.cache
+        name: cache
+      - mountPath: /.marvin
+        name: marvin
+      volumes:
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: marvin
+    name: slack-researcher
+  description: Slack Research agent using LangGraph framework with MCP slack tool integration and authorization
+  suspend: false
