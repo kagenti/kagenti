@@ -23,6 +23,8 @@ Here's a breakdown of the sections:
 
 You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Kagenti UI](./demos.md#connect-to-the-kagenti-ui) section.
 
+> **🎭 User Roles**: This demo involves multiple personas including **Agent Developers**, **Tool Developers**, **Security Administrators**, and **End Users**. See our [Personas Documentation](../PERSONAS_AND_ROLES.md) to understand which parts are relevant to your role.
+
 #### Required GitHub PAT Tokens
 
 In this demo, the GitHub MCP Server will require two GitHub Personal Access tokens with different permissions. You may follow [these instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token) to create fine-grained GitHub PAT tokens. 
