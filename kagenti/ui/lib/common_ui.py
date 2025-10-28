@@ -321,6 +321,70 @@ def display_resource_metadata(st_object, resource_details: dict):
     return tags
 
 
+def display_environment_variables(st_object, env_vars: dict) -> None:
+    """
+    Displays environment variables for a Kubernetes resource (Agent or Tool).
+
+    Args:
+        st_object (streamlit.BaseStreamlitWidget): The Streamlit object for displaying content.
+        env_vars (dict): Dictionary containing environment variables organized by source type.
+    """
+    if env_vars.get("error"):
+        st_object.warning(
+            f"Could not retrieve environment variables: {env_vars['error']}"
+        )
+        return
+
+    total_vars = (
+        len(env_vars.get("direct", []))
+        + len(env_vars.get("configmap", []))
+        + len(env_vars.get("secret", []))
+        + len(env_vars.get("fieldref", []))
+        + len(env_vars.get("resourcefield", []))
+    )
+
+    if total_vars == 0:
+        st_object.info("No environment variables configured for this resource.")
+        return
+
+    with st_object.expander(
+        f"### Environment Variables ({total_vars})", expanded=False
+    ):
+        # Direct value environment variables
+        if env_vars.get("direct"):
+            st_object.markdown("#### Direct Values")
+            for env in env_vars["direct"]:
+                st_object.code(f"{env['name']}={env['value']}", language="bash")
+
+        # ConfigMap references
+        if env_vars.get("configmap"):
+            st_object.markdown("#### From ConfigMaps")
+            for env in env_vars["configmap"]:
+                st_object.markdown(
+                    f"- **{env['name']}**: ConfigMap `{env['source_name']}`, key `{env['source_key']}`"
+                )
+
+        # Secret references
+        if env_vars.get("secret"):
+            st_object.markdown("#### From Secrets")
+            for env in env_vars["secret"]:
+                st_object.markdown(
+                    f"- **{env['name']}**: Secret `{env['source_name']}`, key `{env['source_key']}` 🔒"
+                )
+
+        # Field references
+        if env_vars.get("fieldref"):
+            st_object.markdown("#### From Field References")
+            for env in env_vars["fieldref"]:
+                st_object.markdown(f"- **{env['name']}**: Field `{env['field_path']}`")
+
+        # Resource field references
+        if env_vars.get("resourcefield"):
+            st_object.markdown("#### From Resource Field References")
+            for env in env_vars["resourcefield"]:
+                st_object.markdown(f"- **{env['name']}**: Resource `{env['resource']}`")
+
+
 def check_auth():
     """If authentication is enabled, display content only if the user is logged in"""
     if (

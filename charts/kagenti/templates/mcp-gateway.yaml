@@ -38,7 +38,7 @@ spec:
             type: PathPrefix
             value: /mcp
       backendRefs:
-        - name: mcp-gateway-broker
+        - name: mcp-broker
           port: 8080
 ---          
 apiVersion: route.openshift.io/v1
@@ -57,48 +57,4 @@ spec:
     name: mcp-gateway-istio
     weight: 100
   wildcardPolicy: None
----
-# TODO - verify if this service required in stand-alone install of mcp-gateway chart
-apiVersion: v1
-kind: Service
-metadata:
-  name: mcp-broker
-  namespace:  "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
-  labels:
-    component: broker
-spec:
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/instance: kagenti
-    app.kubernetes.io/name: mcp-gateway
-    component: broker-router
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
-      protocol: TCP
-    - name: grpc
-      port: 50051
-      targetPort: 50051
-      protocol: TCP
----
-# TODO - verify if this service required in stand-alone install of mcp-gateway chart
-apiVersion: v1
-kind: Service
-metadata:
-  name: mcp-config
-  namespace:  "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
-  labels:
-    component: config-api
-spec:
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/instance: kagenti
-    app.kubernetes.io/name: mcp-gateway
-    component: broker-router
-  ports:
-    - name: http
-      port: 8181
-      targetPort: 8181
-      protocol: TCP
 {{- end }}

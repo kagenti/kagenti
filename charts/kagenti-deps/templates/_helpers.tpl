@@ -71,3 +71,4 @@ It will be enabled if:
 {{- define "kagenti.istio.communityCharts.enabled" -}}
 {{- tpl "{{ and .Values.components.istio.enabled (not .Values.openshift) }}" . | toString -}}
 {{- end -}}
+

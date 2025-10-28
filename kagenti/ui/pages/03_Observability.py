@@ -45,7 +45,7 @@ encoded_proxy_url = quote(mcp_proxy_url, safe="")
 mcp_inspector_dashboard_url = (
     f"{mcp_inspector_url}?"
     f"serverUrl={encoded_gateway_url}&"
-    f"transport=streamable_http&"
+    f"transport=streamable-http&"
     f"MCP_PROXY_FULL_ADDRESS={encoded_proxy_url}"
 )
 

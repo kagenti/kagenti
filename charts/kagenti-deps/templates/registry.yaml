@@ -1,8 +1,54 @@
 {{- if and .Values.components.registry.enabled (not .Values.openshift) }}
-# ------------------------------------------------------------------
-#  OpenShift has built-in container image registry 
-#  so no need for a separate registry component
-#  This is only needed for non-OpenShift clusters 
-# ------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.registry.namespace | default "cr-system" }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.registry.name | default "registry" }}
+  namespace: {{ .Values.registry.namespace | default "cr-system" }}
+spec:
+  replicas: {{ .Values.registry.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.registry.name | default "registry" }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.registry.name | default "registry" }}
+    spec:
+      containers:
+      - name: registry
+        image: "{{ .Values.registry.image.repository }}:{{ .Values.registry.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.registry.service.port | default 5000 }}
+          name: registry
+        env:
+        - name: OTEL_TRACES_EXPORTER
+          value: {{ .Values.registry.env.otelTracesExporter | default "none" | quote }}
+        - name: REGISTRY_LOG_LEVEL
+          value: {{ .Values.registry.env.registryLogLevel | default "info" | quote }}
+        {{- if .Values.registry.resources }}
+        resources:
+          {{- toYaml .Values.registry.resources | nindent 10 }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.registry.name | default "registry" }}
+  namespace: {{ .Values.registry.namespace | default "cr-system" }}
+spec:
+  ports:
+  - port: {{ .Values.registry.service.port | default 5000 }}
+    targetPort: {{ .Values.registry.service.port | default 5000 }}
+  selector:
+    app: {{ .Values.registry.name | default "registry" }}
 
 {{- end }}
+

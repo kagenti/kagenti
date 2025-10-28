@@ -6,4 +6,4 @@ dependencies:
   repository: oci://ghcr.io/kagenti/charts
   version: 0.2.0
 digest: sha256:c8c8a6f6b6e7974f43e887b90774d6c93293c9c74f1ff80fabe9366d523a834d
-generated: "2025-10-17T15:39:47.729224-04:00"
+generated: "2025-10-24T16:07:19.697209-04:00"

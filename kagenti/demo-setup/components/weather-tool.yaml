@@ -1,0 +1,86 @@
+apiVersion: kagenti.operator.dev/v1alpha1
+kind: Component
+metadata:
+  name: weather-tool
+  labels:
+    app.kubernetes.io/created-by: streamlit-ui
+    app.kubernetes.io/name: kagenti-operator
+    kagenti.io/framework: Python
+    kagenti.io/protocol: streamable_http
+    kagenti.io/type: tool
+spec:
+  deployer:
+    deployAfterBuild: true
+    env:
+    - name: PORT
+      value: "8000"
+    - name: HOST
+      value: 0.0.0.0
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector.kagenti-system.svc.cluster.local:8335
+    - name: KEYCLOAK_URL
+      value: http://keycloak.keycloak.svc.cluster.local:8080
+    - name: UV_CACHE_DIR
+      value: /app/.cache/uv
+    kubernetes:
+      containerPorts:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      imageSpec:
+        image: weather-tool
+        imagePullPolicy: Always
+        imageRegistry: registry.cr-system.svc.cluster.local:5000
+        imageTag: v0.0.1
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      servicePorts:
+      - name: http
+        port: 8000
+        protocol: TCP
+        targetPort: 8000
+      volumeMounts:
+      - mountPath: /app/.cache
+        name: cache
+      - mountPath: /.marvin
+        name: marvin
+      volumes:
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: marvin
+    name: weather-tool
+  description: Weather MCP tool providing real-time weather data
+  suspend: false
+  tool:
+    build:
+      cleanupAfterBuild: true
+      mode: custom
+      pipeline:
+        parameters:
+        - name: SOURCE_REPO_SECRET
+          value: github-token-secret
+        - name: repo-url
+          value: github.com/kagenti/agent-examples
+        - name: revision
+          value: main
+        - name: subfolder-path
+          value: mcp/weather_tool
+        - name: image
+          value: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+        steps:
+        - configMap: github-clone-step
+          enabled: true
+          name: github-clone
+        - configMap: check-subfolder-step
+          enabled: true
+          name: folder-verification
+        - configMap: kaniko-docker-build-step-local
+          enabled: true
+          name: kaniko-build
+    toolType: MCP

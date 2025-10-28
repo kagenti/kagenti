@@ -56,7 +56,7 @@ spec:
     targetPort: 6277
   type: ClusterIP
 ---
-{{- if  .Values.openshift }}
+{{- if .Values.openshift }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -94,5 +94,47 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
-{{- end }}  
+{{- else }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-inspector
+  namespace: kagenti-system
+spec:
+  parentRefs:
+  - name: {{ .Values.httpGateway.name | default "http" }}
+    sectionName: {{ .Values.httpGateway.sectionName | default "http" }}
+    namespace: {{ .Values.httpGateway.namespace | default "kagenti-system" }}
+  hostnames:
+  - mcp-inspector.{{ .Values.domain | default "localtest.me" }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: mcp-inspector
+      port: 6274 # from service port defined above
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-proxy
+  namespace: kagenti-system
+spec:
+  parentRefs:
+  - name: {{ .Values.httpGateway.name | default "http" }}
+    sectionName: {{ .Values.httpGateway.sectionName | default "http" }}
+    namespace: {{ .Values.httpGateway.namespace | default "kagenti-system" }}
+  hostnames:
+  - mcp-proxy.{{ .Values.domain | default "localtest.me" }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: mcp-inspector
+      port: 6277 # from service port defined above
+{{- end }}
 {{- end }}  

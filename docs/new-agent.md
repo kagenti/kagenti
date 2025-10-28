@@ -31,6 +31,70 @@ To import a new agent into the platform, follow these steps:
 - Manually add environment variables required by your agent.
 - Alternatively, import environment variables from a `.env` file hosted on GitHub.
 
+### Using Secrets / ConfigMaps from .env files
+
+The Kagenti UI supports importing environment variables from a `.env` file. To safely reference Kubernetes Secrets or ConfigMaps from a `.env` file (instead of embedding secret plaintext), the `.env` value may contain a JSON object which will be interpreted as a structured environment entry and mapped to Kubernetes `valueFrom` entries in the agent's manifest.
+
+Important notes:
+
+- JSON values must be quoted in the `.env` file so they survive shell parsing. Either single or double quotes are accepted.
+- If the JSON contains a `valueFrom` object it will be used as-is. A shorthand form is also supported: supplying `secretKeyRef` or `configMapKeyRef` at the top-level will be wrapped under `valueFrom` automatically.
+- The UI will NOT store secret plaintext in repository or ConfigMaps. When you reference a Secret via `secretKeyRef`, Kagenti will include a `valueFrom` reference in the generated Component but it will not create or populate the Kubernetes Secret for you — you must ensure the referenced Secret exists in the target namespace.
+- Invalid JSON will be left as a plain string and the UI will show a warning during import.
+
+Examples (in your `.env` file):
+
+Plain value:
+
+```ini
+MCP_URL=http://weather-tool:8080/mcp
+```
+
+Secret reference (valueFrom provided explicitly):
+
+```ini
+OPENAI_API_KEY='{"valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}}'
+```
+
+Secret shorthand (top-level secretKeyRef will be wrapped into valueFrom):
+
+```ini
+OPENAI_API_KEY='{"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}'
+```
+
+ConfigMap reference example:
+
+```ini
+WEATHER_CONFIG='{"configMapKeyRef": {"name": "weather-config", "key": "settings"}}'
+```
+
+Migration notes
+
+- If you previously kept secrets as plaintext in your `.env` files, move them into Kubernetes Secrets and update the `.env` to reference them using the JSON examples above. Do not commit plaintext secrets to source control.
+- When editing existing `.env` entries in the Kagenti UI, you can toggle a variable to "Structured" and paste the JSON; the UI will validate the JSON. If you switch back to plain mode, structured data will be removed from the in-memory representation.
+- Ensure the referenced Secrets/ConfigMaps are present in the target namespace before deploying; otherwise your agent pods will fail to resolve the environment values.
+
+**Quick Secret creation example**
+
+Below is a minimal example showing how to create a Kubernetes Secret with an API key and then reference it from your `.env` file.
+
+Create the Secret (replace <NAMESPACE> and <YOUR_API_KEY>):
+
+```bash
+kubectl create secret generic openai-secret \
+	--from-literal=apikey='<YOUR_API_KEY>' \
+	-n <NAMESPACE>
+```
+
+Then in your `.env` file reference the Secret using JSON (note the single quotes around the JSON to keep it as one value in the `.env`):
+
+```ini
+OPENAI_API_KEY='{"valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}}'
+```
+
+When Kagenti imports this `.env` entry it will add an env var to the generated Component manifest that uses `valueFrom.secretKeyRef` to pull the `apikey` from the `openai-secret` in the target namespace.
+
+
 ### Step 4: Select Deployment Method
 
 #### Deploy from an existing Docker image.

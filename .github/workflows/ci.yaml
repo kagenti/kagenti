@@ -47,6 +47,6 @@ jobs:
         run: |
           pre-commit run --all-files
 
-      # - name: Test with pytest
-      #   run: |
-      #     pytest
+      - name: Test with pytest
+        run: |
+          cd kagenti/ui && uv run pytest -q

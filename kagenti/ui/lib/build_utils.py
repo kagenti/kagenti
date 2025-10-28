@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,too-many-nested-blocks
 
 """
 Utilities for building UI.
@@ -43,6 +43,131 @@ from .kube import (
 from .utils import sanitize_for_k8s_name, remove_url_prefix, get_resource_name_from_path
 
 logger = logging.getLogger(__name__)
+
+
+def parse_env_file(content: str, st_object=None):  # pylint: disable=too-many-branches,too-many-statements,too-many-nested-blocks
+    """Parse `.env` file content into a list of env var dicts.
+
+    Returns a list of dicts suitable for inclusion in k8s env lists. Supports
+    JSON-encoded values (quoted in the .env) that decode to objects like
+    {"valueFrom": {...}} or shorthand {"secretKeyRef": {...}} which will be
+    converted into a valueFrom entry.
+    """
+    env_vars = []
+    lines = content.strip().splitlines()
+
+    for line_num, line in enumerate(lines, 1):
+        raw_line = line
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            if st_object:
+                st_object.warning(
+                    f"⚠️ Line {line_num}: Invalid format (missing '='): {raw_line}"
+                )
+            else:
+                logger.warning(
+                    "Line %s: Invalid format (missing '='): %s", line_num, raw_line
+                )
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+
+        # strip surrounding quotes if present
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        elif value.startswith("'") and value.endswith("'"):
+            value = value[1:-1]
+
+        if not name:
+            if st_object:
+                st_object.warning(f"⚠️ Line {line_num}: Empty variable name")
+            else:
+                logger.warning("Line %s: Empty variable name", line_num)
+            continue
+
+        env_entry = None
+
+        # Attempt JSON parse only when value looks like JSON
+        if value and (value.startswith("{") or value.startswith("[")):
+            env_entry = _parse_json_value(value, name, line_num, st_object)
+        else:
+            env_entry = {"name": name, "value": value}
+
+        env_vars.append(env_entry)
+
+    return env_vars
+
+
+def _parse_json_value(value: str, name: str, line_num: int, st_object=None) -> dict:
+    """Parse a JSON-looking value from an .env entry into an env dict.
+
+    This centralizes the JSON parsing and logging/warning behavior to keep
+    parse_env_file smaller and easier to read.
+    """
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            if "value" in parsed or "valueFrom" in parsed:
+                return {"name": name, **parsed}
+            if "secretKeyRef" in parsed or "configMapKeyRef" in parsed:
+                return {"name": name, "valueFrom": parsed}
+            # Unrecognized dict shape; keep as string but warn
+            if st_object:
+                st_object.warning(
+                    f"⚠️ Line {line_num}: JSON parsed but has unrecognized keys; kept as string for '{name}'"
+                )
+            else:
+                logger.warning(
+                    "Line %s: JSON parsed but has unrecognized keys; kept as string for '%s'",
+                    line_num,
+                    name,
+                )
+            return {"name": name, "value": value}
+
+        # Non-dict JSON (list, string etc) -> keep as string but warn
+        if st_object:
+            st_object.warning(
+                f"⚠️ Line {line_num}: JSON parsed to non-object; kept as string for '{name}'"
+            )
+        else:
+            logger.warning(
+                "Line %s: JSON parsed to non-object; kept as string for '%s'",
+                line_num,
+                name,
+            )
+        return {"name": name, "value": value}
+    except json.JSONDecodeError:
+        if st_object:
+            st_object.warning(
+                f"⚠️ Line {line_num}: Invalid JSON; kept as string: {value}"
+            )
+        else:
+            logger.warning("Line %s: Invalid JSON; kept as string: %s", line_num, value)
+        return {"name": name, "value": value}
+
+
+def _is_valid_env_entry(env_var: dict) -> bool:
+    """Return True when an env var dict has a valid name and value/structured data.
+
+    Valid when:
+    - name exists and is non-empty after stripping, and
+    - either contains a structured reference (valueFrom or dict-valued 'value')
+      or contains a non-empty string 'value'.
+    """
+    if not isinstance(env_var, dict):
+        return False
+    name = (env_var.get("name") or "").strip()
+    if not name:
+        return False
+    has_structured = "valueFrom" in env_var or isinstance(env_var.get("value"), dict)
+    has_plain = (
+        isinstance(env_var.get("value"), str) and env_var.get("value", "").strip()
+    )
+    return bool(has_structured or has_plain)
+
 
 # Pipeline mode constants
 DEV_EXTERNAL_MODE = "dev-external"
@@ -1225,36 +1350,8 @@ def render_import_form(
                 st.session_state[configmap_loaded_key] = True
                 return
 
-        # takes as input content of the .env file from remote repo and
-        # parses each line to extract name-value pair and adds them to
-        # a list
-        def parse_env_file(content):
-            env_vars = []
-            lines = content.strip().split("\n")
-
-            for line_num, line in enumerate(lines, 1):
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" not in line:
-                    st_object.warning(
-                        f"⚠️ Line {line_num}: Invalid format (missing '='): {line}"
-                    )
-                    continue
-                name, value = line.split("=", 1)
-                name = name.strip()
-                value = value.strip()
-
-                if value.startswith('"') and value.endswith('"'):
-                    value = value[1:-1]
-                elif value.startswith("'") and value.endswith("'"):
-                    value = value[1:-1]
-
-                if name:
-                    env_vars.append({"name": name, "value": value})
-                else:
-                    st_object.warning(f"⚠️ Line {line_num}: Empty variable name")
-            return env_vars
+        # Using module-level `parse_env_file` implementation (supports JSON values)
+        # The module-level function accepts an optional `st_object` for warnings/logging.
 
         configmap_col1, configmap_col2, _ = st_object.columns([2, 2, 2])
         with configmap_col1:
@@ -1320,18 +1417,87 @@ def render_import_form(
                         label_visibility="collapsed" if i > 0 else "visible",
                     )
                 with col2:
-                    env_var["value"] = st.text_input(
-                        "Value",
-                        value=env_var["value"],
-                        key=f"{resource_type.lower()}_env_value_{i}",
-                        placeholder="example: AAAA_BBBB_CCCC",
-                        label_visibility="collapsed" if i > 0 else "visible",
+                    # Support plain string values and structured JSON (valueFrom) entries.
+                    # Determine if this entry is structured
+                    is_structured = (
+                        isinstance(env_var.get("value"), dict) or "valueFrom" in env_var
                     )
+
+                    mode_key = f"{resource_type.lower()}_env_mode_{i}"
+                    # default to Structured when detected, otherwise Plain
+                    default_index = 0 if is_structured else 1
+                    mode = st_object.radio(
+                        "",
+                        options=["Structured", "Plain"],
+                        index=default_index,
+                        key=mode_key,
+                        horizontal=True,
+                        label_visibility="collapsed",
+                    )
+
+                    if mode == "Structured":
+                        # show JSON editor populated from valueFrom or from a dict value
+                        json_obj = None
+                        if "valueFrom" in env_var:
+                            json_obj = env_var.get("valueFrom")
+                        elif isinstance(env_var.get("value"), dict):
+                            json_obj = env_var.get("value")
+
+                        json_str = (
+                            json.dumps(json_obj, indent=2)
+                            if json_obj is not None
+                            else "{}"
+                        )
+                        edited = st_object.text_area(
+                            "Structured JSON",
+                            value=json_str,
+                            key=f"{resource_type.lower()}_env_json_{i}",
+                            height=120,
+                            label_visibility="collapsed",
+                        )
+                        # Try to parse edited JSON and store as valueFrom
+                        try:
+                            parsed = json.loads(edited)
+                            env_var.pop("value", None)
+                            env_var["valueFrom"] = parsed
+                        except json.JSONDecodeError:
+                            # Keep the message concise and use an f-string
+                            var_name = env_var.get("name", "")
+                            st_object.warning(
+                                f"⚠️ Invalid JSON for variable '{var_name}'. Fix the JSON or switch to Plain mode."
+                            )
+                    else:
+                        # Plain mode: keep a simple text input. If previously structured, drop structured data.
+                        current_value = env_var.get("value")
+                        if current_value is None:
+                            # avoid exposing structured secret data; start empty
+                            current_value = ""
+                        env_var["value"] = st_object.text_input(
+                            "Value",
+                            value=current_value,
+                            key=f"{resource_type.lower()}_env_value_{i}",
+                            placeholder="example: AAAA_BBBB_CCCC",
+                            label_visibility="collapsed" if i > 0 else "visible",
+                        )
+                        env_var.pop("valueFrom", None)
 
                 with col3:
                     if i == 0:
                         st_object.write("")
                         st_object.write("")
+                    # visualize origin: configmap-loaded vars, structured references, or custom
+                    structured_ref = False
+                    # valueFrom can be present directly, or value may be a dict with structured content
+                    if "valueFrom" in env_var and isinstance(
+                        env_var.get("valueFrom"), dict
+                    ):
+                        structured_ref = True
+                        vf = env_var.get("valueFrom")
+                    elif isinstance(env_var.get("value"), dict):
+                        structured_ref = True
+                        vf = env_var.get("value")
+                    else:
+                        vf = None
 
                     if is_configmap_var:
                         var_type = env_var.get("configmap_type", "configmap")
@@ -1348,6 +1514,23 @@ def render_import_form(
                         else:
                             st_object.markdown(
                                 "<span style='font-size: 10px; color: green'>🗂️ **ConfigMap**</span>",
+                                unsafe_allow_html=True,
+                            )
+                    elif structured_ref and vf is not None:
+                        # Detect secret vs configmap inside structured valueFrom
+                        if "secretKeyRef" in vf:
+                            st_object.markdown(
+                                "<span style='font-size: 10px; color: red'>🔒 **Secret reference**</span>",
+                                unsafe_allow_html=True,
+                            )
+                        elif "configMapKeyRef" in vf:
+                            st_object.markdown(
+                                "<span style='font-size: 10px; color: green'>🗂️ **ConfigMap reference**</span>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st_object.markdown(
+                                "<span style='font-size: 10px; color: purple'>🧩 **Structured**</span>",
                                 unsafe_allow_html=True,
                             )
                     else:
@@ -1392,6 +1575,13 @@ def render_import_form(
     if st.session_state.get(import_dialog_key, False):
         st_object.markdown("---")
         st_object.subheader("Import Environment Variables from .env file")
+        # Small tooltip/note about secret references
+        st_object.caption(
+            "Tip: If your .env contains JSON secret/configmap references (e.g. using `secretKeyRef` or `configMapKeyRef`), "
+            "Kagenti will include them as `valueFrom` references in the generated manifest but will NOT store secret plaintext. "
+            "Ensure the referenced Secrets/ConfigMaps already exist in the target namespace before deploying. "
+            "See `docs/new-agent.md` for examples."
+        )
 
         repo_url = st_object.text_input(
             "Github Repository URL:",
@@ -1436,7 +1626,7 @@ def render_import_form(
                         response = requests.get(raw_url, timeout=20)
                         env_content = response.text
 
-                        imported_vars = parse_env_file(env_content)
+                        imported_vars = parse_env_file(env_content, st_object)
                         if imported_vars:
                             existing_names = {
                                 var["name"] for var in st.session_state[custom_env_key]
@@ -1484,15 +1674,15 @@ def render_import_form(
         invalid_custom_env_vars = []
 
         for env_var in custom_env_vars:
-            if env_var["name"].strip() and env_var["value"].strip():
-                valid_custom_env_vars.append(
-                    {"name": env_var["name"].strip(), "value": env_var["value"].strip()}
-                )
-            elif env_var["name".strip() or env_var["value"].strip()]:
-                invalid_custom_env_vars.append(env_var)
+            filtered_env_var = {
+                k: v for k, v in env_var.items() if k in ("name", "value", "valueFrom")
+            }
+            if _is_valid_env_entry(env_var):
+                valid_custom_env_vars.append(filtered_env_var)
+            else:
+                invalid_custom_env_vars.append(filtered_env_var)
 
         if invalid_custom_env_vars:
-            # pylint: disable=line-too-long
             st_object.warning(
                 f"{len(invalid_custom_env_vars)} environment variable(s) have missing name or value and will be ignored"
             )
@@ -1511,9 +1701,37 @@ def render_import_form(
 
     if custom_env_vars:
         for env_var in custom_env_vars:
-            if env_var["name"].strip() and env_var["value"].strip():
+            # Skip invalid entries centrally
+            if not _is_valid_env_entry(env_var):
+                continue
+
+            name = (env_var.get("name") or "").strip()
+
+            # Structured env var (valueFrom)
+            if "valueFrom" in env_var and isinstance(env_var.get("valueFrom"), dict):
                 final_additional_envs.append(
-                    {"name": env_var["name"].strip(), "value": env_var["value"].strip()}
+                    {"name": name, "valueFrom": env_var["valueFrom"]}
+                )
+                continue
+
+            # Sometimes structured JSON may be stored under 'value' as a dict
+            if isinstance(env_var.get("value"), dict):
+                # Only allow known keys to be included for manifest predictability
+                allowed_keys = ["valueFrom", "configMapKeyRef", "secretKeyRef"]
+                env_entry = {"name": name}
+                for key in allowed_keys:
+                    if key in env_var["value"]:
+                        env_entry[key] = env_var["value"][key]
+                final_additional_envs.append(env_entry)
+                continue
+
+            # Plain string value (helper ensured non-empty)
+            val = env_var.get("value")
+            if isinstance(val, str):
+                final_additional_envs.append({"name": name, "value": val.strip()})
+            else:
+                logger.warning(
+                    f"Skipping env var '{name}' with non-string value: {val!r}"
                 )
 
     custom_obj_api = get_custom_objects_api()

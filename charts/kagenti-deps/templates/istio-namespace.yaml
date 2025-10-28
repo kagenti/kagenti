@@ -11,14 +11,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     istio-discovery: enabled
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: "{{ .Values.istio.cni.namespace }}"
-  labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
-    istio-discovery: enabled
+
 ---
 apiVersion: v1
 kind: Namespace
@@ -27,4 +20,13 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     istio-discovery: enabled    
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.istio.cni.namespace }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
 {{- end }}
+

@@ -73,7 +73,7 @@ kagenti-platform-operator-chart:
 # ------------------------------------------------------------------
 # subchart configs
 mcp-gateway:
-  fullnameOverride: mcp-gateway 
+  fullnameOverride: mcp
   envoyFilter:
     namespace: istio-system
 # main chart configs    
@@ -81,4 +81,3 @@ mcpGateway:
   namespaces:
     mcpSystem: mcp-system
     gatewaySystem: gateway-system
-    

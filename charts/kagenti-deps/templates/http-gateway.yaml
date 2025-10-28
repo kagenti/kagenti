@@ -1,0 +1,38 @@
+{{- if and .Values.components.ingressGateway.enabled (not .Values.openshift) }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: http
+  namespace: kagenti-system
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    hostname: "*.localtest.me"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces: 
+        from: All
+    # allowedRoutes:
+    #   namespaces:
+    #     from: Selector
+    #     selector:
+    #       matchLabels:
+    #         shared-gateway-access: "true"
+  - name: https
+    hostname: "*.localtest.me"
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - name: gateway-cert
+        kind: Secret
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels:
+            shared-gateway-access: "true"
+{{- end }}

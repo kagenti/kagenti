@@ -1,4 +1,4 @@
-{{- if and .Values.components.certManager.enabled .Values.openshift}}
+{{- if and .Values.components.certManager.enabled .Values.openshift }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -27,5 +27,6 @@ spec:
   installPlanApproval: Automatic
   name: openshift-cert-manager-operator
   source: redhat-operators
-  sourceNamespace: openshift-marketplace      
+  sourceNamespace: openshift-marketplace
 {{- end }}
+

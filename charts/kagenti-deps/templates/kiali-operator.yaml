@@ -1,4 +1,5 @@
-{{- if and .Values.components.kiali.enabled .Values.openshift }}
+{{- if .Values.components.kiali.enabled }}
+{{- if .Values.openshift }}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -12,4 +13,17 @@ spec:
   name: kiali-ossm
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+{{- else }}
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: kiali-operator
+  namespace: operators
+spec:
+  channel: stable
+  name: kiali
+  source: operatorhubio-catalog
+  installPlanApproval: Automatic
+  sourceNamespace: olm
+{{- end }}
 {{- end }}

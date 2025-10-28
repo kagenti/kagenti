@@ -34,15 +34,19 @@ def render_login():
     Render the login page.
     """
 
-    ENABLE_AUTH = os.environ.get("ENABLE_AUTH")
+    # Default to 'false' when the env var is missing so calling .lower() is safe
+    ENABLE_AUTH = os.environ.get("ENABLE_AUTH", "false")
+    # Normalize once into a boolean to avoid repeated .lower() calls and None issues
+    enable_auth_enabled = str(ENABLE_AUTH).lower() == "true"
+
     if ENABLE_AUTH_STRING not in st.session_state:
-        if ENABLE_AUTH.lower() == "true":
+        if enable_auth_enabled:
             logger.info("Authentication is enabled")
         else:
             logger.info("Authentication is disabled")
 
     st.session_state[ENABLE_AUTH_STRING] = False
-    if ENABLE_AUTH.lower() == "true":
+    if enable_auth_enabled:
         st.session_state[ENABLE_AUTH_STRING] = True
 
         st.markdown("---")

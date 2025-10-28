@@ -18,6 +18,9 @@ Utilities for handling [A2A](https://github.com/a2aproject/A2A) protocol.
 """
 
 import logging
+import os
+import re
+import json
 from uuid import uuid4
 from typing import Any, Tuple
 import streamlit as st
@@ -35,17 +38,25 @@ from a2a.types import (
     SendStreamingMessageRequest,
     SendStreamingMessageSuccessResponse,
     JSONRPCErrorResponse,
-    TextPart,
-    DataPart,
 )
+
 from lib.constants import ACCESS_TOKEN_STRING, TOKEN_STRING
 from . import constants
 from .utils import append_to_log_history
+from .logging_config import setup_logging
+
+# Initialize central logging (idempotent). This will read KAGENTI_UI_DEBUG if set.
+setup_logging()
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
-# Basic config should ideally be called once at app startup (e.g. in Home.py or main script)
-logging.basicConfig(level=logging.INFO)
+
+# Module debug flag: honor the legacy KAGENTI_A2A_DEBUG env var or the root logger level.
+DEBUG_A2A = os.getenv("KAGENTI_A2A_DEBUG", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+) or logging.getLogger().isEnabledFor(logging.DEBUG)
 
 
 async def _fetch_agent_card_with_resolver(
@@ -84,7 +95,11 @@ async def _fetch_agent_card_with_resolver(
         logger.error(error_msg)
         st_object.error(error_msg)
     except AttributeError as e:
-        error_msg = f"AttributeError fetching agent card (possibly an issue with A2A library or path handling): {e}"
+        # Keep the message readable while staying within line-length limits
+        error_msg = (
+            "AttributeError fetching agent card (possibly an issue with A2A "
+            f"library or path handling): {e}"
+        )
         logger.error(error_msg, exc_info=True)
         st_object.error(error_msg)
     except Exception as e:
@@ -221,7 +236,7 @@ async def render_a2a_agent_card(st_object, base_url: str):
         st_object.error("Could not retrieve agent card to display.")
 
 
-# pylint: disable=too-many-branches, too-many-statements
+# pylint: disable=too-many-branches, too-many-statements, too-many-locals
 def _process_a2a_stream_chunk(
     chunk_data, session_key_prefix: str, log_container, message_placeholder
 ) -> Tuple[str, bool]:
@@ -229,65 +244,164 @@ def _process_a2a_stream_chunk(
     full_response_content_chunk = ""
     is_final_event = False
 
+    # Debug: log raw chunk type and content (truncated)
+    try:
+        logger.debug(
+            "_process_a2a_stream_chunk: received chunk type=%s", type(chunk_data.root)
+        )
+        raw_chunk = chunk_data.model_dump_json(indent=2, exclude_none=True)
+        logger.debug(
+            "_process_a2a_stream_chunk: raw chunk (truncated 1000 chars): %s",
+            raw_chunk[:1000],
+        )
+        if DEBUG_A2A:
+            append_to_log_history(
+                session_key_prefix, f"[debug] raw_chunk: {raw_chunk[:1000]}"
+            )
+    except Exception as e:
+        logger.debug("_process_a2a_stream_chunk: failed to dump raw chunk: %s", e)
+
+    # Helper: extract text from a list of parts. Parts may be wrapped (p.root)
+    # or be plain objects with a .text attribute. Return concatenated text.
+    def _extract_text_from_parts(parts) -> str:
+        texts = []
+
+        # Recursive collector defined once to avoid defining functions inside
+        # the loop (which triggers pylint W0640: cell-var-from-loop).
+        def _collect_texts(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k == "text" and isinstance(v, str):
+                        texts.append(v)
+                    else:
+                        _collect_texts(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _collect_texts(item)
+
+        if not parts:
+            return ""
+        for p in parts:
+            # Some implementations wrap content in a `.root` attribute
+            part = getattr(p, "root", p)
+
+            # If part is a plain dict, prefer direct access
+            if isinstance(part, dict):
+                txt = part.get("text")
+                if txt:
+                    texts.append(txt)
+                    continue
+
+            # Try attribute access for model-like objects
+            if hasattr(part, "text"):
+                try:
+                    texts.append(part.text)
+                    continue
+                except Exception:
+                    # Fall through to attempted dump parsing
+                    pass
+
+            # Fallback: try model_dump_json to extract any text field
+            mdump = getattr(part, "model_dump_json", None)
+            if callable(mdump):
+                try:
+                    dumped = mdump(indent=0, exclude_none=True)
+                except Exception:
+                    dumped = None
+                if dumped:
+                    # Prefer proper JSON parsing over regex to correctly handle
+                    # escaped characters (e.g. escaped quotes). model_dump_json
+                    # returns a JSON string, so json.loads() should succeed.
+                    try:
+                        parsed = json.loads(dumped)
+                        _collect_texts(parsed)
+                    except Exception:
+                        # As a last-resort fallback, use a forgiving regex. This
+                        # should rarely be needed, but keeps behavior robust if
+                        # model_dump_json returned something non-standard.
+                        m = re.search(r'"text"\s*:\s*"((?:[^\\"]|\\.)*)"', dumped)
+                        if m:
+                            texts.append(m.group(1))
+        return " ".join(t for t in texts if t)
+
     if isinstance(chunk_data.root, SendStreamingMessageSuccessResponse):
         event = chunk_data.root.result
         log_message = ""
 
         if isinstance(event, Task):
-            log_message = f"ℹ️ Task Event (ID: {event.id}): Status - {event.status.state if event.status else 'N/A'}"
-            if event.status and event.status.message and event.status.message.parts:
-                text_content = " ".join(
-                    [
-                        p.root.text
-                        for p in event.status.message.parts
-                        if isinstance(p.root, TextPart)
-                    ]
-                )
-                if text_content:
-                    log_message += f" | Message: {text_content}"
-            is_final_event = (
+            state = event.status.state if event.status else "N/A"
+            log_message = f"ℹ️ Task Event (ID: {event.id}): Status - {state}"
+            # Determine if this Task is in a final state. Only final task messages should be
+            # appended to the chat stream; intermediate task updates are logged but not shown
+            # in the main chat content.
+            is_final = (
                 event.status.state in ["COMPLETED", "FAILED"] if event.status else False
             )
+            if (
+                event.status
+                and event.status.message
+                and getattr(event.status.message, "parts", None)
+            ):
+                text_content = _extract_text_from_parts(event.status.message.parts)
+                if text_content:
+                    log_message += f" | Message: {text_content}"
+                    # Only append to the chat stream if this is a final task status
+                    if is_final:
+                        full_response_content_chunk += text_content
+            is_final_event = is_final
 
         elif isinstance(event, A2AMessage):
-            text_content = " ".join(
-                [p.root.text for p in event.parts if isinstance(p.root, TextPart)]
+            # parts may be wrapped or unwrapped depending on implementation
+            text_content = _extract_text_from_parts(getattr(event, "parts", None))
+            log_message = (
+                "💬 Agent Message (ID: "
+                + str(getattr(event, "messageId", "?"))
+                + "): "
+                + (text_content or "")
             )
-            log_message = f"💬 Agent Message (ID: {event.messageId}): {text_content}"
-            # This isn't streamed to the main chat, but logged.
+            # Agent messages are logged for visibility but are not appended to the main chat
+            # stream here. If you want certain agent messages to appear in-stream, we can
+            # add a flag or more selective logic later.
 
         elif isinstance(event, TaskStatusUpdateEvent):
-            log_message = f"🔄 Task Status Update (ID: {event.taskId}): New State - {event.status.state}"
+            status_state = getattr(event.status, "state", "unknown")
+            log_message = f"🔄 Task Status Update (ID: {event.taskId}): New State - {status_state}"
             if event.status.message and event.status.message.parts:
-                text_content = " ".join(
-                    [
-                        p.root.text
-                        for p in event.status.message.parts
-                        if isinstance(p.root, TextPart)
-                    ]
-                )
+                text_content = _extract_text_from_parts(event.status.message.parts)
                 if text_content:
                     log_message += f" | Details: {text_content}"
+                    # Append to chat stream only when this status update is final
+                    if event.final:
+                        full_response_content_chunk += text_content
             is_final_event = event.final
 
         elif isinstance(event, TaskArtifactUpdateEvent):
-            log_message = f"🔄 Task Artifact Update (ID: {event.taskId}, Artifact: {event.artifact.artifactId})"
-            for part in event.artifact.parts:
-                if isinstance(part.root, TextPart):
-                    full_response_content_chunk += part.root.text
-                    log_message += f" | Text: '{part.root.text[:50]}...'"
-                elif isinstance(part.root, DataPart):
-                    data_str = str(part.root.data)
-                    full_response_content_chunk += data_str
-                    log_message += (
-                        f" | Data: (type: {part.root.kind}, {len(data_str)} bytes)"
-                    )
-            if event.lastChunk:
-                log_message += " (Last Chunk)"
-
+            artifact_id = getattr(getattr(event, "artifact", None), "artifactId", "?")
+            log_message = (
+                f"🔄 Task Artifact Update (ID: {event.taskId}, Artifact: {artifact_id})"
+            )
+            # Artifact parts may be wrapped; handle both wrapped and unwrapped
+            for part in getattr(event.artifact, "parts", []) or []:
+                p = getattr(part, "root", part)
+                if hasattr(p, "text"):
+                    full_response_content_chunk += p.text
+                    log_message += f" | Text: '{p.text[:50]}...'"
+                else:
+                    try:
+                        data = p.data
+                    except Exception:
+                        data = None
+                    if data is not None:
+                        data_str = str(data)
+                        full_response_content_chunk += data_str
+                        kind = getattr(p, "kind", "unknown")
+                        log_message += f" | Data: (type: {kind}, {len(data_str)} bytes)"
         else:
             log_message = f"❓ Unknown A2A Event Type: {type(event)}"
-            logger.warning(f"{log_message} - Data: {event.model_dump_json(indent=2)}")
+            # Avoid a very long single-line message; pass the dump as a parameter
+            logger.warning(
+                "%s - Data: %s", log_message, event.model_dump_json(indent=2)
+            )
 
         if log_message:
             append_to_log_history(session_key_prefix, log_message)
@@ -314,6 +428,21 @@ def _process_a2a_stream_chunk(
         )
         append_to_log_history(session_key_prefix, f"❓ {unknown_chunk_msg}")
         log_container.warning(unknown_chunk_msg)
+
+    # Debug: report what we're returning for this chunk
+    try:
+        logger.debug(
+            "_process_a2a_stream_chunk: returning content_len=%d is_final=%s",
+            len(full_response_content_chunk),
+            is_final_event,
+        )
+        if DEBUG_A2A:
+            append_to_log_history(
+                session_key_prefix,
+                f"[debug] returning chunk len={len(full_response_content_chunk)} final={is_final_event}",
+            )
+    except Exception:
+        pass
 
     return full_response_content_chunk, is_final_event
 
@@ -388,9 +517,35 @@ async def run_agent_chat_stream_a2a(
             )
 
             async for chunk in stream_response_iterator:
+                # Debug: log incoming raw chunk (truncated)
+                try:
+                    raw = chunk.model_dump_json(indent=2, exclude_none=True)
+                    logger.debug(
+                        "run_agent_chat_stream_a2a: raw incoming chunk (trunc): %s",
+                        raw[:1000],
+                    )
+                    if DEBUG_A2A:
+                        append_to_log_history(
+                            session_key_prefix, f"[debug] incoming_chunk: {raw[:1000]}"
+                        )
+                except Exception:
+                    logger.debug(
+                        "run_agent_chat_stream_a2a: failed to dump raw incoming chunk"
+                    )
+
                 chunk_text, is_final = _process_a2a_stream_chunk(
                     chunk, session_key_prefix, log_container, message_placeholder
                 )
+                logger.debug(
+                    "run_agent_chat_stream_a2a: processed chunk len=%d final=%s",
+                    len(chunk_text or ""),
+                    is_final,
+                )
+                if DEBUG_A2A:
+                    append_to_log_history(
+                        session_key_prefix,
+                        f"[debug] processed_chunk len={len(chunk_text or '')} final={is_final}",
+                    )
                 if chunk_text:
                     full_response_content += chunk_text
                     message_placeholder.markdown(full_response_content + "▌")
@@ -438,19 +593,21 @@ async def run_agent_chat_stream_a2a(
                 try:
                     await stream_response_iterator.aclose()
                     logger.info("A2A stream response iterator aclosed successfully.")
-                except RuntimeError as re:
+                except RuntimeError as re_err:
                     # These errors during aclose can sometimes be logged as warnings if the stream
                     # might have been implicitly closed or is in a state where explicit close is problematic.
                     if (
-                        "already running" in str(re).lower()
-                        or "no running event loop" in str(re).lower()
+                        "already running" in str(re_err).lower()
+                        or "no running event loop" in str(re_err).lower()
                     ):
                         logger.warning(
-                            f"RuntimeError during explicit aclose of A2A stream (may be benign): {re}"
+                            "RuntimeError during explicit aclose of A2A stream (may be benign): %s",
+                            re_err,
                         )
                     else:  # Other RuntimeErrors during aclose are more concerning
                         logger.error(
-                            f"Unexpected RuntimeError during explicit aclose of A2A stream: {re}",
+                            "Unexpected RuntimeError during explicit aclose of A2A stream: %s",
+                            re_err,
                             exc_info=True,
                         )
                 except Exception as ex_aclose:  # Catch any other error during aclose

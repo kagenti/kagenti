@@ -30,6 +30,12 @@ spec:
               value: "/app/.cache/uv"
             - name: "ENABLE_AUTH"
               value: "{{- .Values.ui.auth.enabled }}"
+            - name: "SSL_CERT_FILE"
+              valueFrom:
+                secretKeyRef:
+                  name: "kagenti-ui-oauth-secret"
+                  key: "SSL_CERT_FILE"
+                  optional: {{ (not .Values.openshift) }}
             - name: "CLIENT_ID"
               valueFrom:
                 secretKeyRef:
@@ -183,5 +189,5 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
-{{- end }}
+{{- end }}    
 {{- end }}

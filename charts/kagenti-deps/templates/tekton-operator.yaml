@@ -1,4 +1,5 @@
-{{- if and .Values.components.tekton.enabled .Values.openshift }}
+{{- if .Values.components.tekton.enabled }}
+{{- if .Values.openshift }}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -12,4 +13,17 @@ spec:
   name: openshift-pipelines-operator-rh
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+{{- else }}
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: tektoncd-operator
+  namespace: operators
+spec:
+  channel: alpha 
+  name: tektoncd-operator
+  installPlanApproval: Automatic
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+{{- end }}
 {{- end }}

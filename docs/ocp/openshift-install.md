@@ -6,7 +6,6 @@
 
 These limitations will be addressed in successive PRs.
 
-- UI Auth and token management is disabled
 - Only [quay.io](https://quay.io) registry has been tested in build from source
 - Ollama models not tested - OpenAI key required for now
 
@@ -97,8 +96,74 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
    Install the kagenti chart as follows:
 
    ```shell
-   helm upgrade --install kagenti ./charts/kagenti/ -n kagenti-system --create-namespace -f ./charts/kagenti/.secrets.yaml
+   helm upgrade --install kagenti ./charts/kagenti/ -n kagenti-system --create-namespace -f ./charts/kagenti/.secrets.yaml --set ui.tag=${LATEST_TAG}
    ```
+
+## Authentication Configuration
+
+Kagenti UI now supports Keycloak authentication by default.
+
+### Prerequisites
+
+**IMPORTANT**: Before accessing the UI, you must create a Kubernetes secret named `kagenti-ui-oauth-secret` in the `kagenti-system` namespace with the following keys:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kagenti-ui-oauth-secret
+  namespace: kagenti-system
+type: Opaque
+stringData:
+  ENABLE_AUTH: "true"
+  CLIENT_ID: "kagenti"
+  CLIENT_SECRET: "<your-keycloak-client-secret>"
+  AUTH_ENDPOINT: "https://<keycloak-route>/realms/master/protocol/openid-connect/auth"
+  TOKEN_ENDPOINT: "https://<keycloak-route>/realms/master/protocol/openid-connect/token"
+  REDIRECT_URI: "https://<ui-route>/oauth2/callback"
+  SCOPE: "openid profile email"
+  SSL_CERT_FILE: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+```
+
+Replace the placeholders:
+
+**1. Get Keycloak client secret:**
+
+First, find the Keycloak admin username and password in the `keycloak` namespace.
+
+Then, log in to the Keycloak admin console:
+1. Navigate to the Keycloak route URL
+2. Log in with admin credentials
+3. Go to **Clients** in the left sidebar
+4. Click on the `kagenti` client
+5. Go to the **Credentials** tab
+6. Copy the **Client Secret** value
+
+**2. Get route hostnames:**
+```shell
+# Get Keycloak route
+KEYCLOAK_ROUTE=$(oc get route keycloak -n keycloak -o jsonpath='{.spec.host}')
+
+# Get UI route  
+UI_ROUTE=$(oc get route kagenti-ui -n kagenti-system -o jsonpath='{.spec.host}')
+
+echo "Keycloak route: $KEYCLOAK_ROUTE"
+echo "UI route: $UI_ROUTE"
+```
+
+**3. Update the secret:**
+
+Replace in the YAML above:
+- `<your-keycloak-client-secret>`: The client secret from Keycloak (step 1)
+- `<keycloak-route>`: Value of `$KEYCLOAK_ROUTE`
+- `<ui-route>`: Value of `$UI_ROUTE`
+
+### Authentication Features
+
+- **Keycloak Integration**: Uses the deployed Keycloak instance for authentication
+- **Automatic Token Management**: Handles token refresh and session management
+- **User Session Management**: Supports login/logout functionality
+- **SSL Certificate Handling**: Automatically handles OpenShift self-signed certificates
 
 ## Access the UI
 
@@ -107,6 +172,21 @@ After the chart is installed, follow the instructions in the release notes to ac
 ```shell
 echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
 ```
+
+### Login Process
+
+1. Navigate to the UI URL
+2. Click "Click to login" button
+3. You will be redirected to Keycloak authentication page
+4. Authenticate with your Keycloak credentials
+5. You will be redirected back to the Kagenti UI
+6. You should see a welcome message confirming successful login
+
+### Logout Process
+
+1. Click the "Logout" button in the UI
+2. Your session will be cleared
+3. You will need to re-authenticate to access the UI again
 
 If your OpenShift cluster uses self-signed route certificates, open that URL in your browser and accept the certificate.
 
