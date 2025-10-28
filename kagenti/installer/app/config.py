@@ -26,6 +26,7 @@ RESOURCES_DIR = SCRIPT_DIR / "resources"
 CLUSTER_NAME = "agent-platform"
 OPERATOR_NAMESPACE = "kagenti-system"
 TEKTON_VERSION = "v0.66.0"
+BUILDPACKS_VERSION = "0.3"
 KEYCLOAK_URL = "http://keycloak.localtest.me:8080/realms/master"
 
 
