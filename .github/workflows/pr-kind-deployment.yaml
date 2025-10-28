@@ -108,14 +108,14 @@ jobs:
 
       - name: Wait for weather-tool deployment
         run: |
-          until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done
+          timeout 120 bash -c 'until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done'
           kubectl wait --for=condition=available --timeout=300s deployment/weather-tool -n team1 || {
             kubectl get events -n team1 --sort-by='.lastTimestamp'
             exit 1
           }
 
       - name: Collect logs on failure
-        if: failure()
+        if: always()
         run: |
           echo "=== Collecting logs for debugging ==="
           kubectl get events --all-namespaces --sort-by='.lastTimestamp'
