@@ -1505,17 +1505,11 @@ def render_import_form(
             "See `docs/new-agent.md` for examples."
         )
 
-        repo_url = st_object.text_input(
-            "Github Repository URL:",
-            placeholder="http://github.com/username/repository",
+        env_raw_url = st_object.text_input(
+            "Github repository raw url containing the .env file:",
+            placeholder="https://raw.githubusercontent.com/username/repository/path-to/.env",
             key=f"{resource_type.lower()}_repo_url",
-            help="Enter the Github repository URL",
-        )
-        file_path = st_object.text_input(
-            "Path to .env file:",
-            placeholder=". env or config/.env or path/to/your/.env",
-            key=f"{resource_type.lower()}_env_file_path",
-            help="Enter the path to .env file within the repository",
+            help="Enter the Github raw URL to the repository containing the .env file",
         )
 
         import_col1, import_col2, _import_col3 = st_object.columns([1, 1, 2])
@@ -1523,29 +1517,11 @@ def render_import_form(
             if st_object.button(
                 " 🔄 Import",
                 key=f"{resource_type.lower()}_do_import",
-                disabled=not (repo_url and file_path),
+                disabled=not (env_raw_url and env_raw_url.strip()),
             ):
                 try:
                     with st_object.spinner("Fetching .env file from repository ..."):
-                        # Need to convert Github repo URL to raw file URL
-                        if "github.com" in repo_url:
-                            if repo_url.endswith(".git"):
-                                repo_url = repo_url[:-4]
-
-                            repo_path = repo_url.replace(
-                                "https://github.com/", ""
-                            ).replace("http://github.com/", "")
-                            if "/tree/" in repo_path:
-                                parts = repo_path.split("/tree/")
-                                repo_path = parts[0]
-                                branch = parts[1].split("/")[0]
-                            else:
-                                branch = "main"
-                            raw_url = f"https://raw.githubusercontent.com/{repo_path}/{branch}/{file_path.lstrip('/')}"
-                        else:
-                            raw_url = f"{repo_url.rstrip('/')}/{file_path.lstrip('/')}"
-
-                        response = requests.get(raw_url, timeout=20)
+                        response = requests.get(env_raw_url, timeout=20)
                         env_content = response.text
 
                         imported_vars = parse_env_file(env_content, st_object)
