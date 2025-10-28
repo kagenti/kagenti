@@ -113,7 +113,21 @@ jobs:
             kubectl get events -n team1 --sort-by='.lastTimestamp'
             exit 1
           }
-
+      - name: Debug failed pipeline
+        if: always()
+        run: |
+          echo "=== Pipeline Runs ==="
+          kubectl get pipelinerun -n team1
+          
+          echo "=== Task Runs ==="
+          kubectl get taskrun -n team1
+          
+          echo "=== Failed Task Logs ==="
+          FAILED_TASKRUN=$(kubectl get taskrun -n team1 -o json | jq -r '.items[] | select(.status.conditions[]?.status=="False") | .metadata.name' | head -1)
+          if [ ! -z "$FAILED_TASKRUN" ]; then
+            kubectl logs -n team1 -l tekton.dev/taskRun=$FAILED_TASKRUN --all-containers --tail=100
+          fi
+    
       - name: Collect logs on failure
         if: always()
         run: |
