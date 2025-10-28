@@ -31,15 +31,6 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Create Kind cluster config
-        run: |
-          uv run kagenti-installer --silent --skip-install tekton --skip-install operator --skip-install addons --skip-install ui --skip-install gateway --skip-install spire --skip-install mcp_gateway --skip-install keycloak --skip-install agents --skip-install metrics_server --skip-install inspector --skip-install cert_manager --skip-install toolhive --skip-install istio
-
-      - name: Verify Kind cluster
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -54,6 +45,20 @@ jobs:
       - name: Build Client Registration image
         run: |
           docker build -t ghcr.io/kagenti/kagenti/client-registration:pr-test kagenti/auth/client-registration
+
+      - name: Set up environment file
+        working-directory: kagenti/installer/app
+        run: |
+          cp .env_template .env
+          echo "GITHUB_USER=fake" >> .env
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> .env
+          echo "OPENAI_API_KEY=fake" >> .env
+          echo "AGENT_NAMESPACES=team1,team2" >> .env
+
+      - name: Run kagenti-installer to build the cluster
+        working-directory: kagenti/installer
+        run: |
+          uv run kagenti-installer --silent --skip-install tekton --skip-install operator --skip-install addons --skip-install ui --skip-install gateway --skip-install spire --skip-install mcp_gateway --skip-install keycloak --skip-install agents --skip-install metrics_server --skip-install inspector --skip-install cert_manager --skip-install toolhive --skip-install istio
 
       - name: Load images into Kind cluster
         run: |
