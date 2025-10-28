@@ -465,6 +465,106 @@ def get_tool_details(
     )
 
 
+def _find_pods_for_resource(core_v1_api, resource_name, namespace):
+    """Find pods for a given resource name."""
+    label_selectors = [
+        f"app.kubernetes.io/name={resource_name}",
+        f"app={resource_name}",
+    ]
+
+    for label_selector in label_selectors:
+        try:
+            pods = core_v1_api.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=label_selector,
+                timeout_seconds=10,
+            )
+            if pods.items:
+                return pods, None
+        except Exception as e:
+            logger.debug(f"Error trying label selector '{label_selector}': {e}")
+            continue
+
+    error_message = (
+        f"No pods found with label app.kubernetes.io/name={resource_name} "
+        f"or app={resource_name} in namespace {namespace}"
+    )
+    return None, error_message
+
+
+def _extract_env_var_from_source(env_var, result):
+    """Extract environment variable from its source and add to result."""
+    if env_var.value:
+        result["direct"].append({"name": env_var.name, "value": env_var.value})
+    elif env_var.value_from:
+        source = env_var.value_from
+        if source.config_map_key_ref:
+            result["configmap"].append(
+                {
+                    "name": env_var.name,
+                    "source_name": source.config_map_key_ref.name,
+                    "source_key": source.config_map_key_ref.key,
+                }
+            )
+        elif source.secret_key_ref:
+            result["secret"].append(
+                {
+                    "name": env_var.name,
+                    "source_name": source.secret_key_ref.name,
+                    "source_key": source.secret_key_ref.key,
+                }
+            )
+        elif source.field_ref:
+            result["fieldref"].append(
+                {"name": env_var.name, "field_path": source.field_ref.field_path}
+            )
+        elif source.resource_field_ref:
+            result["resourcefield"].append(
+                {
+                    "name": env_var.name,
+                    "resource": source.resource_field_ref.resource,
+                }
+            )
+
+
+def get_pod_environment_variables(
+    core_v1_api: Optional[kubernetes.client.CoreV1Api],
+    resource_name: str,
+    namespace: str = "default",
+) -> Dict[str, Any]:
+    """Get environment variables from the pod associated with a resource (agent or tool)."""
+    result = {
+        "direct": [],
+        "configmap": [],
+        "secret": [],
+        "fieldref": [],
+        "resourcefield": [],
+        "error": None,
+    }
+
+    if not core_v1_api:
+        result["error"] = "CoreV1Api not available"
+        return result
+
+    try:
+        pods, error = _find_pods_for_resource(core_v1_api, resource_name, namespace)
+        if error:
+            result["error"] = error
+            return result
+
+        pod = pods.items[0]
+
+        for container in pod.spec.containers:
+            if container.env:
+                for env_var in container.env:
+                    _extract_env_var_from_source(env_var, result)
+
+    except Exception as e:
+        result["error"] = f"An unexpected error occurred: {e}"
+
+    return result
+
+
 def get_kubernetes_namespace():
     """Get the Kubernetes namespace"""
     if (

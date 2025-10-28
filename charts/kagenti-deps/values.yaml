@@ -31,7 +31,8 @@ components:
     enabled: false
   ingressGateway:
     enabled: false 
-
+  toolhive:
+    enabled: true
 
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
@@ -49,6 +50,21 @@ keycloak:
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
+  httpRoute:
+    annotations: {}
+    parentRefs:
+    - name: http
+      sectionName: http
+      namespace: kagenti-system
+    hostnames:
+      - "keycloak.localtest.me"
+      - "www.keycloak.localtest.me"
+    rules:
+    - matches:
+      - path:
+          type: PathPrefix
+          value: /headers
+
 
 # ------------------------------------------------------------------
 #  Istio Configuration
@@ -68,6 +84,9 @@ istio:
     profile: ambient
     namespace: '{{ .Values.istio.namespace | quote }}'
 
+httpGateway:
+  name: http
+  namespace: "kagenti-system"
 # ------------------------------------------------------------------
 #  Cert Manager Configuration
 # ------------------------------------------------------------------
@@ -79,3 +98,22 @@ certManager:
 # ------------------------------------------------------------------
 spire:
   namespace: zero-trust-workload-identity-manager
+
+
+registry:
+  namespace: cr-system
+  name: registry
+  replicaCount: 1
+  image:
+    repository: ghcr.io/distribution/distribution
+    tag: "3.0.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 5000
+    targetPort: 5000
+  
+  env:
+    otelTracesExporter: "none"
+    logLevel: "info"

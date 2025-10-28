@@ -27,6 +27,7 @@ AGENT_EXAMPLE_SUBFOLDERS = [
     "a2a/a2a_contact_extractor",
     "a2a/a2a_currency_converter",
     "a2a/slack_researcher",
+    "a2a/git_issue_agent",
 ]
 AGENT_PROTOCOL_OPTIONS = ["a2a"]
 

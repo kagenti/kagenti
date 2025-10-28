@@ -1,0 +1,23 @@
+# For non-openshift clusters, need to create an openshift
+# namespace with operator group to support
+# operator OLM subscriptions
+{{- if not .Values.openshift }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: operators
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: kagenti-operatorgroup
+  namespace: operators
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+spec:
+  targetNamespaces: []
+{{- end }}

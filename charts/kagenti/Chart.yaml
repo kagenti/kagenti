@@ -7,8 +7,11 @@ appVersion: "1.0"
 
 dependencies:
 - name: kagenti-platform-operator-chart
-  version: 0.2.0-alpha.8        
+  version: 0.2.0-alpha.10
   repository: oci://ghcr.io/kagenti/kagenti-operator
   condition: components.platformOperator.enabled
-  alias: kagentiPlatformOperator
+- name: mcp-gateway
+  version: 0.2.0  
+  repository: oci://ghcr.io/kagenti/charts
+  condition: components.mcpGateway.enabled  
 

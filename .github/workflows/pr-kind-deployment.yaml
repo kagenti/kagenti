@@ -42,12 +42,41 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build UI image
+        run: |
+          docker build -t ghcr.io/kagenti/kagenti/ui:pr-test kagenti/ui
+
+      - name: Build UI OAuth Secret image
+        run: |
+          docker build -t ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test kagenti/auth/ui-oauth-secret
+
+      - name: Build Client Registration image
+        run: |
+          docker build -t ghcr.io/kagenti/kagenti/client-registration:pr-test kagenti/auth/client-registration
+
+      - name: Load images into Kind cluster
+        run: |
+          kind load docker-image ghcr.io/kagenti/kagenti/ui:pr-test --name agent-platform
+          kind load docker-image ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test --name agent-platform
+          kind load docker-image ghcr.io/kagenti/kagenti/client-registration:pr-test --name agent-platform
+
+      - name: Patch deployment files to use pr-test images
+        run: |
+          # Patch UI deployment to use pr-test tag
+          sed -i 's|ghcr.io/kagenti/kagenti/ui:latest|ghcr.io/kagenti/kagenti/ui:pr-test|g' deployments/ui/kagenti-ui.yaml
+
+          # Patch UI OAuth secret job to use pr-test tag
+          sed -i 's|ghcr.io/kagenti/kagenti/ui-oauth-secret:latest|ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test|g' kagenti/installer/app/resources/ui-oauth-secret.yaml
+
       - name: Set up environment file
         working-directory: kagenti/installer/app
         run: |
           cp .env_template .env
           echo "GITHUB_USER=fake" >> .env
-          echo "GITHUB_TOKEN=fake" >> .env
+          echo "GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" >> .env
           echo "OPENAI_API_KEY=fake" >> .env
           echo "AGENT_NAMESPACES=team1,team2" >> .env
 
@@ -56,45 +85,17 @@ jobs:
         run: |
           uv run kagenti-installer --silent --use-existing-cluster
 
-      - name: Wait for critical deployments to be ready
+      - name: Apply weather-tool component
         run: |
-          echo "Waiting for critical deployments to be ready (1/1)..."
+          kubectl apply -f kagenti/examples/components/weather_mcp.yaml
 
-          # List of critical deployments in format "namespace/deployment"
-          CRITICAL_DEPLOYMENTS=(
-            "cert-manager/cert-manager"
-            "cert-manager/cert-manager-cainjector"
-            "cert-manager/cert-manager-webhook"
-            "cr-system/registry"
-            "gateway-system/mcp-gateway-istio"
-            "istio-system/istiod"
-            "istio-system/kiali"
-            "istio-system/prometheus"
-            "kagenti-system/agentic-platform-controller-manager"
-            "kagenti-system/http-istio"
-            "kagenti-system/kagenti-ui"
-            "kagenti-system/mcp-inspector"
-            "kagenti-system/otel-collector"
-            "mcp-system/mcp-broker-router"
-            "mcp-system/mcp-controller"
-            "spire-server/spire-spiffe-oidc-discovery-provider"
-            "spire-server/spire-tornjak-frontend"
-            "tekton-pipelines-resolvers/tekton-pipelines-remote-resolvers"
-            "tekton-pipelines/tekton-events-controller"
-            "tekton-pipelines/tekton-pipelines-controller"
-            "tekton-pipelines/tekton-pipelines-webhook"
-          )
-
-          # Wait for each deployment
-          for deployment in "${CRITICAL_DEPLOYMENTS[@]}"; do
-            namespace=$(echo $deployment | cut -d'/' -f1)
-            name=$(echo $deployment | cut -d'/' -f2)
-            echo "Waiting for $deployment..."
-            kubectl wait --for=condition=available --timeout=300s deployment/$name -n $namespace
-          done
-
-          echo "All critical deployments are ready!"
-          kubectl get deployments --all-namespaces
+      - name: Wait for weather-tool deployment
+        run: |
+          until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done
+          kubectl wait --for=condition=available --timeout=300s deployment/weather-tool -n team1 || {
+            kubectl get events -n team1 --sort-by='.lastTimestamp'
+            exit 1
+          }
 
       - name: Collect logs on failure
         if: failure()

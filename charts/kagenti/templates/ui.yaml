@@ -183,5 +183,5 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
-{{- end }}
+{{- end }}    
 {{- end }}

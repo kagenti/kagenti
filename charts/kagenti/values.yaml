@@ -50,12 +50,12 @@ ui:
     enabled: false
   namespace: kagenti-system
   image: ghcr.io/kagenti/kagenti/ui
-  tag: v0.1.0-alpha.1
+  tag: v0.1.0-alpha.7
 
 # ------------------------------------------------------------------
 #  Platform Operator Configuration
 # ------------------------------------------------------------------
-kagentiPlatformOperator:
+kagenti-platform-operator-chart:
   controllerManager:
     container:
       args:
@@ -71,8 +71,13 @@ kagentiPlatformOperator:
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
 # ------------------------------------------------------------------
+# subchart configs
+mcp-gateway:
+  fullnameOverride: mcp-gateway 
+  envoyFilter:
+    namespace: istio-system
+# main chart configs    
 mcpGateway:
   namespaces:
     mcpSystem: mcp-system
     gatewaySystem: gateway-system
-    istioNamespace: istio-system

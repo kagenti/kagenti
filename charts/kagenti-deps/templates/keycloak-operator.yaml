@@ -1,4 +1,4 @@
-{{- if and .Values.components.keycloak.enabled .Values.openshift }}
+{{- if .Values.components.keycloak.enabled }}
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -8,6 +8,7 @@ spec:
   targetNamespaces:
     - {{ .Values.keycloak.namespace }}
 ---    
+{{- if .Values.openshift }}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -21,4 +22,17 @@ spec:
   name: rhbk-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+{{- else }}
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: keycloak-operator
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  channel: fast
+  installPlanApproval: Automatic
+  name: keycloak-operator
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+{{- end }}
 {{- end }}

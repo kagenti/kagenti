@@ -1,0 +1,35 @@
+{{- if and .Values.components.istio.enabled .Values.openshift }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: ztunnel-service
+  namespace: "{{ .Values.istio.ztunnel.namespace }}"
+  labels:
+    app: ztunnel
+spec:
+  selector:
+    app: ztunnel
+  ports:
+  - name: ztunnel-stats 
+    port: 15020
+    targetPort: 15020
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ztunnel-servicemonitor
+  namespace: "{{ .Values.istio.ztunnel.namespace }}"
+  labels:
+    release: prometheus   
+spec:
+  selector:
+    matchLabels:
+      app: ztunnel
+  namespaceSelector:
+    matchNames:
+    - istio-ztunnel
+  endpoints:
+  - port: ztunnel-stats
+    interval: 10s
+    path: /metrics
+{{- end }}

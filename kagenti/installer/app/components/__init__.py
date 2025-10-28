@@ -27,4 +27,5 @@ from . import (
     tekton,
     ui,
     metrics_server,
+    toolhive,
 )

@@ -1,4 +1,5 @@
-{{- if and .Values.components.istio.enabled .Values.openshift }}
+{{- if .Values.components.istio.enabled }}
+{{- if .Values.openshift }}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -12,4 +13,17 @@ spec:
   name: servicemeshoperator3
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+{{- else }}
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: sailoperator 
+  namespace: operators
+spec:
+  channel: stable
+  name: sailoperator
+  installPlanApproval: Automatic
+  source: operatorhubio-catalog
+  sourceNamespace: olm
+{{- end }}
 {{- end }}

@@ -11,4 +11,5 @@ data:
     svid_key_file_name = "/opt/svid_key.pem"
     svid_bundle_file_name = "/opt/svid_bundle.pem"
     jwt_svids = [{jwt_audience="kagenti", jwt_svid_file_name="/opt/jwt_svid.token"}]
+    jwt_svid_file_mode = 0644
     include_federated_domains = true

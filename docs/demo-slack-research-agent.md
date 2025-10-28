@@ -16,6 +16,7 @@ Here's a breakdown of the sections:
 
 - In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`a2a_slack_researcher`](https://github.com/kagenti/agent-examples/tree/main/a2a/slack_researcher) agent.
 - In [**Import New Tool**](#import-new-tool), you'll build and deploy the [`slack_tool`](https://github.com/kagenti/agent-examples/tree/main/mcp/slack_tool) tool.
+- In [**Configure Keycloak**](#configure-keycloak), you'll configure Keycloak to provide access tokens with proper permissions to each component and enable token exchange. 
 - In [**Validate the Deployment**](#validate-the-deployment), you'll verify that all components are running and operational.
 - In [**Chat with the Agent**](#chat-with-the-agent), you'll interact with the agent and confirm it responds correctly using real-time Slack data.
 
@@ -166,7 +167,7 @@ export NAMESPACE=<namespace>
 Now run the configuration script:
 
 ```console
-python set_up_demo.py
+python set_up_slack_demo.py
 ```
 
 For more information about the configuration script check the [detailed README.md](../../kagenti/auth/auth_demo/README.md) file.

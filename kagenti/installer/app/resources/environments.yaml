@@ -49,16 +49,8 @@ data:
         "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
       },
       {
-        "name": "AUDIENCE",
-        "value": "spiffe://localtest.me/sa/slack-researcher"
-      },
-      {
         "name": "TOKEN_URL",
         "value": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/token"
-      },
-      {
-        "name": "TARGET_AUDIENCE",
-        "value": "spiffe://localtest.me/sa/slack-tool"
       },
       {
         "name": "TARGET_SCOPES",
@@ -99,3 +91,4 @@ data:
   KEYCLOAK_REALM: "master"
   KEYCLOAK_ADMIN_USERNAME: "admin"
   KEYCLOAK_ADMIN_PASSWORD: "admin"
+  SECRET_FILE_PATH: "/shared/secret.txt"

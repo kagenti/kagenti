@@ -1,0 +1,83 @@
+{{- if .Values.components.mcpGateway.enabled }}
+# Adds the labels for istio discovery and istio ambient to the mcp-system namespace
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-namespace-labeler
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-namespace-labeler-role
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs:
+    - "get"
+    - "list"
+    - "patch"
+    - "update"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-namespace-labeler-binding
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-namespace-labeler-role
+subjects:
+- kind: ServiceAccount
+  name: {{ .Release.Name }}-namespace-labeler
+  namespace: {{ .Release.Namespace }}
+---  
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-label-namespace-hook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+    app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    helm.sh/chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name | quote }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Release.Name }}-namespace-labeler
+      containers:
+        - name: kubectl-labeler
+          image: "{{ .Values.common.kubectlImage }}"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              kubectl label namespace "{{ .Values.mcpGateway.namespaces.mcpSystem }}" \
+                istio-discovery=enabled istio.io/dataplane-mode=ambient --overwrite && \
+              kubectl label namespace "{{ .Release.Namespace }}" \
+                istio-discovery=enabled istio.io/dataplane-mode=ambient --overwrite
+{{- end }}  

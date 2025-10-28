@@ -35,6 +35,7 @@ from .components import (
     metrics_server,
     inspector,
     cert_manager,
+    toolhive,
 )
 from .config import InstallableComponent
 from .utils import console
@@ -59,6 +60,7 @@ INSTALLERS = {
     InstallableComponent.AGENTS: agents.install,
     InstallableComponent.METRICS_SERVER: metrics_server.install,
     InstallableComponent.INSPECTOR: inspector.install,
+    InstallableComponent.TOOLHIVE: toolhive.install,
 }
 
 
@@ -183,6 +185,8 @@ def main(
             InstallableComponent.CERT_MANAGER, skip_install, **install_params
         )
         deploy_component(InstallableComponent.OPERATOR, skip_install, **install_params)
+        deploy_component(InstallableComponent.TOOLHIVE, skip_install, **install_params)
+
         deploy_component(InstallableComponent.ISTIO, skip_install, **install_params)
         deploy_component(
             InstallableComponent.METRICS_SERVER, skip_install, **install_params

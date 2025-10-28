@@ -10,8 +10,8 @@ Detailed overview of the identity concepts are covered in the [Kagenti Identity 
 Check the details for running various demos.
 
 - Simplest Demo - [Weather Service](./demo-weather-agent.md)
-- Identity & Auth Demo - [Slack Authentication](./demo-slack-research-agent/README.md)
-- Github issue demo
+- Identity & Auth Demo - [Slack Authentication](./demo-slack-research-agent.md)
+- Github issue demo - [Github Issue Agent](./demo-github-issue.md)
 
 ## Installation
 

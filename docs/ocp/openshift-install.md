@@ -8,11 +8,7 @@ These limitations will be addressed in successive PRs.
 
 - UI Auth and token management is disabled
 - Only [quay.io](https://quay.io) registry has been tested in build from source
-- Istio Ambient and network observability has not been tested and is not enabled by default
-- URLs for Kiali, Phoenix and Keycloak are not working in UI
 - Ollama models not tested - OpenAI key required for now
-- MCP inspector integration in tools details page is not enabled yet
-- MCP Gateway integration has not been tested yet
 
 ## Requirements 
 
@@ -36,10 +32,16 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
    - Edit the `.secrets.yaml` to provide the necessary keys as per the comments within the file.
 
 3. **Kagenti Dependencies Helm Chart Installation:**
+   - If you have git installed you may determine the latest tag with the command:
+      ```shell
+      LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/||; s/\^{}//')
+      ``` 
+      if this command fails, visit [this page](https://github.com/kagenti/kagenti/pkgs/container/kagenti%2Fkagenti/versions) to determine the latest version to use.
+
+
    This chart includes all the OpenShift software components required by Kagenti.
    ```shell
-   # For example, if the latest tag is 0.1.0-alpha.3
-   LATEST_TAG=0.1.0-alpha.3
+
    helm install --create-namespace -n kagenti-system kagenti-deps oci://ghcr.io/kagenti/kagenti/kagenti-deps --version $LATEST_TAG
    ```
 4.  **Kagenti Helm Chart Installation:**
@@ -79,18 +81,42 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
    ```
 
 5. **Install the Kagenti Chart:**
+ 
+   - Open [kagenti-platform-operator-chart](https://github.com/kagenti/kagenti-operator/pkgs/container/kagenti-operator%2Fkagenti-platform-operator-chart) to find the latest available version (e.g., 0.2.0-alpha.12).
+   - Open charts/kagenti/Chart.yaml and set the version field for kagenti-platform-operator-chart to match the latest tag.
+   - If you updated the version tag, run the following command to update the chart dependencies:
+     ```shell
+      helm dependency update ./charts/kagenti/
+      ```
+   - Determine the latest tag with the command:
+      ```shell
+      LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/||; s/\^{}//')
+      ```
+      if this command fails, visit [this page](https://github.com/kagenti/kagenti/pkgs/container/kagenti%2Fkagenti/versions) to determine the latest version to use.
+
+   Install the kagenti chart as follows:
+
    ```shell
    helm upgrade --install kagenti ./charts/kagenti/ -n kagenti-system --create-namespace -f ./charts/kagenti/.secrets.yaml
    ```
 
 ## Access the UI
 
-After the chart installs, you may access the UI following the instructions in the notes; the URL to UI can be found 
-running this command:
+After the chart is installed, follow the instructions in the release notes to access the UI. To print the UI URL, run:
 
 ```shell
-echo https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')
+echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
 ```
+
+If your OpenShift cluster uses self-signed route certificates, open that URL in your browser and accept the certificate.
+
+You also need to retrieve and open the MCP Inspector proxy address so the MCP Inspector can establish a trusted connection to the MCP server and avoid failing silently. Print the proxy URL with:
+
+```shell
+echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
+```
+
+Open the printed address in your browser and accept the certificate. It is normal to see a `Cannot GET /` message — this indicates the proxy is reachable but not serving an HTML page; you can safely close the tab.
 
 ## Running the demo
 
@@ -182,5 +208,30 @@ running the command:
 kubectl get secret keycloak-initial-admin -n keycloak -o go-template='Username: {{.data.username | base64decode}}  password: {{.data.password | base64decode}}{{"\n"}}'
 ```
 
+## Troubleshooting
 
+### Readiness checks fail for pods in namespaces with istio ambient enabled 
+
+This is a specific [issue](https://github.com/kagenti/kagenti/issues/329) for 
+OpenShift with Network Type `OVNKubernetes`. 
+
+This occurs because OVNKubernetes' default "shared gateway mode" causes 
+health probe traffic from the kubelet to bypass the host network stack. This 
+prevents the Ztunnel proxy from intercepting the traffic and incorrectly fails the probes.
+
+To inspect the Network Type you can run the command:
+
+```shell
+kubectl describe network.config/cluster
+```
+
+**Workaround**
+
+To fix this, you must set `routingViaHost: true` in your gatewayConfig when 
+deploying ambient mode. This forces OVNKubernetes to use "local gateway mode," 
+which correctly routes traffic through the host and allows the probes to function properly.
+
+```shell
+kubectl patch network.operator.openshift.io cluster --type=merge -p '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"gatewayConfig":{"routingViaHost":true}}}}}'
+```
 

@@ -12,11 +12,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ . }}
-  #labels:
-    # These labels correspond to the 'kubectl label' commands in the script
-    # shared-gateway-access: "true"
-    # istio.io/use-waypoint: waypoint
-    # istio.io/dataplane-mode: ambient
+  labels:
+    istio-discovery: enabled
+    istio.io/dataplane-mode: ambient
+    kagenti-enabled: "true"
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  Secrets for Namespace: {{ . }}

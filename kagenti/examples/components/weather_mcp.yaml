@@ -1,0 +1,111 @@
+apiVersion: kagenti.operator.dev/v1alpha1
+kind: Component
+metadata:
+  creationTimestamp: "2025-10-27T19:55:14Z"
+  finalizers:
+  - kagenti.operator.dev/finalizer
+  generation: 1
+  labels:
+    app.kubernetes.io/created-by: streamlit-ui
+    app.kubernetes.io/name: kagenti-operator
+    kagenti.io/framework: Python
+    kagenti.io/protocol: streamable_http
+    kagenti.io/type: tool
+  name: weather-tool
+  namespace: team1
+  resourceVersion: "10446"
+  uid: 4e54f4c1-eb7f-40d8-ad14-f713f8c7837c
+spec:
+  deployer:
+    deployAfterBuild: true
+    env:
+    - name: PORT
+      value: "8000"
+    - name: HOST
+      value: 0.0.0.0
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector.kagenti-system.svc.cluster.local:8335
+    - name: KEYCLOAK_URL
+      value: http://keycloak.keycloak.svc.cluster.local:8080
+    - name: UV_CACHE_DIR
+      value: /app/.cache/uv
+    - name: MCP_URL
+      value: http://weather-tool:8000/mcp
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: apikey
+          name: openai-secret
+    - name: LLM_API_KEY
+      valueFrom:
+        secretKeyRef:
+          key: apikey
+          name: openai-secret
+    - name: LLM_API_BASE
+      value: https://api.openai.com/v1
+    - name: LLM_MODEL
+      value: gpt-4o-mini-2024-07-18
+    kubernetes:
+      containerPorts:
+      - containerPort: 8000
+        name: http
+        protocol: TCP
+      imageSpec:
+        image: weather-tool
+        imagePullPolicy: Always
+        imageRegistry: registry.cr-system.svc.cluster.local:5000
+        imageTag: v0.0.1
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      servicePorts:
+      - name: http
+        port: 8000
+        protocol: TCP
+        targetPort: 8000
+      volumeMounts:
+      - mountPath: /app/.cache
+        name: cache
+      - mountPath: /.marvin
+        name: marvin
+      volumes:
+      - emptyDir: {}
+        name: cache
+      - emptyDir: {}
+        name: marvin
+    name: weather-tool
+    namespace: team1
+  description: Tool 'weather-tool' built from UI.
+  suspend: false
+  tool:
+    build:
+      cleanupAfterBuild: true
+      mode: custom
+      pipeline:
+        namespace: team1
+        parameters:
+        - name: SOURCE_REPO_SECRET
+          value: github-token-secret
+        - name: repo-url
+          value: github.com/kagenti/agent-examples
+        - name: revision
+          value: main
+        - name: subfolder-path
+          value: mcp/weather_tool
+        - name: image
+          value: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+        steps:
+        - configMap: github-clone-step
+          enabled: true
+          name: github-clone
+        - configMap: check-subfolder-step
+          enabled: true
+          name: folder-verification
+        - configMap: kaniko-docker-build-step-local
+          enabled: true
+          name: kaniko-build
+    toolType: MCP
