@@ -78,13 +78,15 @@ jobs:
           kind load docker-image ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test --name agent-platform
           kind load docker-image ghcr.io/kagenti/kagenti/client-registration:pr-test --name agent-platform
 
-      - name: Patch deployment files to use pr-test images
+      - name: Patch deployment files to use pr-test images and set pull policy to IfNotPresent
         run: |
           # Patch UI deployment to use pr-test tag
           sed -i 's|ghcr.io/kagenti/kagenti/ui:latest|ghcr.io/kagenti/kagenti/ui:pr-test|g' deployments/ui/kagenti-ui.yaml
+          sed -i 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g' deployments/ui/kagenti-ui.yaml
 
           # Patch UI OAuth secret job to use pr-test tag
           sed -i 's|ghcr.io/kagenti/kagenti/ui-oauth-secret:latest|ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test|g' kagenti/installer/app/resources/ui-oauth-secret.yaml
+          sed -i 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g' kagenti/installer/app/resources/ui-oauth-secret.yaml
 
       - name: Set up environment file
         working-directory: kagenti/installer/app
@@ -99,32 +101,6 @@ jobs:
         working-directory: kagenti/installer
         run: |
           uv run kagenti-installer --silent --use-existing-cluster
-
-      - name: Debug kagenti-ui-oauth-job
-        run: |
-          echo "=== Checking kagenti-ui-oauth-job status ==="
-          kubectl get job kagenti-ui-oauth-job -n kagenti-system -o yaml || echo "Job not found yet"
-
-          echo ""
-          echo "=== Getting pod for kagenti-ui-oauth-job ==="
-          POD_NAME=$(kubectl get pods -n kagenti-system -l job-name=kagenti-ui-oauth-job -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-          if [ -n "$POD_NAME" ]; then
-            echo "Found pod: $POD_NAME"
-            echo ""
-            echo "=== Pod status ==="
-            kubectl get pod $POD_NAME -n kagenti-system -o yaml
-
-            echo ""
-            echo "=== Pod logs ==="
-            kubectl logs $POD_NAME -n kagenti-system || echo "Could not get logs"
-          else
-            echo "No pod found for kagenti-ui-oauth-job"
-          fi
-
-          echo ""
-          echo "=== All pods in kagenti-system ==="
-          kubectl get pods -n kagenti-system
 
       - name: Apply weather-tool component
         run: |
