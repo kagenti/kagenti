@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from .. import config
-from ..utils import run_command
+from ..utils import console, run_command
 
 
 def install(**kwargs):
@@ -23,3 +24,35 @@ def install(**kwargs):
     run_command(
         ["kubectl", "apply", "--filename", tekton_url], "Installing Tekton Pipelines"
     )
+
+    # Patch Tekton Pipelines to enable step actions for buildpacks
+    patch = [
+        "kubectl",
+        "patch",
+        "configmap",
+        "feature-flags",
+        "-n",
+        "tekton-pipelines",
+        "--type",
+        "merge",
+        "-p",
+        '{"data":{"enable-step-actions":"true"}}',
+    ]
+    run_command(patch, "Patching Tekton Pipelines to enable step actions")
+    namespaces_str = os.getenv("AGENT_NAMESPACES")
+    if not namespaces_str:
+        console.log(
+            "[yellow]AGENT_NAMESPACES not set. Skipping buildpacks configuration.[/yellow]"
+        )
+        return
+
+    """Installs buildpacks phases for Tekton."""
+    buildpacks_url = f"https://raw.githubusercontent.com/tektoncd/catalog/main/task/buildpacks-phases/{config.BUILDPACKS_VERSION}/buildpacks-phases.yaml"
+
+    agent_namespaces = [ns.strip() for ns in namespaces_str.split(",") if ns.strip()]
+
+    for ns in agent_namespaces:
+        run_command(
+            ["kubectl", "apply", "--filename", buildpacks_url, "--namespace", ns],
+            f"Installing Tekton Buildpacks Phases in namespace {ns}",
+        )
