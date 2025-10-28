@@ -100,6 +100,32 @@ jobs:
         run: |
           uv run kagenti-installer --silent --use-existing-cluster
 
+      - name: Debug kagenti-ui-oauth-job
+        run: |
+          echo "=== Checking kagenti-ui-oauth-job status ==="
+          kubectl get job kagenti-ui-oauth-job -n kagenti-system -o yaml || echo "Job not found yet"
+
+          echo ""
+          echo "=== Getting pod for kagenti-ui-oauth-job ==="
+          POD_NAME=$(kubectl get pods -n kagenti-system -l job-name=kagenti-ui-oauth-job -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+          if [ -n "$POD_NAME" ]; then
+            echo "Found pod: $POD_NAME"
+            echo ""
+            echo "=== Pod status ==="
+            kubectl get pod $POD_NAME -n kagenti-system -o yaml
+
+            echo ""
+            echo "=== Pod logs ==="
+            kubectl logs $POD_NAME -n kagenti-system || echo "Could not get logs"
+          else
+            echo "No pod found for kagenti-ui-oauth-job"
+          fi
+
+          echo ""
+          echo "=== All pods in kagenti-system ==="
+          kubectl get pods -n kagenti-system
+
       - name: Apply weather-tool component
         run: |
           kubectl apply -f kagenti/examples/components/weather_mcp.yaml
