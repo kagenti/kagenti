@@ -10,6 +10,8 @@ Once deployed, we will query the agent using a natural language prompt. The agen
 
 This demo illustrates how Kagenti agent can access public tool.
 
+[Video recording](https://youtu.be/5SpTwERN2jU) showing the Kagenti installation and the demo described below is now available.
+
 Here's a breakdown of the sections:
 
 - In [**Import New Agent**](#import-new-agent), you'll build and deploy the [`git_issue_agent`](https://github.com/kagenti/agent-examples/tree/main/a2a/git_issue_agent).
