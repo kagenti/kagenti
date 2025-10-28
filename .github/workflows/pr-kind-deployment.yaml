@@ -98,7 +98,6 @@ jobs:
 
           # Patch UI OAuth secret job to use pr-test tag
           sed -i 's|ghcr.io/kagenti/kagenti/ui-oauth-secret:latest|ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test|g' kagenti/installer/app/resources/ui-oauth-secret.yaml
-          sed -i 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g' kagenti/installer/app/resources/ui-oauth-secret.yaml
 
       - name: Set up environment file
         working-directory: kagenti/installer/app
@@ -114,46 +113,35 @@ jobs:
         run: |
           uv run kagenti-installer --silent --use-existing-cluster
 
-      - name: Debug kagenti-ui-oauth-job
-        run: |
-          echo "=== Checking kagenti-ui-oauth-job status ==="
-          kubectl get job kagenti-ui-oauth-job -n kagenti-system -o yaml || echo "Job not found yet"
-
-          echo ""
-          echo "=== Getting pod for kagenti-ui-oauth-job ==="
-          POD_NAME=$(kubectl get pods -n kagenti-system -l job-name=kagenti-ui-oauth-job -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-          if [ -n "$POD_NAME" ]; then
-            echo "Found pod: $POD_NAME"
-            echo ""
-            echo "=== Pod status ==="
-            kubectl get pod $POD_NAME -n kagenti-system -o yaml
-
-            echo ""
-            echo "=== Pod logs ==="
-            kubectl logs $POD_NAME -n kagenti-system || echo "Could not get logs"
-          else
-            echo "No pod found for kagenti-ui-oauth-job"
-          fi
-
-          echo ""
-          echo "=== All pods in kagenti-system ==="
-          kubectl get pods -n kagenti-system
-
       - name: Apply weather-tool component
         run: |
           kubectl apply -f kagenti/examples/components/weather_mcp.yaml
 
       - name: Wait for weather-tool deployment
         run: |
-          until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done
+          timeout 120 bash -c 'until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done'
           kubectl wait --for=condition=available --timeout=300s deployment/weather-tool -n team1 || {
             kubectl get events -n team1 --sort-by='.lastTimestamp'
             exit 1
           }
 
+      - name: Debug failed pipeline
+        if: always()
+        run: |
+          echo "=== Pipeline Runs ==="
+          kubectl get pipelinerun -n team1
+          
+          echo "=== Task Runs ==="
+          kubectl get taskrun -n team1
+          
+          echo "=== Failed Task Logs ==="
+          FAILED_TASKRUN=$(kubectl get taskrun -n team1 -o json | jq -r '.items[] | select(.status.conditions[]?.status=="False") | .metadata.name' | head -1)
+          if [ ! -z "$FAILED_TASKRUN" ]; then
+            kubectl logs -n team1 -l tekton.dev/taskRun=$FAILED_TASKRUN --all-containers --tail=100
+          fi
+
       - name: Collect logs on failure
-        if: failure()
+        if: always()
         run: |
           echo "=== Collecting logs for debugging ==="
           kubectl get events --all-namespaces --sort-by='.lastTimestamp'
