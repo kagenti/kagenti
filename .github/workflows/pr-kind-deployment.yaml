@@ -33,42 +33,12 @@ jobs:
 
       - name: Create Kind cluster config
         run: |
-          cat > /tmp/kind-config.yaml <<EOF
-          kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          nodes:
-          - role: control-plane
-            extraPortMappings:
-            - containerPort: 30080
-              hostPort: 8080
-            - containerPort: 30443
-              hostPort: 9443
-          containerdConfigPatches:
-          - |
-            [plugins."io.containerd.grpc.v1.cri".registry]
-              [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.cr-system.svc.cluster.local:5000"]
-                endpoint = ["http://registry.cr-system.svc.cluster.local:5000"]
-              [plugins."io.containerd.grpc.v1.cri".registry.configs."registry.cr-system.svc.cluster.local:5000".tls]
-                insecure_skip_verify = true
-          EOF
-
-      - name: Create Kind cluster
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: agent-platform
-          wait: 300s
-          config: /tmp/kind-config.yaml
+          uv run kagenti-installer --silent --skip-install tekton --skip-install operator --skip-install addons --skip-install ui --skip-install gateway --skip-install spire --skip-install mcp_gateway --skip-install keycloak --skip-install agents --skip-install metrics_server --skip-install inspector --skip-install cert_manager --skip-install toolhive --skip-install istio
 
       - name: Verify Kind cluster
         run: |
           kubectl cluster-info
           kubectl get nodes
-
-      - name: Deploy cluster registry
-        run: |
-          echo "Deploying container registry..."
-          kubectl apply -f kagenti/installer/app/resources/registry.yaml
-          kubectl -n cr-system rollout status deployment/registry --timeout=300s
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
