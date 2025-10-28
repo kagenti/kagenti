@@ -76,7 +76,7 @@ jobs:
         run: |
           cp .env_template .env
           echo "GITHUB_USER=fake" >> .env
-          echo "GITHUB_TOKEN=fake" >> .env
+          echo "GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" >> .env
           echo "OPENAI_API_KEY=fake" >> .env
           echo "AGENT_NAMESPACES=team1,team2" >> .env
 
