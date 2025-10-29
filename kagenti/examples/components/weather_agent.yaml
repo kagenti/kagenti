@@ -4,12 +4,38 @@ metadata:
   labels:
     app.kubernetes.io/created-by: streamlit-ui
     app.kubernetes.io/name: kagenti-operator
-    kagenti.io/framework: Python
-    kagenti.io/protocol: streamable_http
-    kagenti.io/type: tool
-  name: weather-tool
+    kagenti.io/framework: LangGraph
+    kagenti.io/protocol: a2a
+    kagenti.io/type: agent
+  name: weather-service
   namespace: team1
 spec:
+  agent:
+    build:
+      mode: dev-local
+      pipeline:
+        namespace: ""
+        parameters:
+        - name: SOURCE_REPO_SECRET
+          value: github-token-secret
+        - name: repo-url
+          value: github.com/kagenti/agent-examples
+        - name: revision
+          value: main
+        - name: subfolder-path
+          value: a2a/weather_service
+        - name: image
+          value: registry.cr-system.svc.cluster.local:5000/weather-service:v0.0.1
+        steps:
+        - configMap: github-clone-step
+          enabled: true
+          name: github-clone
+        - configMap: check-subfolder-step
+          enabled: true
+          name: folder-verification
+        - configMap: kaniko-docker-build-step-local
+          enabled: true
+          name: kaniko-build
   deployer:
     deployAfterBuild: true
     env:
@@ -23,8 +49,6 @@ spec:
       value: http://keycloak.keycloak.svc.cluster.local:8080
     - name: UV_CACHE_DIR
       value: /app/.cache/uv
-    - name: MCP_URL
-      value: http://weather-tool:8000/mcp
     - name: OPENAI_API_KEY
       valueFrom:
         secretKeyRef:
@@ -39,13 +63,15 @@ spec:
       value: https://api.openai.com/v1
     - name: LLM_MODEL
       value: gpt-4o-mini-2024-07-18
+    - name: GITHUB_SECRET_NAME
+      value: github-token-secret
     kubernetes:
       containerPorts:
       - containerPort: 8000
         name: http
         protocol: TCP
       imageSpec:
-        image: weather-tool
+        image: weather-service
         imagePullPolicy: Always
         imageRegistry: registry.cr-system.svc.cluster.local:5000
         imageTag: v0.0.1
@@ -71,35 +97,7 @@ spec:
         name: cache
       - emptyDir: {}
         name: marvin
-    name: weather-tool
+    name: weather-service
     namespace: team1
-  description: Tool 'weather-tool' built from UI.
+  description: Agent 'weather-service' built from UI.
   suspend: false
-  tool:
-    build:
-      cleanupAfterBuild: true
-      mode: custom
-      pipeline:
-        namespace: team1
-        parameters:
-        - name: SOURCE_REPO_SECRET
-          value: github-token-secret
-        - name: repo-url
-          value: github.com/kagenti/agent-examples
-        - name: revision
-          value: main
-        - name: subfolder-path
-          value: mcp/weather_tool
-        - name: image
-          value: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
-        steps:
-        - configMap: github-clone-step
-          enabled: true
-          name: github-clone
-        - configMap: check-subfolder-step
-          enabled: true
-          name: folder-verification
-        - configMap: kaniko-docker-build-step-local
-          enabled: true
-          name: kaniko-build
-    toolType: MCP
