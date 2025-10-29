@@ -31,53 +31,6 @@ jobs:
         with:
           version: 'latest'
 
-      - name: Create Kind cluster config
-        run: |
-          cat > /tmp/kind-config.yaml <<EOF
-          kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          nodes:
-          - role: control-plane
-            extraPortMappings:
-            - containerPort: 30080
-              hostPort: 8080
-            - containerPort: 30443
-              hostPort: 9443
-          containerdConfigPatches:
-          - |
-            [plugins."io.containerd.grpc.v1.cri".registry]
-              [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.cr-system.svc.cluster.local:5000"]
-                endpoint = ["http://registry.cr-system.svc.cluster.local:5000"]
-              [plugins."io.containerd.grpc.v1.cri".registry.configs."registry.cr-system.svc.cluster.local:5000".tls]
-                insecure_skip_verify = true
-          EOF
-
-      - name: Create Kind cluster
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: agent-platform
-          wait: 300s
-          config: /tmp/kind-config.yaml
-
-      - name: Verify Kind cluster
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
-
-      - name: Deploy cluster registry
-        run: |
-          echo "Deploying container registry..."
-          kubectl apply -f kagenti/installer/app/resources/registry.yaml
-          kubectl -n cr-system rollout status deployment/registry --timeout=300s
-
-      - name: Configure registry DNS in Kind container
-        run: |
-          echo "Configuring registry DNS..."
-          REGISTRY_IP=$(kubectl get service registry -n cr-system -o jsonpath='{.spec.clusterIP}')
-          echo "Registry IP: $REGISTRY_IP"
-          docker exec agent-platform-control-plane sh -c "echo $REGISTRY_IP registry.cr-system.svc.cluster.local >> /etc/hosts"
-          echo "Registry DNS configured"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -92,6 +45,20 @@ jobs:
       - name: Build Client Registration image
         run: |
           docker build -t ghcr.io/kagenti/kagenti/client-registration:pr-test kagenti/auth/client-registration
+
+      - name: Set up environment file
+        working-directory: kagenti/installer/app
+        run: |
+          cp .env_template .env
+          echo "GITHUB_USER=fake" >> .env
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> .env
+          echo "OPENAI_API_KEY=fake" >> .env
+          echo "AGENT_NAMESPACES=team1,team2" >> .env
+
+      - name: Run kagenti-installer to build the cluster
+        working-directory: kagenti/installer
+        run: |
+          uv run kagenti-installer --silent --skip-install tekton --skip-install operator --skip-install addons --skip-install ui --skip-install gateway --skip-install spire --skip-install mcp_gateway --skip-install keycloak --skip-install agents --skip-install metrics_server --skip-install inspector --skip-install cert_manager --skip-install toolhive --skip-install istio
 
       - name: Load images into Kind cluster
         run: |
@@ -121,46 +88,28 @@ jobs:
         run: |
           uv run kagenti-installer --silent --use-existing-cluster
 
-      - name: Debug kagenti-ui-oauth-job
+      - name: Apply weather-tool and weather service
         run: |
-          echo "=== Checking kagenti-ui-oauth-job status ==="
-          kubectl get job kagenti-ui-oauth-job -n kagenti-system -o yaml || echo "Job not found yet"
-
-          echo ""
-          echo "=== Getting pod for kagenti-ui-oauth-job ==="
-          POD_NAME=$(kubectl get pods -n kagenti-system -l job-name=kagenti-ui-oauth-job -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-          if [ -n "$POD_NAME" ]; then
-            echo "Found pod: $POD_NAME"
-            echo ""
-            echo "=== Pod status ==="
-            kubectl get pod $POD_NAME -n kagenti-system -o yaml
-
-            echo ""
-            echo "=== Pod logs ==="
-            kubectl logs $POD_NAME -n kagenti-system || echo "Could not get logs"
-          else
-            echo "No pod found for kagenti-ui-oauth-job"
-          fi
-
-          echo ""
-          echo "=== All pods in kagenti-system ==="
-          kubectl get pods -n kagenti-system
-
-      - name: Apply weather-tool component
-        run: |
-          kubectl apply -f kagenti/examples/components/weather_mcp.yaml
+          kubectl apply -f kagenti/examples/components/
 
       - name: Wait for weather-tool deployment
         run: |
-          until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done
+          timeout 120 bash -c 'until kubectl get deployment weather-tool -n team1 &> /dev/null; do sleep 2; done'
           kubectl wait --for=condition=available --timeout=300s deployment/weather-tool -n team1 || {
             kubectl get events -n team1 --sort-by='.lastTimestamp'
             exit 1
           }
 
+      - name: Wait for weather-tool deployment
+        run: |
+          timeout 120 bash -c 'until kubectl get deployment weather-service -n team1 &> /dev/null; do sleep 2; done'
+          kubectl wait --for=condition=available --timeout=300s deployment/weather-service -n team1 || {
+            kubectl get events -n team1 --sort-by='.lastTimestamp'
+            exit 1
+          }
+
       - name: Collect logs on failure
-        if: failure()
+        if: always()
         run: |
           echo "=== Collecting logs for debugging ==="
           kubectl get events --all-namespaces --sort-by='.lastTimestamp'
