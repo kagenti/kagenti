@@ -311,7 +311,7 @@ A few problem fixes might include:
 
    ```console
    podman machine stop
-   podman machine set --memory=8192
+   podman machine set --memory=12288 --cpus=8
    podman machine start
    ```
 
@@ -320,7 +320,7 @@ A few problem fixes might include:
    ```console
    podman machine rm -f
    podman machine init
-   podman machine set --memory=8192
+   podman machine set --memory=12288 --cpus=8
    podman machine start
    ```
 
