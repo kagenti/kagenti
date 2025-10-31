@@ -21,6 +21,44 @@ spec:
         app: kagenti-ui
     spec:
       serviceAccountName: kagenti-ui-service-account
+      {{- if .Values.ui.auth.enabled }}
+      initContainers:
+      - name: wait-for-oauth-secret
+        image: {{ .Values.common.kubectlImage }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for OAuth secret to be created..."
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            if kubectl get secret kagenti-ui-oauth-secret -n {{ .Values.ui.namespace }} >/dev/null 2>&1; then
+              echo "OAuth secret found. Verifying required keys..."
+              REQUIRED_KEYS="CLIENT_ID CLIENT_SECRET AUTH_ENDPOINT TOKEN_ENDPOINT REDIRECT_URI"
+              ALL_PRESENT=true
+              for KEY in $REQUIRED_KEYS; do
+                if ! kubectl get secret kagenti-ui-oauth-secret -n {{ .Values.ui.namespace }} -o jsonpath='{.data.'$KEY'}' >/dev/null 2>&1; then
+                  echo "Missing key: $KEY"
+                  ALL_PRESENT=false
+                fi
+              done
+              if [ "$ALL_PRESENT" = "true" ]; then
+                echo "All required OAuth keys are present. Proceeding..."
+                exit 0
+              else
+                echo "Some keys are missing. Waiting 2 seconds... (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+                sleep 2
+              fi
+            else
+              echo "OAuth secret not found. Waiting 2 seconds... (attempt $ATTEMPT/$MAX_ATTEMPTS)"
+              sleep 2
+            fi
+          done
+          echo "ERROR: OAuth secret not ready after $MAX_ATTEMPTS attempts. Proceeding anyway but authentication may not work."
+          exit 0
+      {{- end }}
       containers:
         - name: kagenti-ui-container
           image: "{{ .Values.ui.image }}:{{ .Values.ui.tag }}"
@@ -35,7 +73,7 @@ spec:
                 secretKeyRef:
                   name: "kagenti-ui-oauth-secret"
                   key: "SSL_CERT_FILE"
-                  optional: {{ (not .Values.openshift) }}
+                  optional: {{ or (not .Values.openshift) (not .Values.ui.auth.enabled) }}
             - name: "CLIENT_ID"
               valueFrom:
                 secretKeyRef:

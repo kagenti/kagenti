@@ -53,6 +53,22 @@ ui:
   tag: v0.1.0-alpha.7
 
 # ------------------------------------------------------------------
+#  UI OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+uiOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  tag: latest
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  namespace: keycloak
+  adminSecretName: keycloak-initial-admin
+  adminUsernameKey: username
+  adminPasswordKey: password
+
+# ------------------------------------------------------------------
 #  Platform Operator Configuration
 # ------------------------------------------------------------------
 kagenti-platform-operator-chart:
