@@ -8,6 +8,7 @@ KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM")
 KEYCLOAK_ADMIN_USERNAME = os.environ.get("KEYCLOAK_ADMIN_USERNAME")
 KEYCLOAK_ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD")
 NAMESPACE = os.environ.get("NAMESPACE")
+DOMAIN_NAME = os.environ.get("DOMAIN_NAME", "localtest.me")
 
 if KEYCLOAK_URL is None:
     raise Exception('Expected environment variable "KEYCLOAK_URL"')
@@ -38,11 +39,11 @@ slack_partial_access_string = "slack-partial-access"
 slack_full_access_string = "slack-full-access"
 slack_partial_access_user_string = f"{slack_partial_access_string}-user"
 slack_full_access_user_string = f"{slack_full_access_string}-user"
-slack_client_id = f"spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-tool"
+slack_client_id = f"spiffe://{DOMAIN_NAME}/ns/{NAMESPACE}/sa/slack-tool"
 kagenti_client_id = "kagenti"
 
 slack_agent_access_string = "slack-agent-access"
-slack_agent_client_id = f"spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-researcher"
+slack_agent_client_id = f"spiffe://{DOMAIN_NAME}/ns/{NAMESPACE}/sa/slack-researcher"
 
 
 keycloak_admin = KeycloakAdmin(

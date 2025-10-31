@@ -8,6 +8,7 @@ KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM")
 KEYCLOAK_ADMIN_USERNAME = os.environ.get("KEYCLOAK_ADMIN_USERNAME")
 KEYCLOAK_ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD")
 NAMESPACE = os.environ.get("NAMESPACE")
+DOMAIN_NAME = os.environ.get("DOMAIN_NAME", "localtest.me")
 
 if KEYCLOAK_URL is None:
     raise Exception('Expected environment variable "KEYCLOAK_URL"')
@@ -38,11 +39,11 @@ github_partial_access_string = "github-partial-access"
 github_full_access_string = "github-full-access"
 github_partial_access_user_string = f"{github_partial_access_string}-user"
 github_full_access_user_string = f"{github_full_access_string}-user"
-github_client_id = f"spiffe://localtest.me/ns/{NAMESPACE}/sa/github-tool"
+github_client_id = f"spiffe://{DOMAIN_NAME}/ns/{NAMESPACE}/sa/github-tool"
 kagenti_client_id = "kagenti"
 
 github_agent_access_string = "github-agent-access"
-github_agent_client_id = f"spiffe://localtest.me/ns/{NAMESPACE}/sa/git-issue-agent"
+github_agent_client_id = f"spiffe://{DOMAIN_NAME}/ns/{NAMESPACE}/sa/git-issue-agent"
 
 
 keycloak_admin = KeycloakAdmin(

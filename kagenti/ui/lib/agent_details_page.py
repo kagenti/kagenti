@@ -174,8 +174,8 @@ def render_agent_details_content(agent_k8s_name: str):
         if running_in_cluster:
             agent_url = f"{scheme}{agent_service_host_name}.{namespace}.svc.cluster.local:{agent_port}"
         else:
-            # For local/off-cluster, localtest.me resolves to localhost.
-            agent_url = f"{scheme}{agent_service_host_name}.localtest.me:{agent_port}"
+            # For local/off-cluster, use configured DOMAIN_NAME (defaults to localhost.me)
+            agent_url = f"{scheme}{agent_service_host_name}.{constants.DOMAIN_NAME}:{agent_port}"
 
         logger.info(
             f"Agent URL for '{agent_k8s_name}': {agent_url} (in-cluster: {running_in_cluster}, port: {agent_port})"

@@ -38,6 +38,8 @@ if KEYCLOAK_URL is None:
         f'Expected environment variable "KEYCLOAK_URL". Skipping client registration of {CLIENT_ID}.'
     )
     exit()  # KEYCLOAK_URL is optional so do not raise an error
+# Domain for off-cluster endpoints
+DOMAIN_NAME = os.environ.get("DOMAIN_NAME", "localtest.me")
 
 
 # TODO: use the function from kagenti/ui/lib/kube.py
@@ -105,9 +107,9 @@ data = {
     "ENABLE_AUTH": "true",  # string true
     "CLIENT_SECRET": client_secret,
     "CLIENT_ID": CLIENT_ID,
-    "AUTH_ENDPOINT": "http://keycloak.localtest.me:8080/realms/master/protocol/openid-connect/auth",
+    "AUTH_ENDPOINT": f"http://keycloak.{DOMAIN_NAME}:8080/realms/master/protocol/openid-connect/auth",
     "TOKEN_ENDPOINT": "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/token",
-    "REDIRECT_URI": "http://kagenti-ui.localtest.me:8080/oauth2/callback",
+    "REDIRECT_URI": f"http://kagenti-ui.{DOMAIN_NAME}:8080/oauth2/callback",
     "SCOPE": "openid profile email",
 }
 

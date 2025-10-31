@@ -45,7 +45,7 @@ spire-server:
         default:
           autoPopulateDNSNames: true
           # dnsNameTemplates:
-          # - '{{index .PodMeta.Labels "app"}}.localhost.me'
+          # - '{{index .PodMeta.Labels "app"}}.${DOMAIN_NAME}'
 
 spiffe-oidc-discovery-provider:
   enabled: true

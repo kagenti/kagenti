@@ -109,7 +109,7 @@ class KeycloakSetup:
 
     def create_client(self, app_name):
         try:
-            client_name = f"spiffe://localtest.me/sa/{app_name}"
+            client_name = f"spiffe://{config.DOMAIN_NAME}/sa/{app_name}"
             client_id = self.keycloak_admin.create_client(
                 {
                     "clientId": client_name,
@@ -133,7 +133,7 @@ class KeycloakSetup:
 
 def setup_keycloak() -> str:
     """Setup keycloak and return client secret"""
-    base_url = "http://keycloak.localtest.me:8080"
+    base_url = f"http://keycloak.{config.DOMAIN_NAME}:8080"
     admin_username = "admin"
     admin_password = "admin"
     demo_realm_name = "demo"

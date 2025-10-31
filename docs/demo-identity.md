@@ -42,6 +42,6 @@ open http://spire-tornjak-ui.localtest.me:8080/
 Agents and Tools get SPIFFE Id as follow:
 
 ```console
-spiffe://localhost.me/ns/team/sa/weather-service
-spiffe://localhost.me/ns/team/sa/weather-tool
+spiffe://${DOMAIN_NAME}/ns/team/sa/weather-service
+spiffe://${DOMAIN_NAME}/ns/team/sa/weather-tool
 ```
