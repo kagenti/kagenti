@@ -21,6 +21,8 @@ Here's a breakdown of the sections:
 
 You should also open the Agent Platform Demo Dashboard as instructed in the [Connect to the Kagenti UI](./demos.md#connect-to-the-kagenti-ui) section.
 
+> **🎭 User Roles**: This demo involves multiple personas including **Agent Developers**, **Tool Developers**, **Security Administrators**, and **End Users**. See our [Personas Documentation](../PERSONAS_AND_ROLES.md) to understand which parts are relevant to your role.
+
 ---
 
 ## Import New Agent

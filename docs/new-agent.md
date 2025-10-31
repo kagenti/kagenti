@@ -4,13 +4,18 @@
 
 When deploying a new agent, you may either deploy from source code or from a pre-existing container image. When deploying from source code, Kagenti will retrieve the source code from GitHub. Kagenti will build your agent by deploying the code into a container based up on the Dockerfile you provide. When deploying from an image, it is expected that the agent code already exists in the container image, so the GitHub retrieval of the code and its installation will be skipped.
 
+> **💡 New to Kagenti?** This guide is designed for **Agent Developers**. If you're unsure about your role or want to understand the broader ecosystem, check out our **[Personas and Roles Documentation](../PERSONAS_AND_ROLES.md#11-ai-agent-developers)** first.
+
 ### Deploying from Source
+
 Before importing a new agent from source, ensure that:
-1. The agent code is hosted on GitHub and is accessible using the GitHub credentials provided [during the Kagenti installation](https://github.com/kagenti/kagenti/blob/main/docs/demos.md). 
+
+1. The agent code is hosted on GitHub and is accessible using the GitHub credentials provided [during the Kagenti installation](https://github.com/kagenti/kagenti/blob/main/docs/demos.md).
 2. The agent code is organized within a sub-directory of the Git repository (not in the root directory).
 3. The root of the subdirectory contains a Dockerfile.
 
 ### Deploying from an Image
+
 Before importing a new agent from an existing Docker image, ensure that the Docker image is available in an accessible container registry.
 
 ## Agent Examples
@@ -18,16 +23,20 @@ Before importing a new agent from an existing Docker image, ensure that the Dock
 See the [Kagenti agent examples repo](https://github.com/kagenti/agent-examples) for a variety of agents and MCP tool examples.
 
 ## Steps to Import a New Agent
+
 To import a new agent into the platform, follow these steps:
 
 ### Step 1: Access the Import New Agent Section
+
 - Log in to the Kagenti UI.
 - Navigate to the "Import New Agent" section.
 
 ### Step 2: Select the Namespace
+
 - Choose the namespace where you want to deploy the agent.
 
 ### Step 3: Configure Environment Variables
+
 - Manually add environment variables required by your agent.
 - Alternatively, import environment variables from a `.env` file hosted on GitHub.
 
@@ -97,10 +106,11 @@ When Kagenti imports this `.env` entry it will add an env var to the generated C
 
 ### Step 4: Select Deployment Method
 
-#### Deploy from an existing Docker image.
+#### Deploy from an existing Docker image
+
 - Select "deploy from existing image" as the deployment method, and provide the address of the image in a remote container registry
 
-#### Deploy from source code.
+#### Deploy from source code
 
 1. Select "Build from source" as the deployment method
 2. In "Agent Source Repository URL", enter the root of your GitHub repository where your agent project lives.
@@ -119,6 +129,7 @@ Press the "Build New Agent" button. There will be continual status updates in th
 3. At the bottom of the screen, you may enter text in the "chat with agent" text box at the bottom of the page in order to send messages to the agent for testing.
 
 ## Troubleshooting
+
 If you encounter issues during agent deployment, you can troubleshoot by inspecting the Kubernetes artifacts produced during the deployment process.
 
 - The custom resource created is called a `Component`.
