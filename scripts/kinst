@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Wrapper to run the kinst project from the repo root.
+# Usage: ./scripts/kinst <args...>
+
+# Resolve script dir (repo root/scripts -> repo root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${SCRIPT_DIR}/.."
+KINST_DIR="${REPO_ROOT}/kagenti/kinst"
+
+if [ ! -d "$KINST_DIR" ]; then
+  echo "kinst subproject not found at: $KINST_DIR" >&2
+  exit 2
+fi
+
+cd "$KINST_DIR"
+exec uv run kinst "$@"

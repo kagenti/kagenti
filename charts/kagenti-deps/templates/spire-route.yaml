@@ -1,4 +1,11 @@
 {{- if and .Values.components.spire.enabled (not .Values.openshift) }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.spire.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

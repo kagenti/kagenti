@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kinst"
+version = "0.0.0"
+description = "kinst: a small CLI to orchestrate Helm charts and remote YAMLs (prototype)"
+readme = "README.md"
+authors = [ { name = "kagenti" } ]
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.7",
+  "PyYAML>=6.0",
+  "jsonschema>=4.0",
+  "requests>=2.0",
+  "rich>=13.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-asyncio>=0.21",
+  "pytest-cov>=4.0"
+]
+
+[tool.pytest.ini_options]
+# Ensure pytest adds the src/ directory to sys.path so imports like
+# `import kagenti.kinst` work during test collection.
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+# Configure pytest-asyncio loop fixture scope to avoid deprecation warning
+asyncio_default_fixture_loop_scope = "function"
+
+[project.scripts]
+kinst = "kagenti.kinst.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}

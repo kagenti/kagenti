@@ -1,0 +1,17 @@
+istio:
+  enabled: true
+  namespace: istio-system
+  profile: ambient
+  # subtree passed to helm when valuesPath: istiod
+  istiod:
+    global:
+      proxy:
+        logLevel: info
+
+kiali:
+  enabled: true
+  namespace: kiali-system
+
+certManager:
+  enabled: true
+  namespace: cert-manager-operator

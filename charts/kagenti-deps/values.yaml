@@ -2,11 +2,9 @@
 openshift: true
 
 # ------------------------------------------------------------------
-#  Control Panel: Enable or disable components here
+#   Enable or disable components here
 # ------------------------------------------------------------------
 components:
-  agentNamespaces:
-    enabled: true
   mcpInspector:
     enabled: true
   istio:
@@ -22,7 +20,7 @@ components:
   registry:
     enabled: false
   spire:
-    enabled: false
+    enabled: true
   tekton:
     enabled: true
   certManager:

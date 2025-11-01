@@ -1,6 +1,4 @@
-# templates/istio-namespace.yaml
-
-{{- if .Values.components.istio.enabled }}
+{{- if and .Values.components.certManager.enabled .Values.openshift }}
 # ------------------------------------------------------------------
 #  Creates the Namespaces for all Istio components.
 # ------------------------------------------------------------------

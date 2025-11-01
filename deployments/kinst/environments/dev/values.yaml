@@ -1,0 +1,54 @@
+container-registry:
+  enabled: true
+  namespace: cr-system
+
+istio:
+  enabled: true
+  namespace: istio-system
+  base: {}
+  istiod: {}
+  cni:
+    profile: ambient
+  ztunnel: {}  
+
+gateway-api:
+  enabled: true
+
+kiali:
+  enabled: true  
+
+cert-manager:
+  enabled: true
+  namespace: cert-manager
+
+kagenti-deps:
+  enabled: true
+  namespace: kagenti-system
+  openshift: false
+  components:
+    ingressGateway:
+      enabled: true
+
+
+kind:
+  enabled: true
+  clusterName: kagenti
+
+
+
+
+# otel:
+#   enabled: true
+#   namespace: otel-system
+
+
+
+# http-gateway:
+#   enabled: true
+#   namespace: istio-system  
+
+
+# registries:
+# ghcr:
+#   username: ""  # inject in CI or via local env
+#   password: ""

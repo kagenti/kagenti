@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kinst installables file",
+  "description": "Schema for installables.yaml used by kinst to declare helm charts and remote YAML templates.",
+  "type": "object",
+  "properties": {
+    "installables": {
+      "type": "array",
+      "description": "Ordered list of installable items. Each item must set `type` to either `helm` or `kubectl-apply`.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "type", "name", "release"],
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"const": "helm"},
+              "condition": {"type": "string"},
+              "namespace": {"type": "string"},
+              "dependsOn": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+              "valuesPath": {"type": "string"},
+              "repositoryCredentials": {"type": "object"},
+              "name": {"type": "string"},
+              "release": {"type": "string"},
+              "repository": {"type": "string"},
+              "chartVersion": {"type": "string"},
+              "wait": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["id", "type", "url"],
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"const": "kubectl-apply"},
+              "condition": {"type": "string"},
+              "namespace": {"type": "string"},
+              "dependsOn": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+              "url": {"type": "string"},
+              "applyMethod": {"type": "string"},
+              "injectNamespace": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["id", "type", "namespace"],
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"const": "kubectl-label"},
+              "condition": {"type": "string"},
+              "namespace": {"type": "string"},
+              "dependsOn": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
+              "labels": {"type": "object"},
+              "labelsPath": {"type": "string"},
+              "override": {"type": "boolean", "description": "when true pass --overwrite to kubectl label (default true)"}
+            },
+            "anyOf": [{"required": ["labels"]}, {"required": ["labelsPath"]}],
+            "additionalProperties": false
+          }
+          ,
+          {
+            "type": "object",
+            "required": ["id", "type", "command"],
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"const": "task"},
+              "condition": {"type": "string"},
+              "command": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}], "description": "Command to run; may be an executable name or a path. Relative paths are resolved against the installables.yaml file."},
+              "applyArgs": {"type": "array", "items": {"type": "string"}, "description": "arguments to pass to the command during apply (fallback to 'args' for compatibility)"},
+              "deleteArgs": {"type": "array", "items": {"type": "string"}, "description": "arguments to pass to the command during delete. If omitted, delete will skip running the task."},
+              "args": {"type": "array", "items": {"type": "string"}, "description": "(deprecated) legacy fallback for applyArgs"},
+              "dependsOn": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

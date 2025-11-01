@@ -1,0 +1,151 @@
+installables:
+  - id: create-kind-cluster
+    type: task
+    command: scripts/create-kind-cluster.py
+    applyArgs:
+      - --install-registry
+      - --preload
+      - --yes
+    condition: kind.enabled
+    deleteArgs:
+      - --delete
+      - --yes
+
+  - id: container-registry
+    type: kubectl-apply
+    url: file:///templates/container-registry.yaml
+    namespace: container-registry.namespace
+    injectNamespace: true
+    condition: container-registry.enabled
+    applyMethod: kubectl-apply  
+
+  - id: istio-base
+    type: helm
+    name: base
+    release: istio-base
+    repository: "https://istio-release.storage.googleapis.com/charts"
+    chartVersion: "1.27.3"
+    condition: istio.enabled
+    namespace: istio.namespace
+    valuesPath: istio.base
+
+  - id: istiod
+    type: helm
+    name: istiod
+    release: istiod
+    repository: "https://istio-release.storage.googleapis.com/charts"
+    chartVersion: "1.27.3"
+    condition: istio.enabled
+    namespace: istio.namespace
+    valuesPath: istio.istiod 
+
+  - id: istio-cni
+    type: helm
+    name: cni
+    release: istio-cni
+    repository: "https://istio-release.storage.googleapis.com/charts"
+    chartVersion: "1.27.3"
+    condition: istio.enabled
+    namespace: istio.namespace
+    valuesPath: istio.cni
+
+  - id: istio-ztunnel
+    type: helm
+    name: ztunnel
+    release: ztunnel
+    repository: "https://istio-release.storage.googleapis.com/charts"
+    chartVersion: "1.27.3"
+    condition: istio.enabled
+    namespace: istio.namespace
+    valuesPath: istio.ztunnel
+
+  - id: label-istio-system
+    type: kubectl-label
+    namespace: istio.namespace      
+    labels:
+      shared-gateway-access: true
+    condition: istio.enabled 
+    override: true
+
+  - id: gateway-api
+    type: kubectl-apply
+    url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml"
+    condition: gateway-api.enabled
+    applyMethod: kubectl-apply   
+
+  - id: prometheus
+    type: kubectl-apply
+    url: https://raw.githubusercontent.com/istio/istio/release-1.27/samples/addons/prometheus.yaml
+    condition: kiali.enabled
+    applyMethod: kubectl-apply
+
+  - id: kiali
+    type: kubectl-apply
+    url: https://raw.githubusercontent.com/istio/istio/release-1.27/samples/addons/kiali.yaml
+    condition: kiali.enabled
+    applyMethod: kubectl-apply
+
+  - id: cert-manager
+    type: kubectl-apply
+    url: https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
+    condition: cert-manager.enabled
+    namespace: cert-manager.namespace
+    applyMethod: kubectl-apply
+    injectNamespace: false     
+
+  - id: kagenti-deps
+    type: helm
+    name: ../../charts/kagenti-deps
+    release: kagenti-deps
+    condition: kagenti-deps.enabled
+    namespace: kagenti-deps.namespace
+    valuesPath: kagenti-deps
+
+
+
+# in kagenti-deps
+  # - id: http-gateway
+  #   type: kubectl-apply
+  #   url: file:///templates/http-gateway.yaml
+  #   namespace: http-gateway.namespace
+  #   injectNamespace: true
+  #   condition: http-gateway.enabled
+  #   applyMethod: kubectl-apply 
+
+# in kagenti-deps
+  # - id: kiali-httproute
+  #   type: kubectl-apply
+  #   url: file:///templates/kiali-route.yaml
+  #   condition: kiali.enabled
+  #   applyMethod: kubectl-apply    
+   
+# in kagenti-deps  
+  # - id: phoenix
+  #   type: kubectl-apply
+  #   url: file:///templates/phoenix.yaml
+  #   namespace: otel.namespace
+  #   injectNamespace: true
+  #   condition: otel.enabled
+  #   applyMethod: kubectl-apply
+    # TODO - need route for phoenix
+
+# in kagenti-deps
+  # - id: otel-collector
+  #   type: kubectl-apply
+  #   url: file:///templates/otel-collector.yaml
+  #   namespace: otel.namespace
+  #   injectNamespace: true
+  #   condition: otel.enabled
+  #   applyMethod: kubectl-apply  
+
+
+
+  # - id: kagenti
+  #   type: helm
+  #   name: charts/kagenti
+  #   release: kagenti
+  #   repository: ""
+  #   chartVersion: ""
+  #   condition: components.kagenti.enabled
+  #   namespace: components.kagenti.namespace
+  #   valuesPath: components.kagenti

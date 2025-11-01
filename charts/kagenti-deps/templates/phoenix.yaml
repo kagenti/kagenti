@@ -26,8 +26,6 @@ spec:
         command:
         - python
         env:
-        # - name: PHOENIX_SQL_DATABASE_URL
-        #   value: postgresql://testuser:thisisonly4testingNOT4prod@postgres:5432/postgres
         - name: PHOENIX_POSTGRES_HOST
           value: postgres
         - name: PHOENIX_POSTGRES_PORT

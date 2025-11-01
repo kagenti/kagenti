@@ -1,0 +1,14 @@
+# List of images to preload into kind
+# One image per line. Blank lines and lines beginning with '#' are ignored.
+# Edit this file to include the images your environment needs.
+# Example entries (replace with your project's actual images):
+docker.io/istio/proxyv2:1.26.1-distroless
+docker.io/istio/install-cni:1.26.1-distroless
+docker.io/istio/pilot:1.26.1-distroless
+docker.io/istio/ztunnel:1.26.1
+otel/opentelemetry-collector-contrib:0.122.1
+arizephoenix/phoenix:version-8.32.1
+prom/prometheus:v3.1.0
+docker.io/nginxinc/nginx-unprivileged:1.29.0-alpine
+docker.io/bitnamilegacy/postgresql:12
+# End of file

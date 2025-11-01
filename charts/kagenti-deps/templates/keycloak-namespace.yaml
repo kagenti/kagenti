@@ -1,5 +1,3 @@
-# templates/keycloak-namespace.yaml
-
 {{- if .Values.components.keycloak.enabled }}
 # ------------------------------------------------------------------
 #  Creates the Namespace for all Keycloak-related resources.

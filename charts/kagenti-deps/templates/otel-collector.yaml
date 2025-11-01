@@ -21,7 +21,6 @@ spec:
           command:
           - /otelcol-contrib
           - --config=/etc/otelcol-config/base.yaml
-          #- --config=/etc/otelcol-config/beeai.yaml # use only base config for now
           - --set
           - receivers::otlp::protocols::http::endpoint=0.0.0.0:8335
           volumeMounts:

@@ -1,2 +1,40 @@
 {{- if and .Values.components.ingressGateway.enabled (not .Values.openshift) }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: http
+  annotations:
+    networking.istio.io/service-type: ClusterIP
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels:
+            shared-gateway-access: "true"
+---            
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    gateway.istio.io/managed: istio.io-gateway-controller
+    gateway.networking.k8s.io/gateway-name: http
+    istio.io/dataplane-mode: none
+  name: http-istio-np
+spec:
+  ports:
+  - appProtocol: http
+    name: http
+    nodePort: 30080
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    gateway.networking.k8s.io/gateway-name: http
+  type: NodePort                        
 {{- end }}

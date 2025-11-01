@@ -1,4 +1,4 @@
-{{- if .Values.components.keycloak.enabled }}
+{{- if and .Values.components.keycloak.enabled .Values.openshift }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
