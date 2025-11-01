@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant Agent
+    participant Gateway as MCP Gateway
+    participant Tool as MCP Tool
+    participant KC as Keycloak
+    
+    Agent->>Gateway: MCP request + JWT token
+    Gateway->>KC: Validate token
+    KC->>Gateway: Token validation result
+    Gateway->>Gateway: Check tool permissions
+    Gateway->>Tool: Forward authenticated request
+    Tool->>Gateway: Return MCP response
+    Gateway->>Agent: Return response

@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant UI as Kagenti UI
+    participant Agent as Slack Agent
+    participant KC as Keycloak
+    participant SPIRE as SPIRE Server
+    
+    UI->>Agent: Forward user request + token
+    Agent->>SPIRE: Get JWT SVID
+    SPIRE->>Agent: Return JWT SVID
+    Agent->>KC: Token exchange request
+    KC->>SPIRE: Validate JWT SVID
+    SPIRE->>KC: Confirm identity
+    KC->>Agent: Return scoped token
+    Agent->>Agent: Process with scoped permissions
