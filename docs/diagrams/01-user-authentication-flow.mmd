@@ -1,0 +1,11 @@
+sequenceDiagram
+    participant User
+    participant UI as Kagenti UI
+    participant KC as Keycloak
+    
+    User->>UI: Access Agent Catalog
+    UI->>KC: Redirect to login
+    KC->>User: Present login form
+    User->>KC: Provide credentials
+    KC->>UI: Return JWT token
+    UI->>User: Display authenticated interface
