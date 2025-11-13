@@ -1,4 +1,4 @@
-{{- if and .Values.components.spire.enabled .Values.openshift }}
+{{- if and (include "kagenti.identity.shouldInstallSpire" .) .Values.components.spire.enabled .Values.openshift }}
 apiVersion: v1
 kind: Namespace
 metadata:

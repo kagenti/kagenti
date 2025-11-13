@@ -94,11 +94,19 @@ kagenti-platform-operator-chart:
           memory: 512Mi
 
 # ------------------------------------------------------------------
+#  Identity Provider Configuration
+# ------------------------------------------------------------------
+identity:
+  provider: "spire"  # spire or serviceaccount (required)
+  # spire: Use SPIRE provider (requires SPIRE to be installed) - DEFAULT
+  # serviceaccount: Use Kubernetes ServiceAccount provider (cluster-local only)
+
+# ------------------------------------------------------------------
 #  MCP Gateway Configuration
 # ------------------------------------------------------------------
 # subchart configs
 mcp-gateway:
-  fullnameOverride: mcp
+  fullnameOverride: mcp 
   envoyFilter:
     namespace: istio-system
   image:

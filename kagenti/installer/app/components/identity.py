@@ -14,11 +14,41 @@
 # limitations under the License.
 
 from .. import config
-from ..utils import run_command
+from ..utils import run_command, console
 
 
 def install(**kwargs):
-    """Installs all SPIRE components using the official Helm charts."""
+    """
+    Installs identity provider infrastructure.
+
+    For SPIRE provider: Installs SPIRE components using the official Helm charts.
+    For ServiceAccount provider: No additional infrastructure needed (uses K8s native).
+    """
+    if not config.IDENTITY_PROVIDER:
+        raise ValueError(
+            "IDENTITY_PROVIDER must be set to 'spire' or 'serviceaccount'. "
+            "Set KAGENTI_IDENTITY_PROVIDER environment variable."
+        )
+
+    identity_provider = config.IDENTITY_PROVIDER.lower().strip()
+
+    if identity_provider == "serviceaccount":
+        console.log(
+            "[yellow]Using ServiceAccount identity provider (no additional infrastructure needed)[/yellow]"
+        )
+        return
+
+    if identity_provider != "spire":
+        raise ValueError(
+            f"Invalid identity provider: '{identity_provider}'. "
+            "Must be 'spire' or 'serviceaccount'."
+        )
+
+    # Install SPIRE for "spire" provider
+    console.log(
+        f"[cyan]Installing SPIRE infrastructure for identity provider: {identity_provider}[/cyan]"
+    )
+
     # This command sets up SPIRE CRDs
     run_command(
         [
@@ -36,12 +66,7 @@ def install(**kwargs):
         ],
         "Installing SPIRE CRDs",
     )
-    # run_command(
-    #     [
-    #         "pwd",
-    #     ],
-    #     "Print working directory",
-    # )
+
     # Install SPIRE using provided helm configuration
     run_command(
         [
@@ -60,11 +85,13 @@ def install(**kwargs):
         ],
         "Installing SPIRE Server",
     )
+
     # Setup OIDC route
     run_command(
         ["kubectl", "apply", "-f", str(config.RESOURCES_DIR / "spire-oidc-route.yaml")],
         "Applying Spire OIDC route",
     )
+
     # Setup Tornjak backend route
     run_command(
         [
@@ -75,6 +102,7 @@ def install(**kwargs):
         ],
         "Applying Spire Tornjak api route",
     )
+
     # Setup Tornjak frontend route
     run_command(
         [
@@ -85,6 +113,7 @@ def install(**kwargs):
         ],
         "Applying Spire Tornjak UI route",
     )
+
     # Add SPIRE namespace to shared gateway access
     run_command(
         [
@@ -97,6 +126,7 @@ def install(**kwargs):
         ],
         "Sharing gateway access for Spire",
     )
+
     # Add SPIRE namespace to Istio ambient mesh
     run_command(
         [
