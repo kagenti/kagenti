@@ -88,17 +88,22 @@ kagenti-platform-operator-chart:
       - "--metrics-bind-address=:8443"
       - "--health-probe-bind-address=:8081"
       - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
-      - "--enable-client-registration=false"
-      resources:
-        limits:
-          memory: 512Mi
+      - "--enable-client-registration=true"
+
+# ------------------------------------------------------------------
+#  Identity Provider Configuration
+# ------------------------------------------------------------------
+identity:
+  provider: "spire"  # spire or serviceaccount (required)
+  # spire: Use SPIRE provider (requires SPIRE to be installed) - DEFAULT
+  # serviceaccount: Use Kubernetes ServiceAccount provider (cluster-local only)
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
 # ------------------------------------------------------------------
 # subchart configs
 mcp-gateway:
-  fullnameOverride: mcp
+  fullnameOverride: mcp-gateway 
   envoyFilter:
     namespace: istio-system
   image:

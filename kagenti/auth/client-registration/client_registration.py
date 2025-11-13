@@ -12,6 +12,19 @@ import os
 import jwt
 from keycloak import KeycloakAdmin, KeycloakPostError
 
+try:
+    from kagenti.identity import get_identity_provider
+
+    IDENTITY_AVAILABLE = True
+    print("Successfully imported kagenti.identity module")
+except ImportError as e:
+    # Fallback for environments where identity module is not available
+    IDENTITY_AVAILABLE = False
+    print(f"Warning: Failed to import kagenti.identity: {e}")
+    import sys
+
+    print(f"Python path: {sys.path}")
+
 
 def get_env_var(name: str) -> str:
     """
@@ -74,26 +87,27 @@ def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payloa
 
 def get_client_id() -> str:
     """
-    Read the SVID JWT from file and extract the client ID from the "sub" claim.
+    Get the client ID from the workload identity.
+
+    Uses the identity abstraction to support multiple providers.
+    Requires explicit provider configuration via KAGENTI_IDENTITY_PROVIDER.
     """
-    # Read SVID JWT from file to get client ID
-    jwt_file_path = "/opt/jwt_svid.token"
+    if not IDENTITY_AVAILABLE:
+        raise RuntimeError(
+            "Identity abstraction module not available. "
+            "Ensure kagenti.identity module is installed and accessible."
+        )
+
     try:
-        with open(jwt_file_path, "r") as file:
-            content = file.read()
-
-    except FileNotFoundError:
-        print(f"Error: The file {jwt_file_path} was not found.")
+        # Use identity abstraction
+        provider = get_identity_provider()
+        identity = provider.get_current_identity()
+        client_id = identity.get_subject()
+        print(f"Using {provider.get_name()} identity provider")
+        return client_id
     except Exception as e:
-        print(f"An error occurred: {e}")
-
-    if content is None or content.strip() == "":
-        raise Exception(f"No content read from SVID JWT.")
-
-    decoded = jwt.decode(content, options={"verify_signature": False})
-    if "sub" not in decoded:
-        raise Exception('SVID JWT does not contain a "sub" claim.')
-    return decoded["sub"]
+        print(f"Error: Failed to use identity abstraction: {e}")
+        raise
 
 
 client_id = get_client_id()
@@ -128,11 +142,6 @@ internal_client_id = register_client(
         "directAccessGrantsEnabled": True,
         "fullScopeAllowed": False,
         "publicClient": False,  # Enable client authentication
-        # Enable token exchange for this client.
-        # Token exchange allows this client to exchange tokens for other tokens, potentially across different clients.
-        # Use case: [EXPLAIN THE SPECIFIC USE CASE HERE, e.g., "Required for service-to-service authentication in microservices architecture."]
-        # Security considerations: Ensure only trusted clients have this capability, restrict scopes and permissions as needed,
-        # and audit usage to prevent privilege escalation or unauthorized access.
         "attributes": {
             "standard.token.exchange.enabled": "true",  # Enable token exchange
         },

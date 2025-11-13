@@ -15,6 +15,7 @@
 
 from enum import Enum
 from pathlib import Path
+import os
 
 # --- Core Paths ---
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -37,6 +38,11 @@ class ContainerEngine(str, Enum):
 
 
 CONTAINER_ENGINE = "docker"
+
+# --- Identity Provider Configuration ---
+IDENTITY_PROVIDER = os.environ.get(
+    "KAGENTI_IDENTITY_PROVIDER"
+)  # spire or serviceaccount (required)
 
 # --- Dependency Version Requirements ---
 # Defines the minimum (inclusive) and maximum (exclusive) required versions for tools.

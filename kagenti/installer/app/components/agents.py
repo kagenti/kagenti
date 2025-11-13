@@ -132,17 +132,29 @@ def install(**kwargs):
             ],
             f"Applying environments configmap in '{ns}'",
         )
-        run_command(
-            [
-                "kubectl",
-                "apply",
-                "-n",
-                ns,
-                "-f",
-                str(config.RESOURCES_DIR / "spiffe-helper-config.yaml"),
-            ],
-            f"Applying spiffe-helper-config configmap in '{ns}'",
+        # Conditionally apply spiffe-helper-config only if SPIRE is used
+        identity_provider = (
+            config.IDENTITY_PROVIDER.lower().strip()
+            if config.IDENTITY_PROVIDER
+            else None
         )
+        if identity_provider == "spire":
+            run_command(
+                [
+                    "kubectl",
+                    "apply",
+                    "-n",
+                    ns,
+                    "-f",
+                    str(config.RESOURCES_DIR / "spiffe-helper-config.yaml"),
+                ],
+                f"Applying spiffe-helper-config configmap in '{ns}'",
+            )
+        else:
+            console.log(
+                f"[yellow]Skipping spiffe-helper-config for '{ns}' "
+                f"(using {identity_provider} provider)[/yellow]"
+            )
         run_command(
             ["kubectl", "label", "ns", ns, "shared-gateway-access=true", "--overwrite"],
             f"Applying shared-gateway-access label to '{ns}'",
