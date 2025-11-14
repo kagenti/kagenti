@@ -15,6 +15,13 @@
 
 ## Value Proposition
 
+![License](https://img.shields.io/github/license/kagenti/kagenti)
+![Python](https://img.shields.io/pypi/pyversions/kagenti)
+![Contributors](https://img.shields.io/github/contributors/kagenti/kagenti)
+![Issues](https://img.shields.io/github/issues/kagenti/kagenti)
+![Pull Requests](https://img.shields.io/github/issues-pr/kagenti/kagenti)
+
+
 Despite the extensive variety of frameworks available for developing agent-based applications, there is a distinct lack of standardized methods for deploying and operating agent code in production environments, as well as for exposing it through a standardized API. Agents are adept at reasoning, planning, and interacting with various tools, but their full potential can be limited by these deployment challenges. **Kagenti** addresses this gap by enhancing existing agent frameworks with the following key components:
 
 - **Kubernetes Platform Operator**: Facilitates the deployment and configuration of agents along with infrastructure dependencies on Kubernetes. It enables scaling and updating configurations seamlessly.
