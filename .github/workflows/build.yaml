@@ -36,6 +36,8 @@ jobs:
             path: ./kagenti/auth
           - name: client-registration
             path: ./kagenti/auth
+          - name: agent-oauth-secret
+            path: ./kagenti/auth
 
     steps:
       # 1. Checkout the repository code

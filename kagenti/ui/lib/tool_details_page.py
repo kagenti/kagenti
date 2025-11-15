@@ -241,7 +241,7 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
         else:
             st.markdown("#### Available MCP Tools on Server:")
             for i, mcp_tool_data in enumerate(mcp_tools_list):
-                tool_name_on_mcp = mcp_tool_data.get("name", f"Unnamed Tool {i+1}")
+                tool_name_on_mcp = mcp_tool_data.get("name", f"Unnamed Tool {i + 1}")
                 with st.expander(
                     f"Tool: {tool_name_on_mcp}",
                     expanded=len(mcp_tools_list) == 1,

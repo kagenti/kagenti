@@ -305,7 +305,15 @@
       api_version: batch/v1
       kind: Job
       name: kagenti-ui-oauth-secret-job
-      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"      
+      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
+
+  - name: Ensure kagenti-agent-oauth-secret-job is deleted
+    kubernetes.core.k8s:
+      state: absent
+      api_version: batch/v1
+      kind: Job
+      name:  kagenti-agent-oauth-secret-job
+      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
   
   when:
   - (charts['kagenti'] | default({})).get('enabled', false) | bool
