@@ -16,6 +16,8 @@
 Useful constants.
 """
 
+import os
+
 # --- Kubernetes CRD Definitions ---
 CRD_GROUP = "kagenti.operator.dev"
 CRD_VERSION = "v1alpha1"
@@ -37,17 +39,20 @@ RESOURCE_TYPE_TOOL = "tool"
 ENABLED_NAMESPACE_LABEL_KEY = "kagenti-enabled"
 ENABLED_NAMESPACE_LABEL_VALUE = "true"
 
+# --- Domain configuration ---
+DOMAIN_NAME = os.getenv("DOMAIN_NAME", "localtest.me")
+
 # --- External Service URLs ---
 KEYCLOAK_CONSOLE_URL_OFF_CLUSTER = (
-    "http://keycloak.localtest.me:8080/admin/master/console/"
+    f"http://keycloak.{DOMAIN_NAME}:8080/admin/master/console/"
 )
 KEYCLOAK_CONSOLE_URL_IN_CLUSTER = (
     "http://keycloak.keycloak.svc.cluster.local:8080/admin/master/console/"
 )
-TRACES_DASHBOARD_URL = "http://phoenix.localtest.me:8080"
-NETWORK_TRAFFIC_DASHBOARD_URL = "http://kiali.localtest.me:8080"
-MCP_INSPECTOR_URL = "http://mcp-inspector.localtest.me:8080"
-MCP_PROXY_FULL_ADDRESS = "http://mcp-proxy.localtest.me:8080"
+TRACES_DASHBOARD_URL = f"http://phoenix.{DOMAIN_NAME}:8080"
+NETWORK_TRAFFIC_DASHBOARD_URL = f"http://kiali.{DOMAIN_NAME}:8080"
+MCP_INSPECTOR_URL = f"http://mcp-inspector.{DOMAIN_NAME}:8080"
+MCP_PROXY_FULL_ADDRESS = f"http://mcp-proxy.{DOMAIN_NAME}:8080"
 
 # --- Default Values for Import Forms ---
 DEFAULT_REPO_URL = "https://github.com/kagenti/agent-examples"

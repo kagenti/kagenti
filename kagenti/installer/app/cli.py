@@ -232,7 +232,7 @@ def main(
             )
         else:
             console.print(
-                "To open Kagenti UI in your browser: open http://kagenti-ui.localtest.me:8080",
+                f"To open Kagenti UI in your browser: open http://kagenti-ui.{config.DOMAIN_NAME}:8080",
                 "\n",
             )
 

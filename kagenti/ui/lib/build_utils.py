@@ -244,7 +244,7 @@ def _get_keycloak_client_secret(st_object, client_name: str) -> str:
     try:
         keycloak_admin = KeycloakAdmin(
             server_url=os.getenv(
-                "KEYCLOAK_SERVER_URL", "http://keycloak.localtest.me:8080"
+                "KEYCLOAK_SERVER_URL", f"http://keycloak.{constants.DOMAIN_NAME}:8080"
             ),
             username=os.getenv("KEYCLOAK_ADMIN_USER", "admin"),
             password=os.getenv("KEYCLOAK_ADMIN_PASSWORD", "admin"),

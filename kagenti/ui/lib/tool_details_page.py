@@ -134,7 +134,9 @@ def render_mcp_tool_details_content(tool_k8s_name: str):
         if running_in_cluster:
             base_host_port = f"{tool_service_name}.{namespace}.svc.cluster.local:{mcp_tool_service_port}"
         else:
-            base_host_port = f"{tool_service_name}.localtest.me:{mcp_tool_service_port}"
+            base_host_port = (
+                f"{tool_service_name}.{constants.DOMAIN_NAME}:{mcp_tool_service_port}"
+            )
 
         base_url_with_scheme = scheme + base_host_port
 
