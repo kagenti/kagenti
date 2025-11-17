@@ -94,7 +94,9 @@ going to replace `kagenti-installer`.
 deployments/ansible/run-install.sh --env dev
 ```
 
-Check [here](../deployments/ansible/README.md) for more details on the new installer.
+Check [here](../deployments/ansible/README.md) for more details on the new installer. 
+
+To override existing environments, you may create a [customized override file](../deployments/ansible/README.md#using-override-files).
 
 
 ### Using an Existing Kubernetes Cluster

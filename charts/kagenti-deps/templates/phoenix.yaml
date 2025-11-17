@@ -44,7 +44,15 @@ spec:
               name: otel-db-secret
               key: password
         - name: PHOENIX_POSTGRES_DB
-          value: postgres       
+          value: postgres
+        - name: PHOENIX_SQL_DATABASE_POOL_PRE_PING
+          value: "true"
+        - name: PHOENIX_SQL_DATABASE_POOL_SIZE
+          value: "5"
+        - name: PHOENIX_SQL_DATABASE_MAX_OVERFLOW
+          value: "10"
+        - name: PHOENIX_SQL_DATABASE_POOL_RECYCLE
+          value: "3600"
         - name: PHOENIX_WORKING_DIR
           value: /mnt/data
         - name: PHOENIX_PORT

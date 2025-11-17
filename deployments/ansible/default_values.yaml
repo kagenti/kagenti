@@ -74,6 +74,17 @@ charts:
         name: registry  
 
   #################################################################### 
+  # mcp-gateway chart
+  ####################################################################        
+  mcpGateway:
+    enabled: false
+    namespace: mcp-system
+    version: 0.4.0
+    values:
+      image:
+        tag: v0.4
+
+  #################################################################### 
   # kagenti 
   ####################################################################        
   kagenti:
@@ -88,6 +99,7 @@ charts:
       components:
         agentNamespaces:
           enabled: true
+        # additional artifacts required by MCP gateway     
         mcpGateway:
           enabled: false
         platformOperator:
@@ -103,7 +115,7 @@ charts:
   istio:
     enabled: false
     namespace: istio-system
-    version: 1.26.0
+    version: 1.28.0
     values: {}
 
   #################################################################### 

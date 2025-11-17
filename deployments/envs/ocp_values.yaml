@@ -45,6 +45,7 @@ charts:
           enabled: true
         ui:
           enabled: true
+        # additional artifacts required by MCP gateway   
         mcpGateway:
           enabled: true
         istio:
@@ -58,6 +59,10 @@ charts:
         # for a OCP with CA-signed certs for routes it should be false.
         useServiceAccountCA: true    
 
-
+  #################################################################### 
+  # mcp-gateway chart
+  ####################################################################    
+  mcpGateway:
+    enabled: true  
 
 

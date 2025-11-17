@@ -71,7 +71,13 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 
    helm install --create-namespace -n kagenti-system kagenti-deps oci://ghcr.io/kagenti/kagenti/kagenti-deps --version $LATEST_TAG
    ```
-4.  **Kagenti Helm Chart Installation:**
+4. **Install MCP Gateway Chart:**
+
+   ```shell
+   helm install mcp-gateway oci://ghcr.io/kagenti/charts/mcp-gateway --create-namespace --namespace mcp-system --version $LATEST_TAG
+   ```
+
+5.  **Kagenti Helm Chart Installation:**
    This chart includes Kagenti software components and configurations.
    ```shell
    helm upgrade --install --create-namespace -n kagenti-system -f .secrets.yaml kagenti oci://ghcr.io/kagenti/kagenti/kagenti --version $LATEST_TAG
@@ -107,7 +113,13 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
    helm install kagenti-deps ./charts/kagenti-deps/ -n kagenti-system --create-namespace 
    ```
 
-5. **Install the Kagenti Chart:**
+5. **Install MCP Gateway Chart:**
+
+   ```shell
+   helm install mcp-gateway oci://ghcr.io/kagenti/charts/mcp-gateway --create-namespace --namespace mcp-system --version 0.4.0
+   ```
+
+6. **Install the Kagenti Chart:**
  
    - Open [kagenti-platform-operator-chart](https://github.com/kagenti/kagenti-operator/pkgs/container/kagenti-operator%2Fkagenti-platform-operator-chart) to find the latest available version (e.g., 0.2.0-alpha.12).
    - Open charts/kagenti/Chart.yaml and set the version field for kagenti-platform-operator-chart to match the latest tag.
@@ -140,6 +152,8 @@ deployments/ansible/run-install.sh --env ocp
 ```
 
 Check [here](../../deployments/ansible/README.md) for more details on the new installer.
+
+To override existing environments, you may create a [customized override file](../../deployments/ansible/README.md#using-override-files).
 
 
 ## Authentication Configuration
