@@ -104,18 +104,15 @@ identity:
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
 # ------------------------------------------------------------------
-# subchart configs
-mcp-gateway:
-  fullnameOverride: mcp 
-  envoyFilter:
-    namespace: istio-system
-  image:
-    tag: v0.2
-# main chart configs    
 mcpGateway:
   namespaces:
     mcpSystem: mcp-system
     gatewaySystem: gateway-system
+  # TODO: Investigate why only the hostname 'mcp.127-0-0-1.sslip.io' works for MCP Gateway.
+  # Observed behavior: When using this hostname, the MCP Gateway is accessible and functions as expected.
+  # Other values tried:  'mcp.localtest.me', and 'mcp.sslip.io' were tested but failed to route traffic correctly.
+  # Expected behavior: The MCP Gateway should work with any valid hostname or IP address configured for local development.
+  hostname: 'mcp.127-0-0-1.sslip.io'  
 
 # ------------------------------------------------------------------
 #  Spiffe/Spire configs

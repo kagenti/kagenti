@@ -63,9 +63,12 @@ jobs:
           echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> .env
           echo "OPENAI_API_KEY=fake" >> .env
           echo "AGENT_NAMESPACES=team1,team2" >> .env
+          echo "KAGENTI_IDENTITY_PROVIDER=spire" >> .env
 
       - name: Run kagenti-installer to build the cluster
         working-directory: kagenti/installer
+        env:
+          KAGENTI_IDENTITY_PROVIDER: spire
         run: |
           uv run kagenti-installer --silent --skip-install tekton --skip-install operator --skip-install addons --skip-install ui --skip-install gateway --skip-install spire --skip-install mcp_gateway --skip-install keycloak --skip-install agents --skip-install metrics_server --skip-install inspector --skip-install cert_manager --skip-install toolhive --skip-install istio
 
@@ -85,6 +88,8 @@ jobs:
 
       - name: Run kagenti-installer
         working-directory: kagenti/installer
+        env:
+          KAGENTI_IDENTITY_PROVIDER: spire
         run: |
           uv run kagenti-installer --silent --use-existing-cluster
 

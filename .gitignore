@@ -169,3 +169,5 @@ cython_debug/
 .secret_values.yaml
 
 *.tgz
+
+.values_override.yaml

@@ -95,7 +95,8 @@ spec:
               # Get hostnames from the route
             INSPECTOR_HOST=$(kubectl get route mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
             PROTOCOL=https
-            PORT=443
+            # Set PORT to an empty string for OpenShift to use the default https port (443)
+            PORT=""
             {{- else }}
             # Get hostname from the HTTPRoute hostnames
             PROTOCOL=http
@@ -123,13 +124,14 @@ spec:
             metadata:
               name: mcp-inspector-config
             data:
-              ALLOWED_ORIGINS: "${PROTOCOL}://${INSPECTOR_HOST}:${PORT}"
+              # Conditionally include the port if the PORT variable is not empty
+              ALLOWED_ORIGINS: "${PROTOCOL}://${INSPECTOR_HOST}{{ if .Values.openshift | not }}:${PORT}{{ end }}"
             EOF
 
             echo "ConfigMap 'mcp-inspector-config' applied successfully."  
       containers:
         - name: mcp-inspector
-          image: ghcr.io/modelcontextprotocol/inspector:0.16.8
+          image: "{{ .Values.mcpInspector.image }}:{{ .Values.mcpInspector.tag }}"
           ports:
             - containerPort: 6274
             - containerPort: 6277

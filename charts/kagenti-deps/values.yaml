@@ -132,3 +132,11 @@ containerRegistry:
 metricsServer:
   insecure: true
   namespace: kube-system
+
+# ------------------------------------------------------------------
+#  MCP inspector
+# ------------------------------------------------------------------
+
+mcpInspector:
+  image: ghcr.io/modelcontextprotocol/inspector
+  tag: 0.17.2

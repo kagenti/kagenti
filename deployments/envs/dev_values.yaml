@@ -54,10 +54,9 @@ charts:
           enabled: true
         ui:
           enabled: true
+        # additional artifacts required by MCP gateway     
         mcpGateway:
-          enabled: false
-        istio:
-          enabled: false    
+          enabled: true
       # configs    
       ui:      
         auth:
@@ -68,6 +67,12 @@ charts:
   ####################################################################    
   istio:
     enabled: true
+
+  #################################################################### 
+  # mcp-gateway 
+  ####################################################################    
+  mcpGateway:
+    enabled: true  
 
   #################################################################### 
   # spire

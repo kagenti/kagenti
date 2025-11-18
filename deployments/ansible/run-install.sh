@@ -121,7 +121,10 @@ if [[ ${#ENV_FILES[@]} -gt 0 ]]; then
     if [[ "$ef" = /* ]]; then
       resolved="$ef"
     else
-      resolved="$(cd "$SCRIPT_DIR" && cd "$(dirname "$ef")" >/dev/null 2>&1 && echo "$(pwd)/$(basename "$ef")")"
+      # Resolve --env-file relative to the current working directory (PWD)
+      # rather than the script directory so users can pass paths from where
+      # they invoke the script.
+      resolved="$(cd "$(dirname "$ef")" >/dev/null 2>&1 && echo "$(pwd)/$(basename "$ef")")"
     fi
     if [[ ! -f "$resolved" ]]; then
       echo "ERROR: global value file not found: $resolved" >&2
