@@ -47,9 +47,13 @@ jobs:
         run: |
           docker build -t ghcr.io/kagenti/kagenti/ui-oauth-secret:pr-test kagenti/auth/ui-oauth-secret
 
+      - name: Prepare build context for client-registration
+        run: |
+          cp -r ./kagenti/identity ./kagenti/auth/identity
+
       - name: Build Client Registration image
         run: |
-          docker build -t ghcr.io/kagenti/kagenti/client-registration:latest kagenti/auth/client-registration
+          docker build -f kagenti/auth/client-registration/Dockerfile -t ghcr.io/kagenti/kagenti/client-registration:latest kagenti/auth
 
       - name: Set up environment file
         working-directory: kagenti/installer/app
