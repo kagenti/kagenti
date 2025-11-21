@@ -20,7 +20,7 @@ from . import (
     istio,
     keycloak,
     cert_manager,
-    spire,
+    identity,
     mcp_gateway,
     operator,
     registry,

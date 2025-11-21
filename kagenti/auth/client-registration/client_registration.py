@@ -8,9 +8,30 @@ Idempotent:
 - Always retrieves and stores the client secret.
 """
 
+import logging
 import os
 import jwt
 from keycloak import KeycloakAdmin, KeycloakPostError
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+try:
+    from kagenti.identity import get_identity_provider
+
+    IDENTITY_AVAILABLE = True
+    logger.info("Successfully imported kagenti.identity module")
+except ImportError as e:
+    # Fallback for environments where identity module is not available
+    IDENTITY_AVAILABLE = False
+    logger.warning("Failed to import kagenti.identity: %s", e)
+    import sys
+
+    logger.debug("Python path: %s", sys.path)
 
 
 def get_env_var(name: str) -> str:
@@ -36,17 +57,17 @@ def write_client_secret(
         # There will be a value field if client authentication is enabled
         # client authentication is enabled if "publicClient" is False
         secret = keycloak_admin.get_client_secrets(internal_client_id)["value"]
-        print(f'Successfully retrieved secret for client "{client_name}".')
+        logger.info('Successfully retrieved secret for client "%s"', client_name)
     except KeycloakPostError as e:
-        print(f"Could not retrieve secret for client '{client_name}': {e}")
+        logger.error("Could not retrieve secret for client '%s': %s", client_name, e)
         return
 
     try:
         with open(secret_file_path, "w") as f:
             f.write(secret)
-        print(f'Secret written to file: "{secret_file_path}"')
+        logger.info('Secret written to file: "%s"', secret_file_path)
     except OSError as ioe:
-        print(f"Error writing secret to file: {ioe}")
+        logger.error("Error writing secret to file: %s", ioe)
 
 
 # TODO: refactor this function so kagenti-client-registration image can use it
@@ -57,7 +78,9 @@ def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payloa
     """
     internal_client_id = keycloak_admin.get_client_id(f"{client_id}")
     if internal_client_id:
-        print(f'Client "{client_id}" already exists with ID: {internal_client_id}')
+        logger.info(
+            'Client "%s" already exists with ID: %s', client_id, internal_client_id
+        )
         return internal_client_id
 
     # Create client
@@ -65,35 +88,36 @@ def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payloa
     try:
         internal_client_id = keycloak_admin.create_client(client_payload)
 
-        print(f'Created Keycloak client "{client_id}": {internal_client_id}')
+        logger.info('Created Keycloak client "%s": %s', client_id, internal_client_id)
         return internal_client_id
     except KeycloakPostError as e:
-        print(f'Could not create client "{client_id}": {e}')
+        logger.error('Could not create client "%s": %s', client_id, e)
         raise
 
 
 def get_client_id() -> str:
     """
-    Read the SVID JWT from file and extract the client ID from the "sub" claim.
+    Get the client ID from the workload identity.
+
+    Uses the identity abstraction to support multiple providers.
+    Requires explicit provider configuration via KAGENTI_IDENTITY_PROVIDER.
     """
-    # Read SVID JWT from file to get client ID
-    jwt_file_path = "/opt/jwt_svid.token"
+    if not IDENTITY_AVAILABLE:
+        raise RuntimeError(
+            "Identity abstraction module not available. "
+            "Ensure kagenti.identity module is installed and accessible."
+        )
+
     try:
-        with open(jwt_file_path, "r") as file:
-            content = file.read()
-
-    except FileNotFoundError:
-        print(f"Error: The file {jwt_file_path} was not found.")
+        # Use identity abstraction
+        provider = get_identity_provider()
+        identity = provider.get_current_identity()
+        client_id = identity.get_subject()
+        logger.info("Using %s identity provider", provider.get_name())
+        return client_id
     except Exception as e:
-        print(f"An error occurred: {e}")
-
-    if content is None or content.strip() == "":
-        raise Exception(f"No content read from SVID JWT.")
-
-    decoded = jwt.decode(content, options={"verify_signature": False})
-    if "sub" not in decoded:
-        raise Exception('SVID JWT does not contain a "sub" claim.')
-    return decoded["sub"]
+        logger.error("Failed to use identity abstraction: %s", e)
+        raise
 
 
 client_id = get_client_id()
@@ -101,9 +125,10 @@ client_id = get_client_id()
 # The Keycloak URL is handled differently from the other env vars because unlike the others, it's intended to be optional
 try:
     KEYCLOAK_URL = get_env_var("KEYCLOAK_URL")
-except:
-    print(
-        f'Expected environment variable "KEYCLOAK_URL" missing. Skipping client registration of {client_id}.'
+except ValueError:
+    logger.warning(
+        'Expected environment variable "KEYCLOAK_URL" missing. Skipping client registration of %s.',
+        client_id,
     )
     exit()
 
@@ -128,11 +153,6 @@ internal_client_id = register_client(
         "directAccessGrantsEnabled": True,
         "fullScopeAllowed": False,
         "publicClient": False,  # Enable client authentication
-        # Enable token exchange for this client.
-        # Token exchange allows this client to exchange tokens for other tokens, potentially across different clients.
-        # Use case: [EXPLAIN THE SPECIFIC USE CASE HERE, e.g., "Required for service-to-service authentication in microservices architecture."]
-        # Security considerations: Ensure only trusted clients have this capability, restrict scopes and permissions as needed,
-        # and audit usage to prevent privilege escalation or unauthorized access.
         "attributes": {
             "standard.token.exchange.enabled": "true",  # Enable token exchange
         },
@@ -143,8 +163,11 @@ try:
     secret_file_path = get_env_var("SECRET_FILE_PATH")
 except ValueError:
     secret_file_path = "/shared/secret.txt"
-print(
-    f'Writing secret for client ID: "{client_id}" (internal client ID: "{internal_client_id}") to file: "{secret_file_path}"'
+logger.info(
+    'Writing secret for client ID: "%s" (internal client ID: "%s") to file: "%s"',
+    client_id,
+    internal_client_id,
+    secret_file_path,
 )
 write_client_secret(
     keycloak_admin,
@@ -153,4 +176,4 @@ write_client_secret(
     secret_file_path=secret_file_path,
 )
 
-print("Client registration complete.")
+logger.info("Client registration complete.")

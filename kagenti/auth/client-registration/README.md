@@ -2,6 +2,17 @@
 
 `client-registration` is the image that enables Kagenti to automatically register a client (agent or tool) in Keycloak.
 
+## Identity Provider Support
+
+The client registration process supports multiple workload identity providers:
+
+- **SPIRE/SPIFFE** (default): Uses SPIFFE ID from `/opt/jwt_svid.token`
+- **Kubernetes ServiceAccount**: Uses ServiceAccount token from `/var/run/secrets/kubernetes.io/serviceaccount/token`
+
+The provider must be explicitly set via the `KAGENTI_IDENTITY_PROVIDER` environment variable (`spire` or `serviceaccount`).
+
+For more details, see the [Identity Providers documentation](../../../docs/identity-providers.md).
+
 # Local development
 
 ### Build the image

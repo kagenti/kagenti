@@ -40,7 +40,9 @@ charts:
         kiali:
           enabled: true  
         toolhive:
-          enabled: true 
+          enabled: true
+      identity:
+        provider: "spire"  # Using SPIRE since spire component is enabled 
 
   #################################################################### 
   # kagenti 
