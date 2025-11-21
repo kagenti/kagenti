@@ -147,6 +147,10 @@ class ServiceAccountProvider(IdentityProvider):
 
         Returns:
             Dictionary with serviceAccountName, volumes, and volumeMounts
+
+        Note:
+            Uses standard Kubernetes token location for better compatibility.
+            The projected token will be mounted at the standard location.
         """
         return {
             "serviceAccountName": component_name,
@@ -169,7 +173,7 @@ class ServiceAccountProvider(IdentityProvider):
             "volumeMounts": [
                 {
                     "name": "kagenti-identity-token",
-                    "mountPath": "/var/run/secrets/kagenti.io/identity",
+                    "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
                     "readOnly": True,
                 }
             ],

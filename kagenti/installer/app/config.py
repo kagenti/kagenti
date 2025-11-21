@@ -88,7 +88,7 @@ class InstallableComponent(str, Enum):
     ADDONS = "addons"  # Prometheus, Kiali & Phoenix
     UI = "ui"
     GATEWAY = "gateway"
-    SPIRE = "spire"
+    IDENTITY = "spire"  # Identity provider (SPIRE or ServiceAccount) - kept as "spire" for CLI backward compatibility
     MCP_GATEWAY = "mcp_gateway"
     KEYCLOAK = "keycloak"
     AGENTS = "agents"

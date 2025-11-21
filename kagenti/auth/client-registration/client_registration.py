@@ -8,22 +8,30 @@ Idempotent:
 - Always retrieves and stores the client secret.
 """
 
+import logging
 import os
 import jwt
 from keycloak import KeycloakAdmin, KeycloakPostError
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 try:
     from kagenti.identity import get_identity_provider
 
     IDENTITY_AVAILABLE = True
-    print("Successfully imported kagenti.identity module")
+    logger.info("Successfully imported kagenti.identity module")
 except ImportError as e:
     # Fallback for environments where identity module is not available
     IDENTITY_AVAILABLE = False
-    print(f"Warning: Failed to import kagenti.identity: {e}")
+    logger.warning("Failed to import kagenti.identity: %s", e)
     import sys
 
-    print(f"Python path: {sys.path}")
+    logger.debug("Python path: %s", sys.path)
 
 
 def get_env_var(name: str) -> str:
@@ -49,17 +57,17 @@ def write_client_secret(
         # There will be a value field if client authentication is enabled
         # client authentication is enabled if "publicClient" is False
         secret = keycloak_admin.get_client_secrets(internal_client_id)["value"]
-        print(f'Successfully retrieved secret for client "{client_name}".')
+        logger.info('Successfully retrieved secret for client "%s"', client_name)
     except KeycloakPostError as e:
-        print(f"Could not retrieve secret for client '{client_name}': {e}")
+        logger.error("Could not retrieve secret for client '%s': %s", client_name, e)
         return
 
     try:
         with open(secret_file_path, "w") as f:
             f.write(secret)
-        print(f'Secret written to file: "{secret_file_path}"')
+        logger.info('Secret written to file: "%s"', secret_file_path)
     except OSError as ioe:
-        print(f"Error writing secret to file: {ioe}")
+        logger.error("Error writing secret to file: %s", ioe)
 
 
 # TODO: refactor this function so kagenti-client-registration image can use it
@@ -70,7 +78,9 @@ def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payloa
     """
     internal_client_id = keycloak_admin.get_client_id(f"{client_id}")
     if internal_client_id:
-        print(f'Client "{client_id}" already exists with ID: {internal_client_id}')
+        logger.info(
+            'Client "%s" already exists with ID: %s', client_id, internal_client_id
+        )
         return internal_client_id
 
     # Create client
@@ -78,10 +88,10 @@ def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payloa
     try:
         internal_client_id = keycloak_admin.create_client(client_payload)
 
-        print(f'Created Keycloak client "{client_id}": {internal_client_id}')
+        logger.info('Created Keycloak client "%s": %s', client_id, internal_client_id)
         return internal_client_id
     except KeycloakPostError as e:
-        print(f'Could not create client "{client_id}": {e}')
+        logger.error('Could not create client "%s": %s', client_id, e)
         raise
 
 
@@ -103,10 +113,10 @@ def get_client_id() -> str:
         provider = get_identity_provider()
         identity = provider.get_current_identity()
         client_id = identity.get_subject()
-        print(f"Using {provider.get_name()} identity provider")
+        logger.info("Using %s identity provider", provider.get_name())
         return client_id
     except Exception as e:
-        print(f"Error: Failed to use identity abstraction: {e}")
+        logger.error("Failed to use identity abstraction: %s", e)
         raise
 
 
@@ -115,9 +125,10 @@ client_id = get_client_id()
 # The Keycloak URL is handled differently from the other env vars because unlike the others, it's intended to be optional
 try:
     KEYCLOAK_URL = get_env_var("KEYCLOAK_URL")
-except:
-    print(
-        f'Expected environment variable "KEYCLOAK_URL" missing. Skipping client registration of {client_id}.'
+except ValueError:
+    logger.warning(
+        'Expected environment variable "KEYCLOAK_URL" missing. Skipping client registration of %s.',
+        client_id,
     )
     exit()
 
@@ -152,8 +163,11 @@ try:
     secret_file_path = get_env_var("SECRET_FILE_PATH")
 except ValueError:
     secret_file_path = "/shared/secret.txt"
-print(
-    f'Writing secret for client ID: "{client_id}" (internal client ID: "{internal_client_id}") to file: "{secret_file_path}"'
+logger.info(
+    'Writing secret for client ID: "%s" (internal client ID: "%s") to file: "%s"',
+    client_id,
+    internal_client_id,
+    secret_file_path,
 )
 write_client_secret(
     keycloak_admin,
@@ -162,4 +176,4 @@ write_client_secret(
     secret_file_path=secret_file_path,
 )
 
-print("Client registration complete.")
+logger.info("Client registration complete.")

@@ -30,6 +30,9 @@ charts:
           enabled: false
         toolhive:
           enabled: true
+      # Identity provider configuration
+      identity:
+        provider: "spire"  # Using SPIRE since spire component is enabled
 
   #################################################################### 
   # kagenti 

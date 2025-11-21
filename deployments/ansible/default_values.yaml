@@ -68,6 +68,11 @@ charts:
           enabled: false
         toolhive:
           enabled: false
+      # Identity provider configuration
+      identity:
+        provider: "spire"  # spire or serviceaccount (required)
+        # spire: Use SPIRE provider (requires SPIRE to be installed) - DEFAULT
+        # serviceaccount: Use Kubernetes ServiceAccount provider (cluster-local only)
       # components settings    
       containerRegistry:
         namespace: cr-system

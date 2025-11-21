@@ -9,8 +9,8 @@ RUN mkdir -p /app/kagenti
 RUN touch /app/kagenti/__init__.py
 
 # Copy identity module from build context
-# Note: The identity module must be copied into kagenti/auth/identity/ 
-# before building (done automatically in CI workflows)
+# Note: The identity module directory must be present as ./identity in the build context
+# (done automatically in CI workflows by copying kagenti/identity to kagenti/auth/identity)
 COPY identity /app/kagenti/identity
 
 # Set PYTHONPATH so kagenti module can be imported

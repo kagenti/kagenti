@@ -51,7 +51,7 @@ INSTALLERS = {
     InstallableComponent.CERT_MANAGER: cert_manager.install,
     InstallableComponent.OPERATOR: operator.install,
     InstallableComponent.ISTIO: istio.install,
-    InstallableComponent.SPIRE: identity.install,
+    InstallableComponent.IDENTITY: identity.install,
     InstallableComponent.MCP_GATEWAY: mcp_gateway.install,
     InstallableComponent.ADDONS: addons.install,
     InstallableComponent.UI: ui.install,
@@ -203,7 +203,9 @@ def main(
             deploy_component(
                 InstallableComponent.KEYCLOAK, skip_install, **install_params
             )
-            deploy_component(InstallableComponent.SPIRE, skip_install, **install_params)
+            deploy_component(
+                InstallableComponent.IDENTITY, skip_install, **install_params
+            )
             deploy_component(
                 InstallableComponent.MCP_GATEWAY, skip_install, **install_params
             )

@@ -151,9 +151,10 @@ def install(**kwargs):
                 f"Applying spiffe-helper-config configmap in '{ns}'",
             )
         else:
+            provider_msg = identity_provider if identity_provider else "unknown"
             console.log(
                 f"[yellow]Skipping spiffe-helper-config for '{ns}' "
-                f"(using {identity_provider} provider)[/yellow]"
+                f"(using {provider_msg} provider)[/yellow]"
             )
         run_command(
             ["kubectl", "label", "ns", ns, "shared-gateway-access=true", "--overwrite"],
