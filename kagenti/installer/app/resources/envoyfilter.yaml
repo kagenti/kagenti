@@ -7,19 +7,20 @@ metadata:
 spec:
   workloadSelector:
     labels:
-      gateway-type: mcpgateway
+      istio: ingressgateway
   configPatches:
     - applyTo: HTTP_FILTER
       match:
         context: GATEWAY
         listener:
+          portNumber: 8080
           filterChain:
             filter:
               name: 'envoy.filters.network.http_connection_manager'
               subFilter:
                 name: 'envoy.filters.http.router'
       patch:
-        operation: INSERT_BEFORE
+        operation: INSERT_FIRST
         value:
           name: envoy.filters.http.ext_proc
           typed_config:
@@ -32,7 +33,7 @@ spec:
               request_header_mode: 'SEND'
               response_header_mode: 'SEND'
               request_body_mode: 'BUFFERED'
-              response_body_mode: 'BUFFERED'
+              response_body_mode: 'NONE'
               request_trailer_mode: 'SKIP'
               response_trailer_mode: 'SKIP'
             grpc_service:

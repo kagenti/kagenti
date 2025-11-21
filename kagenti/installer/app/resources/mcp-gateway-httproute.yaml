@@ -1,0 +1,25 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  namespace: mcp-system
+  name: mcp-route
+spec:
+  parentRefs:
+    - name: mcp-gateway
+      namespace: gateway-system
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - name: mcp-gateway-broker
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource
+      backendRefs:
+        - name: mcp-gateway-broker
+          port: 8080
