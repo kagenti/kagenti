@@ -4,6 +4,7 @@
 pytest>=7.4.0
 pytest-timeout>=2.1.0
 pytest-xdist>=3.3.0  # For parallel test execution
+pytest-asyncio>=0.21.0  # For async test support
 
 # Kubernetes client
 kubernetes>=27.2.0
@@ -11,6 +12,10 @@ urllib3>=1.26.0,<2.1.0  # Pin to avoid HTTPResponse.getheaders() deprecation
 
 # HTTP requests
 requests>=2.31.0
+httpx>=0.24.0  # For A2A client
+
+# A2A protocol client
+a2a-sdk>=0.2.5
 
 # Keycloak client
 python-keycloak>=3.7.0

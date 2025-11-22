@@ -2,133 +2,189 @@
 """
 Agent Conversation E2E Tests for Kagenti Platform
 
-Tests basic agent functionality:
-- Agent responds to queries
+Tests agent conversation functionality via A2A protocol:
+- Agent responds to queries via A2A protocol
 - LLM integration (Ollama) works
-- A2A protocol communication
+- Agent can process weather queries
 
 Usage:
     pytest tests/e2e/test_agent_conversation.py -v
 """
 
 import pytest
-import subprocess
-import json
-import time
+import httpx
+from uuid import uuid4
+from a2a.client import A2AClient
+from a2a.types import (
+    Task,
+    Message as A2AMessage,
+    TaskStatusUpdateEvent,
+    TaskArtifactUpdateEvent,
+    MessageSendParams,
+    SendStreamingMessageRequest,
+    SendStreamingMessageSuccessResponse,
+)
 
 
 # ============================================================================
-# Test: Weather Agent Conversation
+# Test: Weather Agent Conversation via A2A Protocol
 # ============================================================================
 
 
 class TestWeatherAgentConversation:
-    """Test weather-service agent conversation with Ollama LLM."""
+    """Test weather-service agent conversation with Ollama LLM via A2A protocol."""
 
-    @pytest.mark.critical
-    def test_agent_health_endpoint(self):
-        """Verify agent health endpoint is accessible from within cluster."""
-        # Use kubectl run to execute curl from inside the cluster
-        cmd = [
-            "kubectl",
-            "run",
-            "test-agent-health",
-            "--rm",
-            "-i",
-            "--restart=Never",
-            "--image=curlimages/curl:latest",
-            "-n",
-            "team1",
-            "--",
-            "curl",
-            "-f",
-            "-s",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{http_code}",
-            "http://weather-service:8000/health",
-        ]
-
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=30, check=False
-            )
-
-            # Extract HTTP status code from output
-            if result.returncode == 0 and "200" in result.stdout:
-                print("\n✓ Agent health endpoint is accessible (HTTP 200)")
-                return
-
-            pytest.fail(
-                f"Health endpoint check failed. Return code: {result.returncode}, "
-                f"Output: {result.stdout}, Error: {result.stderr}"
-            )
-        except subprocess.TimeoutExpired:
-            pytest.fail("Health check timed out after 30s")
-        except Exception as e:
-            pytest.fail(f"Failed to check agent health endpoint: {e}")
-
-    def test_agent_simple_query(self):
+    @pytest.mark.asyncio
+    async def test_agent_simple_query(self):
         """
-        Test agent can process a simple query using Ollama.
+        Test agent can process a simple query using A2A protocol and Ollama.
 
         This validates:
-        - Agent API is accessible
+        - A2A protocol client works
+        - Agent API is accessible via A2A
         - Ollama LLM integration works
-        - Agent can generate responses
-
-        Note: This is a basic connectivity test. Full agent conversation
-        testing requires more complex setup and is better suited for
-        integration tests with proper A2A client setup.
+        - Agent can generate responses to weather queries
         """
-        # Use kubectl run to execute curl from inside the cluster
-        # Simple health/status check that validates agent is responding
-        cmd = [
-            "kubectl",
-            "run",
-            "test-agent-query",
-            "--rm",
-            "-i",
-            "--restart=Never",
-            "--image=curlimages/curl:latest",
-            "-n",
-            "team1",
-            "--",
-            "curl",
-            "-f",
-            "-s",
-            "-w",
-            "\\nHTTP_CODE:%{http_code}",
-            "http://weather-service:8000/",
+        # Use internal cluster DNS for agent service
+        agent_url = "http://weather-service.team1.svc.cluster.local:8000"
+
+        async with httpx.AsyncClient(timeout=60.0) as httpx_client:
+            # Initialize A2A client
+            client = A2AClient(httpx_client=httpx_client, url=agent_url)
+
+            # Create message payload
+            user_message = "What is the weather like in San Francisco?"
+            send_message_payload = {
+                "message": {
+                    "role": "user",
+                    "parts": [{"kind": "text", "text": user_message}],
+                    "messageId": uuid4().hex,
+                },
+            }
+
+            # Create streaming request
+            streaming_request = SendStreamingMessageRequest(
+                id=str(uuid4()), params=MessageSendParams(**send_message_payload)
+            )
+
+            # Send message and collect response
+            full_response = ""
+            final_event_received = False
+            tool_invocation_detected = False
+
+            try:
+                stream_response_iterator = client.send_message_streaming(
+                    streaming_request
+                )
+
+                async for chunk in stream_response_iterator:
+                    if isinstance(chunk.root, SendStreamingMessageSuccessResponse):
+                        event = chunk.root.result
+
+                        # Handle Task events
+                        if isinstance(event, Task):
+                            if event.status and event.status.state in [
+                                "COMPLETED",
+                                "FAILED",
+                            ]:
+                                final_event_received = True
+                                if event.status.message and hasattr(
+                                    event.status.message, "parts"
+                                ):
+                                    for part in event.status.message.parts:
+                                        p = getattr(part, "root", part)
+                                        if hasattr(p, "text"):
+                                            full_response += p.text
+
+                        # Handle TaskStatusUpdateEvent
+                        elif isinstance(event, TaskStatusUpdateEvent):
+                            if event.final:
+                                final_event_received = True
+                                if event.status.message and event.status.message.parts:
+                                    for part in event.status.message.parts:
+                                        p = getattr(part, "root", part)
+                                        if hasattr(p, "text"):
+                                            full_response += p.text
+
+                        # Handle TaskArtifactUpdateEvent (indicates tool was called)
+                        elif isinstance(event, TaskArtifactUpdateEvent):
+                            tool_invocation_detected = True
+                            print(
+                                f"\n✓ Tool invocation detected (Artifact ID: {getattr(getattr(event, 'artifact', None), 'artifactId', '?')})"
+                            )
+                            # Extract tool response data
+                            if hasattr(event, "artifact") and hasattr(
+                                event.artifact, "parts"
+                            ):
+                                for part in event.artifact.parts or []:
+                                    p = getattr(part, "root", part)
+                                    if hasattr(p, "text"):
+                                        full_response += p.text
+                                    elif hasattr(p, "data"):
+                                        # Tool might return data in data field
+                                        full_response += str(p.data)
+
+                        # Handle Message events
+                        elif isinstance(event, A2AMessage):
+                            if hasattr(event, "parts"):
+                                for part in event.parts:
+                                    p = getattr(part, "root", part)
+                                    if hasattr(p, "text"):
+                                        full_response += p.text
+
+                    # Break if we got a final event
+                    if final_event_received:
+                        break
+
+            except httpx.HTTPStatusError as e:
+                pytest.fail(
+                    f"A2A HTTP error: {e.response.status_code} - {e.response.text}"
+                )
+            except httpx.RequestError as e:
+                pytest.fail(f"A2A network error: {e}")
+            except Exception as e:
+                pytest.fail(f"Unexpected error during A2A conversation: {e}")
+
+        # Validate we got a response
+        assert full_response, "Agent did not return any response"
+        assert len(full_response) > 10, f"Agent response too short: {full_response}"
+
+        # Validate tool was invoked (critical for MCP integration test)
+        assert tool_invocation_detected, (
+            "Weather MCP tool was not invoked by the agent. "
+            "Agent should call the weather-tool to get weather data."
+        )
+
+        # Weather-related keywords that should appear if tool was called successfully
+        # The tool returns actual weather data (temperature, conditions, location)
+        weather_data_keywords = [
+            "weather",
+            "temperature",
+            "san francisco",
+            "°",
+            "degrees",
+            "sunny",
+            "cloudy",
+            "rain",
+            "forecast",
+            "current",
+            "conditions",
         ]
 
-        try:
-            # Give agent time to be fully ready (LLM loading, etc.)
-            time.sleep(5)
+        response_lower = full_response.lower()
+        has_weather_data = any(
+            keyword in response_lower for keyword in weather_data_keywords
+        )
 
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60, check=False
-            )
+        assert has_weather_data, (
+            f"Agent response doesn't contain weather data from tool. "
+            f"Response: {full_response}"
+        )
 
-            # Check if we got a successful response (200-299)
-            if result.returncode == 0 and "HTTP_CODE:20" in result.stdout:
-                print("\n✓ Agent API is accessible and responding")
-                print(f"  Output: {result.stdout[:200]}")  # First 200 chars
-                return
-
-            # If we got here, something failed
-            pytest.fail(
-                f"Agent query failed. Return code: {result.returncode}, "
-                f"Output: {result.stdout[:500]}, Error: {result.stderr[:500]}"
-            )
-
-        except subprocess.TimeoutExpired:
-            pytest.fail(
-                "Agent query timed out after 60s - may indicate LLM not responding"
-            )
-        except Exception as e:
-            pytest.fail(f"Failed to query agent: {e}")
+        print(f"\n✓ Agent responded successfully via A2A protocol")
+        print(f"✓ Weather MCP tool was invoked")
+        print(f"  Query: {user_message}")
+        print(f"  Response: {full_response[:200]}...")
 
 
 if __name__ == "__main__":
