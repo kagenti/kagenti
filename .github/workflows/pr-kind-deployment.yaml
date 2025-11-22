@@ -224,7 +224,7 @@ jobs:
       - name: Run E2E tests
         working-directory: kagenti
         run: |
-          pytest tests/e2e/test_deployment_health.py -v \
+          pytest tests/e2e/ -v \
             --timeout=300 \
             --tb=short \
             --junit-xml=../test-results/e2e-results.xml
