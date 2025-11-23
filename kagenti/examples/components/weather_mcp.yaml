@@ -25,20 +25,12 @@ spec:
       value: /app/.cache/uv
     - name: MCP_URL
       value: http://weather-tool:8000/mcp
-    - name: OPENAI_API_KEY
-      valueFrom:
-        secretKeyRef:
-          key: apikey
-          name: openai-secret
-    - name: LLM_API_KEY
-      valueFrom:
-        secretKeyRef:
-          key: apikey
-          name: openai-secret
     - name: LLM_API_BASE
-      value: https://api.openai.com/v1
+      value: http://dockerhost:11434/v1
+    - name: LLM_API_KEY
+      value: dummy
     - name: LLM_MODEL
-      value: gpt-4o-mini-2024-07-18
+      value: qwen2.5:0.5b
     kubernetes:
       containerPorts:
       - containerPort: 8000

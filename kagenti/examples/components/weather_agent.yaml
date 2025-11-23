@@ -49,20 +49,12 @@ spec:
       value: http://keycloak.keycloak.svc.cluster.local:8080
     - name: UV_CACHE_DIR
       value: /app/.cache/uv
-    - name: OPENAI_API_KEY
-      valueFrom:
-        secretKeyRef:
-          key: apikey
-          name: openai-secret
-    - name: LLM_API_KEY
-      valueFrom:
-        secretKeyRef:
-          key: apikey
-          name: openai-secret
     - name: LLM_API_BASE
-      value: https://api.openai.com/v1
+      value: http://dockerhost:11434/v1
+    - name: LLM_API_KEY
+      value: dummy
     - name: LLM_MODEL
-      value: gpt-4o-mini-2024-07-18
+      value: qwen2.5:0.5b
     - name: GITHUB_SECRET_NAME
       value: github-token-secret
     kubernetes:
