@@ -22,7 +22,13 @@ from lib.build_utils import render_import_form
 from lib.kube import get_kube_api_client_cached
 
 # --- Define Tool-Specific Settings for the Import Form ---
-TOOL_EXAMPLE_SUBFOLDERS = ["mcp/weather_tool", "mcp/slack_tool", "mcp/github_tool"]
+TOOL_EXAMPLE_SUBFOLDERS = [
+    "mcp/weather_tool",
+    "mcp/slack_tool",
+    "mcp/github_tool",
+    "mcp/movie_tool",
+    "mcp/flight_tool",
+]
 TOOL_PROTOCOL_OPTIONS = ["streamable_http", "sse"]
 
 check_auth()
