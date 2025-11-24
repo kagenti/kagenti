@@ -54,6 +54,48 @@ Important variables you can override (via `-e` / `--extra-vars`):
 - `kind_cluster_name`, `kind_images_preload`, `container_engine`, `kind_config`,
    `kind_config_registry`, `preload_images_file` - Kind-related knobs (see `default_values.yaml`).
 
+## Identity Provider Configuration
+
+Kagenti supports multiple workload identity providers for authentication and authorization.
+The identity provider is configured via Helm chart values under `identity.provider`:
+
+- **`spire`** (default): Use SPIRE/SPIFFE provider for workload identity. Requires SPIRE to be installed
+  (set `charts.spire.enabled: true` and ensure SPIRE components are deployed).
+- **`serviceaccount`**: Use Kubernetes ServiceAccount provider. No additional infrastructure required,
+  but limited to cluster-local authentication.
+
+### Configuring Identity Provider
+
+The identity provider can be set in multiple ways:
+
+1. **In value files** (recommended for environment-specific configs):
+   ```yaml
+   charts:
+     kagenti-deps:
+       values:
+         identity:
+           provider: "spire"  # or "serviceaccount"
+   ```
+   
+   Note: Only `kagenti-deps` chart requires `identity.provider`. The `kagenti` chart operator uses `KAGENTI_IDENTITY_PROVIDER` environment variable instead.
+
+2. **Via extra-vars** (for quick overrides):
+   ```bash
+   ansible-playbook ... -e '{"charts":{"kagenti-deps":{"values":{"identity":{"provider":"serviceaccount"}}}}}'
+   ```
+
+3. **In environment-specific files** (`dev_values.yaml`, `ocp_values.yaml`, etc.):
+   - See `deployments/envs/dev_values.yaml` and `deployments/envs/ocp_values.yaml` for examples
+   - Default is `spire` when SPIRE component is enabled
+
+### Notes
+
+- **`kagenti-deps` chart requires** `identity.provider` - it uses this value to conditionally install SPIRE operator and routes
+- **`kagenti` chart** does not use `identity.provider` - the operator uses `KAGENTI_IDENTITY_PROVIDER` environment variable (set by the Python installer) instead
+- When using `spire`, ensure `charts.spire.enabled: true` and SPIRE is properly installed
+- When using `serviceaccount`, SPIRE installation can be skipped (`charts.spire.enabled: false`)
+- The identity provider setting affects client registration and workload authentication
+
 Notes on overrides: pass extra-vars as JSON to avoid shell quoting issues. For
 example:
 
@@ -71,9 +113,9 @@ ansible-playbook -i localhost, -c local deployments/ansible/installer-playbook.y
 
 ## Environment examples
 - Development (full dev configuration): `../envs/dev_values.yaml` (enables UI,
-   platform operator, mcpGateway, istio where required).
+   platform operator, mcpGateway, istio, SPIRE where required).
 - Minimal dev (no auth): `../envs/dev_values_minimal.yaml`.
-- OpenShift / OCP example: `../envs/ocp_values.yaml`.
+- OpenShift / OCP example: `../envs/ocp_values.yaml` (includes SPIRE identity provider configuration).
 
 Pick one or more of the files in `deployments/envs` and pass them via
 `global_value_files`. The playbook merges these files (in order) into the

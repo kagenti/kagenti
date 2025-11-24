@@ -72,3 +72,12 @@ It will be enabled if:
 {{- tpl "{{ and .Values.components.istio.enabled (not .Values.openshift) }}" . | toString -}}
 {{- end -}}
 
+{{/*
+Determines if SPIRE should be installed based on identity provider configuration.
+SPIRE will be installed if:
+  - Identity provider is explicitly set to "spire"
+*/}}
+{{- define "kagenti.identity.shouldInstallSpire" -}}
+{{- eq .Values.identity.provider "spire" }}
+{{- end -}}
+

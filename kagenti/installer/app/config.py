@@ -40,6 +40,11 @@ class ContainerEngine(str, Enum):
 
 CONTAINER_ENGINE = "docker"
 
+# --- Identity Provider Configuration ---
+IDENTITY_PROVIDER = os.environ.get(
+    "KAGENTI_IDENTITY_PROVIDER"
+)  # spire or serviceaccount (required)
+
 # --- Dependency Version Requirements ---
 # Defines the minimum (inclusive) and maximum (exclusive) required versions for tools.
 REQ_VERSIONS = {
@@ -84,7 +89,7 @@ class InstallableComponent(str, Enum):
     ADDONS = "addons"  # Prometheus, Kiali & Phoenix
     UI = "ui"
     GATEWAY = "gateway"
-    SPIRE = "spire"
+    IDENTITY = "spire"  # Identity provider (SPIRE or ServiceAccount) - kept as "spire" for CLI backward compatibility
     MCP_GATEWAY = "mcp_gateway"
     KEYCLOAK = "keycloak"
     AGENTS = "agents"
