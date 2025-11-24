@@ -407,7 +407,7 @@ def list_agents(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.AGENTS_PLURAL,
         label_selector=f"{constants.KAGENTI_TYPE_LABEL}={constants.RESOURCE_TYPE_AGENT}",
     )
 
@@ -425,7 +425,7 @@ def get_agent_details(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.AGENTS_PLURAL,
         name=agent_name,
     )
 
@@ -442,7 +442,7 @@ def list_tools(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.TOOLHIVE_MCP_PLURAL,
         label_selector=f"{constants.KAGENTI_TYPE_LABEL}={constants.RESOURCE_TYPE_TOOL}",
     )
 
@@ -460,7 +460,7 @@ def get_tool_details(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.TOOLHIVE_MCP_PLURAL ,
         name=tool_name,
     )
 

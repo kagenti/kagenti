@@ -200,10 +200,15 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list"]
-  - apiGroups: ["kagenti.operator.dev"]
-    resources: ["components"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["agent.kagenti.dev"]
+    resources: ["agents", "agentbuilds"]
     verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
-
+  - apiGroups: ["toolhive.stacklok.dev"]
+    resources: ["mcpservers"]
+    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

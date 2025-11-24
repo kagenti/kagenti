@@ -12,6 +12,13 @@ certManager:
 tekton:
   enabled: true 
 
+toolhiveCRDs:
+  enabled: true
+  
+toolhiveOperator:
+  enabled: true
+
+
 charts:
   #################################################################### 
   # kagenti-deps 

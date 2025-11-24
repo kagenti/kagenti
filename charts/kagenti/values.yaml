@@ -9,10 +9,17 @@ components:
     enabled: true
   mcpGateway:
     enabled: true
+<<<<<<< HEAD
   platformOperator:
     enabled: true
   kagentiOperator:
     enabled: true
+=======
+  agentOperator:
+    enabled: true   
+  platformWebhook:
+    enabled: true    
+>>>>>>> 94bbd67 (changes to support  new kagenti operator)
   ui:
     enabled: true
   istio:
@@ -40,7 +47,7 @@ common:
 #  Agents Namespaces
 # ------------------------------------------------------------------
 agentNamespaces:
-- team1
+- kagenti
 - team2
 
 # ------------------------------------------------------------------
@@ -99,7 +106,7 @@ keycloak:
 # ------------------------------------------------------------------
 #  Platform Operator Configuration
 # ------------------------------------------------------------------
-kagenti-platform-operator-chart:
+kagenti-operator-chart:
   controllerManager:
     container:
       args:

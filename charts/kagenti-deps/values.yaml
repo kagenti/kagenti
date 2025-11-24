@@ -25,6 +25,10 @@ components:
     enabled: true
   tekton:
     enabled: true
+  toolhiveCRDs:
+    enabled: true
+  toolhiveOperator:
+    enabled: true
   certManager:
     enabled: true  
   gatewayApi:  

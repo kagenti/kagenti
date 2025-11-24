@@ -19,11 +19,16 @@ Useful constants.
 import os
 
 # --- Kubernetes CRD Definitions ---
-CRD_GROUP = "kagenti.operator.dev"
+CRD_GROUP = "agent.kagenti.dev"
 CRD_VERSION = "v1alpha1"
+TOOLHIVE_CRD_GROUP = "toolhive.stacklok.dev"
+TOOLHIVE_CRD_VERSION = "v1alpha1"
 AGENTS_PLURAL = "agents"
-COMPONENTS_PLURAL = "components"
+AGENTBUILDS_PLURAL = "agentbuilds"
+TOOLHIVE_MCP_PLURAL = "mcpservers"
 OPERATOR_NS = "kagenti-system"
+
+PYTHON_VERSION="3.13"
 
 # --- Kubernetes Labels and Selectors ---
 KAGENTI_LABEL_PREFIX = "kagenti.io/"

@@ -25,15 +25,15 @@ def install(**kwargs):
         github_repo=config.OPERATOR_GIT_REPO,
         fallback_version=config.OPERATOR_FALLBACK_VERSION,
     ).lstrip("v")
-    print(f"Using Platform Operator version: {operator_version}")
+    print(f"Using Kagenti Operator version: {operator_version}")
 
     run_command(
         [
             "helm",
             "upgrade",
             "--install",
-            "kagenti-platform-operator",
-            "oci://ghcr.io/kagenti/kagenti-operator/kagenti-platform-operator-chart",
+            "kagenti-operator",
+            "oci://ghcr.io/kagenti/kagenti-operator/kagenti-operator-chart",
             "--create-namespace",
             "--namespace",
             config.OPERATOR_NAMESPACE,
@@ -42,5 +42,5 @@ def install(**kwargs):
             "--set",
             "controllerManager.container.image.tag=" + operator_version,
         ],
-        "Installing the Platform Operator",
+        "Installing the Kagenti Operator",
     )
