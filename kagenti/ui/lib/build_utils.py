@@ -40,7 +40,7 @@ from .kube import (
     _handle_kube_api_exception,
     _display_kube_config_status_once,
 )
-from .utils import sanitize_for_k8s_name, remove_url_prefix, get_resource_name_from_path
+from .utils import sanitize_for_k8s_name, get_resource_name_from_path
 
 logger = logging.getLogger(__name__)
 
@@ -313,14 +313,8 @@ def _construct_tool_resource_body(
         return None
     st_object.info(f"Using GitHub username '{repo_user}' from secret for build.")
     # image_registry_prefix = f"ghcr.io/{repo_user}"
-    image_name = k8s_resource_name
-    image_registry_prefix, image_name, _tag = parse_image_url(repo_url)
-    if _tag:
-        image_tag = _tag
-        # Handle local images with no registry prefix
-        if image_registry_prefix is None:
-            image_registry_prefix = ""
-
+    # image_name = k8s_resource_name
+    # image_registry_prefix, _, _ = parse_image_url(repo_url)
     client_secret_for_env = _get_keycloak_client_secret(
         st_object, f"{k8s_resource_name}-client"
     )
@@ -403,7 +397,6 @@ def _construct_tool_resource_body(
                                     "mountPath": "/tmp",
                                     "readOnly": False,
                                 },
-
                             ],
                         }
                     ],
@@ -483,17 +476,34 @@ def extract_image_name(url):
         return match.group(2)  # image name is the second group
     return None
 
+
 def strip_protocol(url: str) -> str:
+    """
+    Remove protocol prefix from a URL or Git remote string.
+
+    Strips common protocol prefixes including http://, https://, ssh://, and git@
+    from the beginning of a URL string. Used for normalizing repository URLs
+    and remote addresses.
+
+    Args:
+        url: The URL string to clean. Can be empty or None.
+
+    Returns:
+        The URL string with protocol prefix removed. Returns empty string if
+        input is None or empty.
+
+    """
     if not url:
         return ""
     # Remove leading http://, https://, ssh://, git@, etc.
-    cleaned = re.sub(r'^(https?:\/\/|ssh:\/\/|git@)', "", url)
+    cleaned = re.sub(r"^(https?:\/\/|ssh:\/\/|git@)", "", url)
     return cleaned
+
 
 # pylint: disable=too-many-branches
 def _construct_agentbuild_resource_body(
-    st_object,
-    core_v1_api: Optional[kubernetes.client.CoreV1Api],
+    # st_object,
+    # core_v1_api: Optional[kubernetes.client.CoreV1Api],
     build_namespace: str,
     resource_name: str,
     resource_type: str,
@@ -506,7 +516,6 @@ def _construct_agentbuild_resource_body(
     image_name: str,
     registry_config: Optional[dict] = None,
     image_tag: str = constants.DEFAULT_IMAGE_TAG,
-
 ) -> Optional[dict]:
     """
     Constructs the Kubernetes resource body for a new build.
@@ -530,11 +539,9 @@ def _construct_agentbuild_resource_body(
         Optional[dict]: The constructed Kubernetes resource body, or None if an error occurred.
     """
     k8s_resource_name = sanitize_for_k8s_name(resource_name)
-
+    cleaned_url = repo_url
     if repo_url:
         cleaned_url = strip_protocol(repo_url)
-        st_object.write("### Cleaned URL (protocol removed):")
-        st_object.code(cleaned_url)
 
     body = {
         "apiVersion": f"{constants.CRD_GROUP}/{constants.CRD_VERSION}",
@@ -553,17 +560,18 @@ def _construct_agentbuild_resource_body(
         "spec": {
             "model": "dev",
             "source": {
-                "sourceRepository": cleaned_url, 
+                "sourceRepository": cleaned_url,
                 "sourceRevision": repo_branch,
                 "sourceSubfolder": source_subfolder,
-                "sourceCredentials": {
-                    "name": constants.GIT_USER_SECRET_NAME
-                },
+                "sourceCredentials": {"name": constants.GIT_USER_SECRET_NAME},
             },
             "pipeline": {
                 "namespace": constants.OPERATOR_NS,
                 "parameters": [
-                    {"name": "SOURCE_REPO_SECRET", "value": constants.GIT_USER_SECRET_NAME},
+                    {
+                        "name": "SOURCE_REPO_SECRET",
+                        "value": constants.GIT_USER_SECRET_NAME,
+                    },
                     {"name": "START_COMMAND", "value": start_command},
                     {"name": "PYTHON_VERSION", "value": constants.PYTHON_VERSION},
                 ],
@@ -573,8 +581,7 @@ def _construct_agentbuild_resource_body(
                 "imageTag": image_tag,
                 "imageRegistry": registry_config["registry_url"],
             },
-        }
-
+        },
     }
     # Add imageRepoCredentials only if authentication is required
     if registry_config and registry_config.get("requires_auth"):
@@ -582,6 +589,7 @@ def _construct_agentbuild_resource_body(
             "name": registry_config["credentials_secret"],
         }
     return body
+
 
 # pylint: disable=too-many-branches
 def _construct_agent_resource_body(
@@ -594,11 +602,11 @@ def _construct_agent_resource_body(
     protocol: str,
     framework: str,
     description: str,
-    build_from_source: bool,
-    registry_config: Optional[dict] = None,
+    # build_from_source: bool,
+    # registry_config: Optional[dict] = None,
     additional_env_vars: Optional[list] = None,
     pod_config: Optional[dict] = None,
-    image_pull_secret: Optional[str] = None,
+    # image_pull_secret: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Constructs the Kubernetes resource body for a new build.
@@ -638,9 +646,8 @@ def _construct_agent_resource_body(
         return None
     st_object.info(f"Using GitHub username '{repo_user}' from secret for build.")
 
-    image_registry_prefix, image_name, _tag = parse_image_url(repo_url)
-    if _tag:
-        image_tag = _tag
+    image_registry_prefix, _, _ = parse_image_url(repo_url)
+
     # Handle local images with no registry prefix
     if image_registry_prefix is None:
         image_registry_prefix = ""
@@ -657,9 +664,9 @@ def _construct_agent_resource_body(
         {"name": "GITHUB_SECRET_NAME", "value": constants.GIT_USER_SECRET_NAME}
     )
 
-    pull_secrets = _get_image_pull_secrets(
-        build_from_source, registry_config, image_pull_secret
-    )
+    # pull_secrets = _get_image_pull_secrets(
+    #    build_from_source, registry_config, image_pull_secret
+    # )
 
     # Extract service ports from pod_config or use defaults
     if pod_config and pod_config.get("service_ports"):
@@ -796,8 +803,7 @@ def trigger_and_monitor_build(
     registry_config: Optional[dict] = None,
     pod_config: Optional[dict] = None,
     additional_env_vars: Optional[List[Dict[str, Any]]] = None,
-    start_command: str = "python main.py",  
-
+    start_command: str = "python main.py",
 ):
     """
     Triggers a build for a new resource and monitors its status.
@@ -840,8 +846,8 @@ def trigger_and_monitor_build(
     if resource_type.lower() == "agent" and build_from_source:
         # Step 1: Build the agent using AgentBuild CR
         agentbuild_cr_body = _construct_agentbuild_resource_body(
-            st_object=st_object,
-            core_v1_api=core_v1_api,
+            # st_object=st_object,
+            # core_v1_api=core_v1_api,
             build_namespace=build_namespace,
             resource_name=k8s_resource_name,
             resource_type=resource_type,
@@ -850,25 +856,26 @@ def trigger_and_monitor_build(
             source_subfolder=source_subfolder,
             protocol=protocol,
             framework=framework,
-            start_command=start_command, 
-            image_name=k8s_resource_name, 
+            start_command=start_command,
+            image_name=k8s_resource_name,
             registry_config=registry_config,
-            image_tag=constants.DEFAULT_IMAGE_TAG, 
+            image_tag=constants.DEFAULT_IMAGE_TAG,
         )
-        
+
         if not agentbuild_cr_body:
             st_object.error(
                 f"Failed to construct AgentBuild resource body for '{k8s_resource_name}'. Check previous errors."
             )
             return False
-        
+
         # Deploy AgentBuild CR
         with st_object.spinner(
             f"Submitting AgentBuild for '{k8s_resource_name}' in namespace '{build_namespace}'..."
         ):
             try:
                 logger.info(
-                    "Generated AgentBuild manifest:\n%s", json.dumps(agentbuild_cr_body, indent=2)
+                    "Generated AgentBuild manifest:\n%s",
+                    json.dumps(agentbuild_cr_body, indent=2),
                 )
                 custom_obj_api.create_namespaced_custom_object(
                     group=constants.CRD_GROUP,
@@ -893,14 +900,14 @@ def trigger_and_monitor_build(
                     f"An unexpected error occurred creating AgentBuild for '{k8s_resource_name}': {e}"
                 )
                 return False
-        
+
         # Monitor AgentBuild completion
         status_placeholder = st_object.empty()
         current_build_status = "Pending"
         max_retries = 120
         retries = 0
         built_image_ref = None
-        
+
         with st_object.spinner(
             f"Waiting for AgentBuild '{k8s_resource_name}' to complete..."
         ):
@@ -923,11 +930,11 @@ def trigger_and_monitor_build(
 
                     # Capture built image reference from status
                     if "builtImage" in status_data:
-                        built_image_ref = status_data.get("builtImage")                    
+                        built_image_ref = status_data.get("builtImage")
                     status_placeholder.info(
                         f"Build Status for '{k8s_resource_name}': **{current_build_status}**\nMessage: {status_message}"
                     )
-                    
+
                     if current_build_status in ["Succeeded", "Failed", "Error"]:
                         break
                     time.sleep(constants.POLL_INTERVAL_SECONDS)
@@ -948,23 +955,23 @@ def trigger_and_monitor_build(
                     )
                     current_build_status = "Error"
                     break
-        
+
         if current_build_status != "Succeeded":
             st_object.error(
                 f"AgentBuild for '{k8s_resource_name}' failed with status: {current_build_status}. Check operator logs."
             )
             return False
-        
+
         if not built_image_ref:
             st_object.error(
                 f"AgentBuild succeeded but no image reference found in status for '{k8s_resource_name}'."
             )
             return False
-        
+
         st_object.success(
             f"AgentBuild '{k8s_resource_name}' completed successfully! Built image: {built_image_ref}"
         )
-        
+
         # Step 2: Create Agent CR with the built image
         build_cr_body = _construct_agent_resource_body(
             st_object=st_object,
@@ -972,17 +979,17 @@ def trigger_and_monitor_build(
             build_namespace=build_namespace,
             resource_name=k8s_resource_name,
             resource_type=resource_type,
-            repo_url=built_image_ref, 
+            repo_url=built_image_ref,
             protocol=protocol,
             framework=framework,
             description=description,
-            build_from_source=True,  
-            registry_config=registry_config,
+            # build_from_source=True,
+            # registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
         current_build_status = "Succeeded"
-        use_deployment_only_monitoring = True  
+        use_deployment_only_monitoring = True
     elif resource_type.lower() == "agent" and not build_from_source:
         current_build_status = "Succeeded"
         # Deploy agent from existing image (no build step)
@@ -996,8 +1003,8 @@ def trigger_and_monitor_build(
             protocol=protocol,
             framework=framework,
             description=description,
-            build_from_source=False,
-            registry_config=registry_config,
+            # build_from_source=False,
+            # registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
@@ -1030,10 +1037,16 @@ def trigger_and_monitor_build(
                 "Generated Component manifest:\n%s", json.dumps(build_cr_body, indent=2)
             )
             custom_obj_api.create_namespaced_custom_object(
-                group=constants.CRD_GROUP if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_GROUP,
-                version=constants.CRD_VERSION if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_VERSION,
+                group=constants.CRD_GROUP
+                if resource_type.lower() == "agent"
+                else constants.TOOLHIVE_CRD_GROUP,
+                version=constants.CRD_VERSION
+                if resource_type.lower() == "agent"
+                else constants.TOOLHIVE_CRD_VERSION,
                 namespace=build_namespace,
-                plural=constants.AGENTS_PLURAL if resource_type.lower() == "agent" else constants.TOOLHIVE_MCP_PLURAL,
+                plural=constants.AGENTS_PLURAL
+                if resource_type.lower() == "agent"
+                else constants.TOOLHIVE_MCP_PLURAL,
                 body=build_cr_body,
             )
             st_object.success(
@@ -1057,7 +1070,7 @@ def trigger_and_monitor_build(
         status_placeholder = st_object.empty()
         current_build_status = "Pending"
     else:
-        current_build_status = "Succeeded"    
+        current_build_status = "Succeeded"
 
     max_retries = 120
     retries = 0
@@ -1071,10 +1084,16 @@ def trigger_and_monitor_build(
             retries += 1
             try:
                 build_obj = custom_obj_api.get_namespaced_custom_object(
-                    group=constants.CRD_GROUP if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_GROUP,
-                    version=constants.CRD_VERSION if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_VERSION,
+                    group=constants.CRD_GROUP
+                    if resource_type.lower() == "agent"
+                    else constants.TOOLHIVE_CRD_GROUP,
+                    version=constants.CRD_VERSION
+                    if resource_type.lower() == "agent"
+                    else constants.TOOLHIVE_CRD_VERSION,
                     namespace=build_namespace,
-                    plural=constants.AGENTS_PLURAL if resource_type.lower() == "agent" else constants.TOOLHIVE_MCP_PLURAL,
+                    plural=constants.AGENTS_PLURAL
+                    if resource_type.lower() == "agent"
+                    else constants.TOOLHIVE_MCP_PLURAL,
                     name=k8s_resource_name,
                 )
                 status_data = build_obj.get("status", {})
@@ -1138,10 +1157,16 @@ def trigger_and_monitor_build(
                 try:
                     # Re-fetch the object to get latest deployment status
                     build_obj = custom_obj_api.get_namespaced_custom_object(
-                        group=constants.CRD_GROUP if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_GROUP,
-                        version=constants.CRD_VERSION if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_VERSION,
+                        group=constants.CRD_GROUP
+                        if resource_type.lower() == "agent"
+                        else constants.TOOLHIVE_CRD_GROUP,
+                        version=constants.CRD_VERSION
+                        if resource_type.lower() == "agent"
+                        else constants.TOOLHIVE_CRD_VERSION,
                         namespace=build_namespace,
-                        plural=constants.AGENTS_PLURAL if resource_type.lower() == "agent" else constants.TOOLHIVE_MCP_PLURAL,
+                        plural=constants.AGENTS_PLURAL
+                        if resource_type.lower() == "agent"
+                        else constants.TOOLHIVE_MCP_PLURAL,
                         name=k8s_resource_name,
                     )
 
@@ -1213,7 +1238,7 @@ def trigger_and_monitor_deployment_from_image(
     description: str = "",
     additional_env_vars: Optional[List[Dict[str, Any]]] = None,
     pod_config: Optional[dict] = None,
-    image_pull_secret: Optional[str] = None,
+    # image_pull_secret: Optional[str] = None,
 ):
     """
     Triggers a build for a new resource and monitors its status.
@@ -1258,13 +1283,12 @@ def trigger_and_monitor_deployment_from_image(
             resource_name=k8s_resource_name,
             resource_type=resource_type,
             repo_url=repo_url,
-
             protocol=protocol,
             framework=framework,
             description=description,
-            build_from_source=False,
+            # build_from_source=False,
             pod_config=pod_config,
-            image_pull_secret=image_pull_secret,
+            # image_pull_secret=image_pull_secret,
             additional_env_vars=additional_env_vars,
         )
 
@@ -1295,10 +1319,16 @@ def trigger_and_monitor_deployment_from_image(
             )
 
             custom_obj_api.create_namespaced_custom_object(
-                group=constants.CRD_GROUP if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_GROUP,
-                version=constants.CRD_VERSION if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_VERSION,
+                group=constants.CRD_GROUP
+                if resource_type.lower() == "agent"
+                else constants.TOOLHIVE_CRD_GROUP,
+                version=constants.CRD_VERSION
+                if resource_type.lower() == "agent"
+                else constants.TOOLHIVE_CRD_VERSION,
                 namespace=deployment_namespace,
-                plural=constants.AGENTS_PLURAL if resource_type.lower() == "agent" else constants.TOOLHIVE_MCP_PLURAL,
+                plural=constants.AGENTS_PLURAL
+                if resource_type.lower() == "agent"
+                else constants.TOOLHIVE_MCP_PLURAL,
                 body=cr_body,
             )
 
@@ -1335,10 +1365,16 @@ def trigger_and_monitor_deployment_from_image(
             try:
                 # Re-fetch the object to get latest deployment status
                 build_obj = custom_obj_api.get_namespaced_custom_object(
-                    group=constants.CRD_GROUP if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_GROUP,
-                    version=constants.CRD_VERSION if resource_type.lower() == "agent" else constants.TOOLHIVE_CRD_VERSION,
+                    group=constants.CRD_GROUP
+                    if resource_type.lower() == "agent"
+                    else constants.TOOLHIVE_CRD_GROUP,
+                    version=constants.CRD_VERSION
+                    if resource_type.lower() == "agent"
+                    else constants.TOOLHIVE_CRD_VERSION,
                     namespace=deployment_namespace,
-                    plural=constants.AGENTS_PLURAL if resource_type.lower() == "agent" else constants.TOOLHIVE_MCP_PLURAL,
+                    plural=constants.AGENTS_PLURAL
+                    if resource_type.lower() == "agent"
+                    else constants.TOOLHIVE_MCP_PLURAL,
                     name=k8s_resource_name,
                 )
 
@@ -1346,14 +1382,17 @@ def trigger_and_monitor_deployment_from_image(
                 if resource_type.lower() == "tool":
                     final_deployment_phase = status_data.get("phase", "Unknown")
                     deployment_message = status_data.get("message", "")
-                    # Map "Running" to "Ready" 
+                    # Map "Running" to "Ready"
                     if final_deployment_phase == "Running":
                         final_deployment_phase = "Ready"
                 else:
                     final_deployment_status = status_data.get("deploymentStatus", {})
-                    final_deployment_phase = final_deployment_status.get("phase", "Unknown")
-                    deployment_message = final_deployment_status.get("deploymentMessage", "")
-
+                    final_deployment_phase = final_deployment_status.get(
+                        "phase", "Unknown"
+                    )
+                    deployment_message = final_deployment_status.get(
+                        "deploymentMessage", ""
+                    )
 
                 # Update status display
                 status_placeholder.info(
@@ -1938,9 +1977,11 @@ def render_import_form(
     else:
         # Tools can only be deployed from existing images
         deployment_method = "Deploy from Existing Image"
-        
+
     if example_subfolders is None:
         example_subfolders = []
+
+    start_command = "python main.py"  # Default value
 
     if deployment_method == "Build from Source":
         st_object.write(
@@ -2008,32 +2049,31 @@ def render_import_form(
             )
             if manual_subfolder_input:
                 final_source_subfolder_path = manual_subfolder_input
-            start_command = "python main.py"  # Default value
+
             if resource_type.lower() == "agent":
                 st_object.markdown("---")
                 st_object.subheader("Agent Build Configuration")
-                
+
                 start_command = st_object.text_input(
                     "Start Command",
                     value="python main.py",
                     key=f"{resource_type.lower()}_start_command",
-                    help="Command to start the agent (e.g., 'python main.py', 'uvicorn app:app')"
+                    help="Command to start the agent (e.g., 'python main.py', 'uvicorn app:app')",
                 )
-                
+
                 # Image name derived from resource name
-                suggested_image_name = sanitize_for_k8s_name(
-                    get_resource_name_from_path(final_source_subfolder_path) 
-                    if final_source_subfolder_path else "agent-image"
-                )
-                
-                image_name_input = st_object.text_input(
-                    "Image Name",
-                    value=suggested_image_name,
-                    key=f"{resource_type.lower()}_image_name",
-                    help="Name for the built container image"
-                )
+                # suggested_image_name = sanitize_for_k8s_name(
+                #    get_resource_name_from_path(final_source_subfolder_path)
+                #    if final_source_subfolder_path
+                #    else "agent-image"
+                # )
 
-
+                # image_name_input = st_object.text_input(
+                #    "Image Name",
+                #    value=suggested_image_name,
+                #    key=f"{resource_type.lower()}_image_name",
+                #    help="Name for the built container image",
+                # )
 
             # If no subfolder is specified, require a manual resource name
             if not final_source_subfolder_path:
@@ -2098,7 +2138,7 @@ def render_import_form(
                 registry_config=registry_config,
                 pod_config=pod_config,
                 additional_env_vars=final_additional_envs,
-                start_command=start_command,   
+                start_command=start_command,
             )
 
     elif deployment_method == "Deploy from Existing Image":
@@ -2116,11 +2156,11 @@ def render_import_form(
             "Container Image (e.g., myrepo/myimage:tag)",
             key=f"{resource_type.lower()}_docker_image",
         )
-        repo_secret_name = st_object.text_input(
-            "Image Pull Secret Name (optional, leave empty for public images)",
-            key=f"{resource_type.lower()}_repo_secret",
-            help="Name of the Kubernetes secret containing credentials for private container registries",
-        )
+        #        repo_secret_name = st_object.text_input(
+        #            "Image Pull Secret Name (optional, leave empty for public images)",
+        #            key=f"{resource_type.lower()}_repo_secret",
+        #            help="Name of the Kubernetes secret containing credentials for private container registries",
+        #        )
         selected_protocol = default_protocol
         if protocol_options:
             current_protocol_index = (
@@ -2175,7 +2215,7 @@ def render_import_form(
                 description=f"{resource_type} '{resource_name_suggestion}' built from UI.",
                 pod_config=pod_config,
                 additional_env_vars=final_additional_envs,
-                image_pull_secret=repo_secret_name if repo_secret_name else None,
+                # image_pull_secret=repo_secret_name if repo_secret_name else None,
             )
 
     st_object.markdown("---")

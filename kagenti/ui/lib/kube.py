@@ -460,7 +460,7 @@ def get_tool_details(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.TOOLHIVE_MCP_PLURAL ,
+        plural=constants.TOOLHIVE_MCP_PLURAL,
         name=tool_name,
     )
 

@@ -28,7 +28,7 @@ AGENTBUILDS_PLURAL = "agentbuilds"
 TOOLHIVE_MCP_PLURAL = "mcpservers"
 OPERATOR_NS = "kagenti-system"
 
-PYTHON_VERSION="3.13"
+PYTHON_VERSION = "3.13"
 
 # --- Kubernetes Labels and Selectors ---
 KAGENTI_LABEL_PREFIX = "kagenti.io/"
