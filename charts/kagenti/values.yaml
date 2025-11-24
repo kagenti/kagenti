@@ -9,17 +9,11 @@ components:
     enabled: true
   mcpGateway:
     enabled: true
-<<<<<<< HEAD
-  platformOperator:
-    enabled: true
-  kagentiOperator:
-    enabled: true
-=======
+
   agentOperator:
     enabled: true   
   platformWebhook:
     enabled: true    
->>>>>>> 94bbd67 (changes to support  new kagenti operator)
   ui:
     enabled: true
   istio:
