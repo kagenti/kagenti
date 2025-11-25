@@ -439,8 +439,8 @@ def list_tools(
     return list_custom_resources(
         st_object=st_object,
         custom_obj_api=custom_obj_api,
-        group=constants.CRD_GROUP,
-        version=constants.CRD_VERSION,
+        group=constants.TOOLHIVE_CRD_GROUP,
+        version=constants.TOOLHIVE_CRD_VERSION,
         namespace=namespace,
         plural=constants.TOOLHIVE_MCP_PLURAL,
         label_selector=f"{constants.KAGENTI_TYPE_LABEL}={constants.RESOURCE_TYPE_TOOL}",
@@ -457,8 +457,8 @@ def get_tool_details(
     return get_custom_resource(
         st_object=st_object,
         custom_obj_api=custom_obj_api,
-        group=constants.CRD_GROUP,
-        version=constants.CRD_VERSION,
+        group=constants.TOOLHIVE_CRD_GROUP,
+        version=constants.TOOLHIVE_CRD_VERSION,
         namespace=namespace,
         plural=constants.TOOLHIVE_MCP_PLURAL,
         name=tool_name,

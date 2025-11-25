@@ -26,6 +26,7 @@ from lib.kube import (
 )
 from lib.common_ui import check_auth, render_resource_catalog
 from lib.tool_details_page import render_mcp_tool_details_content
+from lib import constants
 
 check_auth()
 
@@ -47,17 +48,17 @@ def delete_tool_resource(custom_obj_api, name, namespace):
     return delete_custom_resource(
         st_object=st,
         custom_obj_api=custom_obj_api,
-        group="kagenti.operator.dev",
-        version="v1alpha1",
+        group=constants.TOOLHIVE_CRD_GROUP,
+        version=constants.TOOLHIVE_CRD_VERSION,
         namespace=namespace,
-        plural="components",
+        plural=constants.TOOLHIVE_MCP_PLURAL,
         name=name,
     )
 
 
 render_resource_catalog(
     st_object=st,
-    resource_type_name="Tool",
+    resource_type_name="MCPServer",
     list_resources_func=list_tools,
     get_details_func=get_tool_details,
     render_details_func=render_mcp_tool_details_content,

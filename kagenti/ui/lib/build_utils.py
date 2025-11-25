@@ -880,10 +880,10 @@ def trigger_and_monitor_build(
             f"Submitting AgentBuild for '{k8s_resource_name}' in namespace '{build_namespace}'..."
         ):
             try:
-                logger.info(
-                    "Generated AgentBuild manifest:\n%s",
-                    json.dumps(agentbuild_cr_body, indent=2),
-                )
+                #               logger.info(
+                #                   "Generated AgentBuild manifest:\n%s",
+                #                   json.dumps(agentbuild_cr_body, indent=2),
+                #               )
                 custom_obj_api.create_namespaced_custom_object(
                     group=constants.CRD_GROUP,
                     version=constants.CRD_VERSION,
@@ -1041,9 +1041,9 @@ def trigger_and_monitor_build(
         f"Submitting build for {resource_type} '{k8s_resource_name}' in namespace '{build_namespace}'..."
     ):
         try:
-            logger.info(
-                "Generated Component manifest:\n%s", json.dumps(build_cr_body, indent=2)
-            )
+            #            logger.info(
+            #                "Generated Component manifest:\n%s", json.dumps(build_cr_body, indent=2)
+            #            )
             custom_obj_api.create_namespaced_custom_object(
                 group=constants.CRD_GROUP
                 if resource_type.lower() == "agent"

@@ -26,6 +26,7 @@ from lib.kube import (
 )
 from lib.agent_details_page import render_agent_details_content
 from lib.common_ui import check_auth, render_resource_catalog
+from lib import constants
 
 check_auth()
 
@@ -47,10 +48,10 @@ def delete_agent_resource(custom_obj_api, name, namespace):
     return delete_custom_resource(
         st_object=st,
         custom_obj_api=custom_obj_api,
-        group="kagenti.operator.dev",
-        version="v1alpha1",
+        group=constants.CRD_GROUP,
+        version=constants.CRD_VERSION,
         namespace=namespace,
-        plural="components",
+        plural=constants.AGENTS_PLURAL,
         name=name,
     )
 
