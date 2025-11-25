@@ -849,7 +849,7 @@ def trigger_and_monitor_build(
         st_object.error("Invalid resource name after sanitization. Cannot proceed.")
         return False
     build_cr_body = None
-
+    use_deployment_only_monitoring = False
     if resource_type.lower() == "agent" and build_from_source:
         # Step 1: Build the agent using AgentBuild CR
         agentbuild_cr_body = _construct_agentbuild_resource_body(
