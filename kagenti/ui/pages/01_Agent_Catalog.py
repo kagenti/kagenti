@@ -45,7 +45,8 @@ def delete_agent_resource(custom_obj_api, name, namespace):
     Wrapper function to delete agent resources specifically.
     Adjust the group, version, and plural parameters according to your agent CRD.
     """
-    return delete_custom_resource(
+    # 1. Delete the Agent resource (always present)
+    delete_custom_resource(
         st_object=st,
         custom_obj_api=custom_obj_api,
         group=constants.CRD_GROUP,
@@ -54,6 +55,22 @@ def delete_agent_resource(custom_obj_api, name, namespace):
         plural=constants.AGENTS_PLURAL,
         name=name,
     )
+    # 2. Try deleting AgentBuild (only exists for 'build from source' agents).
+    try:
+        delete_custom_resource(
+            st_object=st,
+            custom_obj_api=custom_obj_api,
+            group=constants.CRD_GROUP,
+            version=constants.CRD_VERSION,
+            namespace=namespace,
+            plural=constants.AGENTBUILDS_PLURAL,
+            name=name,
+        )
+    except Exception:
+        # Silently ignore if AgentBuild does not exist
+        pass
+
+    return True
 
 
 render_resource_catalog(

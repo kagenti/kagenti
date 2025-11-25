@@ -506,7 +506,7 @@ def strip_protocol(url: str) -> str:
 
 # pylint: disable=too-many-branches
 def _construct_agentbuild_resource_body(
-    # st_object,
+    st_object,
     # core_v1_api: Optional[kubernetes.client.CoreV1Api],
     build_namespace: str,
     resource_name: str,
@@ -543,6 +543,13 @@ def _construct_agentbuild_resource_body(
         Optional[dict]: The constructed Kubernetes resource body, or None if an error occurred.
     """
     k8s_resource_name = sanitize_for_k8s_name(resource_name)
+    if not registry_config:
+        st_object.error("Registry configuration is required for building from source.")
+        return None
+
+    if not registry_config.get("registry_url"):
+        st_object.error("Registry URL is missing from configuration.")
+        return None
     cleaned_url = repo_url
     if repo_url:
         cleaned_url = strip_protocol(repo_url)
@@ -853,7 +860,7 @@ def trigger_and_monitor_build(
     if resource_type.lower() == "agent" and build_from_source:
         # Step 1: Build the agent using AgentBuild CR
         agentbuild_cr_body = _construct_agentbuild_resource_body(
-            # st_object=st_object,
+            st_object=st_object,
             # core_v1_api=core_v1_api,
             build_namespace=build_namespace,
             resource_name=k8s_resource_name,
@@ -2165,11 +2172,11 @@ def render_import_form(
             "Container Image (e.g., myrepo/myimage:tag)",
             key=f"{resource_type.lower()}_docker_image",
         )
-        #        repo_secret_name = st_object.text_input(
-        #            "Image Pull Secret Name (optional, leave empty for public images)",
-        #            key=f"{resource_type.lower()}_repo_secret",
-        #            help="Name of the Kubernetes secret containing credentials for private container registries",
-        #        )
+        repo_secret_name = st_object.text_input(
+            "Image Pull Secret Name (optional, leave empty for public images)",
+            key=f"{resource_type.lower()}_repo_secret",
+            help="Name of the Kubernetes secret containing credentials for private container registries",
+        )
         selected_protocol = default_protocol
         if protocol_options:
             current_protocol_index = (
@@ -2224,7 +2231,7 @@ def render_import_form(
                 description=f"{resource_type} '{resource_name_suggestion}' built from UI.",
                 pod_config=pod_config,
                 additional_env_vars=final_additional_envs,
-                # image_pull_secret=repo_secret_name if repo_secret_name else None,
+                image_pull_secret=repo_secret_name if repo_secret_name else None,
             )
 
     st_object.markdown("---")
