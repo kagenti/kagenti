@@ -278,7 +278,9 @@ def _construct_tool_resource_body(
     protocol: str,
     framework: str,
     additional_env_vars: Optional[list] = None,
+    registry_config: Optional[dict] = None,
     pod_config: Optional[dict] = None,
+    image_pull_secret: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Constructs the Kubernetes resource body for a new build.
@@ -337,7 +339,7 @@ def _construct_tool_resource_body(
                 "protocol": "TCP",
             }
         ]
-
+    pull_secrets = _get_image_pull_secrets(False, registry_config, image_pull_secret)
     body = {
         "apiVersion": f"{constants.TOOLHIVE_CRD_GROUP}/{constants.TOOLHIVE_CRD_VERSION}",
         "kind": "MCPServer",
@@ -404,6 +406,8 @@ def _construct_tool_resource_body(
             },
         },
     }
+    if pull_secrets:
+        body["spec"]["podTemplateSpec"]["spec"]["ImagePullSecrets"] = pull_secrets
     return body
 
 
@@ -583,6 +587,7 @@ def _construct_agentbuild_resource_body(
             },
         },
     }
+
     # Add imageRepoCredentials only if authentication is required
     if registry_config and registry_config.get("requires_auth"):
         body["spec"]["buildOutput"]["imageRepoCredentials"] = {
@@ -602,11 +607,11 @@ def _construct_agent_resource_body(
     protocol: str,
     framework: str,
     description: str,
-    # build_from_source: bool,
-    # registry_config: Optional[dict] = None,
+    build_from_source: bool,
+    registry_config: Optional[dict] = None,
     additional_env_vars: Optional[list] = None,
     pod_config: Optional[dict] = None,
-    # image_pull_secret: Optional[str] = None,
+    image_pull_secret: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Constructs the Kubernetes resource body for a new build.
@@ -664,9 +669,9 @@ def _construct_agent_resource_body(
         {"name": "GITHUB_SECRET_NAME", "value": constants.GIT_USER_SECRET_NAME}
     )
 
-    # pull_secrets = _get_image_pull_secrets(
-    #    build_from_source, registry_config, image_pull_secret
-    # )
+    pull_secrets = _get_image_pull_secrets(
+        build_from_source, registry_config, image_pull_secret
+    )
 
     # Extract service ports from pod_config or use defaults
     if pod_config and pod_config.get("service_ports"):
@@ -756,6 +761,8 @@ def _construct_agent_resource_body(
             },
         },
     }
+    if pull_secrets:
+        body["spec"]["podTemplateSpec"]["spec"]["ImagePullSecrets"] = pull_secrets
 
     return body
 
@@ -983,8 +990,8 @@ def trigger_and_monitor_build(
             protocol=protocol,
             framework=framework,
             description=description,
-            # build_from_source=True,
-            # registry_config=registry_config,
+            build_from_source=True,
+            registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
@@ -1003,8 +1010,8 @@ def trigger_and_monitor_build(
             protocol=protocol,
             framework=framework,
             description=description,
-            # build_from_source=False,
-            # registry_config=registry_config,
+            build_from_source=False,
+            registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
@@ -1020,6 +1027,7 @@ def trigger_and_monitor_build(
             repo_url=repo_url,
             protocol=protocol,
             framework=framework,
+            registry_config=registry_config,
             additional_env_vars=additional_env_vars,
             pod_config=pod_config,
         )
@@ -1238,7 +1246,7 @@ def trigger_and_monitor_deployment_from_image(
     description: str = "",
     additional_env_vars: Optional[List[Dict[str, Any]]] = None,
     pod_config: Optional[dict] = None,
-    # image_pull_secret: Optional[str] = None,
+    image_pull_secret: Optional[str] = None,
 ):
     """
     Triggers a build for a new resource and monitors its status.
@@ -1286,9 +1294,9 @@ def trigger_and_monitor_deployment_from_image(
             protocol=protocol,
             framework=framework,
             description=description,
-            # build_from_source=False,
+            build_from_source=False,
             pod_config=pod_config,
-            # image_pull_secret=image_pull_secret,
+            image_pull_secret=image_pull_secret,
             additional_env_vars=additional_env_vars,
         )
 
@@ -1303,6 +1311,7 @@ def trigger_and_monitor_deployment_from_image(
             protocol=protocol,
             framework=framework,
             pod_config=pod_config,
+            image_pull_secret=image_pull_secret,
             additional_env_vars=additional_env_vars,
         )
     if not cr_body:
