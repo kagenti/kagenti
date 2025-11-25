@@ -84,15 +84,15 @@ def install(**kwargs):
                     container["image"] = f"{image_name}:{updated_tag}"
     # Use delete=False to avoid Windows file locking issues
     # Windows keeps an exclusive lock on files with delete=True, preventing kubectl from reading
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp_file:
-        yaml.safe_dump_all(ui_yamls, tmp_file)
-        tmp_path = tmp_file.name
-
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp_file:
+            yaml.safe_dump_all(ui_yamls, tmp_file)
+            tmp_path = tmp_file.name
         run_command(["kubectl", "apply", "-f", str(tmp_path)], "Installing Kagenti UI")
     finally:
         # Clean up temp file manually
-        if os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
     run_command(
