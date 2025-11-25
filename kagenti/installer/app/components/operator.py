@@ -32,8 +32,8 @@ def install(**kwargs):
             "helm",
             "upgrade",
             "--install",
-            "kagenti-operator",
-            "oci://ghcr.io/kagenti/kagenti-operator/kagenti-operator-chart",
+            "kagenti-platform-operator",
+            "oci://ghcr.io/kagenti/kagenti-operator/kagenti-platform-operator-chart",
             "--create-namespace",
             "--namespace",
             config.OPERATOR_NAMESPACE,
@@ -42,5 +42,5 @@ def install(**kwargs):
             "--set",
             "controllerManager.container.image.tag=" + operator_version,
         ],
-        "Installing the Kagenti Operator",
+        "Installing the Platform Operator",
     )
