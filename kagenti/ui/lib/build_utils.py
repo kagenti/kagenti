@@ -407,7 +407,7 @@ def _construct_tool_resource_body(
         },
     }
     if pull_secrets:
-        body["spec"]["podTemplateSpec"]["spec"]["ImagePullSecrets"] = pull_secrets
+        body["spec"]["podTemplateSpec"]["spec"]["imagePullSecrets"] = pull_secrets
     return body
 
 
