@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant UI as Kagenti UI
+    participant Agent as Auth Bridge
+    participant KC as Keycloak
+    participant SPIRE as SPIRE Server
+    
+    UI->>Agent: Forward user request + access token
+    Agent->>SPIRE: Get JWT SVID
+    SPIRE->>Agent: Return JWT SVID
+    Agent->>KC: Token exchange request with JWT SVID + access token
+    KC->>SPIRE: Validate JWT SVID
+    SPIRE->>KC: Confirm attested identity
+    KC->>Agent: Return scoped token
+    Agent->>Agent: Process with scoped permissions

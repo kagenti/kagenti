@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant Agent as Agent
+    participant Tool as Tool
+    participant KC as Keycloak
+    participant VA as Vault
+    participant API as External API
+
+    Agent->>Tool: Call tool with delegated token
+    Tool->>KC: Validate token
+    KC->>Tool: Confirm token + scopes
+    Tool->>VA: Request External API key (send token)
+    VA->>KC: Request OIDC discovery
+    KC->>VA: Return public keys to validate token
+    VA->>VA: Verify the Vault policies and claims
+    VA->>Tool: Return External API key
+    Tool->>API: Request data with External API key
+    API->>Tool: Return data
+    Tool->>Agent: Return data for processing
