@@ -13,14 +13,17 @@ import jwt
 from keycloak import KeycloakAdmin, KeycloakPostError
 
 
-def get_env_var(name: str) -> str:
+def get_env_var(name: str, default: str | None = None) -> str | None:
     """
-    Fetch an environment variable or raise ValueError if missing.
+    Fetch an environment variable or return default if provided.
+    Raise ValueError if missing and no default is set.
     """
     value = os.environ.get(name)
-    if not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
+    if value is not None and value != "":
+        return value
+    if default is not None:
+        return default
+    raise ValueError(f"Missing required environment variable: {name}")
 
 
 def write_client_secret(
@@ -98,15 +101,26 @@ def get_client_id() -> str:
 
 client_id = get_client_id()
 
-# The Keycloak URL is handled differently from the other env vars because unlike the others, it's intended to be optional
 try:
     KEYCLOAK_URL = get_env_var("KEYCLOAK_URL")
-except:
-    print(
-        f'Expected environment variable "KEYCLOAK_URL" missing. Skipping client registration of {client_id}.'
+    KEYCLOAK_TOKEN_EXCHANGE_ENABLED = (
+        get_env_var("KEYCLOAK_TOKEN_EXCHANGE_ENABLED", "true").lower() == "true"
     )
-    exit()
+    KEYCLOAK_CLIENT_REGISTRATION_ENABLED = (
+        get_env_var("KEYCLOAK_CLIENT_REGISTRATION_ENABLED", "true").lower() == "true"
+    )
+except ValueError as e:
+    print(
+        f"Expected environment variable missing. Skipping client registration of {client_id}."
+    )
+    print(e)
+    exit(1)
 
+if not KEYCLOAK_CLIENT_REGISTRATION_ENABLED:
+    print(
+        f"Client registration (KEYCLOAK_CLIENT_REGISTRATION_ENABLED=false) disabled. Skipping registration of {client_id}."
+    )
+    exit(0)
 
 keycloak_admin = KeycloakAdmin(
     server_url=KEYCLOAK_URL,
@@ -134,7 +148,9 @@ internal_client_id = register_client(
         # Security considerations: Ensure only trusted clients have this capability, restrict scopes and permissions as needed,
         # and audit usage to prevent privilege escalation or unauthorized access.
         "attributes": {
-            "standard.token.exchange.enabled": "true",  # Enable token exchange
+            "standard.token.exchange.enabled": str(
+                KEYCLOAK_TOKEN_EXCHANGE_ENABLED
+            ).lower(),  # Enable token exchange
         },
     },
 )
