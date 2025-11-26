@@ -1864,7 +1864,7 @@ def render_import_form(
                 if example_subfolders:
                     selected_example = st_object.selectbox(
                         "Select an example:",
-                        options=[""] + example_subfolders,
+                        options=[""] + sorted(example_subfolders),
                         key=f"selected_{resource_type.lower()}_example_subfolder",
                         format_func=lambda x: x if x else "Select an example...",
                     )
