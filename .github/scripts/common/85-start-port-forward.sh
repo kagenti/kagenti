@@ -65,4 +65,29 @@ for i in {1..10}; do
     sleep 1
 done
 
+# ============================================================================
+# Port-forward Phoenix to localhost:6006
+# ============================================================================
+
+log_info "Port-forwarding Phoenix service -> localhost:6006"
+
+# Start Phoenix port-forward in background
+kubectl port-forward -n kagenti-system svc/phoenix 6006:6006 > /tmp/port-forward-phoenix.log 2>&1 &
+PHOENIX_PORT_FORWARD_PID=$!
+
+if [ "$IS_CI" = true ]; then
+    echo "PHOENIX_PORT_FORWARD_PID=$PHOENIX_PORT_FORWARD_PID" >> $GITHUB_ENV
+else
+    echo $PHOENIX_PORT_FORWARD_PID > /tmp/port-forward-phoenix.pid
+fi
+
+# Wait for Phoenix port-forward to be ready
+for i in {1..10}; do
+    if curl -s http://localhost:6006/graphql >/dev/null 2>&1 || curl -s http://localhost:6006/ >/dev/null 2>&1; then
+        log_success "Phoenix port-forward is ready (localhost:6006)"
+        break
+    fi
+    sleep 1
+done
+
 log_success "All port-forwards started"

@@ -11,8 +11,8 @@ spec:
   mode: dev
 
   source:
-    sourceRepository: "github.com/kagenti/agent-examples.git"
-    sourceRevision: "main"
+    sourceRepository: "github.com/Ladas/agent-examples.git"
+    sourceRevision: "phoenix-autoinstrumentation"
     sourceSubfolder: "a2a/weather_service"
     sourceCredentials:
       name: github-token-secret
@@ -25,5 +25,5 @@ spec:
 
   buildOutput:
     image: "weather-service"
-    imageTag: "v0.0.1"
+    imageTag: "v0.0.8-phoenix"
     imageRegistry: "registry.cr-system.svc.cluster.local:5000"

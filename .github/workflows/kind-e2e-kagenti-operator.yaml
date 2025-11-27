@@ -75,7 +75,7 @@ jobs:
       - name: Deploy weather-tool via Toolhive MCPServer
         run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
 
-      - name: Patch weather-tool StatefulSet for writable /tmp
+      - name: Patch weather-tool for writable /tmp
         run: bash .github/scripts/kagenti-operator/73-patch-weather-tool.sh
 
       # AGENT DEPLOYMENT (AFTER tool is ready - agent depends on tool)

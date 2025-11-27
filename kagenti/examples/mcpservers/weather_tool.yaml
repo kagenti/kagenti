@@ -18,6 +18,9 @@ spec:
   # HTTP transport for MCP (weather-tool exposes HTTP endpoint at /mcp)
   transport: sse
 
+  # Target port the MCP container listens on (matches PORT env var)
+  targetPort: 8000
+
   # Environment variables for the weather-tool
   env:
     - name: PORT
@@ -47,3 +50,6 @@ spec:
     requests:
       cpu: 100m
       memory: 256Mi
+
+  # Note: The MCPServer CRD only supports hostPath volumes, not emptyDir.
+  # Writable /tmp for uv cache is handled by patching in 72-deploy-weather-tool.sh
