@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-template-dev
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: kagenti-operator
+    app.kubernetes.io/component: pipeline-template
+    component.kagenti.ai/mode: dev
+data:
+  template.json: |
+    {
+      "name": "Development Pipeline",
+      "namespace": "team1",
+      "description": "Basic pipeline for development builds in team1 namespace",
+      "requiredParameters": [
+        "repo-url",
+        "revision",
+        "subfolder-path",
+        "image"
+      ],
+      "steps": [
+        {
+          "name": "github-clone",
+          "configMap": "github-clone-step",
+          "enabled": true,
+          "description": "Clone source code from GitHub repository",
+          "requiredParameters": ["repo-url"]
+        },
+        {
+          "name": "folder-verification",
+          "configMap": "check-subfolder-step",
+          "enabled": true,
+          "description": "Verify that the specified subfolder exists",
+          "requiredParameters": ["subfolder-path"]
+        },
+        {
+          "name": "dockerfile-check",
+          "configMap": "check-dockerfile-step",
+          "enabled": true,
+          "description": "Checks if Dockerfile exists in the specified subfolder",
+          "requiredParameters": ["subfolder-path"]
+        },
+        {
+          "name": "buildah-build",
+          "configMap": "buildah-build-step",
+          "enabled": true,
+          "description": "Build container image using buildah",
+          "requiredParameters": ["image"],
+          "whenExpressions": [
+            {
+              "input": "$(tasks.dockerfile-check.results.has-dockerfile)",
+              "operator": "in",
+              "values": ["true"]
+            }
+          ],
+          "defaultParameters": [
+            {
+              "name": "DOCKERFILE",
+              "value": "$(tasks.dockerfile-check.results.dockerfile-name)"
+            }
+          ]
+        },
+        {
+          "name": "buildpack-step",
+          "configMap": "buildpack-step",
+          "enabled": true,
+          "description": "Build container image using Buildpacks",
+          "requiredParameters": ["image"],
+          "whenExpressions": [
+            {
+              "input": "$(tasks.dockerfile-check.results.has-dockerfile)",
+              "operator": "in",
+              "values": ["false"]
+            }
+          ]
+        }
+      ],
+      "globalParameters": [
+        {
+          "name": "pipeline-timeout",
+          "value": "20m",
+          "description": "Overall pipeline timeout"
+        }
+      ]
+    }

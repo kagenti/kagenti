@@ -1,98 +1,34 @@
 """
-Root pytest configuration for Kagenti E2E tests.
+Root pytest configuration for Kagenti tests.
 
-Provides shared command-line options and fixtures used across all test suites.
+Registers custom markers and provides shared fixtures.
 """
 
 import base64
+from typing import Dict
+
 import pytest
-from typing import Set, Dict
+import requests
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-import requests
-
-
-def pytest_addoption(parser):
-    """Add custom command-line options shared across all test suites."""
-
-    # Shared option: exclude applications from testing
-    parser.addoption(
-        "--exclude-app",
-        action="store",
-        default="",
-        help="Comma-separated list of application/component names to exclude from tests",
-    )
-
-    # Test timeout option
-    parser.addoption(
-        "--app-timeout",
-        action="store",
-        type=int,
-        default=300,
-        help="Timeout in seconds for waiting for applications to become healthy (default: 300)",
-    )
-
-    # Critical tests only
-    parser.addoption(
-        "--only-critical",
-        action="store_true",
-        default=False,
-        help="Only run tests marked as critical",
-    )
 
 
 def pytest_configure(config):
-    """Configure pytest with custom markers."""
+    """Register custom markers to avoid 'Unknown mark' warnings."""
     config.addinivalue_line(
-        "markers", "critical: marks tests as critical (should always pass)"
+        "markers",
+        "requires_features(features): skip test if required features are not enabled "
+        "(auto-detected from KAGENTI_CONFIG_FILE)",
     )
-    config.addinivalue_line("markers", "slow: marks tests as slow (>10 seconds)")
-    config.addinivalue_line("markers", "integration: marks tests as integration tests")
     config.addinivalue_line(
-        "markers", "auth: marks tests related to authentication/authorization"
+        "markers",
+        "critical: marks tests as critical (should always pass)",
     )
-
-
-def pytest_collection_modifyitems(config, items):
-    """Modify test collection based on command-line options."""
-    if config.getoption("--only-critical"):
-        skip_non_critical = pytest.mark.skip(
-            reason="--only-critical specified, skipping non-critical tests"
-        )
-        for item in items:
-            if "critical" not in item.keywords:
-                item.add_marker(skip_non_critical)
 
 
 # ============================================================================
 # Shared Fixtures
 # ============================================================================
-
-
-@pytest.fixture(scope="session")
-def excluded_apps(request) -> Set[str]:
-    """
-    Get set of excluded application/component names.
-
-    Returns:
-        Set of application names to exclude from testing
-        (e.g., {'spire', 'istio', 'phoenix'})
-    """
-    exclude_str = request.config.getoption("--exclude-app")
-    if not exclude_str:
-        return set()
-    return {app.strip() for app in exclude_str.split(",")}
-
-
-@pytest.fixture(scope="session")
-def app_timeout(request) -> int:
-    """
-    Get timeout for waiting for applications.
-
-    Returns:
-        Timeout in seconds (default: 300)
-    """
-    return request.config.getoption("--app-timeout")
 
 
 @pytest.fixture(scope="session")
@@ -172,6 +108,9 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
     """
     Acquire access token from Keycloak using admin credentials.
 
+    This fixture uses the port-forwarded Keycloak endpoint (localhost:8081)
+    which is set up by the test infrastructure (85-start-port-forward.sh).
+
     Args:
         keycloak_admin_credentials: Dict with username/password
 
@@ -185,11 +124,8 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
     Raises:
         pytest.skip: If cannot acquire Keycloak token
     """
-    # Try localtest.me first (typical for Kind/local deployments)
-    token_urls = [
-        "http://keycloak.localtest.me:8080/realms/master/protocol/openid-connect/token",
-        "https://keycloak.localtest.me:9443/realms/master/protocol/openid-connect/token",
-    ]
+    # Use port-forwarded Keycloak (set up by 85-start-port-forward.sh)
+    token_url = "http://localhost:8081/realms/master/protocol/openid-connect/token"
 
     data = {
         "grant_type": "password",
@@ -198,23 +134,15 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
         "password": keycloak_admin_credentials["password"],
     }
 
-    last_error = None
-    for token_url in token_urls:
-        try:
-            response = requests.post(
-                token_url,
-                data=data,
-                verify=False,  # Self-signed cert for localtest.me
-                timeout=10,
-            )
+    try:
+        response = requests.post(token_url, data=data, timeout=10)
 
-            if response.status_code == 200:
-                return response.json()
+        if response.status_code == 200:
+            return response.json()
 
-            last_error = f"Status {response.status_code}: {response.text}"
+        pytest.skip(
+            f"Could not acquire Keycloak token. Status {response.status_code}: {response.text}"
+        )
 
-        except requests.exceptions.RequestException as e:
-            last_error = str(e)
-            continue
-
-    pytest.skip(f"Could not acquire Keycloak token: {last_error}")
+    except requests.exceptions.RequestException as e:
+        pytest.skip(f"Could not acquire Keycloak token: {e}")

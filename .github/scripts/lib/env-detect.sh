@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Environment Detection Library
+# Detects if running in CI or locally and sets environment variables
+
+# Don't use set -euo pipefail in sourced library to avoid affecting parent shell
+
+# Detect if running in CI
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    export IS_CI=true
+    export REPO_ROOT="${GITHUB_WORKSPACE}"
+    echo "Running in CI (GitHub Actions)"
+else
+    export IS_CI=false
+    # Get script directory - handle both direct execution and sourcing
+    if [ -n "${BASH_SOURCE[0]:-}" ]; then
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        export REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    else
+        # Fallback: use git to find repo root
+        export REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    fi
+    echo "Running locally"
+fi
+
+# Detect if running on macOS or Linux
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    export IS_MACOS=true
+    echo "Detected OS: macOS"
+else
+    export IS_MACOS=false
+    echo "Detected OS: Linux"
+fi
+
+# Export for child scripts
+export IS_CI
+export IS_MACOS
+export REPO_ROOT

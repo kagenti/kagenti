@@ -45,7 +45,17 @@ jobs:
       # instead of having the separate flake8 step.
       - name: Run pre-commit hooks
         run: |
-          pre-commit run --all-files
+          echo "Running pre-commit hooks..."
+          pre-commit run --all-files --verbose || {
+            echo "❌ Pre-commit hooks failed!"
+            echo ""
+            echo "Files modified by hooks:"
+            git diff --name-only
+            echo ""
+            echo "Detailed changes:"
+            git diff --stat
+            exit 1
+          }
 
       - name: Test with pytest
         run: |

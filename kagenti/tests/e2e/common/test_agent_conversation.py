@@ -28,12 +28,12 @@ from a2a.types import (
 
 
 # ============================================================================
-# Test: Weather Agent Conversation via A2A Protocol
+# Test: Weather Agent Conversation via A2A Protocol (Both Operators)
 # ============================================================================
 
 
 class TestWeatherAgentConversation:
-    """Test weather-service agent conversation with Ollama LLM via A2A protocol."""
+    """Test weather-service agent with MCP weather-tool (works with both operators)."""
 
     @pytest.mark.asyncio
     async def test_agent_simple_query(self):
@@ -183,8 +183,8 @@ class TestWeatherAgentConversation:
             f"Response: {full_response}"
         )
 
-        print(f"\n✓ Agent responded successfully via A2A protocol")
-        print(f"✓ Weather MCP tool was invoked")
+        print("\n✓ Agent responded successfully via A2A protocol")
+        print("✓ Weather MCP tool was invoked")
         print(f"  Query: {user_message}")
         print(f"  Response: {full_response[:200]}...")
 
