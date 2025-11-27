@@ -118,6 +118,37 @@
   when: (tekton.enabled | default(false)) and not (enable_openshift | default(false))
 
 #
+# Toolhive CRDS
+#
+- name: Install/upgrade Toolhive crds 
+  kubernetes.core.helm:
+    release_name: toolhive-operator-crds
+    chart_ref: oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds
+    chart_version: "{{ toolhiveCRDs.version }}"
+    release_namespace: "{{ toolhiveOperator.namespace }}"
+    create_namespace: true
+    state: present
+    wait: true
+    timeout: "{{ helm_wait_timeout }}s"
+  when: toolhiveCRDs.enabled | default(false)
+
+
+#
+# Toolhive Operator
+#
+- name: Install/upgrade Toolhive Operator
+  kubernetes.core.helm:
+    release_name: toolhive-operator
+    chart_ref: oci://ghcr.io/stacklok/toolhive/toolhive-operator
+    chart_version: "{{ toolhiveOperator.version }}"
+    release_namespace: "{{ toolhiveOperator.namespace }}"
+    create_namespace: true
+    state: present
+    wait: true
+    timeout: "{{ helm_wait_timeout }}s"
+  when: toolhiveOperator.enabled | default(false)
+
+#
 #  Spire
 #
 - name: Install SPIRE 

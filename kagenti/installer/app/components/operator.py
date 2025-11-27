@@ -25,7 +25,7 @@ def install(**kwargs):
         github_repo=config.OPERATOR_GIT_REPO,
         fallback_version=config.OPERATOR_FALLBACK_VERSION,
     ).lstrip("v")
-    print(f"Using Platform Operator version: {operator_version}")
+    print(f"Using Kagenti Operator version: {operator_version}")
 
     run_command(
         [
