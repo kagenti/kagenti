@@ -1,0 +1,22 @@
+# Snyk (https://snyk.io) policy file
+
+version: v1.25.0
+
+# Ignore specific vulnerabilities
+# Example:
+# ignore:
+#   'SNYK-PYTHON-PACKAGE-ID':
+#     - '*':
+#         reason: 'Not applicable to our use case'
+#         expires: '2025-12-31T00:00:00.000Z'
+
+# Exclude paths from scanning (for Snyk Code SAST)
+exclude:
+  code:
+    - tests/
+    - docs/
+    - examples/
+    - "*.md"
+
+# Patch settings
+patch: {}

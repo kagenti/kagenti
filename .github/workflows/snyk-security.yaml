@@ -1,0 +1,163 @@
+name: Snyk Security Scanning
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Run weekly on Monday at 2am UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:  # Allow manual triggers
+
+permissions:
+  contents: read
+  security-events: write  # Required for SARIF upload to GitHub Security tab
+  actions: read
+
+jobs:
+  snyk-python:
+    name: Python Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Snyk to check Python dependencies
+        uses: snyk/actions/python@master
+        continue-on-error: true  # Ensure SARIF upload runs even if vulnerabilities found
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          # Use 'monitor' on push to main for tracking, 'test' on PRs for blocking
+          command: ${{ github.event_name == 'push' && 'monitor' || 'test' }}
+          args: |
+            --severity-threshold=high
+            --fail-on=upgradable
+            --all-projects
+            --detection-depth=4
+            --exclude=tests,docs,examples
+            --sarif-file-output=snyk-python.sarif
+            ${{ github.event_name == 'push' && format('--org={0}', secrets.SNYK_ORG_ID) || '' }}
+
+      - name: Upload Python results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()  # Upload even if scan failed
+        with:
+          sarif_file: snyk-python.sarif
+          category: python-dependencies
+
+  snyk-docker:
+    name: Container Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build UI Docker image
+        run: |
+          docker build -t kagenti-ui:${{ github.sha }} \
+            -f kagenti/ui/Dockerfile \
+            kagenti/ui
+
+      - name: Run Snyk to check Docker image
+        uses: snyk/actions/docker@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: kagenti-ui:${{ github.sha }}
+          args: |
+            --file=kagenti/ui/Dockerfile
+            --severity-threshold=high
+            --fail-on=upgradable
+            --exclude-app-vulns
+
+      - name: Upload Docker results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk.sarif
+          category: container-image
+
+  snyk-iac:
+    name: Infrastructure as Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Snyk IaC scan on Kubernetes and Helm
+        uses: snyk/actions/iac@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: |
+            --severity-threshold=high
+            --report
+            ${{ github.event_name == 'push' && format('--org={0}', secrets.SNYK_ORG_ID) || '' }}
+
+      - name: Upload IaC results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk.sarif
+          category: infrastructure-as-code
+
+  snyk-code:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Snyk
+        uses: snyk/actions/setup@master
+
+      - name: Run Snyk Code test
+        run: |
+          snyk code test \
+            --severity-threshold=high \
+            --sarif-file-output=snyk-code.sarif || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload Code results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: snyk-code.sarif
+          category: sast
+
+  snyk-license-compliance:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    # Only run on scheduled scans and pushes to main, not PRs
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Snyk
+        uses: snyk/actions/setup@master
+
+      - name: Run Snyk license check
+        run: |
+          snyk test \
+            --all-projects \
+            --detection-depth=4 \
+            --exclude=tests,docs,examples \
+            --json-file-output=snyk-licenses.json || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload license report as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snyk-license-report
+          path: snyk-licenses.json
+          retention-days: 30
