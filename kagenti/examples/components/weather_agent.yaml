@@ -19,9 +19,9 @@ spec:
         - name: SOURCE_REPO_SECRET
           value: github-token-secret
         - name: repo-url
-          value: github.com/kagenti/agent-examples
+          value: github.com/Ladas/agent-examples
         - name: revision
-          value: main
+          value: phoenix-autoinstrumentation
         - name: subfolder-path
           value: a2a/weather_service
         - name: image
@@ -39,24 +39,51 @@ spec:
   deployer:
     deployAfterBuild: true
     env:
+    # Service Configuration
     - name: PORT
       value: "8000"
     - name: HOST
-      value: 0.0.0.0
+      value: "0.0.0.0"
+
+    # OpenTelemetry Configuration
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
-      value: http://otel-collector.kagenti-system.svc.cluster.local:8335
+      value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+    - name: OTEL_SERVICE_NAME
+      value: "weather-service"
+    - name: OTEL_EXPORTER_OTLP_PROTOCOL
+      value: "grpc"
+    - name: OTEL_EXPORTER_OTLP_INSECURE
+      value: "true"
+
+    # Phoenix Project Assignment
+    - name: PHOENIX_PROJECT_NAME
+      value: "team1-agents"
+
+    # Deployment Environment
+    - name: DEPLOYMENT_ENVIRONMENT
+      value: "kind-local"
+
+    # Resource Attributes
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: "deployment.environment=kind-local"
+
+    # Application Configuration
     - name: KEYCLOAK_URL
-      value: http://keycloak.keycloak.svc.cluster.local:8080
+      value: "http://keycloak.keycloak.svc.cluster.local:8080"
     - name: UV_CACHE_DIR
-      value: /app/.cache/uv
+      value: "/app/.cache/uv"
+
+    # LLM Configuration
     - name: LLM_API_BASE
-      value: http://dockerhost:11434/v1
+      value: "http://dockerhost:11434/v1"
     - name: LLM_API_KEY
-      value: dummy
+      value: "dummy"
     - name: LLM_MODEL
-      value: qwen2.5:0.5b
+      value: "qwen2.5:0.5b"
+
+    # Secrets
     - name: GITHUB_SECRET_NAME
-      value: github-token-secret
+      value: "github-token-secret"
     kubernetes:
       containerPorts:
       - containerPort: 8000
