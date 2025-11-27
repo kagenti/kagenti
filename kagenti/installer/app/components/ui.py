@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import tempfile
 import typer
 import yaml
@@ -81,10 +82,18 @@ def install(**kwargs):
                         f"  Using image tag {updated_tag} for Kagenti UI deployment"
                     )
                     container["image"] = f"{image_name}:{updated_tag}"
-    with tempfile.NamedTemporaryFile("w", delete=True, suffix=".yaml") as tmp_file:
-        yaml.safe_dump_all(ui_yamls, tmp_file)
-        tmp_path = tmp_file.name
+    # Use delete=False to avoid Windows file locking issues
+    # Windows keeps an exclusive lock on files with delete=True, preventing kubectl from reading
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp_file:
+            yaml.safe_dump_all(ui_yamls, tmp_file)
+            tmp_path = tmp_file.name
         run_command(["kubectl", "apply", "-f", str(tmp_path)], "Installing Kagenti UI")
+    finally:
+        # Clean up temp file manually
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     run_command(
         [
