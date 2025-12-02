@@ -103,8 +103,9 @@ data:
             ## Filter for openinference packages
             #### Python format `openinference.instrumentation.${package_name}`
             #### - crewAI exception `crewai.telemetry`
+            #### - A2A SDK exception `a2a-python-sdk` (tracer name, not logger name)
             #### Javascript format `@arizeai/openinference-instrumentation-${packageName}`
-            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry")
+            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry" or instrumentation_scope.name == "a2a-python-sdk")
 
     extensions:
       health_check:

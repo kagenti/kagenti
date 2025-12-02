@@ -25,5 +25,5 @@ spec:
 
   buildOutput:
     image: "weather-service"
-    imageTag: "v0.0.6-phoenix"
+    imageTag: "v0.0.8-phoenix"
     imageRegistry: "registry.cr-system.svc.cluster.local:5000"

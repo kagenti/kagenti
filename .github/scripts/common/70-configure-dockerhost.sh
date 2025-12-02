@@ -6,22 +6,33 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "70" "Configuring dockerhost service"
 
+# Delete existing EndpointSlice first to ensure clean recreation
+kubectl delete endpointslice dockerhost -n team1 2>/dev/null || true
+
 # Get Docker host IP
 # On macOS, we need to use host.docker.internal which is the host machine as seen from containers
 # The Docker network gateway (172.18.0.1) doesn't work on macOS because Docker runs in a VM
 if [[ "${IS_MACOS:-false}" == "true" ]]; then
-    # Resolve host.docker.internal to get the actual IP from inside a Kind pod
-    DOCKER_HOST_IP=$(kubectl run docker-host-lookup --image=busybox:1.28 --rm -it --restart=Never --quiet -- nslookup host.docker.internal 2>/dev/null | grep "Address" | tail -1 | awk '{print $NF}' || echo "")
+    # Get IP directly from the Kind container - most reliable method
+    DOCKER_HOST_IP=$(docker exec kagenti-control-plane getent hosts host.docker.internal 2>/dev/null | awk '{print $1}' || echo "")
 
-    # Fallback: try from the Kind container if kubectl pod fails
+    # Fallback: try with a temporary pod
     if [ -z "$DOCKER_HOST_IP" ] || [ "$DOCKER_HOST_IP" = "" ]; then
-        DOCKER_HOST_IP=$(docker exec kagenti-control-plane getent hosts host.docker.internal 2>/dev/null | awk '{print $1}' || echo "")
+        DOCKER_HOST_IP=$(kubectl run docker-host-lookup --image=busybox:1.28 --rm -it --restart=Never --quiet -- nslookup host.docker.internal 2>/dev/null | grep "Address" | tail -1 | awk '{print $NF}' || echo "")
     fi
 
     if [ -z "$DOCKER_HOST_IP" ] || [ "$DOCKER_HOST_IP" = "" ]; then
         log_error "Could not resolve host.docker.internal"
         exit 1
     fi
+
+    # Validate it's actually an IP address (not a DNS name)
+    if ! echo "$DOCKER_HOST_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+        log_error "Invalid IP address resolved: ${DOCKER_HOST_IP}"
+        log_error "Expected IPv4 address, got hostname or invalid format"
+        exit 1
+    fi
+
     log_info "macOS: Using host.docker.internal IP: ${DOCKER_HOST_IP}"
 else
     # On Linux, use the Docker network gateway
