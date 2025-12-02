@@ -292,13 +292,14 @@ class TestPhoenixAgentInstrumentation:
 
         # Step 3: Query Phoenix for recent spans in the default project
         # Phoenix 8.x uses projects -> spans structure, not root spans query
+        # Increase limit to 200 to ensure we capture LLM spans even with many A2A SDK spans
         query = """
         query GetRecentSpans {
           projects {
             edges {
               node {
                 name
-                spans(first: 50) {
+                spans(first: 200) {
                   edges {
                     node {
                       name
@@ -366,6 +367,7 @@ class TestPhoenixAgentInstrumentation:
 
         # Verify expected spans exist
         # We expect at least one LLM span (for ChatOpenAI/LangGraph)
+        # Note: A2A SDK creates many spans with spanKind=UNKNOWN (expected behavior)
         llm_spans = [kind for kind in span_kinds if kind == "LLM"]
         # In Phoenix 8.x, ChatOpenAI spans have spanKind=LLM
         # If not found, check for ChatOpenAI span by name
@@ -374,11 +376,33 @@ class TestPhoenixAgentInstrumentation:
                 name for name in span_names if "ChatOpenAI" in name or "OpenAI" in name
             ]
 
+        # Count span kinds for debugging
+        kind_counts = {}
+        for kind in span_kinds:
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+
+        # Count A2A SDK spans (they start with "a2a.")
+        a2a_spans = [name for name in span_names if name.startswith("a2a.")]
+        langchain_spans = [
+            name
+            for name in span_names
+            if "ChatOpenAI" in name
+            or "LangGraph" in name
+            or "weather_agent" in name
+            or "ToolNode" in name
+        ]
+
+        logger.info(f"📊 Span kind distribution: {kind_counts}")
+        logger.info(f"📊 A2A SDK spans: {len(a2a_spans)}")
+        logger.info(f"📊 LangChain/Agent spans: {len(langchain_spans)}")
+
         assert len(llm_spans) > 0, (
             f"❌ No LLM spans found. Expected at least 1 LLM span.\n"
-            f"Found span kinds: {span_kinds}\n"
-            f"Found span names: {span_names}\n"
-            f"This indicates OpenInference LangChain instrumentation may not be working."
+            f"Span kind distribution: {kind_counts}\n"
+            f"A2A SDK spans: {len(a2a_spans)} (expected - internal event tracing)\n"
+            f"LangChain spans: {langchain_spans}\n"
+            f"This indicates OpenInference LangChain instrumentation may not be working.\n"
+            f"All span names: {span_names[:20]}..."  # First 20 for readability
         )
 
         logger.info(f"✅ Found {len(llm_spans)} LLM spans")
