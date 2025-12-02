@@ -31,13 +31,19 @@ spec:
         - name: HOST
           value: "0.0.0.0"
 
+        # MCP Tool Configuration
+        - name: MCP_URL
+          value: "http://mcp-weather-tool-proxy:8080/sse"
+        - name: MCP_TRANSPORT
+          value: "sse"
+
         # OpenTelemetry Configuration
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
         - name: OTEL_SERVICE_NAME
           value: "weather-service"
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
-          value: "grpc"
+          value: "http/protobuf"
         - name: OTEL_EXPORTER_OTLP_INSECURE
           value: "true"
 
