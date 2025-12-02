@@ -147,9 +147,9 @@ Once the deployment is complete, you can run the demo:
    ```console
    Show me flights for one adult from Taipei to San Francisco on November 22nd, 2025. 
    ```
+   Please note, that you will need to use a date that is in the future. 
 
-   or: 
-
+   To use the movie tool, use a prompt like this:
    ```console
    Tell me the plot of Wicked: For Good
    ```
