@@ -13,6 +13,7 @@ Check the details for running various demos.
 - Simplest Demo - [Weather Service](./demo-weather-agent.md)
 - Identity & Auth Demo - [Slack Authentication](./demo-slack-research-agent.md)
 - Github Issue Demo - [Github Issue Agent](./demo-github-issue.md) ([demo recording](https://youtu.be/5SpTwERN2jU))
+- Generic Agent (Multi-MCP Server) Demo - [Generic Agent](./demo-generic-agent.md)
 
 ## Installation
 
