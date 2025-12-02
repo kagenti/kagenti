@@ -100,12 +100,15 @@ data:
       filter/phoenix:
         traces:
           span:
-            ## Filter for openinference packages
+            ## Filter for openinference packages only
+            ## Phoenix is for LLM/AI observability - only spans with OpenInference semantics should be routed here
             #### Python format `openinference.instrumentation.${package_name}`
             #### - crewAI exception `crewai.telemetry`
-            #### - A2A SDK exception `a2a-python-sdk` (tracer name, not logger name)
             #### Javascript format `@arizeai/openinference-instrumentation-${packageName}`
-            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry" or instrumentation_scope.name == "a2a-python-sdk")
+            ## NOTE: A2A SDK spans (`a2a-python-sdk`) are intentionally NOT included
+            ## They are protocol-layer debugging spans without OpenInference semantics,
+            ## creating noise in Phoenix without providing LLM observability value.
+            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry")
 
     extensions:
       health_check:
