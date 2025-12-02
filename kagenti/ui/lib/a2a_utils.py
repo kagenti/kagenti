@@ -237,6 +237,62 @@ async def render_a2a_agent_card(st_object, base_url: str):
 
 
 # pylint: disable=too-many-branches, too-many-statements, too-many-locals
+def _handle_task_artifact_update(event: TaskArtifactUpdateEvent) -> Tuple[str, str]:
+    """Handles TaskArtifactUpdateEvent, returning the content chunk and log message."""
+    artifact_id = getattr(getattr(event, "artifact", None), "artifactId", "?")
+    log_message = (
+        f"🔄 Task Artifact Update (ID: {event.taskId}, Artifact: {artifact_id})"
+    )
+    content_chunk = ""
+
+    # Artifact parts may be wrapped; handle both wrapped and unwrapped
+    for part in getattr(event.artifact, "parts", []) or []:
+        p = getattr(part, "root", part)
+        if hasattr(p, "text"):
+            content_chunk += p.text
+            log_message += f" | Text: '{p.text[:50]}...'"
+            continue
+
+        try:
+            data = p.data
+        except Exception:
+            data = None
+
+        if data is None:
+            continue
+
+        kind = getattr(p, "kind", "unknown")
+
+        content_type = data.get("content_type", "")
+        content_encoding = data.get("content_encoding", "")
+        content = data.get("content", "")
+
+        is_image = (
+            kind == "data"
+            and content_type.startswith("image/")
+            and content_encoding == "base64"
+            and content
+        )
+
+        if is_image:
+            name = getattr(event.artifact, "name", "Image")
+            # Construct HTML <img> tag for inline display
+            img_html = (
+                f'<img src="data:{content_type};base64,{content}" '
+                f'alt="{name}" style="max-width: 100%;" />'
+            )
+            content_chunk += f"\n\n{img_html}\n\n"
+            log_message += " | [Image Artifact Processed]"
+        else:
+            # Append raw data string if not recognized image
+            data_str = str(data)
+            content_chunk += data_str
+            log_message += f" | Data: (type: {kind}, {len(data_str)} bytes)"
+
+    return content_chunk, log_message
+
+
+# pylint: disable=too-many-branches, too-many-statements, too-many-locals
 def _process_a2a_stream_chunk(
     chunk_data, session_key_prefix: str, log_container, message_placeholder
 ) -> Tuple[str, bool]:
@@ -376,26 +432,10 @@ def _process_a2a_stream_chunk(
             is_final_event = event.final
 
         elif isinstance(event, TaskArtifactUpdateEvent):
-            artifact_id = getattr(getattr(event, "artifact", None), "artifactId", "?")
-            log_message = (
-                f"🔄 Task Artifact Update (ID: {event.taskId}, Artifact: {artifact_id})"
-            )
-            # Artifact parts may be wrapped; handle both wrapped and unwrapped
-            for part in getattr(event.artifact, "parts", []) or []:
-                p = getattr(part, "root", part)
-                if hasattr(p, "text"):
-                    full_response_content_chunk += p.text
-                    log_message += f" | Text: '{p.text[:50]}...'"
-                else:
-                    try:
-                        data = p.data
-                    except Exception:
-                        data = None
-                    if data is not None:
-                        data_str = str(data)
-                        full_response_content_chunk += data_str
-                        kind = getattr(p, "kind", "unknown")
-                        log_message += f" | Data: (type: {kind}, {len(data_str)} bytes)"
+            chunk_text, log_msg = _handle_task_artifact_update(event)
+            full_response_content_chunk += chunk_text
+            log_message = log_msg
+
         else:
             log_message = f"❓ Unknown A2A Event Type: {type(event)}"
             # Avoid a very long single-line message; pass the dump as a parameter
@@ -558,13 +598,19 @@ async def run_agent_chat_stream_a2a(
                     )
                 if chunk_text:
                     full_response_content += chunk_text
-                    message_placeholder.markdown(full_response_content + "▌")
+                    message_placeholder.markdown(
+                        full_response_content + "▌", unsafe_allow_html=True
+                    )
 
                 if is_final:
-                    message_placeholder.markdown(full_response_content)
+                    message_placeholder.markdown(
+                        full_response_content, unsafe_allow_html=True
+                    )
                     break
             else:  # Loop completed without break (e.g., no explicit final event received)
-                message_placeholder.markdown(full_response_content)
+                message_placeholder.markdown(
+                    full_response_content, unsafe_allow_html=True
+                )
 
         except httpx.HTTPStatusError as e:
             error_msg = f"A2A HTTP Status Error during chat: {e.response.status_code} - {e.response.text}"
