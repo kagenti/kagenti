@@ -195,6 +195,7 @@ def wait_for_traces(seconds: int = 5):
 # ============================================================================
 
 
+@pytest.mark.requires_features(["phoenix", "kagenti-operator"])
 class TestPhoenixAgentInstrumentation:
     """Test agent instrumentation and trace collection in Phoenix."""
 
@@ -651,6 +652,7 @@ class TestPhoenixAgentInstrumentation:
 # ============================================================================
 
 
+@pytest.mark.requires_features(["phoenix"])
 class TestPhoenixBackend:
     """Test Phoenix backend deployment and configuration."""
 
@@ -710,6 +712,7 @@ class TestPhoenixBackend:
 # ============================================================================
 
 
+@pytest.mark.requires_features(["phoenix"])
 class TestOTELCollectorRouting:
     """Test OTEL Collector routing configuration."""
 
