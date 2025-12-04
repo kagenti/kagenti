@@ -253,41 +253,39 @@ def _handle_task_artifact_update(event: TaskArtifactUpdateEvent) -> Tuple[str, s
             log_message += f" | Text: '{p.text[:50]}...'"
             continue
 
-        try:
-            data = p.data
-        except Exception:
-            data = None
-
+        data = getattr(p, "data", None)
         if data is None:
             continue
 
-        kind = getattr(p, "kind", "unknown")
+        try:
+            kind = getattr(p, "kind", "unknown")
+            content_type = data.get("content_type", "")
+            content_encoding = data.get("content_encoding", "")
+            content = data.get("content", "")
 
-        content_type = data.get("content_type", "")
-        content_encoding = data.get("content_encoding", "")
-        content = data.get("content", "")
-
-        is_image = (
-            kind == "data"
-            and content_type.startswith("image/")
-            and content_encoding == "base64"
-            and content
-        )
-
-        if is_image:
-            name = getattr(event.artifact, "name", "Image")
-            # Construct HTML <img> tag for inline display
-            img_html = (
-                f'<img src="data:{content_type};base64,{content}" '
-                f'alt="{name}" style="max-width: 100%;" />'
+            is_image = (
+                kind == "data"
+                and content_type.startswith("image/")
+                and content_encoding == "base64"
+                and content
             )
-            content_chunk += f"\n\n{img_html}\n\n"
-            log_message += " | [Image Artifact Processed]"
-        else:
-            # Append raw data string if not recognized image
-            data_str = str(data)
-            content_chunk += data_str
-            log_message += f" | Data: (type: {kind}, {len(data_str)} bytes)"
+
+            if is_image:
+                name = getattr(event.artifact, "name", "Image")
+                # Construct HTML <img> tag for inline display
+                img_html = (
+                    f'<img src="data:{content_type};base64,{content}" '
+                    f'alt="{name}" style="max-width: 100%;" />'
+                )
+                content_chunk += f"\n\n{img_html}\n\n"
+                log_message += " | [Image Artifact Processed]"
+            else:
+                # Append raw data string if not recognized image
+                data_str = str(data)
+                content_chunk += data_str
+                log_message += f" | Data: (type: {kind}, {len(data_str)} bytes)"
+        except Exception as e:
+            logger.warning("Unexpected error processing artifact data: %s", e)
 
     return content_chunk, log_message
 
