@@ -29,9 +29,9 @@ Environment Variables:
 
 import os
 import time
-import uuid
 import logging
 from typing import Dict, Any, Optional
+from uuid import uuid4
 
 import pytest
 import httpx
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Test Markers
 # ============================================================================
 
-pytestmark = pytest.mark.requires_features(["phoenix"])
+pytestmark = pytest.mark.requires_features(["otel"])
 
 
 # ============================================================================
@@ -86,29 +86,37 @@ async def send_chat_message(
 
     Returns dict with request_id, user_id, and responses.
     """
-    request_id = request_id or f"req-{uuid.uuid4()}"
-    conversation_id = f"conv-{uuid.uuid4()}"
+    request_id = request_id or f"req-{uuid4()}"
+    conversation_id = f"conv-{uuid4()}"
 
-    client = A2AClient(base_url=agent_url)
+    async with httpx.AsyncClient(timeout=float(timeout)) as httpx_client:
+        client = A2AClient(httpx_client=httpx_client, url=agent_url)
 
-    request_params = SendStreamingMessageRequest(
-        params=MessageSendParams(
-            message=message,
-            context_id=conversation_id,
+        # Create message payload matching A2A protocol format
+        send_message_payload = {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": message}],
+                "messageId": uuid4().hex,
+            },
+        }
+
+        request_params = SendStreamingMessageRequest(
+            id=str(uuid4()),
+            params=MessageSendParams(**send_message_payload),
         )
-    )
 
-    responses = []
-    async for response in client.send_streaming_message(request_params):
-        responses.append(response)
+        responses = []
+        async for response in client.send_message_streaming(request_params):
+            responses.append(response)
 
-    return {
-        "request_id": request_id,
-        "conversation_id": conversation_id,
-        "user_id": user_id,
-        "message": message,
-        "responses": responses,
-    }
+        return {
+            "request_id": request_id,
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+            "message": message,
+            "responses": responses,
+        }
 
 
 async def query_phoenix_for_traces(
@@ -148,7 +156,10 @@ async def query_phoenix_for_traces(
             response.raise_for_status()
             data = response.json()
 
-            spans = data.get("data", {}).get("spans", {}).get("edges", [])
+            # Handle null responses safely
+            response_data = data.get("data") or {}
+            spans_data = response_data.get("spans") or {}
+            spans = spans_data.get("edges", [])
             if len(spans) > 0:
                 return data
 
@@ -199,6 +210,9 @@ def print_trace_summary(spans: list, request_id: str, user_id: str):
 # ============================================================================
 
 
+@pytest.mark.skip(
+    reason="Interactive tests - require manual verification, not suited for CI"
+)
 class TestPhoenixInteractive:
     """Interactive tests for Phoenix observability."""
 
@@ -235,7 +249,7 @@ class TestPhoenixInteractive:
 
         # Step 1: Send chat message
         user_id = "interactive-test-user"
-        request_id = f"interactive-{uuid.uuid4()}"
+        request_id = f"interactive-{uuid4()}"
 
         print(f"\n📤 Sending chat message to agent...")
         print(f"   Request ID: {request_id}")
@@ -337,7 +351,7 @@ class TestPhoenixInteractive:
         trace_ids = []
 
         for i, message in enumerate(conversations, 1):
-            request_id = f"multi-conv-{i}-{uuid.uuid4()}"
+            request_id = f"multi-conv-{i}-{uuid4()}"
             request_ids.append(request_id)
 
             print(f"\n📤 Conversation {i}/3: '{message}'")
