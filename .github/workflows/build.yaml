@@ -34,8 +34,6 @@ jobs:
             path: ./kagenti
           - name: ui-oauth-secret
             path: ./kagenti/auth
-          - name: client-registration
-            path: ./kagenti/auth
           - name: agent-oauth-secret
             path: ./kagenti/auth
 
