@@ -100,7 +100,10 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 5. **Kagenti Helm Chart Installation:**
    This chart includes Kagenti software components and configurations.
 
-   **Important**: We have to disable the use of the OpenShift CA as its trusted Cert:
+   ```shell
+   helm upgrade --install --create-namespace -n kagenti-system -f .secrets.yaml kagenti oci://ghcr.io/kagenti/kagenti/kagenti --version $LATEST_TAG --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa
+   ```
+   **Important**: When using OpenShift CA, we have to disable it as trusted cert:
 
    ```shell
    helm upgrade --install --create-namespace -n kagenti-system -f .secrets.yaml kagenti oci://ghcr.io/kagenti/kagenti/kagenti --version $LATEST_TAG --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa --set uiOAuthSecret.useServiceAccountCA=false --set agentOAuthSecret.useServiceAccountCA=false
@@ -169,6 +172,11 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
    ```shell
    helm upgrade --install kagenti ./charts/kagenti/ -n kagenti-system --create-namespace -f ./charts/kagenti/.secrets.yaml --set ui.tag=${LATEST_TAG} --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa
    ```
+   **Important**: When using OpenShift CA, we have to disable it as trusted cert:
+
+   ```shell
+   helm upgrade --install kagenti ./charts/kagenti/ -n kagenti-system --create-namespace -f ./charts/kagenti/.secrets.yaml --set ui.tag=${LATEST_TAG} --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa --set uiOAuthSecret.useServiceAccountCA=false --set agentOAuthSecret.useServiceAccountCA=false
+   ```
 
 ## Using the new ansible-based installer
 
@@ -218,7 +226,7 @@ echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.st
 1. Navigate to the UI URL
 2. Click "Click to login" button
 3. You will be redirected to Keycloak authentication page
-4. Authenticate with your Keycloak credentials
+4. Authenticate with your [Keycloak credentials](#authentication-configuration)
 5. You will be redirected back to the Kagenti UI
 6. You should see a welcome message confirming successful login
 
