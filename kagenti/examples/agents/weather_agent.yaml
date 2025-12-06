@@ -25,22 +25,65 @@ spec:
       containers:
       - name: agent
         env:
+        # Service Configuration
         - name: PORT
           value: "8000"
         - name: HOST
           value: "0.0.0.0"
+
+        # MCP Tool Configuration
+        - name: MCP_URL
+          value: "http://mcp-weather-tool-proxy:8080/sse"
+        - name: MCP_TRANSPORT
+          value: "sse"
+
+        # OpenTelemetry Configuration
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_SERVICE_NAME
+          value: "weather-service"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_EXPORTER_OTLP_INSECURE
+          value: "true"
+
+        # Phoenix Project Assignment
+        - name: PHOENIX_PROJECT_NAME
+          value: "team1-agents"
+
+        # Kubernetes Metadata (via Downward API)
+        - name: K8S_NAMESPACE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: K8S_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+
+        # Deployment Environment
+        - name: DEPLOYMENT_ENVIRONMENT
+          value: "kind-local"
+
+        # Resource Attributes (for additional context)
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "deployment.environment=kind-local"
+
+        # Application Configuration
         - name: KEYCLOAK_URL
           value: "http://keycloak.keycloak.svc.cluster.local:8080"
         - name: UV_CACHE_DIR
           value: "/app/.cache/uv"
+
+        # LLM Configuration
         - name: LLM_API_BASE
           value: "http://dockerhost:11434/v1"
         - name: LLM_API_KEY
           value: "dummy"
         - name: LLM_MODEL
           value: "qwen2.5:0.5b"
+
+        # Secrets
         - name: GITHUB_SECRET_NAME
           value: "github-token-secret"
         ports:
