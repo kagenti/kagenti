@@ -23,7 +23,7 @@ spec:
         namespaces:
           from: All
     - name: mcps 
-      hostname: '*.mcp.test.com' #public accessibly MCP host (doesn't need dns as it is for rewritten hosts)
+      hostname: '*.mcp.local' #public accessibly MCP host (doesn't need dns as it is for rewritten hosts)
       port: 8080
       protocol: HTTP
       allowedRoutes:
