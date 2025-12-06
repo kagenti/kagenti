@@ -127,7 +127,12 @@ def run_command(command: list[str], description: str):
     with console.status(f"[cyan]{description}..."):
         try:
             process = subprocess.run(
-                full_command, check=True, capture_output=True, text=True
+                full_command,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace'  # Replace undecodable bytes to avoid UnicodeDecodeError on Windows
             )
             console.log(
                 f"[bold green]✓[/bold green] {description} [bold green]done[/bold green]."
