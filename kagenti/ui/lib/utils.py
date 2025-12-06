@@ -133,7 +133,7 @@ def display_chat_history(session_key_prefix: str):
     if chat_history_key in st.session_state:
         for message in st.session_state[chat_history_key]:
             with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+                st.markdown(message["content"], unsafe_allow_html=True)
 
 
 def append_to_chat_history(session_key_prefix: str, role: str, content: str):
