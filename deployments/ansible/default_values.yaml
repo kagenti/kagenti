@@ -76,13 +76,25 @@ charts:
           enabled: false
         ingressGateway:
           enabled: false
-        toolhive:
-          enabled: false
       # components settings    
       containerRegistry:
         namespace: cr-system
         name: registry  
 
+  #################################################################### 
+  # toolhive CRDs chart
+  ####################################################################        
+  toolhiveCRDs:
+    namespace: "kagenti-system"
+    enabled: true
+    version: 0.0.60
+  #################################################################### 
+  # toolhive operator chart
+  ####################################################################        
+  toolhiveOperator:
+    namespace: "kagenti-system"
+    enabled: true
+    version: 0.5.3
   #################################################################### 
   # mcp-gateway chart
   ####################################################################        
@@ -166,6 +178,7 @@ charts:
             - kagenti-system
             - tekton-*
             - istio-*
+            - toolhive-*
           identities:
             clusterSPIFFEIDs:
               default:

@@ -6,10 +6,11 @@ version: 0.1.2
 appVersion: "0.1.2"
 
 dependencies:
-- name: kagenti-platform-operator-chart
+- name: kagenti-operator-chart
   version: 0.2.0-alpha.17
   repository: oci://ghcr.io/kagenti/kagenti-operator
-  condition: components.platformOperator.enabled
-
-
-
+  condition: components.agentOperator.enabled
+- name: kagenti-webhook-chart
+  version: 0.1.0-alpha.6
+  repository: oci://ghcr.io/kagenti/kagenti-extensions
+  condition: components.platformWebhook.enabled

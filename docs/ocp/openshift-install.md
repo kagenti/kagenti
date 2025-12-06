@@ -465,5 +465,9 @@ kubectl delete deploy cert-manager cert-manager-cainjector cert-manager-webhook 
 kubectl delete service cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
 
 kubectl get all -n cert-manager
+<<<<<<< HEAD
 kubectl delete ns cert-manager-operator cert-manager
 ```
+=======
+kubectl delete ns cert-manager-operator cert-manager
+>>>>>>> 8401988 (Add new operator and installer changes)

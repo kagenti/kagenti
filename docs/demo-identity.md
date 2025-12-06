@@ -215,10 +215,100 @@ kubectl get secret keycloak-initial-admin -n keycloak -o go-template=\
 ```console
 spiffe://${DOMAIN_NAME}/ns/team/sa/weather-service
 spiffe://${DOMAIN_NAME}/ns/team/sa/weather-tool
+
 ```
 
 ---
 
+<<<<<<< HEAD
+=======
+## 🎫 Keycloak Identity Management
+
+### Keycloak Architecture in Kagenti
+
+Keycloak serves as the central identity provider that:
+
+- Manages user identities and authentication
+- Issues OAuth2/OIDC tokens
+- Enforces role-based access control (RBAC)
+- Facilitates token exchange between services
+- Validates SPIFFE identities for workload authentication
+
+### Realm Configuration
+
+**Master Realm** is configured with:
+
+- **Users**: Demo users with different access levels
+- **Clients**: Each agent/tool is a Keycloak client
+- **Roles**: Granular permissions (e.g., `slack-full-access`, `github-partial-access`)
+- **Scopes**: Define token audiences and permissions
+
+### Client Types
+
+| Client Type | Authentication | Purpose | Example |
+|-------------|----------------|---------|----------|
+| **Public Client** | No secret | Frontend applications | `kagenti-ui` |
+| **Confidential Client** | Client secret | Backend services | Traditional services |
+| **SPIFFE Client** | JWT SVID | Workload identity | `spiffe://localtest.me/ns/team/sa/slack-researcher` |
+
+### Demo Users and Access Levels
+
+```yaml
+# Full Access Users
+slack-full-access-user:
+  password: "password"
+  roles: ["slack-full-access", "slack-partial-access"]
+  permissions:
+    - channels:read
+    - channels:history
+    - messages:write
+
+# Partial Access Users
+slack-partial-access-user:
+  password: "password"
+  roles: ["slack-partial-access"]
+  permissions:
+    - channels:read
+
+# GitHub Users
+github-full-access-user:
+  password: "password"
+  roles: ["github-full-access", "github-partial-access"]
+  permissions:
+    - repos:read
+    - issues:write
+    - issues:read
+
+github-partial-access-user:
+  password: "password"
+  roles: ["github-partial-access"]
+  permissions:
+    - issues:read
+
+# Admin Users
+admin:
+  password: "admin"
+  roles: ["admin", "*"]
+  permissions: ["*"]
+```
+
+### Keycloak Admin Access
+
+```bash
+# Access Keycloak Admin Console 
+# on kind:
+open http://keycloak.localtest.me:8080/admin/master/console/
+# on OpenShift:
+open "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
+
+# Get admin credentials from Kubernetes (if different)
+kubectl get secret keycloak-initial-admin -n keycloak -o go-template=\
+  'Username: {{.data.username | base64decode}}  Password: {{.data.password | base64decode}}{{"\n"}}'
+```
+
+---
+
+>>>>>>> 8401988 (Add new operator and installer changes)
 ## 🔄 OAuth2 Token Exchange Flows
 
 ### Token Exchange Protocol (RFC 8693)

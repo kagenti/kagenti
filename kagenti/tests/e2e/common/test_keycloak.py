@@ -44,9 +44,9 @@ class TestKeycloakDeployment:
             desired_replicas = deployment.spec.replicas or 1
             ready_replicas = deployment.status.ready_replicas or 0
 
-            assert (
-                ready_replicas >= desired_replicas
-            ), f"Keycloak deployment not ready: {ready_replicas}/{desired_replicas} replicas"
+            assert ready_replicas >= desired_replicas, (
+                f"Keycloak deployment not ready: {ready_replicas}/{desired_replicas} replicas"
+            )
             return  # Success
         except ApiException as e:
             deployment_error = str(e)
@@ -60,9 +60,9 @@ class TestKeycloakDeployment:
             desired_replicas = statefulset.spec.replicas or 1
             ready_replicas = statefulset.status.ready_replicas or 0
 
-            assert (
-                ready_replicas >= desired_replicas
-            ), f"Keycloak statefulset not ready: {ready_replicas}/{desired_replicas} replicas"
+            assert ready_replicas >= desired_replicas, (
+                f"Keycloak statefulset not ready: {ready_replicas}/{desired_replicas} replicas"
+            )
             return  # Success
         except ApiException as e:
             statefulset_error = str(e)
@@ -92,19 +92,19 @@ class TestKeycloakDeployment:
         """
         # Verify we got a valid token from the fixture
         assert keycloak_token is not None, "keycloak_token fixture returned None"
-        assert isinstance(
-            keycloak_token, dict
-        ), f"keycloak_token is not a dict: {type(keycloak_token)}"
+        assert isinstance(keycloak_token, dict), (
+            f"keycloak_token is not a dict: {type(keycloak_token)}"
+        )
 
         # Verify required token fields
-        assert (
-            "access_token" in keycloak_token
-        ), f"No access_token in token. Keys: {keycloak_token.keys()}"
+        assert "access_token" in keycloak_token, (
+            f"No access_token in token. Keys: {keycloak_token.keys()}"
+        )
         assert len(keycloak_token["access_token"]) > 0, "Access token is empty"
         assert "token_type" in keycloak_token, "No token_type in token"
-        assert (
-            keycloak_token["token_type"].lower() == "bearer"
-        ), f"Unexpected token type: {keycloak_token['token_type']}"
+        assert keycloak_token["token_type"].lower() == "bearer", (
+            f"Unexpected token type: {keycloak_token['token_type']}"
+        )
 
         print("\n✓ Successfully authenticated to Keycloak")
         print(f"  Token type: {keycloak_token.get('token_type', 'unknown')}")

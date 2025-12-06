@@ -124,9 +124,9 @@ class TestWeatherToolDeployment:
         desired_replicas = deployment.spec.replicas or 1
         ready_replicas = deployment.status.ready_replicas or 0
 
-        assert (
-            ready_replicas >= desired_replicas
-        ), f"weather-tool deployment not ready: {ready_replicas}/{desired_replicas} replicas"
+        assert ready_replicas >= desired_replicas, (
+            f"weather-tool deployment not ready: {ready_replicas}/{desired_replicas} replicas"
+        )
 
     def test_weather_tool_pods_running(self, k8s_client, k8s_apps_client):
         """Verify weather-tool pods are in Running state."""
@@ -146,9 +146,9 @@ class TestWeatherToolDeployment:
         assert len(pods.items) > 0, "No weather-tool pods found"
 
         for pod in pods.items:
-            assert (
-                pod.status.phase == "Running"
-            ), f"weather-tool pod {pod.metadata.name} not running: {pod.status.phase}"
+            assert pod.status.phase == "Running", (
+                f"weather-tool pod {pod.metadata.name} not running: {pod.status.phase}"
+            )
 
 
 class TestWeatherServiceDeployment:
@@ -181,9 +181,9 @@ class TestWeatherServiceDeployment:
         desired_replicas = deployment.spec.replicas or 1
         ready_replicas = deployment.status.ready_replicas or 0
 
-        assert (
-            ready_replicas >= desired_replicas
-        ), f"weather-service deployment not ready: {ready_replicas}/{desired_replicas} replicas"
+        assert ready_replicas >= desired_replicas, (
+            f"weather-service deployment not ready: {ready_replicas}/{desired_replicas} replicas"
+        )
 
     def test_weather_service_pods_running(self, k8s_client, k8s_apps_client):
         """Verify weather-service pods are in Running state."""
@@ -203,9 +203,9 @@ class TestWeatherServiceDeployment:
         assert len(pods.items) > 0, "No weather-service pods found"
 
         for pod in pods.items:
-            assert (
-                pod.status.phase == "Running"
-            ), f"weather-service pod {pod.metadata.name} not running: {pod.status.phase}"
+            assert pod.status.phase == "Running", (
+                f"weather-service pod {pod.metadata.name} not running: {pod.status.phase}"
+            )
 
 
 if __name__ == "__main__":

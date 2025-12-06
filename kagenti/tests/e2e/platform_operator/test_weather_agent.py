@@ -40,9 +40,9 @@ class TestWeatherToolServices:
                         has_endpoints = True
                         break
 
-            assert (
-                has_endpoints
-            ), f"{weather_tool_service_name} service has no endpoints"
+            assert has_endpoints, (
+                f"{weather_tool_service_name} service has no endpoints"
+            )
 
         except ApiException as e:
             pytest.fail(f"Could not read {weather_tool_service_name} endpoints: {e}")

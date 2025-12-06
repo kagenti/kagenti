@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 
 # --- Kubernetes Configuration ---
 @st.cache_resource
-def get_kube_api_client_cached() -> (
-    Tuple[Optional[kubernetes.client.ApiClient], Optional[str], Optional[str]]
-):
+def get_kube_api_client_cached() -> Tuple[
+    Optional[kubernetes.client.ApiClient], Optional[str], Optional[str]
+]:
     """
     Loads Kubernetes configuration and returns an ApiClient,
     along with a status message and icon for UI feedback.
@@ -407,7 +407,7 @@ def list_agents(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.AGENTS_PLURAL,
         label_selector=f"{constants.KAGENTI_TYPE_LABEL}={constants.RESOURCE_TYPE_AGENT}",
     )
 
@@ -425,7 +425,7 @@ def get_agent_details(
         group=constants.CRD_GROUP,
         version=constants.CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.AGENTS_PLURAL,
         name=agent_name,
     )
 
@@ -439,10 +439,10 @@ def list_tools(
     return list_custom_resources(
         st_object=st_object,
         custom_obj_api=custom_obj_api,
-        group=constants.CRD_GROUP,
-        version=constants.CRD_VERSION,
+        group=constants.TOOLHIVE_CRD_GROUP,
+        version=constants.TOOLHIVE_CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.TOOLHIVE_MCP_PLURAL,
         label_selector=f"{constants.KAGENTI_TYPE_LABEL}={constants.RESOURCE_TYPE_TOOL}",
     )
 
@@ -457,10 +457,10 @@ def get_tool_details(
     return get_custom_resource(
         st_object=st_object,
         custom_obj_api=custom_obj_api,
-        group=constants.CRD_GROUP,
-        version=constants.CRD_VERSION,
+        group=constants.TOOLHIVE_CRD_GROUP,
+        version=constants.TOOLHIVE_CRD_VERSION,
         namespace=namespace,
-        plural=constants.COMPONENTS_PLURAL,
+        plural=constants.TOOLHIVE_MCP_PLURAL,
         name=tool_name,
     )
 
