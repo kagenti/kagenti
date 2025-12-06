@@ -47,8 +47,49 @@
       set_fact:
         preload_images: "{{ (lookup('file', preload_images_file).split('\n') | map('trim') | reject('equalto','') | reject('match','^#')) | list }}"
 
+    - name: Pull images
+      command: docker pull {{ item }}
+      loop: "{{ preload_images }}"
+      register: docker_pull_results
+      failed_when: false
+
+    - name: Report if some image pull failed
+      debug:
+        msg: "Failed to pull image: {{ item.item }}. RC: {{ item.rc }}. Error: {{ item.stderr | default('No specific error captured') }}"
+      loop: "{{ docker_pull_results.results | selectattr('rc', 'ne', 0) | list }}"
+      run_once: true
+
     - name: Load images into kind
-      command: kind load docker-image {{ item }} --name {{ kind_cluster_name }}
+      # use raw loading instead of `kind load docker-image` as it is broken on latest Rancher Desktop with VZ virtualization
+      shell: |
+        tmp=$(mktemp /tmp/image.XXXXXX.tar) && \
+        docker save "{{ item }}" -o "$tmp" && \
+        docker cp "$tmp" {{ kind_cluster_name }}-control-plane:/"$(basename "$tmp")" && \
+        docker exec {{ kind_cluster_name }}-control-plane ctr --namespace=k8s.io images import "/$(basename "$tmp")" && \
+        docker exec {{ kind_cluster_name }}-control-plane rm "/$(basename "$tmp")" && \
+        rm -f "$tmp"
+      args:
+        chdir: /tmp
+        executable: /bin/bash
       loop: "{{ preload_images }}"
       register: kind_load_results
       failed_when: false
+      changed_when: false
+
+    - name: Set failed kind image imports flag
+      set_fact:
+        has_failed_kind_imports: "{{ kind_load_results is defined and (kind_load_results.results | selectattr('rc','ne',0) | list) | length > 0 }}"
+
+    - name: Report failed kind image imports
+      debug:
+        msg: "Failed to import image {{ item.item }}. rc={{ item.rc }} stdout={{ item.stdout | default('') }} stderr={{ item.stderr | default('') }}"
+      loop: "{{ kind_load_results.results | selectattr('rc','ne',0) | list }}"
+      run_once: true
+      when: has_failed_kind_imports
+
+    - name: Fail if any kind image import failed
+      fail:
+        msg: "One or more images failed to import into kind cluster '{{ kind_cluster_name }}'. See previous debug messages for details."
+      run_once: true
+      when: has_failed_kind_imports
+

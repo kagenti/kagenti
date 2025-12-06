@@ -31,7 +31,10 @@ and preload images when requested.
 
    ansible-galaxy collection install -r deployments/ansible/collections-reqs.yml
 
-- A working `kubectl` and Helm (recommended: install `helm-diff` plugin for cleaner diffs):
+- A working `kubectl` and `helm` - note that helm v4 has breaking changes incompatible with 
+  ansible `kubernetes.core.helm` so helm needs to be still v3
+
+- recommended: install `helm-diff` plugin for cleaner diffs:
 
    helm plugin install https://github.com/databus23/helm-diff
 
@@ -161,6 +164,8 @@ deployments/ansible/run-install.sh --env dev -- --check --tags debug_vars
 
 The wrapper prefers to run `uv run ansible-playbook` when `uv` is available (so `uv` manages the venv/deps); if `uv` is not found it will fall back to `ansible-playbook` with a warning.
 
+If you are using Rancher Desktop follow [these steps](#installation-using-rancher-desktop-on-macos).
+
 ## Using override files
 
 Override files must be passed with a path relative to the directory from which you invoke the script (your current working directory). The layout of variables should be the same as
@@ -189,6 +194,40 @@ Save the file in a place of your choice (for example, `deployments/envs/.values_
    preload lists, chart `values:` overrides). Inspect that file to discover the
    defaults before overriding.
 
+
+## Installation using Rancher Desktop on MacOS
+
+To ensure Kagenti installs correctly, configure Rancher Desktop with the following settings:
+
+---
+
+### 1. Perform a Factory Reset (if needed)
+- Navigate to **Troubleshooting → Factory Reset**.
+- After restarting:
+  - **Important: disable the default Kubernetes cluster**:
+    - Go to **Preferences → Kubernetes** and uncheck **Enable Kubernetes**.
+  - Under **Preferences → Container Engine**, select **dockerd** as the container engine.
+
+---
+
+### 2. Update Rancher Desktop to Version 1.21
+- This version resolves DNS issues for Kind (UDP port forwarding on Linux/macOS) and supports **VZ virtualization with Rosetta emulation**.
+- Download from: [Rancher Desktop v1.21 Release](https://github.com/rancher-sandbox/rancher-desktop/releases/tag/v1.21.0)
+
+---
+
+### 3. Increase Resource Limits
+- Follow the guidance in [Kubestellar Known Issue Docs](https://docs.kubestellar.io/release-0.25.1/direct/knownissue-kind-config/) to adjust limits for Kind clusters.
+
+---
+
+### 4. Configure Virtual Machine Settings
+- Go to **Preferences → Virtual Machine → Hardware tab**:
+  - Set **Memory** to **16 GB**.
+  - Set **CPU** to **4 cores**.
+- Switch to the **Emulation tab**:
+  - Set **Virtual Machine Type** to **VZ**.
+  - Enable **Rosetta Support** under **VZ Options**.
 
 
 

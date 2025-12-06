@@ -1,10 +1,9 @@
 arizephoenix/phoenix:version-8.32.1
-curlimages/curl
-docker.io/istio/install-cni:1.26.0-distroless
-docker.io/istio/pilot:1.26.0-distroless
-docker.io/istio/proxyv2:1.26.0-distroless
-docker.io/istio/ztunnel:1.26.0
-docker.io/kindest/kindnetd:v20250214-acbabc1a
+docker.io/istio/install-cni:1.28.0-distroless
+docker.io/istio/pilot:1.28.0-distroless
+docker.io/istio/proxyv2:1.28.0-distroless
+docker.io/istio/ztunnel:1.28.0
+docker.io/kindest/kindnetd:v20250512-df8de77b
 docker.io/kindest/local-path-provisioner:v20250214-acbabc1a
 docker.io/nginx/nginx-prometheus-exporter:1.4.2
 docker.io/nginxinc/nginx-unprivileged:1.29.1-alpine
