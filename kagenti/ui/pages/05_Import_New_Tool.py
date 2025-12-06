@@ -28,6 +28,7 @@ TOOL_EXAMPLE_SUBFOLDERS = [
     "mcp/movie_tool",
     "mcp/slack_tool",
     "mcp/weather_tool",
+    "mcp/cloud_storage_tool",
 ]
 TOOL_PROTOCOL_OPTIONS = ["streamable_http", "sse"]
 
