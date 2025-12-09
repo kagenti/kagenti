@@ -14,13 +14,13 @@ This script performs the following steps:
 9) Assign the `slack-partial-access` realm role to `slack-partial-access-user`
 10) Create the `slack-full-access-user` user with a password "password"
 11) Assign the `slack-partial-access` and `slack-full-access` realm roles to `slack-full-access-user`
-12) Enable service accounts for the `spiffe://localtest.me/sa/slack-tool` client
-13) Assign `view-clients` (master realm) client role to `spiffe://localtest.me/sa/slack-tool` client
+12) Enable service accounts for the `spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-tool` client
+13) Assign `view-clients` (master realm) client role to `spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-tool` client
 14) Set the realm access token lifespan to 10 minutes
 
 The script assumes there to be:
 * `kagenti` client
-* `spiffe://localtest.me/sa/slack-tool` client
+* `spiffe://localtest.me/ns/{NAMESPACE}/sa/slack-tool` client
 * `view-clients` client role in the realm
 * `slack-partial-access` realm role
 * `slack-full-access` realm role
