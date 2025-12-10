@@ -22,7 +22,9 @@ if pgrep -x "ollama" > /dev/null; then
     log_info "Ollama process already running, checking if responsive..."
 else
     log_info "Starting Ollama in background"
-    ollama serve > "$OLLAMA_LOG" 2>&1 &
+    # Start Ollama with OLLAMA_HOST=0.0.0.0 to listen on all interfaces
+    # This is required for Kind clusters to access Ollama from inside the Docker VM
+    OLLAMA_HOST=0.0.0.0 ollama serve > "$OLLAMA_LOG" 2>&1 &
     STARTED_OLLAMA=true
 fi
 
