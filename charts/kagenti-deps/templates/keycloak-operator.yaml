@@ -1,4 +1,6 @@
 {{- if and .Values.components.keycloak.enabled .Values.openshift }}
+{{- /* Skip OperatorGroup if it already exists */}}
+{{- if not (lookup "operators.coreos.com/v1" "OperatorGroup" .Values.keycloak.namespace "keycloak-operatorgroup") }}
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -9,7 +11,10 @@ metadata:
 spec:
   targetNamespaces:
     - {{ .Values.keycloak.namespace }}
----    
+{{- end }}
+---
+{{- /* Skip Subscription if Keycloak/RHBK operator already exists */}}
+{{- if not (lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.keycloak.namespace "rhbk-operator") }}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -24,4 +29,5 @@ spec:
   name: rhbk-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+{{- end }}
 {{- end }}

@@ -4,7 +4,7 @@ The route for kagenti UI can be found with the command:
 
 {{- if .Values.openshift }}
 ```
-echo https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')
+echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
 ```
 
 {{- else }}

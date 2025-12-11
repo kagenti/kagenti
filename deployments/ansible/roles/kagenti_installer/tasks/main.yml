@@ -221,7 +221,7 @@
       retries: 3
       delay: 15
       until: spire_result is not failed
-  when: (charts.spire.enabled | default(false)) and not (enable_openshift | default(false))
+  when: charts.spire.enabled | default(false)
 
 #
 #  Gateway API

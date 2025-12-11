@@ -21,7 +21,7 @@ charts:
         otel:
           enabled: true
         spire:
-          enabled: true
+          enabled: false  # Use Helm-based SPIRE instead of OLM (ZTWIM not available on all OCP versions)
         tekton:
           enabled: true
         toolhiveCRDs:
@@ -65,10 +65,17 @@ charts:
       keycloak:
         url: http://keycloak-service.keycloak:8080
 
-  #################################################################### 
+  ####################################################################
   # mcp-gateway chart
-  ####################################################################    
+  ####################################################################
   mcpGateway:
-    enabled: true  
+    enabled: true
 
-
+  ####################################################################
+  # spire - Use Helm charts (ZTWIM operator not available on all OCP versions)
+  ####################################################################
+  spire:
+    enabled: true
+    values:
+      global:
+        openshift: true
