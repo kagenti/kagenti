@@ -181,5 +181,29 @@ data:
         "value": "slack-full-access"
       }
     ]
+{{- if $.Values.openshift }}
+{{- if not (lookup "rbac.authorization.k8s.io/v1" "RoleBinding" . "pipeline-anyuid-scc") }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  SCC RoleBinding for Pipeline SA in Namespace: {{ . }}
+#  Grants anyuid SCC to the pipeline service account for buildah builds
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-anyuid-scc
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: pipeline
+    namespace: {{ . }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

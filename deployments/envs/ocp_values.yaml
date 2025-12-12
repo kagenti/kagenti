@@ -41,7 +41,7 @@ charts:
   kagenti:
     enabled: true
     values:
-      openshift: false
+      openshift: true
       components:
         agentNamespaces:
           enabled: true
