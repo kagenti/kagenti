@@ -12,6 +12,9 @@ metadata:
   name: keycloak
   namespace: {{ .Values.keycloak.namespace }}
 spec:
+  bootstrapAdmin:
+    user:
+      secret: keycloak-initial-admin
   hostname:
     strict: false
   http:

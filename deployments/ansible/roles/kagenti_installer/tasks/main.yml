@@ -149,6 +149,35 @@
   until: tekton_result is not failed
   when: (tekton.enabled | default(false)) and not (enable_openshift | default(false))
 
+# TODO: Move TektonConfig patching to kagenti-operator
+# The kagenti-operator creates PipelineRuns for AgentBuilds, so it has the
+# context to know what Tekton settings are needed. The operator should:
+# 1. Check if running on OpenShift (detect TektonConfig CRD)
+# 2. Patch TektonConfig to set pipeline.set-security-context: true
+# 3. This ensures proper fsGroup handling for PVC permissions in build pods
+# For now, we patch it in the installer as a workaround.
+- name: Patch TektonConfig for OpenShift build permissions
+  block:
+    - name: Wait for TektonConfig to exist
+      command: kubectl get tektonconfig config
+      register: tektonconfig_check
+      retries: 30
+      delay: 10
+      until: tektonconfig_check.rc == 0
+      changed_when: false
+
+    - name: Patch TektonConfig to set security context
+      kubernetes.core.k8s:
+        api_version: operator.tekton.dev/v1alpha1
+        kind: TektonConfig
+        name: config
+        definition:
+          spec:
+            pipeline:
+              set-security-context: true
+        merge_type: merge
+  when: enable_openshift | default(false)
+
 #
 #  Toolhive
 #
@@ -221,7 +250,7 @@
       retries: 3
       delay: 15
       until: spire_result is not failed
-  when: (charts.spire.enabled | default(false)) and not (enable_openshift | default(false))
+  when: charts.spire.enabled | default(false)
 
 #
 #  Gateway API

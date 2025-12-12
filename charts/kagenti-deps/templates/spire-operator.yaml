@@ -1,4 +1,6 @@
 {{- if and .Values.components.spire.enabled .Values.openshift }}
+{{- /* Skip Namespace if it already exists */}}
+{{- if not (lookup "v1" "Namespace" "" .Values.spire.namespace) }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -6,7 +8,10 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     istio-discovery: enabled
+{{- end }}
 ---
+{{- /* Skip OperatorGroup if it already exists */}}
+{{- if not (lookup "operators.coreos.com/v1" "OperatorGroup" .Values.spire.namespace "zero-trust-workload-identity-manager") }}
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -18,7 +23,10 @@ spec:
     upgradeStrategy: Default
     targetNamespaces:
     - {{ .Values.spire.namespace }}
+{{- end }}
 ---
+{{- /* Skip Subscription if SPIRE/ZTWIM operator already exists */}}
+{{- if not (lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.spire.namespace "openshift-zero-trust-workload-identity-manager") }}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -33,4 +41,5 @@ spec:
   name: openshift-zero-trust-workload-identity-manager
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+{{- end }}
 {{- end }}  
