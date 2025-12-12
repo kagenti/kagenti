@@ -1,0 +1,79 @@
+# Barebones Kagenti installation - Operator (CRDs + Controller) only
+# Minimal dependencies for kagenti-operator with Agent and AgentCard CRDs and controllers
+# No build pipelines - use pre-built images with Agent resources directly
+
+####################################################################
+# Minimal kubectl-applied dependencies
+####################################################################
+gatewayApi:
+  enabled: false
+
+# cert-manager is required for operator webhook certificates
+certManager:
+  enabled: true
+
+# tekton disabled - no need for AgentBuild, use Agent resources with pre-built images
+tekton:
+  enabled: false
+
+toolhiveCRDs:
+  enabled: false
+
+toolhiveOperator:
+  enabled: false
+
+kiali:
+  enabled: false
+
+charts:
+  ####################################################################
+  # kagenti-deps - disable all optional components
+  ####################################################################
+  kagenti-deps:
+    enabled: false
+
+  ####################################################################
+  # kagenti - only kagentiOperator enabled
+  ####################################################################
+  kagenti:
+    enabled: true
+    values:
+      openshift: false
+      components:
+        agentNamespaces:
+          enabled: false
+        platformOperator:
+          enabled: false  # Old operator - deprecated
+        kagentiOperator:
+          enabled: true   # NEW operator with AgentCard CRDs
+        ui:
+          enabled: false
+        mcpGateway:
+          enabled: false
+        istio:
+          enabled: false
+
+  ####################################################################
+  # istio - disabled
+  ####################################################################
+  istio:
+    enabled: false
+
+  ####################################################################
+  # mcp-gateway - disabled
+  ####################################################################
+  mcpGateway:
+    enabled: false
+
+  ####################################################################
+  # spire - disabled
+  ####################################################################
+  spire:
+    enabled: false
+
+####################################################################
+# Kind cluster settings
+####################################################################
+kind_images_preload: false
+# docker or podman
+container_engine: docker

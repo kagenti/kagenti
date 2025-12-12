@@ -76,6 +76,8 @@ ansible-playbook -i localhost, -c local deployments/ansible/installer-playbook.y
 - Development (full dev configuration): `../envs/dev_values.yaml` (enables UI,
    platform operator, mcpGateway, istio where required).
 - Minimal dev (no auth): `../envs/dev_values_minimal.yaml`.
+- Barebones (operator only): `../envs/barebones_operator_values.yaml` (only kagenti-operator
+   with CRDs and controller, cert-manager only - no build pipelines).
 - OpenShift / OCP example: `../envs/ocp_values.yaml`.
 
 Pick one or more of the files in `deployments/envs` and pass them via
@@ -147,6 +149,12 @@ deployments/ansible/run-install.sh --env dev
 
 ```bash
 deployments/ansible/run-install.sh --env minimal
+```
+
+- Barebones (operator only):
+
+```bash
+deployments/ansible/run-install.sh --env barebones
 ```
 
 - OpenShift / OCP:
