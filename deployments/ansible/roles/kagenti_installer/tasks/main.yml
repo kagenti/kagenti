@@ -364,7 +364,7 @@
       kubeconfig: ""
       release_namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
       state: present
-      create_namespace: false
+      create_namespace: true
       wait: true
       timeout: "{{ helm_wait_timeout }}s"
       values: >-

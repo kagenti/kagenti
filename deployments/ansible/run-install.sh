@@ -37,7 +37,7 @@ usage() {
 Usage: ${0##*/} [options] [-- ansible-playbook-args]
 
 Options:
-  --env <dev|minimal|ocp>   Use a named environment file from deployments/envs
+  --env <dev|minimal|auth|barebones|ocp>   Use a named environment file from deployments/envs
   --env-file <path>         Add an explicit environment values file (can repeat)
   --secret <path>           Path to secret values file (example: ../envs/.secret_values.yaml)
   --preload                 Set kind_images_preload=true
@@ -62,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         dev) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values.yaml") ;;
         minimal) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values_minimal.yaml") ;;
         auth) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values_minimal_auth.yaml") ;;
+        barebones) ENV_FILES+=("$SCRIPT_DIR/../envs/barebones_operator_values.yaml") ;;
         ocp) ENV_FILES+=("$SCRIPT_DIR/../envs/ocp_values.yaml") ;;
         *) echo "Unknown env: $1" >&2; exit 2 ;;
       esac
