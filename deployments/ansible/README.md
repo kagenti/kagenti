@@ -29,7 +29,7 @@ and preload images when requested.
 - Python deps for kubernetes support: `PyYAML`, `kubernetes`, `openshift`.
 - Install Ansible collections used by the playbook:
 
-   ansible-galaxy collection install -r deployments/ansible/collections-reqs.yml
+   `ansible-galaxy collection install -r deployments/ansible/collections-reqs.yml`
 
 - A working `kubectl` and `helm` - note that helm v4 has breaking changes incompatible with 
   ansible `kubernetes.core.helm` so helm needs to be still v3
@@ -83,7 +83,6 @@ Pick one or more of the files in `deployments/envs` and pass them via
 runtime variables used to decide which charts to install.
 
 ## Secrets handling
-- Example secrets file: `deployments/envs/secret_values.yaml.example`.
  - Example secrets file: `deployments/envs/secret_values.yaml.example`.
  - Default behavior: if you copy the example to `deployments/envs/.secret_values.yaml`
     (the repository default location) the installer will load it automatically and
