@@ -1,3 +1,0 @@
-python-keycloak~=5.3.1
-kubernetes==33.1.0
-typer==0.20.0
