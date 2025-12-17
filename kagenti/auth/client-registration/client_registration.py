@@ -10,6 +10,7 @@ Idempotent:
 
 import os
 import jwt
+from kagenti.auth.shared_utils import register_client
 from keycloak import KeycloakAdmin, KeycloakPostError
 
 
@@ -50,29 +51,6 @@ def write_client_secret(
         print(f'Secret written to file: "{secret_file_path}"')
     except OSError as ioe:
         print(f"Error writing secret to file: {ioe}")
-
-
-# TODO: refactor this function so kagenti-client-registration image can use it
-def register_client(keycloak_admin: KeycloakAdmin, client_id: str, client_payload):
-    """
-    Ensure a Keycloak client exists.
-    Returns the internal client ID.
-    """
-    internal_client_id = keycloak_admin.get_client_id(f"{client_id}")
-    if internal_client_id:
-        print(f'Client "{client_id}" already exists with ID: {internal_client_id}')
-        return internal_client_id
-
-    # Create client
-    internal_client_id = None
-    try:
-        internal_client_id = keycloak_admin.create_client(client_payload)
-
-        print(f'Created Keycloak client "{client_id}": {internal_client_id}')
-        return internal_client_id
-    except KeycloakPostError as e:
-        print(f'Could not create client "{client_id}": {e}')
-        raise
 
 
 def get_client_id() -> str:
