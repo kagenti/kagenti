@@ -17,6 +17,9 @@ dependencies = [
     # Dependencies Ansible collections or Python code
     "kubernetes>=34",
     "PyYAML>=6.0.3",
+
+    # Dependencies for reliable logging in the authentication process.
+    "typer>=0.20.0"
 ]
 
 [project.optional-dependencies]
