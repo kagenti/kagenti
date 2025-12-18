@@ -7,8 +7,8 @@
 ### Build the image
 
 ```sh
-cd kagenti/auth/client-registration
-docker build -t client-registration .
+cd kagenti/auth/
+docker build --target client-reg -t client-registration -f Auth.Dockerfile .
 docker tag client-registration ghcr.io/kagenti/kagenti/client-registration:latest
 ```
 
@@ -22,7 +22,7 @@ uv run kagenti-installer
 ### Load the image into the cluster
 
 ```sh
-kind load docker-image ghcr.io/kagenti/kagenti/client-registration:latest --name agent-platform
+kind load docker-image ghcr.io/kagenti/kagenti/client-registration:latest --name kagenti
 ```
 
 ### Import a new agent
@@ -43,6 +43,6 @@ Open Keycloak at [http://keycloak.localtest.me:8080](http://keycloak.localtest.m
 
 The default username and password are `admin`.
 
-Go to `Clients` tab on the sidebar.
+Go to `Clients` tab on the sidebar. You may need to switch realms to demo in order to see the agent client.
 
 After a while, a new client should appear.
