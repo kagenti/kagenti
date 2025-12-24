@@ -135,68 +135,207 @@ git push upstream v0.0.4-alpha.10
 
 ## Kagenti UI Development
 
-### Running locally
+The Kagenti UI v2 is a modern web application consisting of two components:
+- **Frontend**: React + TypeScript application with PatternFly components
+- **Backend**: FastAPI REST API that interfaces with Kubernetes
 
-To run the UI locally, ensure you have Python version 3.12 or above installed.
-If Kagenti is not already running, execute the installer to set up Kagenti first.
-Follow these steps to run the UI:
+### Running Locally
 
-1. Navigate to the kagenti/ui directory:
+#### Prerequisites
+
+- **Frontend**: Node.js 20+ and npm
+- **Backend**: Python 3.11+ and uv (package manager)
+- Access to a Kubernetes cluster with kubeconfig properly configured
+
+#### Backend Development Server
+
+1. Navigate to the backend directory:
 
     ```shell
-    cd kagenti/ui
+    cd kagenti/backend
     ```
 
-2. Launch the UI using the following Streamlit command:
+2. Create virtual environment and install dependencies:
 
     ```shell
-    uv run streamlit run Home.py
+    uv venv
+    source .venv/bin/activate
+    uv pip install -e .
     ```
 
-Access the UI in your browser at `http://localhost:8501`.
+3. Run the development server:
 
-Note: Running locally allows you to explore various UI features except for connecting to an agent or tool, which requires exposing them via an HTTPRoute.
+    ```shell
+    uvicorn app.main:app --reload --port 8000
+    ```
 
-Example: Connecting to `a2a-currency-converter`
+The backend API will be available at `http://localhost:8000` with:
+- Swagger UI docs: `http://localhost:8000/api/docs`
+- ReDoc: `http://localhost:8000/api/redoc`
 
-To test connectivity with the `a2a-currency-converter` agent within
-the team1 namespace, apply the following HTTPRoute configuration:
+#### Frontend Development Server
+
+1. Navigate to the frontend directory:
+
+    ```shell
+    cd kagenti/ui-v2
+    ```
+
+2. Install dependencies:
+
+    ```shell
+    npm install
+    ```
+
+3. Start the development server:
+
+    ```shell
+    npm run dev
+    ```
+
+The frontend will be available at `http://localhost:3000`. It automatically proxies API requests to the backend at `http://localhost:8000`.
+
+**Note**: When running locally, you can explore UI features. To connect to agents or tools, you'll need to expose them via HTTPRoutes in your Kubernetes cluster.
+
+### Building and Loading Images for Kubernetes Testing
+
+The project Makefile provides convenient targets for building and loading images into your Kind cluster for testing.
+
+#### Build Both Frontend and Backend Images
 
 ```shell
-kubectl apply -n team1 -f - <<EOF
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: a2a-currency-converter
-  labels:
-    app: a2a-currency-converter
-spec:
-  parentRefs:
-    - name: http
-      namespace: kagenti-system
-  hostnames:
-    - "a2a-currency-converter.localtest.me"
-  rules:
-    - backendRefs:
-        - name: a2a-currency-converter
-          port: 8000
-EOF
+make build-load-ui
 ```
 
-### Running Your Image in Kubernetes
+This command will:
+1. Build both frontend and backend Docker images with auto-generated tags
+2. Load them into your Kind cluster (default: `kagenti`)
+3. Display the Helm upgrade command to deploy your images
 
-Before proceeding, ensure there is an existing Kagenti instance
-running. To test your build on Kubernetes, execute the following script:
+#### Build Individual Images
+
+Build only the frontend:
+```shell
+make build-load-ui-frontend
+```
+
+Build only the backend:
+```shell
+make build-load-ui-backend
+```
+
+#### Custom Tags and Cluster Names
+
+Override default values:
+```shell
+make build-load-ui UI_FRONTEND_TAG=my-feature UI_BACKEND_TAG=my-feature KIND_CLUSTER_NAME=my-cluster
+```
+
+### Updating Your Kubernetes Deployment
+
+After building and loading your images, update your Kagenti installation with the new image tags:
 
 ```shell
-scripts/ui-dev-build.sh
+helm upgrade --install kagenti charts/kagenti \
+  --namespace kagenti-system \
+  --set openshift=false \
+  --set ui.frontend.image=ghcr.io/kagenti/kagenti-ui-v2 \
+  --set ui.frontend.tag=<your-frontend-tag> \
+  --set ui.backend.image=ghcr.io/kagenti/kagenti-backend \
+  --set ui.backend.tag=<your-backend-tag> \
+  -f <your-values-file>
 ```
 
-Script Details:
+**Tip**: The `make build-load-ui` command displays the exact Helm command with your generated tags. Copy and paste it from the output.
 
-- Builds the image locally.
-- The image is loaded into Kind.
-- The script replaces the image in the kagenti-ui pod with the newly built image.
+Once the upgrade completes, access the UI at `http://kagenti-ui.localtest.me:8080`.
 
-Once complete, access the UI at http://kagenti-ui.localtest.me:8080.
+### Quick Development Workflow
+
+1. Make changes to frontend or backend code
+2. Run `make build-load-ui` to build and load both images
+3. Copy the displayed Helm upgrade command and run it
+4. Wait for pods to restart with new images
+5. Test your changes at `http://kagenti-ui.localtest.me:8080`
+
+### Environment Variables Import Feature
+
+The Kagenti UI supports importing environment variables from local `.env` files or remote URLs when creating agents. This feature simplifies agent configuration by allowing reuse of standardized environment variable definitions.
+
+#### Supported Formats
+
+**Standard .env Format**:
+```env
+MCP_URL=http://weather-tool:8080/mcp
+LLM_MODEL=llama3.2
+PORT=8000
+```
+
+**Extended Format with Kubernetes References**:
+
+When referencing values from Kubernetes Secrets or ConfigMaps, use JSON format enclosed in single quotes:
+
+```env
+# Standard direct values
+PORT=8000
+MCP_URL=http://weather-tool:8080/mcp
+LOG_LEVEL=INFO
+
+# Secret reference - JSON format in single quotes
+OPENAI_API_KEY='{"valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}}'
+
+# ConfigMap reference - JSON format in single quotes
+APP_CONFIG='{"valueFrom": {"configMapKeyRef": {"name": "app-settings", "key": "config.json"}}}'
+```
+
+**Format Requirements for JSON References:**
+- Entire JSON must be in **single quotes** (`'...'`)
+- Use **double quotes** for JSON keys and values
+- No spaces around the `=` sign
+- Valid JSON structure: `{"valueFrom": {"secretKeyRef": {"name": "...", "key": "..."}}}`
+- Or for ConfigMaps: `{"valueFrom": {"configMapKeyRef": {"name": "...", "key": "..."}}}`
+
+**Important:**
+- The Secret/ConfigMap must exist in the agent's namespace
+- The agent needs permission to read the referenced resources
+- Mix standard values and references in the same file
+
+#### How to Use
+
+1. **Navigate** to the Import New Agent page
+2. **Expand** the "Environment Variables" section
+3. **Click** "Import from File/URL" button
+4. **Choose** import method:
+   - **Upload File**: Drag and drop or browse for a local `.env` file
+   - **From URL**: Enter a URL to a remote `.env` file (e.g., from GitHub)
+5. **Review** the parsed variables in the preview
+6. **Click** "Import" to add variables to your agent configuration
+7. **Edit** or **delete** variables as needed before creating the agent
+
+#### Variable Types
+
+When adding or editing environment variables, you can choose from three types:
+
+- **Direct Value**: Simple key-value pair (e.g., `PORT=8000`)
+- **Secret**: Reference to a Kubernetes Secret (requires secret name and key)
+- **ConfigMap**: Reference to a Kubernetes ConfigMap (requires configMap name and key)
+
+The UI provides conditional form fields based on the selected type, making it easy to configure the appropriate values.
+
+#### Example URLs
+
+Import environment variables directly from agent example repositories:
+
+```
+https://raw.githubusercontent.com/kagenti/agent-examples/main/a2a/git_issue_agent/.env.openai
+https://raw.githubusercontent.com/kagenti/agent-examples/main/a2a/weather_service/.env
+```
+
+### Additional Resources
+
+- Frontend README: `kagenti/ui-v2/README.md`
+- Backend README: `kagenti/backend/README.md`
+- Makefile UI targets: Run `make help-ui` for details
+- Environment Variables Import Design: `docs/env-import-feature-design.md`
+
 

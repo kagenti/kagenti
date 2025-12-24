@@ -1,30 +1,37 @@
 {{- if and .Values.components.ui.enabled }}
+# Backend Service Account
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kagenti-ui-service-account
+  name: kagenti-backend
   namespace: "{{ .Values.ui.namespace }}"
   labels:
+    app.kubernetes.io/name: kagenti-backend
     {{- include "kagenti.labels" . | nindent 4 }}
 ---
+# Backend Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kagenti-ui
+  name: kagenti-backend
   namespace: "{{ .Values.ui.namespace }}"
   labels:
+    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: kagenti-ui
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: kagenti-ui
+      app.kubernetes.io/name: kagenti-backend
   template:
     metadata:
       labels:
-        app: kagenti-ui
+        app.kubernetes.io/name: kagenti-backend
+        app.kubernetes.io/component: backend
     spec:
-      serviceAccountName: kagenti-ui-service-account
+      serviceAccountName: kagenti-backend
       {{- if .Values.ui.auth.enabled }}
       initContainers:
       - name: wait-for-oauth-secret
@@ -34,7 +41,7 @@ spec:
         - -c
         - |
           echo "Waiting for OAuth secret to be created..."
-          # it may take time as if keycloak was just instaled it takes some time to be available
+          # it may take time as if keycloak was just installed it takes some time to be available
           MAX_ATTEMPTS=120
           ATTEMPT=0
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
@@ -64,173 +71,231 @@ spec:
           echo "ERROR: OAuth secret not ready after $MAX_ATTEMPTS attempts. Proceeding anyway but authentication may not work."
           exit 0
       {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
       containers:
-        - name: kagenti-ui-container
-          image: "{{ .Values.ui.image }}:{{ .Values.ui.tag }}"
+        - name: backend
+          image: "{{ .Values.ui.backend.image }}:{{ .Values.ui.backend.tag }}"
           imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
           env:
-            - name: UV_CACHE_DIR
-              value: "/app/.cache/uv"
-            - name: "ENABLE_AUTH"
-              value: "{{- .Values.ui.auth.enabled }}"
+            - name: DEBUG
+              value: "false"
+            - name: DOMAIN_NAME
+              value: "localtest.me"
+            - name: ENABLE_AUTH
+              value: "{{ .Values.ui.auth.enabled }}"
             {{- if .Values.uiOAuthSecret.useServiceAccountCA }}
-            - name: "SSL_CERT_FILE"
+            - name: SSL_CERT_FILE
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "SSL_CERT_FILE"
+                  name: kagenti-ui-oauth-secret
+                  key: SSL_CERT_FILE
                   optional: {{ or (not .Values.openshift) (not .Values.ui.auth.enabled) }}
             {{- end }}
-            - name: "CLIENT_ID"
+            - name: AUTH_ENDPOINT
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "CLIENT_ID"
+                  name: kagenti-ui-oauth-secret
+                  key: AUTH_ENDPOINT
                   optional: true
-            - name: "CLIENT_SECRET"
+            - name: REDIRECT_URI
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "CLIENT_SECRET"
+                  name: kagenti-ui-oauth-secret
+                  key: REDIRECT_URI
                   optional: true
-            - name: "AUTH_ENDPOINT"
+            - name: CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "AUTH_ENDPOINT"
+                  name: kagenti-ui-oauth-secret
+                  key: CLIENT_ID
                   optional: true
-            - name: "TOKEN_ENDPOINT"
+            - name: CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "TOKEN_ENDPOINT"
+                  name: kagenti-ui-oauth-secret
+                  key: CLIENT_SECRET
                   optional: true
-            - name: "REDIRECT_URI"
+            - name: TOKEN_ENDPOINT
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "REDIRECT_URI"
+                  name: kagenti-ui-oauth-secret
+                  key: TOKEN_ENDPOINT
                   optional: true
-            - name: "SCOPE"
+            - name: SCOPE
               valueFrom:
                 secretKeyRef:
-                  name: "kagenti-ui-oauth-secret"
-                  key: "SCOPE"
+                  name: kagenti-ui-oauth-secret
+                  key: SCOPE
                   optional: true
-            - name: TRACES_DASHBOARD_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: "{{ .Values.ui.configmap }}"
-                  key: "TRACES_DASHBOARD_URL"
-                  optional: {{ (not .Values.openshift) }}
-            - name: NETWORK_TRAFFIC_DASHBOARD_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: "{{ .Values.ui.configmap }}"
-                  key: "NETWORK_TRAFFIC_DASHBOARD_URL"
-                  optional: {{ (not .Values.openshift) }}
-            - name: MCP_INSPECTOR_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: "{{ .Values.ui.configmap }}"
-                  key: "MCP_INSPECTOR_URL"
-                  optional: {{ (not .Values.openshift) }}
-            - name: MCP_PROXY_FULL_ADDRESS
-              valueFrom:
-                configMapKeyRef:
-                  name: "{{ .Values.ui.configmap }}"
-                  key: "MCP_PROXY_FULL_ADDRESS"
-                  optional: {{ (not .Values.openshift) }}      
-            - name: KEYCLOAK_CONSOLE_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: "{{ .Values.ui.configmap }}"
-                  key: "KEYCLOAK_CONSOLE_URL"
-                  optional: {{ (not .Values.openshift) }}        
-          volumeMounts:
-            - name: cache
-              mountPath: /app/.cache
-            - name: streamlit
-              mountPath: /.streamlit
-          ports:
-            - containerPort: 8501
           resources:
-            {{- if .Values.ui.resources }}
-            {{- toYaml .Values.ui.resources | nindent 12 }}
-            {{- else }}
-            limits:
-              cpu: 300m
-              memory: 512Mi
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            {{- end }}
-      volumes:
-        - name: cache
-          emptyDir: {}
-        - name: streamlit
-          emptyDir: {}
+            {{- toYaml .Values.ui.backend.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
 ---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagenti-backend
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: kagenti-backend
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-ui
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app.kubernetes.io/name: kagenti-ui
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: kagenti-ui
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagenti-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kagenti-ui
+        app.kubernetes.io/component: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: frontend
+          image: "{{ .Values.ui.frontend.image }}:{{ .Values.ui.frontend.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.ui.frontend.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+---
+# Frontend Service
 apiVersion: v1
 kind: Service
 metadata:
   name: kagenti-ui
   namespace: "{{ .Values.ui.namespace }}"
   labels:
+    app.kubernetes.io/name: kagenti-ui
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
-  selector:
-    app: kagenti-ui
-  ports:
-    - protocol: TCP
-      port: 8501
-      targetPort: 8501
   type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: kagenti-ui
 ---
-
+# Backend RBAC
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kagenti-ui-role
+  name: kagenti-backend
   labels:
+    app.kubernetes.io/name: kagenti-backend
     {{- include "kagenti.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list"]
+  - apiGroups: ["agent.kagenti.dev"]
+    resources: ["agents", "agentbuilds"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["toolhive.stacklok.dev"]
+    resources: ["mcpservers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["secrets"]
+    resources: ["pods"]
     verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    resources: ["pods"]
+    resources: ["secrets"]
     verbs: ["get", "list"]
-  - apiGroups: ["agent.kagenti.dev"]
-    resources: ["agents", "agentbuilds"]
-    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
-  - apiGroups: ["toolhive.stacklok.dev"]
-    resources: ["mcpservers"]
-    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kagenti-ui-binding
+  name: kagenti-backend
   labels:
+    app.kubernetes.io/name: kagenti-backend
     {{- include "kagenti.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kagenti-ui-role
+  name: kagenti-backend
 subjects:
   - kind: ServiceAccount
-    name: kagenti-ui-service-account
+    name: kagenti-backend
     namespace: "{{ .Values.ui.namespace }}"
-
-{{- if .Values.openshift }}
 ---
+{{- if .Values.openshift }}
+# OpenShift Route for UI
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -243,7 +308,7 @@ metadata:
 spec:
   path: /
   port:
-    targetPort: 8501
+    targetPort: http
   to:
     kind: Service
     name: kagenti-ui
@@ -252,14 +317,14 @@ spec:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
 {{- else }}
----
+# HTTPRoute for Kubernetes Gateway API
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: kagenti-ui
   namespace: "{{ .Values.ui.namespace }}"
   labels:
-    app: kagenti-ui
+    app.kubernetes.io/name: kagenti-ui
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
   parentRefs:
@@ -268,8 +333,21 @@ spec:
   hostnames:
     - "{{ .Values.ui.hostname }}"
   rules:
-    - backendRefs:
+    # Route /api/* to backend
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: kagenti-backend
+          port: 8000
+    # Route everything else to frontend
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
         - name: kagenti-ui
-          port: 8501
+          port: 8080
 {{- end }}    
 {{- end }}
