@@ -23,6 +23,18 @@ Despite the extensive variety of frameworks available for developing agent-based
 
 Kagenti addresses these challenges by enhancing existing agent frameworks with production-ready, framework-neutral infrastructure.
 
+## Architecture
+
+The goal of Kagenti is to provide a pluggable agentic platform blueprint. Key functionalities are currently organized into four key pillars: 
+1. Lifecycle Orchestration
+2. Networking
+3. Security
+4. Observability
+
+Under each of these pillars are logical components that support the workload runtime. 
+
+![Kagenti Architecture](./docs/images/kagenti-architecture.drawio.png)
+
 ## Core Components
 
 Kagenti provides a set of components and assets that make it easier to manage AI agents and tools and integrate their fine-grained authorization into modern cloud-native environments.
@@ -34,47 +46,7 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 | **[Agent Lifecycle Operator](https://github.com/kagenti/kagenti-extensions/tree/main/kagenti-webhook)** | Kubernetes admission webhook for building agents from source, managing lifecycle, and coordinating platform services |
 | **[MCP Gateway](https://github.com/kagenti/mcp-gateway/blob/main/README.md)** | Unified gateway for Model Context Protocol (MCP) servers and tools. It acts as the entry point for policy enforcement, handling requests and routing them through the appropriate authorization patterns |
 
-## Architecture
 
-```shell
-┌───────────────────────────────────────────────────────────────────────┐
-│                           Kubernetes Cluster                          │
-├───────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌─────────────────────────────────────────────────────────────────┐  │
-│  │                      kagenti-system Namespace                   │  │
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │  │
-│  │  │ Kagenti UI │  │  Agent     │  │  Ingress   │  │   Kiali    │ │  │
-│  │  │            │  │  Lifecycle │  │  Gateway   │  │            │ │  │
-│  │  │            │  │  Operator  │  │            │  │            │ │  │
-│  │  └────────────┘  └────────────┘  └────────────┘  └────────────┘ │  │
-│  └─────────────────────────────────────────────────────────────────┘  │
-│                                                                       │
-│  ┌──────────────────────────────────────────────────────────────────┐ │
-│  │                Workload Namespaces (team1, team2, ...)           │ │
-│  │     ┌──────────────┐  ┌──────────────┐   ┌──────────────┐        │ │
-│  │     │  A2A Agents  │  │  MCP Tools   │   │ Custom       │        │ │
-│  │     │  (LangGraph, │  │  (weather,   │   │ Workloads    │        │ │
-│  │     │   CrewAI,    │  │   slack,     │   │              │        │ │
-│  │     │   AG2...)    │  │   fetch...)  │   │              │        │ │
-│  │     └──────────────┘  └──────────────┘   └──────────────┘        │ │
-│  └──────────────────────────────────────────────────────────────────┘ │
-│                                                                       │
-│           ┌────────────────────┐  ┌────────────────────┐              |
-│           │  gateway-system    │  │     mcp-system     │              │
-│           │  ┌──────────────┐  │  │  ┌──────────────┐  │              │
-│           │  │ MCP Gateway  │  │  │  │ MCP Broker   │  │              │
-│           │  │   (Envoy)    │  │  │  │ Controller   │  │              │
-│           │  └──────────────┘  │  │  └──────────────┘  │              │
-│           └────────────────────┘  └────────────────────┘              │
-│                                                                       │
-│    ┌────────────────┐  ┌────────────────┐  ┌────────────────────┐     │
-│    │     SPIRE      │  │       IAM      │  │  Istio Ambient     │     │
-│    │  (Identity)    │  │(e.g. Keycloak) |  │  (Service Mesh)    │     │
-│    └────────────────┘  └────────────────┘  └────────────────────┘     │
-│                                                                       │
-└───────────────────────────────────────────────────────────────────────┘
-```
 
 ## Quick Start
 
