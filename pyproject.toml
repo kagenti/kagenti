@@ -19,7 +19,11 @@ dependencies = [
     "PyYAML>=6.0.3",
 
     # Dependencies for reliable logging in the authentication process.
-    "typer>=0.20.0"
+    "typer>=0.20.0",
+
+    # Authentication and JSON Web Token handling
+    "PyJWT>=2.8.0",
+    "python-keycloak>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -42,10 +46,10 @@ test = [
     "a2a-sdk>=0.2.5",
 
     # Keycloak client
-    "python-keycloak>=3.7.0",
+    #"python-keycloak>=3.7.0",
 
     # JSON Web Token handling
-    "PyJWT>=2.8.0",
+    #"PyJWT>=2.8.0",
 ]
 
 [tool.setuptools]

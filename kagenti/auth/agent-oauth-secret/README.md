@@ -258,8 +258,8 @@ The tool provides clear error messages for common issues:
 # Activate virtual environment
 source .venv/bin/activate
 
-# Install dependencies
-pip install typer python-keycloak kubernetes
+# Install the kagenti package in edit mode and its dependencies
+pip install -e .
 
 # Set environment variables
 export AGENT_NAMESPACES="test-ns"
