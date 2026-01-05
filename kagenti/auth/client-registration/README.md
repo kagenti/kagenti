@@ -7,8 +7,7 @@
 ### Build the image
 
 ```sh
-cd kagenti/auth/
-docker build --target client-reg -t client-registration -f Auth.Dockerfile .
+docker build --target client-reg -t client-registration -f kagenti/auth/Auth.Dockerfile .
 docker tag client-registration ghcr.io/kagenti/kagenti/client-registration:latest
 ```
 

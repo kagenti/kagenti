@@ -1,6 +1,9 @@
 # Use minimal Python base image for all targets
 FROM python:3.12.3-slim AS base
 
+# Install the kagenti package from the top level directory
+RUN pip install .
+
 # Set work directory
 WORKDIR /app
 
