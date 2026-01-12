@@ -137,11 +137,11 @@ spec:
             - containerPort: 6277
           resources:
             limits:
-              cpu: 500m
-              memory: 512Mi
-            requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
           env:
           - name: DANGEROUSLY_OMIT_AUTH
             value: "true"

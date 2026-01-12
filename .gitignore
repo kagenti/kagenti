@@ -174,3 +174,8 @@ cython_debug/
 
 # Local testing scripts (not committed)
 local-testing/
+
+############## Node and React 
+
+node_modules/
+.bin/

@@ -144,11 +144,14 @@ def create_kind_cluster(install_registry: bool, silent: bool):
     ):
         return False
 
+    # Pin to Kubernetes 1.32.x to ensure compatibility with kubeadm v1beta3
+    # Kubernetes 1.35+ deprecated v1beta3 causing kubelet startup failures on Ubuntu 24.04
     base_config = """
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  image: kindest/node:v1.32.2@sha256:f226345927d7e348497136874b6d207e0b32cc52154ad8323129352923a3142f
   extraPortMappings:
   - containerPort: 30080
     hostPort: 8080

@@ -49,27 +49,42 @@ agentNamespaces:
 # ------------------------------------------------------------------
 ui:
   configmap: kagenti-ui-config
+  # Domain name for constructing service URLs (non-OpenShift only)
+  domainName: localtest.me
   auth:
     enabled: true
   namespace: kagenti-system
-  image: ghcr.io/kagenti/kagenti/ui
-  tag: v0.2.0-alpha.2
   hostname: kagenti-ui.localtest.me
   url: http://kagenti-ui.localtest.me:8080
-  # Resource defaults for the UI container (can be overridden)
-  resources:
-    limits:
-      cpu: 300m
-      memory: 512Mi
-    requests:
-      cpu: 100m
-      memory: 256Mi
+  # Frontend (UI v2) configuration
+  frontend:
+    image: ghcr.io/kagenti/kagenti/ui-v2
+    tag: latest
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+  # Backend configuration
+  backend:
+    image: ghcr.io/kagenti/kagenti/backend
+    tag: latest
+    resources:
+      limits:
+        cpu: 250m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
 
 # ------------------------------------------------------------------
 #  UI OAuth Secret Creator Configuration
 # ------------------------------------------------------------------
 uiOAuthSecret:
-  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  #image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  image: quay.io/pdettori/ui-oauth-secret
   tag: latest
   # When true, mount the in-cluster serviceaccount CA 
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
@@ -120,11 +135,11 @@ kagenti-operator-chart:
       - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
       resources:
         limits:
-          cpu: 300m
-          memory: 512Mi
-        requests:
-          cpu: 100m
+          cpu: 150m
           memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration

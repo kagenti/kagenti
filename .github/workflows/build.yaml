@@ -32,6 +32,10 @@ jobs:
         image_config:
           - name: ui
             path: ./kagenti
+          - name: ui-v2
+            path: ./kagenti
+          - name: backend
+            path: ./kagenti    
           - name: ui-oauth-secret
             path: ./kagenti/auth
           - name: agent-oauth-secret

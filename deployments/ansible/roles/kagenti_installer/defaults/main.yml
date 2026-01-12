@@ -1,4 +1,4 @@
 ---
 # Default role variables for kagenti_installer
 # Timeout (seconds) to wait for helm operations
-helm_wait_timeout: 600
+helm_wait_timeout: 1200

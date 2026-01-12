@@ -1,0 +1,935 @@
+/* Copyright 2025 IBM Corp.
+ * Licensed under the Apache License, Version 2.0
+ *
+ * OpenShift Console-inspired PatternFly theme for Kagenti UI
+ * Supports automatic dark/light theme switching based on system preference
+ */
+
+/* Base variables - shared across themes */
+:root {
+  /* Primary colors - OpenShift blue palette */
+  --pf-v5-global--primary-color--100: #0066cc;
+  --pf-v5-global--primary-color--200: #004080;
+  --pf-v5-global--link--Color: #0066cc;
+  --pf-v5-global--link--Color--hover: #004080;
+
+  /* Masthead - Always dark like OpenShift */
+  --pf-v5-c-masthead--BackgroundColor: #151515;
+  --pf-v5-c-masthead__brand--c-button--Color: #ffffff;
+
+  /* Page sidebar - Always dark like OpenShift */
+  --pf-v5-c-page__sidebar--BackgroundColor: #212427;
+  --pf-v5-c-nav--BackgroundColor: #212427;
+  --pf-v5-c-nav__link--Color: #ffffff;
+  --pf-v5-c-nav__link--hover--Color: #ffffff;
+  --pf-v5-c-nav__link--hover--BackgroundColor: #3c3f42;
+  --pf-v5-c-nav__link--m-current--Color: #ffffff;
+  --pf-v5-c-nav__link--m-current--BackgroundColor: #0066cc;
+
+  /* Status colors */
+  --kagenti-status-ready: #3e8635;
+  --kagenti-status-not-ready: #c9190b;
+  --kagenti-status-pending: #f0ab00;
+
+  /* Spacing */
+  --kagenti-page-padding: 24px;
+
+  /* Theme transition */
+  --theme-transition-duration: 0.2s;
+}
+
+/* Light theme (default) */
+[data-theme="light"] {
+  /* Background colors */
+  --pf-v5-global--BackgroundColor--100: #ffffff;
+  --pf-v5-global--BackgroundColor--200: #f0f0f0;
+  --pf-v5-global--BackgroundColor--150: #fafafa;
+  --pf-v5-global--BackgroundColor--light-100: #ffffff;
+
+  /* Text colors */
+  --pf-v5-global--Color--100: #151515;
+  --pf-v5-global--Color--200: #6a6e73;
+  --pf-v5-global--Color--light-100: #151515;
+  --pf-v5-global--Color--light-200: #6a6e73;
+
+  /* Card styling */
+  --pf-v5-c-card--BackgroundColor: #ffffff;
+  --pf-v5-c-card--BorderColor: #d2d2d2;
+  --pf-v5-c-card--BoxShadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
+  --pf-v5-c-card--hover--BoxShadow: 0 4px 8px 0 rgba(0, 0, 0, 0.15);
+
+  /* Table styling */
+  --pf-v5-c-table--BackgroundColor: #ffffff;
+  --pf-v5-c-table--BorderColor: #d2d2d2;
+  --pf-v5-c-table--thead--BackgroundColor: #f0f0f0;
+  --pf-v5-c-table--tr--hover--BackgroundColor: #f0f0f0;
+  --pf-v5-c-table--Color: #151515;
+
+  /* Chat colors */
+  --kagenti-chat-messages-bg: #fafafa;
+  --kagenti-chat-message-assistant-bg: #ffffff;
+  --kagenti-chat-message-assistant-border: #d2d2d2;
+  --kagenti-chat-input-bg: #ffffff;
+  --kagenti-chat-input-border: #d2d2d2;
+
+  /* Form and input colors */
+  --pf-v5-c-form-control--BackgroundColor: #ffffff;
+  --pf-v5-c-form-control--BorderColor: #d2d2d2;
+  --pf-v5-c-form-control--Color: #151515;
+
+  /* Tag colors */
+  --kagenti-tag-bg: #f0f0f0;
+  --kagenti-tag-color: #151515;
+
+  /* Code block colors */
+  --kagenti-code-bg: #f0f0f0;
+  --kagenti-code-color: #151515;
+
+  /* Border colors */
+  --kagenti-border-color: #d2d2d2;
+
+  /* Title colors */
+  --pf-v5-c-title--Color: #151515;
+
+  /* Toolbar colors */
+  --pf-v5-c-toolbar--BackgroundColor: transparent;
+
+  /* Empty state */
+  --pf-v5-c-empty-state--Color: #151515;
+
+  /* Breadcrumb */
+  --pf-v5-c-breadcrumb__link--Color: #0066cc;
+
+  /* Clipboard copy */
+  --pf-v5-c-clipboard-copy--BackgroundColor: #ffffff;
+  --pf-v5-c-clipboard-copy--BorderColor: #d2d2d2;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  /* Background colors */
+  --pf-v5-global--BackgroundColor--100: #151515;
+  --pf-v5-global--BackgroundColor--200: #212427;
+  --pf-v5-global--BackgroundColor--150: #1a1d21;
+  --pf-v5-global--BackgroundColor--light-100: #212427;
+
+  /* Text colors */
+  --pf-v5-global--Color--100: #ffffff;
+  --pf-v5-global--Color--200: #c9c9c9;
+  --pf-v5-global--Color--light-100: #ffffff;
+  --pf-v5-global--Color--light-200: #c9c9c9;
+
+  /* Link colors for dark mode */
+  --pf-v5-global--link--Color: #73bcf7;
+  --pf-v5-global--link--Color--hover: #2b9af3;
+
+  /* Card styling */
+  --pf-v5-c-card--BackgroundColor: #212427;
+  --pf-v5-c-card--BorderColor: #3c3f42;
+  --pf-v5-c-card--BoxShadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --pf-v5-c-card--hover--BoxShadow: 0 4px 8px 0 rgba(0, 0, 0, 0.4);
+
+  /* Table styling */
+  --pf-v5-c-table--BackgroundColor: #212427;
+  --pf-v5-c-table--BorderColor: #3c3f42;
+  --pf-v5-c-table--thead--BackgroundColor: #1a1d21;
+  --pf-v5-c-table--tr--hover--BackgroundColor: #3c3f42;
+  --pf-v5-c-table--Color: #ffffff;
+
+  /* Chat colors */
+  --kagenti-chat-messages-bg: #1a1d21;
+  --kagenti-chat-message-assistant-bg: #212427;
+  --kagenti-chat-message-assistant-border: #3c3f42;
+  --kagenti-chat-input-bg: #212427;
+  --kagenti-chat-input-border: #3c3f42;
+
+  /* Form and input colors */
+  --pf-v5-c-form-control--BackgroundColor: #212427;
+  --pf-v5-c-form-control--BorderColor: #3c3f42;
+  --pf-v5-c-form-control--Color: #ffffff;
+
+  /* Tag colors */
+  --kagenti-tag-bg: #3c3f42;
+  --kagenti-tag-color: #ffffff;
+
+  /* Code block colors */
+  --kagenti-code-bg: #212427;
+  --kagenti-code-color: #ffffff;
+
+  /* Border colors */
+  --kagenti-border-color: #3c3f42;
+
+  /* Title colors */
+  --pf-v5-c-title--Color: #ffffff;
+
+  /* Toolbar colors */
+  --pf-v5-c-toolbar--BackgroundColor: transparent;
+
+  /* Empty state */
+  --pf-v5-c-empty-state--Color: #ffffff;
+
+  /* Breadcrumb */
+  --pf-v5-c-breadcrumb__link--Color: #73bcf7;
+
+  /* Clipboard copy */
+  --pf-v5-c-clipboard-copy--BackgroundColor: #212427;
+  --pf-v5-c-clipboard-copy--BorderColor: #3c3f42;
+}
+
+/* Global styles */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Apply theme colors to body */
+body {
+  background-color: var(--pf-v5-global--BackgroundColor--100);
+  color: var(--pf-v5-global--Color--100);
+  transition: background-color var(--theme-transition-duration),
+    color var(--theme-transition-duration);
+}
+
+/* Page main section */
+.pf-v5-c-page__main {
+  background-color: var(--pf-v5-global--BackgroundColor--100);
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Page section styling - Override variant="light" in dark mode */
+.pf-v5-c-page__main-section {
+  padding: var(--kagenti-page-padding);
+  background-color: var(--pf-v5-global--BackgroundColor--100);
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Force page sections to use theme colors even with variant="light" */
+[data-theme="dark"] .pf-v5-c-page__main-section.pf-m-light {
+  background-color: var(--pf-v5-global--BackgroundColor--100) !important;
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Title styling */
+.pf-v5-c-title {
+  color: var(--pf-v5-c-title--Color);
+}
+
+/* Card styling - OpenShift style */
+.pf-v5-c-card {
+  --pf-v5-c-card--BoxShadow: var(--pf-v5-c-card--BoxShadow);
+  background-color: var(--pf-v5-c-card--BackgroundColor);
+  border: 1px solid var(--pf-v5-c-card--BorderColor);
+  border-radius: 3px;
+  color: var(--pf-v5-global--Color--100);
+  transition: background-color var(--theme-transition-duration),
+    box-shadow var(--theme-transition-duration),
+    border-color var(--theme-transition-duration);
+}
+
+.pf-v5-c-card:hover {
+  --pf-v5-c-card--BoxShadow: var(--pf-v5-c-card--hover--BoxShadow);
+}
+
+.pf-v5-c-card__title {
+  color: var(--pf-v5-global--Color--100);
+}
+
+.pf-v5-c-card__body {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Table styling */
+.pf-v5-c-table {
+  --pf-v5-c-table--BorderColor: var(--pf-v5-c-table--BorderColor);
+  background-color: var(--pf-v5-c-table--BackgroundColor);
+  color: var(--pf-v5-c-table--Color);
+}
+
+.pf-v5-c-table thead {
+  background-color: var(--pf-v5-c-table--thead--BackgroundColor);
+}
+
+.pf-v5-c-table th {
+  color: var(--pf-v5-c-table--Color);
+  border-bottom: 1px solid var(--pf-v5-c-table--BorderColor);
+}
+
+.pf-v5-c-table td {
+  color: var(--pf-v5-c-table--Color);
+  border-bottom: 1px solid var(--pf-v5-c-table--BorderColor);
+}
+
+.pf-v5-c-table tbody tr {
+  background-color: var(--pf-v5-c-table--BackgroundColor);
+}
+
+.pf-v5-c-table tbody tr:hover {
+  background-color: var(--pf-v5-c-table--tr--hover--BackgroundColor);
+}
+
+/* Description list styling */
+.pf-v5-c-description-list__term {
+  color: var(--pf-v5-global--Color--200);
+}
+
+.pf-v5-c-description-list__description {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Button styling - consistent across themes */
+/* Reference: Dark theme "Import New Agent" button styling */
+
+/* Primary button - consistent blue with white text */
+.pf-v5-c-button.pf-m-primary {
+  background-color: #0066cc !important;
+  color: #ffffff !important;
+  border-color: #0066cc !important;
+}
+
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+  background-color: #004080 !important;
+  color: #ffffff !important;
+  border-color: #004080 !important;
+}
+
+/* Secondary button - consistent dark background with white text (like dark theme) */
+.pf-v5-c-button.pf-m-secondary {
+  background-color: #212427 !important;
+  color: #ffffff !important;
+  border-color: #3c3f42 !important;
+}
+
+.pf-v5-c-button.pf-m-secondary:hover,
+.pf-v5-c-button.pf-m-secondary:focus {
+  background-color: #3c3f42 !important;
+  color: #ffffff !important;
+  border-color: #4f5255 !important;
+}
+
+/* Tertiary button - transparent with text color consistent */
+.pf-v5-c-button.pf-m-tertiary {
+  background-color: transparent !important;
+  color: #0066cc !important;
+  border-color: #0066cc !important;
+}
+
+.pf-v5-c-button.pf-m-tertiary:hover,
+.pf-v5-c-button.pf-m-tertiary:focus {
+  background-color: rgba(0, 102, 204, 0.1) !important;
+  color: #004080 !important;
+  border-color: #004080 !important;
+}
+
+/* Danger button - consistent red with white text */
+.pf-v5-c-button.pf-m-danger {
+  background-color: #c9190b !important;
+  color: #ffffff !important;
+  border-color: #c9190b !important;
+}
+
+.pf-v5-c-button.pf-m-danger:hover,
+.pf-v5-c-button.pf-m-danger:focus {
+  background-color: #a30000 !important;
+  color: #ffffff !important;
+  border-color: #a30000 !important;
+}
+
+/* Link button - consistent blue text */
+.pf-v5-c-button.pf-m-link {
+  color: #0066cc !important;
+  background-color: transparent !important;
+}
+
+.pf-v5-c-button.pf-m-link:hover,
+.pf-v5-c-button.pf-m-link:focus {
+  color: #004080 !important;
+  background-color: transparent !important;
+}
+
+/* Plain button (icon buttons) - theme-aware styling */
+.pf-v5-c-button.pf-m-plain {
+  color: var(--pf-v5-global--Color--100) !important;
+  background-color: transparent !important;
+}
+
+.pf-v5-c-button.pf-m-plain:hover,
+.pf-v5-c-button.pf-m-plain:focus {
+  background-color: var(--pf-v5-global--BackgroundColor--200) !important;
+}
+
+/* Plain button with danger styling (for delete icons) */
+.pf-v5-c-button.pf-m-plain[style*="danger"] {
+  color: var(--pf-v5-global--danger-color--100) !important;
+}
+
+/* Control button - consistent styling */
+.pf-v5-c-button.pf-m-control {
+  background-color: #212427 !important;
+  color: #ffffff !important;
+  border-color: #3c3f42 !important;
+}
+
+.pf-v5-c-button.pf-m-control:hover,
+.pf-v5-c-button.pf-m-control:focus {
+  background-color: #3c3f42 !important;
+  color: #ffffff !important;
+  border-color: #4f5255 !important;
+}
+
+/* User dropdown toggle - always light text on dark background */
+.pf-v5-c-toolbar .pf-v5-c-menu-toggle {
+  color: #ffffff !important;
+}
+
+.pf-v5-c-toolbar .pf-v5-c-menu-toggle:hover,
+.pf-v5-c-toolbar .pf-v5-c-menu-toggle:active,
+.pf-v5-c-toolbar .pf-v5-c-menu-toggle:focus {
+  color: #ffffff !important;
+}
+
+/* Avatar in toolbar should have light background for contrast */
+.pf-v5-c-toolbar .pf-v5-c-avatar {
+  background-color: var(--pf-v5-global--primary-color--100);
+}
+
+/* Toolbar styling */
+.pf-v5-c-toolbar {
+  padding: 0;
+  margin-bottom: 16px;
+  background-color: var(--pf-v5-c-toolbar--BackgroundColor);
+  color: var(--pf-v5-global--Color--100);
+}
+
+.pf-v5-c-toolbar__content {
+  background-color: transparent;
+}
+
+/* Empty state styling */
+.pf-v5-c-empty-state {
+  padding: 48px;
+  background-color: var(--pf-v5-global--BackgroundColor--100);
+  color: var(--pf-v5-c-empty-state--Color);
+}
+
+.pf-v5-c-empty-state__title-text {
+  color: var(--pf-v5-c-empty-state--Color);
+}
+
+.pf-v5-c-empty-state__body {
+  color: var(--pf-v5-global--Color--200);
+}
+
+.pf-v5-c-empty-state__icon {
+  color: var(--pf-v5-global--Color--200);
+}
+
+/* Status badge styling */
+.kagenti-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.kagenti-status-badge--ready {
+  background-color: var(--kagenti-status-ready);
+  color: white;
+}
+
+.kagenti-status-badge--not-ready {
+  background-color: var(--kagenti-status-not-ready);
+  color: white;
+}
+
+.kagenti-status-badge--pending {
+  background-color: var(--kagenti-status-pending);
+  color: #151515;
+}
+
+/* Sidebar and Navigation - Always dark with light text */
+.pf-v5-c-page__sidebar {
+  background-color: #212427 !important;
+}
+
+.pf-v5-c-nav {
+  background-color: #212427 !important;
+}
+
+.pf-v5-c-nav__link {
+  color: #ffffff !important;
+}
+
+.pf-v5-c-nav__link:hover {
+  color: #ffffff !important;
+  background-color: #3c3f42 !important;
+}
+
+.pf-v5-c-nav__item.pf-m-current > .pf-v5-c-nav__link {
+  color: #ffffff !important;
+  background-color: #0066cc !important;
+}
+
+/* Nav expandable toggle (like "Workloads") */
+.pf-v5-c-nav__link.pf-m-expandable {
+  color: #ffffff !important;
+}
+
+.pf-v5-c-nav__toggle {
+  color: #ffffff !important;
+}
+
+.pf-v5-c-nav__toggle-icon {
+  color: #ffffff !important;
+}
+
+/* Subnav items */
+.pf-v5-c-nav__subnav .pf-v5-c-nav__link {
+  color: #ffffff !important;
+}
+
+/* Navigation section titles (NavGroup headers) */
+.pf-v5-c-nav__section-title {
+  color: #8a8d90 !important;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 16px 16px 8px;
+  margin-top: 8px;
+}
+
+/* First NavGroup should not have top margin */
+.pf-v5-c-nav__section:first-child .pf-v5-c-nav__section-title {
+  margin-top: 0;
+}
+
+/* NavGroup container */
+.pf-v5-c-nav__section {
+  background-color: #212427 !important;
+}
+
+/* NavList within NavGroup */
+.pf-v5-c-nav__section .pf-v5-c-nav__list {
+  background-color: #212427 !important;
+}
+
+/* Masthead brand */
+.kagenti-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.kagenti-brand-logo {
+  width: 36px;
+  height: 36px;
+}
+
+/* Content area */
+.kagenti-content {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Form styling */
+.pf-v5-c-form__group {
+  margin-bottom: 16px;
+}
+
+/* Form control styling */
+.pf-v5-c-form-control {
+  background-color: var(--pf-v5-c-form-control--BackgroundColor);
+  border-color: var(--pf-v5-c-form-control--BorderColor);
+  color: var(--pf-v5-c-form-control--Color);
+}
+
+/* Light theme: form inputs need dark text (exclude masthead which is always dark) */
+[data-theme="light"] input:not(.pf-v5-c-masthead input),
+[data-theme="light"] textarea:not(.pf-v5-c-masthead textarea),
+[data-theme="light"] select:not(.pf-v5-c-masthead select),
+[data-theme="light"] .pf-v5-c-form-control:not(.pf-v5-c-masthead .pf-v5-c-form-control),
+[data-theme="light"] .pf-v5-c-text-input-group__text-input:not(.pf-v5-c-masthead .pf-v5-c-text-input-group__text-input),
+[data-theme="light"] .pf-v5-c-select__toggle-text:not(.pf-v5-c-masthead .pf-v5-c-select__toggle-text),
+[data-theme="light"] .pf-v5-c-menu-toggle__text:not(.pf-v5-c-masthead .pf-v5-c-menu-toggle__text) {
+  background-color: #ffffff !important;
+  color: #151515 !important;
+  border-color: #d2d2d2 !important;
+}
+
+/* Masthead elements always use light text (dark background) */
+.pf-v5-c-masthead .pf-v5-c-menu-toggle__text,
+.pf-v5-c-masthead .pf-v5-c-button,
+.pf-v5-c-masthead .pf-v5-c-dropdown__toggle,
+.pf-v5-c-masthead input,
+.pf-v5-c-masthead select {
+  color: #ffffff !important;
+}
+
+/* Masthead button hover - always dark background */
+.pf-v5-c-masthead .pf-v5-c-button:hover,
+.pf-v5-c-masthead .pf-v5-c-button:focus,
+.pf-v5-c-masthead .pf-v5-c-menu-toggle:hover,
+.pf-v5-c-masthead .pf-v5-c-menu-toggle:focus {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+/* Dark theme: form inputs need light text */
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select,
+[data-theme="dark"] .pf-v5-c-form-control,
+[data-theme="dark"] .pf-v5-c-text-input-group__text-input,
+[data-theme="dark"] .pf-v5-c-select__toggle-text,
+[data-theme="dark"] .pf-v5-c-menu-toggle__text {
+  background-color: #212427 !important;
+  color: #ffffff !important;
+  border-color: #3c3f42 !important;
+}
+
+/* Placeholder text styling */
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #6a6e73 !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #c9c9c9 !important;
+}
+
+/* Form label styling */
+.pf-v5-c-form__label-text {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Code block styling for JSON/YAML display */
+.pf-v5-c-code-block {
+  max-height: 400px;
+  overflow: auto;
+  background-color: var(--kagenti-code-bg);
+  border: 1px solid var(--kagenti-border-color);
+}
+
+pre {
+  background-color: var(--kagenti-code-bg);
+  color: var(--kagenti-code-color);
+}
+
+code {
+  color: var(--kagenti-code-color);
+}
+
+/* Chat styling */
+.kagenti-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  border: 1px solid var(--kagenti-border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.kagenti-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background-color: var(--kagenti-chat-messages-bg);
+}
+
+.kagenti-chat-message {
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  max-width: 80%;
+}
+
+.kagenti-chat-message--user {
+  background-color: #0066cc;
+  color: white;
+  margin-left: auto;
+}
+
+.kagenti-chat-message--assistant {
+  background-color: var(--kagenti-chat-message-assistant-bg);
+  border: 1px solid var(--kagenti-chat-message-assistant-border);
+  color: var(--pf-v5-global--Color--100);
+}
+
+.kagenti-chat-input {
+  display: flex;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid var(--kagenti-border-color);
+  background-color: var(--kagenti-chat-input-bg);
+}
+
+/* Label/Tag styling */
+.kagenti-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-right: 4px;
+  margin-bottom: 4px;
+  background-color: var(--kagenti-tag-bg);
+  color: var(--kagenti-tag-color);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+/* Loading spinner center */
+.kagenti-loading-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+/* Breadcrumb styling */
+.pf-v5-c-breadcrumb__link {
+  color: var(--pf-v5-c-breadcrumb__link--Color);
+}
+
+.pf-v5-c-breadcrumb__item-divider,
+.pf-v5-c-breadcrumb__item {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Clipboard copy styling */
+.pf-v5-c-clipboard-copy {
+  background-color: var(--pf-v5-c-clipboard-copy--BackgroundColor);
+  border-color: var(--pf-v5-c-clipboard-copy--BorderColor);
+}
+
+.pf-v5-c-clipboard-copy__text {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Tabs styling */
+.pf-v5-c-tabs__link {
+  color: var(--pf-v5-global--Color--100);
+}
+
+.pf-v5-c-tabs__link::after {
+  background-color: var(--kagenti-border-color);
+}
+
+.pf-v5-c-tabs__item.pf-m-current .pf-v5-c-tabs__link {
+  color: var(--pf-v5-global--link--Color);
+}
+
+/* Expandable section styling */
+.pf-v5-c-expandable-section__toggle {
+  color: var(--pf-v5-global--Color--100);
+}
+
+.pf-v5-c-expandable-section__toggle-text {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Alert styling in dark mode */
+[data-theme="dark"] .pf-v5-c-alert {
+  --pf-v5-c-alert--BackgroundColor: #212427;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .pf-v5-c-alert__title {
+  color: #ffffff;
+}
+
+[data-theme="dark"] .pf-v5-c-alert__description {
+  color: #c9c9c9;
+}
+
+/* Modal styling in dark mode */
+[data-theme="dark"] .pf-v5-c-modal-box {
+  background-color: #212427;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .pf-v5-c-modal-box__title {
+  color: #ffffff;
+}
+
+[data-theme="dark"] .pf-v5-c-modal-box__body {
+  color: #ffffff;
+}
+
+/* Dropdown menu styling in dark mode */
+[data-theme="dark"] .pf-v5-c-menu {
+  background-color: #212427;
+  border-color: #3c3f42;
+  --pf-v5-c-menu__list-item--hover--BackgroundColor: #3c3f42;
+}
+
+[data-theme="dark"] .pf-v5-c-menu__item {
+  color: #ffffff;
+}
+
+[data-theme="dark"] .pf-v5-c-menu__item-description {
+  color: #c9c9c9;
+}
+
+/* Select/Dropdown styling in dark mode */
+[data-theme="dark"] .pf-v5-c-menu-toggle {
+  background-color: #212427;
+  border-color: #3c3f42;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .pf-v5-c-menu-toggle__text {
+  color: #ffffff;
+}
+
+/* Grid styling */
+.pf-v5-l-grid {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Split styling */
+.pf-v5-l-split {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Flex styling */
+.pf-v5-l-flex {
+  color: var(--pf-v5-global--Color--100);
+}
+
+/* Text input styling */
+[data-theme="dark"] .pf-v5-c-text-input-group {
+  background-color: #212427;
+  border-color: #3c3f42;
+}
+
+[data-theme="dark"] .pf-v5-c-text-input-group__text-input {
+  background-color: #212427;
+  color: #ffffff;
+}
+
+/* Select styling */
+[data-theme="dark"] .pf-v5-c-select__toggle {
+  background-color: #212427;
+  border-color: #3c3f42;
+  color: #ffffff;
+}
+
+/* Spinner color */
+[data-theme="dark"] .pf-v5-c-spinner {
+  --pf-v5-c-spinner--Color: #73bcf7;
+}
+
+/* Label styling - OpenShift Console design guide (PatternFly tokens) */
+/* Theme-invariant colors for consistency */
+
+/* Success (Green) Labels - for Running, Ready, Authenticated states */
+.pf-v5-c-label.pf-m-green {
+  --pf-v5-c-label--BackgroundColor: #bcd8c7 !important;
+  --pf-v5-c-label--Color: #151515 !important;
+  background-color: #bcd8c7 !important;
+  color: #151515 !important;
+  border: 1px solid #bcd8c7 !important;
+}
+
+.pf-v5-c-label.pf-m-green .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-green .pf-v5-c-label__text {
+  color: #151515 !important;
+}
+
+/* Danger (Red) Labels - for errors, Not Ready states */
+.pf-v5-c-label.pf-m-red {
+  --pf-v5-c-label--BackgroundColor: #b1380b !important;
+  --pf-v5-c-label--Color: #ffffff !important;
+  background-color: #b1380b !important;
+  color: #ffffff !important;
+  border: 1px solid #b1380b !important;
+}
+
+.pf-v5-c-label.pf-m-red .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-red .pf-v5-c-label__text {
+  color: #ffffff !important;
+}
+
+/* Warning (Gold/Orange) Labels - for warnings, Not configured, None, Default states */
+.pf-v5-c-label.pf-m-gold,
+.pf-v5-c-label.pf-m-orange {
+  --pf-v5-c-label--BackgroundColor: #fcf7de !important;
+  --pf-v5-c-label--Color: #151515 !important;
+  background-color: #fcf7de !important;
+  color: #151515 !important;
+  border: 1px solid #fcf7de !important;
+}
+
+.pf-v5-c-label.pf-m-gold .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-gold .pf-v5-c-label__text,
+.pf-v5-c-label.pf-m-orange .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-orange .pf-v5-c-label__text {
+  color: #151515 !important;
+}
+
+/* Branded/Blue Labels - for protocols, in-progress states */
+.pf-v5-c-label.pf-m-blue,
+.pf-v5-c-label.pf-m-cyan,
+.pf-v5-c-label.pf-m-purple {
+  --pf-v5-c-label--BackgroundColor: #0066cc !important;
+  --pf-v5-c-label--Color: #ffffff !important;
+  background-color: #0066cc !important;
+  color: #ffffff !important;
+  border: 1px solid #0066cc !important;
+}
+
+.pf-v5-c-label.pf-m-blue .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-blue .pf-v5-c-label__text,
+.pf-v5-c-label.pf-m-cyan .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-cyan .pf-v5-c-label__text,
+.pf-v5-c-label.pf-m-purple .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-purple .pf-v5-c-label__text {
+  color: #ffffff !important;
+}
+
+/* Neutral/Grey Labels - for disabled states or general info */
+.pf-v5-c-label.pf-m-grey,
+.pf-v5-c-label.pf-m-gray,
+.pf-v5-c-label {
+  --pf-v5-c-label--BackgroundColor: #f2f2f2 !important;
+  --pf-v5-c-label--Color: #151515 !important;
+  background-color: #f2f2f2 !important;
+  color: #151515 !important;
+  border: 1px solid #c7c7c7 !important;
+}
+
+.pf-v5-c-label.pf-m-grey .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-gray .pf-v5-c-label__content,
+.pf-v5-c-label.pf-m-grey .pf-v5-c-label__text,
+.pf-v5-c-label.pf-m-gray .pf-v5-c-label__text,
+.pf-v5-c-label .pf-v5-c-label__content,
+.pf-v5-c-label .pf-v5-c-label__text {
+  color: #151515 !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .kagenti-chat-message {
+    max-width: 95%;
+  }
+
+  :root {
+    --kagenti-page-padding: 16px;
+  }
+}

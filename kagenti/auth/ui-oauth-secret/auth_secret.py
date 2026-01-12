@@ -23,7 +23,7 @@ DEFAULT_KEYCLOAK_REALM = "master"
 DEFAULT_ADMIN_SECRET_NAME = "keycloak-initial-admin"
 DEFAULT_ADMIN_USERNAME_KEY = "username"
 DEFAULT_ADMIN_PASSWORD_KEY = "password"
-OAUTH_REDIRECT_PATH = "/oauth2/callback"
+OAUTH_REDIRECT_PATH = "/"
 OAUTH_SCOPE = "openid profile email"
 SERVICE_ACCOUNT_CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
@@ -398,34 +398,42 @@ def main() -> None:
         )
 
         # Register client
+        # Configure as public client with PKCE for SPA best practices
+        # Public clients don't use client secrets (can't be kept confidential in browser)
+        # PKCE (S256) provides security for the authorization code flow
         client_payload = {
             "clientId": client_id,
             "name": client_id,
-            "description": "",
+            "description": "Kagenti UI - Public SPA client with PKCE",
             "rootUrl": root_url,
             "adminUrl": root_url,
             "baseUrl": "",
             "enabled": True,
-            "clientAuthenticatorType": "client-secret",
+            "publicClient": True,  # Public client - no client secret
             "redirectUris": [root_url + "/*"],
             "webOrigins": [root_url],
-            "standardFlowEnabled": True,
-            "implicitFlowEnabled": False,
-            "directAccessGrantsEnabled": False,
-            "publicClient": False,
+            "standardFlowEnabled": True,  # Authorization code flow
+            "implicitFlowEnabled": False,  # Deprecated, use standard flow instead
+            "directAccessGrantsEnabled": False,  # No password grant for SPAs
             "frontchannelLogout": True,
             "protocol": "openid-connect",
             "fullScopeAllowed": True,
+            "attributes": {
+                "pkce.code.challenge.method": "S256"  # Enable PKCE with S256
+            },
         }
 
         internal_client_id = register_client(keycloak_admin, client_id, client_payload)
 
-        # Get client secret
+        # Get client secret (will be empty for public clients, but kept for backward compatibility)
+        # Public clients don't have secrets, so this will return empty
         secrets = keycloak_admin.get_client_secrets(internal_client_id)
         client_secret = secrets.get("value", "") if secrets else ""
 
         if not client_secret:
-            logger.warning(f"No client secret found for client {client_id}")
+            logger.info(
+                f"Client {client_id} is a public client (no secret) - this is expected for SPAs with PKCE"
+            )
 
         # Construct OAuth endpoints
         # AUTH_ENDPOINT uses public URL for browser redirects
