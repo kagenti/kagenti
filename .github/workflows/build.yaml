@@ -37,6 +37,8 @@ jobs:
             path: ./kagenti/auth
           - name: agent-oauth-secret
             path: ./kagenti/auth
+          - name: phoenix-oauth-secret
+            path: ./kagenti/auth
           - name: mlflow-oauth-secret
             path: ./kagenti/auth
 

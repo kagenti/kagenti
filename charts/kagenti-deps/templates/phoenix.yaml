@@ -1,4 +1,44 @@
 {{- if .Values.components.otel.enabled }}
+{{- if .Values.phoenix.auth.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: phoenix
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: phoenix-secret-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.phoenix.auth.secretName | default "phoenix-oauth-secret" | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: phoenix-secret-reader-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: phoenix
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: phoenix-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -21,6 +61,24 @@ spec:
       labels:
         app: phoenix
     spec:
+      {{- if .Values.phoenix.auth.enabled }}
+      serviceAccountName: phoenix
+      # Wait for OAuth secret to exist before starting Phoenix
+      # This prevents Phoenix from running unauthenticated
+      initContainers:
+      - name: wait-for-oauth-secret
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for phoenix-oauth-secret to be created..."
+          until kubectl get secret {{ .Values.phoenix.auth.secretName | default "phoenix-oauth-secret" }} -n {{ .Release.Namespace }} 2>/dev/null; do
+            echo "Secret not found, waiting..."
+            sleep 5
+          done
+          echo "OAuth secret found, Phoenix can start with authentication enabled"
+      {{- end }}
       containers:
       - args:
         - -m
@@ -28,6 +86,11 @@ spec:
         - serve
         command:
         - python
+        {{- if .Values.phoenix.auth.enabled }}
+        envFrom:
+        - secretRef:
+            name: {{ .Values.phoenix.auth.secretName | default "phoenix-oauth-secret" }}
+        {{- end }}
         env:
         - name: PHOENIX_POSTGRES_HOST
           value: postgres
