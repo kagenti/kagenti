@@ -44,6 +44,9 @@ jobs:
           - name: api-oauth-secret
             context: ./kagenti
             dockerfile: auth/api-oauth-secret/Dockerfile
+          - name: phoenix-oauth-secret
+            context: ./kagenti
+            dockerfile: auth/phoenix-oauth-secret/Dockerfile
           - name: mlflow-oauth-secret
             context: ./kagenti
             dockerfile: auth/mlflow-oauth-secret/Dockerfile
