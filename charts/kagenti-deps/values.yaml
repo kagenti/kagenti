@@ -161,3 +161,14 @@ metricsServer:
 mcpInspector:
   image: ghcr.io/modelcontextprotocol/inspector
   tag: 0.17.2
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    # When enabled, Phoenix expects OAuth env vars from the phoenix-oauth-secret
+    enabled: true
+    # Name of the Kubernetes secret containing OAuth credentials
+    secretName: phoenix-oauth-secret
