@@ -54,6 +54,20 @@ Smaller pull requests are typically easier to review and merge than larger ones.
 
 See the [making PR](./docs/dev-guide.md#making-a-pr) document for detailed instructions.
 
+## Contributing Documentation
+
+Documentation improvements are always welcome! When contributing documentation, please follow these guidelines:
+
+### Diagrams
+
+When adding diagrams to the documentation, please place them in the appropriate location:
+
+- **General images and architecture diagrams**: Place PNG, JPG, or other image files in [`docs/images/`](./docs/images/). This includes architecture diagrams, screenshots, QR codes, and other visual assets used across the documentation. We recommend using [draw.io](https://draw.io) for generating diagrams so they can be easily edited in the future. 
+
+- **Mermaid sequence diagrams**: Place Mermaid source files (`.mmd`) in [`docs/diagrams/`](./docs/diagrams/) and generate PNG versions in [`docs/diagrams/images/png/`](./docs/diagrams/images/png/). See the [diagrams README](./docs/diagrams/README.md) for instructions on generating diagram images from Mermaid source files.
+
+When referencing diagrams in documentation, use relative paths from the documentation file location (e.g., `./images/kagenti-architecture.drawio.png` or `../diagrams/images/png/01-user-authentication-flow.png`).
+
 ## Licensing
 
 Kagenti is [Apache 2.0 licensed](LICENSE) and we accept contributions via
