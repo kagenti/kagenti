@@ -1,0 +1,256 @@
+#
+# Shipwright Build installation for Kubernetes (non-OpenShift) clusters
+# On OpenShift, Shipwright is installed via the Shipwright Operator
+#
+- name: Install Shipwright Build
+  block:
+    #
+    # Pre-requisite check: cert-manager must be installed
+    #
+    - name: Check if cert-manager is installed
+      command: kubectl get deployment cert-manager-webhook -n cert-manager
+      register: cert_manager_check
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if cert-manager is not installed
+      fail:
+        msg: |
+          cert-manager is required for Shipwright webhook certificates but is not installed.
+          Please enable cert-manager installation by setting certManager.enabled: true in your values file.
+      when: cert_manager_check.rc != 0
+
+    #
+    # Install Shipwright Build
+    # Using server-side apply to handle large CRDs (buildruns.shipwright.io exceeds 256KB annotation limit)
+    #
+    - name: Install Shipwright Build release
+      command: >-
+        kubectl apply --server-side --force-conflicts
+        -f https://github.com/shipwright-io/build/releases/download/{{ shipwright.version }}/release.yaml
+      register: shipwright_release_result
+      retries: 3
+      delay: 15
+      until: shipwright_release_result is not failed
+
+    - name: Wait for shipwright-build namespace to be active
+      command: kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/shipwright-build --timeout=30s
+
+    #
+    # Create cert-manager resources for webhook TLS certificates
+    #
+    - name: Create cert-manager ClusterIssuer for Shipwright
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: shipwright-selfsigned-issuer
+          spec:
+            selfSigned: {}
+
+    - name: Create Shipwright CA Certificate
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: shipwright-ca
+            namespace: shipwright-build
+          spec:
+            isCA: true
+            commonName: shipwright-ca
+            secretName: shipwright-ca-secret
+            duration: 87600h  # 10 years
+            privateKey:
+              algorithm: ECDSA
+              size: 256
+            issuerRef:
+              name: shipwright-selfsigned-issuer
+              kind: ClusterIssuer
+
+    - name: Wait for Shipwright CA Certificate to be ready
+      command: >-
+        kubectl wait --for=condition=Ready certificate/shipwright-ca
+        -n shipwright-build --timeout=60s
+
+    - name: Create Shipwright CA Issuer
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Issuer
+          metadata:
+            name: shipwright-ca-issuer
+            namespace: shipwright-build
+          spec:
+            ca:
+              secretName: shipwright-ca-secret
+
+    - name: Create Shipwright Webhook TLS Certificate
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: shipwright-build-webhook-cert
+            namespace: shipwright-build
+          spec:
+            secretName: shipwright-build-webhook-cert
+            duration: 8760h  # 1 year
+            renewBefore: 720h  # Renew 30 days before expiry
+            dnsNames:
+              - shp-build-webhook
+              - shp-build-webhook.shipwright-build
+              - shp-build-webhook.shipwright-build.svc
+              - shp-build-webhook.shipwright-build.svc.cluster.local
+            issuerRef:
+              name: shipwright-ca-issuer
+              kind: Issuer
+
+    - name: Wait for Shipwright Webhook Certificate to be ready
+      command: >-
+        kubectl wait --for=condition=Ready certificate/shipwright-build-webhook-cert
+        -n shipwright-build --timeout=60s
+
+    #
+    # Configure CA injection for Shipwright CRDs
+    # cert-manager's ca-injector will automatically populate the caBundle field
+    #
+    - name: Annotate Shipwright CRDs for CA injection
+      command: >-
+        kubectl annotate crd {{ item }}
+        cert-manager.io/inject-ca-from=shipwright-build/shipwright-build-webhook-cert
+        --overwrite
+      loop:
+        - clusterbuildstrategies.shipwright.io
+        - buildstrategies.shipwright.io
+        - builds.shipwright.io
+        - buildruns.shipwright.io
+
+    #
+    # Restart webhook to pick up the TLS certificate
+    #
+    - name: Restart Shipwright webhook deployment
+      command: kubectl rollout restart deployment/shipwright-build-webhook -n shipwright-build
+
+    - name: Wait for Shipwright webhook deployment to be ready
+      command: >-
+        kubectl rollout status deployment/shipwright-build-webhook
+        -n shipwright-build --timeout=120s
+      register: shipwright_webhook_ready
+      retries: 3
+      delay: 10
+      until: shipwright_webhook_ready.rc == 0
+
+    - name: Wait for Shipwright controller deployment to be ready
+      command: >-
+        kubectl rollout status deployment/shipwright-build-controller
+        -n shipwright-build --timeout=120s
+      register: shipwright_controller_ready
+      retries: 3
+      delay: 10
+      until: shipwright_controller_ready.rc == 0
+
+    #
+    # Install Shipwright sample build strategies
+    #
+    - name: Install Shipwright sample build strategies
+      command: >-
+        kubectl apply --server-side
+        -f https://github.com/shipwright-io/build/releases/download/{{ shipwright.version }}/sample-strategies.yaml
+      register: shipwright_strategies_result
+      retries: 3
+      delay: 15
+      until: shipwright_strategies_result is not failed
+
+    #
+    # Install custom buildah-insecure-push strategy for internal registries
+    # Standard Shipwright strategies use managed push which doesn't support insecure registries
+    # This strategy uses buildah's native push with --tls-verify=false
+    #
+    - name: Install buildah-insecure-push ClusterBuildStrategy
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: shipwright.io/v1beta1
+          kind: ClusterBuildStrategy
+          metadata:
+            name: buildah-insecure-push
+          spec:
+            parameters:
+              - name: dockerfile
+                description: Path to the Dockerfile
+                type: string
+                default: Dockerfile
+              - name: build-args
+                description: Build arguments in KEY=VALUE format
+                type: array
+                defaults: []
+              - name: storage-driver
+                description: The storage driver to use (overlay or vfs)
+                type: string
+                default: vfs
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
+            steps:
+              - name: build-and-push
+                image: quay.io/containers/buildah:v1.37.5
+                workingDir: $(params.shp-source-root)
+                securityContext:
+                  capabilities:
+                    add:
+                      - SETFCAP
+                command:
+                  - /bin/bash
+                args:
+                  - -c
+                  - |
+                    set -euo pipefail
+
+                    # Build arguments
+                    BUILD_ARGS=()
+                    for arg in "$@"; do
+                      if [[ "$arg" == "--build-arg="* ]]; then
+                        BUILD_ARGS+=("--build-arg" "${arg#--build-arg=}")
+                      fi
+                    done
+
+                    echo "Building image..."
+                    buildah --storage-driver=$(params.storage-driver) bud \
+                      "${BUILD_ARGS[@]}" \
+                      -f "$(params.shp-source-context)/$(params.dockerfile)" \
+                      -t "$(params.shp-output-image)" \
+                      "$(params.shp-source-context)"
+
+                    echo "Pushing image to $(params.shp-output-image)..."
+                    buildah --storage-driver=$(params.storage-driver) push \
+                      --tls-verify=false \
+                      "$(params.shp-output-image)" \
+                      "docker://$(params.shp-output-image)"
+
+                    echo "Build and push completed successfully!"
+                  - --
+                  - $(params.build-args[*])
+                resources:
+                  limits:
+                    cpu: "1"
+                    memory: 2Gi
+                  requests:
+                    cpu: 250m
+                    memory: 256Mi
+
+    - name: Display Shipwright installation status
+      debug:
+        msg: |
+          Shipwright Build installed successfully.
+          - Namespace: shipwright-build
+          - Webhook TLS: Managed by cert-manager (auto-renewal enabled)
+          - Build strategies: Run 'kubectl get clusterbuildstrategies' to list available strategies
+          - Custom strategy 'buildah-insecure-push' installed for internal registries
+
+  when: (shipwright.enabled | default(false)) and not (enable_openshift | default(false))

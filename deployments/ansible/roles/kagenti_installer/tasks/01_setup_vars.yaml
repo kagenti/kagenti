@@ -81,6 +81,7 @@
         gatewayApi: "{{ (gatewayApi | default({})) | combine((global_values_merged.get('gatewayApi', {}) | default({})), recursive=True) }}"
         certManager: "{{ (certManager | default({})) | combine((global_values_merged.get('certManager', {}) | default({})), recursive=True) }}"
         tekton: "{{ (tekton | default({})) | combine((global_values_merged.get('tekton', {}) | default({})), recursive=True) }}"
+        shipwright: "{{ (shipwright | default({})) | combine((global_values_merged.get('shipwright', {}) | default({})), recursive=True) }}"
         toolhiveCRDs: "{{ (toolhiveCRDs | default({})) | combine((global_values_merged.get('toolhiveCRDs', {}) | default({})), recursive=True) }}"
         toolhiveOperator: "{{ (toolhiveOperator | default({})) | combine((global_values_merged.get('toolhiveOperator', {}) | default({})), recursive=True) }}"
         kiali: "{{ (kiali | default({})) | combine((global_values_merged.get('kiali', {}) | default({})), recursive=True) }}"

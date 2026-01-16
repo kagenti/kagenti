@@ -150,6 +150,12 @@
   when: (tekton.enabled | default(false)) and not (enable_openshift | default(false))
 
 #
+#  Shipwright
+#
+- name: Install Shipwright Build
+  ansible.builtin.import_tasks: 04_install_shipwright.yaml
+
+#
 #  Toolhive
 #
 - name: Install Toolhive CRDs
