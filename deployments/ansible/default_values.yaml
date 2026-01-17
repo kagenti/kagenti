@@ -80,6 +80,8 @@ charts:
           enabled: false
         ingressGateway:
           enabled: false
+        shipwright:
+          enabled: false
       # components settings    
       containerRegistry:
         namespace: cr-system

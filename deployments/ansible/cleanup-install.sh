@@ -16,6 +16,9 @@ TEAM_NAMESPACES=("team1" "team2")
 # Platform namespaces
 PLATFORM_NAMESPACES=("kagenti-system" "kagenti-webhook-system" "mcp-system" "spire-mgmt" "spire-server" "spire-system" "toolhive-system" "gateway-system")
 
+# OpenShift operator namespaces (managed by OLM, may have finalizers)
+OPENSHIFT_OPERATOR_NAMESPACES=("openshift-builds" "cert-manager-operator" "zero-trust-workload-identity-manager")
+
 # ==============================================================================
 # 1. Delete CRs in team namespaces BEFORE uninstalling operators
 # ==============================================================================
@@ -114,7 +117,79 @@ kubectl delete secret istio-ca-secret -n istio-system --ignore-not-found 2>/dev/
 echo ""
 
 # ==============================================================================
-# 3. Remove stuck finalizers (fallback if operators are already gone)
+# 3. Clean up OpenShift operator namespaces (OLM-managed)
+# ==============================================================================
+# These namespaces contain operators installed via OLM subscriptions.
+# The operators create resources with finalizers that can only be removed
+# by the operator controller. We must delete the operator properly first.
+
+echo "Cleaning up OpenShift operator namespaces..."
+
+# Function to remove finalizers from all resources in a namespace
+remove_namespace_finalizers() {
+  local ns=$1
+  local finalizer_pattern=$2
+  
+  echo "Removing finalizers matching '$finalizer_pattern' from resources in $ns..."
+  kubectl api-resources --verbs=list --namespaced -o name 2>/dev/null | \
+    xargs -I {} kubectl get {} -n "$ns" -o json 2>/dev/null | \
+    jq -r ".items[] | select(.metadata.finalizers != null and (.metadata.finalizers[] | contains(\"$finalizer_pattern\"))) | \"\(.kind | ascii_downcase)/\(.metadata.name)\"" 2>/dev/null | \
+    while read resource; do
+      if [ -n "$resource" ]; then
+        echo "  Patching $resource..."
+        kubectl patch "$resource" -n "$ns" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+      fi
+    done
+}
+
+for ns in "${OPENSHIFT_OPERATOR_NAMESPACES[@]}"; do
+  if kubectl get ns "$ns" &>/dev/null 2>&1; then
+    echo "Processing OpenShift operator namespace: $ns"
+    
+    # Delete Subscription first (this triggers operator uninstall)
+    echo "  Deleting Subscriptions in $ns..."
+    kubectl delete subscription --all -n "$ns" --ignore-not-found 2>/dev/null || true
+    
+    # Wait a moment for OLM to process the subscription deletion
+    sleep 2
+    
+    # Delete CSVs (ClusterServiceVersions)
+    echo "  Deleting CSVs in $ns..."
+    kubectl delete csv --all -n "$ns" --ignore-not-found 2>/dev/null || true
+    
+    # Delete OperatorGroups
+    echo "  Deleting OperatorGroups in $ns..."
+    kubectl delete operatorgroup --all -n "$ns" --ignore-not-found 2>/dev/null || true
+    
+    # Check if namespace is terminating and has stuck finalizers
+    ns_phase=$(kubectl get ns "$ns" -o jsonpath='{.status.phase}' 2>/dev/null)
+    if [ "$ns_phase" == "Terminating" ]; then
+      echo "  Namespace $ns is stuck in Terminating state, removing finalizers..."
+      case "$ns" in
+        openshift-builds)
+          remove_namespace_finalizers "$ns" "operator.openshift.io/openshiftbuilds"
+          ;;
+        cert-manager-operator)
+          remove_namespace_finalizers "$ns" "operator.openshift.io"
+          ;;
+        zero-trust-workload-identity-manager)
+          remove_namespace_finalizers "$ns" "operator.openshift.io"
+          ;;
+        *)
+          remove_namespace_finalizers "$ns" "operator.openshift.io"
+          ;;
+      esac
+    fi
+    
+    # Now delete the namespace
+    echo "  Deleting namespace $ns..."
+    kubectl delete ns "$ns" --ignore-not-found 2>/dev/null || true
+  fi
+done
+echo ""
+
+# ==============================================================================
+# 5. Remove stuck finalizers (fallback if operators are already gone)
 # ==============================================================================
 # If operators were uninstalled before CRs were deleted, CRs may be stuck
 # with finalizers that can never be removed. This removes them forcefully.
@@ -140,7 +215,7 @@ done
 echo ""
 
 # ==============================================================================
-# 4. Delete team namespaces
+# 6. Delete team namespaces
 # ==============================================================================
 
 echo "Deleting team namespaces..."
@@ -153,7 +228,7 @@ done
 echo ""
 
 # ==============================================================================
-# 5. Delete platform namespaces
+# 7. Delete platform namespaces
 # ==============================================================================
 
 echo "Deleting platform namespaces..."
@@ -166,11 +241,11 @@ done
 echo ""
 
 # ==============================================================================
-# 6. Wait for namespaces to terminate
+# 8. Wait for namespaces to terminate
 # ==============================================================================
 
 # Build list of namespaces to wait for
-WAIT_NAMESPACES=("${TEAM_NAMESPACES[@]}" "${PLATFORM_NAMESPACES[@]}")
+WAIT_NAMESPACES=("${TEAM_NAMESPACES[@]}" "${PLATFORM_NAMESPACES[@]}" "${OPENSHIFT_OPERATOR_NAMESPACES[@]}")
 
 echo "Waiting for namespaces to terminate..."
 MAX_WAIT=60

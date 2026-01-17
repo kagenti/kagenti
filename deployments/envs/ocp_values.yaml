@@ -34,8 +34,10 @@ charts:
         otel:
           enabled: true
         spire:
-          enabled: false  # Use Helm-based SPIRE instead of OLM (ZTWIM not available on all OCP versions)
+          enabled: true  # Use ZTWIM operator for OCP 4.19+
         tekton:
+          enabled: true
+        shipwright:
           enabled: true
         toolhiveCRDs:
           enabled: true
@@ -85,10 +87,8 @@ charts:
     enabled: true
 
   ####################################################################
-  # spire - Use Helm charts (ZTWIM operator not available on all OCP versions)
+  # spire - On OpenShift, ZTWIM operator is used (configured in kagenti-deps)
+  # Helm-based SPIRE is automatically skipped on OpenShift
   ####################################################################
   spire:
-    enabled: true
-    values:
-      global:
-        openshift: true
+    enabled: false  # Helm SPIRE disabled; ZTWIM operator used via kagenti-deps

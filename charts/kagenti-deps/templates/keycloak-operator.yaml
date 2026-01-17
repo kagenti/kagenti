@@ -1,6 +1,9 @@
 {{- if and .Values.components.keycloak.enabled .Values.openshift }}
-{{- /* Skip OperatorGroup if it already exists */}}
-{{- if not (lookup "operators.coreos.com/v1" "OperatorGroup" .Values.keycloak.namespace "keycloak-operatorgroup") }}
+{{- /* Check if ANY OperatorGroup already exists in the namespace (lookup with empty name returns list) */}}
+{{- /* Use len to check items - empty slice [] is truthy but len 0 */}}
+{{- $existingOGs := lookup "operators.coreos.com/v1" "OperatorGroup" .Values.keycloak.namespace "" }}
+{{- if or (not $existingOGs) (eq (len ($existingOGs.items | default list)) 0) }}
+{{- /* OperatorGroup - only create if none exists in the namespace */}}
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -9,12 +12,15 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
+  upgradeStrategy: Default
   targetNamespaces:
     - {{ .Values.keycloak.namespace }}
-{{- end }}
 ---
-{{- /* Skip Subscription if Keycloak/RHBK operator already exists */}}
-{{- if not (lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.keycloak.namespace "rhbk-operator") }}
+{{- end }}
+{{- /* Check if ANY Subscription already exists in the namespace */}}
+{{- $existingSubs := lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.keycloak.namespace "" }}
+{{- if or (not $existingSubs) (eq (len ($existingSubs.items | default list)) 0) }}
+{{- /* Subscription - only create if none exists in the namespace */}}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -24,7 +30,7 @@ metadata:
     operators.coreos.com/servicemeshoperator3.openshift-operators: ""
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
-  channel: stable-v26.2
+  channel: stable-v26.4
   installPlanApproval: Automatic
   name: rhbk-operator
   source: redhat-operators

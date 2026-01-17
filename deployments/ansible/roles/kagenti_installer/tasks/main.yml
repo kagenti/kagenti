@@ -217,9 +217,9 @@
     - toolhiveOperator.enabled | default(false)
 
 #
-#  Spire
+#  Spire (Helm-based for Kubernetes, skip on OpenShift where ZTWIM operator is used)
 #
-- name: Install SPIRE 
+- name: Install SPIRE via Helm charts
   block:
     - name: Install spire-crds via helm
       kubernetes.core.helm:
@@ -253,7 +253,7 @@
       retries: 3
       delay: 15
       until: spire_result is not failed
-  when: charts.spire.enabled | default(false)
+  when: (charts.spire.enabled | default(false)) and not (enable_openshift | default(false))
 
 #
 #  Gateway API
@@ -294,7 +294,122 @@
     - (charts['kagenti-deps'] | default({})).get('dependency_update', true) | bool
     - (charts['kagenti-deps'] | default({})).get('chart') is search(local_chart_path_regex)
     - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
- 
+
+# Detect already-installed OLM operators on OpenShift.
+# If an operator is already installed (not by this Helm chart), we skip installing it
+# to avoid conflicts with existing OperatorGroups and Subscriptions.
+- name: Detect already-installed OLM operators on OpenShift
+  block:
+    - name: Check if cert-manager operator is already installed via OLM
+      shell: >-
+        kubectl get csv -n cert-manager-operator -o json 2>/dev/null |
+        jq -e '.items[] | select(.status.phase == "Succeeded")' > /dev/null 2>&1 &&
+        kubectl get subscription -n cert-manager-operator -o json 2>/dev/null |
+        jq -e '.items[] | select(.metadata.annotations == null or .metadata.annotations["meta.helm.sh/release-name"] != "kagenti-deps")' > /dev/null 2>&1
+      args:
+        executable: /bin/bash
+      register: cert_manager_olm_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if cert-manager is already installed by other means (e.g., OpenShift Pipelines)
+      shell: >-
+        kubectl get crd certificates.cert-manager.io > /dev/null 2>&1 &&
+        kubectl get deployment -n cert-manager cert-manager -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '[1-9]'
+      args:
+        executable: /bin/bash
+      register: cert_manager_existing_check
+      failed_when: false
+      changed_when: false
+
+    - name: Set cert-manager skip fact
+      set_fact:
+        skip_cert_manager_operator: "{{ cert_manager_olm_check.rc == 0 or cert_manager_existing_check.rc == 0 }}"
+
+    - name: Debug cert-manager detection
+      debug:
+        msg: >-
+          cert-manager already installed: {{ skip_cert_manager_operator }}
+          (OLM operator: {{ cert_manager_olm_check.rc == 0 }},
+          existing install: {{ cert_manager_existing_check.rc == 0 }})
+      when: skip_cert_manager_operator | default(false)
+
+    - name: Check if SPIRE/ZTWIM operator is already installed
+      shell: >-
+        kubectl get csv -n zero-trust-workload-identity-manager -o json 2>/dev/null |
+        jq -e '.items[] | select(.status.phase == "Succeeded")' > /dev/null 2>&1 &&
+        kubectl get subscription -n zero-trust-workload-identity-manager -o json 2>/dev/null |
+        jq -e '.items[] | select(.metadata.annotations == null or .metadata.annotations["meta.helm.sh/release-name"] != "kagenti-deps")' > /dev/null 2>&1
+      args:
+        executable: /bin/bash
+      register: spire_operator_check
+      failed_when: false
+      changed_when: false
+
+    - name: Set SPIRE operator skip fact
+      set_fact:
+        skip_spire_operator: "{{ spire_operator_check.rc == 0 }}"
+
+    - name: Debug SPIRE operator detection
+      debug:
+        msg: "SPIRE/ZTWIM operator already installed (not by Helm): {{ skip_spire_operator }}"
+      when: skip_spire_operator | default(false)
+
+    - name: Check if OpenShift Builds operator is already installed
+      shell: >-
+        kubectl get csv -n openshift-builds -o json 2>/dev/null |
+        jq -e '.items[] | select(.status.phase == "Succeeded")' > /dev/null 2>&1 &&
+        kubectl get subscription -n openshift-builds -o json 2>/dev/null |
+        jq -e '.items[] | select(.metadata.annotations == null or .metadata.annotations["meta.helm.sh/release-name"] != "kagenti-deps")' > /dev/null 2>&1
+      args:
+        executable: /bin/bash
+      register: builds_operator_check
+      failed_when: false
+      changed_when: false
+
+    - name: Set OpenShift Builds operator skip fact
+      set_fact:
+        skip_builds_operator: "{{ builds_operator_check.rc == 0 }}"
+
+    - name: Debug OpenShift Builds operator detection
+      debug:
+        msg: "OpenShift Builds operator already installed (not by Helm): {{ skip_builds_operator }}"
+      when: skip_builds_operator | default(false)
+  when:
+    - enable_openshift | default(false)
+    - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
+
+# Build operator skip overrides based on detection results.
+# If an operator is already installed (not by Helm), we disable its component to avoid conflicts.
+- name: Build operator skip overrides for kagenti-deps
+  block:
+    - name: Initialize operator overrides
+      set_fact:
+        kagenti_deps_operator_overrides: {}
+
+    - name: Add cert-manager skip override
+      set_fact:
+        kagenti_deps_operator_overrides: "{{ kagenti_deps_operator_overrides | combine({'components': {'certManager': {'enabled': false}}}, recursive=True) }}"
+      when: skip_cert_manager_operator | default(false)
+
+    - name: Add SPIRE operator skip override
+      set_fact:
+        kagenti_deps_operator_overrides: "{{ kagenti_deps_operator_overrides | combine({'components': {'spire': {'enabled': false}}}, recursive=True) }}"
+      when: skip_spire_operator | default(false)
+
+    - name: Add OpenShift Builds operator skip override
+      set_fact:
+        kagenti_deps_operator_overrides: "{{ kagenti_deps_operator_overrides | combine({'components': {'shipwright': {'enabled': false}}}, recursive=True) }}"
+      when: skip_builds_operator | default(false)
+
+    - name: Debug operator overrides
+      debug:
+        msg: "Operator overrides for kagenti-deps: {{ kagenti_deps_operator_overrides }}"
+      when: kagenti_deps_operator_overrides | length > 0
+  when:
+    - enable_openshift | default(false)
+    - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
+
 - name: Install/upgrade kagenti-deps chart
   kubernetes.core.helm:
     release_name: "{{ (charts['kagenti-deps'] | default({})).get('release_name', 'kagenti-deps') }}"
@@ -310,7 +425,8 @@
         | combine((global_values_merged | default({})), recursive=True)
         | combine((((secret_values.get('charts', {}) | default({})).get('kagenti-deps', {}) ).get('values', {})) , recursive=True)
         | combine((secret_values.get('global', {}) | default({})), recursive=True)
-        | combine({'openshift': enable_openshift}, recursive=True) }}
+        | combine({'openshift': enable_openshift}, recursive=True)
+        | combine((kagenti_deps_operator_overrides | default({})), recursive=True) }}
     values_files: >
       {{ (global_value_files | default([]) | list) +
         (((charts['kagenti-deps'] | default({}))['values_files'] | default([])) | list)
@@ -333,6 +449,79 @@
     - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
     - (charts['kagenti-deps'] | default({})).get('chart') is defined
 
+# Wait for cert-manager CRDs to be available on OpenShift.
+# The cert-manager operator is installed via OLM subscription in kagenti-deps,
+# but the CRDs take time to be created by the operator. The kagenti chart
+# depends on Certificate and Issuer CRDs being available.
+- name: Wait for cert-manager CRDs on OpenShift
+  block:
+    - name: Wait for cert-manager operator CSV to succeed
+      command: >-
+        kubectl get csv -n cert-manager-operator
+        -o jsonpath='{.items[?(@.spec.displayName=="cert-manager Operator for Red Hat OpenShift")].status.phase}'
+      register: cert_manager_csv_status
+      retries: 60
+      delay: 10
+      until: cert_manager_csv_status.stdout == "Succeeded"
+      changed_when: false
+
+    - name: Wait for Certificate CRD to be available
+      command: kubectl get crd certificates.cert-manager.io
+      register: cert_crd_check
+      retries: 30
+      delay: 10
+      until: cert_crd_check.rc == 0
+      changed_when: false
+
+    - name: Wait for Issuer CRD to be available
+      command: kubectl get crd issuers.cert-manager.io
+      register: issuer_crd_check
+      retries: 30
+      delay: 10
+      until: issuer_crd_check.rc == 0
+      changed_when: false
+
+    - name: Wait for cert-manager webhook to be ready
+      command: >-
+        kubectl wait --for=condition=Available deployment
+        -l app.kubernetes.io/name=cert-manager
+        -n cert-manager --timeout=300s
+      register: cert_manager_webhook_ready
+      retries: 3
+      delay: 30
+      until: cert_manager_webhook_ready.rc == 0
+  when:
+    - enable_openshift | default(false)
+    - (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('certManager', {}).get('enabled', false) | bool
+    - not (skip_cert_manager_operator | default(false))
+
+# Wait for OpenShift Builds operator to be ready.
+# The operator is installed via OLM subscription in kagenti-deps.
+# Skip if the operator was already installed (detected earlier) or if component is disabled.
+- name: Wait for OpenShift Builds operator on OpenShift
+  block:
+    - name: Wait for OpenShift Builds operator CSV to succeed
+      command: >-
+        kubectl get csv -n openshift-builds
+        -o jsonpath='{.items[?(@.spec.displayName=="Builds for Red Hat OpenShift Operator")].status.phase}'
+      register: builds_csv_status
+      retries: 60
+      delay: 10
+      until: builds_csv_status.stdout == "Succeeded"
+      changed_when: false
+
+    - name: Wait for Build CRD to be available
+      command: kubectl get crd builds.shipwright.io
+      register: build_crd_check
+      retries: 30
+      delay: 10
+      until: build_crd_check.rc == 0
+      changed_when: false
+  when:
+    - enable_openshift | default(false)
+    - (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('shipwright', {}).get('enabled', false) | bool
+    - not (skip_builds_operator | default(false))
+
 # TODO: Move TektonConfig patching to kagenti-operator
 # The kagenti-operator creates PipelineRuns for AgentBuilds, so it has the
 # context to know what Tekton settings are needed. The operator should:
@@ -350,6 +539,17 @@
       until: tektonconfig_check.rc == 0
       changed_when: false
 
+    - name: Wait for Tekton operator webhook to be ready
+      command: >-
+        kubectl rollout status deployment/tekton-operator-webhook
+        -n openshift-operators --timeout=120s
+      register: tekton_webhook_ready
+      retries: 5
+      delay: 10
+      until: tekton_webhook_ready.rc == 0
+      changed_when: false
+      failed_when: false
+
     - name: Patch TektonConfig to set security context
       kubernetes.core.k8s:
         api_version: operator.tekton.dev/v1alpha1
@@ -360,6 +560,10 @@
             pipeline:
               set-security-context: true
         merge_type: merge
+      retries: 5
+      delay: 15
+      register: tektonconfig_patch
+      until: tektonconfig_patch is not failed
   when: enable_openshift | default(false)
 
 # Wait for Istio ambient mesh components to be ready on OpenShift.
@@ -517,6 +721,26 @@
 
 - name: Install/upgrade Kagenti chart and print instructions
   block:
+  # Delete old OAuth secret jobs BEFORE Helm install to allow fresh job creation.
+  # Jobs are immutable, so Helm can't update them - we must delete first.
+  - name: Delete old kagenti-ui-oauth-secret-job before Helm install
+    kubernetes.core.k8s:
+      state: absent
+      api_version: batch/v1
+      kind: Job
+      name: kagenti-ui-oauth-secret-job
+      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
+    failed_when: false
+
+  - name: Delete old kagenti-agent-oauth-secret-job before Helm install
+    kubernetes.core.k8s:
+      state: absent
+      api_version: batch/v1
+      kind: Job
+      name: kagenti-agent-oauth-secret-job
+      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
+    failed_when: false
+
   - name: Install/upgrade Kagenti chart
     kubernetes.core.helm:
       release_name: "{{ (charts['kagenti'] | default({})).get('release_name', 'kagenti') }}"
@@ -539,22 +763,6 @@
         {{ (global_value_files | default([]) | list) +
           (((charts['kagenti'] | default({}))['values_files'] | default([])) | list)
         }}
-
-  - name: Ensure kagenti-ui-oauth-secret-job is deleted
-    kubernetes.core.k8s:
-      state: absent
-      api_version: batch/v1
-      kind: Job
-      name: kagenti-ui-oauth-secret-job
-      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
-
-  - name: Ensure kagenti-agent-oauth-secret-job is deleted
-    kubernetes.core.k8s:
-      state: absent
-      api_version: batch/v1
-      kind: Job
-      name:  kagenti-agent-oauth-secret-job
-      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
 
   # TODO: Move github-clone-step fixes to kagenti-operator.
   # The kagenti-operator creates the github-clone-step ConfigMap for Tekton pipelines.
