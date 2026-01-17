@@ -10,7 +10,7 @@ metadata:
     operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators: ""
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
-  channel: pipelines-1.14
+  channel: latest
   installPlanApproval: Automatic
   name: openshift-pipelines-operator-rh
   source: redhat-operators

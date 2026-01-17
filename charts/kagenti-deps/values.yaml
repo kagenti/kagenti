@@ -25,6 +25,8 @@ components:
     enabled: true
   tekton:
     enabled: true
+  shipwright:
+    enabled: true
   toolhiveCRDs:
     enabled: true
   toolhiveOperator:
@@ -90,6 +92,13 @@ istio:
 httpGateway:
   name: http
   namespace: "kagenti-system"
+# ------------------------------------------------------------------
+#  Shipwright / OpenShift Builds Configuration
+# ------------------------------------------------------------------
+shipwright:
+  namespace: openshift-builds
+  channel: latest
+
 # ------------------------------------------------------------------
 #  Cert Manager Configuration
 # ------------------------------------------------------------------

@@ -24,6 +24,10 @@ tekton:
   enabled: false
   version: v0.66.0
 
+shipwright:
+  enabled: false
+  version: v0.14.0
+
 toolhiveCRDs:
   enabled: false
   version: 0.0.60
@@ -75,6 +79,8 @@ charts:
         gatewayApi:
           enabled: false
         ingressGateway:
+          enabled: false
+        shipwright:
           enabled: false
       # components settings    
       containerRegistry:

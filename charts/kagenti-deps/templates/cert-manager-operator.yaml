@@ -1,16 +1,33 @@
 {{- if and .Values.components.certManager.enabled .Values.openshift }}
-{{- /* Skip Namespace if it already exists */}}
-{{- if not (lookup "v1" "Namespace" "" .Values.certManager.namespace) }}
+{{- /* 
+  Cert-Manager Operator Installation
+  
+  NOTE: Resources use helm.sh/resource-policy: keep to prevent deletion on helm uninstall.
+  This avoids the namespace getting stuck in Terminating state due to operator-managed
+  resources with finalizers that can only be removed by the operator controller.
+*/}}
+{{- /* Check if namespace exists and is not terminating */}}
+{{- $ns := lookup "v1" "Namespace" "" .Values.certManager.namespace }}
+{{- if and $ns (eq ($ns.status.phase | default "Active") "Terminating") }}
+{{- fail (printf "Namespace %s is in Terminating state. Please wait for it to be fully deleted or manually remove finalizers from stuck resources." .Values.certManager.namespace) }}
+{{- end }}
+{{- /* Create Namespace only if it doesn't exist - use helm.sh/resource-policy to prevent deletion */}}
+{{- if not $ns }}
 apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ .Values.certManager.namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
-{{- end }}
+  annotations:
+    helm.sh/resource-policy: keep
 ---
-{{- /* Skip OperatorGroup if it already exists */}}
-{{- if not (lookup "operators.coreos.com/v1" "OperatorGroup" .Values.certManager.namespace "openshift-cert-manager-operatorgroup") }}
+{{- end }}
+{{- /* Check if ANY OperatorGroup already exists in the namespace (lookup with empty name returns list) */}}
+{{- /* Use len to check items - empty slice [] is truthy but len 0 */}}
+{{- $existingOGs := lookup "operators.coreos.com/v1" "OperatorGroup" .Values.certManager.namespace "" }}
+{{- if or (not $existingOGs) (eq (len ($existingOGs.items | default list)) 0) }}
+{{- /* OperatorGroup - only create if none exists in the namespace */}}
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -18,19 +35,24 @@ metadata:
   namespace: {{ .Values.certManager.namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
-  targetNamespaces:
-    - {{ .Values.certManager.namespace }}
-{{- end }}
+  upgradeStrategy: Default
 ---
-{{- /* Skip Subscription if cert-manager operator already exists */}}
-{{- if not (lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.certManager.namespace "openshift-cert-manager-operator") }}
+{{- end }}
+{{- /* Check if ANY Subscription already exists in the namespace */}}
+{{- $existingSubs := lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.certManager.namespace "" }}
+{{- if or (not $existingSubs) (eq (len ($existingSubs.items | default list)) 0) }}
+{{- /* Subscription - only create if none exists in the namespace */}}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   labels:
     operators.coreos.com/openshift-cert-manager-operator.cert-manager-operator: ""
     {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
   name: openshift-cert-manager-operator
   namespace: {{ .Values.certManager.namespace }}
 spec:

@@ -37,7 +37,21 @@ stringData:
   user: {{ $.Values.secrets.githubUser | quote }}
   token: {{ $.Values.secrets.githubToken | quote }}
 ---
-# 2. GHCR Docker Registry Secret (for pulling private images)
+# 2. GitHub Shipwright Secret (for Shipwright Build git clone)
+#    Shipwright requires kubernetes.io/basic-auth type with username/password fields
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-shipwright-secret
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+type: kubernetes.io/basic-auth
+stringData:
+  username: {{ $.Values.secrets.githubUser | quote }}
+  password: {{ $.Values.secrets.githubToken | quote }}
+---
+# 3. GHCR Docker Registry Secret (for pulling private images)
 apiVersion: v1
 kind: Secret
 metadata:
@@ -49,7 +63,7 @@ type: kubernetes.io/dockerconfigjson
 data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"ghcr.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.githubUser $.Values.secrets.githubToken (printf "%s:%s" $.Values.secrets.githubUser $.Values.secrets.githubToken | b64enc)) | b64enc }}
 ---
-# 3. OpenAI API Key Secret
+# 4. OpenAI API Key Secret
 apiVersion: v1
 kind: Secret
 metadata:
@@ -61,7 +75,7 @@ type: Opaque
 stringData:
   apikey: {{ $.Values.secrets.openaiApiKey | quote }}
 ---
-# 4. Slack Bot Tokens Secret
+# 5. Slack Bot Tokens Secret
 apiVersion: v1
 kind: Secret
 metadata:
@@ -74,7 +88,7 @@ stringData:
   bot-token: {{ $.Values.secrets.slackBotToken | quote }}
   admin-bot-token: {{ $.Values.secrets.adminSlackBotToken | quote }}
 ---
-# 5. Quay.io Docker Registry Secret (for pushing images)
+# 6. Quay.io Docker Registry Secret (for pushing images)
 apiVersion: v1
 kind: Secret
 metadata:

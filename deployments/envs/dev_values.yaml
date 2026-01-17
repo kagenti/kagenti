@@ -11,7 +11,10 @@ certManager:
   enabled: true  
 
 tekton:
-  enabled: true 
+  enabled: true
+
+shipwright:
+  enabled: true
 
 toolhiveCRDs:
   enabled: true
