@@ -63,7 +63,7 @@
             isCA: true
             commonName: shipwright-ca
             secretName: shipwright-ca-secret
-            duration: 87600h  # 10 years
+            duration: 26280h  # 3 years
             privateKey:
               algorithm: ECDSA
               size: 256
