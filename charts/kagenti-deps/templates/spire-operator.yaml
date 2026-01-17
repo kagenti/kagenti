@@ -39,6 +39,8 @@ metadata:
   annotations:
     helm.sh/resource-policy: keep
 spec:
+  # Cluster-scoped OperatorGroup (no targetNamespaces) is required so SPIRE/ZTWIM
+  # can manage workload identities across all namespaces.
   upgradeStrategy: Default
 ---
 {{- end }}
