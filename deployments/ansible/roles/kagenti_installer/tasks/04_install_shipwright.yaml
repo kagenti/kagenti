@@ -26,7 +26,7 @@
     #
     - name: Install Shipwright Build release
       command: >-
-        kubectl apply --server-side --force-conflicts
+        kubectl apply --server-side
         -f https://github.com/shipwright-io/build/releases/download/{{ shipwright.version }}/release.yaml
       register: shipwright_release_result
       retries: 3
