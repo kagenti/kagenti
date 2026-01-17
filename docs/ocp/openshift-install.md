@@ -15,7 +15,7 @@ These limitations will be addressed in successive PRs.
 - kubectl >= v1.32.1 or oc >= 4.16.0
 - git >= 2.48.0
 - Access to OpenShift cluster with admin authority (We tested with OpenShift 4.19, see the [upgrade notes](#upgrade-from-ocp-418-to-419) if necessary)
-- Currently we can't disable the installation of Cert Manager, so [remove Cert Manager](#remove-cert-manager) before installing Kagenti
+- If using manual Helm chart installation, see [Cert Manager Configuration](#cert-manager-configuration) for handling existing cert-manager installations
 
 ## Check Cluster Network Type and Configure for OVN in Ambient Mode
 
@@ -27,7 +27,7 @@ This behavior is documented in this [issue](https://github.com/kagenti/kagenti/i
 `OVNKubernetes` defaults to shared gateway mode, which routes kubelet health probe traffic outside the host network stack. As a result, the Ztunnel proxy cannot intercept the probes, causing them to fail incorrectly.
 
 **Verify Network Type**
-To confirm your cluster’s network type, run:
+To confirm your cluster's network type, run:
 
 ```shell
 kubectl describe network.config/cluster
@@ -129,7 +129,7 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 
 3. **Update Helm Charts dependencies:**
 
-   These commands need to be run only the first time you clone 
+   These commands need to be run only the first time you clone
    the repository or when there are updates to the charts.
 
    ```shell
@@ -180,7 +180,7 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
 
 ## Using the new ansible-based installer
 
-You may also use the new ansible based installer to install the helm charts. 
+You may also use the new ansible based installer to install the helm charts.
 
 1. Copy example secrets file: `deployments/envs/secret_values.yaml.example` to `deployments/envs/.secret_values.yaml` and fill in the values in that file.
 
@@ -206,7 +206,7 @@ If `Current` and/or `Ready` status is `0`, follow the steps in the [troubleshoot
 
 ## Authentication Configuration
 
-Kagenti UI now supports Keycloak authentication by default. The `kagenti` helm chart creates automatically the required  
+Kagenti UI now supports Keycloak authentication by default. The `kagenti` helm chart creates automatically the required
 `kagenti-ui-oauth-secret`in the `kagenti-system` namespace required by the UI.
 
 ```shell
@@ -265,7 +265,7 @@ You should now be able to use the UI to:
 - List the tool
 - Interact with the tool from the tool details page
 
-# 🚀 Running the Demo
+# Running the Demo
 
 > **Note**
 > At this time, only the OpenAI API-backed agents have been tested: `a2a-content-extractor` and `a2a-currency-converter`.
@@ -315,7 +315,7 @@ Follow this path if you want to build the agent container images yourself.
 
 ---
 
-## ✅ Verifying in the UI
+## Verifying in the UI
 
 After completing either of the setup options above, you should be able to use the UI to:
 
@@ -446,36 +446,147 @@ oc get clusterversion
 ```
 </details>
 
-### Remove Cert Manager
+### Cert Manager Configuration
 
-If cert manager is running, we have to remove it before Kagenti installation.
+Kagenti requires cert-manager for TLS certificate management. On OpenShift, cert-manager may already be installed by other operators such as OpenShift Pipelines (Tekton).
 
-Check:
+#### Using the Ansible Installer (Recommended)
+
+The ansible-based installer automatically detects existing cert-manager installations, including:
+- Cert-manager installed via OLM (Operator Lifecycle Manager)
+- Cert-manager installed by OpenShift Pipelines/Tekton operator
+
+When an existing cert-manager is detected, the installer will:
+1. Skip the cert-manager operator installation
+2. Use the existing cert-manager installation
+3. Wait for the CRDs and webhook to be ready before proceeding
+
+No manual intervention is required when using the ansible installer.
+
+#### Manual Helm Chart Installation
+
+When installing Kagenti manually with Helm charts, you need to handle cert-manager appropriately.
+
+**Check if cert-manager is already installed:**
 
 ```shell
-kubectl get all -n cert-manager-operator
-kubectl get all -n cert-manager
+# Check for cert-manager CRDs
+kubectl get crd certificates.cert-manager.io
+
+# Check for running cert-manager pods
+kubectl get pods -n cert-manager
 ```
+
+**Option 1: Use existing cert-manager (Recommended)**
+
+If cert-manager is already running (e.g., installed by OpenShift Pipelines), you can skip installing it via kagenti-deps:
+
+```shell
+# Install kagenti-deps with cert-manager disabled
+helm install kagenti-deps ./charts/kagenti-deps/ -n kagenti-system --create-namespace \
+  --set spire.trustDomain=${DOMAIN} \
+  --set components.certManager.enabled=false \
+  --wait
+```
+
+Or when using OCI charts:
+
+```shell
+helm install --create-namespace -n kagenti-system kagenti-deps \
+  oci://ghcr.io/kagenti/kagenti/kagenti-deps --version $LATEST_TAG \
+  --set spire.trustDomain=${DOMAIN} \
+  --set components.certManager.enabled=false
+```
+
+**Option 2: Remove existing cert-manager and let Kagenti install it**
+
+If you prefer Kagenti to manage cert-manager, remove the existing installation first:
 
 Using the OpenShift Container Platform web console:
 
-  1. Log in to the OpenShift Container Platform web console.
-  2. Go to Operators > Installed Operators.
-  3. Locate the cert-manager Operator for Red Hat OpenShift in the list.
-  4. Click the Options menu (three vertical dots) next to the operator.
-  5. Select Uninstall Operator.
+1. Log in to the OpenShift Container Platform web console.
+2. Go to Operators > Installed Operators.
+3. Locate the cert-manager Operator for Red Hat OpenShift in the list.
+4. Click the Options menu (three vertical dots) next to the operator.
+5. Select Uninstall Operator.
 
 Then from the console:
 
 ```shell
 kubectl delete deploy cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
-
 kubectl delete service cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
-
-kubectl get all -n cert-manager
-<<<<<<< HEAD
 kubectl delete ns cert-manager-operator cert-manager
 ```
-=======
-kubectl delete ns cert-manager-operator cert-manager
->>>>>>> 8401988 (Add new operator and installer changes)
+
+After removal, install kagenti-deps with cert-manager enabled (the default):
+
+```shell
+helm install kagenti-deps ./charts/kagenti-deps/ -n kagenti-system --create-namespace \
+  --set spire.trustDomain=${DOMAIN} \
+  --set components.certManager.enabled=true \
+  --wait
+```
+
+#### Resolving Conflicts with OpenShift Pipelines Operator
+
+OpenShift Pipelines (Tekton) can install its own internal cert-manager, which may conflict with a cluster-wide cert-manager installation. This can cause CRD conflicts where two cert-managers fight over the same Custom Resource Definitions.
+
+**Symptoms of conflict:**
+- cert-manager pods repeatedly restarting
+- Certificate resources not being reconciled properly
+- Errors in cert-manager logs about CRD ownership
+
+**Solution: Configure TektonConfig to use external cert-manager**
+
+OpenShift Pipelines 1.12+ can be configured to use an existing cluster-wide cert-manager. The ansible installer automatically patches the TektonConfig when it detects this scenario.
+
+For manual installations, edit the TektonConfig:
+
+```shell
+oc edit tektonconfig config
+```
+
+Under `spec`, ensure the configuration does not conflict with your external cert-manager. If Tekton Results is the component requiring cert-manager, you may need to:
+
+1. **Disable Tekton Results** if you don't need it:
+
+```yaml
+spec:
+  platforms:
+    openshift:
+      pipelinesAsCode:
+        enable: false
+```
+
+2. **Or configure Results to use external cert-manager** by ensuring the cert-manager namespace is set correctly and the internal bundling is disabled.
+
+**Alternative: Use specific Pipelines Operator channel**
+
+Check the Subscription of the Pipelines Operator for channels that don't bundle cert-manager:
+
+```shell
+oc get subscription openshift-pipelines-operator-rh -n openshift-operators -o yaml
+```
+
+Look for alternative channels in the PackageManifest that may have different dependency configurations:
+
+```shell
+oc get packagemanifest openshift-pipelines-operator-rh -o jsonpath='{.status.channels[*].name}'
+```
+
+**Recommended installation order:**
+
+1. Install cert-manager Operator for Red Hat OpenShift (or let Kagenti install it)
+2. Ensure cert-manager is fully healthy
+3. Install OpenShift Pipelines, configuring it to use the existing cert-manager
+4. Install Kagenti
+
+If conflicts persist after installation:
+
+```shell
+# Check which cert-manager is running
+kubectl get pods -n cert-manager -o wide
+
+# Check for CRD conflicts
+kubectl get crd certificates.cert-manager.io -o yaml | grep -A5 'ownerReferences'
+```

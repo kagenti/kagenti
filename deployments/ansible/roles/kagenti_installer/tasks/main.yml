@@ -312,10 +312,12 @@
       failed_when: false
       changed_when: false
 
-    - name: Check if cert-manager is already installed by other means (e.g., OpenShift Pipelines)
+    - name: Check if cert-manager is already installed by other means (e.g., OpenShift Pipelines/Tekton)
       shell: >-
         kubectl get crd certificates.cert-manager.io > /dev/null 2>&1 &&
-        kubectl get deployment -n cert-manager cert-manager -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q '[1-9]'
+        (kubectl get pods -n cert-manager -l app.kubernetes.io/name=cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -q . ||
+         kubectl get pods -n cert-manager -l app=cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -q . ||
+         kubectl get pods -n cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -qE 'cert-manager-(controller|webhook|cainjector)')
       args:
         executable: /bin/bash
       register: cert_manager_existing_check
@@ -331,7 +333,8 @@
         msg: >-
           cert-manager already installed: {{ skip_cert_manager_operator }}
           (OLM operator: {{ cert_manager_olm_check.rc == 0 }},
-          existing install: {{ cert_manager_existing_check.rc == 0 }})
+          existing install e.g. Tekton/OpenShift Pipelines: {{ cert_manager_existing_check.rc == 0 }}).
+          Will skip cert-manager operator installation and use existing.
       when: skip_cert_manager_operator | default(false)
 
     - name: Check if SPIRE/ZTWIM operator is already installed
@@ -495,6 +498,45 @@
     - (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('certManager', {}).get('enabled', false) | bool
     - not (skip_cert_manager_operator | default(false))
 
+# Wait for pre-existing cert-manager (e.g., installed by Tekton/OpenShift Pipelines) to be ready.
+# This handles the case where cert-manager was detected but not installed via OLM.
+# We skip the CSV check since there's no OLM subscription, but still wait for CRDs and webhook.
+- name: Wait for pre-existing cert-manager on OpenShift
+  block:
+    - name: Wait for Certificate CRD to be available (pre-existing)
+      command: kubectl get crd certificates.cert-manager.io
+      register: cert_crd_check_existing
+      retries: 30
+      delay: 10
+      until: cert_crd_check_existing.rc == 0
+      changed_when: false
+
+    - name: Wait for Issuer CRD to be available (pre-existing)
+      command: kubectl get crd issuers.cert-manager.io
+      register: issuer_crd_check_existing
+      retries: 30
+      delay: 10
+      until: issuer_crd_check_existing.rc == 0
+      changed_when: false
+
+    - name: Wait for cert-manager webhook to be ready (pre-existing)
+      shell: >-
+        kubectl wait --for=condition=Available deployment
+        -l app.kubernetes.io/name=cert-manager -n cert-manager --timeout=60s 2>/dev/null ||
+        kubectl wait --for=condition=Available deployment
+        -l app=cert-manager -n cert-manager --timeout=60s 2>/dev/null ||
+        kubectl get pods -n cert-manager --field-selector=status.phase=Running -o name | grep -qE 'cert-manager-(controller|webhook|cainjector)'
+      args:
+        executable: /bin/bash
+      register: cert_manager_webhook_ready_existing
+      retries: 3
+      delay: 30
+      until: cert_manager_webhook_ready_existing.rc == 0
+  when:
+    - enable_openshift | default(false)
+    - skip_cert_manager_operator | default(false)
+    - cert_manager_existing_check.rc == 0
+
 # Wait for OpenShift Builds operator to be ready.
 # The operator is installed via OLM subscription in kagenti-deps.
 # Skip if the operator was already installed (detected earlier) or if component is disabled.
@@ -565,6 +607,62 @@
       register: tektonconfig_patch
       until: tektonconfig_patch is not failed
   when: enable_openshift | default(false)
+
+# Configure TektonConfig to use external cert-manager instead of bundled version.
+# OpenShift Pipelines 1.12+ can be configured to use a cluster-wide cert-manager,
+# preventing CRD conflicts between the Pipelines-internal cert-manager and the
+# cert-manager Operator for Red Hat OpenShift (or other external installations).
+# This is especially important when cert-manager is already installed by kagenti
+# or detected from another source (e.g., pre-existing OLM installation).
+- name: Configure TektonConfig to use external cert-manager
+  block:
+    - name: Check if TektonConfig exists
+      command: kubectl get tektonconfig config -o name
+      register: tektonconfig_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Get current TektonConfig spec
+      command: kubectl get tektonconfig config -o jsonpath='{.spec}'
+      register: tektonconfig_spec
+      when: tektonconfig_exists.rc == 0
+      changed_when: false
+      failed_when: false
+
+    - name: Patch TektonConfig to use external cert-manager
+      kubernetes.core.k8s:
+        api_version: operator.tekton.dev/v1alpha1
+        kind: TektonConfig
+        name: config
+        definition:
+          spec:
+            # Disable internal cert-manager installation in OpenShift Pipelines
+            # This prevents conflicts with external cert-manager operators
+            params:
+              - name: createRbacResource
+                value: "true"
+            # Configure Tekton Results to use external cert-manager if enabled
+            # Note: If Tekton Results requires cert-manager and cannot use external,
+            # consider disabling it: spec.platforms.openshift.pipelinesAsCode.enable: false
+            targetNamespace: openshift-pipelines
+        merge_type: merge
+      retries: 3
+      delay: 10
+      register: tektonconfig_certmanager_patch
+      until: tektonconfig_certmanager_patch is not failed
+      when: tektonconfig_exists.rc == 0
+
+    - name: Log TektonConfig cert-manager configuration
+      debug:
+        msg: >-
+          TektonConfig has been patched to work with external cert-manager.
+          If OpenShift Pipelines still installs bundled cert-manager, check the
+          Pipelines Operator subscription channel or disable Tekton Results.
+      when: tektonconfig_exists.rc == 0
+  when:
+    - enable_openshift | default(false)
+    - skip_cert_manager_operator | default(false) or
+      (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('certManager', {}).get('enabled', false) | bool
 
 # Wait for Istio ambient mesh components to be ready on OpenShift.
 # The Istio, IstioCNI, and ZTunnel CRs are created as helm post-install hooks,
