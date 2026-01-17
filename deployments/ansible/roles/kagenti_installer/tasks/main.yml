@@ -305,7 +305,7 @@
         kubectl get csv -n cert-manager-operator -o json 2>/dev/null |
         jq -e '.items[] | select(.status.phase == "Succeeded")' > /dev/null 2>&1 &&
         kubectl get subscription -n cert-manager-operator -o json 2>/dev/null |
-        jq -e '.items[] | select(.metadata.annotations == null or .metadata.annotations["meta.helm.sh/release-name"] != "kagenti-deps")' > /dev/null 2>&1
+        jq -e '.items[] | select((.spec.name == "cert-manager-operator" or ((.status.currentCSV // "") | contains("cert-manager-operator"))) and (.metadata.annotations == null or .metadata.annotations["meta.helm.sh/release-name"] != "kagenti-deps"))' > /dev/null 2>&1
       args:
         executable: /bin/bash
       register: cert_manager_olm_check
