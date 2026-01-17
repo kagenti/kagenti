@@ -315,9 +315,7 @@
     - name: Check if cert-manager is already installed by other means (e.g., OpenShift Pipelines/Tekton)
       shell: >-
         kubectl get crd certificates.cert-manager.io > /dev/null 2>&1 &&
-        (kubectl get pods -n cert-manager -l app.kubernetes.io/name=cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -q . ||
-         kubectl get pods -n cert-manager -l app=cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -q . ||
-         kubectl get pods -n cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -qE 'cert-manager-(controller|webhook|cainjector)')
+        (kubectl get pods -n cert-manager -l app.kubernetes.io/instance=cert-manager --field-selector=status.phase=Running -o name 2>/dev/null | grep -q .)
       args:
         executable: /bin/bash
       register: cert_manager_existing_check
