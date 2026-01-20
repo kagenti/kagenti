@@ -11,8 +11,24 @@ log_step "74" "Deploying weather-service agent via Shipwright + Deployment"
 # Step 1: Build the weather-service image using Shipwright
 # ============================================================================
 
+# Detect if running on OpenShift (check for oc command and logged in)
+if oc whoami &>/dev/null; then
+    IS_OPENSHIFT=true
+    log_info "Detected OpenShift - using OpenShift Shipwright files with internal registry"
+else
+    IS_OPENSHIFT=false
+    log_info "Detected Kind/vanilla Kubernetes - using Kind Shipwright files"
+fi
+
+# Clean up previous Build to avoid conflicts
+kubectl delete build weather-service -n team1 --ignore-not-found 2>/dev/null || true
+sleep 2
 log_info "Creating Shipwright Build..."
-kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build.yaml"
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build_ocp.yaml"
+else
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build.yaml"
+fi
 
 # Wait for Build to be registered
 run_with_timeout 30 'kubectl get build weather-service -n team1 &> /dev/null' || {

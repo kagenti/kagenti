@@ -1,4 +1,4 @@
-{{- if and (or .Values.components.keycloak.enabled .Values.components.istio.enabled .Values.components.kiali.enabled) .Values.openshift }}
+{{- if and (or .Values.components.keycloak.enabled .Values.components.istio.enabled .Values.components.kiali.enabled .Values.components.spire.enabled) .Values.openshift }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -74,7 +74,7 @@ spec:
               # Auto-approve any pending InstallPlans in operator namespaces.
               # This is needed because OLM may bundle multiple operators into one InstallPlan,
               # and if any subscription has Manual approval, the entire plan requires approval.
-              OPERATOR_NAMESPACES="openshift-operators {{ .Values.keycloak.namespace }}"
+              OPERATOR_NAMESPACES="openshift-operators {{ .Values.keycloak.namespace }} {{ .Values.spire.namespace }}"
 
               for ns in $OPERATOR_NAMESPACES; do
                 echo "Checking for pending InstallPlans in $ns namespace..."
@@ -92,7 +92,21 @@ spec:
                 fi
               done
 
-              CRDS_TO_WAIT_FOR="keycloaks.k8s.keycloak.org istios.sailoperator.io kialis.kiali.io"
+              # Build list of CRDs to wait for based on enabled components
+              CRDS_TO_WAIT_FOR=""
+              {{- if .Values.components.keycloak.enabled }}
+              CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR keycloaks.k8s.keycloak.org"
+              {{- end }}
+              {{- if .Values.components.istio.enabled }}
+              CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR istios.sailoperator.io"
+              {{- end }}
+              {{- if .Values.components.kiali.enabled }}
+              CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR kialis.kiali.io"
+              {{- end }}
+              {{- if .Values.components.spire.enabled }}
+              # ZTWIM operator CRDs (Zero Trust Workload Identity Manager)
+              CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR spireservers.operator.openshift.io spireagents.operator.openshift.io spiffecsidrivers.operator.openshift.io"
+              {{- end }}
 
               for crd in $CRDS_TO_WAIT_FOR; do
                 echo "Waiting for CRD '$crd' to be available..."

@@ -28,8 +28,8 @@ toolhiveOperator:
   namespace: toolhive-system
 
 charts:
-  #################################################################### 
-  # kagenti-deps 
+  ####################################################################
+  # kagenti-deps
   ####################################################################
   kagenti-deps:
     enabled: true
@@ -41,7 +41,7 @@ charts:
         istio:
           enabled: true
         kiali:
-          enabled: true  
+          enabled: true
         keycloak:
           enabled: true
         otel:
@@ -60,15 +60,15 @@ charts:
         toolhiveOperator:
           enabled: true
         certManager:
-          enabled: true  
-        gatewayApi:  
+          enabled: true
+        gatewayApi:
           enabled: false
         toolhive:
           enabled: true
 
-  #################################################################### 
-  # kagenti 
-  ####################################################################        
+  ####################################################################
+  # kagenti
+  ####################################################################
   kagenti:
     enabled: true
     values:
@@ -78,15 +78,20 @@ charts:
           enabled: true
         platformOperator:
           enabled: true
+        # Disable platformWebhook - it injects SPIFFE sidecars into MCPServers
+        # but Tools don't need SPIFFE (they use delegated tokens from Agents)
+        # and the SPIFFE CSI driver isn't available on OpenShift (ZTWIM uses different approach)
+        platformWebhook:
+          enabled: false
         ui:
           enabled: true
-        # additional artifacts required by MCP gateway   
+        # additional artifacts required by MCP gateway
         mcpGateway:
           enabled: true
         istio:
-          enabled: false    
-      # configs    
-      ui:      
+          enabled: false
+      # configs
+      ui:
         auth:
           enabled: true
       uiOAuthSecret:
@@ -95,6 +100,10 @@ charts:
         useServiceAccountCA: true
       keycloak:
         url: http://keycloak-service.keycloak:8080
+      # List of agent namespaces for Ansible installer to create internal-registry-secret
+      agentNamespaces:
+        - team1
+        - team2
 
   ####################################################################
   # mcp-gateway chart

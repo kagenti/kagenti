@@ -117,6 +117,8 @@ certManager:
 spire:
   namespace: zero-trust-workload-identity-manager
   trustDomain: localtest.me
+  # OLM channel for ZTWIM operator. Use "stable-v1" for OCP 4.20+, "tech-preview-v0.2" for OCP 4.19
+  channel: stable-v1
 
 containerRegistry:
   namespace: cr-system

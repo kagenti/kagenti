@@ -111,7 +111,7 @@ metadata:
   name: openshift-zero-trust-workload-identity-manager
   namespace: {{ .Values.spire.namespace }}
 spec:
-  channel: stable-v1
+  channel: {{ .Values.spire.channel | default "stable-v1" }}
   installPlanApproval: Automatic
   name: openshift-zero-trust-workload-identity-manager
   source: redhat-operators

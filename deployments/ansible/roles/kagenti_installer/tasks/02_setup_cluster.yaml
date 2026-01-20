@@ -8,6 +8,35 @@
   set_fact:
     enable_openshift: "{{ 'openshift.io' in (kubectl_api.stdout | default('')) }}"
 
+# Configure OVN-Kubernetes for Istio Ambient mode on OpenShift
+# See: https://istio.io/latest/docs/ambient/install/platform-prerequisites/
+# When using OVN-Kubernetes CNI, routingViaHost must be true for health probes
+# to work correctly in Ambient mode. Without this, kubelet probe traffic bypasses
+# the host network stack and ztunnel cannot exempt it from redirection.
+- name: Check OVN-Kubernetes gateway configuration for Ambient mode
+  command: kubectl get network.operator.openshift.io cluster -o jsonpath='{.spec.defaultNetwork.ovnKubernetesConfig.gatewayConfig.routingViaHost}'
+  register: ovn_routing_via_host
+  failed_when: false
+  changed_when: false
+  when: enable_openshift | default(false)
+
+- name: Configure OVN-Kubernetes local gateway mode for Istio Ambient
+  command: >-
+    kubectl patch network.operator.openshift.io cluster --type=merge
+    -p '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"gatewayConfig":{"routingViaHost":true}}}}}'
+  when:
+    - enable_openshift | default(false)
+    - ovn_routing_via_host.stdout | default('false') != 'true'
+  register: ovn_patch_result
+
+- name: Wait for OVN-Kubernetes to apply gateway configuration
+  pause:
+    seconds: 30
+    prompt: "Waiting for OVN-Kubernetes to apply routingViaHost=true configuration..."
+  when:
+    - enable_openshift | default(false)
+    - ovn_patch_result is changed
+
 - name: Check kubectl connectivity (client)
   command: kubectl version --client
   register: kubectl_client

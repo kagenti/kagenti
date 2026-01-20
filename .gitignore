@@ -172,10 +172,10 @@ cython_debug/
 
 .values_override.yaml
 
-# Local testing scripts (not committed)
-local-testing/
-
-############## Node and React 
+############## Node and React
 
 node_modules/
 .bin/
+
+# HyperShift CI credentials
+.env.hypershift-ci

@@ -1,0 +1,41 @@
+# Shipwright Build for weather-service agent (OpenShift)
+# Uses OpenShift internal registry instead of Kind registry
+apiVersion: shipwright.io/v1beta1
+kind: Build
+metadata:
+  name: weather-service
+  namespace: team1
+  labels:
+    app.kubernetes.io/created-by: e2e-test
+    app.kubernetes.io/name: weather-service
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+  annotations:
+    # Store agent configuration for finalization
+    kagenti.io/agent-config: |
+      {
+        "protocol": "a2a",
+        "framework": "LangGraph",
+        "createHttpRoute": false
+      }
+spec:
+  source:
+    type: Git
+    git:
+      url: https://github.com/kagenti/agent-examples
+      revision: main
+      cloneSecret: github-shipwright-secret
+    contextDir: a2a/weather_service
+  strategy:
+    name: buildah
+    kind: ClusterBuildStrategy
+  paramValues:
+    - name: dockerfile
+      value: Dockerfile
+  output:
+    image: image-registry.openshift-image-registry.svc:5000/team1/weather-service:v0.0.1
+  timeout: 15m
+  retention:
+    succeededLimit: 3
+    failedLimit: 3

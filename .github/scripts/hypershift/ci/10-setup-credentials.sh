@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
-# Stub script - will be replaced by real implementation
-echo "Stub script - placeholder for CI workflow bootstrap"
-exit 0
+# Setup credentials for CI
+set -euo pipefail
+
+echo "Setting up credentials..."
+
+# Management cluster kubeconfig
+mkdir -p ~/.kube
+echo "$HYPERSHIFT_MGMT_KUBECONFIG" | base64 -d > ~/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig
+chmod 600 ~/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig
+
+# Export KUBECONFIG for subsequent steps
+echo "KUBECONFIG=$HOME/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig" >> "$GITHUB_ENV"
+
+# Pull secret
+mkdir -p ~/.docker
+echo "$PULL_SECRET" > ~/.pullsecret.json
+chmod 600 ~/.pullsecret.json
+
+echo "Credentials configured"
