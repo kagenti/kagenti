@@ -209,7 +209,7 @@ if [ "${SKIP_ANSIBLE:-false}" != "true" ]; then
         cd "$HYPERSHIFT_AUTOMATION_DIR"
 
         ansible-playbook site.yml \
-            -e '{"destroy": true, "create_iam": false}' \
+            -e '{"create": false, "destroy": true, "create_iam": false}' \
             -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
             -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'"}]}' || true
 

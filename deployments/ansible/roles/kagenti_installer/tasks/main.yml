@@ -885,6 +885,7 @@
 
 # Wait for OpenShift Builds operator to be ready.
 # The operator is installed via OLM subscription in kagenti-deps.
+# The OpenShiftBuild operand CR is created via Helm hook (post-install).
 # Skip if the operator was already installed (detected earlier) or if component is disabled.
 - name: Wait for OpenShift Builds operator on OpenShift
   block:
@@ -898,10 +899,32 @@
       until: builds_csv_status.stdout == "Succeeded"
       changed_when: false
 
-    - name: Wait for Build CRD to be available
+    - name: Wait for OpenShiftBuild CRD to be available (operator ready)
+      command: kubectl get crd openshiftbuilds.operator.openshift.io
+      register: openshiftbuild_crd_check
+      retries: 30
+      delay: 10
+      until: openshiftbuild_crd_check.rc == 0
+      changed_when: false
+
+    - name: Check OpenShiftBuild operand status
+      command: kubectl get openshiftbuild cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: openshiftbuild_status
+      retries: 60
+      delay: 10
+      until: openshiftbuild_status.stdout == "True"
+      changed_when: false
+      failed_when: false
+
+    - name: Display OpenShiftBuild operand status
+      debug:
+        msg: "OpenShiftBuild operand status: {{ openshiftbuild_status.stdout | default('not ready') }}"
+      when: openshiftbuild_status.rc != 0 or openshiftbuild_status.stdout != "True"
+
+    - name: Wait for Shipwright Build CRD to be available
       command: kubectl get crd builds.shipwright.io
       register: build_crd_check
-      retries: 30
+      retries: 60
       delay: 10
       until: build_crd_check.rc == 0
       changed_when: false
@@ -987,10 +1010,7 @@
             params:
               - name: createRbacResource
                 value: "true"
-            # Configure Tekton Results to use external cert-manager if enabled
-            # Note: If Tekton Results requires cert-manager and cannot use external,
-            # consider disabling it: spec.platforms.openshift.pipelinesAsCode.enable: false
-            targetNamespace: openshift-pipelines
+            # Note: targetNamespace is immutable after creation (defaults to openshift-pipelines)
         merge_type: merge
       retries: 3
       delay: 10

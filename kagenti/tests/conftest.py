@@ -5,6 +5,7 @@ Registers custom markers and provides shared fixtures.
 """
 
 import base64
+import os
 from typing import Dict
 
 import pytest
@@ -130,8 +131,11 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
     """
     Acquire access token from Keycloak using admin credentials.
 
-    This fixture uses the port-forwarded Keycloak endpoint (localhost:8081)
-    which is set up by the test infrastructure (85-start-port-forward.sh).
+    Environment Variables:
+        KEYCLOAK_URL: Keycloak endpoint URL (default: http://localhost:8081)
+            For OpenShift: https://keycloak-keycloak.apps.cluster.example.com
+        KEYCLOAK_VERIFY_SSL: Set to "false" to disable SSL verification (default: true)
+        KEYCLOAK_CA_BUNDLE: Path to CA certificate bundle for SSL verification
 
     Args:
         keycloak_admin_credentials: Dict with username/password
@@ -144,10 +148,19 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
             - expires_in: Seconds until expiration
 
     Raises:
-        pytest.skip: If cannot acquire Keycloak token
+        pytest.fail: If cannot acquire Keycloak token
     """
-    # Use port-forwarded Keycloak (set up by 85-start-port-forward.sh)
-    token_url = "http://localhost:8081/realms/master/protocol/openid-connect/token"
+    # Use KEYCLOAK_URL env var, or fall back to port-forwarded Keycloak for Kind
+    keycloak_base_url = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
+    token_url = f"{keycloak_base_url}/realms/master/protocol/openid-connect/token"
+
+    # SSL verification: True by default, can be disabled via env var for self-signed certs
+    # Can also set KEYCLOAK_CA_BUNDLE to path of CA certificate bundle
+    verify_ssl: bool | str = True
+    if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() == "false":
+        verify_ssl = False
+    elif os.environ.get("KEYCLOAK_CA_BUNDLE"):
+        verify_ssl = os.environ["KEYCLOAK_CA_BUNDLE"]
 
     data = {
         "grant_type": "password",
@@ -157,14 +170,19 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
     }
 
     try:
-        response = requests.post(token_url, data=data, timeout=10)
+        response = requests.post(token_url, data=data, timeout=10, verify=verify_ssl)
 
         if response.status_code == 200:
             return response.json()
 
-        pytest.skip(
-            f"Could not acquire Keycloak token. Status {response.status_code}: {response.text}"
+        pytest.fail(
+            f"Could not acquire Keycloak token. Status {response.status_code}: {response.text}\n"
+            f"Keycloak URL: {keycloak_base_url}"
         )
 
     except requests.exceptions.RequestException as e:
-        pytest.skip(f"Could not acquire Keycloak token: {e}")
+        pytest.fail(
+            f"Could not acquire Keycloak token: {e}\n"
+            f"Keycloak URL: {keycloak_base_url}\n"
+            f"Hint: Set KEYCLOAK_URL env var to your Keycloak endpoint"
+        )

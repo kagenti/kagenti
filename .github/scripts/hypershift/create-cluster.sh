@@ -198,7 +198,7 @@ cd "$HYPERSHIFT_AUTOMATION_DIR"
 # Note: We rely on HyperShift's built-in tagging (kubernetes.io/cluster/<cluster-name>=owned)
 # rather than a custom ManagedBy tag. IAM policies use tag key pattern matching.
 ansible-playbook site.yml \
-    -e '{"create": true, "create_iam": false}' \
+    -e '{"create": true, "destroy": false, "create_iam": false}' \
     -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
     -e "domain=$BASE_DOMAIN" \
     -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'", "replicas": '"$REPLICAS"', "instance_type": "'"$INSTANCE_TYPE"'", "image": "'"$OCP_VERSION"'"}]}'

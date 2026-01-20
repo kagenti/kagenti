@@ -1,0 +1,30 @@
+{{- if and .Values.components.shipwright.enabled .Values.openshift }}
+{{- /*
+  OpenShiftBuild Operand Configuration
+
+  The OpenShift Builds operator requires this operand CR to deploy Shipwright components.
+  After the operator subscription is installed, this CR triggers the creation of:
+  - builds.shipwright.io CRD
+  - buildruns.shipwright.io CRD
+  - buildstrategies.shipwright.io CRD
+  - clusterbuildstrategies.shipwright.io CRD
+
+  Uses Helm hooks to ensure the operator has time to install before creating the operand.
+*/}}
+apiVersion: operator.openshift.io/v1alpha1
+kind: OpenShiftBuild
+metadata:
+  name: cluster
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  sharedResource:
+    state: Enabled
+  shipwright:
+    build:
+      state: Enabled
+{{- end }}

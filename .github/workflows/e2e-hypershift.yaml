@@ -9,10 +9,9 @@ on:
       - 'deployments/**'
       - '.github/**'
   # Use pull_request_target for fork PRs to access secrets
-  # SECURITY: Maintainer must add 'safe-to-test' label after reviewing PR
+  # SECURITY: First-time contributors require maintainer approval via GitHub UI
   pull_request_target:
     branches: [main]
-    types: [labeled]  # Only trigger when label is added
     paths:
       - 'kagenti/**'
       - 'charts/**'
@@ -33,13 +32,9 @@ on:
         required: false
         type: boolean
         default: false
-      max_parallel:
-        description: 'Maximum parallel CI runs (slot count)'
-        required: false
-        default: '6'
 
 # Only allow one run per PR to avoid resource conflicts
-# When a new commit is pushed, the old run is cancelled but cleanup job still runs
+# When a new commit is pushed, the old run is cancelled but cleanup step runs first
 concurrency:
   group: e2e-hypershift-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -51,31 +46,12 @@ env:
   # For workflow_dispatch: user-provided or run_number
   CLUSTER_SUFFIX: ${{ inputs.cluster_name || (github.event.pull_request.number && format('pr{0}', github.event.pull_request.number)) || github.run_number }}
   OCP_VERSION: ${{ inputs.ocp_version || '4.20.10' }}
-  # Slot management for parallel CI runs
-  MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
-  SLOT_TIMEOUT: '60'  # Minutes to wait for an available slot
 
 jobs:
-  # ============================================================================
-  # E2E Tests Job - This is the main check that determines PR mergeability
-  # ============================================================================
   e2e-ocp-kagenti-operator:
-    name: E2E Tests
+    name: e2e (OCP, Kagenti Operator)
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
-    # SECURITY: Only run E2E tests if:
-    # - Push to main (trusted code)
-    # - Manual workflow dispatch (maintainer triggered)
-    # - PR has 'safe-to-test' label (maintainer reviewed)
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request_target' &&
-       contains(github.event.pull_request.labels.*.name, 'safe-to-test'))
-
-    outputs:
-      slot_id: ${{ steps.acquire-slot.outputs.slot_id }}
 
     steps:
       - name: Checkout repository
@@ -122,23 +98,6 @@ jobs:
       - name: Verify management cluster access
         run: bash .github/scripts/hypershift/ci/50-verify-mgmt-access.sh
 
-      # --- Slot Management (for parallel CI runs) ---
-      - name: Cleanup stale CI slots
-        run: bash .github/scripts/hypershift/ci/slots/cleanup-stale.sh
-        continue-on-error: true  # Don't fail if cleanup has issues
-
-      - name: Acquire CI slot
-        id: acquire-slot
-        run: bash .github/scripts/hypershift/ci/slots/acquire.sh
-        env:
-          MAX_SLOTS: ${{ env.MAX_SLOTS }}
-          SLOT_TIMEOUT: ${{ env.SLOT_TIMEOUT }}
-          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
-
-      - name: Check cluster capacity
-        run: bash .github/scripts/hypershift/ci/slots/check-capacity.sh
-      # --- End Slot Management ---
-
       - name: Cleanup any existing cluster (from cancelled runs)
         run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
         env:
@@ -180,71 +139,27 @@ jobs:
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
-  # ============================================================================
-  # Cleanup Job - Runs after E2E tests, doesn't block PR merge
-  # ============================================================================
-  cleanup:
-    name: Cleanup
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [e2e-ocp-kagenti-operator]
-    # Always run cleanup to destroy any resources with this PR's CLUSTER_SUFFIX
-    # This handles: failed runs, cancelled runs, and stale resources from previous runs
-    # Only skip if skip_destroy is explicitly set (for debugging)
-    if: always() && !inputs.skip_destroy
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Setup credentials
-        run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
-        env:
-          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
-          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
-          PULL_SECRET: ${{ secrets.PULL_SECRET }}
-
-      - name: Install tools
-        run: bash .github/scripts/hypershift/ci/20-install-tools.sh
-        env:
-          OCP_VERSION: ${{ env.OCP_VERSION }}
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.23'
-
-      - name: Build hcp CLI from source
-        run: bash .github/scripts/hypershift/ci/30-build-hcp-cli.sh
-
-      - name: Clone hypershift-automation
-        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
-
       - name: Destroy HyperShift cluster
-        # Use the same cleanup script as pre-cleanup - it handles CLUSTER_SUFFIX
-        # This ensures cleanup works even if e2e job failed before setting outputs
-        run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
+        # Always try to destroy cluster, even if create-cluster step failed
+        # The destroy script gracefully handles "cluster not found" cases
+        # Note: Using !inputs.skip_destroy instead of != true for compatibility with pull_request_target
+        if: ${{ always() && !inputs.skip_destroy }}
+        run: bash .github/scripts/hypershift/destroy-cluster.sh "${{ env.CLUSTER_SUFFIX }}"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
           HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
-          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
-
-      - name: Release CI slot
-        if: always()
-        run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ needs.e2e-ocp-kagenti-operator.outputs.slot_id }}"
 
       - name: Summary
         if: always()
         run: bash .github/scripts/hypershift/ci/99-summary.sh
         env:
+          CLUSTER_NAME: ${{ steps.create-cluster.outputs.cluster_name }}
           CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
           MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
           OCP_VERSION: ${{ env.OCP_VERSION }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          E2E_RESULT: ${{ needs.e2e-ocp-kagenti-operator.result }}
+          CREATE_OUTCOME: ${{ steps.create-cluster.outcome }}
           SKIP_DESTROY: ${{ inputs.skip_destroy || 'false' }}

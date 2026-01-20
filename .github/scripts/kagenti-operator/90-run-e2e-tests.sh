@@ -8,8 +8,12 @@ log_step "90" "Running E2E tests (Kagenti Operator)"
 
 cd "$REPO_ROOT/kagenti"
 
-export AGENT_URL=http://localhost:8000
-export KAGENTI_CONFIG_FILE=deployments/envs/dev_kagenti_operator_values.yaml
+# Use environment variables if set, otherwise default
+export AGENT_URL="${AGENT_URL:-http://localhost:8000}"
+export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/dev_kagenti_operator_values.yaml}"
+
+echo "AGENT_URL: $AGENT_URL"
+echo "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
 mkdir -p "$REPO_ROOT/test-results"
 

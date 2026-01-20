@@ -26,9 +26,19 @@ else
     else
         curl -fsSLk -o /tmp/hcp.tar.gz "$HCP_DOWNLOAD_URL"
     fi
-    sudo tar -xzf /tmp/hcp.tar.gz -C /usr/local/bin hcp
+    # Extract to temp dir and find hcp binary (archive structure varies)
+    mkdir -p /tmp/hcp-extract
+    tar -xzf /tmp/hcp.tar.gz -C /tmp/hcp-extract
+    echo "Archive contents:"
+    find /tmp/hcp-extract -type f -name 'hcp*' | head -5
+    HCP_BIN=$(find /tmp/hcp-extract -type f -name 'hcp' | head -1)
+    if [ -z "$HCP_BIN" ]; then
+        echo "Error: hcp binary not found in archive"
+        exit 1
+    fi
+    sudo mv "$HCP_BIN" /usr/local/bin/hcp
     sudo chmod +x /usr/local/bin/hcp
-    rm /tmp/hcp.tar.gz
+    rm -rf /tmp/hcp.tar.gz /tmp/hcp-extract
 fi
 
 echo "hcp CLI installed:"
