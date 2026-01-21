@@ -260,14 +260,21 @@ source .env.hypershift-ci                                          # Reload CI c
 
 **run-full-test.sh Options:**
 
+The script has 5 phases: `create` → `install` → `agents` → `test` → `destroy`
+
 | Option | Description | Use Case |
 |--------|-------------|----------|
-| (no options) | Full test: create → deploy → E2E → destroy | CI, one-off testing |
-| `--skip-destroy` | Keep cluster after tests | First dev run |
-| `--skip-create` | Reuse existing cluster | Final run (destroys cluster) |
-| `--skip-create --skip-destroy` | Iterate on existing cluster | Fast iteration |
+| (no options) | Run all 5 phases | CI, one-off testing |
+| `--skip-destroy` | Run phases 1-4 (keep cluster) | First dev run |
+| `--skip-create` | Run phases 2-5 (reuse cluster) | Final run, destroy cluster |
+| `--skip-create --skip-destroy` | Run phases 2-4 only | Fast iteration |
+| `--include-create --include-destroy` | Run only phases 1 and 5 | Cleanup leftover resources |
+| `--include-destroy` | Run only phase 5 | Cleanup only |
 | `--clean-kagenti` | Uninstall kagenti before installing | Fresh kagenti install |
+| `--env <dev\|ocp>` | Values file (default: ocp) | Kind (dev) vs OpenShift (ocp) |
 | `[suffix]` | Custom cluster suffix (e.g., `pr123`) | Multiple clusters |
+
+**Note**: `--skip-X` is blacklist mode (run all except listed), `--include-X` is whitelist mode (run only listed).
 
 ## Environment Comparison
 
