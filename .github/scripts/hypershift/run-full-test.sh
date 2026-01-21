@@ -336,10 +336,25 @@ if [ "$RUN_TEST" = "true" ]; then
             export AGENT_URL="http://localhost:8000"
         fi
     fi
+
+    # Get Keycloak URL from route (if not already set)
+    if [ -z "${KEYCLOAK_URL:-}" ]; then
+        KEYCLOAK_HOST=$(oc get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$KEYCLOAK_HOST" ]; then
+            export KEYCLOAK_URL="https://$KEYCLOAK_HOST"
+            # OpenShift routes use self-signed certs, disable SSL verification
+            export KEYCLOAK_VERIFY_SSL="false"
+        else
+            log_error "keycloak route not found"
+            export KEYCLOAK_URL="http://localhost:8081"
+        fi
+    fi
+
     # Set config file based on environment
     export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
 
     log_step "AGENT_URL: $AGENT_URL"
+    log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
     log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
     ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
