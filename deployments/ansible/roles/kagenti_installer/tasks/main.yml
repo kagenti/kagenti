@@ -962,6 +962,27 @@
       delay: 15
       register: tektonconfig_patch
       until: tektonconfig_patch is not failed
+
+    # Wait for TektonConfig to become fully Ready before proceeding.
+    # OpenShift Builds operator depends on TektonConfig being ready before
+    # it will deploy Shipwright components. Without this wait, the Builds
+    # operator will be stuck in a retry loop waiting for Tekton.
+    - name: Wait for TektonConfig to be Ready
+      command: >-
+        kubectl get tektonconfig config
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: tektonconfig_ready_status
+      retries: 60
+      delay: 10
+      until: tektonconfig_ready_status.stdout == "True"
+      changed_when: false
+
+    - name: Display TektonConfig status if not ready
+      debug:
+        msg: |
+          TektonConfig status: {{ tektonconfig_ready_status.stdout | default('unknown') }}
+          Waiting for TektonConfig to report Ready=True before proceeding to OpenShift Builds.
+      when: tektonconfig_ready_status.stdout != "True"
   when: enable_openshift | default(false)
 
 # Wait for OpenShift Builds operator to be ready.
