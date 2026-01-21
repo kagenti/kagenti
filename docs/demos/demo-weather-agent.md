@@ -29,22 +29,20 @@ You should also open the Agent Platform Demo Dashboard as instructed in the [Acc
 
 To deploy the Weather Agent:
 
-1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
-2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
-3. Under [**Select Environment Variable Sets**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#select-environment-variable-sets), select:
-   - `mcp-weather`
-   - `ollama` or `openai`
-4. In the **Agent Source Repository URL** field, use the default:
-   <https://github.com/kagenti/agent-examples>
-   Or use a custom repository accessible using the GitHub ID specified in your `.env` file.
-5. For **Git Branch or Tag**, use the default `main` branch (or select another as needed).
-6. Set **Protocol** to `a2a`.
-7. Under [**Specify Source Subfolder**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#specify-source-subfolder):
-   - Click `Select from examples`
-   - Choose: `a2a/weather_service`
-8. Click **Build & Deploy New Agent** to deploy.
+1. Click on [Import New Agent](http://kagenti-ui.localtest.me:8080/agents/import) in the Kagenti UI.
+1. In the **Agent Configuration** section's **Namespace** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces can be defined or overwritten in [value files](https://github.com/kagenti/kagenti/tree/main/deployments/ansible#how-variables-and-value-files-are-resolved).)
+1. Provide a new **Agent Name** if wanted, or this will get populated later automatically as `weather-service`.
+1. Keep the **Deployment Method** as **Build from Source** to deploy from a source repository.
+1. In the **Source Repository** section's **Git Repository URL** field, use the default:
+   <https://github.com/kagenti/agent-examples>.
+   Or use a custom repository accessible using the GitHub ID specified in your `.secret_values` file.
+1. For **Git Branch**, use the default `main` branch (or select another as needed).
+1. For **Select Example**, choose `Weather Service Agent`. The **Source Path** will populate as `a2a/weather_service` (or provide another path).
+1. Keep the **Container Registry Configuration** section's **Container Registry** and **Override Start Command** as default.
+1. Expand the **Environment Variables** dropdown and click **Import from File/URL** to add environment variables including agent LLM information. Use the default `https://raw.githubusercontent.com/kagenti/agent-examples/refs/heads/main/a2a/weather_service/.env.openai` URL or select another file or URL, then click **Fetch & Parse**. Make sure the LLM variables are for a model accessible to you. Variables can be updated in the UI as wanted.
+1. Click **Build & Deploy New Agent** to deploy.
 
-**Note:** The `ollama` environmental variable set specifies `llama3.2:3b-instruct-fp16` as the default model. To download the model, run `ollama pull llama3.2:3b-instruct-fp16`. Please ensure an Ollama server is running in a separate terminal via `ollama serve`. 
+**Note:** To use `ollama`, update the `LLM_API_BASE` to `http://host.docker.internal:11434/v1` or wherever the model is being served. To download an `ollama` model, run `ollama pull <model-name>`. Please ensure an Ollama server is running in a separate terminal via `ollama serve`.
 
 ---
 
@@ -52,16 +50,14 @@ To deploy the Weather Agent:
 
 To deploy the Weather Tool using Shipwright:
 
-1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
-1. Select the same `<namespace>` as used for the agent.
-1. Select "Build from source" as the deployment method.
-1. Use the same source repository:
-   <https://github.com/kagenti/agent-examples>
-1. Choose the `main` branch or your preferred branch.
-1. Set **Select Protocol** to `streamable_http`.
-1. Under **Specify Source Subfolder**:
-   - Select: `mcp/weather_tool`
-1. Click **Build & Deploy New Tool** to deploy.
+1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/tools/import) in the UI.
+1. Select the same `<namespace>` as used for the agent for the **Namespace** under **Tool Configuration**.
+1. Provide a new **Tool Name** if wanted, or this will get populated later automatically as `weather-tool`.
+1. Keep the **Deployment Method** as **Deploy From Image** to deploy from an image. It can also be switched to **Build from Source** to build, where an example `Weather Tool` can be chosen.
+1. For **Container Image**, use `ghcr.io/kagenti/agent-examples/weather_tool` or any other full image path with the weather tool. These examples are available [here on the Github Container Registry](https://github.com/kagenti/agent-examples/pkgs/container/agent-examples%2Fweather_tool).
+1. Pick a corresponding tag under **Image Tag** or keep the default `latest`.
+1. Keep the **MCP Transport Portocol** as "Streamable HTTP".
+1. Click **Deploy New Tool** to deploy.
 
 You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once the build succeeds, the MCPServer will be created automatically.
 
@@ -79,7 +75,8 @@ To verify that both the agent and tool are running:
    ```console
    installer$ kubectl get po -n <your-ns>
    NAME                                  READY   STATUS    RESTARTS   AGE
-   weather-service-8bb4644fc-4d65d       1/1     Running   0          1m
+   weather-service-8bb4644fc-4d65d       3/3     Running   0          1m
+   weather-tool-0                        3/3     Running   0          1m
    weather-tool-5bb675dd7c-ccmlp         1/1     Running   0          1m
    ```
 
@@ -88,8 +85,8 @@ To verify that both the agent and tool are running:
 
    ```console
    installer$ kubectl logs -f deployment/weather-service -n <your-ns>
-   Defaulted container "weather-service" out of: weather-service, kagenti-client-registration (init)
-   INFO:     Started server process [18]
+   Defaulted container "agent" out of: agent, spiffe-helper, kagenti-client-registration
+   INFO:     Started server process [17]
    INFO:     Waiting for application startup.
    INFO:     Application startup complete.
    INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
@@ -98,11 +95,11 @@ To verify that both the agent and tool are running:
    For the tool:
    ```console
    installer$ kubectl logs -f deployment/weather-tool -n <your-ns>
-   Defaulted container "weather-tool" out of: weather-tool, kagenti-client-registration (init)
-   INFO:     Started server process [19]
-   INFO:     Waiting for application startup.
-   INFO:     Application startup complete.
-   INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+   ...
+   {"level":"info","ts":1769024819.3249917,"caller":"logger/logger.go:39","msg":"Server was initialized successfully for http://mcp-weather-tool-headless:8000"}
+   {"level":"info","ts":1769024819.3251433,"caller":"logger/logger.go:39","msg":"MCP server is ready after 3.122989251s (attempt 6)"}
+   ...
+   {"level":"info","ts":1769024819.3265529,"caller":"logger/logger.go:34","msg":"Press Ctrl+C to stop or wait for container to exit"}
    ```
 
 4. Once you see the logs indicating that both services are up and running, you're ready to proceed to [Chat with the Weather Agent](#chat-with-the-weather-agent).
@@ -113,53 +110,32 @@ To verify that both the agent and tool are running:
 
 Once the deployment is complete, you can run the demo:
 
-1. Navigate to the **Agent Catalog** in the Kagenti UI.
-2. Select the same `<namespace>` used during the agent deployment.
-3. Under [**Available Agents in <namespace>**](http://kagenti-ui.localtest.me:8080/Agent_Catalog#available-agents-in-kagenti-system), select `weather-service` and click **View Details**.
-4. Scroll to the bottom of the page. In the input field labeled *Say something to the agent...*, enter:
+1. Navigate to the **Agent Catalog** in the Kagenti UI by clicking on **Agents** on the left sidebar.
+1. Select the agent name chosen earlier (`weather-service` by default).
+1. Click on the **Chat** tab. You can see agent details under the **Agent Details** dropdown.
+1. Scroll to the bottom of the page. In the input field labeled *Type your message...*, enter:
 
    ```console
    What is the weather in NY?
    ```
 
-5. You will see the *Agent Thinking...* message. Depending on the speed of your hosting environment, the agent will return a weather response. For example:
+1. You will see *Events* flowing and a *Processing...* message. Depending on the speed of your hosting environment, the agent will return a weather response. For example:
 
    ```console
    The current weather in NY is mostly sunny with a temperature of 22.6 degrees Celsius (73.07 degrees Fahrenheit). There is a gentle breeze blowing at 6.8 km/h (4.2 mph) from the northwest. It's currently daytime, and the weather code indicates fair weather with no precipitation.
    ```
 
-6. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
+1. You can tail the log files (as shown in the [Validate the Deployment section](#validate-the-deployment)) to observe the interaction between the agent and the tool in real time.
 
 If you encounter any errors, check the [Troubleshooting Guide](../troubleshooting.md).
 
 ## Cleanup
 
-To cleanup the agents and tools in the UI, go to the `Agent Catalog` and `Tool Catalog`
-respectively and click the `Delete` button next to each.
+To cleanup the agents and tools in the UI, go to the `Agent Catalog` and `Tool Catalog` respectively. These are accessible via "Agents" and "Tools" on the left sidebar. Click on each agent or tool you want to delete. On the right side there is an `Action` dropdown that will show `Delete agent` or `Delete tool`. Confirmation will be required to ensure deletion is intentional.
 
-You can also manually remove them by deleting their Custom Resources (CRs) from the cluster.
+You can also manually remove them by deleting their Custom Resources (CRs) from the cluster. The Kagenti Operator will automatically clean up all related Kubernetes resources.
 
-### Step 1: List Custom Resource Definitions (CRDs)
-
-   ```console
-   installer$ kubectl get crds | grep kagenti
-   components.kagenti.operator.dev             2025-07-23T23:11:59Z
-   platforms.kagenti.operator.dev              2025-07-23T23:11:59Z
-   ```
-
-### Step 2: List deployed components in your namespace
-
-   ```console
-   installer$ kubectl get components.kagenti.operator.dev -n <your-ns>
-   NAME                  SUSPEND
-   weather-service       false
-   weather-tool          false
-   ```
-
-### Step 3: Delete the Agent and the Tool
-
-   ```console
-   installer$ kubectl delete components.kagenti.operator.dev weather-service weather-tool -n <your-ns>
-   ```
-
-The Kagenti Operator will automatically clean up all related Kubernetes resources.
+<!---
+Once CRDs are finalized as part of https://github.com/kagenti/kagenti/issues/523,
+instructions for manual removal can be updated here.
+-->
