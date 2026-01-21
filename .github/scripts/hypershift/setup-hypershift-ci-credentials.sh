@@ -1086,17 +1086,19 @@ rules:
     resources: ["routes"]
     verbs: ["get", "list", "watch"]
   # CAPI resources - for machine/nodepool status
+  # Note: patch is needed to remove finalizers from orphaned Cluster resources during cleanup
   - apiGroups: ["cluster.x-k8s.io"]
     resources: ["machines", "machinesets", "machinedeployments", "clusters"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
   # AWS CAPI resources
   - apiGroups: ["infrastructure.cluster.x-k8s.io"]
     resources: ["awsmachines", "awsmachinetemplates", "awsclusters"]
     verbs: ["get", "list", "watch"]
   # Deployments and other workloads for debugging control plane
+  # Note: patch is needed to remove finalizers from orphaned deployments during cleanup
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "replicasets"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
 EOF
 log_success "ClusterRole '${CLUSTER_ROLE_NAME}' applied"
 
