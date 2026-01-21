@@ -43,18 +43,39 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
         echo "::warning::Control plane namespace still exists after cleanup"
         # Force delete namespace as last resort
         echo "Force-deleting orphaned namespace..."
+
+        # Remove finalizers from resources in the namespace
+        # Include HyperShift-specific resources that can block deletion
+        for resource in clusters.cluster.x-k8s.io deployments hostedcontrolplane etcd secret configmap pvc; do
+            resources=$(oc get "$resource" -n "$CONTROL_PLANE_NS" -o name 2>/dev/null || true)
+            if [ -n "$resources" ]; then
+                echo "$resources" | while read -r name; do
+                    echo "  Removing finalizers from $name"
+                    oc patch "$name" -n "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+                done
+            fi
+        done
+
         oc delete ns "$CONTROL_PLANE_NS" --wait=false 2>/dev/null || true
         oc patch ns "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
 
-        # Wait for namespace deletion
-        for i in {1..12}; do
+        # Wait for namespace deletion (up to 5 minutes)
+        NS_DELETED=false
+        for i in {1..60}; do
             if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
                 echo "Namespace deleted"
+                NS_DELETED=true
                 break
             fi
-            echo "Waiting for namespace deletion... ($i/12)"
+            echo "Waiting for namespace deletion... ($i/60)"
             sleep 5
         done
+
+        # Warn if namespace still exists but continue - create step will fail if there's a real conflict
+        if [ "$NS_DELETED" = "false" ]; then
+            echo "::warning::Namespace $CONTROL_PLANE_NS still exists after 5 minutes - continuing anyway"
+            echo "The create step may fail if there's a resource conflict."
+        fi
     fi
 
     echo "Cleanup complete"
