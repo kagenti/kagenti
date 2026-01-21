@@ -1,15 +1,16 @@
-# IAM Policy Templates
+# Policy Templates
 
-These policy templates define the AWS IAM permissions for HyperShift CI operations.
+This directory contains policy templates for HyperShift CI credentials.
 They use variable substitution (`${VAR}`) and are rendered by `setup-hypershift-ci-credentials.sh`.
 
 ## Policy Files
 
 | File | Purpose | Used By |
 |------|---------|---------|
-| `ci-user-policy.json` | Scoped permissions for CI automation | `kagenti-hypershift-ci` IAM user |
-| `hcp-role-policy.json` | Permissions for `hcp` CLI operations | `kagenti-hypershift-ci-role` IAM role |
-| `debug-user-policy.json` | Read-only access for debugging | `kagenti-hypershift-ci-debug` IAM user |
+| `ci-user-policy.json` | Scoped AWS permissions for CI automation | `kagenti-hypershift-ci` IAM user |
+| `hcp-role-policy.json` | AWS permissions for `hcp` CLI operations | `kagenti-hypershift-ci-role` IAM role |
+| `debug-user-policy.json` | Read-only AWS access for debugging | `kagenti-hypershift-ci-debug` IAM user |
+| `k8s-ci-clusterrole.yaml` | Kubernetes RBAC for HyperShift operations | `kagenti-hypershift-ci` ServiceAccount |
 
 ## Required Variables
 
@@ -17,6 +18,10 @@ They use variable substitution (`${VAR}`) and are rendered by `setup-hypershift-
 |----------|-------------|---------|
 | `MANAGED_BY_TAG` | Primary identifier for resource scoping | `kagenti-hypershift-ci` |
 | `ROUTE53_ZONE_ID` | Route53 hosted zone ID for base domain | `Z1234567890ABC` |
+| `CLUSTER_ROLE_NAME` | Kubernetes ClusterRole name | `kagenti-hypershift-ci-k8s-role` |
+| `CLUSTER_ROLE_BINDING_NAME` | Kubernetes ClusterRoleBinding name | `kagenti-hypershift-ci-k8s-binding` |
+| `SA_NAME` | Kubernetes ServiceAccount name | `kagenti-hypershift-ci` |
+| `SA_NAMESPACE` | Kubernetes namespace for ServiceAccount | `kagenti-hypershift-ci` |
 
 ## Tagging Strategy
 
@@ -98,6 +103,35 @@ Multiple layers provide protection:
 3. **Cluster naming convention** - All clusters prefixed with `${MANAGED_BY_TAG}`
 4. **K8s RBAC** - Limits HostedCluster management on management cluster
 5. **Separate users** - CI user vs HCP role separation
+
+## Kubernetes RBAC (k8s-ci-clusterrole.yaml)
+
+The `k8s-ci-clusterrole.yaml` defines RBAC for the CI service account on the HyperShift management cluster.
+
+### Why Cluster-Scoped?
+
+Unlike AWS IAM, Kubernetes RBAC does not support namespace prefix patterns. HyperShift dynamically creates control plane namespaces (e.g., `clusters-<name>`) that CI needs to access. Since namespace names aren't known in advance and the HyperShift operator creates them, we cannot use namespace-scoped RoleBindings.
+
+### Permission Categories
+
+| Resource | Verbs | Purpose |
+|----------|-------|---------|
+| `hostedclusters`, `nodepools`, `hostedcontrolplanes` | full CRUD | Cluster lifecycle management |
+| `secrets`, `configmaps`, `namespaces` | full CRUD | Cluster configuration and kubeconfig access |
+| `cluster.x-k8s.io` resources | get, list, watch, **patch** | CAPI status and orphan cleanup |
+| `apps/deployments`, `statefulsets` | get, list, watch, **patch** | Control plane debugging and orphan cleanup |
+| `pods`, `nodes`, `events`, `pods/log` | read-only | Debugging |
+
+### The `patch` Permission
+
+The `patch` verb on `cluster.x-k8s.io/clusters` and `apps/deployments` is critical for cleanup:
+
+**Problem**: When a HyperShift cluster is deleted, the control plane namespace (containing cluster-api controllers) is deleted first. This creates a deadlock:
+- `Cluster` resources have finalizers requiring cluster-api controller
+- Controller runs in the namespace being deleted
+- Controller can't remove finalizers → namespace stuck in Terminating
+
+**Solution**: CI service account can patch these resources to remove finalizers manually during cleanup.
 
 ## Testing Policy Changes
 

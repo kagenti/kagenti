@@ -84,104 +84,86 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 
 **Prerequisites**: AWS CLI, oc CLI, bash 3.2+, jq
 
-#### Quick Run
+#### One-Time Setup
 
 ```bash
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ ONE-TIME SETUP (requires AWS admin + OCP cluster-admin on mgmt cluster)    │
-# └─────────────────────────────────────────────────────────────────────────────┘
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"   # Controls IAM user/policy naming
-CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-local}"                   # Customize per-cluster
-# Cluster name = ${MANAGED_BY_TAG}-${CLUSTER_SUFFIX} → e.g., kagenti-hypershift-ci-local
-
+# Requires: AWS admin + OCP cluster-admin on management cluster
 ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh    # Creates IAM + .env.hypershift-ci
 ./.github/scripts/hypershift/local-setup.sh                        # Installs hcp CLI + ansible
-
-# Optional: Verify mgmt cluster capacity and autoscaling
-# ./.github/scripts/hypershift/setup-autoscaling.sh                # Check/configure autoscaling
-
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ DEVELOPMENT WORKFLOW (most common - keep cluster, iterate fast)            │
-# └─────────────────────────────────────────────────────────────────────────────┘
-
-# First time: Create cluster and run tests, keep cluster for iteration
-./.github/scripts/hypershift/run-full-test.sh --skip-destroy       # ~25 min
-
-# Iterate: Clean kagenti, redeploy, test (keeps cluster)
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-ci-local/auth/kubeconfig
-./deployments/ansible/cleanup-install.sh                            # ~2 min
-./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy  # ~10 min
-
-# When done developing: Destroy cluster
-source .env.hypershift-ci
-./.github/scripts/hypershift/destroy-cluster.sh local               # ~10 min
-
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ FULL CI TEST (create → deploy → test → destroy)                            │
-# └─────────────────────────────────────────────────────────────────────────────┘
-source .env.hypershift-ci
-./.github/scripts/hypershift/run-full-test.sh                       # ~35 min total
-
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ ALL OPTIONS                                                                 │
-# └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/hypershift/run-full-test.sh                       # Full CI run
-./.github/scripts/hypershift/run-full-test.sh pr123                 # Custom cluster suffix
-./.github/scripts/hypershift/run-full-test.sh --skip-destroy        # First dev run, keep cluster
-./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy  # Iterate on existing cluster
-./.github/scripts/hypershift/run-full-test.sh --skip-create --clean-kagenti --skip-destroy  # Fresh kagenti on existing cluster
-./.github/scripts/hypershift/run-full-test.sh --skip-create         # Final run, destroy cluster
 ```
 
-#### Detailed Instructions
+#### Main Testing Flow
+
+```bash
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ STEP 1: Run tests, keep cluster for debugging (~25 min)                     │
+# └─────────────────────────────────────────────────────────────────────────────┘
+./.github/scripts/hypershift/run-full-test.sh --skip-destroy
+
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ STEP 2: When done - destroy cluster                                         │
+# └─────────────────────────────────────────────────────────────────────────────┘
+./.github/scripts/hypershift/run-full-test.sh --include-destroy
+```
+
+#### Common Examples
+
+```bash
+# Default cluster (kagenti-hypershift-ci-local)
+./.github/scripts/hypershift/run-full-test.sh --skip-destroy
+
+# Custom cluster suffix (kagenti-hypershift-ci-pr123)
+./.github/scripts/hypershift/run-full-test.sh pr123 --skip-destroy
+./.github/scripts/hypershift/run-full-test.sh pr123 --include-destroy
+
+# Full CI run: create → deploy → test → destroy (~35 min)
+./.github/scripts/hypershift/run-full-test.sh
+
+# Iterate on existing cluster (skip create, keep cluster)
+./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy
+
+# Fresh kagenti install on existing cluster
+./.github/scripts/hypershift/run-full-test.sh --skip-create --clean-kagenti --skip-destroy
+```
+
+#### Running Individual Phases
+
+Use `--include-<phase>` to run only specific phases:
+
+```bash
+# Create cluster only
+./.github/scripts/hypershift/run-full-test.sh --include-create
+
+# Install kagenti only (on existing cluster)
+./.github/scripts/hypershift/run-full-test.sh --include-install
+
+# Deploy agents only
+./.github/scripts/hypershift/run-full-test.sh --include-agents
+
+# Run tests only
+./.github/scripts/hypershift/run-full-test.sh --include-test
+
+# Destroy cluster only
+./.github/scripts/hypershift/run-full-test.sh --include-destroy
+
+# Combine phases: create + install only
+./.github/scripts/hypershift/run-full-test.sh --include-create --include-install
+```
 
 <details>
-<summary>Click to expand step-by-step instructions</summary>
+<summary>Click to expand step-by-step manual instructions</summary>
 
 ```bash
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 1: ONE-TIME SETUP (run once per environment)                          ┃
-# ┃ Requires: AWS IAM admin + OCP cluster-admin on management cluster           ┃
-# ┃ Creates:  Scoped CI user (AWS) + service account (OCP) with minimal privs   ┃
+# ┃ PHASE 1: CREATE CLUSTER                                                     ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-# AWS login (if using SSO)
-# aws sso login --profile your-profile
-# export AWS_PROFILE=your-profile
-
-aws sts get-caller-identity                                        # Verify AWS admin
-
-# Option A: Login interactively
-# oc login https://api.mgmt-cluster.example.com:6443 -u kubeadmin    # Login to mgmt cluster
-
-# Option B: Use existing kubeconfig
-# export KUBECONFIG=~/.kube/my-mgmt-cluster.kubeconfig
-
-oc whoami && oc status                                             # Verify cluster access
-
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"          # Controls IAM user/policy naming
-CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-local}"                          # Customize per-cluster
-# Cluster name = ${MANAGED_BY_TAG}-${CLUSTER_SUFFIX} → e.g., kagenti-hypershift-ci-local
-
-./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh    # Creates IAM + .env.hypershift-ci
-./.github/scripts/hypershift/local-setup.sh                        # Installs hcp CLI + ansible
-
-# Optional: Debug orphaned AWS resources or configure autoscaling
-# ./.github/scripts/hypershift/debug-aws-hypershift.sh             # Find orphaned AWS resources (read-only)
-# ./.github/scripts/hypershift/setup-autoscaling.sh                # Configure mgmt/nodepool autoscaling
+source .env.hypershift-ci
+./.github/scripts/hypershift/create-cluster.sh                     # or: create-cluster.sh pr123
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 2: CREATE CLUSTER (uses scoped CI credentials from .env.hypershift-ci)┃
+# ┃ PHASE 2-4: DEPLOY KAGENTI + AGENTS + TEST                                   ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-source .env.hypershift-ci                                          # Load scoped CI creds
-./.github/scripts/hypershift/create-cluster.sh                     # Creates kagenti-hypershift-ci-local
-
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 3: DEPLOY KAGENTI + E2E (uses hosted cluster kubeconfig)              ┃
-# ┃ Credentials: KUBECONFIG from created cluster (cluster-admin on hosted)      ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-# Kubeconfig path: ~/clusters/hcp/<cluster-name>/auth/kubeconfig
 export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-ci-local/auth/kubeconfig
-oc get nodes
 
 ./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
 ./.github/scripts/kagenti-operator/41-wait-crds.sh
@@ -198,20 +180,16 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ ITERATE: Clean kagenti and re-run Phase 3 (keeps cluster, fast iteration)  ┃
-# ┃ Use this to iterate on kagenti/agents without destroying the cluster       ┃
+# ┃ ITERATE: Clean and redeploy (keeps cluster)                                 ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-ci-local/auth/kubeconfig
-./deployments/ansible/cleanup-install.sh                           # ~2 min: clean kagenti only
-# Then re-run Phase 3 steps above (30-run-installer.sh through 90-run-e2e-tests.sh)
-# Or use the automated script:
-./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy
+./deployments/ansible/cleanup-install.sh
+# Re-run Phase 2-4 steps above
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ CLEANUP: Destroy cluster (uses scoped CI credentials)                       ┃
+# ┃ PHASE 5: DESTROY CLUSTER                                                    ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-source .env.hypershift-ci                                          # Reload CI creds
-./.github/scripts/hypershift/destroy-cluster.sh local              # Destroys kagenti-hypershift-ci-local
+source .env.hypershift-ci
+./.github/scripts/hypershift/destroy-cluster.sh local              # or: destroy-cluster.sh pr123
 ```
 
 </details>
@@ -260,21 +238,19 @@ source .env.hypershift-ci                                          # Reload CI c
 
 **run-full-test.sh Options:**
 
-The script has 5 phases: `create` → `install` → `agents` → `test` → `destroy`
+Phases: `create` → `install` → `agents` → `test` → `destroy`
 
-| Option | Description | Use Case |
-|--------|-------------|----------|
-| (no options) | Run all 5 phases | CI, one-off testing |
-| `--skip-destroy` | Run phases 1-4 (keep cluster) | First dev run |
-| `--skip-create` | Run phases 2-5 (reuse cluster) | Final run, destroy cluster |
-| `--skip-create --skip-destroy` | Run phases 2-4 only | Fast iteration |
-| `--include-create --include-destroy` | Run only phases 1 and 5 | Cleanup leftover resources |
-| `--include-destroy` | Run only phase 5 | Cleanup only |
-| `--clean-kagenti` | Uninstall kagenti before installing | Fresh kagenti install |
-| `--env <dev\|ocp>` | Values file (default: ocp) | Kind (dev) vs OpenShift (ocp) |
-| `[suffix]` | Custom cluster suffix (e.g., `pr123`) | Multiple clusters |
+| Option | Runs | Use Case |
+|--------|------|----------|
+| `--skip-destroy` | 1-4 | **Main flow**: run tests, keep cluster |
+| `--include-destroy` | 5 | **Cleanup**: destroy cluster when done |
+| (no options) | 1-5 | Full CI run (create + test + destroy) |
+| `--skip-create --skip-destroy` | 2-4 | Iterate on existing cluster |
+| `--include-<phase>` | selected | Run specific phase(s) only |
+| `--clean-kagenti` | - | Uninstall kagenti before installing |
+| `[suffix]` | - | Custom cluster suffix (e.g., `pr123`) |
 
-**Note**: `--skip-X` is blacklist mode (run all except listed), `--include-X` is whitelist mode (run only listed).
+**Modes**: `--skip-X` excludes phases, `--include-X` runs only specified phases.
 
 ## Environment Comparison
 

@@ -225,349 +225,56 @@ echo ""
 
 log_info "Setting up AWS IAM users..."
 
-# AWS IAM Policy for CI - HyperShift cluster lifecycle
+# AWS IAM Policies
 #
-# RESOURCE SCOPING STRATEGY:
-#   We use multiple techniques to limit what CI can touch:
+# Policies are stored in external JSON files under policies/ directory.
+# They use variable substitution via envsubst for:
+#   - ${MANAGED_BY_TAG} - Resource naming prefix
+#   - ${ROUTE53_ZONE_ID} - Specific Route53 zone (if available)
 #
-#   1. TAG CONDITIONS (EC2, ELB):
-#      - Require "ManagedBy=${MANAGED_BY_TAG}" tag on created resources
-#      - Only allow operations on resources with matching tags
-#      - IMPORTANT: Provisioning scripts must add this tag to all resources!
+# See policies/README.md for security model documentation.
 #
-#   2. ARN PATTERNS (S3, IAM):
-#      - S3 buckets must start with "${MANAGED_BY_TAG}-"
-#      - IAM roles/profiles must start with "${MANAGED_BY_TAG}-"
-#      - IMPORTANT: Cluster names must start with ${MANAGED_BY_TAG}- prefix!
-#
-#   3. READ-ONLY WILDCARDS:
-#      - Describe* actions use "*" (read-only, no risk)
-#
-#   4. STILL BROAD (documented):
-#      - Route53: All hosted zones (could be tightened to specific zone ID)
-#      - OIDC providers: Can't be scoped by name pattern
-#
-# NAMING CONVENTION FOR CLUSTERS:
-#   Use: ${MANAGED_BY_TAG}-<suffix>
-#   Example: kagenti-hypershift-ci-pr123, kagenti-hypershift-ci-local
-#
-# The policy is generated dynamically to include MANAGED_BY_TAG.
-#
-generate_ci_policy() {
-    cat <<POLICY
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "EC2DescribeReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeInstances",
-        "ec2:DescribeInstanceStatus",
-        "ec2:DescribeSecurityGroups",
-        "ec2:DescribeVpcs",
-        "ec2:DescribeSubnets",
-        "ec2:DescribeAvailabilityZones",
-        "ec2:DescribeNetworkInterfaces",
-        "ec2:DescribeImages",
-        "ec2:DescribeTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "EC2CreateWithTag",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:RunInstances",
-        "ec2:CreateSecurityGroup",
-        "ec2:CreateNetworkInterface",
-        "ec2:CreateTags"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "aws:RequestTag/ManagedBy": "${MANAGED_BY_TAG}"
-        }
-      }
-    },
-    {
-      "Sid": "EC2ManageTaggedResources",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:TerminateInstances",
-        "ec2:DeleteSecurityGroup",
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress",
-        "ec2:RevokeSecurityGroupIngress",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:DeleteNetworkInterface",
-        "ec2:ModifyNetworkInterfaceAttribute",
-        "ec2:DeleteTags"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "aws:ResourceTag/ManagedBy": "${MANAGED_BY_TAG}"
-        }
-      }
-    },
-    {
-      "Sid": "ELBDescribeReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:DescribeLoadBalancers",
-        "elasticloadbalancing:DescribeLoadBalancerAttributes",
-        "elasticloadbalancing:DescribeTargetGroups",
-        "elasticloadbalancing:DescribeListeners",
-        "elasticloadbalancing:DescribeTags"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "ELBCreateWithTag",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:CreateLoadBalancer",
-        "elasticloadbalancing:CreateTargetGroup",
-        "elasticloadbalancing:AddTags"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "aws:RequestTag/ManagedBy": "${MANAGED_BY_TAG}"
-        }
-      }
-    },
-    {
-      "Sid": "ELBManageTaggedResources",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:DeleteLoadBalancer",
-        "elasticloadbalancing:ModifyLoadBalancerAttributes",
-        "elasticloadbalancing:DeleteTargetGroup",
-        "elasticloadbalancing:RegisterTargets",
-        "elasticloadbalancing:DeregisterTargets",
-        "elasticloadbalancing:CreateListener",
-        "elasticloadbalancing:DeleteListener"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "aws:ResourceTag/ManagedBy": "${MANAGED_BY_TAG}"
-        }
-      }
-    },
-    {
-      "Sid": "Route53ReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "route53:GetHostedZone",
-        "route53:ListHostedZones",
-        "route53:ListHostedZonesByName",
-        "route53:ListResourceRecordSets"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "Route53ChangeRecords",
-      "Effect": "Allow",
-      "Action": [
-        "route53:ChangeResourceRecordSets"
-      ],
-      "Resource": "arn:aws:route53:::hostedzone/*"
-    },
-    {
-      "Sid": "S3PrefixedBuckets",
-      "Effect": "Allow",
-      "Action": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-        "s3:PutBucketPolicy",
-        "s3:GetBucketPolicy",
-        "s3:GetBucketLocation",
-        "s3:PutBucketTagging",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetBucketPublicAccessBlock"
-      ],
-      "Resource": [
-        "arn:aws:s3:::${MANAGED_BY_TAG}-*",
-        "arn:aws:s3:::${MANAGED_BY_TAG}-*/*"
-      ]
-    },
-$(if [ -n "$OIDC_S3_BUCKET" ]; then cat <<S3OIDC
-    {
-      "Sid": "S3SharedOIDCBucket",
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-        "s3:GetBucketLocation"
-      ],
-      "Resource": [
-        "arn:aws:s3:::${OIDC_S3_BUCKET}",
-        "arn:aws:s3:::${OIDC_S3_BUCKET}/${MANAGED_BY_TAG}-*"
-      ]
-    },
-S3OIDC
-fi)
-    {
-      "Sid": "IAMReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "iam:GetRole",
-        "iam:GetUser",
-        "iam:ListRoles",
-        "iam:GetInstanceProfile",
-        "iam:ListInstanceProfiles",
-        "iam:ListInstanceProfilesForRole",
-        "iam:GetRolePolicy",
-        "iam:ListRolePolicies",
-        "iam:ListAttachedRolePolicies",
-        "iam:ListOpenIDConnectProviders"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "IAMPrefixedRoles",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreateRole",
-        "iam:DeleteRole",
-        "iam:TagRole",
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy",
-        "iam:PutRolePolicy",
-        "iam:DeleteRolePolicy",
-        "iam:PassRole"
-      ],
-      "Resource": "arn:aws:iam::*:role/${MANAGED_BY_TAG}-*"
-    },
-    {
-      "Sid": "IAMPrefixedInstanceProfiles",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreateInstanceProfile",
-        "iam:DeleteInstanceProfile",
-        "iam:TagInstanceProfile",
-        "iam:AddRoleToInstanceProfile",
-        "iam:RemoveRoleFromInstanceProfile"
-      ],
-      "Resource": "arn:aws:iam::*:instance-profile/${MANAGED_BY_TAG}-*"
-    },
-    {
-      "Sid": "IAMOIDCProviders",
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreateOpenIDConnectProvider",
-        "iam:DeleteOpenIDConnectProvider",
-        "iam:GetOpenIDConnectProvider",
-        "iam:TagOpenIDConnectProvider"
-      ],
-      "Resource": "arn:aws:iam::*:oidc-provider/*"
-    },
-    {
-      "Sid": "STSIdentity",
-      "Effect": "Allow",
-      "Action": [
-        "sts:GetCallerIdentity"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "STSAssumeRolePrefixed",
-      "Effect": "Allow",
-      "Action": [
-        "sts:AssumeRole"
-      ],
-      "Resource": "arn:aws:iam::*:role/${MANAGED_BY_TAG}-*"
-    }
-  ]
-}
-POLICY
+POLICIES_DIR="$SCRIPT_DIR/policies"
+
+# Function to load and render a policy template
+render_policy() {
+    local policy_file="$1"
+    if [ ! -f "$policy_file" ]; then
+        log_error "Policy file not found: $policy_file"
+    fi
+    # Use envsubst to substitute variables in the policy
+    envsubst < "$policy_file"
 }
 
-IAM_CI_POLICY_DOC=$(generate_ci_policy)
-
-# Read-only policy for debugging
-IAM_DEBUG_POLICY_DOC=$(cat <<'POLICY'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "EC2ReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:Describe*",
-        "ec2:Get*"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "ELBReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:Describe*"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "Route53ReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "route53:Get*",
-        "route53:List*"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "S3ReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "s3:Get*",
-        "s3:List*"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "IAMReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "iam:Get*",
-        "iam:List*"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "STSReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "sts:GetCallerIdentity"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Sid": "CloudWatchReadOnly",
-      "Effect": "Allow",
-      "Action": [
-        "cloudwatch:Describe*",
-        "cloudwatch:Get*",
-        "cloudwatch:List*",
-        "logs:Describe*",
-        "logs:Get*",
-        "logs:FilterLogEvents"
-      ],
-      "Resource": "*"
-    }
-  ]
+# Get Route53 zone ID for scoped access (if available)
+get_route53_zone_id() {
+    if [ -n "${BASE_DOMAIN:-}" ]; then
+        local zone_id
+        zone_id=$(aws route53 list-hosted-zones-by-name --dns-name "$BASE_DOMAIN" --max-items 1 \
+            --query "HostedZones[?Name=='${BASE_DOMAIN}.' && Config.PrivateZone==\`false\`].Id" \
+            --output text 2>/dev/null | sed 's|/hostedzone/||' || echo "")
+        if [ -n "$zone_id" ] && [ "$zone_id" != "None" ]; then
+            echo "$zone_id"
+            return
+        fi
+    fi
+    # Fallback: allow all zones (less secure but functional)
+    echo "*"
 }
-POLICY
-)
+
+export ROUTE53_ZONE_ID
+ROUTE53_ZONE_ID=$(get_route53_zone_id)
+if [ "$ROUTE53_ZONE_ID" = "*" ]; then
+    log_warn "Route53 zone ID not found - using broad access (all zones)"
+else
+    log_success "Route53 zone scoped to: $ROUTE53_ZONE_ID"
+fi
+
+# Load CI user policy from external file
+IAM_CI_POLICY_DOC=$(render_policy "$POLICIES_DIR/ci-user-policy.json")
+
+# Load debug user policy from external file (no variables to substitute)
+IAM_DEBUG_POLICY_DOC=$(cat "$POLICIES_DIR/debug-user-policy.json")
 
 # Function to create/update IAM user with policy (idempotent)
 setup_iam_user() {
@@ -722,242 +429,34 @@ HCP_ROLE_TRUST_POLICY=$(cat <<TRUSTPOLICY
 TRUSTPOLICY
 )
 
-# Role policy - permissions needed by hcp CLI for cluster lifecycle
-# Based on hypershift-automation/hcp/templates/policy.json.j2
-# ENHANCED with scoping where possible (S3, IAM)
-#
-# NOTE: This policy uses ${MANAGED_BY_TAG} for scoping.
-# The heredoc below uses variable substitution.
-#
-HCP_ROLE_POLICY_DOC=$(cat <<ROLEPOLICY
+# Load HCP role policy from external file (uses tag-based scoping for EC2/ELB)
+# The external policy uses kubernetes.io/cluster/${MANAGED_BY_TAG}-* tag conditions
+HCP_ROLE_POLICY_DOC=$(render_policy "$POLICIES_DIR/hcp-role-policy.json")
+
+# Inject shared OIDC S3 bucket statement if auto-detected
+# This bucket is shared across all clusters on the management cluster
+if [ -n "$OIDC_S3_BUCKET" ]; then
+    log_info "Adding shared OIDC bucket access: $OIDC_S3_BUCKET"
+    OIDC_STATEMENT=$(cat <<OIDCSTMT
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "EC2Broad",
-            "Effect": "Allow",
-            "Action": [
-                "ec2:CreateDhcpOptions",
-                "ec2:DeleteSubnet",
-                "ec2:ReplaceRouteTableAssociation",
-                "ec2:DescribeAddresses",
-                "ec2:DescribeInstances",
-                "ec2:DeleteVpcEndpoints",
-                "ec2:CreateNatGateway",
-                "ec2:CreateVpc",
-                "ec2:DescribeDhcpOptions",
-                "ec2:AttachInternetGateway",
-                "ec2:DeleteVpcEndpointServiceConfigurations",
-                "ec2:DeleteRouteTable",
-                "ec2:AssociateRouteTable",
-                "ec2:DescribeInternetGateways",
-                "ec2:DescribeAvailabilityZones",
-                "ec2:CreateRoute",
-                "ec2:CreateInternetGateway",
-                "ec2:RevokeSecurityGroupEgress",
-                "ec2:ModifyVpcAttribute",
-                "ec2:DeleteInternetGateway",
-                "ec2:DescribeVpcEndpointConnections",
-                "ec2:RejectVpcEndpointConnections",
-                "ec2:DescribeRouteTables",
-                "ec2:ReleaseAddress",
-                "ec2:AssociateDhcpOptions",
-                "ec2:TerminateInstances",
-                "ec2:CreateTags",
-                "ec2:DeleteTags",
-                "ec2:DeleteRoute",
-                "ec2:CreateRouteTable",
-                "ec2:DetachInternetGateway",
-                "ec2:DescribeVpcEndpointServiceConfigurations",
-                "ec2:DescribeNatGateways",
-                "ec2:DisassociateRouteTable",
-                "ec2:AllocateAddress",
-                "ec2:DescribeSecurityGroups",
-                "ec2:RevokeSecurityGroupIngress",
-                "ec2:CreateVpcEndpoint",
-                "ec2:DescribeVpcs",
-                "ec2:DeleteSecurityGroup",
-                "ec2:DeleteDhcpOptions",
-                "ec2:DeleteNatGateway",
-                "ec2:DescribeVpcEndpoints",
-                "ec2:DeleteVpc",
-                "ec2:CreateSubnet",
-                "ec2:DescribeSubnets",
-                "ec2:CreateSecurityGroup",
-                "ec2:ModifyInstanceAttribute",
-                "ec2:AuthorizeSecurityGroupIngress",
-                "ec2:AuthorizeSecurityGroupEgress",
-                "ec2:DescribeLaunchTemplates",
-                "ec2:DescribeLaunchTemplateVersions",
-                "ec2:CreateLaunchTemplate",
-                "ec2:CreateLaunchTemplateVersion",
-                "ec2:DeleteLaunchTemplate",
-                "ec2:RunInstances"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "ELBBroad",
-            "Effect": "Allow",
-            "Action": [
-                "elasticloadbalancing:DeleteLoadBalancer",
-                "elasticloadbalancing:DescribeLoadBalancers",
-                "elasticloadbalancing:DescribeTargetGroups",
-                "elasticloadbalancing:DeleteTargetGroup",
-                "elasticloadbalancing:CreateLoadBalancer",
-                "elasticloadbalancing:CreateTargetGroup",
-                "elasticloadbalancing:CreateListener",
-                "elasticloadbalancing:DeleteListener",
-                "elasticloadbalancing:RegisterTargets",
-                "elasticloadbalancing:DeregisterTargets",
-                "elasticloadbalancing:ModifyLoadBalancerAttributes",
-                "elasticloadbalancing:ModifyTargetGroupAttributes",
-                "elasticloadbalancing:DescribeListeners",
-                "elasticloadbalancing:DescribeLoadBalancerAttributes",
-                "elasticloadbalancing:DescribeTargetGroupAttributes",
-                "elasticloadbalancing:DescribeTargetHealth",
-                "elasticloadbalancing:AddTags"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "IAMReadOnly",
-            "Effect": "Allow",
-            "Action": [
-                "iam:GetRole",
-                "iam:GetInstanceProfile",
-                "iam:ListAttachedRolePolicies",
-                "iam:GetRolePolicy",
-                "iam:GetOpenIDConnectProvider",
-                "iam:ListOpenIDConnectProviders"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "IAMPassWorkerRole",
-            "Effect": "Allow",
-            "Action": "iam:PassRole",
-            "Resource": [
-                "arn:aws:iam::*:role/${MANAGED_BY_TAG}-*-worker-role",
-                "arn:aws:iam::*:role/${MANAGED_BY_TAG}-*"
-            ],
-            "Condition": {
-                "ForAnyValue:StringEqualsIfExists": {
-                    "iam:PassedToService": "ec2.amazonaws.com"
-                }
-            }
-        },
-        {
-            "Sid": "IAMPrefixedRoles",
-            "Effect": "Allow",
-            "Action": [
-                "iam:CreateRole",
-                "iam:DeleteRole",
-                "iam:TagRole",
-                "iam:UpdateRole",
-                "iam:UpdateAssumeRolePolicy",
-                "iam:PutRolePolicy",
-                "iam:DeleteRolePolicy"
-            ],
-            "Resource": "arn:aws:iam::*:role/${MANAGED_BY_TAG}-*"
-        },
-        {
-            "Sid": "IAMPrefixedInstanceProfiles",
-            "Effect": "Allow",
-            "Action": [
-                "iam:CreateInstanceProfile",
-                "iam:DeleteInstanceProfile",
-                "iam:TagInstanceProfile",
-                "iam:AddRoleToInstanceProfile",
-                "iam:RemoveRoleFromInstanceProfile"
-            ],
-            "Resource": "arn:aws:iam::*:instance-profile/${MANAGED_BY_TAG}-*"
-        },
-        {
-            "Sid": "IAMOIDCProviders",
-            "Effect": "Allow",
-            "Action": [
-                "iam:CreateOpenIDConnectProvider",
-                "iam:DeleteOpenIDConnectProvider",
-                "iam:TagOpenIDConnectProvider"
-            ],
-            "Resource": "arn:aws:iam::*:oidc-provider/*"
-        },
-        {
-            "Sid": "Route53Broad",
-            "Effect": "Allow",
-            "Action": [
-                "route53:ListHostedZonesByVPC",
-                "route53:CreateHostedZone",
-                "route53:ListHostedZones",
-                "route53:ChangeResourceRecordSets",
-                "route53:ListResourceRecordSets",
-                "route53:DeleteHostedZone",
-                "route53:AssociateVPCWithHostedZone",
-                "route53:ListHostedZonesByName"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "S3ReadOnly",
-            "Effect": "Allow",
-            "Action": [
-                "s3:ListAllMyBuckets",
-                "s3:GetBucketLocation"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "S3PrefixedBuckets",
-            "Effect": "Allow",
-            "Action": [
-                "s3:CreateBucket",
-                "s3:DeleteBucket",
-                "s3:ListBucket",
-                "s3:PutObject",
-                "s3:GetObject",
-                "s3:DeleteObject",
-                "s3:PutBucketPolicy",
-                "s3:GetBucketPolicy",
-                "s3:PutBucketTagging",
-                "s3:PutBucketPublicAccessBlock",
-                "s3:GetBucketPublicAccessBlock"
-            ],
-            "Resource": [
-                "arn:aws:s3:::${MANAGED_BY_TAG}-*",
-                "arn:aws:s3:::${MANAGED_BY_TAG}-*/*"
-            ]
-        },
-$(if [ -n "$OIDC_S3_BUCKET" ]; then cat <<S3OIDCROLE
-        {
-            "Sid": "S3SharedOIDCBucket",
-            "Effect": "Allow",
-            "Action": [
-                "s3:PutObject",
-                "s3:GetObject",
-                "s3:DeleteObject",
-                "s3:ListBucket",
-                "s3:GetBucketLocation"
-            ],
-            "Resource": [
-                "arn:aws:s3:::${OIDC_S3_BUCKET}",
-                "arn:aws:s3:::${OIDC_S3_BUCKET}/${MANAGED_BY_TAG}-*"
-            ]
-        },
-S3OIDCROLE
-fi)
-        {
-            "Sid": "STS",
-            "Effect": "Allow",
-            "Action": [
-                "sts:GetCallerIdentity"
-            ],
-            "Resource": "*"
-        }
+    "Sid": "S3SharedOIDCBucket",
+    "Effect": "Allow",
+    "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+    ],
+    "Resource": [
+        "arn:aws:s3:::${OIDC_S3_BUCKET}",
+        "arn:aws:s3:::${OIDC_S3_BUCKET}/${MANAGED_BY_TAG}-*"
     ]
 }
-ROLEPOLICY
+OIDCSTMT
 )
+    HCP_ROLE_POLICY_DOC=$(echo "$HCP_ROLE_POLICY_DOC" | jq --argjson stmt "$OIDC_STATEMENT" '.Statement += [$stmt]')
+fi
 
 # Create or update IAM role
 ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${IAM_HCP_ROLE}"
@@ -1035,91 +534,13 @@ metadata:
 EOF
 log_success "ServiceAccount '${SA_NAME}' exists"
 
-# Create cluster role (idempotent via apply)
-# RBAC scope analysis:
-#   - hostedclusters/nodepools: Full CRUD needed for cluster lifecycle
-#   - secrets: Needed to create pull-secret, read kubeconfig after cluster creation
-#   - configmaps: Needed for cluster configuration
-#   - namespaces: Create/delete for cluster isolation
-#   - events: Read-only for debugging cluster provisioning issues
-#   - nodes/pods: Read-only for status checks
-# Note: secrets/configmaps are cluster-scoped because HyperShift creates
-# resources in dynamically-named namespaces (e.g., clusters-<name>)
-oc apply -f - <<EOF
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: ${CLUSTER_ROLE_NAME}
-  labels:
-    app.kubernetes.io/managed-by: hypershift-ci-setup
-rules:
-  # HyperShift resources - full lifecycle management
-  - apiGroups: ["hypershift.openshift.io"]
-    resources: ["hostedclusters", "nodepools", "hostedcontrolplanes"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Secrets - full lifecycle for cluster secrets (kubeconfig, pull-secret, etc)
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # ConfigMaps - cluster configuration
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Namespaces - full lifecycle for cluster namespaces (hcp patches labels/annotations)
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Services - for checking ingress/load balancers
-  - apiGroups: [""]
-    resources: ["services"]
-    verbs: ["get", "list", "watch"]
-  # Read-only for debugging
-  - apiGroups: [""]
-    resources: ["nodes", "pods", "events"]
-    verbs: ["get", "list", "watch"]
-  # Pod logs - needed for debugging HyperShift operator and control plane issues
-  - apiGroups: [""]
-    resources: ["pods/log"]
-    verbs: ["get", "list"]
-  # Routes - for checking ignition and other routes
-  - apiGroups: ["route.openshift.io"]
-    resources: ["routes"]
-    verbs: ["get", "list", "watch"]
-  # CAPI resources - for machine/nodepool status
-  # Note: patch is needed to remove finalizers from orphaned Cluster resources during cleanup
-  - apiGroups: ["cluster.x-k8s.io"]
-    resources: ["machines", "machinesets", "machinedeployments", "clusters"]
-    verbs: ["get", "list", "watch", "patch"]
-  # AWS CAPI resources
-  - apiGroups: ["infrastructure.cluster.x-k8s.io"]
-    resources: ["awsmachines", "awsmachinetemplates", "awsclusters"]
-    verbs: ["get", "list", "watch"]
-  # Deployments and other workloads for debugging control plane
-  # Note: patch is needed to remove finalizers from orphaned deployments during cleanup
-  - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets", "replicasets"]
-    verbs: ["get", "list", "watch", "patch"]
-EOF
-log_success "ClusterRole '${CLUSTER_ROLE_NAME}' applied"
-
-# Create cluster role binding (idempotent via apply)
-oc apply -f - <<EOF
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: ${CLUSTER_ROLE_BINDING_NAME}
-  labels:
-    app.kubernetes.io/managed-by: hypershift-ci-setup
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: ${CLUSTER_ROLE_NAME}
-subjects:
-  - kind: ServiceAccount
-    name: ${SA_NAME}
-    namespace: ${SA_NAMESPACE}
-EOF
-log_success "ClusterRoleBinding '${CLUSTER_ROLE_BINDING_NAME}' applied"
+# Create ClusterRole and ClusterRoleBinding from external YAML file
+# The external file uses envsubst variables: ${CLUSTER_ROLE_NAME}, ${CLUSTER_ROLE_BINDING_NAME},
+# ${SA_NAME}, ${SA_NAMESPACE}
+# See policies/k8s-ci-clusterrole.yaml for RBAC scope analysis and security notes
+export CLUSTER_ROLE_NAME CLUSTER_ROLE_BINDING_NAME SA_NAME SA_NAMESPACE
+envsubst < "$POLICIES_DIR/k8s-ci-clusterrole.yaml" | oc apply -f -
+log_success "ClusterRole '${CLUSTER_ROLE_NAME}' and ClusterRoleBinding applied"
 
 # Create long-lived token secret (idempotent via apply)
 # Note: This uses the legacy annotation method which still works in OpenShift

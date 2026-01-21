@@ -1,0 +1,101 @@
+# Kubernetes RBAC for HyperShift CI Service Account
+# Variables: ${SA_NAMESPACE}, ${SA_NAME}, ${CLUSTER_ROLE_NAME}, ${CLUSTER_ROLE_BINDING_NAME}
+# Rendered by: setup-hypershift-ci-credentials.sh using envsubst
+#
+# SECURITY NOTES:
+# - This ClusterRole grants permissions across all namespaces
+# - Kubernetes RBAC doesn't support namespace prefix patterns
+# - HyperShift creates dynamic namespaces (clusters-<name>) that CI needs to access
+# - Permissions are minimized to what's needed for cluster lifecycle and cleanup
+#
+# NAMESPACE SCOPING ANALYSIS:
+# We cannot scope to namespace prefixes because:
+# 1. Kubernetes RBAC doesn't support wildcards in namespace selectors
+# 2. HyperShift dynamically creates control plane namespaces (clusters-<name>)
+# 3. The operator, not CI, creates these namespaces so we can't pre-create RoleBindings
+#
+# MITIGATION:
+# - Permissions are limited to specific resources (not wildcards)
+# - Write permissions are scoped to HyperShift-related resources
+# - Read-only for debugging resources (nodes, pods, events)
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ${CLUSTER_ROLE_NAME}
+  labels:
+    app.kubernetes.io/managed-by: hypershift-ci-setup
+rules:
+  # HyperShift resources - full lifecycle management in 'clusters' namespace
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters", "nodepools", "hostedcontrolplanes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Secrets - needed for kubeconfig, pull-secret, oauth-secrets
+  # Note: Cluster-wide because HyperShift creates secrets in dynamic namespaces
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # ConfigMaps - cluster configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Namespaces - full lifecycle for cluster namespaces
+  # hcp CLI patches labels/annotations, and CI needs to delete orphaned namespaces
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Services - for checking ingress/load balancers
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+
+  # Read-only for debugging
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "events"]
+    verbs: ["get", "list", "watch"]
+
+  # Pod logs - needed for debugging HyperShift operator and control plane issues
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+
+  # Routes - for checking ignition and other routes
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["get", "list", "watch"]
+
+  # CAPI resources - for machine/nodepool status and orphan cleanup
+  # Note: patch is needed to remove finalizers from orphaned Cluster resources
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["machines", "machinesets", "machinedeployments", "clusters"]
+    verbs: ["get", "list", "watch", "patch"]
+
+  # AWS CAPI resources
+  - apiGroups: ["infrastructure.cluster.x-k8s.io"]
+    resources: ["awsmachines", "awsmachinetemplates", "awsclusters"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployments and other workloads for debugging and orphan cleanup
+  # Note: patch is needed to remove finalizers from orphaned deployments
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ${CLUSTER_ROLE_BINDING_NAME}
+  labels:
+    app.kubernetes.io/managed-by: hypershift-ci-setup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ${CLUSTER_ROLE_NAME}
+subjects:
+  - kind: ServiceAccount
+    name: ${SA_NAME}
+    namespace: ${SA_NAMESPACE}
