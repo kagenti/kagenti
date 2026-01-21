@@ -120,33 +120,46 @@ colorize_pct() {
 log_info "Gathering management cluster node utilization..."
 echo ""
 
-declare -a NODE_NAMES=()
-declare -a NODE_ROLES=()
-declare -a NODE_INSTANCE=()
-declare -a NODE_CPU_REQ=()
-declare -a NODE_CPU_LIM=()
-declare -a NODE_MEM_REQ=()
-declare -a NODE_MEM_LIM=()
+# Collect node data for sorting
+NODE_DATA=""
+WORKER_COUNT=0
+CONTROL_PLANE_COUNT=0
+HIGH_UTIL_WORKERS=0
 
-# Parse node information
-while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    name=$(echo "$line" | awk '{print $1}')
-    NODE_NAMES+=("$name")
+while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
 
-    roles=$(oc get node "$name" -o jsonpath='{.metadata.labels}' 2>/dev/null | grep -o '"node-role.kubernetes.io/[^"]*"' | sed 's/"node-role.kubernetes.io\///g; s/"//g' | tr '\n' ',' | sed 's/,$//')
+    # Get node details in one call
+    node_json=$(oc get node "$name" -o json 2>/dev/null)
+
+    # Role
+    roles=$(echo "$node_json" | jq -r '.metadata.labels | keys[]' 2>/dev/null | grep 'node-role.kubernetes.io' | sed 's/node-role.kubernetes.io\///' || echo "")
     if [[ "$roles" == *"master"* ]] || [[ "$roles" == *"control-plane"* ]]; then
-        NODE_ROLES+=("control-plane")
+        role="control-plane"
+        role_sort="0"  # Sort control-plane first
+        ((CONTROL_PLANE_COUNT++)) || true
     else
-        NODE_ROLES+=("worker")
+        role="worker"
+        role_sort="1"
+        ((WORKER_COUNT++)) || true
     fi
 
-    instance=$(oc get node "$name" -o jsonpath='{.metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
-    NODE_INSTANCE+=("$instance")
-done < <(oc get nodes -o custom-columns='NAME:.metadata.name' --no-headers 2>/dev/null)
+    # Zone (last char of zone label, e.g., us-east-1a -> 1a)
+    zone_full=$(echo "$node_json" | jq -r '.metadata.labels["topology.kubernetes.io/zone"] // "unknown"' 2>/dev/null)
+    zone=$(echo "$zone_full" | grep -o '[0-9][a-z]$' || echo "$zone_full")
 
-# Get resource allocation per node
-for name in "${NODE_NAMES[@]}"; do
+    # Instance ID (from provider ID: aws:///us-east-1a/i-0abc123...)
+    provider_id=$(echo "$node_json" | jq -r '.spec.providerID // ""' 2>/dev/null)
+    instance_id=$(echo "$provider_id" | grep -o 'i-[a-z0-9]*' || echo "-")
+
+    # Instance type
+    instance_type=$(echo "$node_json" | jq -r '.metadata.labels["node.kubernetes.io/instance-type"] // "unknown"' 2>/dev/null)
+
+    # Creation date
+    created_full=$(echo "$node_json" | jq -r '.metadata.creationTimestamp // ""' 2>/dev/null)
+    created=$(echo "$created_full" | cut -d'T' -f1)  # Just the date part
+
+    # Get resource allocation
     alloc=$(oc describe node "$name" 2>/dev/null | grep -A 6 "Allocated resources" || echo "")
 
     cpu_pcts=$(echo "$alloc" | grep "cpu" | grep -o '([0-9]*%)' | tr -d '()' || echo "")
@@ -161,52 +174,38 @@ for name in "${NODE_NAMES[@]}"; do
     [[ -z "$mem_req" ]] && mem_req="N/A"
     [[ -z "$mem_lim" ]] && mem_lim="N/A"
 
-    NODE_CPU_REQ+=("$cpu_req")
-    NODE_CPU_LIM+=("$cpu_lim")
-    NODE_MEM_REQ+=("$mem_req")
-    NODE_MEM_LIM+=("$mem_lim")
-done
-
-# Print node table
-echo -e "${BOLD}Management Cluster Nodes:${NC}"
-echo ""
-echo "  Req = Requests (affects scheduling), Lim = Limits (affects throttling)"
-echo ""
-printf "  %-28s %-13s %-11s %-9s %-9s %-9s %-9s\n" "NODE" "ROLE" "INSTANCE" "CPU Req" "CPU Lim" "MEM Req" "MEM Lim"
-printf "  %-28s %-13s %-11s %-9s %-9s %-9s %-9s\n" "----------------------------" "-------------" "-----------" "---------" "---------" "---------" "---------"
-
-WORKER_COUNT=0
-CONTROL_PLANE_COUNT=0
-HIGH_UTIL_WORKERS=0
-
-for i in "${!NODE_NAMES[@]}"; do
-    name="${NODE_NAMES[$i]}"
-    short_name=$(echo "$name" | sed 's/.ec2.internal//' | cut -c1-27)
-    role="${NODE_ROLES[$i]}"
-    instance="${NODE_INSTANCE[$i]}"
-    cpu_req="${NODE_CPU_REQ[$i]}"
-    cpu_lim="${NODE_CPU_LIM[$i]}"
-    mem_req="${NODE_MEM_REQ[$i]}"
-    mem_lim="${NODE_MEM_LIM[$i]}"
-
+    # Check high utilization
     cpu_num=$(echo "$cpu_req" | grep -o '[0-9]*' | head -1 || echo "0")
     if [[ "$cpu_num" -ge 80 ]] && [[ "$role" == "worker" ]]; then
         ((HIGH_UTIL_WORKERS++)) || true
     fi
 
-    if [[ "$role" == "worker" ]]; then
-        ((WORKER_COUNT++)) || true
-    else
-        ((CONTROL_PLANE_COUNT++)) || true
-    fi
+    # Collect data for sorting: role_sort|created|zone|instance_id|role|instance_type|cpu_req|cpu_lim|mem_req|mem_lim
+    NODE_DATA+="${role_sort}|${created}|${zone}|${instance_id}|${role}|${instance_type}|${cpu_req}|${cpu_lim}|${mem_req}|${mem_lim}\n"
+
+done < <(oc get nodes -o custom-columns='NAME:.metadata.name' --no-headers 2>/dev/null)
+
+# Print node table
+echo -e "${BOLD}Management Cluster Nodes:${NC}"
+echo ""
+echo "  Rq = Requests (scheduling), Lm = Limits (throttling)"
+echo ""
+printf "  %-12s %-4s %-21s %-11s %-12s %-7s %-7s %-7s %-7s\n" "ROLE" "ZONE" "INSTANCE ID" "TYPE" "CREATED" "CPU Rq" "CPU Lm" "MEM Rq" "MEM Lm"
+printf "  %-12s %-4s %-21s %-11s %-12s %-7s %-7s %-7s %-7s\n" "------------" "----" "---------------------" "-----------" "------------" "-------" "-------" "-------" "-------"
+
+# Sort: by role (control-plane first), then by creation date
+SORTED_DATA=$(echo -e "$NODE_DATA" | sort -t'|' -k1,1 -k2,2)
+
+while IFS='|' read -r role_sort created zone instance_id role instance_type cpu_req cpu_lim mem_req mem_lim; do
+    [[ -z "$role" ]] && continue
 
     cpu_req_c=$(colorize_pct "$cpu_req")
     cpu_lim_c=$(colorize_pct "$cpu_lim")
     mem_req_c=$(colorize_pct "$mem_req")
     mem_lim_c=$(colorize_pct "$mem_lim")
 
-    printf "  %-28s %-13s %-11s %-20b %-20b %-20b %-20b\n" "$short_name" "$role" "$instance" "$cpu_req_c" "$cpu_lim_c" "$mem_req_c" "$mem_lim_c"
-done
+    printf "  %-12s %-4s %-21s %-11s %-12s %-18b %-18b %-18b %-18b\n" "$role" "$zone" "$instance_id" "$instance_type" "$created" "$cpu_req_c" "$cpu_lim_c" "$mem_req_c" "$mem_lim_c"
+done <<< "$SORTED_DATA"
 
 echo ""
 if [[ $HIGH_UTIL_WORKERS -gt 0 ]]; then
@@ -271,25 +270,30 @@ echo ""
 log_info "Checking HyperShift hosted clusters..."
 echo ""
 
-HOSTED_CLUSTERS=$(oc get hostedclusters -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "")
 NODEPOOL_NAME=""
 NODEPOOL_NS=""
 NODEPOOL_CURRENT_REPLICAS="2"
 
+# Get hosted clusters
+HOSTED_CLUSTERS=$(oc get hostedclusters -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "")
+
 if [[ -z "$HOSTED_CLUSTERS" ]]; then
     log_warn "No hosted clusters found"
+    CLUSTER_COUNT=0
 else
-    echo -e "${BOLD}Hosted Clusters & NodePools:${NC}"
-    echo ""
-    printf "  %-38s %-10s %-10s %-12s %-10s\n" "NODEPOOL" "DESIRED" "CURRENT" "AUTOSCALING" "MIN/MAX"
-    printf "  %-38s %-10s %-10s %-12s %-10s\n" "--------------------------------------" "----------" "----------" "------------" "----------"
+    # Get all nodepools directly (avoid duplicates)
+    NODEPOOLS=$(oc get nodepools -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "")
 
-    while IFS= read -r hc; do
-        [[ -z "$hc" ]] && continue
-        ns=$(echo "$hc" | cut -d'/' -f1)
+    if [[ -n "$NODEPOOLS" ]]; then
+        echo -e "${BOLD}NodePools:${NC}"
+        echo ""
+        printf "  %-38s %-10s %-10s %-12s %-10s\n" "NODEPOOL" "DESIRED" "CURRENT" "AUTOSCALING" "MIN/MAX"
+        printf "  %-38s %-10s %-10s %-12s %-10s\n" "--------------------------------------" "----------" "----------" "------------" "----------"
 
-        while IFS= read -r np_name; do
-            [[ -z "$np_name" ]] && continue
+        while IFS= read -r np_entry; do
+            [[ -z "$np_entry" ]] && continue
+            ns=$(echo "$np_entry" | cut -d'/' -f1)
+            np_name=$(echo "$np_entry" | cut -d'/' -f2)
 
             np_desired=$(oc get nodepool "$np_name" -n "$ns" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "-")
             np_current=$(oc get nodepool "$np_name" -n "$ns" -o jsonpath='{.status.replicas}' 2>/dev/null || echo "-")
@@ -312,9 +316,202 @@ else
             NODEPOOL_NAME="$np_name"
             NODEPOOL_NS="$ns"
             [[ "$np_desired" != "-" ]] && NODEPOOL_CURRENT_REPLICAS="$np_desired"
-        done < <(oc get nodepools -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)
-    done <<< "$HOSTED_CLUSTERS"
+        done <<< "$NODEPOOLS"
+        echo ""
+    fi
+
+    # =========================================================================
+    # HOSTED CLUSTER RESOURCE USAGE
+    # =========================================================================
+
+    echo -e "${BOLD}Hosted Cluster Control Plane Resources:${NC}"
     echo ""
+    printf "  %-30s %-10s %-12s %-12s %-10s\n" "CLUSTER" "STATUS" "CPU Req" "MEM Req" "PODS"
+    printf "  %-30s %-10s %-12s %-12s %-10s\n" "------------------------------" "----------" "------------" "------------" "----------"
+
+    CLUSTER_COUNT=0
+    READY_CLUSTER_COUNT=0
+    TOTAL_CLUSTER_CPU_REQ=0
+    TOTAL_CLUSTER_MEM_REQ=0
+
+    while IFS= read -r hc_entry; do
+        [[ -z "$hc_entry" ]] && continue
+        hc_ns=$(echo "$hc_entry" | cut -d'/' -f1)
+        hc_name=$(echo "$hc_entry" | cut -d'/' -f2)
+
+        # Get cluster status
+        hc_available=$(oc get hostedcluster "$hc_name" -n "$hc_ns" -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "Unknown")
+        if [[ "$hc_available" == "True" ]]; then
+            status="${GREEN}Ready${NC}"
+            is_ready=true
+        else
+            status="${YELLOW}NotReady${NC}"
+            is_ready=false
+        fi
+
+        # Control plane namespace is typically clusters-<name>
+        cp_ns="clusters-${hc_name}"
+
+        # Sum CPU and memory requests for all pods in the control plane namespace
+        # CPU is in millicores (e.g., 100m, 1, 2000m)
+        # Memory is in bytes (e.g., 128Mi, 1Gi)
+        pod_resources=$(oc get pods -n "$cp_ns" -o json 2>/dev/null | jq -r '
+            [.items[].spec.containers[].resources.requests // {}] |
+            map({
+                cpu: ((.cpu // "0") | if test("m$") then (.[:-1] | tonumber) else ((. | tonumber) * 1000) end),
+                mem: ((.memory // "0") | if test("Gi$") then ((.[:-2] | tonumber) * 1024) elif test("Mi$") then (.[:-2] | tonumber) elif test("Ki$") then ((.[:-2] | tonumber) / 1024) else 0 end)
+            }) |
+            {cpu: (map(.cpu) | add), mem: (map(.mem) | add)}
+        ' 2>/dev/null || echo '{"cpu":0,"mem":0}')
+
+        cpu_req_m=$(echo "$pod_resources" | jq -r '.cpu // 0' | cut -d'.' -f1)
+        mem_req_mi=$(echo "$pod_resources" | jq -r '.mem // 0' | cut -d'.' -f1)
+
+        # Count pods
+        pod_count=$(oc get pods -n "$cp_ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+        # Format for display
+        if [[ "$cpu_req_m" -ge 1000 ]]; then
+            cpu_display="$(echo "scale=1; $cpu_req_m / 1000" | bc)c"
+        else
+            cpu_display="${cpu_req_m}m"
+        fi
+
+        if [[ "$mem_req_mi" -ge 1024 ]]; then
+            mem_display="$(echo "scale=1; $mem_req_mi / 1024" | bc)Gi"
+        else
+            mem_display="${mem_req_mi}Mi"
+        fi
+
+        printf "  %-30s %-21b %-12s %-12s %-10s\n" "$hc_name" "$status" "$cpu_display" "$mem_display" "$pod_count"
+
+        ((CLUSTER_COUNT++)) || true
+        # Only count Ready clusters for average calculation
+        if [[ "$is_ready" == "true" ]]; then
+            ((READY_CLUSTER_COUNT++)) || true
+            TOTAL_CLUSTER_CPU_REQ=$((TOTAL_CLUSTER_CPU_REQ + cpu_req_m))
+            TOTAL_CLUSTER_MEM_REQ=$((TOTAL_CLUSTER_MEM_REQ + mem_req_mi))
+        fi
+
+    done <<< "$HOSTED_CLUSTERS"
+
+    echo ""
+
+    # =========================================================================
+    # CAPACITY CALCULATION
+    # =========================================================================
+
+    if [[ $CLUSTER_COUNT -gt 0 ]]; then
+        # Get total allocatable resources from worker nodes
+        TOTAL_ALLOC_CPU=0
+        TOTAL_ALLOC_MEM=0
+
+        while IFS= read -r node_line; do
+            [[ -z "$node_line" ]] && continue
+            # Check if worker node
+            is_worker=$(oc get node "$node_line" -o jsonpath='{.metadata.labels.node-role\.kubernetes\.io/worker}' 2>/dev/null)
+            is_master=$(oc get node "$node_line" -o jsonpath='{.metadata.labels.node-role\.kubernetes\.io/master}' 2>/dev/null)
+            [[ -n "$is_master" ]] && continue
+
+            alloc=$(oc get node "$node_line" -o json 2>/dev/null | jq -r '
+                .status.allocatable |
+                {
+                    cpu: ((.cpu // "0") | if test("m$") then (.[:-1] | tonumber) else ((. | tonumber) * 1000) end),
+                    mem: (((.memory // "0") | gsub("Ki$"; "") | tonumber) / 1024)
+                }
+            ' 2>/dev/null || echo '{"cpu":0,"mem":0}')
+
+            node_cpu=$(echo "$alloc" | jq -r '.cpu' | cut -d'.' -f1)
+            node_mem=$(echo "$alloc" | jq -r '.mem' | cut -d'.' -f1)
+
+            TOTAL_ALLOC_CPU=$((TOTAL_ALLOC_CPU + node_cpu))
+            TOTAL_ALLOC_MEM=$((TOTAL_ALLOC_MEM + node_mem))
+        done < <(oc get nodes -o custom-columns='NAME:.metadata.name' --no-headers 2>/dev/null)
+
+        # Get total current requests from all pods on workers
+        TOTAL_USED_CPU=0
+        TOTAL_USED_MEM=0
+
+        all_pod_resources=$(oc get pods -A -o json 2>/dev/null | jq -r '
+            [.items[] | select(.status.phase == "Running") | .spec.containers[].resources.requests // {}] |
+            map({
+                cpu: ((.cpu // "0") | if test("m$") then (.[:-1] | tonumber) else ((. | tonumber) * 1000) end),
+                mem: ((.memory // "0") | if test("Gi$") then ((.[:-2] | tonumber) * 1024) elif test("Mi$") then (.[:-2] | tonumber) elif test("Ki$") then ((.[:-2] | tonumber) / 1024) else 0 end)
+            }) |
+            {cpu: (map(.cpu) | add), mem: (map(.mem) | add)}
+        ' 2>/dev/null || echo '{"cpu":0,"mem":0}')
+
+        TOTAL_USED_CPU=$(echo "$all_pod_resources" | jq -r '.cpu // 0' | cut -d'.' -f1)
+        TOTAL_USED_MEM=$(echo "$all_pod_resources" | jq -r '.mem // 0' | cut -d'.' -f1)
+
+        # Calculate remaining capacity
+        REMAINING_CPU=$((TOTAL_ALLOC_CPU - TOTAL_USED_CPU))
+        REMAINING_MEM=$((TOTAL_ALLOC_MEM - TOTAL_USED_MEM))
+
+        # Average cluster footprint (only from Ready clusters)
+        if [[ $READY_CLUSTER_COUNT -gt 0 ]]; then
+            AVG_CLUSTER_CPU=$((TOTAL_CLUSTER_CPU_REQ / READY_CLUSTER_COUNT))
+            AVG_CLUSTER_MEM=$((TOTAL_CLUSTER_MEM_REQ / READY_CLUSTER_COUNT))
+        else
+            AVG_CLUSTER_CPU=0
+            AVG_CLUSTER_MEM=0
+        fi
+
+        # How many more clusters can fit?
+        if [[ $AVG_CLUSTER_CPU -gt 0 ]] && [[ $AVG_CLUSTER_MEM -gt 0 ]]; then
+            FIT_BY_CPU=$((REMAINING_CPU / AVG_CLUSTER_CPU))
+            FIT_BY_MEM=$((REMAINING_MEM / AVG_CLUSTER_MEM))
+            # Take the minimum
+            if [[ $FIT_BY_CPU -lt $FIT_BY_MEM ]]; then
+                CAN_FIT=$FIT_BY_CPU
+                LIMITING="CPU"
+            else
+                CAN_FIT=$FIT_BY_MEM
+                LIMITING="memory"
+            fi
+        else
+            CAN_FIT=0
+            LIMITING="unknown"
+        fi
+
+        # Format numbers for display
+        fmt_cpu() {
+            local m=$1
+            if [[ $m -ge 1000 ]]; then
+                echo "$(echo "scale=1; $m / 1000" | bc) cores"
+            else
+                echo "${m}m"
+            fi
+        }
+
+        fmt_mem() {
+            local mi=$1
+            if [[ $mi -ge 1024 ]]; then
+                echo "$(echo "scale=1; $mi / 1024" | bc) Gi"
+            else
+                echo "${mi} Mi"
+            fi
+        }
+
+        echo -e "${BOLD}Capacity Summary:${NC}"
+        echo ""
+        echo "  Worker nodes:        ${WORKER_COUNT}"
+        echo "  Allocatable:         $(fmt_cpu $TOTAL_ALLOC_CPU), $(fmt_mem $TOTAL_ALLOC_MEM)"
+        echo "  Current requests:    $(fmt_cpu $TOTAL_USED_CPU), $(fmt_mem $TOTAL_USED_MEM)"
+        echo "  Remaining:           $(fmt_cpu $REMAINING_CPU), $(fmt_mem $REMAINING_MEM)"
+        echo ""
+        echo "  Hosted clusters:     ${CLUSTER_COUNT} total, ${READY_CLUSTER_COUNT} ready"
+        echo "  Avg cluster size:    $(fmt_cpu $AVG_CLUSTER_CPU), $(fmt_mem $AVG_CLUSTER_MEM) (based on ${READY_CLUSTER_COUNT} ready)"
+        echo ""
+        if [[ $READY_CLUSTER_COUNT -eq 0 ]]; then
+            echo -e "  ${YELLOW}No ready clusters to calculate capacity estimate${NC}"
+        elif [[ $CAN_FIT -gt 0 ]]; then
+            echo -e "  ${GREEN}Can fit ~${CAN_FIT} more cluster(s)${NC} (limited by ${LIMITING})"
+        else
+            echo -e "  ${RED}At capacity${NC} - no room for additional clusters without scaling"
+        fi
+        echo ""
+    fi
 fi
 
 # ============================================================================
