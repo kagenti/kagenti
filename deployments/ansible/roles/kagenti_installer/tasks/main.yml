@@ -883,6 +883,87 @@
     - skip_cert_manager_operator | default(false)
     - cert_manager_existing_check.rc == 0
 
+# TODO: Move TektonConfig patching to kagenti-operator
+# The kagenti-operator creates PipelineRuns for AgentBuilds, so it has the
+# context to know what Tekton settings are needed. The operator should:
+# 1. Check if running on OpenShift (detect TektonConfig CRD)
+# 2. Patch TektonConfig to set pipeline.set-security-context: true
+# 3. This ensures proper fsGroup handling for PVC permissions in build pods
+# For now, we patch it in the installer as a workaround.
+#
+# IMPORTANT: On HyperShift clusters, TektonConfig may be created without
+# proper SCC defaults (spec.platforms.openshift.scc is empty), causing the
+# Tekton operator to crash with nil pointer dereference in rbac.go.
+# We MUST patch the SCC configuration BEFORE waiting for Shipwright, because
+# Shipwright depends on TektonConfig being ready.
+- name: Patch TektonConfig for OpenShift build permissions
+  block:
+    - name: Wait for TektonConfig to exist
+      command: kubectl get tektonconfig config
+      register: tektonconfig_check
+      retries: 30
+      delay: 10
+      until: tektonconfig_check.rc == 0
+      changed_when: false
+
+    # On HyperShift clusters, TektonConfig may be created with empty
+    # spec.platforms.openshift, causing operator crash. Check and patch early.
+    - name: Check if TektonConfig has SCC defaults
+      command: kubectl get tektonconfig config -o jsonpath='{.spec.platforms.openshift.scc.default}'
+      register: tektonconfig_scc_check
+      failed_when: false
+      changed_when: false
+
+    - name: Patch TektonConfig SCC defaults for HyperShift clusters
+      kubernetes.core.k8s:
+        api_version: operator.tekton.dev/v1alpha1
+        kind: TektonConfig
+        name: config
+        definition:
+          spec:
+            platforms:
+              openshift:
+                scc:
+                  default: "pipelines-scc"
+        merge_type: merge
+      retries: 5
+      delay: 10
+      register: tektonconfig_scc_patch
+      until: tektonconfig_scc_patch is not failed
+      when: tektonconfig_scc_check.stdout | default('') | length == 0
+
+    - name: Wait for Tekton operator to recover after SCC patch
+      pause:
+        seconds: 10
+      when: tektonconfig_scc_check.stdout | default('') | length == 0
+
+    - name: Wait for Tekton operator webhook to be ready
+      command: >-
+        kubectl rollout status deployment/tekton-operator-webhook
+        -n openshift-operators --timeout=120s
+      register: tekton_webhook_ready
+      retries: 5
+      delay: 10
+      until: tekton_webhook_ready.rc == 0
+      changed_when: false
+      failed_when: false
+
+    - name: Patch TektonConfig to set security context
+      kubernetes.core.k8s:
+        api_version: operator.tekton.dev/v1alpha1
+        kind: TektonConfig
+        name: config
+        definition:
+          spec:
+            pipeline:
+              set-security-context: true
+        merge_type: merge
+      retries: 5
+      delay: 15
+      register: tektonconfig_patch
+      until: tektonconfig_patch is not failed
+  when: enable_openshift | default(false)
+
 # Wait for OpenShift Builds operator to be ready.
 # The operator is installed via OLM subscription in kagenti-deps.
 # The OpenShiftBuild operand CR is created via Helm hook (post-install).
@@ -1031,50 +1112,6 @@
     - enable_openshift | default(false)
     - (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('shipwright', {}).get('enabled', false) | bool
     - not (skip_builds_operator | default(false))
-
-# TODO: Move TektonConfig patching to kagenti-operator
-# The kagenti-operator creates PipelineRuns for AgentBuilds, so it has the
-# context to know what Tekton settings are needed. The operator should:
-# 1. Check if running on OpenShift (detect TektonConfig CRD)
-# 2. Patch TektonConfig to set pipeline.set-security-context: true
-# 3. This ensures proper fsGroup handling for PVC permissions in build pods
-# For now, we patch it in the installer as a workaround.
-- name: Patch TektonConfig for OpenShift build permissions
-  block:
-    - name: Wait for TektonConfig to exist
-      command: kubectl get tektonconfig config
-      register: tektonconfig_check
-      retries: 30
-      delay: 10
-      until: tektonconfig_check.rc == 0
-      changed_when: false
-
-    - name: Wait for Tekton operator webhook to be ready
-      command: >-
-        kubectl rollout status deployment/tekton-operator-webhook
-        -n openshift-operators --timeout=120s
-      register: tekton_webhook_ready
-      retries: 5
-      delay: 10
-      until: tekton_webhook_ready.rc == 0
-      changed_when: false
-      failed_when: false
-
-    - name: Patch TektonConfig to set security context
-      kubernetes.core.k8s:
-        api_version: operator.tekton.dev/v1alpha1
-        kind: TektonConfig
-        name: config
-        definition:
-          spec:
-            pipeline:
-              set-security-context: true
-        merge_type: merge
-      retries: 5
-      delay: 15
-      register: tektonconfig_patch
-      until: tektonconfig_patch is not failed
-  when: enable_openshift | default(false)
 
 # Configure TektonConfig to use external cert-manager instead of bundled version.
 # OpenShift Pipelines 1.12+ can be configured to use a cluster-wide cert-manager,
