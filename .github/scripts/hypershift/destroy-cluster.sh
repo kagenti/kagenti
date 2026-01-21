@@ -254,7 +254,58 @@ if [ "${SKIP_ANSIBLE:-false}" != "true" ]; then
 fi
 
 # ============================================================================
-# 6. Cleanup local files
+# 6. Cleanup control plane namespace (prevents encryption key mismatch on retry)
+# ============================================================================
+
+CONTROL_PLANE_NS="clusters-$CLUSTER_NAME"
+if oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
+    log_info "Waiting for control plane namespace '$CONTROL_PLANE_NS' to be deleted..."
+
+    # Wait for namespace to be deleted (up to 2 minutes)
+    NS_DELETED=false
+    for i in {1..24}; do
+        if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
+            NS_DELETED=true
+            break
+        fi
+        echo "  Waiting... ($i/24)"
+        sleep 5
+    done
+
+    if [ "$NS_DELETED" = "false" ]; then
+        log_info "Namespace still exists, force-deleting..."
+
+        # Remove finalizers from all resources in namespace
+        for resource in hostedcontrolplane secret configmap pvc; do
+            oc get "$resource" -n "$CONTROL_PLANE_NS" -o name 2>/dev/null | while read -r name; do
+                oc patch "$name" -n "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+            done
+        done
+
+        # Delete namespace with --wait=false and remove finalizers
+        oc delete ns "$CONTROL_PLANE_NS" --wait=false 2>/dev/null || true
+        oc patch ns "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+
+        # Wait again for namespace deletion
+        for i in {1..12}; do
+            if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
+                break
+            fi
+            sleep 5
+        done
+    fi
+
+    if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
+        log_success "Control plane namespace deleted"
+    else
+        echo -e "${RED}✗${NC} Failed to delete namespace '$CONTROL_PLANE_NS'. Manual cleanup may be required."
+    fi
+else
+    log_success "Control plane namespace already deleted"
+fi
+
+# ============================================================================
+# 7. Cleanup local files
 # ============================================================================
 
 CLUSTER_DIR="$HOME/clusters/hcp/$CLUSTER_NAME"
