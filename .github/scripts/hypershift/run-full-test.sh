@@ -246,10 +246,16 @@ fi
 # Setup kubeconfig (needed for phases 2, 3, 4)
 # ============================================================================
 
-# Set kubeconfig for the created cluster (for local dev)
-# In CI, KUBECONFIG is set by the workflow
-if [ -z "${KUBECONFIG:-}" ]; then
-    export KUBECONFIG="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+# For phases 2-4, we need the hosted cluster kubeconfig (cluster-admin on hosted cluster)
+# This is different from the management cluster kubeconfig used for create/destroy
+HOSTED_KUBECONFIG="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+
+# In CI, KUBECONFIG is set by the workflow for each phase
+# Locally, we always use the hosted cluster kubeconfig for phases 2-4
+if [ "$CI_MODE" != "true" ]; then
+    if [ "$RUN_INSTALL" = "true" ] || [ "$RUN_AGENTS" = "true" ] || [ "$RUN_TEST" = "true" ]; then
+        export KUBECONFIG="$HOSTED_KUBECONFIG"
+    fi
 fi
 
 if [ ! -f "$KUBECONFIG" ]; then

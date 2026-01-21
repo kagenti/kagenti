@@ -921,6 +921,105 @@
         msg: "OpenShiftBuild operand status: {{ openshiftbuild_status.stdout | default('not ready') }}"
       when: openshiftbuild_status.rc != 0 or openshiftbuild_status.stdout != "True"
 
+    # Verify the OpenShiftBuild operand has Shipwright enabled
+    - name: Check OpenShiftBuild operand Shipwright spec
+      command: kubectl get openshiftbuild cluster -o jsonpath='{.spec.shipwright.build.state}'
+      register: openshiftbuild_shipwright_state
+      changed_when: false
+      failed_when: false
+
+    - name: Display OpenShiftBuild Shipwright state
+      debug:
+        msg: |
+          OpenShiftBuild operand Shipwright state: {{ openshiftbuild_shipwright_state.stdout | default('not found') }}
+          Expected: Enabled
+
+    - name: Fail if Shipwright is not enabled in operand
+      fail:
+        msg: |
+          OpenShiftBuild operand does not have Shipwright enabled!
+          Current state: {{ openshiftbuild_shipwright_state.stdout | default('not found') }}
+          This may indicate the Helm hook did not run or the operand was created by another source.
+          Check: kubectl get openshiftbuild cluster -o yaml
+      when: openshiftbuild_shipwright_state.stdout != "Enabled"
+
+    # The Ready condition might be True before Shipwright is fully deployed.
+    # Wait explicitly for Shipwright deployments to be ready.
+    # See: https://docs.openshift.com/builds/1.0/installing/installing-openshift-builds.html
+    - name: Wait for Shipwright build controller deployment to exist
+      command: kubectl get deployment/shipwright-build-controller -n openshift-builds
+      register: shipwright_controller_exists
+      retries: 60
+      delay: 10
+      until: shipwright_controller_exists.rc == 0
+      changed_when: false
+      failed_when: false
+
+    - name: Display Shipwright deployment status on failure
+      shell: |
+        echo "=== OpenShiftBuild operand status ==="
+        kubectl get openshiftbuild cluster -o yaml 2>&1 || echo "Not found"
+        echo ""
+        echo "=== Pods in openshift-builds namespace ==="
+        kubectl get pods -n openshift-builds 2>&1 || echo "None"
+        echo ""
+        echo "=== Deployments in openshift-builds namespace ==="
+        kubectl get deployments -n openshift-builds 2>&1 || echo "None"
+        echo ""
+        echo "=== Events in openshift-builds namespace ==="
+        kubectl get events -n openshift-builds --sort-by='.lastTimestamp' 2>&1 | tail -20 || echo "None"
+        echo ""
+        echo "=== OpenShift Builds operator pod logs ==="
+        kubectl logs -n openshift-builds deployment/openshift-builds-operator -c operator --tail=50 2>&1 || echo "No operator pod"
+        echo ""
+        echo "=== TektonConfig status (Shipwright depends on Tekton) ==="
+        kubectl get tektonconfig config -o jsonpath='{.status.conditions}' 2>&1 | jq . 2>/dev/null || kubectl get tektonconfig config -o yaml 2>&1 || echo "TektonConfig not found"
+        echo ""
+        echo "=== OpenShift Pipelines operator pods ==="
+        kubectl get pods -n openshift-operators -l name=openshift-pipelines-operator 2>&1 || echo "None"
+        echo ""
+        echo "=== OpenShift Pipelines CSV status ==="
+        kubectl get csv -n openshift-operators -l operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators 2>&1 || echo "No Pipelines CSV"
+        echo ""
+        echo "=== Tekton pods in openshift-pipelines ==="
+        kubectl get pods -n openshift-pipelines 2>&1 || echo "None"
+      args:
+        executable: /bin/bash
+      register: shipwright_debug_info
+      when: shipwright_controller_exists.rc != 0
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if Shipwright controller deployment not found
+      fail:
+        msg: |
+          Shipwright build controller deployment not found in openshift-builds namespace.
+          The OpenShift Builds operator may not have deployed Shipwright components.
+
+          Debug info:
+          {{ shipwright_debug_info.stdout | default('No debug info available') }}
+      when: shipwright_controller_exists.rc != 0
+
+    - name: Wait for Shipwright build controller deployment to be ready
+      command: >-
+        kubectl rollout status deployment/shipwright-build-controller
+        -n openshift-builds --timeout=300s
+      register: shipwright_controller_status
+      retries: 5
+      delay: 30
+      until: shipwright_controller_status.rc == 0
+      changed_when: false
+
+    - name: Wait for Shipwright build webhook deployment to be ready
+      command: >-
+        kubectl rollout status deployment/shipwright-build-webhook
+        -n openshift-builds --timeout=300s
+      register: shipwright_webhook_status
+      retries: 5
+      delay: 30
+      until: shipwright_webhook_status.rc == 0
+      changed_when: false
+
     - name: Wait for Shipwright Build CRD to be available
       command: kubectl get crd builds.shipwright.io
       register: build_crd_check
