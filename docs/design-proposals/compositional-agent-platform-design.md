@@ -429,57 +429,92 @@ status:
 - Provide discovery API for other agents
 
 **API Structure**:
-
 ```yaml
 apiVersion: kagenti.io/v1alpha1
 kind: AgentCard
 metadata:
   name: weather-agent-card
   namespace: default
+  labels:
+    app.kubernetes.io/name: weather-agent-card
+    app.kubernetes.io/component: discovery
 spec:
+  syncPeriod: "30s"
   selector:
     matchLabels:
       app: weather-agent
-  
-  endpoint:
-    path: "/.well-known/agent.json"
-    port: 8081
-    scheme: http
-  
-  syncPeriod: 30s
-  
-  metadata:
-    name: "Weather Intelligence Agent"
-    description: "Production weather forecasting service"
-    tags:
-    - weather
-    - forecast
-    - production
-
+      kagenti.io/type: agent
 status:
-  phase: Active
-  lastSyncTime: "2026-01-13T16:10:00Z"
-  discoveredPods: 3
-  syncErrors: 0
-  cards:
-  - podName: weather-agent-7d5f8b9c4d-abc12
-    podIP: 10.244.0.10
-    url: "http://10.244.0.10:8081"
-    lastFetchTime: "2026-01-13T16:10:00Z"
-    fetchStatus: Success
-    card:
-      name: "Weather Intelligence Agent"
-      version: "2.1.0"
-      url: "http://weather-agent.default.svc.cluster.local"
-      capabilities:
-        streaming: true
-        batchProcessing: true
-      skills:
-      - name: "get_forecast"
-        description: "Get weather forecast for location"
-      - name: "get_climate_data"
-        description: "Get historical climate data"
+  protocol: "a2a"
+  lastSyncTime: "2026-01-21T10:30:00Z"
+  conditions:
+  - type: Synced
+    status: "True"
+    lastTransitionTime: "2026-01-21T10:30:00Z"
+    reason: SyncSuccess
+    message: "Agent card successfully fetched"
+  card:
+    name: "Weather Intelligence Agent"
+    description: "Provides weather forecasts and current conditions for locations worldwide"
+    version: "2.1.0"
+    url: "http://weather-agent.default.svc.cluster.local:8080"
+    capabilities:
+      streaming: true
+      pushNotifications: false
+    defaultInputModes:
+      - "application/json"
+      - "text/plain"
+    defaultOutputModes:
+      - "application/json"
+    skills:
+    - name: "get_forecast"
+      description: "Get weather forecast for a location"
+      inputModes:
+        - "application/json"
+      outputModes:
+        - "application/json"
+      parameters:
+      - name: "location"
+        type: "string"
+        description: "City name or coordinates (lat,lon)"
+        required: true
+      - name: "days"
+        type: "number"
+        description: "Number of days to forecast (1-14)"
+        required: false
+        default: "7"
+    - name: "get_current_conditions"
+      description: "Get current weather conditions for a location"
+      inputModes:
+        - "application/json"
+      outputModes:
+        - "application/json"
+      parameters:
+      - name: "location"
+        type: "string"
+        description: "City name or coordinates (lat,lon)"
+        required: true
+    - name: "get_climate_data"
+      description: "Get historical climate data for analysis"
+      inputModes:
+        - "application/json"
+      outputModes:
+        - "application/json"
+      parameters:
+      - name: "location"
+        type: "string"
+        description: "City name or coordinates"
+        required: true
+      - name: "start_date"
+        type: "string"
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+      - name: "end_date"
+        type: "string"
+        description: "End date (YYYY-MM-DD)"
+        required: true
 ```
+
 
 **Adaptation Needed**: Change selector from Agent-specific to generic workload selector to work with any workload type via label matching.
 
