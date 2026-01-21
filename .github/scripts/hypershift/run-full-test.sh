@@ -1,24 +1,59 @@
 #!/usr/bin/env bash
 #
-# Run Full HyperShift Test (Phase 2 + Phase 3)
+# Run Full HyperShift Test
 #
-# Creates a HyperShift cluster, deploys Kagenti, and runs E2E tests.
-# Stops immediately if any step fails.
+# Creates a HyperShift cluster, deploys Kagenti, deploys test agents, and runs E2E tests.
+# Supports both whitelist (--create, --install) and blacklist (--skip-create, --skip-install) modes.
 #
 # USAGE:
 #   ./.github/scripts/hypershift/run-full-test.sh [options] [cluster-suffix]
 #
+# MODES:
+#   Whitelist mode: If ANY include flag (--create, --install, etc.) is used,
+#                   only explicitly enabled phases run (default all OFF)
+#   Blacklist mode: If only --skip-X flags are used,
+#                   all phases run except those skipped (default all ON)
+#
 # OPTIONS:
-#   --skip-create    Reuse existing cluster (skip cluster creation)
-#   --skip-destroy   Keep cluster after tests (skip cluster destruction)
-#   --clean-kagenti  Uninstall kagenti before installing (fresh install)
+#   Include flags (whitelist mode - only run specified phases):
+#     --include-create   Include cluster creation phase
+#     --include-install  Include Kagenti platform installation phase
+#     --include-agents   Include building/deploying test agents phase
+#     --include-test     Include E2E test phase
+#     --include-destroy  Include cluster destruction phase
+#
+#   Skip flags (blacklist mode - run all except specified):
+#     --skip-create      Skip cluster creation (reuse existing cluster)
+#     --skip-install     Skip Kagenti platform installation
+#     --skip-agents      Skip building/deploying test agents
+#     --skip-test        Skip running E2E tests
+#     --skip-destroy     Skip cluster destruction (keep cluster after tests)
+#
+#   Other options:
+#     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
+#     --env ENV          Environment for Kagenti installer (default: ocp)
 #
 # EXAMPLES:
-#   ./.github/scripts/hypershift/run-full-test.sh                    # Full CI run
-#   ./.github/scripts/hypershift/run-full-test.sh --skip-destroy     # First dev run, keep cluster
-#   ./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy  # Iterate on existing cluster
-#   ./.github/scripts/hypershift/run-full-test.sh --skip-create --clean-kagenti --skip-destroy  # Fresh kagenti on existing cluster
-#   ./.github/scripts/hypershift/run-full-test.sh --skip-create      # Final run, destroy cluster
+#   # Full run (default - everything)
+#   ./.github/scripts/hypershift/run-full-test.sh
+#
+#   # First dev run - everything except destroy (blacklist mode)
+#   ./.github/scripts/hypershift/run-full-test.sh --skip-destroy
+#
+#   # CI deploy step - only install + agents (whitelist mode)
+#   ./.github/scripts/hypershift/run-full-test.sh --include-install --include-agents
+#
+#   # CI test step - only tests (whitelist mode)
+#   ./.github/scripts/hypershift/run-full-test.sh --include-test
+#
+#   # Iterate on existing cluster (blacklist mode)
+#   ./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy
+#
+#   # Fresh kagenti on existing cluster (whitelist mode)
+#   ./.github/scripts/hypershift/run-full-test.sh --include-install --include-agents --include-test --clean-kagenti
+#
+#   # Final cleanup - only destroy (whitelist mode)
+#   ./.github/scripts/hypershift/run-full-test.sh --include-destroy
 #
 
 set -euo pipefail
@@ -36,18 +71,65 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 
-# Parse arguments
+# Parse arguments - track both include and skip flags
+INCLUDE_CREATE=false
+INCLUDE_INSTALL=false
+INCLUDE_AGENTS=false
+INCLUDE_TEST=false
+INCLUDE_DESTROY=false
 SKIP_CREATE=false
+SKIP_INSTALL=false
+SKIP_AGENTS=false
+SKIP_TEST=false
 SKIP_DESTROY=false
 CLEAN_KAGENTI=false
+KAGENTI_ENV="${KAGENTI_ENV:-ocp}"
 CLUSTER_SUFFIX=""
+WHITELIST_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --include-create)
+            INCLUDE_CREATE=true
+            WHITELIST_MODE=true
+            shift
+            ;;
+        --include-install)
+            INCLUDE_INSTALL=true
+            WHITELIST_MODE=true
+            shift
+            ;;
+        --include-agents)
+            INCLUDE_AGENTS=true
+            WHITELIST_MODE=true
+            shift
+            ;;
+        --include-test)
+            INCLUDE_TEST=true
+            WHITELIST_MODE=true
+            shift
+            ;;
+        --include-destroy)
+            INCLUDE_DESTROY=true
+            WHITELIST_MODE=true
+            shift
+            ;;
         --skip-create)
             SKIP_CREATE=true
+            shift
+            ;;
+        --skip-install)
+            SKIP_INSTALL=true
+            shift
+            ;;
+        --skip-agents)
+            SKIP_AGENTS=true
+            shift
+            ;;
+        --skip-test)
+            SKIP_TEST=true
             shift
             ;;
         --skip-destroy)
@@ -58,12 +140,39 @@ while [[ $# -gt 0 ]]; do
             CLEAN_KAGENTI=true
             shift
             ;;
+        --env)
+            KAGENTI_ENV="$2"
+            shift 2
+            ;;
         *)
             CLUSTER_SUFFIX="$1"
             shift
             ;;
     esac
 done
+
+# Resolve final phase settings based on mode
+# Whitelist mode: only run phases explicitly included
+# Blacklist mode: run all phases except those skipped
+if [ "$WHITELIST_MODE" = "true" ]; then
+    RUN_CREATE=$INCLUDE_CREATE
+    RUN_INSTALL=$INCLUDE_INSTALL
+    RUN_AGENTS=$INCLUDE_AGENTS
+    RUN_TEST=$INCLUDE_TEST
+    RUN_DESTROY=$INCLUDE_DESTROY
+else
+    # Blacklist mode - default all to true, then apply skips
+    RUN_CREATE=true
+    RUN_INSTALL=true
+    RUN_AGENTS=true
+    RUN_TEST=true
+    RUN_DESTROY=true
+    [ "$SKIP_CREATE" = "true" ] && RUN_CREATE=false
+    [ "$SKIP_INSTALL" = "true" ] && RUN_INSTALL=false
+    [ "$SKIP_AGENTS" = "true" ] && RUN_AGENTS=false
+    [ "$SKIP_TEST" = "true" ] && RUN_TEST=false
+    [ "$SKIP_DESTROY" = "true" ] && RUN_DESTROY=false
+fi
 
 # Default suffix
 CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-local}"
@@ -98,82 +207,135 @@ CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
 echo ""
 echo "Configuration:"
 echo "  Cluster Name:   $CLUSTER_NAME"
-echo "  Skip Create:    $SKIP_CREATE"
-echo "  Skip Destroy:   $SKIP_DESTROY"
+echo "  Environment:    $KAGENTI_ENV"
+echo "  Mode:           $([ "$WHITELIST_MODE" = "true" ] && echo "Whitelist (explicit)" || echo "Blacklist (full run)")"
+echo "  Phases:"
+echo "    Create:       $RUN_CREATE"
+echo "    Install:      $RUN_INSTALL"
+echo "    Agents:       $RUN_AGENTS"
+echo "    Test:         $RUN_TEST"
+echo "    Destroy:      $RUN_DESTROY"
 echo "  Clean Kagenti:  $CLEAN_KAGENTI"
 echo ""
 
 # ============================================================================
-# PHASE 2: Create Cluster
+# PHASE 1: Create Cluster
 # ============================================================================
 
-if [ "$SKIP_CREATE" = "false" ]; then
-    log_phase "PHASE 2: Create HyperShift Cluster"
+if [ "$RUN_CREATE" = "true" ]; then
+    log_phase "PHASE 1: Create HyperShift Cluster"
     log_step "Creating cluster: $CLUSTER_NAME"
 
     ./.github/scripts/hypershift/create-cluster.sh "$CLUSTER_SUFFIX"
 else
-    log_phase "PHASE 2: Skipping Cluster Creation (--skip-create)"
+    log_phase "PHASE 1: Skipping Cluster Creation"
 fi
 
 # ============================================================================
-# PHASE 3: Deploy Kagenti + E2E Tests
+# Setup kubeconfig (needed for phases 2, 3, 4)
 # ============================================================================
 
-log_phase "PHASE 3: Deploy Kagenti + Run E2E Tests"
-
-# Set kubeconfig for the created cluster
-export KUBECONFIG="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+# Set kubeconfig for the created cluster (for local dev)
+# In CI, KUBECONFIG is set by the workflow
+if [ -z "${KUBECONFIG:-}" ]; then
+    export KUBECONFIG="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+fi
 
 if [ ! -f "$KUBECONFIG" ]; then
-    log_error "Kubeconfig not found at $KUBECONFIG"
-    log_error "Either cluster creation failed or cluster doesn't exist."
-    exit 1
+    if [ "$RUN_INSTALL" = "true" ] || [ "$RUN_AGENTS" = "true" ] || [ "$RUN_TEST" = "true" ]; then
+        log_error "Kubeconfig not found at $KUBECONFIG"
+        log_error "Either cluster creation failed or cluster doesn't exist."
+        exit 1
+    fi
+else
+    log_step "Using kubeconfig: $KUBECONFIG"
+    oc get nodes || kubectl get nodes
 fi
 
-log_step "Using kubeconfig: $KUBECONFIG"
-oc get nodes
+# ============================================================================
+# PHASE 2: Install Kagenti Platform
+# ============================================================================
 
-if [ "$CLEAN_KAGENTI" = "true" ]; then
-    log_step "Uninstalling Kagenti (--clean-kagenti)..."
-    ./deployments/ansible/cleanup-install.sh
+if [ "$RUN_INSTALL" = "true" ]; then
+    log_phase "PHASE 2: Install Kagenti Platform"
+
+    if [ "$CLEAN_KAGENTI" = "true" ]; then
+        log_step "Uninstalling Kagenti (--clean-kagenti)..."
+        ./deployments/ansible/cleanup-install.sh || true
+    fi
+
+    log_step "Installing Kagenti platform..."
+    ./.github/scripts/kagenti-operator/30-run-installer.sh --env "$KAGENTI_ENV"
+
+    log_step "Waiting for CRDs..."
+    ./.github/scripts/kagenti-operator/41-wait-crds.sh
+
+    log_step "Applying pipeline template..."
+    ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
+
+    log_step "Waiting for Toolhive CRDs..."
+    ./.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
+else
+    log_phase "PHASE 2: Skipping Kagenti Installation"
 fi
 
-log_step "Installing Kagenti platform..."
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
+# ============================================================================
+# PHASE 3: Deploy Test Agents
+# ============================================================================
 
-log_step "Waiting for CRDs..."
-./.github/scripts/kagenti-operator/41-wait-crds.sh
+if [ "$RUN_AGENTS" = "true" ]; then
+    log_phase "PHASE 3: Deploy Test Agents"
 
-log_step "Applying pipeline template..."
-./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
+    log_step "Building weather-tool..."
+    ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
 
-log_step "Waiting for Toolhive CRDs..."
-./.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
+    log_step "Deploying weather-tool..."
+    ./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
 
-log_step "Building weather-tool..."
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
+    log_step "Patching weather-tool..."
+    ./.github/scripts/kagenti-operator/73-patch-weather-tool.sh
 
-log_step "Deploying weather-tool..."
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+    log_step "Deploying weather-agent..."
+    ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+else
+    log_phase "PHASE 3: Skipping Agent Deployment"
+fi
 
-log_step "Patching weather-tool..."
-./.github/scripts/kagenti-operator/73-patch-weather-tool.sh
+# ============================================================================
+# PHASE 4: Run E2E Tests
+# ============================================================================
 
-log_step "Deploying weather-agent..."
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+if [ "$RUN_TEST" = "true" ]; then
+    log_phase "PHASE 4: Run E2E Tests"
 
-log_step "Running E2E tests..."
-export AGENT_URL="https://$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}')"
-export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+    log_step "Running E2E tests..."
+    # Get agent URL from route (if not already set)
+    if [ -z "${AGENT_URL:-}" ]; then
+        ROUTE_HOST=$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$ROUTE_HOST" ]; then
+            export AGENT_URL="https://$ROUTE_HOST"
+        else
+            log_error "weather-service route not found"
+            export AGENT_URL="http://localhost:8000"
+        fi
+    fi
+    # Set config file based on environment
+    export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
+
+    log_step "AGENT_URL: $AGENT_URL"
+    log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+
+    ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+else
+    log_phase "PHASE 4: Skipping E2E Tests"
+fi
 
 # ============================================================================
 # Cleanup (optional)
 # ============================================================================
 
-if [ "$SKIP_DESTROY" = "false" ]; then
-    log_phase "CLEANUP: Destroying Cluster"
+if [ "$RUN_DESTROY" = "true" ]; then
+    log_phase "PHASE 5: Destroy Cluster"
 
     # Reload CI creds (in case KUBECONFIG was changed)
     # shellcheck source=/dev/null
@@ -181,7 +343,7 @@ if [ "$SKIP_DESTROY" = "false" ]; then
 
     ./.github/scripts/hypershift/destroy-cluster.sh "$CLUSTER_SUFFIX"
 else
-    log_phase "CLEANUP: Skipping (--skip-destroy)"
+    log_phase "PHASE 5: Skipping Cluster Destruction"
     echo ""
     echo "Cluster kept for debugging. To destroy later:"
     echo "  source .env.hypershift-ci"
