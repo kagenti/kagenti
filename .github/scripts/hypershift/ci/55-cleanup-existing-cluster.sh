@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cleanup any existing cluster from cancelled runs
-# This script calls run-full-test.sh --include-destroy to ensure CI and local use same cleanup logic
+# Uses run-full-test.sh --include-destroy to ensure CI and local use the same cleanup logic
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,10 +28,10 @@ fi
 if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
     echo "Cleaning up existing cluster resources..."
 
-    # Use run-full-test.sh --include-destroy to ensure same cleanup logic as local dev
+    # Use run-full-test.sh --include-destroy for consistent cleanup logic
+    # run-full-test.sh now detects CI mode (GITHUB_ACTIONS env var) and skips .env loading
     "$REPO_ROOT/.github/scripts/hypershift/run-full-test.sh" \
         --include-destroy \
-        --env ocp \
         "$CLUSTER_SUFFIX" || true
 
     # Verify cleanup completed

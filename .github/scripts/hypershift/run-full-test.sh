@@ -193,13 +193,24 @@ cd "$REPO_ROOT"
 # Load credentials
 # ============================================================================
 
-if [ ! -f ".env.hypershift-ci" ]; then
-    log_error ".env.hypershift-ci not found. Run setup-hypershift-ci-credentials.sh first."
-    exit 1
-fi
+# Detect CI mode (GitHub Actions sets GITHUB_ACTIONS=true)
+CI_MODE="${GITHUB_ACTIONS:-false}"
 
-# shellcheck source=/dev/null
-source .env.hypershift-ci
+if [ "$CI_MODE" = "true" ]; then
+    # CI mode: credentials are passed via environment variables from GitHub secrets
+    # Required: MANAGED_BY_TAG, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
+    #           HCP_ROLE_NAME, KUBECONFIG (already set in GITHUB_ENV)
+    log_step "Using CI credentials from environment"
+else
+    # Local mode: load from .env file
+    if [ ! -f ".env.hypershift-ci" ]; then
+        log_error ".env.hypershift-ci not found. Run setup-hypershift-ci-credentials.sh first."
+        exit 1
+    fi
+    # shellcheck source=/dev/null
+    source .env.hypershift-ci
+    log_step "Loaded credentials from .env.hypershift-ci"
+fi
 
 MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
 CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
@@ -338,8 +349,10 @@ if [ "$RUN_DESTROY" = "true" ]; then
     log_phase "PHASE 5: Destroy Cluster"
 
     # Reload CI creds (in case KUBECONFIG was changed)
-    # shellcheck source=/dev/null
-    source .env.hypershift-ci
+    if [ "$CI_MODE" != "true" ]; then
+        # shellcheck source=/dev/null
+        source .env.hypershift-ci
+    fi
 
     ./.github/scripts/hypershift/destroy-cluster.sh "$CLUSTER_SUFFIX"
 else
