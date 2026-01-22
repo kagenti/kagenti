@@ -327,12 +327,26 @@ if [ "$RUN_TEST" = "true" ]; then
 
     log_step "Running E2E tests..."
     # Get agent URL from route (if not already set)
+    # Wait for the route to be created by kagenti-operator (can take a few seconds after deployment is ready)
     if [ -z "${AGENT_URL:-}" ]; then
-        ROUTE_HOST=$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-        if [ -n "$ROUTE_HOST" ]; then
-            export AGENT_URL="https://$ROUTE_HOST"
-        else
-            log_error "weather-service route not found"
+        log_step "Waiting for weather-service route..."
+        for i in {1..30}; do
+            ROUTE_HOST=$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+            if [ -n "$ROUTE_HOST" ]; then
+                export AGENT_URL="https://$ROUTE_HOST"
+                log_step "Found route: $AGENT_URL"
+                break
+            fi
+            echo "[$i/30] Waiting for route to be created..."
+            sleep 5
+        done
+        if [ -z "${AGENT_URL:-}" ]; then
+            log_error "weather-service route not found after 150 seconds"
+            # Show what routes exist in team1 namespace for debugging
+            echo "Available routes in team1:"
+            oc get routes -n team1 2>/dev/null || echo "  (none)"
+            echo "Available httproutes in team1:"
+            kubectl get httproutes -n team1 2>/dev/null || echo "  (none)"
             export AGENT_URL="http://localhost:8000"
         fi
     fi

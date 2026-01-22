@@ -98,3 +98,40 @@ kubectl get service weather-service -n team1 || {
 }
 
 log_success "Weather-service deployed via Deployment + Service (operator-independent)"
+
+# Create OpenShift Route for the agent (on OpenShift only)
+# The kagenti-operator doesn't create routes automatically - they're created by the UI backend
+# when using the web interface. For E2E tests, we need to create the route manually.
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    log_info "Creating OpenShift Route for weather-service..."
+    cat <<EOF | kubectl apply -f -
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: weather-service
+  namespace: team1
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: 8000
+  to:
+    kind: Service
+    name: weather-service
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+EOF
+    # Wait for route to be assigned a host
+    for i in {1..30}; do
+        ROUTE_HOST=$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$ROUTE_HOST" ]; then
+            log_success "Route created: https://$ROUTE_HOST"
+            break
+        fi
+        echo "[$i/30] Waiting for route host assignment..."
+        sleep 2
+    done
+fi
