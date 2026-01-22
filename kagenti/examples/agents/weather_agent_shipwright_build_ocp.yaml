@@ -28,7 +28,7 @@ spec:
       cloneSecret: github-shipwright-secret
     contextDir: a2a/weather_service
   strategy:
-    name: buildah-insecure-push
+    name: buildah
     kind: ClusterBuildStrategy
   paramValues:
     - name: dockerfile

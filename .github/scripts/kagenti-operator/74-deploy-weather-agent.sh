@@ -30,15 +30,16 @@ else
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build.yaml"
 fi
 
-# Wait for Build to be registered (with retry loop)
-run_with_timeout 60 'until kubectl get build weather-service -n team1 &> /dev/null; do sleep 2; done' || {
+# Wait for Shipwright Build to be registered (with retry loop)
+# Use full API group to avoid confusion with OpenShift legacy builds
+run_with_timeout 60 'until kubectl get builds.shipwright.io weather-service -n team1 &> /dev/null; do sleep 2; done' || {
     log_error "Shipwright Build not found after 60 seconds"
-    log_info "Available Builds in team1:"
-    kubectl get builds -n team1 2>&1 || echo "  (none or error)"
+    log_info "Available Shipwright Builds in team1:"
+    kubectl get builds.shipwright.io -n team1 2>&1 || echo "  (none or error)"
     log_info "Available ClusterBuildStrategies:"
-    kubectl get clusterbuildstrategies 2>&1 || echo "  (none or error)"
-    log_info "Events in team1 related to builds:"
-    kubectl get events -n team1 --field-selector involvedObject.kind=Build 2>&1 || echo "  (none)"
+    kubectl get clusterbuildstrategies.shipwright.io 2>&1 || echo "  (none or error)"
+    log_info "Recent Events in team1:"
+    kubectl get events -n team1 --sort-by='.lastTimestamp' 2>&1 | tail -20 || echo "  (none)"
     exit 1
 }
 log_info "Shipwright Build created"
