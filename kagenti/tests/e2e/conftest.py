@@ -2,11 +2,20 @@
 E2E-specific pytest fixtures.
 
 Config-driven fixtures that adapt tests based on installer configuration.
+
+Environment markers:
+- @pytest.mark.openshift_only - Test only runs on OpenShift
+- @pytest.mark.kind_only - Test only runs on Kind cluster
+- @pytest.mark.requires_features(["feature1", "feature2"]) - Test requires specific features
 """
 
+import base64
 import os
 import pathlib
+import subprocess
+import tempfile
 
+import httpx
 import pytest
 import yaml
 
@@ -97,6 +106,163 @@ def enabled_features(kagenti_config):
     return features
 
 
+@pytest.fixture(scope="session")
+def is_openshift(kagenti_config):
+    """
+    Detect if running on OpenShift based on config.
+
+    Checks for openshift: true in various config locations:
+    - charts.kagenti-deps.values.openshift
+    - charts.kagenti.values.openshift
+    - Top-level openshift flag
+
+    Returns True if any of these are set to True.
+    """
+    if not kagenti_config:
+        return False
+
+    # Check top-level
+    if kagenti_config.get("openshift", False):
+        return True
+
+    # Check chart values
+    charts = kagenti_config.get("charts", {})
+
+    # kagenti-deps
+    deps_chart = charts.get("kagenti-deps", {})
+    if deps_chart.get("values", {}).get("openshift", False):
+        return True
+
+    # kagenti
+    kagenti_chart = charts.get("kagenti", {})
+    if kagenti_chart.get("values", {}).get("openshift", False):
+        return True
+
+    return False
+
+
+def _fetch_openshift_ingress_ca():
+    """
+    Fetch OpenShift ingress CA certificate from the cluster.
+
+    Tries to get the router-ca secret from openshift-ingress-operator namespace.
+    Returns the path to a temporary CA bundle file, or None if not available.
+    """
+    try:
+        # Get the router-ca secret which contains the ingress CA
+        result = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                "secret",
+                "router-ca",
+                "-n",
+                "openshift-ingress-operator",
+                "-o",
+                "jsonpath={.data.tls\\.crt}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0 or not result.stdout:
+            return None
+
+        # Decode the base64-encoded certificate
+        ca_cert = base64.b64decode(result.stdout).decode("utf-8")
+
+        # Write to a temporary file (will be cleaned up when process exits)
+        ca_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".crt", delete=False, prefix="openshift-ingress-ca-"
+        )
+        ca_file.write(ca_cert)
+        ca_file.close()
+
+        return ca_file.name
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        # kubectl not available or other error
+        return None
+
+
+# Module-level cache for the CA file path
+_openshift_ca_file_cache = None
+
+
+@pytest.fixture(scope="session")
+def openshift_ingress_ca(is_openshift):
+    """
+    Get the OpenShift ingress CA certificate file path.
+
+    Fetches the router-ca secret from the cluster and writes it to a temp file.
+    Returns the path to the CA bundle file, or None if not on OpenShift or
+    if fetching fails.
+
+    The CA file is cached for the session to avoid repeated kubectl calls.
+    """
+    global _openshift_ca_file_cache
+
+    if not is_openshift:
+        return None
+
+    # Check environment variable first (allows override)
+    ca_path = os.getenv("OPENSHIFT_INGRESS_CA")
+    if ca_path and pathlib.Path(ca_path).exists():
+        return ca_path
+
+    # Use cached value if available
+    if _openshift_ca_file_cache is not None:
+        return _openshift_ca_file_cache
+
+    # Fetch from cluster
+    _openshift_ca_file_cache = _fetch_openshift_ingress_ca()
+    return _openshift_ca_file_cache
+
+
+@pytest.fixture(scope="session")
+def http_client(is_openshift, openshift_ingress_ca):
+    """
+    Create an httpx AsyncClient configured for the environment.
+
+    On OpenShift: Uses the ingress CA certificate if available, otherwise
+                  disables SSL verification (self-signed certs)
+    On Kind: Standard SSL verification
+    """
+    if is_openshift:
+        if openshift_ingress_ca:
+            # Use the proper CA certificate
+            return httpx.AsyncClient(
+                verify=openshift_ingress_ca, follow_redirects=False
+            )
+        else:
+            # Fallback: disable SSL verification
+            return httpx.AsyncClient(verify=False, follow_redirects=False)
+    else:
+        return httpx.AsyncClient(follow_redirects=False)
+
+
+def _detect_openshift_from_config(kagenti_config):
+    """Helper to detect OpenShift from config dict."""
+    if not kagenti_config:
+        return False
+
+    if kagenti_config.get("openshift", False):
+        return True
+
+    charts = kagenti_config.get("charts", {})
+
+    deps_chart = charts.get("kagenti-deps", {})
+    if deps_chart.get("values", {}).get("openshift", False):
+        return True
+
+    kagenti_chart = charts.get("kagenti", {})
+    if kagenti_chart.get("values", {}).get("openshift", False):
+        return True
+
+    return False
+
+
 def pytest_collection_modifyitems(config, items):
     """
     Skip tests at collection time based on required features.
@@ -171,8 +337,25 @@ def pytest_collection_modifyitems(config, items):
         if isinstance(component_config, dict) and "enabled" in component_config:
             enabled[component_name] = component_config["enabled"]
 
+    # Detect OpenShift from config
+    is_openshift = _detect_openshift_from_config(kagenti_config)
+
     # Process each test item
     for item in items:
+        # Check for @pytest.mark.openshift_only marker
+        if item.get_closest_marker("openshift_only"):
+            if not is_openshift:
+                item.add_marker(
+                    pytest.mark.skip(reason="Test requires OpenShift environment")
+                )
+
+        # Check for @pytest.mark.kind_only marker
+        if item.get_closest_marker("kind_only"):
+            if is_openshift:
+                item.add_marker(
+                    pytest.mark.skip(reason="Test requires Kind environment")
+                )
+
         # Check for @pytest.mark.requires_features(["feature1", "feature2"]) marker
         marker = item.get_closest_marker("requires_features")
         if marker:

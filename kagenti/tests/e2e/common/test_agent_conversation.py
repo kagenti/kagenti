@@ -12,8 +12,11 @@ Usage:
 """
 
 import os
+import pathlib
+
 import pytest
 import httpx
+import yaml
 from uuid import uuid4
 from a2a.client import A2AClient
 from a2a.types import (
@@ -25,6 +28,68 @@ from a2a.types import (
     SendStreamingMessageRequest,
     SendStreamingMessageSuccessResponse,
 )
+
+# Import CA certificate fetching from conftest
+from kagenti.tests.e2e.conftest import (
+    _fetch_openshift_ingress_ca,
+)
+
+
+def _is_openshift_from_config():
+    """Detect if running on OpenShift from KAGENTI_CONFIG_FILE."""
+    config_file = os.getenv("KAGENTI_CONFIG_FILE")
+    if not config_file:
+        return False
+
+    config_path = pathlib.Path(config_file)
+    if not config_path.is_absolute():
+        repo_root = pathlib.Path(__file__).parent.parent.parent.parent.parent
+        config_path = repo_root / config_file
+
+    if not config_path.exists():
+        return False
+
+    try:
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+    except Exception:
+        return False
+
+    # Check various locations for openshift flag
+    if config.get("openshift", False):
+        return True
+
+    charts = config.get("charts", {})
+    if charts.get("kagenti-deps", {}).get("values", {}).get("openshift", False):
+        return True
+    if charts.get("kagenti", {}).get("values", {}).get("openshift", False):
+        return True
+
+    return False
+
+
+def _get_ssl_verify():
+    """
+    Get the SSL verification setting for httpx client.
+
+    On OpenShift: Uses the ingress CA certificate if available, otherwise False
+    On Kind: True (standard SSL verification)
+    """
+    if not _is_openshift_from_config():
+        return True
+
+    # Check environment variable first (allows override)
+    ca_path = os.getenv("OPENSHIFT_INGRESS_CA")
+    if ca_path and pathlib.Path(ca_path).exists():
+        return ca_path
+
+    # Try to fetch from cluster
+    ca_file = _fetch_openshift_ingress_ca()
+    if ca_file:
+        return ca_file
+
+    # Fallback: disable SSL verification
+    return False
 
 
 # ============================================================================
@@ -50,7 +115,9 @@ class TestWeatherAgentConversation:
         # Set AGENT_URL=http://weather-service.team1.svc.cluster.local:8000 for in-cluster tests
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
 
-        async with httpx.AsyncClient(timeout=60.0) as httpx_client:
+        # Get SSL verification setting (uses OpenShift CA cert if available)
+        ssl_verify = _get_ssl_verify()
+        async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as httpx_client:
             # Initialize A2A client
             client = A2AClient(httpx_client=httpx_client, url=agent_url)
 
