@@ -58,9 +58,9 @@ cleanup_orphaned_aws_resources() {
 
     # Use ansible destroy playbook with cluster_exists=true to force cleanup
     # even when HostedCluster doesn't exist in Kubernetes
+    # Note: cluster_exists must be passed as JSON boolean, not string
     ansible-playbook site.yml \
-        -e '{"create": false, "destroy": true, "create_iam": false}' \
-        -e 'cluster_exists=true' \
+        -e '{"create": false, "destroy": true, "create_iam": false, "cluster_exists": true}' \
         -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
         -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'"}]}' || true
 
