@@ -276,7 +276,8 @@ if oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
         log_info "Namespace still exists, force-deleting..."
 
         # Remove finalizers from all resources in namespace
-        for resource in hostedcontrolplane secret configmap pvc; do
+        # Include deployments which can have hypershift.openshift.io/component-finalizer
+        for resource in hostedcontrolplane deployment secret configmap pvc; do
             oc get "$resource" -n "$CONTROL_PLANE_NS" -o name 2>/dev/null | while read -r name; do
                 oc patch "$name" -n "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
             done
