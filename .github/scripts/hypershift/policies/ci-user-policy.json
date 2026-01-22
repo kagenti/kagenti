@@ -26,7 +26,7 @@
       "Resource": "*"
     },
     {
-      "Sid": "EC2CreateWithTag",
+      "Sid": "EC2Create",
       "Effect": "Allow",
       "Action": [
         "ec2:RunInstances",
@@ -43,15 +43,10 @@
         "ec2:CreateVpcEndpoint",
         "ec2:CreateLaunchTemplate"
       ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
+      "Resource": "*"
     },
     {
-      "Sid": "EC2DeleteTaggedResources",
+      "Sid": "EC2Broad",
       "Effect": "Allow",
       "Action": [
         "ec2:TerminateInstances",
@@ -67,19 +62,7 @@
         "ec2:DeleteDhcpOptions",
         "ec2:DeleteVpcEndpoints",
         "ec2:ReleaseAddress",
-        "ec2:DeleteLaunchTemplate"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringLike": {
-          "ec2:ResourceTag/kubernetes.io/cluster/${MANAGED_BY_TAG}-*": "*"
-        }
-      }
-    },
-    {
-      "Sid": "EC2ModifyTaggedResources",
-      "Effect": "Allow",
-      "Action": [
+        "ec2:DeleteLaunchTemplate",
         "ec2:AuthorizeSecurityGroupIngress",
         "ec2:AuthorizeSecurityGroupEgress",
         "ec2:RevokeSecurityGroupIngress",
@@ -95,12 +78,7 @@
         "ec2:AllocateAddress",
         "ec2:ModifyInstanceAttribute"
       ],
-      "Resource": "*",
-      "Condition": {
-        "StringLike": {
-          "ec2:ResourceTag/kubernetes.io/cluster/${MANAGED_BY_TAG}-*": "*"
-        }
-      }
+      "Resource": "*"
     },
     {
       "Sid": "ELBDescribeReadOnly",
@@ -117,25 +95,13 @@
       "Resource": "*"
     },
     {
-      "Sid": "ELBCreateWithTag",
+      "Sid": "ELBBroad",
       "Effect": "Allow",
       "Action": [
         "elasticloadbalancing:CreateLoadBalancer",
         "elasticloadbalancing:CreateTargetGroup",
         "elasticloadbalancing:AddTags",
-        "elasticloadbalancing:CreateListener"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
-    },
-    {
-      "Sid": "ELBManageTaggedResources",
-      "Effect": "Allow",
-      "Action": [
+        "elasticloadbalancing:CreateListener",
         "elasticloadbalancing:DeleteLoadBalancer",
         "elasticloadbalancing:ModifyLoadBalancerAttributes",
         "elasticloadbalancing:DeleteTargetGroup",
@@ -144,12 +110,7 @@
         "elasticloadbalancing:DeregisterTargets",
         "elasticloadbalancing:DeleteListener"
       ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
+      "Resource": "*"
     },
     {
       "Sid": "Route53ReadOnly",
@@ -169,6 +130,17 @@
         "route53:ChangeResourceRecordSets"
       ],
       "Resource": "arn:aws:route53:::hostedzone/${ROUTE53_ZONE_ID}"
+    },
+    {
+      "Sid": "Route53Broad",
+      "Effect": "Allow",
+      "Action": [
+        "route53:CreateHostedZone",
+        "route53:DeleteHostedZone",
+        "route53:ChangeResourceRecordSets",
+        "route53:ChangeTagsForResource"
+      ],
+      "Resource": "*"
     },
     {
       "Sid": "S3PrefixedBuckets",
