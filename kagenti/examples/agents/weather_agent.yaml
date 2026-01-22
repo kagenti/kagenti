@@ -17,6 +17,13 @@ spec:
 
   replicas: 1
 
+  # Explicit servicePorts to fix port mismatch (CRD defaults to 8080, pod listens on 8000)
+  servicePorts:
+  - name: http
+    port: 8080
+    targetPort: 8000
+    protocol: TCP
+
   imageSource:
     buildRef:
       name: weather-service-build
