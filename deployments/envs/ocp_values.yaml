@@ -55,6 +55,9 @@ charts:
           enabled: true
         shipwright:
           enabled: true
+          # Skip Helm hook for OpenShiftBuild operand - Ansible creates it after CRD is ready
+          # This is needed on HyperShift/fresh installs where the CRD doesn't exist yet
+          skipOpenShiftBuildOperand: true
         toolhiveCRDs:
           enabled: true
         toolhiveOperator:

@@ -1,4 +1,4 @@
-{{- if and .Values.components.shipwright.enabled .Values.openshift }}
+{{- if and .Values.components.shipwright.enabled .Values.openshift (not .Values.components.shipwright.skipOpenShiftBuildOperand) }}
 {{- /*
   OpenShiftBuild Operand Configuration
 
@@ -10,6 +10,10 @@
   - clusterbuildstrategies.shipwright.io CRD
 
   Uses Helm hooks to ensure the operator has time to install before creating the operand.
+
+  NOTE: On fresh installs (e.g., HyperShift), the CRD may not exist when Helm runs.
+  Set components.shipwright.skipOpenShiftBuildOperand=true and let Ansible create
+  the operand after the CRD is available.
 */}}
 apiVersion: operator.openshift.io/v1alpha1
 kind: OpenShiftBuild

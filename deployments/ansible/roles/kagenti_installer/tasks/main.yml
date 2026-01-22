@@ -1018,6 +1018,24 @@
       until: openshiftbuild_crd_check.rc == 0
       changed_when: false
 
+    # When skipOpenShiftBuildOperand is set, Ansible creates the operand after the CRD is ready
+    # This is needed on HyperShift/fresh installs where the CRD doesn't exist when Helm runs
+    - name: Create OpenShiftBuild operand (skipped if Helm hook created it)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operator.openshift.io/v1alpha1
+          kind: OpenShiftBuild
+          metadata:
+            name: cluster
+          spec:
+            sharedResource:
+              state: Enabled
+            shipwright:
+              build:
+                state: Enabled
+      register: openshiftbuild_create
+
     - name: Check OpenShiftBuild operand status
       command: kubectl get openshiftbuild cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
       register: openshiftbuild_status
