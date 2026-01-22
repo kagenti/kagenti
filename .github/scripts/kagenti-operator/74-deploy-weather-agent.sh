@@ -31,8 +31,14 @@ else
 fi
 
 # Wait for Build to be registered (with retry loop)
-run_with_timeout 30 'until kubectl get build weather-service -n team1 &> /dev/null; do sleep 2; done' || {
-    log_error "Shipwright Build not created"
+run_with_timeout 60 'until kubectl get build weather-service -n team1 &> /dev/null; do sleep 2; done' || {
+    log_error "Shipwright Build not found after 60 seconds"
+    log_info "Available Builds in team1:"
+    kubectl get builds -n team1 2>&1 || echo "  (none or error)"
+    log_info "Available ClusterBuildStrategies:"
+    kubectl get clusterbuildstrategies 2>&1 || echo "  (none or error)"
+    log_info "Events in team1 related to builds:"
+    kubectl get events -n team1 --field-selector involvedObject.kind=Build 2>&1 || echo "  (none)"
     exit 1
 }
 log_info "Shipwright Build created"
