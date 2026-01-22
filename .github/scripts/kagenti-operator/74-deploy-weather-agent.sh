@@ -30,8 +30,8 @@ else
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build.yaml"
 fi
 
-# Wait for Build to be registered
-run_with_timeout 30 'kubectl get build weather-service -n team1 &> /dev/null' || {
+# Wait for Build to be registered (with retry loop)
+run_with_timeout 30 'until kubectl get build weather-service -n team1 &> /dev/null; do sleep 2; done' || {
     log_error "Shipwright Build not created"
     exit 1
 }
