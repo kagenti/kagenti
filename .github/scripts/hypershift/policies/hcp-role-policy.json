@@ -2,152 +2,92 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "EC2ReadOnly",
+      "Sid": "EC2Broad",
       "Effect": "Allow",
       "Action": [
+        "ec2:CreateDhcpOptions",
+        "ec2:DeleteSubnet",
+        "ec2:ReplaceRouteTableAssociation",
         "ec2:DescribeAddresses",
         "ec2:DescribeInstances",
+        "ec2:DeleteVpcEndpoints",
+        "ec2:CreateNatGateway",
+        "ec2:CreateVpc",
         "ec2:DescribeDhcpOptions",
+        "ec2:AttachInternetGateway",
+        "ec2:DeleteVpcEndpointServiceConfigurations",
+        "ec2:DeleteRouteTable",
+        "ec2:AssociateRouteTable",
         "ec2:DescribeInternetGateways",
         "ec2:DescribeAvailabilityZones",
+        "ec2:CreateRoute",
+        "ec2:CreateInternetGateway",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:ModifyVpcAttribute",
+        "ec2:DeleteInternetGateway",
         "ec2:DescribeVpcEndpointConnections",
+        "ec2:RejectVpcEndpointConnections",
         "ec2:DescribeRouteTables",
+        "ec2:ReleaseAddress",
+        "ec2:AssociateDhcpOptions",
+        "ec2:TerminateInstances",
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:DeleteRoute",
+        "ec2:CreateRouteTable",
+        "ec2:DetachInternetGateway",
         "ec2:DescribeVpcEndpointServiceConfigurations",
         "ec2:DescribeNatGateways",
+        "ec2:DisassociateRouteTable",
+        "ec2:AllocateAddress",
         "ec2:DescribeSecurityGroups",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:CreateVpcEndpoint",
         "ec2:DescribeVpcs",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteDhcpOptions",
+        "ec2:DeleteNatGateway",
         "ec2:DescribeVpcEndpoints",
+        "ec2:DeleteVpc",
+        "ec2:CreateSubnet",
         "ec2:DescribeSubnets",
+        "ec2:CreateSecurityGroup",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
         "ec2:DescribeLaunchTemplates",
-        "ec2:DescribeLaunchTemplateVersions"
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:DeleteLaunchTemplate",
+        "ec2:RunInstances"
       ],
       "Resource": "*"
     },
     {
-      "Sid": "EC2CreateWithTag",
+      "Sid": "ELBBroad",
       "Effect": "Allow",
       "Action": [
-        "ec2:CreateDhcpOptions",
-        "ec2:CreateNatGateway",
-        "ec2:CreateVpc",
-        "ec2:CreateRoute",
-        "ec2:CreateInternetGateway",
-        "ec2:CreateTags",
-        "ec2:CreateRouteTable",
-        "ec2:AllocateAddress",
-        "ec2:CreateVpcEndpoint",
-        "ec2:CreateSubnet",
-        "ec2:CreateSecurityGroup",
-        "ec2:CreateLaunchTemplate",
-        "ec2:CreateLaunchTemplateVersion",
-        "ec2:RunInstances"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
-    },
-    {
-      "Sid": "EC2ModifyTaggedResources",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:ReplaceRouteTableAssociation",
-        "ec2:AttachInternetGateway",
-        "ec2:AssociateRouteTable",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:ModifyVpcAttribute",
-        "ec2:RejectVpcEndpointConnections",
-        "ec2:AssociateDhcpOptions",
-        "ec2:DisassociateRouteTable",
-        "ec2:RevokeSecurityGroupIngress",
-        "ec2:ModifyInstanceAttribute",
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "StringLike": {
-          "ec2:ResourceTag/kubernetes.io/cluster/${MANAGED_BY_TAG}-*": "*"
-        }
-      }
-    },
-    {
-      "Sid": "EC2Delete",
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DeleteSubnet",
-        "ec2:DeleteVpcEndpoints",
-        "ec2:DeleteVpcEndpointServiceConfigurations",
-        "ec2:DeleteRouteTable",
-        "ec2:DeleteInternetGateway",
-        "ec2:DetachInternetGateway",
-        "ec2:ReleaseAddress",
-        "ec2:TerminateInstances",
-        "ec2:DeleteTags",
-        "ec2:DeleteRoute",
-        "ec2:DeleteSecurityGroup",
-        "ec2:DeleteDhcpOptions",
-        "ec2:DeleteNatGateway",
-        "ec2:DeleteVpc",
-        "ec2:DeleteLaunchTemplate"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
-    },
-    {
-      "Sid": "ELBReadOnly",
-      "Effect": "Allow",
-      "Action": [
+        "elasticloadbalancing:DeleteLoadBalancer",
         "elasticloadbalancing:DescribeLoadBalancers",
         "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
         "elasticloadbalancing:DescribeListeners",
         "elasticloadbalancing:DescribeLoadBalancerAttributes",
         "elasticloadbalancing:DescribeTargetGroupAttributes",
         "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:AddTags",
         "elasticloadbalancing:DescribeTags"
       ],
       "Resource": "*"
-    },
-    {
-      "Sid": "ELBCreateAndModify",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:CreateLoadBalancer",
-        "elasticloadbalancing:CreateTargetGroup",
-        "elasticloadbalancing:CreateListener",
-        "elasticloadbalancing:AddTags",
-        "elasticloadbalancing:RegisterTargets",
-        "elasticloadbalancing:ModifyLoadBalancerAttributes",
-        "elasticloadbalancing:ModifyTargetGroupAttributes"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
-    },
-    {
-      "Sid": "ELBDelete",
-      "Effect": "Allow",
-      "Action": [
-        "elasticloadbalancing:DeleteLoadBalancer",
-        "elasticloadbalancing:DeleteTargetGroup",
-        "elasticloadbalancing:DeleteListener",
-        "elasticloadbalancing:DeregisterTargets"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "ForAnyValue:StringLike": {
-          "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
-        }
-      }
     },
     {
       "Sid": "IAMReadOnly",
@@ -213,27 +153,20 @@
       "Resource": "arn:aws:iam::*:oidc-provider/*"
     },
     {
-      "Sid": "Route53ReadOnly",
+      "Sid": "Route53Broad",
       "Effect": "Allow",
       "Action": [
         "route53:ListHostedZonesByVPC",
+        "route53:CreateHostedZone",
         "route53:ListHostedZones",
+        "route53:ChangeResourceRecordSets",
         "route53:ListResourceRecordSets",
+        "route53:DeleteHostedZone",
+        "route53:AssociateVPCWithHostedZone",
         "route53:ListHostedZonesByName",
         "route53:GetHostedZone"
       ],
       "Resource": "*"
-    },
-    {
-      "Sid": "Route53Lifecycle",
-      "Effect": "Allow",
-      "Action": [
-        "route53:ChangeResourceRecordSets",
-        "route53:CreateHostedZone",
-        "route53:DeleteHostedZone",
-        "route53:AssociateVPCWithHostedZone"
-      ],
-      "Resource": "arn:aws:route53:::hostedzone/*"
     },
     {
       "Sid": "S3ReadOnly",
