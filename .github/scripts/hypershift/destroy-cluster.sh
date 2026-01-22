@@ -64,6 +64,7 @@ CLUSTER_INPUT="$1"
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log_info() { echo -e "${BLUE}→${NC} $1"; }
@@ -254,53 +255,51 @@ if [ "${SKIP_ANSIBLE:-false}" != "true" ]; then
 fi
 
 # ============================================================================
-# 6. Cleanup control plane namespace (prevents encryption key mismatch on retry)
+# 5b. Cleanup orphaned AWS resources (even if HostedCluster is gone)
 # ============================================================================
+# This handles the case where HostedCluster was deleted but AWS resources remain
+# due to async cleanup failures or permission issues.
+
+log_info "Checking for orphaned AWS resources..."
+if ! "$SCRIPT_DIR/debug-aws-hypershift.sh" --check "$CLUSTER_NAME"; then
+    log_info "Orphaned AWS resources detected, running forced cleanup..."
+
+    cd "$HYPERSHIFT_AUTOMATION_DIR"
+
+    # Use cluster_exists=true to force ansible to run AWS cleanup
+    # even though the HostedCluster doesn't exist
+    ansible-playbook site.yml \
+        -e '{"create": false, "destroy": true, "create_iam": false, "cluster_exists": true}' \
+        -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
+        -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'"}]}' || true
+
+    cd "$REPO_ROOT"
+
+    # Verify cleanup
+    if "$SCRIPT_DIR/debug-aws-hypershift.sh" --check "$CLUSTER_NAME"; then
+        log_success "Orphaned AWS resources cleaned up"
+    else
+        echo -e "${RED}✗${NC} Some AWS resources still remain. Manual cleanup may be required."
+        echo "  Run: ./.github/scripts/hypershift/debug-aws-hypershift.sh $CLUSTER_NAME"
+    fi
+else
+    log_success "No orphaned AWS resources"
+fi
+
+# ============================================================================
+# 6. Verify control plane namespace cleanup
+# ============================================================================
+# Note: The ansible playbook (hypershift-automation) handles namespace cleanup.
+# This section just verifies it worked and warns if it didn't.
 
 CONTROL_PLANE_NS="clusters-$CLUSTER_NAME"
 if oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
-    log_info "Waiting for control plane namespace '$CONTROL_PLANE_NS' to be deleted..."
-
-    # Wait for namespace to be deleted (up to 2 minutes)
-    NS_DELETED=false
-    for i in {1..24}; do
-        if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
-            NS_DELETED=true
-            break
-        fi
-        echo "  Waiting... ($i/24)"
-        sleep 5
-    done
-
-    if [ "$NS_DELETED" = "false" ]; then
-        log_info "Namespace still exists, force-deleting..."
-
-        # Remove finalizers from all resources in namespace
-        # Include deployments which can have hypershift.openshift.io/component-finalizer
-        for resource in hostedcontrolplane deployment secret configmap pvc; do
-            oc get "$resource" -n "$CONTROL_PLANE_NS" -o name 2>/dev/null | while read -r name; do
-                oc patch "$name" -n "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
-            done
-        done
-
-        # Delete namespace with --wait=false and remove finalizers
-        oc delete ns "$CONTROL_PLANE_NS" --wait=false 2>/dev/null || true
-        oc patch ns "$CONTROL_PLANE_NS" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
-
-        # Wait again for namespace deletion
-        for i in {1..12}; do
-            if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
-                break
-            fi
-            sleep 5
-        done
-    fi
-
-    if ! oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
-        log_success "Control plane namespace deleted"
-    else
-        echo -e "${RED}✗${NC} Failed to delete namespace '$CONTROL_PLANE_NS'. Manual cleanup may be required."
-    fi
+    # Namespace still exists after ansible - warn but don't fail
+    echo -e "${YELLOW}!${NC} Control plane namespace '$CONTROL_PLANE_NS' still exists after cleanup"
+    echo "  This may indicate an issue with the hypershift-automation playbook."
+    echo "  To manually clean up:"
+    echo "    oc delete ns $CONTROL_PLANE_NS --wait=false"
+    echo "    oc patch ns $CONTROL_PLANE_NS -p '{\"metadata\":{\"finalizers\":null}}' --type=merge"
 else
     log_success "Control plane namespace already deleted"
 fi

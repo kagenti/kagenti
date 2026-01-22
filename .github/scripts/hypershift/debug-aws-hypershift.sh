@@ -80,17 +80,17 @@ if [ "$CHECK_MODE" = false ]; then
     echo ""
 fi
 
-# Check AWS credentials
+# Check AWS credentials (use --no-cli-pager to avoid interactive prompts)
 log_section "Verifying AWS Credentials"
 if [ "$CHECK_MODE" = false ]; then
-    if aws sts get-caller-identity --output table 2>/dev/null; then
+    if aws sts get-caller-identity --output table --no-cli-pager 2>/dev/null; then
         echo ""
     else
         log_error "AWS credentials not configured or invalid"
         exit 1
     fi
 else
-    if ! aws sts get-caller-identity --output text &>/dev/null; then
+    if ! aws sts get-caller-identity --output text --no-cli-pager &>/dev/null; then
         log_error "AWS credentials not configured or invalid"
         exit 1
     fi
@@ -101,16 +101,17 @@ fi
 # ============================================================================
 
 log_section "EC2 Instances (tagged with kubernetes.io/cluster/$CLUSTER_NAME)"
+# Filter out 'terminated' state instances (they're just finalizing and will disappear)
 INSTANCES=$(aws ec2 describe-instances \
     --filters "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" \
-    --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
+    --query 'Reservations[*].Instances[?State.Name!=`terminated`].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
     --output text 2>/dev/null || echo "")
 if [ -n "$INSTANCES" ]; then
     RESOURCES_FOUND=true
     log_found "EC2 Instances:"
     [ "$CHECK_MODE" = false ] && echo "$INSTANCES" | column -t
 else
-    log_empty "No EC2 instances found"
+    log_empty "No EC2 instances found (or only in 'terminated' state)"
 fi
 
 log_section "VPCs (tagged with kubernetes.io/cluster/$CLUSTER_NAME)"
@@ -153,16 +154,17 @@ else
 fi
 
 log_section "NAT Gateways (tagged with kubernetes.io/cluster/$CLUSTER_NAME)"
+# Filter out 'deleted' state NAT gateways (they're just finalizing and will disappear)
 NATS=$(aws ec2 describe-nat-gateways \
     --filter "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" \
-    --query 'NatGateways[*].[NatGatewayId,State,VpcId]' \
+    --query 'NatGateways[?State!=`deleted`].[NatGatewayId,State,VpcId]' \
     --output text 2>/dev/null || echo "")
 if [ -n "$NATS" ]; then
     RESOURCES_FOUND=true
     log_found "NAT Gateways:"
     [ "$CHECK_MODE" = false ] && echo "$NATS" | column -t
 else
-    log_empty "No NAT gateways found"
+    log_empty "No NAT gateways found (or only in 'deleted' state)"
 fi
 
 log_section "Internet Gateways (tagged with kubernetes.io/cluster/$CLUSTER_NAME)"
@@ -282,6 +284,84 @@ else
 fi
 
 # ============================================================================
+# OpenShift/Kubernetes Resources (on management cluster)
+# ============================================================================
+
+log_section "HostedCluster (in 'clusters' namespace)"
+if command -v oc &>/dev/null && [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
+    HC=$(oc get hostedcluster "$CLUSTER_NAME" -n clusters -o jsonpath='{.metadata.name},{.status.phase},{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
+    if [ -n "$HC" ]; then
+        RESOURCES_FOUND=true
+        log_found "HostedCluster: $HC"
+    else
+        log_empty "No HostedCluster found"
+    fi
+else
+    log_empty "oc not available or KUBECONFIG not set"
+fi
+
+log_section "Control Plane Namespace (clusters-$CLUSTER_NAME)"
+if command -v oc &>/dev/null && [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
+    NS=$(oc get ns "clusters-$CLUSTER_NAME" -o jsonpath='{.metadata.name},{.status.phase},{.metadata.deletionTimestamp}' 2>/dev/null || echo "")
+    if [ -n "$NS" ]; then
+        RESOURCES_FOUND=true
+        log_found "Namespace: $NS"
+
+        if [ "$CHECK_MODE" = false ]; then
+            # Show blocking resources (why namespace can't be deleted)
+            echo "  Blocking resources:"
+
+            # Count by resource type
+            DEPLOY_COUNT=$(oc get deployment -n "clusters-$CLUSTER_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            RS_COUNT=$(oc get replicaset -n "clusters-$CLUSTER_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            POD_COUNT=$(oc get pod -n "clusters-$CLUSTER_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            SECRET_COUNT=$(oc get secret -n "clusters-$CLUSTER_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            CM_COUNT=$(oc get configmap -n "clusters-$CLUSTER_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            SVC_COUNT=$(oc get service -n "clusters-$CLUSTER_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+            echo "    - Deployments: $DEPLOY_COUNT"
+            echo "    - ReplicaSets: $RS_COUNT"
+            echo "    - Pods: $POD_COUNT"
+            echo "    - Services: $SVC_COUNT"
+            echo "    - Secrets: $SECRET_COUNT"
+            echo "    - ConfigMaps: $CM_COUNT"
+
+            # Show resources with finalizers (these block deletion)
+            FINALIZED=$(oc get all -n "clusters-$CLUSTER_NAME" -o json 2>/dev/null | jq -r '.items[] | select(.metadata.finalizers != null and (.metadata.finalizers | length) > 0) | "\(.kind)/\(.metadata.name): \(.metadata.finalizers | join(", "))"' 2>/dev/null | head -10 || echo "")
+            if [ -n "$FINALIZED" ]; then
+                echo "  Resources with finalizers (blocking deletion):"
+                echo "$FINALIZED" | sed 's/^/    /'
+            fi
+
+            # Show unhealthy pods
+            CRASHLOOP=$(oc get pods -n "clusters-$CLUSTER_NAME" --field-selector=status.phase!=Running,status.phase!=Succeeded -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount' 2>/dev/null | grep -v "^NAME" | head -5 || echo "")
+            if [ -n "$CRASHLOOP" ]; then
+                echo "  Unhealthy pods:"
+                echo "$CRASHLOOP" | sed 's/^/    /'
+            fi
+        fi
+    else
+        log_empty "No control plane namespace found"
+    fi
+else
+    log_empty "oc not available or KUBECONFIG not set"
+fi
+
+log_section "NodePools (in 'clusters' namespace)"
+if command -v oc &>/dev/null && [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
+    NP=$(oc get nodepools -n clusters -l "hypershift.openshift.io/hosted-control-plane=$CLUSTER_NAME" -o jsonpath='{range .items[*]}{.metadata.name},{.status.phase}{"\n"}{end}' 2>/dev/null || echo "")
+    if [ -n "$NP" ]; then
+        RESOURCES_FOUND=true
+        log_found "NodePools:"
+        [ "$CHECK_MODE" = false ] && echo "$NP" | sed 's/^/  /'
+    else
+        log_empty "No NodePools found"
+    fi
+else
+    log_empty "oc not available or KUBECONFIG not set"
+fi
+
+# ============================================================================
 # Summary and Exit Code
 # ============================================================================
 
@@ -301,21 +381,21 @@ echo "Resources checked for cluster: $CLUSTER_NAME"
 echo ""
 
 if [ "$RESOURCES_FOUND" = true ]; then
-    echo -e "${RED}AWS resources still exist!${NC}"
+    echo -e "${RED}Orphaned resources still exist!${NC}"
     echo "These resources may be blocking cluster deletion."
-    echo "The HyperShift operator needs to clean up these resources before the"
-    echo "HostedCluster finalizer can be removed."
     echo ""
-    echo "To force remove the finalizer (use with caution - may orphan AWS resources):"
+    echo "To clean up:"
+    echo "  # If HostedCluster still exists with finalizer:"
     echo "  oc patch hostedcluster -n clusters $CLUSTER_NAME -p '{\"metadata\":{\"finalizers\":null}}' --type=merge"
     echo ""
-    echo "To manually delete AWS resources (after removing finalizer):"
-    echo "  # Delete in order: instances, NATs, subnets, IGWs, VPCs, roles, S3, OIDC"
+    echo "  # If control plane namespace is stuck:"
+    echo "  oc delete ns clusters-$CLUSTER_NAME --wait=false"
+    echo "  oc patch ns clusters-$CLUSTER_NAME -p '{\"metadata\":{\"finalizers\":null}}' --type=merge"
+    echo ""
+    echo "  # For AWS resources, delete in order:"
+    echo "  # instances, NATs, subnets, IGWs, VPCs, roles, S3, OIDC"
 else
-    echo -e "${GREEN}All AWS resources have been cleaned up.${NC}"
-    echo "It is safe to remove the HostedCluster finalizer if it is stuck."
-    echo ""
-    echo "To remove the finalizer:"
-    echo "  oc patch hostedcluster -n clusters $CLUSTER_NAME -p '{\"metadata\":{\"finalizers\":null}}' --type=merge"
+    echo -e "${GREEN}All resources have been cleaned up.${NC}"
+    echo "No orphaned AWS or OpenShift resources found."
 fi
 echo ""
