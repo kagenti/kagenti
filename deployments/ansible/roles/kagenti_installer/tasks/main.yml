@@ -948,7 +948,7 @@
       changed_when: false
       failed_when: false
 
-    - name: Patch TektonConfig to set security context
+    - name: Patch TektonConfig to set security context and pruner
       kubernetes.core.k8s:
         api_version: operator.tekton.dev/v1alpha1
         kind: TektonConfig
@@ -957,6 +957,15 @@
           spec:
             pipeline:
               set-security-context: true
+            # Pruner configuration is required by newer Tekton versions.
+            # Without spec.pruner.resources, the webhook validation fails with:
+            # "validation failed: missing field(s): spec.pruner.resources"
+            pruner:
+              resources:
+                - taskrun
+                - pipelinerun
+              keep: 100
+              schedule: "0 8 * * *"
         merge_type: merge
       retries: 5
       delay: 15

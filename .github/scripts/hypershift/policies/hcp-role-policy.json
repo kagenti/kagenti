@@ -24,32 +24,20 @@
       "Resource": "*"
     },
     {
-      "Sid": "EC2CreateAndModify",
+      "Sid": "EC2CreateWithTag",
       "Effect": "Allow",
       "Action": [
         "ec2:CreateDhcpOptions",
-        "ec2:ReplaceRouteTableAssociation",
         "ec2:CreateNatGateway",
         "ec2:CreateVpc",
-        "ec2:AttachInternetGateway",
-        "ec2:AssociateRouteTable",
         "ec2:CreateRoute",
         "ec2:CreateInternetGateway",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:ModifyVpcAttribute",
-        "ec2:RejectVpcEndpointConnections",
-        "ec2:AssociateDhcpOptions",
         "ec2:CreateTags",
         "ec2:CreateRouteTable",
-        "ec2:DisassociateRouteTable",
         "ec2:AllocateAddress",
-        "ec2:RevokeSecurityGroupIngress",
         "ec2:CreateVpcEndpoint",
         "ec2:CreateSubnet",
         "ec2:CreateSecurityGroup",
-        "ec2:ModifyInstanceAttribute",
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress",
         "ec2:CreateLaunchTemplate",
         "ec2:CreateLaunchTemplateVersion",
         "ec2:RunInstances"
@@ -58,6 +46,30 @@
       "Condition": {
         "ForAnyValue:StringLike": {
           "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
+        }
+      }
+    },
+    {
+      "Sid": "EC2ModifyTaggedResources",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:ReplaceRouteTableAssociation",
+        "ec2:AttachInternetGateway",
+        "ec2:AssociateRouteTable",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:ModifyVpcAttribute",
+        "ec2:RejectVpcEndpointConnections",
+        "ec2:AssociateDhcpOptions",
+        "ec2:DisassociateRouteTable",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "ec2:ResourceTag/kubernetes.io/cluster/${MANAGED_BY_TAG}-*": "*"
         }
       }
     },

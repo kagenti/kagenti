@@ -188,7 +188,52 @@ echo "  ManagedBy Tag: $MANAGED_BY_TAG"
 echo ""
 
 # ============================================================================
-# 5. Create cluster
+# 5. Pre-flight check - verify no conflicting resources exist
+# ============================================================================
+
+CONTROL_PLANE_NS="clusters-$CLUSTER_NAME"
+
+# Check if namespace already exists (indicates incomplete cleanup)
+if oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════════════════╗"
+    echo "║   ERROR: Control plane namespace already exists                            ║"
+    echo "╚════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Namespace: $CONTROL_PLANE_NS"
+    echo ""
+    echo "This indicates a previous cluster was not fully cleaned up."
+    echo "Creating a new cluster with the same name will fail."
+    echo ""
+    echo "To fix this, run the destroy script first:"
+    echo "  ./.github/scripts/hypershift/destroy-cluster.sh $CLUSTER_SUFFIX"
+    echo ""
+    echo "If the namespace is stuck, try force-deleting it:"
+    echo "  oc delete ns $CONTROL_PLANE_NS --wait=false"
+    echo "  oc patch ns $CONTROL_PLANE_NS -p '{\"metadata\":{\"finalizers\":null}}' --type=merge"
+    echo ""
+    exit 1
+fi
+
+# Check if HostedCluster resource already exists
+if oc get hostedcluster "$CLUSTER_NAME" -n clusters &>/dev/null; then
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════════════════╗"
+    echo "║   ERROR: HostedCluster resource already exists                             ║"
+    echo "╚════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "HostedCluster: clusters/$CLUSTER_NAME"
+    echo ""
+    echo "To fix this, run the destroy script first:"
+    echo "  ./.github/scripts/hypershift/destroy-cluster.sh $CLUSTER_SUFFIX"
+    echo ""
+    exit 1
+fi
+
+log_success "Pre-flight check passed - no conflicting resources"
+
+# ============================================================================
+# 6. Create cluster
 # ============================================================================
 
 log_info "Creating cluster (this may take 10-15 minutes)..."
@@ -204,7 +249,7 @@ ansible-playbook site.yml \
     -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'", "replicas": '"$REPLICAS"', "instance_type": "'"$INSTANCE_TYPE"'", "image": "'"$OCP_VERSION"'"}]}'
 
 # ============================================================================
-# 6. Summary and Next Steps
+# 7. Summary and Next Steps
 # ============================================================================
 
 CLUSTER_KUBECONFIG="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
