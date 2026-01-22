@@ -145,21 +145,23 @@ def _fetch_openshift_ingress_ca():
     """
     Fetch OpenShift ingress CA certificate from the cluster.
 
-    Tries to get the router-ca secret from openshift-ingress-operator namespace.
+    Tries to get the kube-root-ca.crt configmap from openshift-config namespace,
+    which contains the full certificate chain needed for SSL verification.
     Returns the path to a temporary CA bundle file, or None if not available.
     """
     try:
-        # Get the router-ca secret which contains the ingress CA
+        # Get the kube-root-ca.crt configmap which contains the full CA chain
+        # This includes both the root-ca and ingress certificates
         result = subprocess.run(
             [
                 "kubectl",
                 "get",
-                "secret",
-                "router-ca",
+                "configmap",
+                "kube-root-ca.crt",
                 "-n",
-                "openshift-ingress-operator",
+                "openshift-config",
                 "-o",
-                "jsonpath={.data.tls\\.crt}",
+                "jsonpath={.data.ca\\.crt}",
             ],
             capture_output=True,
             text=True,
@@ -169,8 +171,7 @@ def _fetch_openshift_ingress_ca():
         if result.returncode != 0 or not result.stdout:
             return None
 
-        # Decode the base64-encoded certificate
-        ca_cert = base64.b64decode(result.stdout).decode("utf-8")
+        ca_cert = result.stdout
 
         # Write to a temporary file (will be cleaned up when process exits)
         ca_file = tempfile.NamedTemporaryFile(
