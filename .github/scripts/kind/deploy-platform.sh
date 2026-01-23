@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy Platform Script - Deploys Kagenti to Kind cluster
 # Mirrors GitHub Actions workflows by calling the same scripts
-# Usage: ./local-testing/deploy-platform.sh
+# Usage: ./.github/scripts/kind/deploy-platform.sh
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo ""
 echo "======================================================================="
@@ -100,7 +100,7 @@ echo ""
 echo -e "${GREEN}Platform deployed successfully!${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Run E2E tests:  ./local-testing/run-e2e-tests.sh"
-echo "  2. Access UI:      ./local-testing/access-ui.sh"
+echo "  1. Run E2E tests:  ./.github/scripts/kind/run-e2e-tests.sh"
+echo "  2. Access UI:      ./.github/scripts/kind/access-ui.sh"
 echo "  3. View logs:      kubectl logs -n team1 deployment/weather-service --tail=100"
 echo ""

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Access UI Script - Provides access information for Kagenti UI
-# Usage: ./local-testing/access-ui.sh
+# Usage: ./.github/scripts/kind/access-ui.sh
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ echo ""
 # Check if platform is running
 if ! kubectl get namespace kagenti-system &> /dev/null; then
     echo -e "${RED}✗ Platform not deployed${NC}"
-    echo "  Run: ./local-testing/deploy-platform.sh"
+    echo "  Run: ./.github/scripts/kind/deploy-platform.sh"
     exit 1
 fi
 
@@ -132,5 +132,5 @@ echo "View all pods:"
 echo "  kubectl get pods -A"
 echo ""
 echo "Run tests:"
-echo "  ./local-testing/run-e2e-tests.sh"
+echo "  ./.github/scripts/kind/run-e2e-tests.sh"
 echo ""

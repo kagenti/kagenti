@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy Kagenti to HyperShift cluster
-# This script is a thin wrapper that calls run-full-test.sh with appropriate options.
+# This script is a thin wrapper that calls hypershift-full-test.sh with appropriate options.
 # This ensures CI and local development use the exact same code paths.
 set -euo pipefail
 
@@ -31,9 +31,9 @@ fi
 
 cd "$REPO_ROOT"
 
-# Use run-full-test.sh with whitelist mode (--include-X flags)
+# Use hypershift-full-test.sh with whitelist mode (--include-X flags)
 # This runs: install + agents only
-exec "$REPO_ROOT/.github/scripts/hypershift/run-full-test.sh" \
+exec "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
     --include-install \
     --include-agents \
     --env ocp \

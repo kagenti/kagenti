@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Cleanup Script - Wipes Kind Cluster for Kagenti Testing
-# Based on GitHub Actions CI workflow and kagenti-demo-deployment cleanup
-# Usage: ./local-testing/cleanup-cluster.sh
+# Destroy Kind Cluster Script - Deletes Kind cluster for Kagenti testing
+# Usage: ./.github/scripts/kind/destroy-cluster.sh [cluster-name]
 
 set -euo pipefail
 
@@ -12,7 +11,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-CLUSTER_NAME="${CLUSTER_NAME:-kagenti}"
+CLUSTER_NAME="${1:-${CLUSTER_NAME:-kagenti}}"
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
@@ -41,7 +40,7 @@ echo ""
 echo -e "${GREEN}✨ Cleanup complete!${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Deploy platform: ./local-testing/deploy-platform.sh"
-echo "  2. Run E2E tests:   ./local-testing/run-e2e-tests.sh"
-echo "  3. Access UI:       ./local-testing/access-ui.sh"
+echo "  1. Create cluster:  ./.github/scripts/kind/create-cluster.sh"
+echo "  2. Deploy platform: ./.github/scripts/kind/deploy-platform.sh"
+echo "  3. Run E2E tests:   ./.github/scripts/kind/run-e2e-tests.sh"
 echo ""

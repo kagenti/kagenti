@@ -2,8 +2,8 @@
 # Run E2E Tests Script - Runs Kagenti E2E tests locally
 # Mirrors GitHub Actions test execution by calling the same scripts
 # Usage:
-#   ./local-testing/run-e2e-tests.sh
-#   KAGENTI_CONFIG_FILE=deployments/envs/dev_kagenti_operator_values.yaml ./local-testing/run-e2e-tests.sh
+#   ./.github/scripts/kind/run-e2e-tests.sh
+#   KAGENTI_CONFIG_FILE=deployments/envs/dev_values.yaml ./.github/scripts/kind/run-e2e-tests.sh
 
 set -euo pipefail
 
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 echo ""
 echo "======================================================================="
@@ -28,7 +28,7 @@ echo ""
 echo -e "${BLUE}Checking platform status...${NC}"
 if ! kubectl get namespace kagenti-system &> /dev/null; then
     echo -e "${RED}Platform not deployed${NC}"
-    echo "  Run: ./local-testing/deploy-platform.sh"
+    echo "  Run: ./.github/scripts/kind/deploy-platform.sh"
     exit 1
 fi
 echo -e "${GREEN}Platform is deployed${NC}"
@@ -36,7 +36,7 @@ echo ""
 
 # Set config file if not provided
 if [ -z "${KAGENTI_CONFIG_FILE:-}" ]; then
-    KAGENTI_CONFIG_FILE="$REPO_ROOT/deployments/envs/dev_kagenti_operator_values.yaml"
+    KAGENTI_CONFIG_FILE="$REPO_ROOT/deployments/envs/dev_values.yaml"
     export KAGENTI_CONFIG_FILE
     echo -e "${BLUE}Using config: ${KAGENTI_CONFIG_FILE}${NC}"
 else

@@ -16,32 +16,41 @@ Choose your environment and copy the commands:
 
 ```bash
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 1: Create cluster and deploy platform (~15-20 min)                     │
-# │ No external login required - Kind runs locally with Docker                  │
+# │ OPTION A: Unified test runner (recommended)                                 │
 # └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/local-setup/cleanup-cluster.sh
-./.github/scripts/local-setup/deploy-platform.sh
+
+# Full run: create cluster → deploy kagenti → test → destroy
+./.github/scripts/local-setup/kind-full-test.sh
+
+# Dev flow: run tests, keep cluster for debugging
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
+
+# Iterate on existing cluster
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --skip-cluster-destroy
+
+# Cleanup only
+./.github/scripts/local-setup/kind-full-test.sh --include-cluster-destroy
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 2: Deploy agents and run E2E tests                                     │
+# │ OPTION B: Step-by-step (manual control)                                     │
 # └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-./.github/scripts/kagenti-operator/73-patch-weather-tool.sh
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
 
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 3: Access UI                                                           │
-# └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/local-setup/access-ui.sh
+# Create cluster
+./.github/scripts/kind/create-cluster.sh
+
+# Deploy platform and agents
+./.github/scripts/kind/deploy-platform.sh
+
+# Run tests
+./.github/scripts/kind/run-e2e-tests.sh
+
+# Access UI
+./.github/scripts/kind/access-ui.sh
 kubectl port-forward -n kagenti-system svc/http-istio 8080:80
 # Visit: http://kagenti-ui.localtest.me:8080
 
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ CLEANUP: Delete cluster when done                                           │
-# └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/local-setup/cleanup-cluster.sh
+# Cleanup
+./.github/scripts/kind/destroy-cluster.sh
 ```
 
 ---
@@ -52,22 +61,26 @@ kubectl port-forward -n kagenti-system svc/http-istio 8080:80
 
 ```bash
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 1: Login to OpenShift cluster (cluster-admin required)                 │
+# │ OPTION A: Use HyperShift runner (skipping cluster ops)                      │
 # └─────────────────────────────────────────────────────────────────────────────┘
 oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
-# Or: export KUBECONFIG=/path/to/your/kubeconfig
+
+# Full kagenti test cycle (no cluster create/destroy)
+./.github/scripts/local-setup/hypershift-full-test.sh \
+    --skip-cluster-create --skip-cluster-destroy
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 2: Install Kagenti platform                                            │
+# │ OPTION B: Step-by-step (manual control)                                     │
 # └─────────────────────────────────────────────────────────────────────────────┘
+oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
+
+# Install Kagenti platform
 ./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
 ./.github/scripts/kagenti-operator/41-wait-crds.sh
 ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
 ./.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
 
-# ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 3: Deploy agents and run E2E tests                                     │
-# └─────────────────────────────────────────────────────────────────────────────┘
+# Deploy agents and run E2E tests
 ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
 ./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
 ./.github/scripts/kagenti-operator/73-patch-weather-tool.sh
@@ -98,32 +111,32 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 # ┌─────────────────────────────────────────────────────────────────────────────┐
 # │ STEP 1: Run tests, keep cluster for debugging (~25 min)                     │
 # └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/hypershift/run-full-test.sh --skip-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
 # │ STEP 2: When done - destroy cluster                                         │
 # └─────────────────────────────────────────────────────────────────────────────┘
-./.github/scripts/hypershift/run-full-test.sh --include-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
 ```
 
 #### Common Examples
 
 ```bash
 # Default cluster (kagenti-hypershift-ci-local)
-./.github/scripts/hypershift/run-full-test.sh --skip-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 
 # Custom cluster suffix (kagenti-hypershift-ci-pr123)
-./.github/scripts/hypershift/run-full-test.sh pr123 --skip-destroy
-./.github/scripts/hypershift/run-full-test.sh pr123 --include-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh pr123 --skip-cluster-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh pr123 --include-cluster-destroy
 
 # Full CI run: create → deploy → test → destroy (~35 min)
-./.github/scripts/hypershift/run-full-test.sh
+./.github/scripts/local-setup/hypershift-full-test.sh
 
 # Iterate on existing cluster (skip create, keep cluster)
-./.github/scripts/hypershift/run-full-test.sh --skip-create --skip-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
 
 # Fresh kagenti install on existing cluster
-./.github/scripts/hypershift/run-full-test.sh --skip-create --clean-kagenti --skip-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --clean-kagenti --skip-cluster-destroy
 ```
 
 #### Running Individual Phases
@@ -132,82 +145,49 @@ Use `--include-<phase>` to run only specific phases:
 
 ```bash
 # Create cluster only
-./.github/scripts/hypershift/run-full-test.sh --include-create
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-create
 
 # Install kagenti only (on existing cluster)
-./.github/scripts/hypershift/run-full-test.sh --include-install
+./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install
 
 # Deploy agents only
-./.github/scripts/hypershift/run-full-test.sh --include-agents
+./.github/scripts/local-setup/hypershift-full-test.sh --include-agents
 
 # Run tests only
-./.github/scripts/hypershift/run-full-test.sh --include-test
+./.github/scripts/local-setup/hypershift-full-test.sh --include-test
+
+# Uninstall kagenti only
+./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-uninstall
 
 # Destroy cluster only
-./.github/scripts/hypershift/run-full-test.sh --include-destroy
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
 
 # Combine phases: create + install only
-./.github/scripts/hypershift/run-full-test.sh --include-create --include-install
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-create --include-kagenti-install
 ```
-
-<details>
-<summary>Click to expand step-by-step manual instructions</summary>
-
-```bash
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 1: CREATE CLUSTER                                                     ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-source .env.hypershift-ci
-./.github/scripts/hypershift/create-cluster.sh                     # or: create-cluster.sh pr123
-
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 2-4: DEPLOY KAGENTI + AGENTS + TEST                                   ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-ci-local/auth/kubeconfig
-
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
-./.github/scripts/kagenti-operator/41-wait-crds.sh
-./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
-./.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
-
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-./.github/scripts/kagenti-operator/73-patch-weather-tool.sh
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
-
-export AGENT_URL="https://$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}')"
-export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
-
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ ITERATE: Clean and redeploy (keeps cluster)                                 ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-./deployments/ansible/cleanup-install.sh
-# Re-run Phase 2-4 steps above
-
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ PHASE 5: DESTROY CLUSTER                                                    ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-source .env.hypershift-ci
-./.github/scripts/hypershift/destroy-cluster.sh local              # or: destroy-cluster.sh pr123
-```
-
-</details>
 
 ---
 
 ## Script Reference
 
-### Local Setup Scripts (this directory)
+### Entry Point Scripts (this directory)
 
 | Script | Purpose |
 |--------|---------|
-| `cleanup-cluster.sh` | Delete Kind cluster |
+| `kind-full-test.sh` | **NEW**: Unified Kind test runner (same interface as HyperShift) |
+| `hypershift-full-test.sh` | Unified HyperShift test runner with phase control |
+| `chat-with-agent.sh` | Interactive agent chat CLI |
+| `show-services.sh` | Display all deployed services |
+
+### Kind Scripts (`.github/scripts/kind/`)
+
+| Script | Purpose |
+|--------|---------|
+| `create-cluster.sh` | Create Kind cluster |
+| `destroy-cluster.sh` | Delete Kind cluster |
 | `deploy-platform.sh` | Full Kagenti deployment on Kind |
 | `run-e2e-tests.sh` | Run E2E test suite |
 | `access-ui.sh` | Show service URLs and port-forward commands |
-| `chat-with-agent.sh` | Interactive agent chat CLI |
-| `show-services.sh` | Display all deployed services |
 
 ### Kagenti Operator Scripts (`.github/scripts/kagenti-operator/`)
 
@@ -217,7 +197,7 @@ source .env.hypershift-ci
 | `41-wait-crds.sh` | Wait for Kagenti CRDs |
 | `42-apply-pipeline-template.sh` | Apply Tekton pipeline template |
 | `43-wait-toolhive-crds.sh` | Wait for Toolhive CRDs |
-| `71-build-weather-tool.sh` | Build weather-tool image via AgentBuild |
+| `71-build-weather-tool.sh` | Build weather-tool image via Shipwright |
 | `72-deploy-weather-tool.sh` | Deploy weather-tool Component |
 | `73-patch-weather-tool.sh` | Patch weather-tool for OpenShift |
 | `74-deploy-weather-agent.sh` | Deploy weather-agent Component |
@@ -227,7 +207,6 @@ source .env.hypershift-ci
 
 | Script | Purpose |
 |--------|---------|
-| `run-full-test.sh [suffix] [options]` | Automated test runner (see options below) |
 | `create-cluster.sh [suffix]` | Create HyperShift cluster (~10-15 min) |
 | `destroy-cluster.sh [suffix]` | Destroy HyperShift cluster (~10 min) |
 | `setup-hypershift-ci-credentials.sh` | One-time AWS/OCP credential setup |
@@ -236,26 +215,36 @@ source .env.hypershift-ci
 | `debug-aws-hypershift.sh` | Find orphaned AWS resources (read-only) |
 | `setup-autoscaling.sh` | Configure mgmt/nodepool autoscaling |
 
-**run-full-test.sh Options:**
+## Phase Options (kind-full-test.sh & hypershift-full-test.sh)
 
-Phases: `create` → `install` → `agents` → `test` → `destroy`
+Both scripts support the same unified phase control interface:
+
+**Phases**: `cluster-create` → `kagenti-install` → `agents` → `test` → `kagenti-uninstall` → `cluster-destroy`
 
 | Option | Runs | Use Case |
 |--------|------|----------|
-| `--skip-destroy` | 1-4 | **Main flow**: run tests, keep cluster |
-| `--include-destroy` | 5 | **Cleanup**: destroy cluster when done |
-| (no options) | 1-5 | Full CI run (create + test + destroy) |
-| `--skip-create --skip-destroy` | 2-4 | Iterate on existing cluster |
+| `--skip-cluster-destroy` | 1-4 | **Main flow**: run tests, keep cluster |
+| `--include-cluster-destroy` | 6 | **Cleanup**: destroy cluster when done |
+| (no options) | 1-4,6 | Full CI run (create + test + destroy) |
+| `--skip-cluster-create --skip-cluster-destroy` | 2-4 | Iterate on existing cluster |
 | `--include-<phase>` | selected | Run specific phase(s) only |
+| `--include-kagenti-uninstall` | 5 | Uninstall kagenti (opt-in) |
 | `--clean-kagenti` | - | Uninstall kagenti before installing |
-| `[suffix]` | - | Custom cluster suffix (e.g., `pr123`) |
+| `[suffix]` | - | Custom cluster suffix (HyperShift only) |
 
-**Modes**: `--skip-X` excludes phases, `--include-X` runs only specified phases.
+**Flag aliases** (backward compatible):
+- `--include-create` = `--include-cluster-create`
+- `--include-install` = `--include-kagenti-install`
+- `--include-destroy` = `--include-cluster-destroy`
+- `--skip-create` = `--skip-cluster-create`
+- `--skip-install` = `--skip-kagenti-install`
+- `--skip-destroy` = `--skip-cluster-destroy`
 
 ## Environment Comparison
 
 | Feature | Kind | OpenShift | HyperShift |
 |---------|------|-----------|------------|
+| Entry Script | `kind-full-test.sh` | `hypershift-full-test.sh --skip-cluster-*` | `hypershift-full-test.sh` |
 | SPIRE | Vanilla | ZTWIM Operator | ZTWIM Operator |
 | Values File | `dev_values.yaml` | `ocp_values.yaml` | `ocp_values.yaml` |
 | Cluster Lifetime | Persistent | Persistent | Ephemeral |
