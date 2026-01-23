@@ -882,6 +882,27 @@ export const ImportAgentPage: React.FC = () => {
                 </FormSelect>
               </FormGroup>
 
+              {/* Workload Type Selection (Phase 5 - Currently only Deployment supported) */}
+              <FormGroup label="Workload Type" fieldId="workloadType">
+                <FormSelect
+                  id="workloadType"
+                  value="deployment"
+                  isDisabled
+                  aria-label="Workload type selector"
+                >
+                  <FormSelectOption value="deployment" label="Deployment (Recommended)" />
+                  <FormSelectOption value="statefulset" label="StatefulSet" isDisabled />
+                  <FormSelectOption value="job" label="Job" isDisabled />
+                </FormSelect>
+                <FormHelperText>
+                  <HelperText>
+                    <HelperTextItem>
+                      StatefulSet and Job support coming in a future release
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
+              </FormGroup>
+
               {/* HTTPRoute/Route Creation */}
               <FormGroup fieldId="createHttpRoute">
                 <Checkbox

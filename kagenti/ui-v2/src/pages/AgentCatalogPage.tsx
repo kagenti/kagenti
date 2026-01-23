@@ -110,8 +110,13 @@ export const AgentCatalogPage: React.FC = () => {
   const columns = ['Name', 'Description', 'Status', 'Labels', ''];
 
   const renderStatusBadge = (status: string) => {
-    const isReady = status === 'Ready';
-    return <Label color={isReady ? 'green' : 'red'}>{status}</Label>;
+    let color: 'green' | 'red' | 'blue' = 'red';
+    if (status === 'Ready') {
+      color = 'green';
+    } else if (status === 'Progressing') {
+      color = 'blue';
+    }
+    return <Label color={color}>{status}</Label>;
   };
 
   const renderLabels = (agent: Agent) => {
@@ -315,7 +320,8 @@ export const AgentCatalogPage: React.FC = () => {
               <ExclamationTriangleIcon />
             </Icon>
             The agent <strong>{agentToDelete?.name}</strong> will be permanently
-            deleted. This will also delete the associated AgentBuild if one exists.
+            deleted. This will also delete the associated Deployment, Service,
+            and any Shipwright builds if they exist.
           </Text>
           <Text component="small" style={{ marginTop: '16px', display: 'block' }}>
             Type <strong>{agentToDelete?.name}</strong> to confirm deletion:

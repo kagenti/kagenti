@@ -286,6 +286,22 @@ def _get_deployment_description(deployment: dict) -> str:
     )
 
 
+def _format_timestamp(timestamp) -> Optional[str]:
+    """Convert a timestamp to ISO format string.
+
+    The Kubernetes Python client returns datetime objects for timestamp fields,
+    but our Pydantic models expect strings.
+    """
+    if timestamp is None:
+        return None
+    if isinstance(timestamp, str):
+        return timestamp
+    # Handle datetime objects from K8s Python client
+    if hasattr(timestamp, "isoformat"):
+        return timestamp.isoformat()
+    return str(timestamp)
+
+
 def _extract_labels(labels: dict) -> ResourceLabels:
     """Extract kagenti labels from Kubernetes labels."""
     return ResourceLabels(
@@ -326,8 +342,9 @@ async def list_agents(
                     description=_get_deployment_description(deployment),
                     status=_is_deployment_ready(deployment),
                     labels=_extract_labels(labels),
-                    createdAt=metadata.get("creation_timestamp")
-                    or metadata.get("creationTimestamp"),
+                    createdAt=_format_timestamp(
+                        metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+                    ),
                 )
             )
 
@@ -375,8 +392,9 @@ async def get_agent(
                 "namespace": metadata.get("namespace"),
                 "labels": labels,
                 "annotations": annotations,
-                "creationTimestamp": metadata.get("creation_timestamp")
-                or metadata.get("creationTimestamp"),
+                "creationTimestamp": _format_timestamp(
+                    metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+                ),
                 "uid": metadata.get("uid"),
             },
             "spec": deployment.get("spec", {}),

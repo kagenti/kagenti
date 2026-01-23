@@ -5,20 +5,82 @@
  * Core type definitions for the Kagenti UI.
  */
 
+// Workload types for agent deployment
+export type WorkloadType = 'deployment' | 'statefulset' | 'job';
+
 // Agent types
 export interface AgentLabels {
   protocol?: string;
   framework?: string;
   type?: string;
+  workloadType?: WorkloadType;
 }
 
 export interface Agent {
   name: string;
   namespace: string;
   description: string;
-  status: 'Ready' | 'Not Ready';
+  status: 'Ready' | 'Not Ready' | 'Progressing';
   labels: AgentLabels;
+  workloadType?: WorkloadType;
   createdAt?: string;
+}
+
+// Deployment status structure (from Kubernetes)
+// Note: K8s Python client returns snake_case, while raw API returns camelCase
+export interface DeploymentStatus {
+  replicas?: number;
+  readyReplicas?: number;
+  ready_replicas?: number; // snake_case from K8s Python client
+  availableReplicas?: number;
+  available_replicas?: number; // snake_case from K8s Python client
+  updatedReplicas?: number;
+  updated_replicas?: number; // snake_case from K8s Python client
+  conditions?: Array<{
+    type: string;
+    status: string;
+    reason?: string;
+    message?: string;
+    lastTransitionTime?: string;
+    last_transition_time?: string; // snake_case from K8s API
+  }>;
+}
+
+// Service info returned with agent details
+export interface ServiceInfo {
+  name: string;
+  type?: string;
+  clusterIP?: string;
+  ports?: Array<{
+    name?: string;
+    port: number;
+    targetPort?: number | string;
+    protocol?: string;
+  }>;
+}
+
+// Container spec in Deployment
+export interface ContainerSpec {
+  name: string;
+  image: string;
+  imagePullPolicy?: string;
+  env?: Array<{
+    name: string;
+    value?: string;
+    valueFrom?: {
+      secretKeyRef?: { name: string; key: string };
+      configMapKeyRef?: { name: string; key: string };
+    };
+  }>;
+  ports?: Array<{
+    name?: string;
+    containerPort: number;
+    protocol?: string;
+  }>;
+  resources?: {
+    limits?: { cpu?: string; memory?: string };
+    requests?: { cpu?: string; memory?: string };
+  };
 }
 
 export interface AgentDetail {
@@ -30,7 +92,28 @@ export interface AgentDetail {
     creationTimestamp: string;
     uid: string;
   };
+  // Deployment spec structure
   spec: {
+    replicas?: number;
+    selector?: {
+      matchLabels?: Record<string, string>;
+    };
+    template?: {
+      metadata?: {
+        labels?: Record<string, string>;
+      };
+      spec?: {
+        containers?: ContainerSpec[];
+        volumes?: Array<{
+          name: string;
+          emptyDir?: Record<string, unknown>;
+          configMap?: { name: string };
+          secret?: { secretName: string };
+        }>;
+        imagePullSecrets?: Array<{ name: string }>;
+      };
+    };
+    // Legacy Agent CRD fields (for backward compatibility)
     description?: string;
     source?: {
       git?: {
@@ -49,15 +132,11 @@ export interface AgentDetail {
       };
     };
   };
-  status?: {
-    conditions?: Array<{
-      type: string;
-      status: string;
-      reason?: string;
-      message?: string;
-      lastTransitionTime?: string;
-    }>;
-  };
+  status?: DeploymentStatus;
+  // Service info (new)
+  service?: ServiceInfo;
+  // Workload type (new)
+  workloadType?: WorkloadType;
 }
 
 // Tool types

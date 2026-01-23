@@ -77,6 +77,7 @@ interface StatusCondition {
   reason?: string;
   message?: string;
   lastTransitionTime?: string;
+  last_transition_time?: string; // snake_case from K8s API
 }
 
 interface BuildStatus {
@@ -200,9 +201,11 @@ export const AgentDetailPage: React.FC = () => {
   });
 
   // Check if agent is ready to fetch agent card
+  // For Deployments, check "Available" condition; for legacy Agent CRD, check "Ready"
   const agentConditions = agent?.status?.conditions || [];
   const isAgentReady = agentConditions.some(
-    (c: StatusCondition) => c.type === 'Ready' && c.status === 'True'
+    (c: StatusCondition) =>
+      (c.type === 'Ready' || c.type === 'Available') && c.status === 'True'
   );
 
   // Fetch agent card if agent is ready
@@ -289,9 +292,27 @@ export const AgentDetailPage: React.FC = () => {
   const labels = metadata.labels || {};
   const conditions: StatusCondition[] = status.conditions || [];
 
+  // For Deployments, check "Available" condition; for legacy Agent CRD, check "Ready"
   const isReady = conditions.some(
-    (c) => c.type === 'Ready' && c.status === 'True'
+    (c) => (c.type === 'Ready' || c.type === 'Available') && c.status === 'True'
   );
+
+  // Get service info (new for Deployment-based agents)
+  const serviceInfo = agent.service;
+
+  // Get description from spec (legacy Agent CRD) or annotations (Deployment)
+  const description =
+    spec.description ||
+    metadata.annotations?.['kagenti.io/description'] ||
+    'No description available';
+
+  // Get workload type
+  const workloadType = agent.workloadType || labels['kagenti.io/workload-type'] || 'deployment';
+
+  // Get replica info for Deployments
+  const replicas = spec.replicas ?? 1;
+  const readyReplicas = status.readyReplicas ?? status.ready_replicas ?? 0;
+  const availableReplicas = status.availableReplicas ?? status.available_replicas ?? 0;
 
   const gitSource = spec.source?.git;
 
@@ -405,7 +426,22 @@ export const AgentDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>Description</DescriptionListTerm>
                         <DescriptionListDescription>
-                          {spec.description || 'No description available'}
+                          {description}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Workload Type</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <Label color="cyan" isCompact>
+                            {workloadType.charAt(0).toUpperCase() + workloadType.slice(1)}
+                          </Label>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Replicas</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {readyReplicas}/{replicas} ready
+                          {availableReplicas > 0 && ` (${availableReplicas} available)`}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                       <DescriptionListGroup>
@@ -442,6 +478,37 @@ export const AgentDetailPage: React.FC = () => {
                           </ClipboardCopy>
                         </DescriptionListDescription>
                       </DescriptionListGroup>
+                      {serviceInfo && (
+                        <>
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Service</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {serviceInfo.name} ({serviceInfo.type || 'ClusterIP'})
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Cluster IP</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              <code>{serviceInfo.clusterIP || 'N/A'}</code>
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                          {serviceInfo.ports && serviceInfo.ports.length > 0 && (
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Ports</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <LabelGroup>
+                                  {serviceInfo.ports.map((port, idx) => (
+                                    <Label key={idx} isCompact>
+                                      {port.name ? `${port.name}: ` : ''}
+                                      {port.port}→{port.targetPort}
+                                    </Label>
+                                  ))}
+                                </LabelGroup>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                          )}
+                        </>
+                      )}
                     </DescriptionList>
                   </CardBody>
                 </Card>
@@ -733,8 +800,8 @@ export const AgentDetailPage: React.FC = () => {
                                 {condition.message || '-'}
                               </Td>
                               <Td dataLabel="Last Transition">
-                                {condition.lastTransitionTime
-                                  ? new Date(condition.lastTransitionTime).toLocaleString()
+                                {(condition.lastTransitionTime || condition.last_transition_time)
+                                  ? new Date(condition.lastTransitionTime || condition.last_transition_time!).toLocaleString()
                                   : '-'}
                               </Td>
                             </Tr>
