@@ -31,52 +31,72 @@
       "Action": [
         "ec2:RunInstances",
         "ec2:CreateSecurityGroup",
-        "ec2:CreateNetworkInterface",
-        "ec2:CreateTags",
         "ec2:CreateVpc",
         "ec2:CreateSubnet",
         "ec2:CreateInternetGateway",
         "ec2:CreateNatGateway",
         "ec2:CreateRouteTable",
-        "ec2:CreateRoute",
         "ec2:CreateDhcpOptions",
         "ec2:CreateVpcEndpoint",
-        "ec2:CreateLaunchTemplate"
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:AllocateAddress",
+        "ec2:CreateNetworkInterface",
+        "ec2:CreateTags",
+        "ec2:CreateRoute"
       ],
       "Resource": "*"
     },
     {
-      "Sid": "EC2Broad",
+      "Sid": "EC2SetupVPC",
       "Effect": "Allow",
       "Action": [
-        "ec2:TerminateInstances",
-        "ec2:DeleteSecurityGroup",
-        "ec2:DeleteNetworkInterface",
-        "ec2:DeleteTags",
-        "ec2:DeleteVpc",
-        "ec2:DeleteSubnet",
-        "ec2:DeleteInternetGateway",
-        "ec2:DeleteNatGateway",
-        "ec2:DeleteRouteTable",
-        "ec2:DeleteRoute",
-        "ec2:DeleteDhcpOptions",
-        "ec2:DeleteVpcEndpoints",
-        "ec2:ReleaseAddress",
-        "ec2:DeleteLaunchTemplate",
-        "ec2:AuthorizeSecurityGroupIngress",
-        "ec2:AuthorizeSecurityGroupEgress",
-        "ec2:RevokeSecurityGroupIngress",
-        "ec2:RevokeSecurityGroupEgress",
-        "ec2:ModifyNetworkInterfaceAttribute",
-        "ec2:DetachInternetGateway",
         "ec2:AttachInternetGateway",
+        "ec2:DetachInternetGateway",
         "ec2:AssociateRouteTable",
         "ec2:DisassociateRouteTable",
         "ec2:ReplaceRouteTableAssociation",
         "ec2:AssociateDhcpOptions",
         "ec2:ModifyVpcAttribute",
-        "ec2:AllocateAddress",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteRoute"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EC2MutateTaggedResources",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:TerminateInstances",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteVpc",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:DeleteDhcpOptions",
+        "ec2:DeleteVpcEndpoints",
+        "ec2:ReleaseAddress",
+        "ec2:DeleteLaunchTemplate",
+        "ec2:DeleteTags",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
         "ec2:ModifyInstanceAttribute"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/ManagedBy": "${MANAGED_BY_TAG}"
+        }
+      }
+    },
+    {
+      "Sid": "EC2NetworkInterfaceMutate",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteNetworkInterface",
+        "ec2:ModifyNetworkInterfaceAttribute"
       ],
       "Resource": "*"
     },
@@ -95,22 +115,34 @@
       "Resource": "*"
     },
     {
-      "Sid": "ELBBroad",
+      "Sid": "ELBCreate",
       "Effect": "Allow",
       "Action": [
         "elasticloadbalancing:CreateLoadBalancer",
         "elasticloadbalancing:CreateTargetGroup",
-        "elasticloadbalancing:AddTags",
         "elasticloadbalancing:CreateListener",
-        "elasticloadbalancing:DeleteLoadBalancer",
-        "elasticloadbalancing:ModifyLoadBalancerAttributes",
-        "elasticloadbalancing:DeleteTargetGroup",
-        "elasticloadbalancing:ModifyTargetGroupAttributes",
-        "elasticloadbalancing:RegisterTargets",
-        "elasticloadbalancing:DeregisterTargets",
-        "elasticloadbalancing:DeleteListener"
+        "elasticloadbalancing:AddTags"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "ELBMutateTaggedResources",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:ModifyTargetGroupAttributes"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "elasticloadbalancing:ResourceTag/ManagedBy": "${MANAGED_BY_TAG}"
+        }
+      }
     },
     {
       "Sid": "Route53ReadOnly",
@@ -119,17 +151,10 @@
         "route53:GetHostedZone",
         "route53:ListHostedZones",
         "route53:ListHostedZonesByName",
+        "route53:ListHostedZonesByVPC",
         "route53:ListResourceRecordSets"
       ],
       "Resource": "*"
-    },
-    {
-      "Sid": "Route53ScopedZone",
-      "Effect": "Allow",
-      "Action": [
-        "route53:ChangeResourceRecordSets"
-      ],
-      "Resource": "arn:aws:route53:::hostedzone/${ROUTE53_ZONE_ID}"
     },
     {
       "Sid": "Route53Broad",
@@ -138,7 +163,17 @@
         "route53:CreateHostedZone",
         "route53:DeleteHostedZone",
         "route53:ChangeResourceRecordSets",
-        "route53:ChangeTagsForResource"
+        "route53:ChangeTagsForResource",
+        "route53:AssociateVPCWithHostedZone"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation"
       ],
       "Resource": "*"
     },
@@ -154,7 +189,6 @@
         "s3:ListBucket",
         "s3:PutBucketPolicy",
         "s3:GetBucketPolicy",
-        "s3:GetBucketLocation",
         "s3:PutBucketTagging",
         "s3:PutBucketPublicAccessBlock",
         "s3:GetBucketPublicAccessBlock"
@@ -189,6 +223,8 @@
         "iam:CreateRole",
         "iam:DeleteRole",
         "iam:TagRole",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
         "iam:AttachRolePolicy",
         "iam:DetachRolePolicy",
         "iam:PutRolePolicy",
