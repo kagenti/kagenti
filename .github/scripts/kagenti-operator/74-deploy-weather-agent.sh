@@ -141,4 +141,32 @@ EOF
         echo "[$i/30] Waiting for route host assignment..."
         sleep 2
     done
+
+    # Wait for the agent to be ready to serve traffic
+    # The deployment "available" condition doesn't guarantee the app is ready
+    if [ -n "$ROUTE_HOST" ]; then
+        log_info "Waiting for weather-service agent to respond..."
+        AGENT_URL="https://$ROUTE_HOST"
+        for i in {1..60}; do
+            # Try to fetch the agent card (A2A discovery endpoint)
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "$AGENT_URL/.well-known/agent.json" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+                log_success "Agent is ready and responding (HTTP 200)"
+                break
+            elif [ "$HTTP_CODE" = "503" ] || [ "$HTTP_CODE" = "502" ] || [ "$HTTP_CODE" = "000" ]; then
+                echo "[$i/60] Agent not ready yet (HTTP $HTTP_CODE), waiting..."
+                sleep 3
+            else
+                # Got a response, might be 401/403 which still means the agent is up
+                log_success "Agent is responding (HTTP $HTTP_CODE)"
+                break
+            fi
+        done
+        if [ "$HTTP_CODE" = "503" ] || [ "$HTTP_CODE" = "502" ] || [ "$HTTP_CODE" = "000" ]; then
+            log_error "Agent did not become ready after 3 minutes"
+            log_info "Checking pod status:"
+            kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 || true
+            kubectl describe pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 | tail -30 || true
+        fi
+    fi
 fi
