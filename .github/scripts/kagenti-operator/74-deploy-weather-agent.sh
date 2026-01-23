@@ -106,6 +106,17 @@ kubectl get service weather-service -n team1 || {
 
 log_success "Weather-service deployed via Deployment + Service (operator-independent)"
 
+# WORKAROUND: Fix Service targetPort mismatch
+# The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
+# Patch the Service to use the correct targetPort until the operator is fixed
+# See: https://github.com/kagenti/kagenti-operator/issues/XXX
+log_info "Patching Service to use correct targetPort (8000)..."
+kubectl patch svc weather-service -n team1 --type=json \
+    -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
+    log_error "Failed to patch Service targetPort"
+    kubectl get svc weather-service -n team1 -o yaml
+}
+
 # Create OpenShift Route for the agent (on OpenShift only)
 # The kagenti-operator doesn't create routes automatically - they're created by the UI backend
 # when using the web interface. For E2E tests, we need to create the route manually.
