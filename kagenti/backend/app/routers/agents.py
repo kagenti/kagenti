@@ -9,6 +9,7 @@ import json
 import logging
 import socket
 import ipaddress
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -55,6 +56,9 @@ from app.core.constants import (
     WORKLOAD_TYPE_STATEFULSET,
     WORKLOAD_TYPE_JOB,
     SUPPORTED_WORKLOAD_TYPES,
+    # Migration constants (Phase 4)
+    MIGRATION_SOURCE_ANNOTATION,
+    MIGRATION_TIMESTAMP_ANNOTATION,
 )
 from app.core.config import settings
 from app.models.responses import (
@@ -152,6 +156,9 @@ class CreateAgentRequest(BaseModel):
     framework: str = "LangGraph"
     envVars: Optional[List[EnvVar]] = None
 
+    # Workload type: 'deployment', 'statefulset', or 'job'
+    workloadType: str = WORKLOAD_TYPE_DEPLOYMENT
+
     # Deployment method: 'source' (build from git) or 'image' (use existing image)
     deploymentMethod: str = "source"
 
@@ -177,6 +184,17 @@ class CreateAgentRequest(BaseModel):
     # Shipwright build configuration
     useShipwright: bool = True  # Use Shipwright instead of AgentBuild/Tekton
     shipwrightConfig: Optional[ShipwrightBuildConfig] = None
+
+    @field_validator("workloadType")
+    @classmethod
+    def validate_workload_type(cls, v: str) -> str:
+        """Validate that workload type is supported."""
+        if v not in SUPPORTED_WORKLOAD_TYPES:
+            raise ValueError(
+                f"Unsupported workload type: {v}. "
+                f"Supported types: {', '.join(SUPPORTED_WORKLOAD_TYPES)}"
+            )
+        return v
 
 
 class CreateAgentResponse(BaseModel):
@@ -233,6 +251,47 @@ class AgentShipwrightBuildInfoResponse(BaseModel):
     agentConfig: Optional[ResourceConfigFromBuild] = None
 
 
+# Migration Models (Phase 4: Agent CRD to Deployment migration)
+
+
+class MigrateAgentRequest(BaseModel):
+    """Request to migrate an Agent CRD to a Deployment."""
+
+    delete_old: bool = False  # Whether to delete the Agent CRD after successful migration
+
+
+class MigrateAgentResponse(BaseModel):
+    """Response after migrating an agent."""
+
+    success: bool
+    migrated: bool
+    name: str
+    namespace: str
+    message: str
+    deployment_created: bool = False
+    service_created: bool = False
+    agent_crd_deleted: bool = False
+
+
+class MigratableAgentInfo(BaseModel):
+    """Information about an agent that can be migrated."""
+
+    name: str
+    namespace: str
+    status: str
+    has_deployment: bool  # True if a Deployment already exists with same name
+    labels: Dict[str, str]
+    description: Optional[str] = None
+
+
+class ListMigratableAgentsResponse(BaseModel):
+    """Response containing list of agents that can be migrated."""
+
+    agents: List[MigratableAgentInfo]
+    total: int
+    already_migrated: int  # Count of agents that already have Deployments
+
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -286,6 +345,70 @@ def _get_deployment_description(deployment: dict) -> str:
     )
 
 
+def _is_statefulset_ready(resource_data: dict) -> str:
+    """Check if a Kubernetes StatefulSet is ready based on status."""
+    status = resource_data.get("status", {})
+
+    # Check replica counts for StatefulSets
+    replicas = status.get("replicas", 0)
+    ready_replicas = status.get("ready_replicas") or status.get("readyReplicas", 0)
+
+    if replicas == 0:
+        return "Not Ready"
+    if ready_replicas >= replicas:
+        return "Ready"
+    if ready_replicas > 0:
+        return "Progressing"
+    return "Not Ready"
+
+
+def _get_statefulset_description(statefulset: dict) -> str:
+    """Extract description from StatefulSet annotations."""
+    annotations = statefulset.get("metadata", {}).get("annotations", {})
+    return annotations.get(
+        KAGENTI_DESCRIPTION_ANNOTATION,
+        annotations.get("description", "No description"),
+    )
+
+
+def _get_job_status(job: dict) -> str:
+    """Get the status of a Kubernetes Job."""
+    status = job.get("status", {})
+    conditions = status.get("conditions", [])
+
+    # Check conditions for completed or failed
+    for condition in conditions:
+        cond_type = condition.get("type")
+        cond_status = condition.get("status")
+
+        if cond_type == "Complete" and cond_status == "True":
+            return "Completed"
+        if cond_type == "Failed" and cond_status == "True":
+            return "Failed"
+
+    # Check active/succeeded/failed counts
+    active = status.get("active", 0)
+    succeeded = status.get("succeeded", 0)
+    failed = status.get("failed", 0)
+
+    if succeeded > 0:
+        return "Completed"
+    if failed > 0:
+        return "Failed"
+    if active > 0:
+        return "Running"
+    return "Pending"
+
+
+def _get_job_description(job: dict) -> str:
+    """Extract description from Job annotations."""
+    annotations = job.get("metadata", {}).get("annotations", {})
+    return annotations.get(
+        KAGENTI_DESCRIPTION_ANNOTATION,
+        annotations.get("description", "No description"),
+    )
+
+
 def _format_timestamp(timestamp) -> Optional[str]:
     """Convert a timestamp to ISO format string.
 
@@ -319,10 +442,16 @@ async def list_agents(
     """
     List all agents in the specified namespace.
 
-    Returns agents deployed as Deployments with the kagenti.io/type=agent label.
+    Returns agents deployed as Deployments, StatefulSets, or Jobs with the
+    kagenti.io/type=agent label.
+    During migration period, also includes legacy Agent CRDs that haven't been
+    migrated yet (controlled by enable_legacy_agent_crd setting).
     """
     try:
         label_selector = f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_AGENT}"
+
+        agents = []
+        agent_names = set()
 
         # Query Deployments with agent label
         deployments = kube.list_deployments(
@@ -330,14 +459,15 @@ async def list_agents(
             label_selector=label_selector,
         )
 
-        agents = []
         for deployment in deployments:
             metadata = deployment.get("metadata", {})
+            name = metadata.get("name", "")
+            agent_names.add(name)
             labels = metadata.get("labels", {})
 
             agents.append(
                 AgentSummary(
-                    name=metadata.get("name", ""),
+                    name=name,
                     namespace=metadata.get("namespace", namespace),
                     description=_get_deployment_description(deployment),
                     status=_is_deployment_ready(deployment),
@@ -347,6 +477,110 @@ async def list_agents(
                     ),
                 )
             )
+
+        # Query StatefulSets with agent label
+        statefulsets = kube.list_statefulsets(
+            namespace=namespace,
+            label_selector=label_selector,
+        )
+
+        for statefulset in statefulsets:
+            metadata = statefulset.get("metadata", {})
+            name = metadata.get("name", "")
+            if name in agent_names:
+                continue
+            agent_names.add(name)
+            labels = metadata.get("labels", {})
+
+            agents.append(
+                AgentSummary(
+                    name=name,
+                    namespace=metadata.get("namespace", namespace),
+                    description=_get_statefulset_description(statefulset),
+                    status=_is_statefulset_ready(statefulset),
+                    labels=_extract_labels(labels),
+                    createdAt=_format_timestamp(
+                        metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+                    ),
+                )
+            )
+
+        # Query Jobs with agent label
+        jobs = kube.list_jobs(
+            namespace=namespace,
+            label_selector=label_selector,
+        )
+
+        for job in jobs:
+            metadata = job.get("metadata", {})
+            name = metadata.get("name", "")
+            if name in agent_names:
+                continue
+            agent_names.add(name)
+            labels = metadata.get("labels", {})
+
+            agents.append(
+                AgentSummary(
+                    name=name,
+                    namespace=metadata.get("namespace", namespace),
+                    description=_get_job_description(job),
+                    status=_get_job_status(job),
+                    labels=_extract_labels(labels),
+                    createdAt=_format_timestamp(
+                        metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+                    ),
+                )
+            )
+
+        # Backward compatibility: Also list legacy Agent CRDs (during migration period)
+        if settings.enable_legacy_agent_crd:
+            try:
+                agent_crds = kube.list_custom_resources(
+                    group=CRD_GROUP,
+                    version=CRD_VERSION,
+                    namespace=namespace,
+                    plural=AGENTS_PLURAL,
+                )
+                for agent_crd in agent_crds:
+                    metadata = agent_crd.get("metadata", {})
+                    name = metadata.get("name", "")
+                    # Skip if already listed via workload (already migrated)
+                    if name in agent_names:
+                        continue
+
+                    labels = metadata.get("labels", {})
+                    spec = agent_crd.get("spec", {})
+                    status = agent_crd.get("status", {})
+
+                    # Determine status from Agent CRD
+                    agent_status = "Not Ready"
+                    for cond in status.get("conditions", []):
+                        if cond.get("type") == "Ready" and cond.get("status") == "True":
+                            agent_status = "Ready"
+                            break
+
+                    # Get description
+                    description = spec.get("description") or metadata.get("annotations", {}).get(
+                        KAGENTI_DESCRIPTION_ANNOTATION, "No description"
+                    )
+
+                    agents.append(
+                        AgentSummary(
+                            name=name,
+                            namespace=metadata.get("namespace", namespace),
+                            description=description,
+                            status=agent_status,
+                            labels=_extract_labels(labels),
+                            createdAt=_format_timestamp(
+                                metadata.get("creation_timestamp")
+                                or metadata.get("creationTimestamp")
+                            ),
+                        )
+                    )
+            except ApiException as e:
+                # CRD not installed or not accessible - that's fine, just skip
+                if e.status not in (404, 403):
+                    logger.warning(f"Failed to list legacy Agent CRDs: {e.reason}")
 
         return AgentListResponse(items=agents)
 
@@ -367,60 +601,83 @@ async def get_agent(
 ) -> Any:
     """Get detailed information about a specific agent.
 
-    Returns Deployment details along with associated Service information.
+    Returns workload details (Deployment, StatefulSet, or Job) along with
+    associated Service information.
     """
-    try:
-        # Get the Deployment
-        deployment = kube.get_deployment(namespace=namespace, name=name)
+    workload = None
+    workload_type = None
 
-        # Try to get the associated Service
-        service = None
+    # Try to get Deployment first
+    try:
+        workload = kube.get_deployment(namespace=namespace, name=name)
+        workload_type = WORKLOAD_TYPE_DEPLOYMENT
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # If not found, try StatefulSet
+    if workload is None:
+        try:
+            workload = kube.get_statefulset(namespace=namespace, name=name)
+            workload_type = WORKLOAD_TYPE_STATEFULSET
+        except ApiException as e:
+            if e.status != 404:
+                raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # If still not found, try Job
+    if workload is None:
+        try:
+            workload = kube.get_job(namespace=namespace, name=name)
+            workload_type = WORKLOAD_TYPE_JOB
+        except ApiException as e:
+            if e.status == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Agent '{name}' not found in namespace '{namespace}'",
+                )
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Try to get the associated Service (not applicable for Jobs)
+    service = None
+    if workload_type != WORKLOAD_TYPE_JOB:
         try:
             service = kube.get_service(namespace=namespace, name=name)
         except ApiException as e:
             if e.status != 404:
                 logger.warning(f"Failed to get Service for agent '{name}': {e.reason}")
 
-        # Build response with Deployment info and optional Service info
-        metadata = deployment.get("metadata", {})
-        labels = metadata.get("labels", {})
-        annotations = metadata.get("annotations", {})
+    # Build response with workload info and optional Service info
+    metadata = workload.get("metadata", {})
+    labels = metadata.get("labels", {})
+    annotations = metadata.get("annotations", {})
 
-        response = {
-            "metadata": {
-                "name": metadata.get("name"),
-                "namespace": metadata.get("namespace"),
-                "labels": labels,
-                "annotations": annotations,
-                "creationTimestamp": _format_timestamp(
-                    metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
-                ),
-                "uid": metadata.get("uid"),
-            },
-            "spec": deployment.get("spec", {}),
-            "status": deployment.get("status", {}),
-            "workloadType": labels.get(KAGENTI_WORKLOAD_TYPE_LABEL, WORKLOAD_TYPE_DEPLOYMENT),
+    response = {
+        "metadata": {
+            "name": metadata.get("name"),
+            "namespace": metadata.get("namespace"),
+            "labels": labels,
+            "annotations": annotations,
+            "creationTimestamp": _format_timestamp(
+                metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+            ),
+            "uid": metadata.get("uid"),
+        },
+        "spec": workload.get("spec", {}),
+        "status": workload.get("status", {}),
+        "workloadType": labels.get(KAGENTI_WORKLOAD_TYPE_LABEL, workload_type),
+    }
+
+    # Add service info if available
+    if service:
+        service_spec = service.get("spec", {})
+        response["service"] = {
+            "name": service.get("metadata", {}).get("name"),
+            "type": service_spec.get("type"),
+            "clusterIP": service_spec.get("cluster_ip") or service_spec.get("clusterIP"),
+            "ports": service_spec.get("ports", []),
         }
 
-        # Add service info if available
-        if service:
-            service_spec = service.get("spec", {})
-            response["service"] = {
-                "name": service.get("metadata", {}).get("name"),
-                "type": service_spec.get("type"),
-                "clusterIP": service_spec.get("cluster_ip") or service_spec.get("clusterIP"),
-                "ports": service_spec.get("ports", []),
-            }
-
-        return response
-
-    except ApiException as e:
-        if e.status == 404:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Agent '{name}' not found in namespace '{namespace}'",
-            )
-        raise HTTPException(status_code=e.status, detail=str(e.reason))
+    return response
 
 
 @router.get("/{namespace}/{name}/route-status")
@@ -443,7 +700,7 @@ async def delete_agent(
     """Delete an agent and its associated resources from the cluster.
 
     This deletes:
-    - Deployment
+    - Deployment, StatefulSet, or Job (whichever exists)
     - Service
     - Shipwright Build CR (if exists)
     - Shipwright BuildRun CRs (if exist)
@@ -451,15 +708,35 @@ async def delete_agent(
     """
     messages = []
 
-    # Delete the Deployment
+    # Delete the Deployment (if exists)
     try:
         kube.delete_deployment(namespace=namespace, name=name)
         messages.append(f"Deployment '{name}' deleted")
     except ApiException as e:
         if e.status == 404:
-            logger.debug(f"Deployment '{name}' not found (may be legacy Agent CRD)")
+            logger.debug(f"Deployment '{name}' not found (may be other workload type)")
         else:
             logger.warning(f"Failed to delete Deployment '{name}': {e.reason}")
+
+    # Delete the StatefulSet (if exists)
+    try:
+        kube.delete_statefulset(namespace=namespace, name=name)
+        messages.append(f"StatefulSet '{name}' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            logger.debug(f"StatefulSet '{name}' not found")
+        else:
+            logger.warning(f"Failed to delete StatefulSet '{name}': {e.reason}")
+
+    # Delete the Job (if exists)
+    try:
+        kube.delete_job(namespace=namespace, name=name)
+        messages.append(f"Job '{name}' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            logger.debug(f"Job '{name}' not found")
+        else:
+            logger.warning(f"Failed to delete Job '{name}': {e.reason}")
 
     # Delete the Service
     try:
@@ -552,6 +829,529 @@ async def delete_agent(
             logger.warning(f"Failed to delete Shipwright Build '{name}': {e.reason}")
 
     return DeleteResponse(success=True, message="; ".join(messages))
+
+
+# =============================================================================
+# Migration Endpoints (Phase 4: Agent CRD to Deployment migration)
+# =============================================================================
+
+
+@router.get(
+    "/migration/migratable",
+    response_model=ListMigratableAgentsResponse,
+    summary="List agents that can be migrated from Agent CRD to Deployment",
+    tags=["migration"],
+)
+async def list_migratable_agents(
+    namespace: str = Query(default="default", description="Kubernetes namespace"),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> ListMigratableAgentsResponse:
+    """
+    List all Agent CRDs in a namespace that can be migrated to Deployments.
+
+    Returns information about each agent including whether a Deployment
+    already exists (indicating migration is complete).
+    """
+    try:
+        # List legacy Agent CRDs
+        agent_crds = kube.list_custom_resources(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTS_PLURAL,
+        )
+    except ApiException as e:
+        if e.status == 404:
+            # CRD not installed
+            return ListMigratableAgentsResponse(agents=[], total=0, already_migrated=0)
+        raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Get list of existing Deployments to check for already-migrated agents
+    try:
+        existing_deployments = kube.list_deployments(
+            namespace=namespace,
+            label_selector=f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_AGENT}",
+        )
+        existing_names = {d.get("metadata", {}).get("name") for d in existing_deployments}
+    except ApiException:
+        existing_names = set()
+
+    agents = []
+    already_migrated = 0
+
+    for agent in agent_crds:
+        metadata = agent.get("metadata", {})
+        name = metadata.get("name", "")
+        labels = metadata.get("labels", {})
+        has_deployment = name in existing_names
+
+        if has_deployment:
+            already_migrated += 1
+
+        # Get description from spec or annotations
+        spec = agent.get("spec", {})
+        description = spec.get("description") or metadata.get("annotations", {}).get(
+            KAGENTI_DESCRIPTION_ANNOTATION, ""
+        )
+
+        # Determine status
+        status = agent.get("status", {})
+        agent_status = "Unknown"
+        for cond in status.get("conditions", []):
+            if cond.get("type") == "Ready":
+                agent_status = "Ready" if cond.get("status") == "True" else "Not Ready"
+                break
+
+        agents.append(
+            MigratableAgentInfo(
+                name=name,
+                namespace=namespace,
+                status=agent_status,
+                has_deployment=has_deployment,
+                labels=labels,
+                description=description,
+            )
+        )
+
+    return ListMigratableAgentsResponse(
+        agents=agents,
+        total=len(agents),
+        already_migrated=already_migrated,
+    )
+
+
+@router.post(
+    "/{namespace}/{name}/migrate",
+    response_model=MigrateAgentResponse,
+    summary="Migrate an Agent CRD to a Deployment",
+    tags=["migration"],
+)
+async def migrate_agent(
+    namespace: str,
+    name: str,
+    request: MigrateAgentRequest = MigrateAgentRequest(),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> MigrateAgentResponse:
+    """
+    Migrate an Agent CRD to a Deployment.
+
+    This endpoint:
+    1. Reads the existing Agent CRD specification
+    2. Creates a Deployment with the same pod template
+    3. Creates a Service for the Deployment
+    4. Optionally deletes the Agent CRD (if delete_old=True)
+
+    If a Deployment already exists with the same name, the migration will fail
+    unless the existing Deployment was created by kagenti-operator (in which
+    case we just need to clean up the Agent CRD).
+    """
+    logger.info(f"Starting migration of Agent CRD '{name}' in namespace '{namespace}'")
+
+    deployment_created = False
+    service_created = False
+    agent_crd_deleted = False
+
+    # Step 1: Get the Agent CRD
+    try:
+        agent = kube.get_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTS_PLURAL,
+            name=name,
+        )
+    except ApiException as e:
+        if e.status == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Agent CRD '{name}' not found in namespace '{namespace}'",
+            )
+        raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 2: Check if Deployment already exists
+    deployment_exists = False
+    deployment_managed_by_operator = False
+    try:
+        existing_deployment = kube.get_deployment(namespace=namespace, name=name)
+        deployment_exists = True
+        # Check if it was created by kagenti-operator
+        dep_labels = existing_deployment.get("metadata", {}).get("labels", {})
+        deployment_managed_by_operator = (
+            dep_labels.get(APP_KUBERNETES_IO_CREATED_BY) == KAGENTI_OPERATOR_LABEL_NAME
+            or dep_labels.get(APP_KUBERNETES_IO_MANAGED_BY) == KAGENTI_OPERATOR_LABEL_NAME
+        )
+        logger.info(
+            f"Deployment '{name}' already exists, managed_by_operator={deployment_managed_by_operator}"
+        )
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 3: Check if Service already exists
+    service_exists = False
+    try:
+        kube.get_service(namespace=namespace, name=name)
+        service_exists = True
+        logger.info(f"Service '{name}' already exists")
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 4: Build and create Deployment (if needed)
+    if deployment_exists:
+        if deployment_managed_by_operator:
+            # Deployment was created by operator, we just need to update labels
+            # to mark it as migrated (managed by kagenti-ui now)
+            try:
+                patch = {
+                    "metadata": {
+                        "labels": {
+                            APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+                        },
+                        "annotations": {
+                            MIGRATION_SOURCE_ANNOTATION: "agent-crd",
+                            MIGRATION_TIMESTAMP_ANNOTATION: datetime.now(timezone.utc).isoformat(),
+                        },
+                    }
+                }
+                kube.patch_deployment(namespace=namespace, name=name, body=patch)
+                logger.info(f"Patched Deployment '{name}' with migration annotations")
+            except ApiException as e:
+                logger.warning(f"Failed to patch Deployment '{name}': {e.reason}")
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Deployment '{name}' already exists and was not created by kagenti-operator. "
+                "Cannot migrate. Delete the existing Deployment first or use a different name.",
+            )
+    else:
+        # Create new Deployment from Agent CRD spec
+        deployment_manifest = _build_deployment_from_agent_crd(agent)
+        try:
+            kube.create_deployment(namespace=namespace, body=deployment_manifest)
+            deployment_created = True
+            logger.info(f"Created Deployment '{name}' from Agent CRD")
+        except ApiException as e:
+            raise HTTPException(
+                status_code=e.status,
+                detail=f"Failed to create Deployment: {e.reason}",
+            )
+
+    # Step 5: Build and create Service (if needed)
+    if not service_exists:
+        service_manifest = _build_service_from_agent_crd(agent)
+        try:
+            kube.create_service(namespace=namespace, body=service_manifest)
+            service_created = True
+            logger.info(f"Created Service '{name}' from Agent CRD")
+        except ApiException as e:
+            # If Deployment was created, try to clean up
+            if deployment_created:
+                try:
+                    kube.delete_deployment(namespace=namespace, name=name)
+                except Exception:
+                    pass
+            raise HTTPException(
+                status_code=e.status,
+                detail=f"Failed to create Service: {e.reason}",
+            )
+
+    # Step 6: Delete the Agent CRD (if requested)
+    if request.delete_old:
+        try:
+            kube.delete_custom_resource(
+                group=CRD_GROUP,
+                version=CRD_VERSION,
+                namespace=namespace,
+                plural=AGENTS_PLURAL,
+                name=name,
+            )
+            agent_crd_deleted = True
+            logger.info(f"Deleted Agent CRD '{name}'")
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Failed to delete Agent CRD '{name}': {e.reason}")
+
+    # Build response message
+    messages = []
+    if deployment_created:
+        messages.append("Deployment created")
+    elif deployment_exists and deployment_managed_by_operator:
+        messages.append("Deployment updated (was created by operator)")
+    if service_created:
+        messages.append("Service created")
+    elif service_exists:
+        messages.append("Service already exists")
+    if agent_crd_deleted:
+        messages.append("Agent CRD deleted")
+    elif request.delete_old:
+        messages.append("Agent CRD deletion requested but skipped")
+
+    return MigrateAgentResponse(
+        success=True,
+        migrated=True,
+        name=name,
+        namespace=namespace,
+        message="; ".join(messages) if messages else "Migration completed",
+        deployment_created=deployment_created,
+        service_created=service_created,
+        agent_crd_deleted=agent_crd_deleted,
+    )
+
+
+@router.post(
+    "/migration/migrate-all",
+    response_model=Dict[str, Any],
+    summary="Migrate all Agent CRDs in a namespace to Deployments",
+    tags=["migration"],
+)
+async def migrate_all_agents(
+    namespace: str = Query(default="default", description="Kubernetes namespace"),
+    delete_old: bool = Query(default=False, description="Delete Agent CRDs after migration"),
+    dry_run: bool = Query(default=True, description="If True, only show what would be migrated"),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> Dict[str, Any]:
+    """
+    Migrate all Agent CRDs in a namespace to Deployments.
+
+    Use dry_run=True (default) to see what would be migrated before actually performing
+    the migration. Set dry_run=False to execute the migration.
+    """
+    # First, get the list of migratable agents
+    migratable = await list_migratable_agents(namespace=namespace, kube=kube)
+
+    results = {
+        "namespace": namespace,
+        "dry_run": dry_run,
+        "delete_old": delete_old,
+        "total_agents": migratable.total,
+        "already_migrated": migratable.already_migrated,
+        "to_migrate": migratable.total - migratable.already_migrated,
+        "migrated": [],
+        "skipped": [],
+        "failed": [],
+    }
+
+    for agent_info in migratable.agents:
+        if agent_info.has_deployment:
+            results["skipped"].append(
+                {
+                    "name": agent_info.name,
+                    "reason": "Deployment already exists",
+                }
+            )
+            continue
+
+        if dry_run:
+            results["migrated"].append(
+                {
+                    "name": agent_info.name,
+                    "status": "would be migrated (dry-run)",
+                }
+            )
+        else:
+            try:
+                result = await migrate_agent(
+                    namespace=namespace,
+                    name=agent_info.name,
+                    request=MigrateAgentRequest(delete_old=delete_old),
+                    kube=kube,
+                )
+                results["migrated"].append(
+                    {
+                        "name": agent_info.name,
+                        "status": "migrated",
+                        "message": result.message,
+                    }
+                )
+            except HTTPException as e:
+                results["failed"].append(
+                    {
+                        "name": agent_info.name,
+                        "error": e.detail,
+                    }
+                )
+            except Exception as e:
+                results["failed"].append(
+                    {
+                        "name": agent_info.name,
+                        "error": str(e),
+                    }
+                )
+
+    return results
+
+
+def _build_deployment_from_agent_crd(agent: dict) -> dict:
+    """
+    Build a Kubernetes Deployment manifest from an Agent CRD.
+
+    Args:
+        agent: The Agent CRD resource dictionary.
+
+    Returns:
+        Deployment manifest dictionary.
+    """
+    metadata = agent.get("metadata", {})
+    spec = agent.get("spec", {})
+    name = metadata.get("name", "")
+    namespace = metadata.get("namespace", "default")
+
+    # Get labels from Agent CRD and update for Deployment
+    labels = metadata.get("labels", {}).copy()
+    labels[KAGENTI_WORKLOAD_TYPE_LABEL] = WORKLOAD_TYPE_DEPLOYMENT
+    labels[APP_KUBERNETES_IO_MANAGED_BY] = KAGENTI_UI_CREATOR_LABEL
+
+    # Get annotations
+    annotations = metadata.get("annotations", {}).copy()
+    annotations[MIGRATION_SOURCE_ANNOTATION] = "agent-crd"
+    annotations[MIGRATION_TIMESTAMP_ANNOTATION] = datetime.now(timezone.utc).isoformat()
+
+    # Description
+    description = spec.get("description", "")
+    if description:
+        annotations[KAGENTI_DESCRIPTION_ANNOTATION] = description
+
+    # Extract pod template from Agent CRD
+    pod_template_spec = spec.get("podTemplateSpec", {})
+    pod_spec = pod_template_spec.get("spec", {})
+
+    # If no pod template, try to build one from imageSource
+    if not pod_spec:
+        image_source = spec.get("imageSource", {})
+        image = image_source.get("image", "")
+        if not image:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Agent CRD '{name}' has no podTemplateSpec or imageSource.image",
+            )
+
+        pod_spec = {
+            "containers": [
+                {
+                    "name": "agent",
+                    "image": image,
+                    "imagePullPolicy": DEFAULT_IMAGE_POLICY,
+                    "resources": {
+                        "limits": DEFAULT_RESOURCE_LIMITS,
+                        "requests": DEFAULT_RESOURCE_REQUESTS,
+                    },
+                    "ports": [
+                        {
+                            "name": "http",
+                            "containerPort": DEFAULT_IN_CLUSTER_PORT,
+                            "protocol": "TCP",
+                        }
+                    ],
+                    "volumeMounts": [
+                        {"name": "cache", "mountPath": "/app/.cache"},
+                        {"name": "shared-data", "mountPath": "/shared"},
+                    ],
+                }
+            ],
+            "volumes": [
+                {"name": "cache", "emptyDir": {}},
+                {"name": "shared-data", "emptyDir": {}},
+            ],
+        }
+
+    # Build selector labels
+    selector_labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
+        APP_KUBERNETES_IO_NAME: name,
+    }
+
+    # Build pod template labels (merge selector labels with other labels)
+    pod_labels = labels.copy()
+
+    # Get replicas
+    replicas = spec.get("replicas", 1)
+
+    return {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+            "annotations": annotations,
+        },
+        "spec": {
+            "replicas": replicas,
+            "selector": {
+                "matchLabels": selector_labels,
+            },
+            "template": {
+                "metadata": {
+                    "labels": pod_labels,
+                },
+                "spec": pod_spec,
+            },
+        },
+    }
+
+
+def _build_service_from_agent_crd(agent: dict) -> dict:
+    """
+    Build a Kubernetes Service manifest from an Agent CRD.
+
+    Args:
+        agent: The Agent CRD resource dictionary.
+
+    Returns:
+        Service manifest dictionary.
+    """
+    metadata = agent.get("metadata", {})
+    spec = agent.get("spec", {})
+    name = metadata.get("name", "")
+    namespace = metadata.get("namespace", "default")
+
+    # Get labels
+    labels = metadata.get("labels", {}).copy()
+    labels[APP_KUBERNETES_IO_MANAGED_BY] = KAGENTI_UI_CREATOR_LABEL
+
+    # Build selector labels
+    selector_labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
+        APP_KUBERNETES_IO_NAME: name,
+    }
+
+    # Get service ports from Agent CRD
+    service_ports_spec = spec.get("servicePorts", [])
+    if service_ports_spec:
+        service_ports = [
+            {
+                "name": sp.get("name", "http"),
+                "port": sp.get("port", DEFAULT_OFF_CLUSTER_PORT),
+                "targetPort": sp.get("targetPort", DEFAULT_IN_CLUSTER_PORT),
+                "protocol": sp.get("protocol", "TCP"),
+            }
+            for sp in service_ports_spec
+        ]
+    else:
+        service_ports = [
+            {
+                "name": "http",
+                "port": DEFAULT_OFF_CLUSTER_PORT,
+                "targetPort": DEFAULT_IN_CLUSTER_PORT,
+                "protocol": "TCP",
+            }
+        ]
+
+    return {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+        },
+        "spec": {
+            "type": "ClusterIP",
+            "selector": selector_labels,
+            "ports": service_ports,
+        },
+    }
 
 
 @router.get(
@@ -1074,6 +1874,7 @@ def _build_agent_shipwright_build_manifest(request: CreateAgentRequest) -> dict:
         "framework": request.framework,
         "createHttpRoute": request.createHttpRoute,
         "registrySecret": request.registrySecret,
+        "workloadType": request.workloadType,  # Store workload type for finalization
     }
     # Add env vars if present
     if request.envVars:
@@ -1488,21 +2289,99 @@ def _build_statefulset_manifest(
     """
     Build a Kubernetes StatefulSet manifest for an agent.
 
-    NOTE: StatefulSet support is planned for Phase 5. This function serves as
-    a placeholder to define the interface.
+    StatefulSets are useful for agents that require:
+    - Stable, unique network identifiers
+    - Stable, persistent storage
+    - Ordered, graceful deployment and scaling
+    - Ordered, automated rolling updates
 
     Args:
         request: The agent creation request.
         image: The container image URL.
         shipwright_build_name: Optional name of the Shipwright Build.
 
-    Raises:
-        NotImplementedError: StatefulSet support is not yet implemented.
+    Returns:
+        StatefulSet manifest dictionary.
     """
-    raise NotImplementedError(
-        "StatefulSet support is planned for Phase 5. "
-        "Currently only Deployment workloads are supported."
-    )
+    env_vars = _build_env_vars(request)
+    labels = _build_common_labels(request, WORKLOAD_TYPE_STATEFULSET)
+    selector_labels = _build_selector_labels(request)
+
+    # Build annotations
+    annotations: Dict[str, str] = {
+        KAGENTI_DESCRIPTION_ANNOTATION: f"Agent '{request.name}' deployed as StatefulSet from UI.",
+    }
+    if shipwright_build_name:
+        annotations["kagenti.io/shipwright-build"] = shipwright_build_name
+
+    # Build container ports
+    container_port = DEFAULT_IN_CLUSTER_PORT
+    if request.servicePorts and len(request.servicePorts) > 0:
+        container_port = request.servicePorts[0].targetPort
+
+    manifest = {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "name": request.name,
+            "namespace": request.namespace,
+            "labels": labels,
+            "annotations": annotations,
+        },
+        "spec": {
+            "serviceName": request.name,  # StatefulSet requires a headless service name
+            "replicas": 1,
+            "selector": {
+                "matchLabels": selector_labels,
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        **labels,
+                    },
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "agent",
+                            "image": image,
+                            "imagePullPolicy": DEFAULT_IMAGE_POLICY,
+                            "resources": {
+                                "limits": DEFAULT_RESOURCE_LIMITS,
+                                "requests": DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "env": env_vars,
+                            "ports": [
+                                {
+                                    "name": "http",
+                                    "containerPort": container_port,
+                                    "protocol": "TCP",
+                                },
+                            ],
+                            "volumeMounts": [
+                                {"name": "cache", "mountPath": "/app/.cache"},
+                                {"name": "marvin", "mountPath": "/.marvin"},
+                                {"name": "shared-data", "mountPath": "/shared"},
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {"name": "cache", "emptyDir": {}},
+                        {"name": "marvin", "emptyDir": {}},
+                        {"name": "shared-data", "emptyDir": {}},
+                    ],
+                },
+            },
+        },
+    }
+
+    # Add image pull secrets if specified
+    if request.imagePullSecret:
+        manifest["spec"]["template"]["spec"]["imagePullSecrets"] = [
+            {"name": request.imagePullSecret}
+        ]
+
+    return manifest
 
 
 def _build_job_manifest(
@@ -1513,20 +2392,95 @@ def _build_job_manifest(
     """
     Build a Kubernetes Job manifest for an agent.
 
-    NOTE: Job support is planned for Phase 5. This function serves as
-    a placeholder to define the interface.
+    Jobs are useful for agents that:
+    - Run to completion (batch processing)
+    - Should not be restarted automatically
+    - Perform one-time tasks or scheduled workloads
 
     Args:
         request: The agent creation request.
         image: The container image URL.
         shipwright_build_name: Optional name of the Shipwright Build.
 
-    Raises:
-        NotImplementedError: Job support is not yet implemented.
+    Returns:
+        Job manifest dictionary.
     """
-    raise NotImplementedError(
-        "Job support is planned for Phase 5. Currently only Deployment workloads are supported."
-    )
+    env_vars = _build_env_vars(request)
+    labels = _build_common_labels(request, WORKLOAD_TYPE_JOB)
+    selector_labels = _build_selector_labels(request)
+
+    # Build annotations
+    annotations: Dict[str, str] = {
+        KAGENTI_DESCRIPTION_ANNOTATION: f"Agent '{request.name}' deployed as Job from UI.",
+    }
+    if shipwright_build_name:
+        annotations["kagenti.io/shipwright-build"] = shipwright_build_name
+
+    # Build container ports
+    container_port = DEFAULT_IN_CLUSTER_PORT
+    if request.servicePorts and len(request.servicePorts) > 0:
+        container_port = request.servicePorts[0].targetPort
+
+    manifest = {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": request.name,
+            "namespace": request.namespace,
+            "labels": labels,
+            "annotations": annotations,
+        },
+        "spec": {
+            "backoffLimit": 3,  # Number of retries before considering the job failed
+            "template": {
+                "metadata": {
+                    "labels": {
+                        **labels,
+                    },
+                },
+                "spec": {
+                    "restartPolicy": "OnFailure",
+                    "containers": [
+                        {
+                            "name": "agent",
+                            "image": image,
+                            "imagePullPolicy": DEFAULT_IMAGE_POLICY,
+                            "resources": {
+                                "limits": DEFAULT_RESOURCE_LIMITS,
+                                "requests": DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "env": env_vars,
+                            "ports": [
+                                {
+                                    "name": "http",
+                                    "containerPort": container_port,
+                                    "protocol": "TCP",
+                                },
+                            ],
+                            "volumeMounts": [
+                                {"name": "cache", "mountPath": "/app/.cache"},
+                                {"name": "marvin", "mountPath": "/.marvin"},
+                                {"name": "shared-data", "mountPath": "/shared"},
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {"name": "cache", "emptyDir": {}},
+                        {"name": "marvin", "emptyDir": {}},
+                        {"name": "shared-data", "emptyDir": {}},
+                    ],
+                },
+            },
+        },
+    }
+
+    # Add image pull secrets if specified
+    if request.imagePullSecret:
+        manifest["spec"]["template"]["spec"]["imagePullSecrets"] = [
+            {"name": request.imagePullSecret}
+        ]
+
+    return manifest
 
 
 @router.post("", response_model=CreateAgentResponse)
@@ -1539,44 +2493,76 @@ async def create_agent(
 
     Supports two deployment methods:
     - 'source': Build from git repository using Shipwright Build + BuildRun
-    - 'image': Deploy from existing container image as Deployment + Service
+    - 'image': Deploy from existing container image as workload + Service
+
+    Supports three workload types:
+    - 'deployment': Standard Kubernetes Deployment (default)
+    - 'statefulset': StatefulSet for stateful agents
+    - 'job': Job for batch/one-time agents
     """
     logger.info(
         f"Creating agent '{request.name}' in namespace '{request.namespace}', "
+        f"workloadType={request.workloadType}, "
         f"createHttpRoute={request.createHttpRoute}, useShipwright={request.useShipwright}"
     )
     try:
         if request.deploymentMethod == "image":
-            # Deploy from existing container image as Deployment + Service
+            # Deploy from existing container image
             if not request.containerImage:
                 raise HTTPException(
                     status_code=400,
                     detail="containerImage is required for image deployment",
                 )
 
-            # Create Deployment
-            deployment_manifest = _build_deployment_manifest(
-                request=request,
-                image=request.containerImage,
-            )
-            kube.create_deployment(
-                namespace=request.namespace,
-                body=deployment_manifest,
-            )
-            logger.info(f"Created Deployment '{request.name}' in namespace '{request.namespace}'")
+            # Create workload based on workloadType
+            if request.workloadType == WORKLOAD_TYPE_DEPLOYMENT:
+                workload_manifest = _build_deployment_manifest(
+                    request=request,
+                    image=request.containerImage,
+                )
+                kube.create_deployment(
+                    namespace=request.namespace,
+                    body=workload_manifest,
+                )
+                logger.info(
+                    f"Created Deployment '{request.name}' in namespace '{request.namespace}'"
+                )
+            elif request.workloadType == WORKLOAD_TYPE_STATEFULSET:
+                workload_manifest = _build_statefulset_manifest(
+                    request=request,
+                    image=request.containerImage,
+                )
+                kube.create_statefulset(
+                    namespace=request.namespace,
+                    body=workload_manifest,
+                )
+                logger.info(
+                    f"Created StatefulSet '{request.name}' in namespace '{request.namespace}'"
+                )
+            elif request.workloadType == WORKLOAD_TYPE_JOB:
+                workload_manifest = _build_job_manifest(
+                    request=request,
+                    image=request.containerImage,
+                )
+                kube.create_job(
+                    namespace=request.namespace,
+                    body=workload_manifest,
+                )
+                logger.info(f"Created Job '{request.name}' in namespace '{request.namespace}'")
 
-            # Create Service
-            service_manifest = _build_service_manifest(request)
-            kube.create_service(
-                namespace=request.namespace,
-                body=service_manifest,
-            )
-            logger.info(f"Created Service '{request.name}' in namespace '{request.namespace}'")
+            # Create Service (not needed for Jobs)
+            if request.workloadType != WORKLOAD_TYPE_JOB:
+                service_manifest = _build_service_manifest(request)
+                kube.create_service(
+                    namespace=request.namespace,
+                    body=service_manifest,
+                )
+                logger.info(f"Created Service '{request.name}' in namespace '{request.namespace}'")
 
-            message = f"Agent '{request.name}' deployed successfully."
+            message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
 
-            # Create HTTPRoute/Route if requested
-            if request.createHttpRoute:
+            # Create HTTPRoute/Route if requested (not applicable for Jobs)
+            if request.createHttpRoute and request.workloadType != WORKLOAD_TYPE_JOB:
                 service_port = (
                     request.servicePorts[0].port
                     if request.servicePorts
@@ -1867,6 +2853,7 @@ async def finalize_shipwright_build(
             if request.imagePullSecret is not None
             else stored_config.get("registrySecret")
         )
+        final_workload_type = stored_config.get("workloadType", WORKLOAD_TYPE_DEPLOYMENT)
 
         # For envVars and servicePorts, use request if provided, otherwise use stored config
         final_env_vars = request.envVars
@@ -1879,7 +2866,7 @@ async def finalize_shipwright_build(
             # Convert stored dict format back to ServicePort objects
             final_service_ports = [ServicePort(**sp) for sp in stored_config["servicePorts"]]
 
-        # Step 3: Create Deployment + Service with the built image
+        # Step 3: Create workload + Service with the built image
         # Build a CreateAgentRequest-like object for manifest builders
         agent_request = CreateAgentRequest(
             name=name,
@@ -1887,6 +2874,7 @@ async def finalize_shipwright_build(
             protocol=final_protocol,
             framework=final_framework,
             deploymentMethod="image",
+            workloadType=final_workload_type,
             containerImage=container_image,
             imagePullSecret=final_registry_secret,
             envVars=final_env_vars,
@@ -1894,40 +2882,76 @@ async def finalize_shipwright_build(
             createHttpRoute=final_create_route,
         )
 
-        # Create Deployment
-        deployment_manifest = _build_deployment_manifest(
-            request=agent_request,
-            image=container_image,
-            shipwright_build_name=name,
-        )
-        # Add additional labels from Build
-        deployment_manifest["metadata"]["labels"].update(
-            {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
-        )
-        # Also update pod template labels
-        deployment_manifest["spec"]["template"]["metadata"]["labels"].update(
-            {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
-        )
+        # Create workload based on workloadType
+        if final_workload_type == WORKLOAD_TYPE_DEPLOYMENT:
+            workload_manifest = _build_deployment_manifest(
+                request=agent_request,
+                image=container_image,
+                shipwright_build_name=name,
+            )
+            # Add additional labels from Build
+            workload_manifest["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            # Also update pod template labels
+            workload_manifest["spec"]["template"]["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            kube.create_deployment(namespace=namespace, body=workload_manifest)
+            logger.info(
+                f"Created Deployment '{name}' with image '{container_image}' in namespace '{namespace}'"
+            )
+        elif final_workload_type == WORKLOAD_TYPE_STATEFULSET:
+            workload_manifest = _build_statefulset_manifest(
+                request=agent_request,
+                image=container_image,
+                shipwright_build_name=name,
+            )
+            # Add additional labels from Build
+            workload_manifest["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            # Also update pod template labels
+            workload_manifest["spec"]["template"]["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            kube.create_statefulset(namespace=namespace, body=workload_manifest)
+            logger.info(
+                f"Created StatefulSet '{name}' with image '{container_image}' in namespace '{namespace}'"
+            )
+        elif final_workload_type == WORKLOAD_TYPE_JOB:
+            workload_manifest = _build_job_manifest(
+                request=agent_request,
+                image=container_image,
+                shipwright_build_name=name,
+            )
+            # Add additional labels from Build
+            workload_manifest["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            # Also update pod template labels
+            workload_manifest["spec"]["template"]["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            kube.create_job(namespace=namespace, body=workload_manifest)
+            logger.info(
+                f"Created Job '{name}' with image '{container_image}' in namespace '{namespace}'"
+            )
 
-        kube.create_deployment(namespace=namespace, body=deployment_manifest)
-        logger.info(
-            f"Created Deployment '{name}' with image '{container_image}' in namespace '{namespace}'"
-        )
+        # Create Service (not needed for Jobs)
+        if final_workload_type != WORKLOAD_TYPE_JOB:
+            service_manifest = _build_service_manifest(agent_request)
+            # Add additional labels from Build
+            service_manifest["metadata"]["labels"].update(
+                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            )
+            kube.create_service(namespace=namespace, body=service_manifest)
+            logger.info(f"Created Service '{name}' in namespace '{namespace}'")
 
-        # Create Service
-        service_manifest = _build_service_manifest(agent_request)
-        # Add additional labels from Build
-        service_manifest["metadata"]["labels"].update(
-            {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
-        )
+        message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."
 
-        kube.create_service(namespace=namespace, body=service_manifest)
-        logger.info(f"Created Service '{name}' in namespace '{namespace}'")
-
-        message = f"Agent '{name}' deployed successfully with image '{output_image}'."
-
-        # Step 4: Create HTTPRoute/Route if requested (use merged config value)
-        if final_create_route:
+        # Step 4: Create HTTPRoute/Route if requested (not applicable for Jobs)
+        if final_create_route and final_workload_type != WORKLOAD_TYPE_JOB:
             service_port = (
                 final_service_ports[0].port if final_service_ports else DEFAULT_OFF_CLUSTER_PORT
             )

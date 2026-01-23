@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
     shipwright_default_timeout: str = "15m"
 
+    # Migration settings (Phase 4: Agent CRD to Deployment migration)
+    # When True, list_agents will also include legacy Agent CRDs that haven't been migrated
+    enable_legacy_agent_crd: bool = True  # Set to False after full migration
+
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"
     enabled_namespace_label_key: str = "kagenti-enabled"

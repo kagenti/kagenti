@@ -151,6 +151,9 @@ export const ImportAgentPage: React.FC = () => {
   const [showEnvVars, setShowEnvVars] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
+  // Workload type
+  const [workloadType, setWorkloadType] = useState<'deployment' | 'statefulset' | 'job'>('deployment');
+
   // HTTPRoute/Route creation
   const [createHttpRoute, setCreateHttpRoute] = useState(false);
 
@@ -426,6 +429,8 @@ export const ImportAgentPage: React.FC = () => {
         protocol: 'a2a',
         framework,
         envVars: envVars.filter((ev) => ev.name && (ev.value || ev.valueFrom)),
+        // Workload type
+        workloadType,
         // Additional fields for build from source
         deploymentMethod: 'source',
         registryUrl: getRegistryUrl(),
@@ -450,6 +455,8 @@ export const ImportAgentPage: React.FC = () => {
         protocol: 'a2a',
         framework,
         envVars: envVars.filter((ev) => ev.name && (ev.value || ev.valueFrom)),
+        // Workload type
+        workloadType,
         // Additional fields for image deployment
         deploymentMethod: 'image',
         containerImage: fullImage,
@@ -882,22 +889,24 @@ export const ImportAgentPage: React.FC = () => {
                 </FormSelect>
               </FormGroup>
 
-              {/* Workload Type Selection (Phase 5 - Currently only Deployment supported) */}
+              {/* Workload Type Selection */}
               <FormGroup label="Workload Type" fieldId="workloadType">
                 <FormSelect
                   id="workloadType"
-                  value="deployment"
-                  isDisabled
+                  value={workloadType}
+                  onChange={(_e, value) => setWorkloadType(value as 'deployment' | 'statefulset' | 'job')}
                   aria-label="Workload type selector"
                 >
                   <FormSelectOption value="deployment" label="Deployment (Recommended)" />
-                  <FormSelectOption value="statefulset" label="StatefulSet" isDisabled />
-                  <FormSelectOption value="job" label="Job" isDisabled />
+                  <FormSelectOption value="statefulset" label="StatefulSet" />
+                  <FormSelectOption value="job" label="Job" />
                 </FormSelect>
                 <FormHelperText>
                   <HelperText>
                     <HelperTextItem>
-                      StatefulSet and Job support coming in a future release
+                      {workloadType === 'deployment' && 'Standard deployment for long-running agents with auto-restart'}
+                      {workloadType === 'statefulset' && 'For stateful agents requiring stable network identity and persistent storage'}
+                      {workloadType === 'job' && 'For batch/one-time agents that run to completion'}
                     </HelperTextItem>
                   </HelperText>
                 </FormHelperText>

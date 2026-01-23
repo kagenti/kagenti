@@ -619,80 +619,202 @@ export interface CreateAgentRequest {
 
 **Goal:** Provide tools to migrate existing Agent CRD resources to Deployments.
 
-#### 4.1 Migration Script
+**Status:** ✅ Implemented
 
-Create a CLI script to migrate existing agents:
+#### 4.1 CLI Migration Script
+
+**File:** `kagenti/tools/migrate_agents.py`
+
+A command-line tool for migrating Agent CRDs to Kubernetes Deployments.
+
+##### Installation
+
+The script is included in the kagenti package. Ensure you have the kubernetes Python package installed:
 
 ```bash
-# Usage
-python -m kagenti.tools.migrate_agents \
-  --namespace team1 \
-  --dry-run \
-  --delete-old
+pip install kubernetes
 ```
 
-**Logic:**
-1. List all Agent CRDs in namespace
-2. For each Agent:
-   - Extract pod template spec
-   - Create Deployment with same spec
-   - Create Service
-   - Verify Deployment is running
-   - (Optional) Delete Agent CRD
+##### Usage
 
-#### 4.2 Backend Migration Endpoint (Optional)
+```bash
+# Basic usage - list agents that can be migrated (dry-run by default)
+python -m kagenti.tools.migrate_agents --namespace <namespace>
 
-```python
-@router.post("/agents/{namespace}/{name}/migrate")
-async def migrate_agent(namespace: str, name: str, delete_old: bool = False):
-    """Migrate an Agent CRD to a Deployment."""
-    # Get existing Agent CRD
-    agent = k8s.get_custom_resource(AGENT_GROUP, AGENT_VERSION, namespace, "agents", name)
+# Dry-run migration (shows what would happen without making changes)
+python -m kagenti.tools.migrate_agents --namespace team1 --dry-run
 
-    # Build Deployment from Agent spec
-    deployment = _build_deployment_from_agent_crd(agent)
-    service = _build_service_from_agent_crd(agent)
+# Actually perform the migration
+python -m kagenti.tools.migrate_agents --namespace team1 --no-dry-run
 
-    # Create new resources
-    k8s.create_deployment(namespace, deployment)
-    k8s.create_service(namespace, service)
+# Migrate and delete old Agent CRDs after successful migration
+python -m kagenti.tools.migrate_agents --namespace team1 --no-dry-run --delete-old
 
-    # Optionally delete old Agent CRD
-    if delete_old:
-        k8s.delete_custom_resource(AGENT_GROUP, AGENT_VERSION, namespace, "agents", name)
+# Migrate a specific agent only
+python -m kagenti.tools.migrate_agents --namespace team1 --agent my-agent --no-dry-run
 
-    return {"migrated": True, "deployment": name, "service": name}
+# Output results as JSON (useful for scripting)
+python -m kagenti.tools.migrate_agents --namespace team1 --json
+
+# Verbose output for debugging
+python -m kagenti.tools.migrate_agents --namespace team1 -v
 ```
+
+##### Command-Line Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--namespace` | `-n` | `default` | Kubernetes namespace to migrate agents from |
+| `--agent` | `-a` | (all) | Specific agent name to migrate (migrates all if not specified) |
+| `--dry-run` | | `True` | Show what would be done without making changes |
+| `--no-dry-run` | | | Actually perform the migration |
+| `--delete-old` | | `False` | Delete Agent CRDs after successful migration |
+| `--json` | | `False` | Output results as JSON |
+| `--verbose` | `-v` | `False` | Enable verbose logging |
+
+##### Migration Logic
+
+1. **List Agent CRDs**: Query all Agent CRDs in the specified namespace
+2. **Check for existing Deployments**: Skip agents that already have a Deployment with the same name
+3. **Build Deployment manifest**: Extract configuration from Agent CRD and build Deployment spec
+4. **Build Service manifest**: Create matching Service for the agent
+5. **Create resources**: Apply Deployment and Service to cluster
+6. **Cleanup (optional)**: Delete the original Agent CRD if `--delete-old` is specified
+
+##### Migration Annotations
+
+Migrated Deployments include tracking annotations:
+
+```yaml
+annotations:
+  kagenti.io/migrated-from: "agent-crd"
+  kagenti.io/migration-timestamp: "2026-01-23T10:30:00+00:00"
+```
+
+##### Example Output
+
+```
+============================================================
+Kagenti Agent CRD Migration - DRY-RUN
+============================================================
+Namespace: team1
+Delete old CRDs: False
+Total Agent CRDs found: 3
+============================================================
+
+🔍 weather-agent: dry-run
+   - Would create Deployment
+   - Would create Service
+
+🔍 chat-agent: dry-run
+   - Would create Deployment
+   - Service already exists
+
+⏭️ data-processor: skipped
+   - Deployment already exists
+
+============================================================
+SUMMARY
+============================================================
+Total: 3
+Would migrate: 2
+Skipped (already migrated): 1
+Failed: 0
+============================================================
+
+💡 This was a dry-run. Use --no-dry-run to actually perform the migration.
+```
+
+##### JSON Output Format
+
+When using `--json`, the output follows this structure:
+
+```json
+{
+  "namespace": "team1",
+  "dry_run": true,
+  "delete_old": false,
+  "total": 3,
+  "migrated": 0,
+  "skipped": 1,
+  "failed": 0,
+  "dry_run_count": 2,
+  "results": [
+    {
+      "name": "weather-agent",
+      "namespace": "team1",
+      "status": "dry-run",
+      "deployment_created": false,
+      "service_created": false,
+      "agent_crd_deleted": false,
+      "messages": ["Would create Deployment", "Would create Service"],
+      "errors": []
+    }
+  ]
+}
+```
+
+#### 4.2 Backend Migration Endpoints
+
+**File:** `kagenti/backend/app/routers/agents.py`
+
+Three API endpoints are available for migration:
+
+##### List Migratable Agents
+
+```http
+GET /agents/migration/migratable?namespace=team1
+```
+
+Returns a list of Agent CRDs that can be migrated, indicating which already have Deployments.
+
+##### Migrate Single Agent
+
+```http
+POST /agents/{namespace}/{name}/migrate
+Content-Type: application/json
+
+{
+  "delete_old": false
+}
+```
+
+Migrates a single Agent CRD to a Deployment.
+
+##### Batch Migration
+
+```http
+POST /agents/migration/migrate-all?namespace=team1&dry_run=true&delete_old=false
+```
+
+Migrates all Agent CRDs in a namespace with optional dry-run mode.
 
 #### 4.3 Backward Compatibility Period
 
-During migration, support both Agent CRD and Deployment:
+**File:** `kagenti/backend/app/core/config.py`
+
+During the migration period, the backend supports both Agent CRDs and Deployments via the `enable_legacy_agent_crd` setting:
 
 ```python
-@router.get("/agents")
-async def list_agents(namespace: str):
-    agents = []
-
-    # List Deployment-based agents
-    deployments = k8s.list_deployments(namespace, f"{LABEL_KAGENTI_TYPE}=agent")
-    for d in deployments:
-        agents.append(_deployment_to_agent(d))
-
-    # List legacy Agent CRD agents (during migration period)
-    if ENABLE_LEGACY_AGENT_CRD:
-        try:
-            crd_agents = k8s.list_custom_resources(
-                AGENT_GROUP, AGENT_VERSION, namespace, "agents"
-            )
-            for a in crd_agents:
-                # Skip if already migrated (Deployment exists)
-                if not any(agent["name"] == a["metadata"]["name"] for agent in agents):
-                    agents.append(_agent_crd_to_agent(a))
-        except Exception:
-            pass  # CRD not installed
-
-    return agents
+# config.py
+enable_legacy_agent_crd: bool = True  # Set to False after full migration
 ```
+
+When enabled, the `list_agents` endpoint will:
+
+1. Query Deployments with `kagenti.io/type=agent` label
+2. Query Agent CRDs in the namespace
+3. Skip Agent CRDs that already have a corresponding Deployment (already migrated)
+4. Return a combined list of both Deployment-based and CRD-based agents
+
+##### Disabling Legacy Support
+
+After migration is complete:
+
+1. Set `ENABLE_LEGACY_AGENT_CRD=false` environment variable
+2. Restart the backend service
+3. Only Deployment-based agents will be listed
+4. Agent CRDs can be cleaned up from the cluster
 
 ---
 

@@ -135,6 +135,8 @@ export const agentService = {
         configMapKeyRef?: { name: string; key: string };
       };
     }>;
+    // Workload type
+    workloadType?: 'deployment' | 'statefulset' | 'job';
     // New fields for deployment method
     deploymentMethod?: 'source' | 'image';
     // Build from source fields

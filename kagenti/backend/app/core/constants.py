@@ -39,11 +39,15 @@ RESOURCE_TYPE_TOOL = "tool"
 
 # Workload types for agent deployment
 WORKLOAD_TYPE_DEPLOYMENT = "deployment"
-WORKLOAD_TYPE_STATEFULSET = "statefulset"  # Future - Phase 5
-WORKLOAD_TYPE_JOB = "job"  # Future - Phase 5
+WORKLOAD_TYPE_STATEFULSET = "statefulset"
+WORKLOAD_TYPE_JOB = "job"
 
-# Supported workload types (currently only deployment)
-SUPPORTED_WORKLOAD_TYPES = [WORKLOAD_TYPE_DEPLOYMENT]
+# Supported workload types
+SUPPORTED_WORKLOAD_TYPES = [
+    WORKLOAD_TYPE_DEPLOYMENT,
+    WORKLOAD_TYPE_STATEFULSET,
+    WORKLOAD_TYPE_JOB,
+]
 
 # Namespace labels
 ENABLED_NAMESPACE_LABEL_KEY = settings.enabled_namespace_label_key
@@ -86,6 +90,13 @@ DEFAULT_INTERNAL_REGISTRY = "registry.cr-system.svc.cluster.local:5000"
 # Default resource limits
 DEFAULT_RESOURCE_LIMITS = {"cpu": "500m", "memory": "1Gi"}
 DEFAULT_RESOURCE_REQUESTS = {"cpu": "100m", "memory": "256Mi"}
+
+# Migration (Phase 4: Agent CRD to Deployment migration)
+# Annotation to mark migrated resources
+MIGRATION_SOURCE_ANNOTATION = "kagenti.io/migrated-from"
+MIGRATION_TIMESTAMP_ANNOTATION = "kagenti.io/migration-timestamp"
+# Label to identify legacy Agent CRD resources
+LEGACY_AGENT_CRD_LABEL = "kagenti.io/legacy-crd"
 
 # Default environment variables for agents
 DEFAULT_ENV_VARS = [

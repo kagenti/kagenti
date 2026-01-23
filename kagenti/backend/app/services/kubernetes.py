@@ -315,44 +315,121 @@ class KubernetesService:
             raise
 
     # -------------------------------------------------------------------------
-    # StatefulSet Operations (Future - Phase 5)
+    # StatefulSet Operations
     # -------------------------------------------------------------------------
 
     def create_statefulset(self, namespace: str, body: dict) -> dict:
-        """Create a StatefulSet in the specified namespace. (Future)"""
-        raise NotImplementedError("StatefulSet support coming in future release")
+        """Create a StatefulSet in the specified namespace."""
+        try:
+            result = self.apps_api.create_namespaced_stateful_set(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error(f"Error creating StatefulSet in {namespace}: {e}")
+            raise
 
     def get_statefulset(self, namespace: str, name: str) -> dict:
-        """Get a StatefulSet by name. (Future)"""
-        raise NotImplementedError("StatefulSet support coming in future release")
+        """Get a StatefulSet by name."""
+        try:
+            result = self.apps_api.read_namespaced_stateful_set(
+                name=name,
+                namespace=namespace,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error(f"Error getting StatefulSet {name} in {namespace}: {e}")
+            raise
 
     def list_statefulsets(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
-        """List StatefulSets in a namespace. (Future)"""
-        raise NotImplementedError("StatefulSet support coming in future release")
+        """List StatefulSets in a namespace with optional label selector."""
+        try:
+            result = self.apps_api.list_namespaced_stateful_set(
+                namespace=namespace,
+                label_selector=label_selector,
+            )
+            return [item.to_dict() for item in result.items]
+        except ApiException as e:
+            logger.error(f"Error listing StatefulSets in {namespace}: {e}")
+            raise
 
     def delete_statefulset(self, namespace: str, name: str) -> None:
-        """Delete a StatefulSet by name. (Future)"""
-        raise NotImplementedError("StatefulSet support coming in future release")
+        """Delete a StatefulSet by name."""
+        try:
+            self.apps_api.delete_namespaced_stateful_set(
+                name=name,
+                namespace=namespace,
+            )
+        except ApiException as e:
+            logger.error(f"Error deleting StatefulSet {name} in {namespace}: {e}")
+            raise
+
+    def patch_statefulset(self, namespace: str, name: str, body: dict) -> dict:
+        """Patch a StatefulSet with the provided body."""
+        try:
+            result = self.apps_api.patch_namespaced_stateful_set(
+                name=name,
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error(f"Error patching StatefulSet {name} in {namespace}: {e}")
+            raise
 
     # -------------------------------------------------------------------------
-    # Job Operations (Future - Phase 5)
+    # Job Operations
     # -------------------------------------------------------------------------
 
     def create_job(self, namespace: str, body: dict) -> dict:
-        """Create a Job in the specified namespace. (Future)"""
-        raise NotImplementedError("Job support coming in future release")
+        """Create a Job in the specified namespace."""
+        try:
+            result = self.batch_api.create_namespaced_job(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error(f"Error creating Job in {namespace}: {e}")
+            raise
 
     def get_job(self, namespace: str, name: str) -> dict:
-        """Get a Job by name. (Future)"""
-        raise NotImplementedError("Job support coming in future release")
+        """Get a Job by name."""
+        try:
+            result = self.batch_api.read_namespaced_job(
+                name=name,
+                namespace=namespace,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error(f"Error getting Job {name} in {namespace}: {e}")
+            raise
 
     def list_jobs(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
-        """List Jobs in a namespace. (Future)"""
-        raise NotImplementedError("Job support coming in future release")
+        """List Jobs in a namespace with optional label selector."""
+        try:
+            result = self.batch_api.list_namespaced_job(
+                namespace=namespace,
+                label_selector=label_selector,
+            )
+            return [item.to_dict() for item in result.items]
+        except ApiException as e:
+            logger.error(f"Error listing Jobs in {namespace}: {e}")
+            raise
 
     def delete_job(self, namespace: str, name: str) -> None:
-        """Delete a Job by name. (Future)"""
-        raise NotImplementedError("Job support coming in future release")
+        """Delete a Job by name."""
+        try:
+            # Use propagationPolicy=Background to delete pods
+            self.batch_api.delete_namespaced_job(
+                name=name,
+                namespace=namespace,
+                propagation_policy="Background",
+            )
+        except ApiException as e:
+            logger.error(f"Error deleting Job {name} in {namespace}: {e}")
+            raise
 
 
 @lru_cache
