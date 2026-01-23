@@ -25,12 +25,17 @@ from app.core.constants import (
     KAGENTI_TYPE_LABEL,
     KAGENTI_PROTOCOL_LABEL,
     KAGENTI_FRAMEWORK_LABEL,
+    KAGENTI_WORKLOAD_TYPE_LABEL,
+    KAGENTI_DESCRIPTION_ANNOTATION,
     APP_KUBERNETES_IO_CREATED_BY,
     APP_KUBERNETES_IO_NAME,
+    APP_KUBERNETES_IO_MANAGED_BY,
+    APP_KUBERNETES_IO_COMPONENT,
     KAGENTI_UI_CREATOR_LABEL,
     KAGENTI_OPERATOR_LABEL_NAME,
     RESOURCE_TYPE_AGENT,
     DEFAULT_IN_CLUSTER_PORT,
+    DEFAULT_OFF_CLUSTER_PORT,
     DEFAULT_IMAGE_POLICY,
     DEFAULT_RESOURCE_LIMITS,
     DEFAULT_RESOURCE_REQUESTS,
@@ -45,6 +50,11 @@ from app.core.constants import (
     SHIPWRIGHT_BUILDRUNS_PLURAL,
     SHIPWRIGHT_CLUSTER_BUILD_STRATEGIES_PLURAL,
     DEFAULT_INTERNAL_REGISTRY,
+    # Workload type constants
+    WORKLOAD_TYPE_DEPLOYMENT,
+    WORKLOAD_TYPE_STATEFULSET,
+    WORKLOAD_TYPE_JOB,
+    SUPPORTED_WORKLOAD_TYPES,
 )
 from app.core.config import settings
 from app.models.responses import (
@@ -1134,6 +1144,291 @@ def _build_agent_manifest(
         ]
 
     return manifest
+
+
+# -----------------------------------------------------------------------------
+# Workload Manifest Builders (Phase 1 - Migration to Standard K8s Workloads)
+# -----------------------------------------------------------------------------
+
+
+def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
+    """
+    Build environment variables list with support for valueFrom references.
+
+    Args:
+        request: The agent creation request containing envVars.
+
+    Returns:
+        List of environment variable dictionaries.
+    """
+    env_vars = list(DEFAULT_ENV_VARS)
+    if request.envVars:
+        for ev in request.envVars:
+            if ev.value is not None:
+                # Direct value
+                env_vars.append({"name": ev.name, "value": ev.value})
+            elif ev.valueFrom is not None:
+                # Reference to Secret or ConfigMap
+                env_entry: Dict[str, Any] = {"name": ev.name, "valueFrom": {}}
+
+                if ev.valueFrom.secretKeyRef:
+                    env_entry["valueFrom"]["secretKeyRef"] = {
+                        "name": ev.valueFrom.secretKeyRef.name,
+                        "key": ev.valueFrom.secretKeyRef.key,
+                    }
+                elif ev.valueFrom.configMapKeyRef:
+                    env_entry["valueFrom"]["configMapKeyRef"] = {
+                        "name": ev.valueFrom.configMapKeyRef.name,
+                        "key": ev.valueFrom.configMapKeyRef.key,
+                    }
+
+                env_vars.append(env_entry)
+    return env_vars
+
+
+def _build_common_labels(
+    request: "CreateAgentRequest",
+    workload_type: str = WORKLOAD_TYPE_DEPLOYMENT,
+) -> Dict[str, str]:
+    """
+    Build common labels for agent workloads.
+
+    All agent workloads MUST have these labels:
+    - kagenti.io/type: agent
+    - app.kubernetes.io/name: <agent-name>
+    - kagenti.io/protocol: <protocol>
+
+    Args:
+        request: The agent creation request.
+        workload_type: The type of workload (deployment, statefulset, job).
+
+    Returns:
+        Dictionary of labels.
+    """
+    return {
+        # Required labels
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
+        APP_KUBERNETES_IO_NAME: request.name,
+        KAGENTI_PROTOCOL_LABEL: request.protocol,
+        # Recommended labels
+        KAGENTI_FRAMEWORK_LABEL: request.framework,
+        KAGENTI_WORKLOAD_TYPE_LABEL: workload_type,
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+        APP_KUBERNETES_IO_COMPONENT: RESOURCE_TYPE_AGENT,
+    }
+
+
+def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
+    """
+    Build selector labels for matching pods to workloads and services.
+
+    Args:
+        request: The agent creation request.
+
+    Returns:
+        Dictionary of selector labels.
+    """
+    return {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
+        APP_KUBERNETES_IO_NAME: request.name,
+    }
+
+
+def _build_deployment_manifest(
+    request: "CreateAgentRequest",
+    image: str,
+    shipwright_build_name: Optional[str] = None,
+) -> dict:
+    """
+    Build a Kubernetes Deployment manifest for an agent.
+
+    Args:
+        request: The agent creation request.
+        image: The container image URL.
+        shipwright_build_name: Optional name of the Shipwright Build that created
+            this agent (for annotation tracking).
+
+    Returns:
+        Deployment manifest dictionary.
+    """
+    env_vars = _build_env_vars(request)
+    labels = _build_common_labels(request, WORKLOAD_TYPE_DEPLOYMENT)
+    selector_labels = _build_selector_labels(request)
+
+    # Build annotations
+    annotations: Dict[str, str] = {
+        KAGENTI_DESCRIPTION_ANNOTATION: f"Agent '{request.name}' deployed from UI.",
+    }
+    if shipwright_build_name:
+        annotations["kagenti.io/shipwright-build"] = shipwright_build_name
+
+    # Build container ports
+    container_port = DEFAULT_IN_CLUSTER_PORT
+    if request.servicePorts and len(request.servicePorts) > 0:
+        container_port = request.servicePorts[0].targetPort
+
+    manifest = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": request.name,
+            "namespace": request.namespace,
+            "labels": labels,
+            "annotations": annotations,
+        },
+        "spec": {
+            "replicas": 1,
+            "selector": {
+                "matchLabels": selector_labels,
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        **labels,
+                        # Pod-specific labels can be added here
+                    },
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "agent",
+                            "image": image,
+                            "imagePullPolicy": DEFAULT_IMAGE_POLICY,
+                            "resources": {
+                                "limits": DEFAULT_RESOURCE_LIMITS,
+                                "requests": DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "env": env_vars,
+                            "ports": [
+                                {
+                                    "name": "http",
+                                    "containerPort": container_port,
+                                    "protocol": "TCP",
+                                },
+                            ],
+                            "volumeMounts": [
+                                {"name": "cache", "mountPath": "/app/.cache"},
+                                {"name": "marvin", "mountPath": "/.marvin"},
+                                {"name": "shared-data", "mountPath": "/shared"},
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {"name": "cache", "emptyDir": {}},
+                        {"name": "marvin", "emptyDir": {}},
+                        {"name": "shared-data", "emptyDir": {}},
+                    ],
+                },
+            },
+        },
+    }
+
+    # Add image pull secrets if specified
+    if request.imagePullSecret:
+        manifest["spec"]["template"]["spec"]["imagePullSecrets"] = [
+            {"name": request.imagePullSecret}
+        ]
+
+    return manifest
+
+
+def _build_service_manifest(request: "CreateAgentRequest") -> dict:
+    """
+    Build a Kubernetes Service manifest for an agent.
+
+    Args:
+        request: The agent creation request.
+
+    Returns:
+        Service manifest dictionary.
+    """
+    labels = _build_common_labels(request, WORKLOAD_TYPE_DEPLOYMENT)
+    selector_labels = _build_selector_labels(request)
+
+    # Build service ports
+    if request.servicePorts:
+        service_ports = [
+            {
+                "name": sp.name,
+                "port": sp.port,
+                "targetPort": sp.targetPort,
+                "protocol": sp.protocol,
+            }
+            for sp in request.servicePorts
+        ]
+    else:
+        service_ports = [
+            {
+                "name": "http",
+                "port": DEFAULT_OFF_CLUSTER_PORT,
+                "targetPort": DEFAULT_IN_CLUSTER_PORT,
+                "protocol": "TCP",
+            }
+        ]
+
+    return {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": request.name,
+            "namespace": request.namespace,
+            "labels": labels,
+        },
+        "spec": {
+            "type": "ClusterIP",
+            "selector": selector_labels,
+            "ports": service_ports,
+        },
+    }
+
+
+def _build_statefulset_manifest(
+    request: "CreateAgentRequest",
+    image: str,
+    shipwright_build_name: Optional[str] = None,
+) -> dict:
+    """
+    Build a Kubernetes StatefulSet manifest for an agent.
+
+    NOTE: StatefulSet support is planned for Phase 5. This function serves as
+    a placeholder to define the interface.
+
+    Args:
+        request: The agent creation request.
+        image: The container image URL.
+        shipwright_build_name: Optional name of the Shipwright Build.
+
+    Raises:
+        NotImplementedError: StatefulSet support is not yet implemented.
+    """
+    raise NotImplementedError(
+        "StatefulSet support is planned for Phase 5. "
+        "Currently only Deployment workloads are supported."
+    )
+
+
+def _build_job_manifest(
+    request: "CreateAgentRequest",
+    image: str,
+    shipwright_build_name: Optional[str] = None,
+) -> dict:
+    """
+    Build a Kubernetes Job manifest for an agent.
+
+    NOTE: Job support is planned for Phase 5. This function serves as
+    a placeholder to define the interface.
+
+    Args:
+        request: The agent creation request.
+        image: The container image URL.
+        shipwright_build_name: Optional name of the Shipwright Build.
+
+    Raises:
+        NotImplementedError: Job support is not yet implemented.
+    """
+    raise NotImplementedError(
+        "Job support is planned for Phase 5. Currently only Deployment workloads are supported."
+    )
 
 
 @router.post("", response_model=CreateAgentResponse)
