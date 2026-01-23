@@ -7,10 +7,10 @@ source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
 log_step "41" "Waiting for Kagenti Operator CRDs"
 
+# NOTE: agents.agent.kagenti.dev is NOT required for E2E tests since we now
+# deploy agents using standard Kubernetes Deployments + Services directly.
+# Only keeping CRDs that are still actively used in CI.
 CRDS=(
-    "agents.agent.kagenti.dev"
-    "agentbuilds.agent.kagenti.dev"
-    "agentcards.agent.kagenti.dev"
     "mcpservers.mcp.kagenti.com"
     "mcpvirtualservers.mcp.kagenti.com"
 )

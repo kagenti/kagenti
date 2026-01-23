@@ -63,7 +63,7 @@ jobs:
         run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
 
       # NOTE: Pipeline template is only needed for deprecated AgentBuild + Tekton.
-      # Shipwright builds (used by 74-deploy-weather-agent.sh) don't require this.
+      # Agent deployment now uses standard Kubernetes Deployments + Services.
       # Kept for backward compatibility with existing AgentBuild deployments.
       - name: Apply pipeline-template-dev ConfigMap (for AgentBuild backward compatibility)
         run: bash .github/scripts/kagenti-operator/42-apply-pipeline-template.sh
@@ -82,6 +82,7 @@ jobs:
         run: bash .github/scripts/kagenti-operator/73-patch-weather-tool.sh
 
       # AGENT DEPLOYMENT (AFTER tool is ready - agent depends on tool)
+      # Uses standard Kubernetes Deployment + Service (no Agent CRD dependency)
       - name: Deploy weather-service Agent
         run: bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
 
