@@ -374,7 +374,7 @@ def _get_statefulset_description(statefulset: dict) -> str:
 def _get_job_status(job: dict) -> str:
     """Get the status of a Kubernetes Job."""
     status = job.get("status", {})
-    conditions = status.get("conditions", [])
+    conditions = status.get("conditions") or []
 
     # Check conditions for completed or failed
     for condition in conditions:
@@ -387,9 +387,9 @@ def _get_job_status(job: dict) -> str:
             return "Failed"
 
     # Check active/succeeded/failed counts
-    active = status.get("active", 0)
-    succeeded = status.get("succeeded", 0)
-    failed = status.get("failed", 0)
+    active = status.get("active") or 0
+    succeeded = status.get("succeeded") or 0
+    failed = status.get("failed") or 0
 
     if succeeded > 0:
         return "Completed"
@@ -651,6 +651,16 @@ async def get_agent(
     labels = metadata.get("labels", {})
     annotations = metadata.get("annotations", {})
 
+    # Compute ready status based on workload type
+    if workload_type == WORKLOAD_TYPE_DEPLOYMENT:
+        ready_status = _is_deployment_ready(workload)
+    elif workload_type == WORKLOAD_TYPE_STATEFULSET:
+        ready_status = _is_statefulset_ready(workload)
+    elif workload_type == WORKLOAD_TYPE_JOB:
+        ready_status = _get_job_status(workload)
+    else:
+        ready_status = "Unknown"
+
     response = {
         "metadata": {
             "name": metadata.get("name"),
@@ -665,6 +675,7 @@ async def get_agent(
         "spec": workload.get("spec", {}),
         "status": workload.get("status", {}),
         "workloadType": labels.get(KAGENTI_WORKLOAD_TYPE_LABEL, workload_type),
+        "readyStatus": ready_status,  # Computed ready status for frontend
     }
 
     # Add service info if available
@@ -2784,6 +2795,46 @@ async def finalize_shipwright_build(
             raise HTTPException(
                 status_code=400,
                 detail=f"Build has not succeeded yet. Status: {failure_message or 'In progress'}",
+            )
+
+        # Check if workload already exists (idempotency check)
+        # This handles the case where finalize is called multiple times
+        workload_exists = False
+        existing_workload_type = None
+        try:
+            kube.get_deployment(namespace=namespace, name=name)
+            workload_exists = True
+            existing_workload_type = WORKLOAD_TYPE_DEPLOYMENT
+        except ApiException as e:
+            if e.status != 404:
+                raise
+        if not workload_exists:
+            try:
+                kube.get_statefulset(namespace=namespace, name=name)
+                workload_exists = True
+                existing_workload_type = WORKLOAD_TYPE_STATEFULSET
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+        if not workload_exists:
+            try:
+                kube.get_job(namespace=namespace, name=name)
+                workload_exists = True
+                existing_workload_type = WORKLOAD_TYPE_JOB
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+
+        if workload_exists:
+            logger.info(
+                f"Workload '{name}' already exists as {existing_workload_type} in namespace '{namespace}'. "
+                "Skipping creation (finalize already completed)."
+            )
+            return CreateAgentResponse(
+                success=True,
+                name=name,
+                namespace=namespace,
+                message=f"Agent '{name}' already deployed as {existing_workload_type}.",
             )
 
         # Get the output image from BuildRun status

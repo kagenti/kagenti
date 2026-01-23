@@ -137,6 +137,8 @@ export interface AgentDetail {
   service?: ServiceInfo;
   // Workload type (new)
   workloadType?: WorkloadType;
+  // Computed ready status from backend (handles Deployment, StatefulSet, Job)
+  readyStatus?: 'Ready' | 'Not Ready' | 'Progressing' | 'Completed' | 'Failed' | 'Running' | 'Pending' | 'Unknown';
 }
 
 // Tool types

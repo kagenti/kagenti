@@ -110,10 +110,10 @@ export const AgentCatalogPage: React.FC = () => {
   const columns = ['Name', 'Description', 'Status', 'Labels', ''];
 
   const renderStatusBadge = (status: string) => {
-    let color: 'green' | 'red' | 'blue' = 'red';
-    if (status === 'Ready') {
+    let color: 'green' | 'red' | 'blue' | 'cyan' = 'red';
+    if (status === 'Ready' || status === 'Completed' || status === 'Running') {
       color = 'green';
-    } else if (status === 'Progressing') {
+    } else if (status === 'Progressing' || status === 'Pending') {
       color = 'blue';
     }
     return <Label color={color}>{status}</Label>;

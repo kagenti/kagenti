@@ -149,11 +149,11 @@ export const AgentDetailPage: React.FC = () => {
     enabled: !!namespace && !!name,
     refetchInterval: (query) => {
       // Poll every 5 seconds if agent is not ready
-      const conditions = query.state.data?.status?.conditions || [];
-      const isReady = conditions.some(
-        (c: StatusCondition) => c.type === 'Ready' && c.status === 'True'
-      );
-      return isReady ? false : 5000;
+      // Use readyStatus from backend (handles Deployment, StatefulSet, Job)
+      // For Jobs: stop polling once Completed or Failed, but continue for Running
+      const readyStatus = query.state.data?.readyStatus;
+      const isStable = readyStatus === 'Ready' || readyStatus === 'Completed' || readyStatus === 'Failed';
+      return isStable ? false : 5000;
     },
   });
 
@@ -201,12 +201,10 @@ export const AgentDetailPage: React.FC = () => {
   });
 
   // Check if agent is ready to fetch agent card
-  // For Deployments, check "Available" condition; for legacy Agent CRD, check "Ready"
-  const agentConditions = agent?.status?.conditions || [];
-  const isAgentReady = agentConditions.some(
-    (c: StatusCondition) =>
-      (c.type === 'Ready' || c.type === 'Available') && c.status === 'True'
-  );
+  // Use readyStatus from backend (handles Deployment, StatefulSet, Job)
+  // For Jobs, "Running" means the pod is active and agent card should be available
+  const agentReadyStatus = agent?.readyStatus;
+  const isAgentReady = agentReadyStatus === 'Ready' || agentReadyStatus === 'Completed' || agentReadyStatus === 'Running';
 
   // Fetch agent card if agent is ready
   const { data: agentCard, isLoading: isAgentCardLoading } = useQuery<AgentCard>({
@@ -292,8 +290,12 @@ export const AgentDetailPage: React.FC = () => {
   const labels = metadata.labels || {};
   const conditions: StatusCondition[] = status.conditions || [];
 
-  // For Deployments, check "Available" condition; for legacy Agent CRD, check "Ready"
-  const isReady = conditions.some(
+  // Use computed readyStatus from backend (handles Deployment, StatefulSet, Job)
+  // Fallback to checking conditions for backward compatibility
+  const readyStatus = agent.readyStatus;
+  // For Jobs, "Running" is a valid active state (green), "Completed" is also green
+  const isRunningOrReady = readyStatus === 'Ready' || readyStatus === 'Completed' || readyStatus === 'Running';
+  const isReady = isRunningOrReady || conditions.some(
     (c) => (c.type === 'Ready' || c.type === 'Available') && c.status === 'True'
   );
 
@@ -347,7 +349,7 @@ export const AgentDetailPage: React.FC = () => {
           </SplitItem>
           <SplitItem>
             <Label color={isReady ? 'green' : 'red'}>
-              {isReady ? 'Ready' : 'Not Ready'}
+              {readyStatus || (isReady ? 'Ready' : 'Not Ready')}
             </Label>
           </SplitItem>
           <SplitItem isFilled />
