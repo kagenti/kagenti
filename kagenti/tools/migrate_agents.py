@@ -216,6 +216,9 @@ def build_deployment_from_agent_crd(agent: Dict) -> Dict:
         image_source = spec.get("imageSource", {})
         image = image_source.get("image", "")
         if not image:
+            # Note: The API layer uses HTTPException for this condition, but this
+            # standalone CLI migration script raises ValueError instead. This keeps
+            # dependencies minimal while providing equivalent failure semantics.
             raise ValueError(
                 f"Agent CRD '{name}' has no podTemplateSpec or imageSource.image"
             )
