@@ -238,26 +238,52 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 def _is_deployment_ready(resource_data: dict) -> str:
-    """Check if a deployment is ready based on status conditions.
+    """Check if a Kubernetes Deployment is ready based on status.
 
-    Checks for a condition with type="Ready" and status="True".
-    The reason field can be anything (e.g., "Ready", "Available", etc.).
+    For Deployments, checks:
+    1. conditions array for type="Available" with status="True"
+    2. replicas vs readyReplicas count
+
+    Also maintains backward compatibility with Agent CRD status format.
     """
     status = resource_data.get("status", {})
     conditions = status.get("conditions", [])
 
-    # Check conditions array for Ready condition
+    # Check for Kubernetes Deployment conditions (type=Available)
     for condition in conditions:
-        if condition.get("type") == "Ready" and condition.get("status") == "True":
+        cond_type = condition.get("type")
+        cond_status = condition.get("status")
+
+        # Kubernetes Deployment uses "Available" condition
+        if cond_type == "Available" and cond_status == "True":
             return "Ready"
 
-    # Fallback: check deploymentStatus.phase for older CRD versions
+        # Agent CRD uses "Ready" condition (backward compatibility)
+        if cond_type == "Ready" and cond_status == "True":
+            return "Ready"
+
+    # Check replica counts for Deployments
+    replicas = status.get("replicas", 0)
+    ready_replicas = status.get("ready_replicas") or status.get("readyReplicas", 0)
+    if replicas > 0 and ready_replicas >= replicas:
+        return "Ready"
+
+    # Fallback: check deploymentStatus.phase for older Agent CRD versions
     deployment_status = status.get("deploymentStatus", {})
     phase = deployment_status.get("phase", "")
     if phase in ("Ready", "Running"):
         return "Ready"
 
     return "Not Ready"
+
+
+def _get_deployment_description(deployment: dict) -> str:
+    """Extract description from Deployment annotations."""
+    annotations = deployment.get("metadata", {}).get("annotations", {})
+    return annotations.get(
+        KAGENTI_DESCRIPTION_ANNOTATION,
+        annotations.get("description", "No description"),
+    )
 
 
 def _extract_labels(labels: dict) -> ResourceLabels:
@@ -277,43 +303,37 @@ async def list_agents(
     """
     List all agents in the specified namespace.
 
-    Returns agents that have the kagenti.io/type=agent label.
+    Returns agents deployed as Deployments with the kagenti.io/type=agent label.
     """
     try:
         label_selector = f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_AGENT}"
 
-        items = kube.list_custom_resources(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
+        # Query Deployments with agent label
+        deployments = kube.list_deployments(
             namespace=namespace,
-            plural=AGENTS_PLURAL,
             label_selector=label_selector,
         )
 
         agents = []
-        for item in items:
-            metadata = item.get("metadata", {})
-            spec = item.get("spec", {})
+        for deployment in deployments:
+            metadata = deployment.get("metadata", {})
+            labels = metadata.get("labels", {})
 
             agents.append(
                 AgentSummary(
                     name=metadata.get("name", ""),
                     namespace=metadata.get("namespace", namespace),
-                    description=spec.get("description", "No description"),
-                    status=_is_deployment_ready(item),
-                    labels=_extract_labels(metadata.get("labels", {})),
-                    createdAt=metadata.get("creationTimestamp"),
+                    description=_get_deployment_description(deployment),
+                    status=_is_deployment_ready(deployment),
+                    labels=_extract_labels(labels),
+                    createdAt=metadata.get("creation_timestamp")
+                    or metadata.get("creationTimestamp"),
                 )
             )
 
         return AgentListResponse(items=agents)
 
     except ApiException as e:
-        if e.status == 404:
-            raise HTTPException(
-                status_code=404,
-                detail="Agent CRD not found. Is the operator installed?",
-            )
         if e.status == 403:
             raise HTTPException(
                 status_code=403,
@@ -328,16 +348,53 @@ async def get_agent(
     name: str,
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> Any:
-    """Get detailed information about a specific agent."""
+    """Get detailed information about a specific agent.
+
+    Returns Deployment details along with associated Service information.
+    """
     try:
-        agent = kube.get_custom_resource(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            namespace=namespace,
-            plural=AGENTS_PLURAL,
-            name=name,
-        )
-        return agent
+        # Get the Deployment
+        deployment = kube.get_deployment(namespace=namespace, name=name)
+
+        # Try to get the associated Service
+        service = None
+        try:
+            service = kube.get_service(namespace=namespace, name=name)
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Failed to get Service for agent '{name}': {e.reason}")
+
+        # Build response with Deployment info and optional Service info
+        metadata = deployment.get("metadata", {})
+        labels = metadata.get("labels", {})
+        annotations = metadata.get("annotations", {})
+
+        response = {
+            "metadata": {
+                "name": metadata.get("name"),
+                "namespace": metadata.get("namespace"),
+                "labels": labels,
+                "annotations": annotations,
+                "creationTimestamp": metadata.get("creation_timestamp")
+                or metadata.get("creationTimestamp"),
+                "uid": metadata.get("uid"),
+            },
+            "spec": deployment.get("spec", {}),
+            "status": deployment.get("status", {}),
+            "workloadType": labels.get(KAGENTI_WORKLOAD_TYPE_LABEL, WORKLOAD_TYPE_DEPLOYMENT),
+        }
+
+        # Add service info if available
+        if service:
+            service_spec = service.get("spec", {})
+            response["service"] = {
+                "name": service.get("metadata", {}).get("name"),
+                "type": service_spec.get("type"),
+                "clusterIP": service_spec.get("cluster_ip") or service_spec.get("clusterIP"),
+                "ports": service_spec.get("ports", []),
+            }
+
+        return response
 
     except ApiException as e:
         if e.status == 404:
@@ -365,17 +422,39 @@ async def delete_agent(
     name: str,
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> DeleteResponse:
-    """Delete an agent and its associated builds from the cluster.
+    """Delete an agent and its associated resources from the cluster.
 
     This deletes:
-    - Agent CR
-    - AgentBuild CR (if exists, for Tekton-based builds)
+    - Deployment
+    - Service
     - Shipwright Build CR (if exists)
     - Shipwright BuildRun CRs (if exist)
+    - Legacy: Agent CR, AgentBuild CR (if exist, for backward compatibility)
     """
     messages = []
 
-    # Delete the Agent CR
+    # Delete the Deployment
+    try:
+        kube.delete_deployment(namespace=namespace, name=name)
+        messages.append(f"Deployment '{name}' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            logger.debug(f"Deployment '{name}' not found (may be legacy Agent CRD)")
+        else:
+            logger.warning(f"Failed to delete Deployment '{name}': {e.reason}")
+
+    # Delete the Service
+    try:
+        kube.delete_service(namespace=namespace, name=name)
+        messages.append(f"Service '{name}' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            # Service doesn't exist, that's fine
+            pass
+        else:
+            logger.warning(f"Failed to delete Service '{name}': {e.reason}")
+
+    # Legacy cleanup: Delete the Agent CR if it exists
     try:
         kube.delete_custom_resource(
             group=CRD_GROUP,
@@ -384,14 +463,15 @@ async def delete_agent(
             plural=AGENTS_PLURAL,
             name=name,
         )
-        messages.append(f"Agent '{name}' deleted")
+        messages.append(f"Agent CR '{name}' deleted (legacy)")
     except ApiException as e:
         if e.status == 404:
-            messages.append(f"Agent '{name}' not found (already deleted)")
+            # Agent CR doesn't exist, that's expected for new deployments
+            pass
         else:
-            raise HTTPException(status_code=e.status, detail=str(e.reason))
+            logger.warning(f"Failed to delete Agent CR '{name}': {e.reason}")
 
-    # Delete the AgentBuild CR if it exists (Tekton-based builds)
+    # Legacy cleanup: Delete the AgentBuild CR if it exists (Tekton-based builds)
     try:
         kube.delete_custom_resource(
             group=CRD_GROUP,
@@ -400,10 +480,10 @@ async def delete_agent(
             plural=AGENTBUILDS_PLURAL,
             name=name,
         )
-        messages.append(f"AgentBuild '{name}' deleted")
+        messages.append(f"AgentBuild '{name}' deleted (legacy)")
     except ApiException as e:
         if e.status == 404:
-            # AgentBuild doesn't exist, that's fine (might be image-based or Shipwright deployment)
+            # AgentBuild doesn't exist, that's fine
             pass
         else:
             logger.warning(f"Failed to delete AgentBuild '{name}': {e.reason}")
@@ -1440,10 +1520,8 @@ async def create_agent(
     Create a new agent.
 
     Supports two deployment methods:
-    - 'source': Build from git repository
-      - With useShipwright=True (default): Uses Shipwright Build + BuildRun
-      - With useShipwright=False: Uses AgentBuild CRD + Tekton pipeline
-    - 'image': Deploy from existing container image using Agent CRD
+    - 'source': Build from git repository using Shipwright Build + BuildRun
+    - 'image': Deploy from existing container image as Deployment + Service
     """
     logger.info(
         f"Creating agent '{request.name}' in namespace '{request.namespace}', "
@@ -1451,29 +1529,40 @@ async def create_agent(
     )
     try:
         if request.deploymentMethod == "image":
-            # Deploy from existing container image using Agent CRD
+            # Deploy from existing container image as Deployment + Service
             if not request.containerImage:
                 raise HTTPException(
                     status_code=400,
                     detail="containerImage is required for image deployment",
                 )
 
-            agent_manifest = _build_agent_manifest(request)
-            kube.create_custom_resource(
-                group=CRD_GROUP,
-                version=CRD_VERSION,
-                namespace=request.namespace,
-                plural=AGENTS_PLURAL,
-                body=agent_manifest,
+            # Create Deployment
+            deployment_manifest = _build_deployment_manifest(
+                request=request,
+                image=request.containerImage,
             )
-            message = f"Agent '{request.name}' deployment started."
+            kube.create_deployment(
+                namespace=request.namespace,
+                body=deployment_manifest,
+            )
+            logger.info(f"Created Deployment '{request.name}' in namespace '{request.namespace}'")
+
+            # Create Service
+            service_manifest = _build_service_manifest(request)
+            kube.create_service(
+                namespace=request.namespace,
+                body=service_manifest,
+            )
+            logger.info(f"Created Service '{request.name}' in namespace '{request.namespace}'")
+
+            message = f"Agent '{request.name}' deployed successfully."
 
             # Create HTTPRoute/Route if requested
             if request.createHttpRoute:
                 service_port = (
                     request.servicePorts[0].port
                     if request.servicePorts
-                    else DEFAULT_IN_CLUSTER_PORT
+                    else DEFAULT_OFF_CLUSTER_PORT
                 )
                 create_route_for_agent_or_tool(
                     kube=kube,
@@ -1482,7 +1571,7 @@ async def create_agent(
                     service_name=request.name,
                     service_port=service_port,
                 )
-                message += f" HTTPRoute/Route created for external access."
+                message += " HTTPRoute/Route created for external access."
 
         elif request.useShipwright and settings.use_shipwright_builds:
             # Build from source using Shipwright Build + BuildRun
@@ -1640,10 +1729,11 @@ async def finalize_shipwright_build(
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> CreateAgentResponse:
     """
-    Finalize a Shipwright build by creating the Agent CRD.
+    Finalize a Shipwright build by creating the Deployment and Service.
 
     This endpoint should be called after the Shipwright BuildRun completes successfully.
-    It retrieves the output image from the BuildRun status and creates the Agent CRD.
+    It retrieves the output image from the BuildRun status and creates the Deployment
+    and Service for the agent.
 
     Agent configuration can be provided in the request body, or it will be read from
     the Build's kagenti.io/agent-config annotation (stored during build creation).
@@ -1771,8 +1861,8 @@ async def finalize_shipwright_build(
             # Convert stored dict format back to ServicePort objects
             final_service_ports = [ServicePort(**sp) for sp in stored_config["servicePorts"]]
 
-        # Step 3: Create Agent CRD with the built image
-        # Build a CreateAgentRequest-like object for _build_agent_manifest
+        # Step 3: Create Deployment + Service with the built image
+        # Build a CreateAgentRequest-like object for manifest builders
         agent_request = CreateAgentRequest(
             name=name,
             namespace=namespace,
@@ -1786,33 +1876,42 @@ async def finalize_shipwright_build(
             createHttpRoute=final_create_route,
         )
 
-        agent_manifest = _build_agent_manifest(agent_request)
+        # Create Deployment
+        deployment_manifest = _build_deployment_manifest(
+            request=agent_request,
+            image=container_image,
+            shipwright_build_name=name,
+        )
         # Add additional labels from Build
-        agent_manifest["metadata"]["labels"].update(
+        deployment_manifest["metadata"]["labels"].update(
             {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
         )
-        # Add annotation to link to Shipwright Build
-        agent_manifest["metadata"]["annotations"] = {
-            "kagenti.io/shipwright-build": name,
-        }
-
-        kube.create_custom_resource(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            namespace=namespace,
-            plural=AGENTS_PLURAL,
-            body=agent_manifest,
+        # Also update pod template labels
+        deployment_manifest["spec"]["template"]["metadata"]["labels"].update(
+            {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
         )
+
+        kube.create_deployment(namespace=namespace, body=deployment_manifest)
         logger.info(
-            f"Created Agent '{name}' with image '{container_image}' in namespace '{namespace}'"
+            f"Created Deployment '{name}' with image '{container_image}' in namespace '{namespace}'"
         )
 
-        message = f"Agent '{name}' created successfully with image '{output_image}'."
+        # Create Service
+        service_manifest = _build_service_manifest(agent_request)
+        # Add additional labels from Build
+        service_manifest["metadata"]["labels"].update(
+            {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+        )
+
+        kube.create_service(namespace=namespace, body=service_manifest)
+        logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+
+        message = f"Agent '{name}' deployed successfully with image '{output_image}'."
 
         # Step 4: Create HTTPRoute/Route if requested (use merged config value)
         if final_create_route:
             service_port = (
-                final_service_ports[0].port if final_service_ports else DEFAULT_IN_CLUSTER_PORT
+                final_service_ports[0].port if final_service_ports else DEFAULT_OFF_CLUSTER_PORT
             )
             create_route_for_agent_or_tool(
                 kube=kube,
