@@ -107,7 +107,19 @@ export const AgentCatalogPage: React.FC = () => {
     }
   };
 
-  const columns = ['Name', 'Description', 'Status', 'Labels', ''];
+  const columns = ['Name', 'Description', 'Status', 'Labels', 'Workload', ''];
+
+  const renderWorkloadType = (workloadType: string | undefined) => {
+    const type = workloadType || 'deployment';
+    const label = type.charAt(0).toUpperCase() + type.slice(1);
+    let color: 'grey' | 'orange' | 'gold' = 'grey';
+    if (type === 'job') {
+      color = 'orange';
+    } else if (type === 'statefulset') {
+      color = 'gold';
+    }
+    return <Label color={color} isCompact>{label}</Label>;
+  };
 
   const renderStatusBadge = (status: string) => {
     let color: 'green' | 'red' | 'blue' | 'cyan' = 'red';
@@ -237,6 +249,7 @@ export const AgentCatalogPage: React.FC = () => {
                     </Td>
                     <Td dataLabel="Status">{renderStatusBadge(agent.status)}</Td>
                     <Td dataLabel="Labels">{renderLabels(agent)}</Td>
+                    <Td dataLabel="Workload">{renderWorkloadType(agent.workloadType)}</Td>
                     <Td isActionCell>
                       <Dropdown
                         isOpen={openMenuId === menuId}

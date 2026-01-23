@@ -25,6 +25,7 @@ class AgentSummary(BaseModel):
     description: str
     status: str
     labels: ResourceLabels
+    workloadType: Optional[str] = None
     createdAt: Optional[str] = None
 
 

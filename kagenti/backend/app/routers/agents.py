@@ -472,6 +472,7 @@ async def list_agents(
                     description=_get_deployment_description(deployment),
                     status=_is_deployment_ready(deployment),
                     labels=_extract_labels(labels),
+                    workloadType=WORKLOAD_TYPE_DEPLOYMENT,
                     createdAt=_format_timestamp(
                         metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
                     ),
@@ -499,6 +500,7 @@ async def list_agents(
                     description=_get_statefulset_description(statefulset),
                     status=_is_statefulset_ready(statefulset),
                     labels=_extract_labels(labels),
+                    workloadType=WORKLOAD_TYPE_STATEFULSET,
                     createdAt=_format_timestamp(
                         metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
                     ),
@@ -526,6 +528,7 @@ async def list_agents(
                     description=_get_job_description(job),
                     status=_get_job_status(job),
                     labels=_extract_labels(labels),
+                    workloadType=WORKLOAD_TYPE_JOB,
                     createdAt=_format_timestamp(
                         metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
                     ),
@@ -571,6 +574,7 @@ async def list_agents(
                             description=description,
                             status=agent_status,
                             labels=_extract_labels(labels),
+                            workloadType=WORKLOAD_TYPE_DEPLOYMENT,
                             createdAt=_format_timestamp(
                                 metadata.get("creation_timestamp")
                                 or metadata.get("creationTimestamp")

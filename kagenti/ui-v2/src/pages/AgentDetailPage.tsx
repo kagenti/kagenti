@@ -434,7 +434,7 @@ export const AgentDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>Workload Type</DescriptionListTerm>
                         <DescriptionListDescription>
-                          <Label color="cyan" isCompact>
+                          <Label color={workloadType === 'job' ? 'orange' : workloadType === 'statefulset' ? 'gold' : 'grey'} isCompact>
                             {workloadType.charAt(0).toUpperCase() + workloadType.slice(1)}
                           </Label>
                         </DescriptionListDescription>
