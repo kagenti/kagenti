@@ -1,0 +1,77 @@
+# Deployment manifest for weather-service agent
+# This version uses standard Kubernetes Deployment instead of Agent CRD
+# for direct deployment without kagenti-operator dependency
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-service
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: weather-service
+    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "Weather service agent for E2E testing"
+    kagenti.io/shipwright-build: weather-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: weather-service
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: LangGraph
+        app.kubernetes.io/name: weather-service
+    spec:
+      containers:
+      - name: agent
+        image: registry.cr-system.svc.cluster.local:5000/weather-service:v0.0.1
+        imagePullPolicy: Always
+        env:
+        - name: PORT
+          value: "8000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: KEYCLOAK_URL
+          value: "http://keycloak.keycloak.svc.cluster.local:8080"
+        - name: UV_CACHE_DIR
+          value: "/app/.cache/uv"
+        - name: LLM_API_BASE
+          value: "http://dockerhost:11434/v1"
+        - name: LLM_API_KEY
+          value: "dummy"
+        - name: LLM_MODEL
+          value: "qwen2.5:0.5b"
+        - name: GITHUB_SECRET_NAME
+          value: "github-token-secret"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: cache
+          mountPath: /app/.cache
+        - name: marvin
+          mountPath: /.marvin
+      volumes:
+      - name: cache
+        emptyDir: {}
+      - name: marvin
+        emptyDir: {}
