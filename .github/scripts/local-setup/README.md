@@ -232,14 +232,6 @@ Both scripts support the same unified phase control interface:
 | `--clean-kagenti` | - | Uninstall kagenti before installing |
 | `[suffix]` | - | Custom cluster suffix (HyperShift only) |
 
-**Flag aliases** (backward compatible):
-- `--include-create` = `--include-cluster-create`
-- `--include-install` = `--include-kagenti-install`
-- `--include-destroy` = `--include-cluster-destroy`
-- `--skip-create` = `--skip-cluster-create`
-- `--skip-install` = `--skip-kagenti-install`
-- `--skip-destroy` = `--skip-cluster-destroy`
-
 ## Environment Comparison
 
 | Feature | Kind | OpenShift | HyperShift |

@@ -104,10 +104,10 @@ fi
 if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
     echo "Cleaning up existing cluster resources..."
 
-    # Use hypershift-full-test.sh --include-destroy for consistent cleanup logic
+    # Use hypershift-full-test.sh --include-cluster-destroy for consistent cleanup logic
     # hypershift-full-test.sh now detects CI mode (GITHUB_ACTIONS env var) and skips .env loading
     "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
-        --include-destroy \
+        --include-cluster-destroy \
         "$CLUSTER_SUFFIX" || true
 
     # Verify cleanup completed

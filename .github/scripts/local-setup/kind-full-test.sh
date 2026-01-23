@@ -87,13 +87,13 @@ WHITELIST_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        # Include flags - new names (preferred) and legacy aliases
-        --include-cluster-create|--include-create)
+        # Include flags
+        --include-cluster-create)
             INCLUDE_CREATE=true
             WHITELIST_MODE=true
             shift
             ;;
-        --include-kagenti-install|--include-install)
+        --include-kagenti-install)
             INCLUDE_INSTALL=true
             WHITELIST_MODE=true
             shift
@@ -113,17 +113,17 @@ while [[ $# -gt 0 ]]; do
             WHITELIST_MODE=true
             shift
             ;;
-        --include-cluster-destroy|--include-destroy)
+        --include-cluster-destroy)
             INCLUDE_DESTROY=true
             WHITELIST_MODE=true
             shift
             ;;
-        # Skip flags - new names (preferred) and legacy aliases
-        --skip-cluster-create|--skip-create)
+        # Skip flags
+        --skip-cluster-create)
             SKIP_CREATE=true
             shift
             ;;
-        --skip-kagenti-install|--skip-install)
+        --skip-kagenti-install)
             SKIP_INSTALL=true
             shift
             ;;
@@ -139,7 +139,7 @@ while [[ $# -gt 0 ]]; do
             SKIP_KAGENTI_UNINSTALL=true
             shift
             ;;
-        --skip-cluster-destroy|--skip-destroy)
+        --skip-cluster-destroy)
             SKIP_DESTROY=true
             shift
             ;;

@@ -34,7 +34,7 @@ cd "$REPO_ROOT"
 # Use hypershift-full-test.sh with whitelist mode (--include-X flags)
 # This runs: install + agents only
 exec "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
-    --include-install \
+    --include-kagenti-install \
     --include-agents \
     --env ocp \
     ci
