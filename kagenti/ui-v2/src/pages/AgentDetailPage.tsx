@@ -1112,11 +1112,14 @@ export const AgentDetailPage: React.FC = () => {
                 >
                   {yaml.dump(
                     {
-                      ...agent,
+                      apiVersion: agent.workloadType === 'statefulset' ? 'apps/v1' : agent.workloadType === 'job' ? 'batch/v1' : 'apps/v1',
+                      kind: agent.workloadType === 'statefulset' ? 'StatefulSet' : agent.workloadType === 'job' ? 'Job' : 'Deployment',
                       metadata: {
                         ...agent.metadata,
                         managedFields: undefined,
                       },
+                      spec: agent.spec,
+                      status: agent.status,
                     },
                     { noRefs: true, lineWidth: -1 }
                   )}

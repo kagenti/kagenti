@@ -657,11 +657,14 @@ export const ToolDetailPage: React.FC = () => {
                 >
                   {yaml.dump(
                     {
-                      ...tool,
+                      apiVersion: 'mcp.kagenti.dev/v1alpha1',
+                      kind: 'MCPServer',
                       metadata: {
                         ...tool.metadata,
                         managedFields: undefined,
                       },
+                      spec: tool.spec,
+                      status: tool.status,
                     },
                     { noRefs: true, lineWidth: -1 }
                   )}
