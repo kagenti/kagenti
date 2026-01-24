@@ -26,23 +26,31 @@ export interface Agent {
   createdAt?: string;
 }
 
-// Deployment status structure (from Kubernetes)
-// Note: K8s Python client returns snake_case, while raw API returns camelCase
+/**
+ * Deployment status structure from Kubernetes.
+ *
+ * This interface supports both camelCase and snake_case field names because:
+ * - snake_case: Returned by the Kubernetes Python client (used in our backend API)
+ * - camelCase: Returned by the raw Kubernetes API (e.g., direct kubectl responses)
+ *
+ * When consuming this data, prefer using a fallback pattern:
+ *   value.readyReplicas || value.ready_replicas
+ */
 export interface DeploymentStatus {
   replicas?: number;
   readyReplicas?: number;
-  ready_replicas?: number; // snake_case from K8s Python client
+  ready_replicas?: number;
   availableReplicas?: number;
-  available_replicas?: number; // snake_case from K8s Python client
+  available_replicas?: number;
   updatedReplicas?: number;
-  updated_replicas?: number; // snake_case from K8s Python client
+  updated_replicas?: number;
   conditions?: Array<{
     type: string;
     status: string;
     reason?: string;
     message?: string;
     lastTransitionTime?: string;
-    last_transition_time?: string; // snake_case from K8s API
+    last_transition_time?: string;
   }>;
 }
 
