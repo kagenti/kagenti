@@ -38,9 +38,10 @@ try:
     import kubernetes.client
     import kubernetes.config
     from kubernetes.client import ApiException
-except ImportError:
-    print("Error: kubernetes package not installed. Run: pip install kubernetes")
-    sys.exit(1)
+except ImportError as exc:
+    raise ImportError(
+        "kubernetes package not installed. Run: pip install kubernetes"
+    ) from exc
 
 
 # Configure logging
