@@ -125,6 +125,8 @@ class TestToolBuildManifestGeneration:
 
     def test_tool_build_manifest_with_custom_config(self):
         """Test tool build manifest with custom Shipwright config."""
+        # Use external registry to test custom strategy (internal registry overrides
+        # secure strategy to insecure for TLS-less pushes)
         request = CreateToolRequest(
             name="custom-tool",
             namespace="team1",
@@ -134,6 +136,8 @@ class TestToolBuildManifestGeneration:
             gitUrl="https://github.com/example/tools",
             gitRevision="develop",
             contextDir="tools/custom",
+            registryUrl="quay.io/myorg",
+            registrySecret="quay-secret",
             imageTag="v2.0.0",
             shipwrightConfig=ShipwrightBuildConfig(
                 buildStrategy="buildah",
@@ -145,7 +149,7 @@ class TestToolBuildManifestGeneration:
 
         manifest = _build_tool_shipwright_build_manifest(request)
 
-        # Check custom strategy
+        # Check custom strategy is respected for external registry
         assert manifest["spec"]["strategy"]["name"] == "buildah"
 
         # Check timeout
@@ -156,8 +160,13 @@ class TestToolBuildManifestGeneration:
             p["name"]: p.get("value") or p.get("values") for p in manifest["spec"]["paramValues"]
         }
         assert param_values.get("dockerfile") == "Dockerfile.prod"
-        assert "BUILD_ENV=production" in param_values.get("build-args", [])
-        assert "VERSION=2.0.0" in param_values.get("build-args", [])
+        # build-args are stored as list of dicts with 'value' key
+        build_args = param_values.get("build-args", [])
+        build_arg_values = [
+            arg.get("value") if isinstance(arg, dict) else arg for arg in build_args
+        ]
+        assert "BUILD_ENV=production" in build_arg_values
+        assert "VERSION=2.0.0" in build_arg_values
 
     def test_tool_build_manifest_stores_tool_config(self):
         """Test that tool config is stored in Build annotations."""

@@ -29,7 +29,9 @@ class ResourceType(str, Enum):
 class ShipwrightBuildConfig(BaseModel):
     """Configuration for Shipwright builds (shared by agents and tools)."""
 
-    buildStrategy: str = SHIPWRIGHT_STRATEGY_INSECURE
+    # buildStrategy defaults to None to allow automatic selection based on registry type
+    # (internal registries use insecure push, external use secure)
+    buildStrategy: Optional[str] = None
     dockerfile: str = SHIPWRIGHT_DEFAULT_DOCKERFILE
     buildArgs: Optional[List[str]] = None  # KEY=VALUE format
     buildTimeout: str = SHIPWRIGHT_DEFAULT_TIMEOUT
