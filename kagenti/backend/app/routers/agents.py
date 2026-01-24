@@ -2422,7 +2422,6 @@ def _build_job_manifest(
     """
     env_vars = _build_env_vars(request)
     labels = _build_common_labels(request, WORKLOAD_TYPE_JOB)
-    selector_labels = _build_selector_labels(request)
 
     # Build annotations
     annotations: Dict[str, str] = {
