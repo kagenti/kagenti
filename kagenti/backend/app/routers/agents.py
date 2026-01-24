@@ -1064,8 +1064,12 @@ async def migrate_agent(
             if deployment_created:
                 try:
                     kube.delete_deployment(namespace=namespace, name=name)
-                except Exception:
-                    pass
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "Failed to clean up Deployment '%s' after Service creation error: %s",
+                        name,
+                        cleanup_error,
+                    )
             raise HTTPException(
                 status_code=e.status,
                 detail=f"Failed to create Service: {e.reason}",
