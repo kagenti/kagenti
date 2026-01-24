@@ -2823,6 +2823,30 @@ async def finalize_shipwright_build(
                 detail=f"Build has not succeeded yet. Status: {failure_message or 'In progress'}",
             )
 
+        # Get Build resource for labels and stored agent config (needed for workload type check)
+        build = kube.get_custom_resource(
+            group=SHIPWRIGHT_CRD_GROUP,
+            version=SHIPWRIGHT_CRD_VERSION,
+            namespace=namespace,
+            plural=SHIPWRIGHT_BUILDS_PLURAL,
+            name=name,
+        )
+        build_metadata = build.get("metadata", {})
+        build_labels = build_metadata.get("labels", {})
+        build_annotations = build_metadata.get("annotations", {})
+
+        # Parse stored agent config from Build annotations
+        stored_config: Dict[str, Any] = {}
+        agent_config_json = build_annotations.get("kagenti.io/agent-config")
+        if agent_config_json:
+            try:
+                stored_config = json.loads(agent_config_json)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse agent config from Build annotation: {e}")
+
+        # Determine expected workload type from stored config
+        expected_workload_type = stored_config.get("workloadType", WORKLOAD_TYPE_DEPLOYMENT)
+
         # Check if workload already exists (idempotency check)
         # This handles the case where finalize is called multiple times
         workload_exists = False
@@ -2852,6 +2876,23 @@ async def finalize_shipwright_build(
                     raise
 
         if workload_exists:
+            # Check if existing workload type matches expected type from config
+            if existing_workload_type != expected_workload_type:
+                logger.warning(
+                    f"Workload type mismatch for '{name}' in namespace '{namespace}': "
+                    f"existing workload is {existing_workload_type}, but stored config "
+                    f"specifies {expected_workload_type}. This may indicate a configuration issue."
+                )
+                return CreateAgentResponse(
+                    success=True,
+                    name=name,
+                    namespace=namespace,
+                    message=(
+                        f"Agent '{name}' already deployed as {existing_workload_type}, "
+                        f"but stored config specifies {expected_workload_type}. "
+                        "The existing workload was preserved."
+                    ),
+                )
             logger.info(
                 f"Workload '{name}' already exists as {existing_workload_type} in namespace '{namespace}'. "
                 "Skipping creation (finalize already completed)."
@@ -2869,14 +2910,7 @@ async def finalize_shipwright_build(
         output_digest = output.get("digest")
 
         if not output_image:
-            # Fallback: try to get image from Build spec
-            build = kube.get_custom_resource(
-                group=SHIPWRIGHT_CRD_GROUP,
-                version=SHIPWRIGHT_CRD_VERSION,
-                namespace=namespace,
-                plural=SHIPWRIGHT_BUILDS_PLURAL,
-                name=name,
-            )
+            # Fallback: try to get image from Build spec (build already fetched earlier)
             output_image = build.get("spec", {}).get("output", {}).get("image")
 
         if not output_image:
@@ -2888,28 +2922,8 @@ async def finalize_shipwright_build(
         # If we have a digest, use it for immutable image reference
         container_image = f"{output_image}@{output_digest}" if output_digest else output_image
 
-        # Step 2: Get Build resource for labels and stored agent config
-        build = kube.get_custom_resource(
-            group=SHIPWRIGHT_CRD_GROUP,
-            version=SHIPWRIGHT_CRD_VERSION,
-            namespace=namespace,
-            plural=SHIPWRIGHT_BUILDS_PLURAL,
-            name=name,
-        )
-        build_metadata = build.get("metadata", {})
-        build_labels = build_metadata.get("labels", {})
-        build_annotations = build_metadata.get("annotations", {})
-
-        # Parse stored agent config from Build annotations
-        stored_config: Dict[str, Any] = {}
-        agent_config_json = build_annotations.get("kagenti.io/agent-config")
-        if agent_config_json:
-            try:
-                stored_config = json.loads(agent_config_json)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse agent config from Build annotation: {e}")
-
         # Merge request with stored config (request values take precedence)
+        # Note: build, build_labels, build_annotations, and stored_config were fetched earlier
         final_protocol = (
             request.protocol
             if request.protocol is not None
@@ -2930,7 +2944,8 @@ async def finalize_shipwright_build(
             if request.imagePullSecret is not None
             else stored_config.get("registrySecret")
         )
-        final_workload_type = stored_config.get("workloadType", WORKLOAD_TYPE_DEPLOYMENT)
+        # Use expected_workload_type computed earlier (from stored config)
+        final_workload_type = expected_workload_type
 
         # For envVars and servicePorts, use request if provided, otherwise use stored config
         final_env_vars = request.envVars
