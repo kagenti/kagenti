@@ -498,6 +498,11 @@ async def list_agents(
             metadata = statefulset.get("metadata", {})
             name = metadata.get("name", "")
             if name in agent_names:
+                logger.warning(
+                    f"Duplicate agent name '{name}' detected: StatefulSet skipped because "
+                    f"a Deployment with the same name already exists in namespace '{namespace}'. "
+                    "This may indicate a configuration issue."
+                )
                 continue
             agent_names.add(name)
             labels = metadata.get("labels", {})
@@ -526,6 +531,11 @@ async def list_agents(
             metadata = job.get("metadata", {})
             name = metadata.get("name", "")
             if name in agent_names:
+                logger.warning(
+                    f"Duplicate agent name '{name}' detected: Job skipped because "
+                    f"a Deployment or StatefulSet with the same name already exists in namespace '{namespace}'. "
+                    "This may indicate a configuration issue."
+                )
                 continue
             agent_names.add(name)
             labels = metadata.get("labels", {})
