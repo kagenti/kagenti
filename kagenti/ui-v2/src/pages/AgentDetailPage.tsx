@@ -444,6 +444,11 @@ export const AgentDetailPage: React.FC = () => {
                         <DescriptionListDescription>
                           {readyReplicas}/{replicas} ready
                           {availableReplicas > 0 && ` (${availableReplicas} available)`}
+                          {workloadType === 'statefulset' && (
+                            <span style={{ marginLeft: 4 }}>
+                              (StatefulSet rolling update progress via <code>updatedReplicas</code> is not shown here)
+                            </span>
+                          )}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                       <DescriptionListGroup>
