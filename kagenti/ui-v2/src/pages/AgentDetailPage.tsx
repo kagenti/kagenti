@@ -311,10 +311,12 @@ export const AgentDetailPage: React.FC = () => {
   // Get workload type
   const workloadType = agent.workloadType || labels['kagenti.io/workload-type'] || 'deployment';
 
-  // Get replica info for Deployments
+  // Get replica info for Deployments/StatefulSets
   const replicas = spec.replicas ?? 1;
   const readyReplicas = status.readyReplicas ?? status.ready_replicas ?? 0;
   const availableReplicas = status.availableReplicas ?? status.available_replicas ?? 0;
+  // updatedReplicas indicates rolling update progress for StatefulSets
+  const updatedReplicas = status.updatedReplicas ?? status.updated_replicas ?? 0;
 
   const gitSource = spec.source?.git;
 
@@ -444,10 +446,10 @@ export const AgentDetailPage: React.FC = () => {
                         <DescriptionListDescription>
                           {readyReplicas}/{replicas} ready
                           {availableReplicas > 0 && ` (${availableReplicas} available)`}
-                          {workloadType === 'statefulset' && (
-                            <span style={{ marginLeft: 4 }}>
-                              (StatefulSet rolling update progress via <code>updatedReplicas</code> is not shown here)
-                            </span>
+                          {workloadType === 'statefulset' && updatedReplicas < replicas && (
+                            <Label color="blue" isCompact style={{ marginLeft: 8 }}>
+                              {updatedReplicas}/{replicas} updated
+                            </Label>
                           )}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
