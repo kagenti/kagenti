@@ -810,7 +810,7 @@ export const AgentDetailPage: React.FC = () => {
                               </Td>
                               <Td dataLabel="Last Transition">
                                 {(condition.lastTransitionTime || condition.last_transition_time)
-                                  ? new Date(condition.lastTransitionTime || condition.last_transition_time!).toLocaleString()
+                                  ? new Date((condition.lastTransitionTime || condition.last_transition_time) as string).toLocaleString()
                                   : '-'}
                               </Td>
                             </Tr>
