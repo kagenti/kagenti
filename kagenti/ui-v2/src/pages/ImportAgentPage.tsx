@@ -906,7 +906,7 @@ export const ImportAgentPage: React.FC = () => {
                     <HelperTextItem>
                       {workloadType === 'deployment' && 'Standard deployment for long-running agents with auto-restart'}
                       {workloadType === 'statefulset' && 'For stateful agents requiring stable network identity and persistent storage'}
-                      {workloadType === 'job' && 'For batch/one-time agents that run to completion'}
+                      {workloadType === 'job' && 'For batch/one-time agents that run to completion. Note: Jobs may not expose an agent card or support HTTPRoute-based external access.'}
                     </HelperTextItem>
                   </HelperText>
                 </FormHelperText>
