@@ -57,7 +57,8 @@ class Settings(BaseSettings):
 
     # Migration settings (Phase 4: Agent CRD to Deployment migration)
     # When True, list_agents will also include legacy Agent CRDs that haven't been migrated
-    enable_legacy_agent_crd: bool = True  # Set to False after full migration
+    # Default is False since agents now use standard Kubernetes workloads (Deployments, StatefulSets, Jobs)
+    enable_legacy_agent_crd: bool = False
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"
