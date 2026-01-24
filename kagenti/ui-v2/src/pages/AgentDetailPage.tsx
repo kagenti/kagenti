@@ -202,9 +202,9 @@ export const AgentDetailPage: React.FC = () => {
 
   // Check if agent is ready to fetch agent card
   // Use readyStatus from backend (handles Deployment, StatefulSet, Job)
-  // For Jobs, "Running" means the pod is active and agent card should be available
+  // All workload types now use consistent status values: Ready, Progressing, Not Ready, Failed
   const agentReadyStatus = agent?.readyStatus;
-  const isAgentReady = agentReadyStatus === 'Ready' || agentReadyStatus === 'Completed' || agentReadyStatus === 'Running';
+  const isAgentReady = agentReadyStatus === 'Ready' || agentReadyStatus === 'Progressing';
 
   // Fetch agent card if agent is ready
   const { data: agentCard, isLoading: isAgentCardLoading } = useQuery<AgentCard>({
@@ -293,8 +293,8 @@ export const AgentDetailPage: React.FC = () => {
   // Use computed readyStatus from backend (handles Deployment, StatefulSet, Job)
   // Fallback to checking conditions for backward compatibility
   const readyStatus = agent.readyStatus;
-  // For Jobs, "Running" is a valid active state (green), "Completed" is also green
-  const isRunningOrReady = readyStatus === 'Ready' || readyStatus === 'Completed' || readyStatus === 'Running';
+  // All workload types now use consistent status values: Ready, Progressing, Not Ready, Failed
+  const isRunningOrReady = readyStatus === 'Ready' || readyStatus === 'Progressing';
   const isReady = isRunningOrReady || conditions.some(
     (c) => (c.type === 'Ready' || c.type === 'Available') && c.status === 'True'
   );

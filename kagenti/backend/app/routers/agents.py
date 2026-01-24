@@ -372,7 +372,16 @@ def _get_statefulset_description(statefulset: dict) -> str:
 
 
 def _get_job_status(job: dict) -> str:
-    """Get the status of a Kubernetes Job."""
+    """Get the status of a Kubernetes Job.
+
+    Returns status values consistent with Deployments and StatefulSets:
+    - "Ready": Job completed successfully (equivalent to Job condition "Complete")
+    - "Failed": Job failed (equivalent to Job condition "Failed")
+    - "Progressing": Job is actively running (has active pods)
+    - "Not Ready": Job is pending/not yet started
+
+    This mapping ensures UI consistency across all workload types.
+    """
     status = job.get("status", {})
     conditions = status.get("conditions") or []
 
@@ -382,7 +391,7 @@ def _get_job_status(job: dict) -> str:
         cond_status = condition.get("status")
 
         if cond_type == "Complete" and cond_status == "True":
-            return "Completed"
+            return "Ready"  # Job completed successfully
         if cond_type == "Failed" and cond_status == "True":
             return "Failed"
 
@@ -392,12 +401,12 @@ def _get_job_status(job: dict) -> str:
     failed = status.get("failed") or 0
 
     if succeeded > 0:
-        return "Completed"
+        return "Ready"  # Job completed successfully
     if failed > 0:
         return "Failed"
     if active > 0:
-        return "Running"
-    return "Pending"
+        return "Progressing"  # Job is actively running
+    return "Not Ready"  # Job pending/not started
 
 
 def _get_job_description(job: dict) -> str:
