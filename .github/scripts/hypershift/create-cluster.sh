@@ -184,7 +184,7 @@ echo "  Replicas:      $REPLICAS"
 echo "  Instance Type: $INSTANCE_TYPE"
 echo "  OCP Version:   $OCP_VERSION"
 echo "  Base Domain:   $BASE_DOMAIN"
-echo "  ManagedBy Tag: $MANAGED_BY_TAG"
+echo "  IAM Scope Tag: kagenti.io/managed-by=$MANAGED_BY_TAG"
 echo ""
 
 # ============================================================================
@@ -240,14 +240,15 @@ log_info "Creating cluster (this may take 10-15 minutes)..."
 
 cd "$HYPERSHIFT_AUTOMATION_DIR"
 
-# Pass ManagedBy tag for IAM scoping - this tag is applied to all AWS resources
-# (VPC, subnets, security groups, EC2 instances, etc.) and allows IAM policies
-# to restrict operations to only resources tagged with this value.
+# Pass kagenti.io/managed-by tag for IAM scoping - this namespaced tag is applied
+# to all AWS resources (VPC, subnets, security groups, EC2 instances, etc.) and
+# allows IAM policies to restrict operations to only resources tagged with this value.
+# The tag key follows Kubernetes label conventions to avoid conflicts with other tools.
 ansible-playbook site.yml \
     -e '{"create": true, "destroy": false, "create_iam": false}' \
     -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
     -e "domain=$BASE_DOMAIN" \
-    -e "additional_tags=ManagedBy=${MANAGED_BY_TAG}" \
+    -e "additional_tags=kagenti.io/managed-by=${MANAGED_BY_TAG}" \
     -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'", "replicas": '"$REPLICAS"', "instance_type": "'"$INSTANCE_TYPE"'", "image": "'"$OCP_VERSION"'"}]}'
 
 # ============================================================================

@@ -86,7 +86,7 @@
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "ec2:ResourceTag/ManagedBy": "${MANAGED_BY_TAG}"
+          "ec2:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
         }
       }
     },
@@ -130,7 +130,7 @@
       "Resource": "*",
       "Condition": {
         "StringEquals": {
-          "elasticloadbalancing:ResourceTag/ManagedBy": "${MANAGED_BY_TAG}"
+          "elasticloadbalancing:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
         }
       }
     },

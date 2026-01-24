@@ -25,26 +25,36 @@ They use variable substitution (`${VAR}`) and are rendered by `setup-hypershift-
 
 ## Tagging Strategy
 
-We use **HyperShift's built-in tagging** rather than a custom `ManagedBy` tag:
+We use a **namespaced custom tag** passed via HyperShift's `--additional-tags`:
 
 ```
-HyperShift tags all resources with: kubernetes.io/cluster/<cluster-name>=owned
+Tag Key:   kagenti.io/managed-by
+Tag Value: ${MANAGED_BY_TAG}  (e.g., "kagenti-hypershift-ci")
 
-IAM policy matches with: ForAnyValue:StringLike on aws:TagKeys
-Pattern: kubernetes.io/cluster/${MANAGED_BY_TAG}-*
+IAM policy matches with: ec2:ResourceTag/kagenti.io/managed-by
+Condition: StringEquals to "${MANAGED_BY_TAG}"
 
-This matches clusters like:
-- kagenti-hypershift-ci-local    -> kubernetes.io/cluster/kagenti-hypershift-ci-local=owned
-- kagenti-hypershift-ci-123      -> kubernetes.io/cluster/kagenti-hypershift-ci-123=owned
-- kagenti-hypershift-ci-pr-456   -> kubernetes.io/cluster/kagenti-hypershift-ci-pr-456=owned
+This scopes ALL mutate/delete operations to only resources tagged with:
+  kagenti.io/managed-by=kagenti-hypershift-ci
 ```
 
 ### Why This Approach?
 
-1. **No fork needed** - Uses upstream hypershift-automation without `--additional-tags`
-2. **Already enforced** - HyperShift always creates this tag on all resources
-3. **Multi-cluster support** - Prefix pattern matches all our clusters
-4. **Simpler** - No need to pass custom tags through the pipeline
+1. **Namespaced tag key** - `kagenti.io/` prefix avoids conflicts with other tools (follows K8s label conventions)
+2. **Tag-based scoping** - Destructive operations (delete, terminate) require the tag
+3. **HyperShift integration** - Tags are passed via `--additional-tags` in `create-cluster.sh`
+4. **VPC setup exception** - Route table operations don't require tags (AWS auto-creates main route table untagged)
+
+### Known Limitations
+
+**VPC Setup Operations (EC2SetupVPC section):**
+- AWS auto-creates resources like the main route table without inheriting tags
+- Operations like `ec2:ReplaceRouteTableAssociation` must be allowed without tag conditions
+- This is a known gap - these operations are allowed on any resource
+
+**CREATE Operations:**
+- Currently allowed without requiring tags (HyperShift may create-then-tag)
+- Future improvement: Add `aws:RequestTag` condition once verified HyperShift tags at creation time
 
 ## Security Model
 
@@ -55,35 +65,45 @@ This matches clusters like:
 | **S3 Buckets** | ARN prefix: `${MANAGED_BY_TAG}-*` | HARD LIMIT |
 | **IAM Roles** | ARN prefix: `${MANAGED_BY_TAG}-*` | HARD LIMIT |
 | **IAM Profiles** | ARN prefix: `${MANAGED_BY_TAG}-*` | HARD LIMIT |
-| **EC2** | Tag key pattern: `kubernetes.io/cluster/${MANAGED_BY_TAG}-*` | Matches HyperShift tag |
-| **ELB** | Tag key pattern: `kubernetes.io/cluster/${MANAGED_BY_TAG}-*` | Matches HyperShift tag |
-| **Route53** | Zone ID (CI user) / All zones (HCP role) | Private zones created dynamically |
+| **EC2 (mutate/delete)** | Tag: `kagenti.io/managed-by=${MANAGED_BY_TAG}` | Requires custom tag |
+| **EC2 (VPC setup)** | Unrestricted | AWS auto-creates untagged resources |
+| **ELB (mutate/delete)** | Tag: `kagenti.io/managed-by=${MANAGED_BY_TAG}` | Requires custom tag |
+| **Route53** | Broad access | Private zones created dynamically |
 | **OIDC** | Broad (ARN patterns vary) | hcp CLI only manages its own |
 
-### IAM Condition Pattern
+### IAM Condition Pattern for EC2/ELB
 
 ```json
 {
   "Condition": {
-    "ForAnyValue:StringLike": {
-      "aws:TagKeys": "kubernetes.io/cluster/${MANAGED_BY_TAG}-*"
+    "StringEquals": {
+      "ec2:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
     }
   }
 }
 ```
 
 This condition:
-- Uses `ForAnyValue:StringLike` for pattern matching on tag **keys**
-- Matches any resource tagged with `kubernetes.io/cluster/kagenti-hypershift-ci-*`
-- Works for both creation and deletion operations
+- Uses `StringEquals` for exact match on tag **value**
+- Only allows operations on resources tagged with `kagenti.io/managed-by=kagenti-hypershift-ci`
+- Applied to DELETE/TERMINATE operations (not CREATE, not VPC setup)
 
 ### What CAN Be Strictly Limited
 
 1. **S3 Buckets** - Prefix scoping via ARN. Can only access `${MANAGED_BY_TAG}-*` buckets.
 2. **IAM Roles/Profiles** - Prefix scoping via ARN. Can only manage `${MANAGED_BY_TAG}-*` resources.
-3. **EC2/ELB** - Tag key pattern matching. Only resources tagged with matching cluster name.
+3. **EC2/ELB Mutate/Delete** - Tag value matching. Only resources tagged with `kagenti.io/managed-by`.
 
 ### What CANNOT Be Strictly Limited
+
+**EC2 VPC Setup Operations:**
+- AWS auto-creates the main route table without tags
+- `ReplaceRouteTableAssociation`, `AttachInternetGateway`, etc. must be unrestricted
+- These operations are in the `EC2SetupVPC` section without conditions
+
+**EC2 Create Operations:**
+- Currently unrestricted (HyperShift may not tag at creation time)
+- Could be tightened with `aws:RequestTag` once verified
 
 **Route53:**
 - HyperShift creates private hosted zones per cluster
@@ -98,11 +118,12 @@ This condition:
 
 Multiple layers provide protection:
 
-1. **IAM Policies** - Tag key pattern matching for EC2/ELB, ARN prefix for S3/IAM
-2. **hcp CLI behavior** - Only targets resources tagged with its infra-id
-3. **Cluster naming convention** - All clusters prefixed with `${MANAGED_BY_TAG}`
-4. **K8s RBAC** - Limits HostedCluster management on management cluster
-5. **Separate users** - CI user vs HCP role separation
+1. **IAM Policies** - Tag value matching for EC2/ELB delete/mutate, ARN prefix for S3/IAM
+2. **Custom namespaced tag** - `kagenti.io/managed-by` avoids conflicts with other tools
+3. **hcp CLI behavior** - Only targets resources tagged with its infra-id
+4. **Cluster naming convention** - All clusters prefixed with `${MANAGED_BY_TAG}`
+5. **K8s RBAC** - Limits HostedCluster management on management cluster
+6. **Separate users** - CI user vs HCP role separation
 
 ## Kubernetes RBAC (k8s-ci-clusterrole.yaml)
 
