@@ -6,7 +6,6 @@ Tests for Agent CRD to Deployment migration functionality (Phase 4).
 """
 
 import pytest
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 # Mock the Kubernetes client imports for testing without a cluster
