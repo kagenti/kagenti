@@ -62,12 +62,6 @@ jobs:
       - name: Wait for kagenti-operator CRDs to be established
         run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
 
-      # NOTE: Pipeline template is only needed for deprecated AgentBuild + Tekton.
-      # Agent deployment now uses standard Kubernetes Deployments + Services.
-      # Kept for backward compatibility with existing AgentBuild deployments.
-      - name: Apply pipeline-template-dev ConfigMap (for AgentBuild backward compatibility)
-        run: bash .github/scripts/kagenti-operator/42-apply-pipeline-template.sh
-
       - name: Wait for Toolhive CRDs to be established
         run: bash .github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
 
