@@ -8,7 +8,27 @@ Tests for Agent CRD to Deployment migration functionality (Phase 4).
 import pytest
 from unittest.mock import MagicMock, patch
 
-# Mock the Kubernetes client imports for testing without a cluster
+# IMPORTANT: Mock Setup Before Import Pattern
+# ============================================
+# The migration script (migrate_agents.py) has a bare `import kubernetes` at the
+# top level, followed by a try-except that catches ImportError and exits with a
+# clear error message if the kubernetes package isn't installed.
+#
+# For testing without a real Kubernetes cluster (or without the kubernetes package
+# installed), we must mock the kubernetes modules BEFORE importing the migration
+# script. This is achieved using patch.dict on sys.modules within a `with` block.
+#
+# Why this pattern is necessary:
+# 1. Python caches imported modules in sys.modules
+# 2. The `import kubernetes` statement in migrate_agents.py executes immediately
+#    when the module is first imported
+# 3. By pre-populating sys.modules with mocked versions, Python finds our mocks
+#    instead of trying to import the real kubernetes package
+# 4. This allows tests to run in CI environments without kubernetes installed
+#
+# Note: The `with` block ensures the mocks are in place during the import.
+# After the import, the module is cached and subsequent accesses use the
+# already-imported (mocked) version.
 with patch.dict(
     "sys.modules",
     {

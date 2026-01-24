@@ -125,8 +125,10 @@ export const AgentCatalogPage: React.FC = () => {
     let color: 'green' | 'red' | 'blue' | 'cyan' = 'red';
     if (status === 'Ready' || status === 'Completed' || status === 'Running') {
       color = 'green';
-    } else if (status === 'Progressing' || status === 'Pending') {
+    } else if (status === 'Progressing') {
       color = 'blue';
+    } else if (status === 'Pending') {
+      color = 'cyan';
     }
     return <Label color={color}>{status}</Label>;
   };
