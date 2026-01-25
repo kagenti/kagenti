@@ -12,3 +12,8 @@ repos:
   hooks:
     # Run the formatter.
     - id: ruff-format
+# Secret detection - runs locally (CI action requires license for org repos)
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.21.2
+  hooks:
+    - id: gitleaks

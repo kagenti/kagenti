@@ -1,0 +1,21 @@
+# Gitleaks configuration for Kagenti HyperShift CI
+# See: https://github.com/gitleaks/gitleaks
+
+title = "Kagenti Gitleaks Configuration"
+
+[allowlist]
+  description = "Allowlisted files and patterns"
+
+  # Policy files contain example ARNs and resource patterns, not real secrets
+  paths = [
+    '''^\.github/scripts/hypershift/policies/.*\.json$''',
+    '''^docs/.*\.md$''',
+  ]
+
+  # Regex patterns for allowed strings (false positives)
+  regexes = [
+    # Example ARNs in documentation
+    '''arn:aws:iam::\d{12}:role/example-.*''',
+    # Placeholder values
+    '''PLACEHOLDER|EXAMPLE|TODO|CHANGEME''',
+  ]

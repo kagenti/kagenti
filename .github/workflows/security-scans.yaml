@@ -1,0 +1,154 @@
+# Security Scans - Phase 0 of TODO_GH_APPROVAL_AND_LABELING.md
+#
+# These scans run on pull_request (not pull_request_target), so they:
+# - Use the workflow file from the PR branch (works without stub PR)
+# - Do NOT have access to secrets (safe for fork PRs)
+# - Run automatically on all PRs
+#
+name: Security Scans
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # NOTE: Gitleaks CI action requires a license for organization repos
+  # See: https://github.com/gitleaks/gitleaks-action#-announcement
+  # Gitleaks is run locally via pre-commit hook instead.
+  # To enable in CI: add GITLEAKS_LICENSE secret from gitleaks.io and uncomment below
+  #
+  # gitleaks:
+  #   name: Secret Detection
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #     - name: Run Gitleaks
+  #       uses: gitleaks/gitleaks-action@v2
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: List dependency manifests
+        run: |
+          echo "=== Searching for dependency manifests ==="
+          echo ""
+          # Common manifest files for various ecosystems
+          MANIFESTS=$(find . -type f \( \
+            -name "package-lock.json" -o \
+            -name "package.json" -o \
+            -name "requirements.txt" -o \
+            -name "requirements*.txt" -o \
+            -name "Pipfile.lock" -o \
+            -name "poetry.lock" -o \
+            -name "pyproject.toml" -o \
+            -name "go.sum" -o \
+            -name "go.mod" -o \
+            -name "Cargo.lock" -o \
+            -name "Gemfile.lock" -o \
+            -name "pom.xml" -o \
+            -name "build.gradle" -o \
+            -name "yarn.lock" \
+          \) 2>/dev/null | grep -v node_modules | grep -v ".git/" | sort || true)
+
+          if [ -z "$MANIFESTS" ]; then
+            echo "No dependency manifests found in this repository."
+            echo "The dependency review will compare the dependency graph between base and head."
+          else
+            echo "Found manifests:"
+            echo "$MANIFESTS"
+            echo ""
+            echo "Total: $(echo "$MANIFESTS" | wc -l | tr -d ' ') manifest files"
+          fi
+
+      - name: Dependency Review
+        id: dependency-review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # Post a comment on the PR showing what was scanned
+          comment-summary-in-pr: always
+
+      - name: Show scan results
+        if: always()
+        run: |
+          echo "=== Dependency Review Results ==="
+          echo ""
+          echo "--- Dependency Changes ---"
+          CHANGES='${{ steps.dependency-review.outputs.dependency-changes }}'
+          if [ -n "$CHANGES" ] && [ "$CHANGES" != "null" ] && [ "$CHANGES" != "[]" ]; then
+            echo "$CHANGES" | jq '.' 2>/dev/null || echo "$CHANGES"
+          else
+            echo "No dependency changes detected in this PR."
+          fi
+          echo ""
+          echo "--- Vulnerable Dependencies ---"
+          VULNS='${{ steps.dependency-review.outputs.vulnerable-changes }}'
+          if [ -n "$VULNS" ] && [ "$VULNS" != "null" ] && [ "$VULNS" != "[]" ]; then
+            echo "$VULNS" | jq '.' 2>/dev/null || echo "$VULNS"
+          else
+            echo "No vulnerabilities found."
+          fi
+          echo ""
+          echo "--- License Issues ---"
+          LICENSES='${{ steps.dependency-review.outputs.invalid-license-changes }}'
+          if [ -n "$LICENSES" ] && [ "$LICENSES" != "null" ] && [ "$LICENSES" != "[]" ]; then
+            echo "$LICENSES" | jq '.' 2>/dev/null || echo "$LICENSES"
+          else
+            echo "No license issues found."
+          fi
+
+  shellcheck:
+    name: Shell Script Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on CI scripts
+        run: |
+          echo "Checking .github/scripts for shell scripts..."
+
+          # Find all shell scripts
+          SCRIPTS=$(find .github/scripts -name "*.sh" -type f 2>/dev/null || true)
+
+          if [ -z "$SCRIPTS" ]; then
+            echo "No shell scripts found in .github/scripts"
+            exit 0
+          fi
+
+          echo "Found scripts:"
+          echo "$SCRIPTS"
+          echo ""
+
+          # Run shellcheck with error severity (fail on errors only)
+          # Warnings are reported but don't fail the build
+          FAILED=0
+          for script in $SCRIPTS; do
+            echo "Checking: $script"
+            if ! shellcheck --severity=error "$script"; then
+              FAILED=1
+            fi
+          done
+
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "ERROR: Some scripts have shellcheck errors. Please fix them."
+            exit 1
+          fi
+
+          echo ""
+          echo "All scripts passed shellcheck (error level)"
