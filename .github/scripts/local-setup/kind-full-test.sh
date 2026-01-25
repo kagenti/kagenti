@@ -52,14 +52,15 @@
 
 set -euo pipefail
 
-# Handle Ctrl+C properly - kill all child processes
+# Handle Ctrl+C properly - kill child processes only (not the terminal!)
 cleanup() {
     echo ""
     echo -e "\033[0;31m✗ Interrupted! Killing child processes...\033[0m"
-    # Kill entire process group
-    kill -TERM -$$ 2>/dev/null || true
+    # Kill only direct child processes, not the entire process group
+    # Using pkill -P is safer than kill -$$ which can kill the terminal
+    pkill -P $$ 2>/dev/null || true
     sleep 1
-    kill -9 -$$ 2>/dev/null || true
+    pkill -9 -P $$ 2>/dev/null || true
     exit 130
 }
 trap cleanup SIGINT SIGTERM
