@@ -32,6 +32,10 @@ on:
         required: false
         type: boolean
         default: false
+      max_parallel:
+        description: 'Maximum parallel CI runs (slot count)'
+        required: false
+        default: '6'
 
 # Only allow one run per PR to avoid resource conflicts
 # When a new commit is pushed, the old run is cancelled but cleanup step runs first
@@ -46,6 +50,9 @@ env:
   # For workflow_dispatch: user-provided or run_number
   CLUSTER_SUFFIX: ${{ inputs.cluster_name || (github.event.pull_request.number && format('pr{0}', github.event.pull_request.number)) || github.run_number }}
   OCP_VERSION: ${{ inputs.ocp_version || '4.20.10' }}
+  # Slot management for parallel CI runs
+  MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
+  SLOT_TIMEOUT: '60'  # Minutes to wait for an available slot
 
 jobs:
   e2e-ocp-kagenti-operator:
@@ -97,6 +104,23 @@ jobs:
 
       - name: Verify management cluster access
         run: bash .github/scripts/hypershift/ci/50-verify-mgmt-access.sh
+
+      # --- Slot Management (for parallel CI runs) ---
+      - name: Cleanup stale CI slots
+        run: bash .github/scripts/hypershift/ci/slots/cleanup-stale.sh
+        continue-on-error: true  # Don't fail if cleanup has issues
+
+      - name: Acquire CI slot
+        id: acquire-slot
+        run: bash .github/scripts/hypershift/ci/slots/acquire.sh
+        env:
+          MAX_SLOTS: ${{ env.MAX_SLOTS }}
+          SLOT_TIMEOUT: ${{ env.SLOT_TIMEOUT }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Check cluster capacity
+        run: bash .github/scripts/hypershift/ci/slots/check-capacity.sh
+      # --- End Slot Management ---
 
       - name: Cleanup any existing cluster (from cancelled runs)
         run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
@@ -151,6 +175,10 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
           HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+
+      - name: Release CI slot
+        if: always()
+        run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ steps.acquire-slot.outputs.slot_id }}"
 
       - name: Summary
         if: always()

@@ -84,6 +84,18 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "replicasets"]
     verbs: ["get", "list", "watch", "patch"]
+
+  # Leases - for CI slot management (parallel run coordination)
+  # Used by acquire.sh/release.sh to atomically acquire/release CI slots
+  # Leases are coordination primitives (like leader election) - safe to grant
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+
+  # MachineAutoscalers - for capacity check (read-only)
+  - apiGroups: ["autoscaling.openshift.io"]
+    resources: ["machineautoscalers"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

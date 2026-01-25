@@ -321,3 +321,18 @@ echo "╔═══════════════════════�
 echo "║                    Cluster Destroyed                           ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
+
+# ============================================================================
+# 8. Release CI Slot (for parallel run coordination)
+# ============================================================================
+# Release the CI slot so other runs can use it.
+# Uses CLUSTER_SUFFIX to find the slot (from holderIdentity).
+
+SLOTS_DIR="$SCRIPT_DIR/ci/slots"
+if [[ -d "$SLOTS_DIR" ]]; then
+    echo "=== Releasing CI Slot ==="
+    # Export CLUSTER_SUFFIX for release.sh to find the correct slot
+    export CLUSTER_SUFFIX
+    "$SLOTS_DIR/release.sh" || true
+    echo ""
+fi

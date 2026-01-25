@@ -182,3 +182,34 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
 else
     echo "No existing cluster or namespace found, proceeding with creation"
 fi
+
+# ============================================================================
+# Acquire CI Slot (for parallel run coordination)
+# ============================================================================
+# This runs after cleanup but before cluster creation to ensure we have a slot
+# before consuming resources. The slot is released in destroy-cluster.sh.
+
+SLOTS_DIR="$SCRIPT_DIR/slots"
+
+if [[ -d "$SLOTS_DIR" ]]; then
+    echo ""
+    echo "=== CI Slot Management ==="
+
+    # Cleanup stale slots first
+    "$SLOTS_DIR/cleanup-stale.sh" || true
+
+    # Acquire a slot
+    if "$SLOTS_DIR/acquire.sh"; then
+        echo "Slot acquired successfully"
+    else
+        echo "::error::Failed to acquire CI slot"
+        exit 1
+    fi
+
+    # Check capacity
+    "$SLOTS_DIR/check-capacity.sh" || {
+        echo "::warning::Capacity check failed, proceeding anyway"
+    }
+else
+    echo "Slot management not available (slots/ directory not found)"
+fi
