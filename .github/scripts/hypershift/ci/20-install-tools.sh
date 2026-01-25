@@ -15,7 +15,23 @@ rm /tmp/oc.tar.gz
 pip install ansible-core kubernetes openshift PyYAML
 
 # Install ansible collections (community.aws required for sts_session_token)
-ansible-galaxy collection install kubernetes.core amazon.aws community.aws community.general
+# Retry loop for transient Ansible Galaxy failures (HTTP 500)
+MAX_RETRIES=5
+RETRY_DELAY=30
+for i in $(seq 1 $MAX_RETRIES); do
+    echo "Attempt $i/$MAX_RETRIES: Installing Ansible collections..."
+    if ansible-galaxy collection install kubernetes.core amazon.aws community.aws community.general; then
+        echo "Ansible collections installed successfully"
+        break
+    else
+        if [ "$i" -eq "$MAX_RETRIES" ]; then
+            echo "Failed to install Ansible collections after $MAX_RETRIES attempts"
+            exit 1
+        fi
+        echo "Ansible Galaxy failed (attempt $i/$MAX_RETRIES), retrying in ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+    fi
+done
 
 echo "Tools installed:"
 oc version --client
