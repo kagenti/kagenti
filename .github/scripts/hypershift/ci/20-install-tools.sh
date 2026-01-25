@@ -15,23 +15,39 @@ rm /tmp/oc.tar.gz
 pip install ansible-core kubernetes openshift PyYAML
 
 # Install ansible collections (community.aws required for sts_session_token)
-# Retry loop for transient Ansible Galaxy failures (HTTP 500)
-MAX_RETRIES=5
-RETRY_DELAY=30
-for i in $(seq 1 $MAX_RETRIES); do
-    echo "Attempt $i/$MAX_RETRIES: Installing Ansible collections..."
-    if ansible-galaxy collection install kubernetes.core amazon.aws community.aws community.general; then
-        echo "Ansible collections installed successfully"
-        break
-    else
-        if [ "$i" -eq "$MAX_RETRIES" ]; then
-            echo "Failed to install Ansible collections after $MAX_RETRIES attempts"
-            exit 1
+# Try Galaxy first with retries, fall back to GitHub if Galaxy is down
+install_collections_galaxy() {
+    local MAX_RETRIES=3
+    local RETRY_DELAY=15
+    for i in $(seq 1 $MAX_RETRIES); do
+        echo "Galaxy attempt $i/$MAX_RETRIES: Installing Ansible collections..."
+        if ansible-galaxy collection install kubernetes.core amazon.aws community.aws community.general 2>&1; then
+            echo "Ansible collections installed from Galaxy"
+            return 0
         fi
-        echo "Ansible Galaxy failed (attempt $i/$MAX_RETRIES), retrying in ${RETRY_DELAY}s..."
+        echo "Galaxy failed (attempt $i/$MAX_RETRIES), retrying in ${RETRY_DELAY}s..."
         sleep $RETRY_DELAY
+    done
+    return 1
+}
+
+install_collections_github() {
+    echo "Installing Ansible collections from GitHub (Galaxy fallback)..."
+    # Install from GitHub repos when Galaxy is down
+    ansible-galaxy collection install git+https://github.com/ansible-collections/kubernetes.core.git,main --force && \
+    ansible-galaxy collection install git+https://github.com/ansible-collections/amazon.aws.git,main --force && \
+    ansible-galaxy collection install git+https://github.com/ansible-collections/community.aws.git,main --force && \
+    ansible-galaxy collection install git+https://github.com/ansible-collections/community.general.git,main --force
+}
+
+if ! install_collections_galaxy; then
+    echo "Ansible Galaxy unavailable, falling back to GitHub..."
+    if ! install_collections_github; then
+        echo "Failed to install Ansible collections from both Galaxy and GitHub"
+        exit 1
     fi
-done
+    echo "Ansible collections installed from GitHub"
+fi
 
 echo "Tools installed:"
 oc version --client
