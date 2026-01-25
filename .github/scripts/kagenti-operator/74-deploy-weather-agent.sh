@@ -11,13 +11,12 @@ log_step "74" "Deploying weather-service agent via Shipwright + Deployment"
 # Step 1: Build the weather-service image using Shipwright
 # ============================================================================
 
-# Detect if running on OpenShift (check for oc command and logged in)
-if oc whoami &>/dev/null; then
-    IS_OPENSHIFT=true
-    log_info "Detected OpenShift - using OpenShift Shipwright files with internal registry"
+# IS_OPENSHIFT is set by env-detect.sh (sourced above)
+# It checks for OpenShift-specific APIs, not just "oc whoami" which works on any cluster
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    log_info "Using OpenShift Shipwright files with internal registry"
 else
-    IS_OPENSHIFT=false
-    log_info "Detected Kind/vanilla Kubernetes - using Kind Shipwright files"
+    log_info "Using Kind Shipwright files"
 fi
 
 # Clean up previous Build to avoid conflicts

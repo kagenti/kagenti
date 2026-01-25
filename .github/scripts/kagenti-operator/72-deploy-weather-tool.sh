@@ -7,14 +7,12 @@ source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
 log_step "72" "Deploying weather-tool via Toolhive"
 
-# Detect if running on OpenShift (check for oc command)
-# Use oc command to detect OpenShift - more reliable than grep through api-resources
-if oc whoami &>/dev/null; then
-    IS_OPENSHIFT=true
-    log_info "Detected OpenShift - using OpenShift MCPServer with internal registry"
+# IS_OPENSHIFT is set by env-detect.sh (sourced above)
+# It checks for OpenShift-specific APIs, not just "oc whoami" which works on any cluster
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    log_info "Using OpenShift MCPServer with internal registry"
 else
-    IS_OPENSHIFT=false
-    log_info "Detected Kind/vanilla Kubernetes - using Kind MCPServer"
+    log_info "Using Kind MCPServer"
 fi
 
 if [ "$IS_OPENSHIFT" = "true" ]; then

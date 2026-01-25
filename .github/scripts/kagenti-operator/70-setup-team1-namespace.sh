@@ -20,14 +20,8 @@ fi
 log_info "Labeling team1 namespace for Kagenti..."
 kubectl label namespace team1 kagenti-enabled=true --overwrite
 
-# Detect if running on OpenShift
-if oc whoami &>/dev/null; then
-    IS_OPENSHIFT=true
-    log_info "Detected OpenShift"
-else
-    IS_OPENSHIFT=false
-    log_info "Detected Kind/vanilla Kubernetes"
-fi
+# IS_OPENSHIFT is set by env-detect.sh (sourced above)
+# It checks for OpenShift-specific APIs, not just "oc whoami" which works on any cluster
 
 # Label namespace for Istio ambient mode
 log_info "Labeling team1 namespace for Istio ambient mode..."
