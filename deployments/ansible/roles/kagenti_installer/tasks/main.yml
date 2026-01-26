@@ -208,6 +208,26 @@
     - enable_openshift | default(false)
     - toolhiveOperator.enabled | default(false)
 
+# After granting SCC, scale deployment to 0 then back to 1 to force pod recreation.
+# This avoids the "old replicas pending termination" issue that rollout restart causes.
+- name: Scale Toolhive operator to 0 to clear stuck pods
+  command: kubectl scale deployment/toolhive-operator -n {{ toolhiveOperator.namespace }} --replicas=0
+  when:
+    - enable_openshift | default(false)
+    - toolhiveOperator.enabled | default(false)
+
+- name: Wait for Toolhive operator scale down
+  command: kubectl rollout status deployment/toolhive-operator -n {{ toolhiveOperator.namespace }} --timeout=60s
+  when:
+    - enable_openshift | default(false)
+    - toolhiveOperator.enabled | default(false)
+
+- name: Scale Toolhive operator back to 1
+  command: kubectl scale deployment/toolhive-operator -n {{ toolhiveOperator.namespace }} --replicas=1
+  when:
+    - enable_openshift | default(false)
+    - toolhiveOperator.enabled | default(false)
+
 - name: Wait for Toolhive operator deployment to be ready on OpenShift
   command: >-
     kubectl rollout status deployment/toolhive-operator
