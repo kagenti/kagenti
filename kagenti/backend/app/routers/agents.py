@@ -2031,6 +2031,12 @@ def _build_agent_manifest(
             }
         ]
 
+    # Set description based on deployment method
+    if build_ref_name:
+        description = f"Agent '{request.name}' built from source"
+    else:
+        description = f"Agent '{request.name}' deployed from existing image '{request.containerImage}'"
+
     manifest = {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "Agent",
@@ -2046,7 +2052,7 @@ def _build_agent_manifest(
             },
         },
         "spec": {
-            "description": f"Agent '{request.name}' deployed from UI.",
+            "description": description,
             "replicas": 1,
             "servicePorts": service_ports,
             "podTemplateSpec": {

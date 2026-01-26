@@ -830,6 +830,7 @@ def _build_mcpserver_manifest(request: CreateToolRequest) -> dict:
             },
         },
         "spec": {
+            "description": f"Tool '{request.name}' deployed from existing image '{request.containerImage}'",
             "image": request.containerImage,
             "transport": "streamable-http",
             "port": port,
