@@ -220,6 +220,15 @@ export const ImportToolPage: React.FC = () => {
     }
   };
 
+  // Validate environment variable name according to Kubernetes rules
+  const isValidEnvVarName = (name: string): boolean => {
+    if (!name) return false;
+    // Kubernetes env var name pattern: must start with letter or underscore,
+    // followed by any combination of letters, digits, or underscores
+    const pattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+    return pattern.test(name);
+  };
+
   // Environment variable handlers
   const addEnvVar = () => {
     setEnvVars([...envVars, { name: '', value: '' }]);
@@ -942,34 +951,46 @@ export const ImportToolPage: React.FC = () => {
                 <Card isFlat style={{ marginTop: '8px' }}>
                   <CardBody>
                     {envVars.map((env, index) => (
-                      <Split hasGutter key={index} style={{ marginBottom: '8px' }}>
-                        <SplitItem isFilled>
-                          <TextInput
-                            aria-label="Environment variable name"
-                            value={env.name}
-                            onChange={(_e, value) => updateEnvVar(index, 'name', value)}
-                            placeholder="VAR_NAME"
-                          />
-                        </SplitItem>
-                        <SplitItem isFilled>
-                          <TextInput
-                            aria-label="Environment variable value"
-                            value={env.value}
-                            onChange={(_e, value) => updateEnvVar(index, 'value', value)}
-                            placeholder="value"
-                          />
-                        </SplitItem>
-                        <SplitItem>
-                          <Button
-                            variant="plain"
-                            onClick={() => removeEnvVar(index)}
-                            aria-label="Remove environment variable"
-                            style={{ color: 'var(--pf-v5-global--danger-color--100)' }}
-                          >
-                            <TrashIcon />
-                          </Button>
-                        </SplitItem>
-                      </Split>
+                      <div key={index} style={{ marginBottom: '8px' }}>
+                        <Split hasGutter>
+                          <SplitItem isFilled>
+                            <TextInput
+                              aria-label="Environment variable name"
+                              value={env.name}
+                              onChange={(_e, value) => updateEnvVar(index, 'name', value)}
+                              placeholder="VAR_NAME"
+                              validated={env.name && !isValidEnvVarName(env.name) ? 'error' : 'default'}
+                            />
+                            {env.name && !isValidEnvVarName(env.name) && (
+                              <FormHelperText>
+                                <HelperText>
+                                  <HelperTextItem variant="error">
+                                    Must start with letter or underscore, contain only letters, digits, and underscores
+                                  </HelperTextItem>
+                                </HelperText>
+                              </FormHelperText>
+                            )}
+                          </SplitItem>
+                          <SplitItem isFilled>
+                            <TextInput
+                              aria-label="Environment variable value"
+                              value={env.value}
+                              onChange={(_e, value) => updateEnvVar(index, 'value', value)}
+                              placeholder="value"
+                            />
+                          </SplitItem>
+                          <SplitItem>
+                            <Button
+                              variant="plain"
+                              onClick={() => removeEnvVar(index)}
+                              aria-label="Remove environment variable"
+                              style={{ color: 'var(--pf-v5-global--danger-color--100)' }}
+                            >
+                              <TrashIcon />
+                            </Button>
+                          </SplitItem>
+                        </Split>
+                      </div>
                     ))}
                     <Button
                       variant="link"

@@ -122,6 +122,33 @@ class EnvVar(BaseModel):
     value: Optional[str] = None
     valueFrom: Optional[EnvVarSource] = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_env_var_name(cls, v: str) -> str:
+        """Validate environment variable name according to Kubernetes rules.
+        
+        Valid env var names must:
+        - Contain only letters (A-Z, a-z), digits (0-9), and underscores (_)
+        - Not start with a digit
+        """
+        import re
+        
+        if not v:
+            raise ValueError("Environment variable name cannot be empty")
+        
+        # Kubernetes env var name pattern: must start with letter or underscore,
+        # followed by any combination of letters, digits, or underscores
+        pattern = r'^[A-Za-z_][A-Za-z0-9_]*$'
+        
+        if not re.match(pattern, v):
+            raise ValueError(
+                f"Invalid environment variable name '{v}'. "
+                "Name must start with a letter or underscore and contain only "
+                "letters, digits, and underscores (e.g., MY_VAR, API_KEY, var123)."
+            )
+        
+        return v
+
     @field_validator("valueFrom")
     @classmethod
     def check_value_or_value_from(cls, v, info):
@@ -3151,6 +3178,17 @@ async def parse_env_file(request: ParseEnvRequest) -> ParseEnvResponse:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
+
+        # Validate environment variable name
+        import re
+        env_var_pattern = r'^[A-Za-z_][A-Za-z0-9_]*$'
+        if not re.match(env_var_pattern, key):
+            warnings.append(
+                f"Line {line_num}: Invalid variable name '{key}'. "
+                "Name must start with a letter or underscore and contain only "
+                "letters, digits, and underscores."
+            )
+            continue
 
         # Remove quotes if present
         if (value.startswith('"') and value.endswith('"')) or (

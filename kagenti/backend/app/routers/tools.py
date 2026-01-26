@@ -13,7 +13,7 @@ from contextlib import AsyncExitStack
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client import ApiException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
@@ -88,6 +88,33 @@ class EnvVar(BaseModel):
 
     name: str
     value: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_env_var_name(cls, v: str) -> str:
+        """Validate environment variable name according to Kubernetes rules.
+        
+        Valid env var names must:
+        - Contain only letters (A-Z, a-z), digits (0-9), and underscores (_)
+        - Not start with a digit
+        """
+        import re
+        
+        if not v:
+            raise ValueError("Environment variable name cannot be empty")
+        
+        # Kubernetes env var name pattern: must start with letter or underscore,
+        # followed by any combination of letters, digits, or underscores
+        pattern = r'^[A-Za-z_][A-Za-z0-9_]*$'
+        
+        if not re.match(pattern, v):
+            raise ValueError(
+                f"Invalid environment variable name '{v}'. "
+                "Name must start with a letter or underscore and contain only "
+                "letters, digits, and underscores (e.g., MY_VAR, API_KEY, var123)."
+            )
+        
+        return v
 
 
 class ServicePort(BaseModel):
