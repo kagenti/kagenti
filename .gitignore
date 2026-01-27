@@ -123,6 +123,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
 .venv
 env/
 venv/
@@ -177,6 +178,4 @@ cython_debug/
 node_modules/
 .bin/
 
-# HyperShift CI credentials
-.env.hypershift-ci
-.env.kagenti-*
+# HyperShift CI credentials (covered by .env.* above)
