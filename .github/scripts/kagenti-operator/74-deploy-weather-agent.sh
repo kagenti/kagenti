@@ -108,7 +108,7 @@ log_success "Weather-service deployed via Deployment + Service (operator-indepen
 # WORKAROUND: Fix Service targetPort mismatch
 # The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
 # Patch the Service to use the correct targetPort until the operator is fixed
-# See: https://github.com/kagenti/kagenti-operator/issues/XXX
+# TODO: Remove this workaround once kagenti-operator is fixed to use port from Agent spec
 log_info "Patching Service to use correct targetPort (8000)..."
 kubectl patch svc weather-service -n team1 --type=json \
     -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
