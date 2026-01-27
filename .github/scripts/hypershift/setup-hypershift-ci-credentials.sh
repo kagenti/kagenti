@@ -165,34 +165,6 @@ SA_NAME="${MANAGED_BY_TAG}"
 CLUSTER_ROLE_NAME="${MANAGED_BY_TAG}-k8s-role"
 CLUSTER_ROLE_BINDING_NAME="${MANAGED_BY_TAG}-k8s-binding"
 
-# AWS Region - auto-detect from cluster infrastructure, fallback to us-east-1
-if [ -z "${AWS_REGION:-}" ]; then
-    DETECTED_REGION=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}' 2>/dev/null || echo "")
-    if [ -n "$DETECTED_REGION" ]; then
-        AWS_REGION="$DETECTED_REGION"
-    else
-        AWS_REGION="us-east-1"
-    fi
-fi
-
-# Shared OIDC S3 bucket - auto-detect from existing hosted clusters
-# HyperShift management clusters often use a shared bucket for OIDC discovery
-# This bucket name does NOT follow our prefix pattern, so we need explicit access
-OIDC_S3_BUCKET="${OIDC_S3_BUCKET:-}"
-if [ -z "$OIDC_S3_BUCKET" ]; then
-    # Try to detect from existing hosted clusters
-    EXISTING_ISSUER=$(oc get hostedclusters -A -o jsonpath='{.items[0].spec.issuerURL}' 2>/dev/null || echo "")
-    if [ -n "$EXISTING_ISSUER" ]; then
-        # Extract bucket name from URL like https://hyperocto.s3.us-east-1.amazonaws.com/...
-        OIDC_S3_BUCKET=$(echo "$EXISTING_ISSUER" | sed -E 's|https://([^.]+)\.s3\.[^.]+\.amazonaws\.com/.*|\1|')
-        if [ -n "$OIDC_S3_BUCKET" ] && [ "$OIDC_S3_BUCKET" != "$EXISTING_ISSUER" ]; then
-            log_info "Auto-detected shared OIDC bucket: $OIDC_S3_BUCKET"
-        else
-            OIDC_S3_BUCKET=""
-        fi
-    fi
-fi
-
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║         HyperShift CI Credentials Setup (Idempotent)          ║"
@@ -217,11 +189,51 @@ log_success "All pre-flight checks passed"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 AWS_USER_ARN=$(aws sts get-caller-identity --query Arn --output text)
 
+# ============================================================================
+# AUTO-DETECT FROM MANAGEMENT CLUSTER (after preflight validates oc access)
+# ============================================================================
+
+# AWS Region - auto-detect from cluster infrastructure, fallback to us-east-1
+if [ -z "${AWS_REGION:-}" ]; then
+    DETECTED_REGION=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.aws.region}' 2>/dev/null || echo "")
+    if [ -n "$DETECTED_REGION" ]; then
+        AWS_REGION="$DETECTED_REGION"
+    else
+        AWS_REGION="us-east-1"
+    fi
+fi
+
 # Log the AWS region being used
 if [ -n "${DETECTED_REGION:-}" ]; then
     log_success "AWS Region: $AWS_REGION (auto-detected from cluster)"
 else
     log_info "AWS Region: $AWS_REGION (default)"
+fi
+
+# Shared OIDC S3 bucket - auto-detect from HyperShift operator configuration
+# HyperShift management clusters use a shared bucket for OIDC discovery
+# This bucket name does NOT follow our prefix pattern, so we need explicit access
+OIDC_S3_BUCKET="${OIDC_S3_BUCKET:-}"
+if [ -z "$OIDC_S3_BUCKET" ]; then
+    # Detect from HyperShift operator's OIDC secret
+    OIDC_S3_BUCKET=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+        -o jsonpath='{.data.bucket}' 2>/dev/null | base64_decode 2>/dev/null || echo "")
+    if [ -n "$OIDC_S3_BUCKET" ]; then
+        log_success "OIDC S3 bucket: $OIDC_S3_BUCKET (auto-detected from operator)"
+    else
+        log_error "Could not detect OIDC S3 bucket from HyperShift operator"
+        echo ""
+        echo "The HyperShift operator must be configured with S3 OIDC credentials."
+        echo "Check: oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift"
+        echo ""
+        echo "If the secret exists but has a different name, set OIDC_S3_BUCKET explicitly:"
+        echo "  OIDC_S3_BUCKET=my-bucket $0"
+        echo ""
+        echo "If HyperShift is not configured for S3 OIDC, hosted clusters cannot be created."
+        exit 1
+    fi
+else
+    log_info "OIDC S3 bucket: $OIDC_S3_BUCKET (from environment)"
 fi
 
 echo ""
@@ -648,7 +660,7 @@ echo ""
 
 log_info "Discovering base domain..."
 
-# Try to get from ingress config
+# Get from ingress config (always available on management cluster)
 APPS_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}' 2>/dev/null || echo "")
 
 if [ -n "$APPS_DOMAIN" ]; then
@@ -656,11 +668,14 @@ if [ -n "$APPS_DOMAIN" ]; then
     DETECTED_DOMAIN="${APPS_DOMAIN#apps.}"
     log_info "Detected domain from ingress: $DETECTED_DOMAIN"
 else
-    # Try to get from existing hosted clusters
-    DETECTED_DOMAIN=$(oc get hostedclusters -A -o jsonpath='{.items[0].spec.dns.baseDomain}' 2>/dev/null || echo "")
-    if [ -n "$DETECTED_DOMAIN" ]; then
-        log_info "Detected domain from hosted cluster: $DETECTED_DOMAIN"
-    fi
+    log_error "Could not detect domain from management cluster ingress config"
+    echo ""
+    echo "The management cluster must have ingress configured."
+    echo "Check: oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}'"
+    echo ""
+    echo "Or set BASE_DOMAIN explicitly:"
+    echo "  BASE_DOMAIN=example.com $0"
+    exit 1
 fi
 
 # Find a PUBLIC Route53 hosted zone (required by HyperShift)

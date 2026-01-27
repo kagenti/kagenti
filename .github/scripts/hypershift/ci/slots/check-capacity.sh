@@ -137,12 +137,41 @@ echo "  Required (+ buffer): ${required_cpu}m CPU, ${required_mem}Mi MEM"
 echo "  Existing clusters:   $existing_clusters"
 echo ""
 
+# Calculate autoscaler headroom
+autoscale_headroom=$((max_workers - current_workers))
+headroom_cpu=$((autoscale_headroom * avg_cpu))
+headroom_mem=$((autoscale_headroom * avg_mem))
+
 # Check capacity
 if [[ $remaining_cpu -ge $required_cpu ]] && [[ $remaining_mem -ge $required_mem ]]; then
     echo "RESULT: Sufficient capacity for new cluster"
     exit 0
+elif [[ $autoscale_headroom -gt 0 ]]; then
+    # Trust autoscaler: if we can scale up and that would provide enough capacity, proceed
+    # New nodes come with ~zero usage, so they provide fresh capacity
+    potential_cpu=$((remaining_cpu + headroom_cpu))
+    potential_mem=$((remaining_mem + headroom_mem))
+
+    echo "  Autoscale headroom: $autoscale_headroom node(s) can be added"
+    echo "  Potential capacity: ${potential_cpu}m CPU, ${potential_mem}Mi MEM"
+    echo ""
+
+    if [[ $potential_cpu -ge $required_cpu ]] && [[ $potential_mem -ge $required_mem ]]; then
+        echo "RESULT: Trusting autoscaler - capacity available after scale-up"
+        echo "  Note: Cluster creation may trigger autoscaler to add nodes"
+        exit 0
+    else
+        echo "RESULT: Insufficient capacity (even with autoscaling)"
+        if [[ $potential_cpu -lt $required_cpu ]]; then
+            echo "  - Need ${required_cpu}m CPU, only ${potential_cpu}m available (after scale-up)"
+        fi
+        if [[ $potential_mem -lt $required_mem ]]; then
+            echo "  - Need ${required_mem}Mi MEM, only ${potential_mem}Mi available (after scale-up)"
+        fi
+        exit 1
+    fi
 else
-    echo "RESULT: Insufficient capacity"
+    echo "RESULT: Insufficient capacity (no autoscaling headroom)"
     if [[ $remaining_cpu -lt $required_cpu ]]; then
         echo "  - Need ${required_cpu}m CPU, only ${remaining_cpu}m available"
     fi
