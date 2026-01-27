@@ -347,7 +347,11 @@ def _build_tool_shipwright_build_manifest(request: CreateToolRequest) -> dict:
         "framework": request.framework,
         "createHttpRoute": request.createHttpRoute,
         "registrySecret": request.registrySecret,
+        "workloadType": request.workloadType,
     }
+    # Add persistent storage config if present (for StatefulSet)
+    if request.persistentStorage:
+        resource_config["persistentStorage"] = request.persistentStorage.model_dump()
     # Add env vars if present
     if request.envVars:
         resource_config["envVars"] = [ev.model_dump() for ev in request.envVars]
@@ -1531,10 +1535,12 @@ async def finalize_tool_shipwright_build(
 
         # Create workload (Deployment or StatefulSet)
         if workload_type == WORKLOAD_TYPE_STATEFULSET:
-            # Determine storage size
+            # Determine storage size - check request first, then tool config
             storage_size = "1Gi"
             if request.persistentStorage and request.persistentStorage.enabled:
                 storage_size = request.persistentStorage.size
+            elif tool_config_dict.get("persistentStorage", {}).get("enabled"):
+                storage_size = tool_config_dict["persistentStorage"].get("size", "1Gi")
 
             workload_manifest = _build_tool_statefulset_manifest(
                 name=name,
