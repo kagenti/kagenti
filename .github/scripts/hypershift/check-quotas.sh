@@ -32,13 +32,13 @@ done
 # Disable AWS CLI pager
 export AWS_PAGER=""
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# Colors (use $'...' syntax for proper escape sequence interpretation)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+CYAN=$'\033[0;36m'
+NC=$'\033[0m'
 
 log_info() { echo -e "${BLUE}→${NC} $1"; }
 log_success() { echo -e "${GREEN}✓${NC} $1"; }
@@ -76,12 +76,15 @@ get_quota() {
         --quota-code "$quota_code" \
         --region "$AWS_REGION" \
         --query 'Quota.Value' \
-        --output text 2>/dev/null || echo "0")
+        --output text 2>/dev/null | head -1 || echo "0")
 
-    if [ "$value" = "None" ] || [ -z "$value" ]; then
+    # Sanitize: remove decimals, keep only first line, ensure numeric
+    value="${value%.*}"
+    value="${value%%$'\n'*}"
+    if [ "$value" = "None" ] || [ -z "$value" ] || ! [[ "$value" =~ ^[0-9]+$ ]]; then
         echo "0"
     else
-        echo "${value%.*}"
+        echo "$value"
     fi
 }
 

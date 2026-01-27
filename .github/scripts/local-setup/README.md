@@ -204,10 +204,9 @@ Use `--include-<phase>` to run only specific phases:
 
 | Script | Purpose |
 |--------|---------|
-| `kind-full-test.sh` | **NEW**: Unified Kind test runner (same interface as HyperShift) |
+| `kind-full-test.sh` | Unified Kind test runner (same interface as HyperShift) |
 | `hypershift-full-test.sh` | Unified HyperShift test runner with phase control |
-| `chat-with-agent.sh` | Interactive agent chat CLI |
-| `show-services.sh` | Display all deployed services |
+| `show-services.sh` | Display all deployed services (auto-detects environment) |
 
 ### Kind Scripts (`.github/scripts/kind/`)
 

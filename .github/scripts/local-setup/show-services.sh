@@ -1,110 +1,252 @@
 #!/usr/bin/env bash
 # Show Services Script - Display all Kagenti services, URLs, and credentials
-# Usage: ./.github/scripts/local-setup/show-services.sh
+#
+# Usage:
+#   ./.github/scripts/local-setup/show-services.sh               # Auto-detect environment
+#   MANAGED_BY_TAG=kagenti-hypershift-custom ./.github/scripts/local-setup/show-services.sh
+#
+# Environment detection:
+#   - HyperShift: Uses MANAGED_BY_TAG and CLUSTER_SUFFIX, loads .env file, shows OpenShift routes
+#   - Kind: Uses kubectl with localtest.me URLs
 
 set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-NC='\033[0m' # No Color
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+
+# Colors for output (use $'...' for proper escape interpretation)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+CYAN=$'\033[0;36m'
+MAGENTA=$'\033[0;35m'
+NC=$'\033[0m' # No Color
+
+# Detect environment
+detect_environment() {
+    # Check if we're on OpenShift (HyperShift or regular OCP)
+    if command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
+        # Check if MANAGED_BY_TAG is set (HyperShift)
+        if [ -n "${MANAGED_BY_TAG:-}" ]; then
+            echo "hypershift"
+        else
+            echo "openshift"
+        fi
+    elif command -v kubectl &>/dev/null && kubectl get namespace default &>/dev/null 2>&1; then
+        echo "kind"
+    else
+        echo "unknown"
+    fi
+}
+
+# Find and load .env file for HyperShift
+load_env_file() {
+    local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+
+    if [ -f "$REPO_ROOT/.env.${managed_by_tag}" ]; then
+        # shellcheck source=/dev/null
+        source "$REPO_ROOT/.env.${managed_by_tag}"
+        echo "$REPO_ROOT/.env.${managed_by_tag}"
+    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+        # shellcheck source=/dev/null
+        source "$REPO_ROOT/.env.hypershift-ci"
+        echo "$REPO_ROOT/.env.hypershift-ci"
+    else
+        # Find any .env.kagenti-* file
+        local env_file
+        env_file=$(ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1 || true)
+        if [ -n "$env_file" ] && [ -f "$env_file" ]; then
+            # shellcheck source=/dev/null
+            source "$env_file"
+            echo "$env_file"
+        fi
+    fi
+}
+
+# Get cluster name for HyperShift
+get_cluster_name() {
+    local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    local cluster_suffix="${CLUSTER_SUFFIX:-$USER}"
+    echo "${managed_by_tag}-${cluster_suffix}"
+}
+
+# CLI command (oc for OpenShift, kubectl for Kind)
+CLI="kubectl"
+ENV_TYPE=$(detect_environment)
+
+case "$ENV_TYPE" in
+    hypershift|openshift)
+        CLI="oc"
+        ;;
+esac
 
 echo ""
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║           Kagenti Platform Services & Credentials             ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
+echo "========================================================================="
+echo "             Kagenti Platform Services & Credentials                    "
+echo "========================================================================="
 echo ""
+
+# Check environment and display info
+case "$ENV_TYPE" in
+    hypershift)
+        ENV_FILE=$(load_env_file)
+        CLUSTER_NAME=$(get_cluster_name)
+        echo -e "${CYAN}Environment:${NC}  HyperShift"
+        echo -e "${CYAN}Cluster:${NC}      $CLUSTER_NAME"
+        if [ -n "$ENV_FILE" ]; then
+            echo -e "${CYAN}Credentials:${NC}  $(basename "$ENV_FILE")"
+        fi
+        echo ""
+        ;;
+    openshift)
+        echo -e "${CYAN}Environment:${NC}  OpenShift"
+        echo -e "${CYAN}API Server:${NC}  $(oc whoami --show-server 2>/dev/null || echo 'unknown')"
+        echo ""
+        ;;
+    kind)
+        echo -e "${CYAN}Environment:${NC}  Kind (local Docker)"
+        echo ""
+        ;;
+    *)
+        echo -e "${RED}Error: Unable to detect environment${NC}"
+        echo "  - For Kind: ensure kubectl is configured"
+        echo "  - For HyperShift: set MANAGED_BY_TAG and CLUSTER_SUFFIX, or load .env file"
+        echo "  - For OpenShift: ensure oc is logged in"
+        exit 1
+        ;;
+esac
 
 # Check if platform is running
-if ! kubectl get namespace kagenti-system &> /dev/null; then
-    echo -e "${RED}✗ Platform not deployed${NC}"
-    echo "  Run: ./.github/scripts/local-setup/deploy-platform.sh"
+if ! $CLI get namespace kagenti-system &> /dev/null; then
+    echo -e "${RED}Error: Platform not deployed (kagenti-system namespace not found)${NC}"
+    echo "  Run: ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install"
     exit 1
 fi
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}1. Keycloak (Identity & Access Management)${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-KEYCLOAK_STATUS=$(kubectl get pods -n keycloak -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+KEYCLOAK_STATUS=$($CLI get pods -n keycloak -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}      $KEYCLOAK_STATUS"
-echo -e "${BLUE}Access URL:${NC}  http://keycloak.localtest.me:8080"
-echo ""
-echo -e "${YELLOW}Port-forward command:${NC}"
-echo "  kubectl port-forward -n keycloak svc/keycloak 8080:8080"
+
+# Get Keycloak URL based on environment
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}Access URL:${NC}  http://keycloak.localtest.me:8080"
+    echo ""
+    echo -e "${YELLOW}Port-forward command:${NC}"
+    echo "  kubectl port-forward -n keycloak svc/keycloak 8080:8080"
+else
+    KEYCLOAK_ROUTE=$($CLI get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$KEYCLOAK_ROUTE" ]; then
+        echo -e "${BLUE}Access URL:${NC}  https://$KEYCLOAK_ROUTE"
+    else
+        echo -e "${BLUE}Access URL:${NC}  (no route found - create one or use port-forward)"
+        echo ""
+        echo -e "${YELLOW}Port-forward command:${NC}"
+        echo "  oc port-forward -n keycloak svc/keycloak 8080:8080"
+    fi
+fi
 echo ""
 echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share this output)${NC}"
 
 # Try to get admin credentials from secret
-KEYCLOAK_ADMIN_USER=$(kubectl get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
-KEYCLOAK_ADMIN_PASS=$(kubectl get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+KEYCLOAK_ADMIN_USER=$($CLI get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+KEYCLOAK_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
 
 echo "  Username: ${KEYCLOAK_ADMIN_USER}"
 echo "  Password: ${KEYCLOAK_ADMIN_PASS}"
 echo ""
-echo -e "${YELLOW}Admin Console:${NC}    http://keycloak.localtest.me:8080/admin"
-echo -e "${YELLOW}Realm:${NC}            kagenti"
+echo -e "${YELLOW}Realm:${NC}        kagenti"
 echo ""
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}2. Kagenti UI (Web Dashboard)${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-UI_STATUS=$(kubectl get pods -n kagenti-system -l app=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+UI_STATUS=$($CLI get pods -n kagenti-system -l app=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}      $UI_STATUS"
-echo -e "${BLUE}Access URL:${NC}  http://kagenti-ui.localtest.me:8080"
-echo ""
-echo -e "${YELLOW}Port-forward command:${NC}"
-echo "  kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
+
+# Get UI URL based on environment
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}Access URL:${NC}  http://kagenti-ui.localtest.me:8080"
+    echo ""
+    echo -e "${YELLOW}Port-forward command:${NC}"
+    echo "  kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
+else
+    UI_ROUTE=$($CLI get route -n kagenti-system kagenti-ui -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$UI_ROUTE" ]; then
+        echo -e "${BLUE}Access URL:${NC}  https://$UI_ROUTE"
+    else
+        echo -e "${BLUE}Access URL:${NC}  (no route found)"
+    fi
+fi
 echo ""
 echo -e "${GREEN}Authentication:${NC} Via Keycloak OAuth2"
 echo "  Click 'Login' and use Keycloak credentials above"
 echo ""
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}3. Weather Agent (A2A Protocol)${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-AGENT_STATUS=$(kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+AGENT_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}           $AGENT_STATUS"
 echo -e "${BLUE}Namespace:${NC}        team1"
-echo -e "${BLUE}Service URL:${NC}      http://weather-service.team1.svc.cluster.local:8000"
-echo ""
-echo -e "${YELLOW}Port-forward command:${NC}"
-echo "  kubectl port-forward -n team1 svc/weather-service 8000:8000"
+
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}Service URL:${NC}      http://weather-service.team1.svc.cluster.local:8000"
+    echo ""
+    echo -e "${YELLOW}Port-forward command:${NC}"
+    echo "  kubectl port-forward -n team1 svc/weather-service 8000:8000"
+else
+    AGENT_ROUTE=$($CLI get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$AGENT_ROUTE" ]; then
+        echo -e "${BLUE}External URL:${NC}     https://$AGENT_ROUTE"
+    fi
+fi
 echo ""
 echo -e "${YELLOW}Test with A2A client:${NC}"
-echo "  AGENT_URL=http://localhost:8000 pytest kagenti/tests/e2e/test_agent_conversation.py -v"
+if [ "$ENV_TYPE" != "kind" ] && [ -n "${AGENT_ROUTE:-}" ]; then
+    echo "  AGENT_URL=https://$AGENT_ROUTE pytest kagenti/tests/e2e/test_agent_conversation.py -v"
+else
+    echo "  AGENT_URL=http://localhost:8000 pytest kagenti/tests/e2e/test_agent_conversation.py -v"
+fi
 echo ""
 echo -e "${YELLOW}View logs:${NC}"
-echo "  kubectl logs -n team1 deployment/weather-service --tail=100 -f"
+echo "  $CLI logs -n team1 deployment/weather-service --tail=100 -f"
 echo ""
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}4. Weather Tool (MCP Protocol)${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-TOOL_STATUS=$(kubectl get pods -n team1 -l app.kubernetes.io/name=weather-tool -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+TOOL_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-tool -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}           $TOOL_STATUS"
 echo -e "${BLUE}Namespace:${NC}        team1"
-echo -e "${BLUE}Service URL:${NC}      http://weather-tool.team1.svc.cluster.local:8000"
-echo ""
-echo -e "${YELLOW}Port-forward command:${NC}"
-echo "  kubectl port-forward -n team1 svc/weather-tool 8001:8000"
+
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}Service URL:${NC}      http://weather-tool.team1.svc.cluster.local:8000"
+    echo ""
+    echo -e "${YELLOW}Port-forward command:${NC}"
+    echo "  kubectl port-forward -n team1 svc/weather-tool 8001:8000"
+else
+    TOOL_ROUTE=$($CLI get route -n team1 weather-tool -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$TOOL_ROUTE" ]; then
+        echo -e "${BLUE}External URL:${NC}     https://$TOOL_ROUTE"
+    fi
+fi
 echo ""
 echo -e "${YELLOW}View logs:${NC}"
-echo "  kubectl logs -n team1 deployment/weather-tool --tail=100 -f"
+echo "  $CLI logs -n team1 deployment/weather-tool --tail=100 -f"
 echo ""
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}5. Ollama (Local LLM)${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-if pgrep -x "ollama" > /dev/null; then
+if pgrep -x "ollama" > /dev/null 2>&1; then
     echo -e "${BLUE}Status:${NC}           ${GREEN}Running${NC}"
     echo -e "${BLUE}Access URL:${NC}       http://localhost:11434"
     echo ""
@@ -124,60 +266,60 @@ else
 fi
 echo ""
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}6. Platform Operator${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-OPERATOR_STATUS=$(kubectl get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-platform-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+OPERATOR_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-platform-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}           $OPERATOR_STATUS"
 echo -e "${BLUE}Namespace:${NC}        kagenti-system"
 echo ""
 echo -e "${YELLOW}View logs:${NC}"
-echo "  kubectl logs -n kagenti-system deployment/kagenti-platform-operator --tail=100 -f"
+echo "  $CLI logs -n kagenti-system deployment/kagenti-platform-operator --tail=100 -f"
 echo ""
 echo -e "${YELLOW}View managed components:${NC}"
-echo "  kubectl get components -n team1"
+echo "  $CLI get components -n team1"
 echo ""
 
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 echo -e "${MAGENTA}7. PostgreSQL Database${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo "==========================================================================="
 
-POSTGRES_STATUS=$(kubectl get pods -n keycloak -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+POSTGRES_STATUS=$($CLI get pods -n keycloak -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}           $POSTGRES_STATUS"
 echo -e "${BLUE}Namespace:${NC}        keycloak"
 echo -e "${BLUE}Service:${NC}          postgresql.keycloak.svc.cluster.local:5432"
 echo ""
 echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share this output)${NC}"
-POSTGRES_PASS=$(kubectl get secret -n keycloak postgresql -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+POSTGRES_PASS=$($CLI get secret -n keycloak postgresql -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 echo "  Username: postgres"
 echo "  Password: ${POSTGRES_PASS}"
 echo "  Database: keycloak"
 echo ""
 echo -e "${YELLOW}Connect from pod:${NC}"
-echo "  kubectl run psql --rm -it --image=postgres:16 -n keycloak -- psql -h postgresql -U postgres -d keycloak"
+echo "  $CLI run psql --rm -it --image=postgres:16 -n keycloak -- psql -h postgresql -U postgres -d keycloak"
 echo ""
 
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                   Quick Reference Commands                     ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
+echo "========================================================================="
+echo "                    Quick Reference Commands                            "
+echo "========================================================================="
 echo ""
 echo -e "${YELLOW}View all pods:${NC}"
-echo "  kubectl get pods -A"
+echo "  $CLI get pods -A"
 echo ""
 echo -e "${YELLOW}View all services:${NC}"
-echo "  kubectl get svc -A"
+echo "  $CLI get svc -A"
 echo ""
 echo -e "${YELLOW}Check deployment health:${NC}"
-echo "  kubectl get deployments -A"
+echo "  $CLI get deployments -A"
 echo ""
 echo -e "${YELLOW}View recent events:${NC}"
-echo "  kubectl get events -A --sort-by='.lastTimestamp' | tail -30"
+echo "  $CLI get events -A --sort-by='.lastTimestamp' | tail -30"
 echo ""
 echo -e "${YELLOW}Run E2E tests:${NC}"
-echo "  ./.github/scripts/local-setup/run-e2e-tests.sh"
-echo ""
-echo -e "${YELLOW}Access UI:${NC}"
-echo "  kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
-echo "  Visit: http://kagenti-ui.localtest.me:8080"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo "  ./.github/scripts/local-setup/kind-full-test.sh --include-test"
+else
+    echo "  ./.github/scripts/local-setup/hypershift-full-test.sh --include-test"
+fi
 echo ""
