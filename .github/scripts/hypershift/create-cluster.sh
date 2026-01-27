@@ -277,8 +277,27 @@ for i in {1..30}; do
     fi
 done
 
-log_info "Waiting for nodes to be ready..."
-oc wait --for=condition=Ready nodes --all --timeout=600s || log_warn "Timeout waiting for nodes, some may not be ready"
+log_info "Waiting for at least one node to be ready..."
+# Wait for at least one node to exist first
+for i in {1..60}; do
+    NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$NODE_COUNT" -gt 0 ]; then
+        log_info "Found $NODE_COUNT node(s), waiting for Ready condition..."
+        break
+    fi
+    if [ $i -eq 60 ]; then
+        log_error "No nodes appeared after 10 minutes"
+        exit 1
+    fi
+    echo "  Attempt $i/60 - waiting for nodes to appear..."
+    sleep 10
+done
+# Now wait for nodes to be Ready
+oc wait --for=condition=Ready nodes --all --timeout=600s || {
+    log_error "Timeout waiting for nodes to be Ready"
+    oc get nodes
+    exit 1
+}
 oc get nodes
 oc get clusterversion
 

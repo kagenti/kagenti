@@ -72,7 +72,7 @@ source .env.hypershift-ci
 ### Manual Slot Operations
 ```bash
 # Acquire a slot (for testing)
-MAX_SLOTS=2 CLUSTER_SUFFIX=test ./.github/scripts/hypershift/ci/slots/acquire.sh
+MAX_SLOTS=6 CLUSTER_SUFFIX=test ./.github/scripts/hypershift/ci/slots/acquire.sh
 
 # Release a slot
 ./.github/scripts/hypershift/ci/slots/release.sh 0
@@ -94,7 +94,7 @@ oc get resourcequota -n clusters
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAX_SLOTS` | `2` | Maximum parallel CI runs |
+| `MAX_SLOTS` | `6` | Maximum parallel CI runs |
 | `SLOT_TIMEOUT` | `60` | Minutes to wait for slot |
 | `LEASE_DURATION_SECONDS` | `7200` | Lease TTL (2 hours) |
 | `NAMESPACE` | `clusters` | Namespace for Leases |
