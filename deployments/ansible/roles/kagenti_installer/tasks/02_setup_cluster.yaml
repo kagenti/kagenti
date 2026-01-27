@@ -62,6 +62,19 @@
 - name: Preload images into kind cluster when requested
   when: (kind_images_preload | default(false)) and not (enable_openshift | default(false))
   block:
+    - name: Check if kind cluster exists for preloading
+      command: kind get clusters
+      register: kind_clusters_for_preload
+      failed_when: false
+      changed_when: false
+
+    - name: Verify kind cluster exists (or create it) before preloading
+      command: >-
+        kind create cluster --name {{ kind_cluster_name }} --config {{ (kind_container_registry_enabled | default(true)) | ternary(kind_config_registry, kind_config) }}
+      args:
+        chdir: "{{ playbook_dir }}"
+      when: kind_cluster_name not in (kind_clusters_for_preload.stdout | default(''))
+
     - name: Stat preload images file
       stat:
         path: "{{ preload_images_file }}"
