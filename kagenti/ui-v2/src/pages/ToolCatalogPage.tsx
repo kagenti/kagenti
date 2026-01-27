@@ -110,8 +110,13 @@ export const ToolCatalogPage: React.FC = () => {
   const columns = ['Name', 'Description', 'Status', 'Labels', ''];
 
   const renderStatusBadge = (status: string) => {
-    const isReady = status === 'Ready';
-    return <Label color={isReady ? 'green' : 'red'}>{status}</Label>;
+    const colorMap: Record<string, 'green' | 'red' | 'blue' | 'orange'> = {
+      Ready: 'green',
+      'Not Ready': 'red',
+      Progressing: 'blue',
+      Failed: 'red',
+    };
+    return <Label color={colorMap[status] || 'orange'}>{status}</Label>;
   };
 
   const renderLabels = (tool: Tool) => {
@@ -127,6 +132,13 @@ export const ToolCatalogPage: React.FC = () => {
       labels.push(
         <Label key="framework" color="purple" isCompact>
           {tool.labels.framework}
+        </Label>
+      );
+    }
+    if (tool.workloadType) {
+      labels.push(
+        <Label key="workload" color="grey" isCompact>
+          {tool.workloadType}
         </Label>
       );
     }

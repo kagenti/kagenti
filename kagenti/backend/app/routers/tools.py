@@ -242,6 +242,21 @@ def _is_mcpserver_ready(resource_data: dict) -> str:
     return "Not Ready"
 
 
+def _format_timestamp(timestamp) -> Optional[str]:
+    """Convert a timestamp to ISO format string.
+
+    The Kubernetes Python client returns datetime objects for timestamp fields,
+    but our Pydantic models expect strings.
+    """
+    if timestamp is None:
+        return None
+    if isinstance(timestamp, str):
+        return timestamp
+    if hasattr(timestamp, "isoformat"):
+        return timestamp.isoformat()
+    return str(timestamp)
+
+
 def _get_workload_status(workload: dict) -> str:
     """Get status for a Deployment or StatefulSet workload.
 
@@ -417,8 +432,9 @@ async def list_tools(
                         description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
                         status=_get_workload_status(deploy),
                         labels=_extract_labels(metadata.get("labels", {})),
-                        createdAt=metadata.get("creation_timestamp")
-                        or metadata.get("creationTimestamp"),
+                        createdAt=_format_timestamp(
+                            metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+                        ),
                         workloadType=WORKLOAD_TYPE_DEPLOYMENT,
                     )
                 )
@@ -440,8 +456,9 @@ async def list_tools(
                         description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
                         status=_get_workload_status(sts),
                         labels=_extract_labels(metadata.get("labels", {})),
-                        createdAt=metadata.get("creation_timestamp")
-                        or metadata.get("creationTimestamp"),
+                        createdAt=_format_timestamp(
+                            metadata.get("creation_timestamp") or metadata.get("creationTimestamp")
+                        ),
                         workloadType=WORKLOAD_TYPE_STATEFULSET,
                     )
                 )
@@ -496,21 +513,30 @@ async def get_tool(
             raise HTTPException(status_code=e.status, detail=str(e.reason))
 
     # Get associated Service
-    service = None
+    service_info = None
     service_name = _get_tool_service_name(name)
     try:
         service = kube.get_service(namespace, service_name)
+        # Transform raw K8s Service to ServiceInfo format expected by frontend
+        service_info = {
+            "name": service.get("metadata", {}).get("name"),
+            "type": service.get("spec", {}).get("type"),
+            "clusterIP": service.get("spec", {}).get("cluster_ip"),
+            "ports": service.get("spec", {}).get("ports", []),
+        }
     except ApiException as e:
         if e.status != 404:
             logger.warning(f"Error getting Service '{service_name}': {e}")
 
     # Build response with workload and service details
+    # Return both raw status (for conditions display) and computed readyStatus string
     return {
         "metadata": workload.get("metadata", {}),
         "spec": workload.get("spec", {}),
-        "status": _get_workload_status(workload),
+        "status": workload.get("status", {}),
+        "readyStatus": _get_workload_status(workload),
         "workloadType": workload_type,
-        "service": service,
+        "service": service_info,
     }
 
 
@@ -656,7 +682,6 @@ def _build_mcpserver_manifest(request: CreateToolRequest) -> dict:
             "proxyPort": DEFAULT_IN_CLUSTER_PORT,
             "podTemplateSpec": {
                 "spec": {
-                    "serviceAccountName": request.name,
                     "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},
@@ -786,7 +811,6 @@ def _build_tool_deployment_manifest(
                     }
                 },
                 "spec": {
-                    "serviceAccountName": name,
                     "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},
@@ -933,7 +957,6 @@ def _build_tool_statefulset_manifest(
                     }
                 },
                 "spec": {
-                    "serviceAccountName": name,
                     "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},

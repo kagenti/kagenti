@@ -144,13 +144,8 @@ export const ToolDetailPage: React.FC = () => {
     enabled: !!namespace && !!name,
     refetchInterval: (query) => {
       // Poll every 5 seconds if tool is not ready
-      const status = query.state.data?.status || {};
-      const phase = status.phase || '';
-      const conditions = status.conditions || [];
-      const isReady = phase === 'Running' || conditions.some(
-        (c: { type: string; status: string }) => c.type === 'Ready' && c.status === 'True'
-      );
-      return isReady ? false : 5000;
+      const readyStatus = query.state.data?.readyStatus || '';
+      return readyStatus === 'Ready' ? false : 5000;
     },
   });
 
@@ -265,30 +260,32 @@ export const ToolDetailPage: React.FC = () => {
 
   const metadata = tool.metadata || {};
   const spec = tool.spec || {};
-  const status = tool.status || {};
+  const rawStatus = tool.status || {};
   const labels = metadata.labels || {};
-  const conditions: StatusCondition[] = status.conditions || [];
+  const annotations = metadata.annotations || {};
 
-  // MCPServer CRD uses status.phase for ready state, not conditions
-  const phase = status.phase || '';
-  const isReady = phase === 'Running' || conditions.some(
-    (c) => c.type === 'Ready' && c.status === 'True'
-  );
+  // Extract conditions from raw Deployment/StatefulSet status
+  const statusObj = typeof rawStatus === 'object' && rawStatus !== null ? rawStatus : {};
+  const conditions: StatusCondition[] = (statusObj as Record<string, unknown>).conditions as StatusCondition[] || [];
+
+  // Use computed readyStatus from backend
+  const readyStatus = tool.readyStatus || 'Not Ready';
+  const isReady = readyStatus === 'Ready';
 
   // If route check fails or is loading, default to false (in-cluster URL is safer default)
   const hasRoute = routeStatusData?.hasRoute ?? false;
 
   // Determine the appropriate URL based on route existence
   // External URL: http://{name}.{namespace}.{domainName}:8080 (via HTTPRoute)
-  // In-cluster URL: http://mcp-{name}-proxy.{namespace}.svc.cluster.local:8000
+  // In-cluster URL: http://{name}-mcp.{namespace}.svc.cluster.local:8000
   const domainName = dashboardConfig?.domainName || 'localtest.me';
   const toolExternalUrl = hasRoute
     ? `http://${name}.${namespace}.${domainName}:8080`
-    : `http://mcp-${name}-proxy.${namespace}.svc.cluster.local:8000`;
+    : `http://${name}-mcp.${namespace}.svc.cluster.local:8000`;
 
   // In-cluster URL for MCP server (used by MCP Inspector which runs in-cluster)
-  // ToolHive creates proxy services with pattern: mcp-{name}-proxy on port 8000
-  const mcpInClusterUrl = `http://mcp-${name}-proxy.${namespace}.svc.cluster.local:8000/mcp`;
+  // Service naming: {name}-mcp on port 8000
+  const mcpInClusterUrl = `http://${name}-mcp.${namespace}.svc.cluster.local:8000/mcp`;
 
   // Construct MCP Inspector URL with pre-configured server
   // MCP Inspector runs in-cluster, so it needs the in-cluster URL
@@ -327,8 +324,13 @@ export const ToolDetailPage: React.FC = () => {
             <Title headingLevel="h1">{name}</Title>
           </SplitItem>
           <SplitItem>
-            <Label color={isReady ? 'green' : 'red'}>
-              {isReady ? 'Ready' : 'Not Ready'}
+            <Label color={
+              readyStatus === 'Ready' ? 'green'
+                : readyStatus === 'Progressing' ? 'blue'
+                : readyStatus === 'Failed' ? 'red'
+                : 'orange'
+            }>
+              {readyStatus}
             </Label>
           </SplitItem>
           <SplitItem isFilled />
@@ -339,6 +341,13 @@ export const ToolDetailPage: React.FC = () => {
                   {labels['kagenti.io/protocol']?.toUpperCase() || 'MCP'}
                 </Label>
               </FlexItem>
+              {tool.workloadType && (
+                <FlexItem>
+                  <Label color="grey">
+                    {tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment'}
+                  </Label>
+                </FlexItem>
+              )}
               <FlexItem>
                 <Dropdown
                   isOpen={actionsMenuOpen}
@@ -402,14 +411,34 @@ export const ToolDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>Description</DescriptionListTerm>
                         <DescriptionListDescription>
-                          {spec.description || 'No description available'}
+                          {annotations['kagenti.io/description'] || spec.description || 'No description available'}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Workload Type</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <Label color="grey" isCompact>
+                            {tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment'}
+                          </Label>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Replicas</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {(() => {
+                            const desired = spec.replicas ?? 1;
+                            const ready = (statusObj as Record<string, unknown>).readyReplicas
+                              || (statusObj as Record<string, unknown>).ready_replicas
+                              || 0;
+                            return `${ready}/${desired}`;
+                          })()}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                       <DescriptionListGroup>
                         <DescriptionListTerm>Created</DescriptionListTerm>
                         <DescriptionListDescription>
-                          {metadata.creationTimestamp
-                            ? new Date(metadata.creationTimestamp).toLocaleString()
+                          {(metadata.creationTimestamp || metadata.creation_timestamp)
+                            ? new Date(metadata.creationTimestamp || metadata.creation_timestamp!).toLocaleString()
                             : 'N/A'}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
@@ -427,7 +456,7 @@ export const ToolDetailPage: React.FC = () => {
               </GridItem>
 
               <GridItem md={6}>
-                <Card>
+                <Card style={{ marginBottom: '16px' }}>
                   <CardTitle>Endpoint</CardTitle>
                   <CardBody>
                     <DescriptionList isCompact>
@@ -442,6 +471,50 @@ export const ToolDetailPage: React.FC = () => {
                     </DescriptionList>
                   </CardBody>
                 </Card>
+
+                {tool.service && (
+                  <Card>
+                    <CardTitle>Service</CardTitle>
+                    <CardBody>
+                      <DescriptionList isCompact>
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>Service Name</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {tool.service.name}
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                        {tool.service.type && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Type</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {tool.service.type}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                        {tool.service.clusterIP && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Cluster IP</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {tool.service.clusterIP}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                        {tool.service.ports && tool.service.ports.length > 0 && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Ports</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {tool.service.ports.map((port) => (
+                                <Label key={port.name || port.port} isCompact style={{ marginRight: '4px' }}>
+                                  {port.name ? `${port.name}: ` : ''}{port.port}{port.targetPort ? ` → ${port.targetPort}` : ''}/{port.protocol || 'TCP'}
+                                </Label>
+                              ))}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                      </DescriptionList>
+                    </CardBody>
+                  </Card>
+                )}
               </GridItem>
             </Grid>
           </Tab>
@@ -480,8 +553,10 @@ export const ToolDetailPage: React.FC = () => {
                             {condition.message || '-'}
                           </Td>
                           <Td dataLabel="Last Transition">
-                            {condition.lastTransitionTime
-                              ? new Date(condition.lastTransitionTime).toLocaleString()
+                            {(condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time)
+                              ? new Date(
+                                  (condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time) as string
+                                ).toLocaleString()
                               : '-'}
                           </Td>
                         </Tr>
@@ -657,8 +732,8 @@ export const ToolDetailPage: React.FC = () => {
                 >
                   {yaml.dump(
                     {
-                      apiVersion: 'mcp.kagenti.dev/v1alpha1',
-                      kind: 'MCPServer',
+                      apiVersion: 'apps/v1',
+                      kind: tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment',
                       metadata: {
                         ...tool.metadata,
                         managedFields: undefined,

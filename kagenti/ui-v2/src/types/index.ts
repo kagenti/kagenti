@@ -149,19 +149,24 @@ export interface AgentDetail {
   readyStatus?: 'Ready' | 'Not Ready' | 'Progressing' | 'Completed' | 'Failed' | 'Running' | 'Pending' | 'Unknown';
 }
 
+// Tool workload types
+export type ToolWorkloadType = 'deployment' | 'statefulset';
+
 // Tool types
 export interface ToolLabels {
   protocol?: string;
   framework?: string;
   type?: string;
+  transport?: string;
 }
 
 export interface Tool {
   name: string;
   namespace: string;
   description: string;
-  status: 'Ready' | 'Not Ready';
+  status: 'Ready' | 'Not Ready' | 'Progressing' | 'Failed';
   labels: ToolLabels;
+  workloadType?: ToolWorkloadType;
   createdAt?: string;
 }
 
@@ -176,10 +181,41 @@ export interface ToolDetail {
     name: string;
     namespace: string;
     labels: Record<string, string>;
-    creationTimestamp: string;
-    uid: string;
+    annotations?: Record<string, string>;
+    creationTimestamp?: string;
+    creation_timestamp?: string;
+    uid?: string;
   };
+  // Deployment/StatefulSet spec
   spec: {
+    replicas?: number;
+    selector?: {
+      matchLabels?: Record<string, string>;
+    };
+    template?: {
+      metadata?: {
+        labels?: Record<string, string>;
+      };
+      spec?: {
+        containers?: ContainerSpec[];
+        volumes?: Array<{
+          name: string;
+          emptyDir?: Record<string, unknown>;
+          persistentVolumeClaim?: { claimName: string };
+        }>;
+        imagePullSecrets?: Array<{ name: string }>;
+      };
+    };
+    // StatefulSet-specific
+    serviceName?: string;
+    volumeClaimTemplates?: Array<{
+      metadata: { name: string };
+      spec: {
+        accessModes: string[];
+        resources: { requests: { storage: string } };
+      };
+    }>;
+    // Legacy MCPServer CRD fields
     description?: string;
     source?: {
       git?: {
@@ -189,15 +225,25 @@ export interface ToolDetail {
       };
     };
   };
-  status?: {
+  // Status from backend (string for workloads, object for legacy CRD)
+  status?: string | DeploymentStatus | {
     phase?: string;
     conditions?: Array<{
       type: string;
       status: string;
       reason?: string;
       message?: string;
+      lastTransitionTime?: string;
+      last_transition_time?: string;
     }>;
   };
+  // Workload type
+  workloadType?: ToolWorkloadType;
+  // Associated Service info
+  service?: ServiceInfo;
+  // Computed ready status from backend
+  readyStatus?: 'Ready' | 'Not Ready' | 'Progressing' | 'Failed';
+  // MCP tools (populated after connect)
   mcpTools?: MCPTool[];
 }
 

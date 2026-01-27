@@ -134,6 +134,10 @@ export const ImportToolPage: React.FC = () => {
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [showEnvVars, setShowEnvVars] = useState(false);
 
+  // Workload type
+  const [workloadType, setWorkloadType] = useState<'deployment' | 'statefulset'>('deployment');
+  const [persistentStorageSize, setPersistentStorageSize] = useState('1Gi');
+
   // HTTPRoute/Route creation
   const [createHttpRoute, setCreateHttpRoute] = useState(false);
 
@@ -333,6 +337,10 @@ export const ImportToolPage: React.FC = () => {
         namespace,
         protocol,
         framework: 'Python',
+        workloadType,
+        persistentStorage: workloadType === 'statefulset'
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
         deploymentMethod: 'source',
         gitUrl,
         gitRevision: gitBranch,
@@ -356,6 +364,10 @@ export const ImportToolPage: React.FC = () => {
         containerImage: fullImage,
         protocol,
         framework: 'Python',
+        workloadType,
+        persistentStorage: workloadType === 'statefulset'
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
         envVars: envVars.filter((ev) => ev.name && ev.value),
         imagePullSecret: imagePullSecret || undefined,
         servicePorts: showPodConfig ? servicePorts : undefined,
@@ -729,6 +741,51 @@ export const ImportToolPage: React.FC = () => {
                     </FormHelperText>
                   </FormGroup>
                 </>
+              )}
+
+              <Divider style={{ margin: '24px 0' }} />
+
+              {/* Workload Type */}
+              <Title headingLevel="h3" size="md" style={{ marginBottom: '16px' }}>
+                Workload Type
+              </Title>
+
+              <FormGroup role="radiogroup" fieldId="workloadType">
+                <Radio
+                  name="workloadType"
+                  label="Deployment"
+                  description="Standard Kubernetes Deployment (default, stateless workload)"
+                  isChecked={workloadType === 'deployment'}
+                  onChange={() => setWorkloadType('deployment')}
+                  id="workloadType-deployment"
+                />
+                <Radio
+                  name="workloadType"
+                  label="StatefulSet"
+                  description="Kubernetes StatefulSet with persistent storage (for tools that need data persistence)"
+                  isChecked={workloadType === 'statefulset'}
+                  onChange={() => setWorkloadType('statefulset')}
+                  id="workloadType-statefulset"
+                  style={{ marginTop: '8px' }}
+                />
+              </FormGroup>
+
+              {workloadType === 'statefulset' && (
+                <FormGroup label="Persistent Volume Size" fieldId="persistentStorageSize">
+                  <TextInput
+                    id="persistentStorageSize"
+                    value={persistentStorageSize}
+                    onChange={(_e, value) => setPersistentStorageSize(value)}
+                    placeholder="1Gi"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        Size of the persistent volume claim (e.g., 1Gi, 5Gi, 10Gi)
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
               )}
 
               <Divider style={{ margin: '24px 0' }} />
