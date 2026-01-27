@@ -66,18 +66,56 @@ cleanup_orphaned_aws_resources() {
 
     cd "$REPO_ROOT"
 
-    # Verify VPCs are deleted
-    REMAINING_VPCS=$(aws ec2 describe-vpcs \
-        --region "$AWS_REGION" \
-        --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
-        --query 'Vpcs[*].VpcId' \
-        --output text 2>/dev/null || echo "")
+    # Verify VPCs are deleted (with retries - VPC deletion can take time)
+    echo "Verifying VPC cleanup..."
+    for attempt in {1..6}; do
+        REMAINING_VPCS=$(aws ec2 describe-vpcs \
+            --region "$AWS_REGION" \
+            --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
+            --query 'Vpcs[*].VpcId' \
+            --output text 2>/dev/null || echo "")
 
-    if [ -n "$REMAINING_VPCS" ] && [ "$REMAINING_VPCS" != "None" ]; then
-        echo "::error::Failed to delete orphaned VPCs: $REMAINING_VPCS"
-        echo "Cannot proceed with cluster creation while old VPC exists."
-        exit 1
-    fi
+        if [ -z "$REMAINING_VPCS" ] || [ "$REMAINING_VPCS" = "None" ]; then
+            echo "VPC cleanup verified - no orphaned VPCs remain"
+            break
+        fi
+
+        if [ "$attempt" -eq 6 ]; then
+            echo "::error::Failed to delete orphaned VPCs after 60s: $REMAINING_VPCS"
+            # Show what's blocking VPC deletion
+            echo "Checking for resources blocking VPC deletion:"
+            for vpc in $REMAINING_VPCS; do
+                echo "  VPC: $vpc"
+                echo "  - Tags (check for kagenti.io/managed-by):"
+                aws ec2 describe-vpcs --region "$AWS_REGION" \
+                    --vpc-ids "$vpc" \
+                    --query 'Vpcs[*].Tags' \
+                    --output table 2>/dev/null || true
+                echo "  - ENIs:"
+                aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description,Status]' \
+                    --output table 2>/dev/null || true
+                echo "  - Security Groups:"
+                aws ec2 describe-security-groups --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'SecurityGroups[*].[GroupId,GroupName]' \
+                    --output table 2>/dev/null || true
+                echo "  - VPC Endpoints:"
+                aws ec2 describe-vpc-endpoints --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'VpcEndpoints[*].[VpcEndpointId,State,ServiceName]' \
+                    --output table 2>/dev/null || true
+                echo "  - Attempting manual delete:"
+                aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1 || true
+            done
+            echo "Cannot proceed with cluster creation while old VPC exists."
+            exit 1
+        fi
+
+        echo "  Attempt $attempt/6 - VPCs still exist: $REMAINING_VPCS (waiting 10s...)"
+        sleep 10
+    done
 
     echo "AWS orphaned resource cleanup complete"
 }
