@@ -270,11 +270,13 @@ else
       -o jsonpath='{.data.region}' | base64 -d)
   echo "Bucket: $BUCKET, Region: $REGION"
 
-  # Patch the operator to add OIDC configuration:
+  # Patch the operator to add OIDC args, volume, and volumeMount:
   oc patch deployment operator -n hypershift --type='json' -p="[
     {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$BUCKET\"},
     {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$REGION\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"}
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"oidc-storage-provider-s3-creds\", \"secret\": {\"defaultMode\": 420, \"secretName\": \"hypershift-operator-oidc-provider-s3-credentials\"}}},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/volumeMounts/-\", \"value\": {\"mountPath\": \"/etc/oidc-storage-provider-s3-creds\", \"name\": \"oidc-storage-provider-s3-creds\"}}
   ]"
 
   # Verify the operator restarts and has the new args:
