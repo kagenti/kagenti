@@ -43,7 +43,7 @@ KEYCLOAK_STATUS=$(kubectl get pods -n keycloak -l app.kubernetes.io/name=keycloa
 KEYCLOAK_USER=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "N/A")
 KEYCLOAK_PASS=$(kubectl get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "N/A")
 
-echo -e "${BLUE}Keycloak Admin Console:${NC}"
+echo -e "${BLUE}Keycloak Admin Console:${NC} ${YELLOW}(credentials below - do not share)${NC}"
 echo "  Status:     $KEYCLOAK_STATUS"
 echo -e "  Username:   ${GREEN}$KEYCLOAK_USER${NC}"
 echo -e "  Password:   ${GREEN}$KEYCLOAK_PASS${NC}"

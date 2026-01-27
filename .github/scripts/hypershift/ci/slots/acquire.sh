@@ -16,6 +16,10 @@
 
 set -euo pipefail
 
+# Source shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/logging.sh"
+
 MAX_SLOTS="${MAX_SLOTS:-6}"
 SLOT_TIMEOUT="${SLOT_TIMEOUT:-60}"  # Wait up to 60 min for a slot (CI run timeout is 120 min)
 LEASE_DURATION_SECONDS="${LEASE_DURATION_SECONDS:-7200}"  # 2 hours TTL for stale cleanup
@@ -29,18 +33,6 @@ HOLDER_IDENTITY="${CLUSTER_SUFFIX}:${RUN_ID}"
 
 # Track acquired slot for cleanup
 ACQUIRED_SLOT=""
-
-# Cross-platform date parsing (Linux GNU date vs macOS BSD date)
-parse_iso_date() {
-    local iso_date="$1"
-    if [[ "$(uname)" == "Darwin" ]]; then
-        # macOS BSD date
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$iso_date" +%s 2>/dev/null || echo "0"
-    else
-        # Linux GNU date
-        date -d "$iso_date" +%s 2>/dev/null || echo "0"
-    fi
-}
 
 cleanup_lease() {
     if [[ -n "$ACQUIRED_SLOT" ]]; then

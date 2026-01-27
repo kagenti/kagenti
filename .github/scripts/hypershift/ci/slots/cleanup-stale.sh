@@ -8,19 +8,13 @@
 
 set -uo pipefail
 
+# Source shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/logging.sh"
+
 NAMESPACE="clusters"
 MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
 LEASE_PREFIX="kagenti-ci-slot"  # Namespaced prefix to avoid conflicts
-
-# Cross-platform date parsing (Linux GNU date vs macOS BSD date)
-parse_iso_date() {
-    local iso_date="$1"
-    if [[ "$(uname)" == "Darwin" ]]; then
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$iso_date" +%s 2>/dev/null || echo "0"
-    else
-        date -d "$iso_date" +%s 2>/dev/null || echo "0"
-    fi
-}
 
 echo "Checking for stale CI slots..."
 echo "Lease prefix: $LEASE_PREFIX"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Logging Library
-# Provides color output and logging functions
+# Provides color output, logging functions, and common utilities
 
 # Color codes
 export RED='\033[0;31m'
@@ -49,4 +49,17 @@ log_info() {
 log_warn() {
     local message="$1"
     echo -e "${YELLOW}⚠ $message${NC}"
+}
+
+# Cross-platform date parsing (Linux GNU date vs macOS BSD date)
+# Converts ISO 8601 date (e.g., "2024-01-15T10:30:00Z") to epoch seconds
+parse_iso_date() {
+    local iso_date="$1"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS BSD date
+        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$iso_date" +%s 2>/dev/null || echo "0"
+    else
+        # Linux GNU date
+        date -d "$iso_date" +%s 2>/dev/null || echo "0"
+    fi
 }

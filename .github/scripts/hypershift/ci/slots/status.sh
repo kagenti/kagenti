@@ -9,6 +9,10 @@
 
 set -uo pipefail
 
+# Source shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../../lib/logging.sh"
+
 NAMESPACE="clusters"
 LEASE_PREFIX="kagenti-ci-slot"
 MAX_SLOTS="${MAX_SLOTS:-6}"  # Show up to 6 slots by default
@@ -21,16 +25,6 @@ for arg in "$@"; do
             ;;
     esac
 done
-
-# Cross-platform date parsing
-parse_iso_date() {
-    local iso_date="$1"
-    if [[ "$(uname)" == "Darwin" ]]; then
-        date -j -f "%Y-%m-%dT%H:%M:%SZ" "$iso_date" +%s 2>/dev/null || echo "0"
-    else
-        date -d "$iso_date" +%s 2>/dev/null || echo "0"
-    fi
-}
 
 format_duration() {
     local seconds=$1

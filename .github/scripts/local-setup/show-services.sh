@@ -37,7 +37,7 @@ echo ""
 echo -e "${YELLOW}Port-forward command:${NC}"
 echo "  kubectl port-forward -n keycloak svc/keycloak 8080:8080"
 echo ""
-echo -e "${GREEN}Credentials:${NC}"
+echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share this output)${NC}"
 
 # Try to get admin credentials from secret
 KEYCLOAK_ADMIN_USER=$(kubectl get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
@@ -148,7 +148,7 @@ echo -e "${BLUE}Status:${NC}           $POSTGRES_STATUS"
 echo -e "${BLUE}Namespace:${NC}        keycloak"
 echo -e "${BLUE}Service:${NC}          postgresql.keycloak.svc.cluster.local:5432"
 echo ""
-echo -e "${GREEN}Credentials:${NC}"
+echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share this output)${NC}"
 POSTGRES_PASS=$(kubectl get secret -n keycloak postgresql -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 echo "  Username: postgres"
 echo "  Password: ${POSTGRES_PASS}"
