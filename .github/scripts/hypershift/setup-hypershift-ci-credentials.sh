@@ -144,7 +144,8 @@ base64_decode() {
 # For CI: Set via secrets (MANAGED_BY_TAG=kagenti-hypershift-ci)
 # For local: Defaults to kagenti-hypershift-custom (shared by all developers)
 #
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+# IMPORTANT: Must export for envsubst to work in render_policy()
+export MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 
 # Validate (must be lowercase alphanumeric, can include hyphens, 5-30 chars)
 if ! [[ "$MANAGED_BY_TAG" =~ ^[a-z][a-z0-9-]{4,29}$ ]]; then
