@@ -3,15 +3,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
-source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
-log_step "43" "Waiting for Toolhive CRDs"
+# Toolhive CRDs are no longer required. Tools are deployed as standard
+# Kubernetes Deployments/StatefulSets + Services instead of MCPServer CRDs.
+#
+# This script is kept as a no-op for backward compatibility with workflows
+# that still reference it.
 
-wait_for_crd "mcpservers.toolhive.stacklok.dev" || {
-    log_error "Toolhive MCPServer CRD not found"
-    kubectl get crds | grep -E 'toolhive|mcp' || echo "No toolhive/mcp CRDs found"
-    kubectl get pods -n toolhive-system || echo "No toolhive-system namespace"
-    exit 1
-}
-
-log_success "Toolhive CRDs established"
+log_step "43" "Toolhive CRDs no longer required (tools use Deployments)"
+log_success "Skipped (tools now use standard Kubernetes workloads)"

@@ -76,6 +76,27 @@ get_pod_logs() {
     kubectl logs -n "$namespace" -l "$selector" --tail="$tail" --all-containers=true || true
 }
 
+# Wait for tool service to exist
+# Tool services use the naming convention: {name}-mcp
+wait_for_tool_service() {
+    local tool_name="$1"
+    local namespace="$2"
+    local timeout="${3:-60}"
+    local service_name="${tool_name}-mcp"
+
+    local elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+        if kubectl get service "$service_name" -n "$namespace" &> /dev/null; then
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    echo "ERROR: Service $service_name not found in $namespace after ${timeout}s"
+    return 1
+}
+
 # Start port-forward in background
 port_forward_background() {
     local resource="$1"

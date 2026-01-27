@@ -3,7 +3,8 @@
 # Licensed under the Apache License, Version 2.0
 
 # This script demonstrates deploying the weather tool using Shipwright source build.
-# It creates a Build resource, triggers a BuildRun, and waits for the MCPServer deployment.
+# It creates a Build resource, triggers a BuildRun, waits for the image to be built,
+# then creates a Deployment + Service for the tool.
 
 set -e
 
@@ -42,6 +43,7 @@ metadata:
         "framework": "Python",
         "description": "Weather lookup tool for MCP",
         "createHttpRoute": false,
+        "workloadType": "deployment",
         "envVars": [],
         "servicePorts": [{"containerPort": 8000, "servicePort": 80}]
       }
@@ -93,24 +95,24 @@ POLL_INTERVAL=10
 while [ $ELAPSED -lt $TIMEOUT ]; do
     STATUS=$(kubectl get buildrun "${BUILDRUN_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].status}' 2>/dev/null || echo "")
     REASON=$(kubectl get buildrun "${BUILDRUN_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || echo "")
-    
+
     if [ "$STATUS" == "True" ]; then
-        echo "✅ BuildRun succeeded!"
+        echo "BuildRun succeeded!"
         break
     elif [ "$STATUS" == "False" ]; then
-        echo "❌ BuildRun failed with reason: ${REASON}"
+        echo "BuildRun failed with reason: ${REASON}"
         kubectl get buildrun "${BUILDRUN_NAME}" -n "${NAMESPACE}" -o yaml
         exit 1
     else
-        echo "⏳ BuildRun status: ${REASON:-Pending}... (${ELAPSED}s elapsed)"
+        echo "BuildRun status: ${REASON:-Pending}... (${ELAPSED}s elapsed)"
     fi
-    
+
     sleep $POLL_INTERVAL
     ELAPSED=$((ELAPSED + POLL_INTERVAL))
 done
 
 if [ $ELAPSED -ge $TIMEOUT ]; then
-    echo "❌ Timeout waiting for BuildRun to complete"
+    echo "Timeout waiting for BuildRun to complete"
     exit 1
 fi
 
@@ -122,40 +124,103 @@ OUTPUT_DIGEST=$(kubectl get buildrun "${BUILDRUN_NAME}" -n "${NAMESPACE}" -o jso
 echo "Output Image: ${OUTPUT_IMAGE}"
 echo "Output Digest: ${OUTPUT_DIGEST}"
 
-# Step 5: Create MCPServer for the tool
+# Step 5: Create Deployment for the tool
 echo ""
-echo "Step 5: Creating MCPServer resource..."
+echo "Step 5: Creating Deployment resource..."
 cat <<EOF | kubectl apply -f -
-apiVersion: toolhive.io/v1alpha1
-kind: MCPServer
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: ${TOOL_NAME}
   namespace: ${NAMESPACE}
   labels:
     kagenti.io/type: tool
+    kagenti.io/protocol: mcp
+    kagenti.io/transport: streamable_http
     kagenti.io/built-by: shipwright
     kagenti.io/build-name: ${TOOL_NAME}
+    app.kubernetes.io/name: ${TOOL_NAME}
+  annotations:
+    kagenti.io/description: "Weather lookup tool for MCP (built by Shipwright)"
+    kagenti.io/shipwright-build: "${TOOL_NAME}"
 spec:
-  image: ${OUTPUT_IMAGE}
-  protocol: streamable_http
   replicas: 1
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
+  selector:
+    matchLabels:
+      kagenti.io/type: tool
+      app.kubernetes.io/name: ${TOOL_NAME}
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: tool
+        kagenti.io/protocol: mcp
+        kagenti.io/transport: streamable_http
+        app.kubernetes.io/name: ${TOOL_NAME}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: ${OUTPUT_IMAGE}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsUser: 1000
+      volumes:
+        - name: tmp
+          emptyDir: {}
 EOF
 
-echo "MCPServer '${TOOL_NAME}' created."
+# Step 5b: Create Service
+echo "Creating Service..."
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${TOOL_NAME}-mcp
+  namespace: ${NAMESPACE}
+  labels:
+    kagenti.io/type: tool
+    kagenti.io/protocol: mcp
+    app.kubernetes.io/name: ${TOOL_NAME}
+spec:
+  type: ClusterIP
+  selector:
+    kagenti.io/type: tool
+    app.kubernetes.io/name: ${TOOL_NAME}
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+EOF
 
-# Step 6: Wait for MCPServer to be ready
+echo "Deployment '${TOOL_NAME}' and Service '${TOOL_NAME}-mcp' created."
+
+# Step 6: Wait for Deployment to be ready
 echo ""
-echo "Step 6: Waiting for MCPServer to be ready..."
-kubectl wait --for=condition=Ready mcpserver/${TOOL_NAME} -n ${NAMESPACE} --timeout=120s || {
-    echo "⚠️ MCPServer not ready within timeout, checking status..."
-    kubectl get mcpserver ${TOOL_NAME} -n ${NAMESPACE} -o yaml
+echo "Step 6: Waiting for Deployment to be ready..."
+kubectl wait --for=condition=available "deployment/${TOOL_NAME}" -n "${NAMESPACE}" --timeout=120s || {
+    echo "Warning: Deployment not ready within timeout, checking status..."
+    kubectl get "deployment/${TOOL_NAME}" -n "${NAMESPACE}" -o yaml
 }
 
 echo ""
@@ -163,7 +228,9 @@ echo "=== Weather Tool Deployment Complete ==="
 echo "Tool Name: ${TOOL_NAME}"
 echo "Namespace: ${NAMESPACE}"
 echo "Image: ${OUTPUT_IMAGE}"
+echo "Service: ${TOOL_NAME}-mcp"
 echo ""
 echo "To verify the tool is running:"
-echo "  kubectl get mcpserver ${TOOL_NAME} -n ${NAMESPACE}"
-echo "  kubectl get pods -l app=${TOOL_NAME} -n ${NAMESPACE}"
+echo "  kubectl get deployment ${TOOL_NAME} -n ${NAMESPACE}"
+echo "  kubectl get service ${TOOL_NAME}-mcp -n ${NAMESPACE}"
+echo "  kubectl get pods -l app.kubernetes.io/name=${TOOL_NAME} -n ${NAMESPACE}"

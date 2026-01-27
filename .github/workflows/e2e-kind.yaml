@@ -62,18 +62,13 @@ jobs:
       - name: Wait for kagenti-operator CRDs to be established
         run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
 
-      - name: Wait for Toolhive CRDs to be established
-        run: bash .github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
-
       # TOOL DEPLOYMENT (FIRST - agent depends on tool being available)
+      # Tools are deployed as standard Kubernetes Deployments + Services
       - name: Build weather-tool image
         run: bash .github/scripts/kagenti-operator/71-build-weather-tool.sh
 
-      - name: Deploy weather-tool via Toolhive MCPServer
+      - name: Deploy weather-tool via Deployment + Service
         run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-
-      - name: Patch weather-tool StatefulSet for writable /tmp
-        run: bash .github/scripts/kagenti-operator/73-patch-weather-tool.sh
 
       # AGENT DEPLOYMENT (AFTER tool is ready - agent depends on tool)
       # Uses standard Kubernetes Deployment + Service (no Agent CRD dependency)

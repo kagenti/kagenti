@@ -1,49 +1,108 @@
-apiVersion: toolhive.stacklok.dev/v1alpha1
-kind: MCPServer
+# Deployment for weather-tool MCP server
+# Replaces the previous MCPServer CRD (toolhive.stacklok.dev/v1alpha1)
+# Tools are now deployed as standard Kubernetes Deployments + Services
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: weather-tool
   namespace: team1
   labels:
-    app.kubernetes.io/created-by: e2e-test
-    app.kubernetes.io/name: toolhive-operator
-    kagenti.io/framework: Python
-    kagenti.io/protocol: mcp
     kagenti.io/type: tool
+    kagenti.io/protocol: mcp
+    kagenti.io/transport: streamable_http
+    kagenti.io/framework: Python
+    app.kubernetes.io/name: weather-tool
+    app.kubernetes.io/managed-by: example
   annotations:
-    description: "Weather MCP tool for E2E testing via Toolhive"
+    kagenti.io/description: "Weather MCP tool for E2E testing"
 spec:
-  # Image built by AgentBuild in CI
-  image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
-
-  # HTTP transport for MCP (weather-tool exposes HTTP endpoint at /mcp)
-  transport: sse
-
-  # Environment variables for the weather-tool
-  env:
-    - name: PORT
-      value: "8000"
-    - name: HOST
-      value: "0.0.0.0"
-    - name: OTEL_EXPORTER_OTLP_ENDPOINT
-      value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
-    - name: KEYCLOAK_URL
-      value: "http://keycloak.keycloak.svc.cluster.local:8080"
-    - name: UV_NO_CACHE
-      value: "1"
-    - name: MCP_URL
-      value: "http://weather-tool:8000/mcp"
-    - name: LLM_API_BASE
-      value: "http://dockerhost:11434/v1"
-    - name: LLM_API_KEY
-      value: "dummy"
-    - name: LLM_MODEL
-      value: "qwen2.5:0.5b"
-
-  # Resource limits (matching the Agent CR)
-  resources:
-    limits:
-      cpu: 500m
-      memory: 1Gi
-    requests:
-      cpu: 100m
-      memory: 256Mi
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: tool
+      app.kubernetes.io/name: weather-tool
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: tool
+        kagenti.io/protocol: mcp
+        kagenti.io/transport: streamable_http
+        kagenti.io/framework: Python
+        app.kubernetes.io/name: weather-tool
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+          imagePullPolicy: Always
+          env:
+            - name: PORT
+              value: "8000"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+            - name: KEYCLOAK_URL
+              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+            - name: UV_NO_CACHE
+              value: "1"
+            - name: MCP_URL
+              value: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
+            - name: LLM_API_BASE
+              value: "http://dockerhost:11434/v1"
+            - name: LLM_API_KEY
+              value: "dummy"
+            - name: LLM_MODEL
+              value: "qwen2.5:0.5b"
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: cache
+              mountPath: /app/.cache
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsUser: 1000
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+# Service for weather-tool MCP server
+# Service name follows the convention: {name}-mcp
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-tool-mcp
+  namespace: team1
+  labels:
+    kagenti.io/type: tool
+    kagenti.io/protocol: mcp
+    app.kubernetes.io/name: weather-tool
+    app.kubernetes.io/managed-by: example
+spec:
+  type: ClusterIP
+  selector:
+    kagenti.io/type: tool
+    app.kubernetes.io/name: weather-tool
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
