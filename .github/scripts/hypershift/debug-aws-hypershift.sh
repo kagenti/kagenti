@@ -140,6 +140,53 @@ if [ -n "$VPCS" ]; then
     RESOURCES_FOUND=true
     log_found "VPCs:"
     [ "$CHECK_MODE" = false ] && echo "$VPCS" | column -t
+
+    # Show VPC dependencies (these block VPC deletion but aren't tagged)
+    if [ "$CHECK_MODE" = false ]; then
+        for VPC_ID in $(echo "$VPCS" | awk '{print $1}'); do
+            echo ""
+            echo "  VPC Dependencies for $VPC_ID (blocking deletion):"
+
+            # Route Tables (non-main)
+            RTS=$(aws ec2 describe-route-tables \
+                --filters "Name=vpc-id,Values=$VPC_ID" \
+                --query 'RouteTables[?Associations[0].Main!=`true`].[RouteTableId]' \
+                --output text 2>/dev/null || echo "")
+            if [ -n "$RTS" ]; then
+                echo "    Route Tables: $RTS"
+            fi
+
+            # VPC Endpoints
+            VPCES=$(aws ec2 describe-vpc-endpoints \
+                --filters "Name=vpc-id,Values=$VPC_ID" \
+                --query 'VpcEndpoints[*].[VpcEndpointId,ServiceName]' \
+                --output text 2>/dev/null || echo "")
+            if [ -n "$VPCES" ]; then
+                echo "    VPC Endpoints:"
+                echo "$VPCES" | sed 's/^/      /'
+            fi
+
+            # Security Groups (non-default)
+            SGS_IN_VPC=$(aws ec2 describe-security-groups \
+                --filters "Name=vpc-id,Values=$VPC_ID" \
+                --query 'SecurityGroups[?GroupName!=`default`].[GroupId,GroupName]' \
+                --output text 2>/dev/null || echo "")
+            if [ -n "$SGS_IN_VPC" ]; then
+                echo "    Security Groups (non-default):"
+                echo "$SGS_IN_VPC" | sed 's/^/      /'
+            fi
+
+            # Network Interfaces
+            ENIS=$(aws ec2 describe-network-interfaces \
+                --filters "Name=vpc-id,Values=$VPC_ID" \
+                --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description]' \
+                --output text 2>/dev/null || echo "")
+            if [ -n "$ENIS" ]; then
+                echo "    Network Interfaces:"
+                echo "$ENIS" | sed 's/^/      /'
+            fi
+        done
+    fi
 else
     log_empty "No VPCs found"
 fi

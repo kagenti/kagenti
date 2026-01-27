@@ -4,8 +4,14 @@ set -euo pipefail
 
 echo "Cloning hypershift-automation..."
 
-# Clone from Ladas fork with additional tags support
-git clone --branch add-additional-tags-support --depth 1 \
+# Clone from Ladas fork with additional tags support and VPC endpoint cleanup
+# Using exact commit for reproducibility and safety
+HYPERSHIFT_AUTOMATION_COMMIT="c87177c"
+
+git clone --branch add-additional-tags-support \
     https://github.com/Ladas/hypershift-automation.git /tmp/hypershift-automation
 
-echo "hypershift-automation cloned to /tmp/hypershift-automation"
+cd /tmp/hypershift-automation
+git checkout "$HYPERSHIFT_AUTOMATION_COMMIT"
+
+echo "hypershift-automation cloned to /tmp/hypershift-automation (commit: $HYPERSHIFT_AUTOMATION_COMMIT)"
