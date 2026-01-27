@@ -63,24 +63,23 @@ fi
 echo ""
 echo "Checking for orphaned clusters..."
 
+# Fetch all data upfront to avoid N+1 API calls
 clusters=$(oc get hostedclusters -n clusters \
-    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "")
+    -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.creationTimestamp}{"\n"}{end}' 2>/dev/null || echo "")
+
+# Fetch lease holders once (not inside loop)
+lease_holders=$(oc get leases -n "$NAMESPACE" -l app=kagenti-ci \
+    -o jsonpath='{range .items[*]}{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null || echo "")
 
 orphan_count=0
-while read -r cluster; do
+while IFS='|' read -r cluster created; do
     [[ -z "$cluster" ]] && continue
     [[ ! "$cluster" =~ ^${MANAGED_BY_TAG}- ]] && continue  # Skip non-CI clusters
 
     suffix=${cluster#${MANAGED_BY_TAG}-}
 
-    # Check if any lease holds this cluster (simple grep instead of jsonpath regex)
-    lease_holders=$(oc get leases -n "$NAMESPACE" -l app=kagenti-ci \
-        -o jsonpath='{range .items[*]}{.spec.holderIdentity}{"\n"}{end}' 2>/dev/null || echo "")
-
     if ! echo "$lease_holders" | grep -q "^${suffix}:"; then
         # Check cluster age (only flag if older than 30 minutes)
-        created=$(oc get hostedcluster "$cluster" -n clusters \
-            -o jsonpath='{.metadata.creationTimestamp}' 2>/dev/null || echo "")
         created_epoch=$(parse_iso_date "$created")
         age_minutes=$(( (now_epoch - created_epoch) / 60 ))
 

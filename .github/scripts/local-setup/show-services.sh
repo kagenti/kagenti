@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Show Services Script - Display all Kagenti services, URLs, and credentials
-# Usage: ./local-testing/show-services.sh
+# Usage: ./.github/scripts/local-setup/show-services.sh
 
 set -euo pipefail
 
@@ -22,7 +22,7 @@ echo ""
 # Check if platform is running
 if ! kubectl get namespace kagenti-system &> /dev/null; then
     echo -e "${RED}✗ Platform not deployed${NC}"
-    echo "  Run: ./local-testing/deploy-platform.sh"
+    echo "  Run: ./.github/scripts/local-setup/deploy-platform.sh"
     exit 1
 fi
 
@@ -175,7 +175,7 @@ echo -e "${YELLOW}View recent events:${NC}"
 echo "  kubectl get events -A --sort-by='.lastTimestamp' | tail -30"
 echo ""
 echo -e "${YELLOW}Run E2E tests:${NC}"
-echo "  ./local-testing/run-e2e-tests.sh"
+echo "  ./.github/scripts/local-setup/run-e2e-tests.sh"
 echo ""
 echo -e "${YELLOW}Access UI:${NC}"
 echo "  kubectl port-forward -n kagenti-system svc/http-istio 8080:80"

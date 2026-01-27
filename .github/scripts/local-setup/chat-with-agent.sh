@@ -4,9 +4,9 @@
 # the Agent-to-Agent (A2A) protocol with JSONRPC 2.0 message/send method.
 #
 # Usage:
-#   ./local-testing/chat-with-agent.sh                          # Use default weather-service
-#   ./local-testing/chat-with-agent.sh <agent-url>              # Custom agent URL
-#   ./local-testing/chat-with-agent.sh http://localhost:8000    # Port-forwarded agent
+#   ./.github/scripts/local-setup/chat-with-agent.sh                          # Use default weather-service
+#   ./.github/scripts/local-setup/chat-with-agent.sh <agent-url>              # Custom agent URL
+#   ./.github/scripts/local-setup/chat-with-agent.sh http://localhost:8000    # Port-forwarded agent
 #
 # A2A Protocol Reference:
 #   - Method: message/send
@@ -48,7 +48,7 @@ if [ -z "$AGENT_URL" ]; then
     # Check if platform is running
     if ! kubectl get namespace team1 &> /dev/null; then
         echo -e "${RED}✗ Platform not deployed or team1 namespace not found${NC}"
-        echo "  Run: ./local-testing/deploy-platform.sh"
+        echo "  Run: ./.github/scripts/local-setup/deploy-platform.sh"
         exit 1
     fi
 
@@ -62,7 +62,7 @@ if [ -z "$AGENT_URL" ]; then
         echo -e "${YELLOW}⚠ No agents found in team1 namespace${NC}"
         echo ""
         echo "Deploy the weather agent first:"
-        echo "  ./local-testing/deploy-platform.sh"
+        echo "  ./.github/scripts/local-setup/deploy-platform.sh"
         exit 1
     fi
 
@@ -88,7 +88,7 @@ if [ -z "$AGENT_URL" ]; then
     echo "To use port-forward instead, run in another terminal:"
     echo "  kubectl port-forward -n team1 svc/weather-service 8000:8000"
     echo "Then run this script with:"
-    echo "  ./local-testing/chat-with-agent.sh http://localhost:8000"
+    echo "  ./.github/scripts/local-setup/chat-with-agent.sh http://localhost:8000"
     echo ""
     read -p "Press Enter to continue with in-cluster URL, or Ctrl+C to cancel... "
     echo ""
@@ -183,7 +183,7 @@ EOF
         echo ""
         echo "  3. If using in-cluster URL, try port-forward:"
         echo "     kubectl port-forward -n team1 deployment/$AGENT_NAME 8000:8000"
-        echo "     Then use: ./local-testing/chat-with-agent.sh http://localhost:8000"
+        echo "     Then use: ./.github/scripts/local-setup/chat-with-agent.sh http://localhost:8000"
         echo ""
         continue
     }
