@@ -114,6 +114,7 @@ kubectl patch svc weather-service -n team1 --type=json \
     -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
     log_error "Failed to patch Service targetPort"
     kubectl get svc weather-service -n team1 -o yaml
+    exit 1
 }
 
 # Create OpenShift Route for the agent (on OpenShift only)
@@ -177,6 +178,7 @@ EOF
             log_info "Checking pod status:"
             kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 || true
             kubectl describe pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 | tail -30 || true
+            exit 1
         fi
     fi
 fi

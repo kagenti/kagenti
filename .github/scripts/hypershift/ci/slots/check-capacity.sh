@@ -65,7 +65,7 @@ get_avg_node_allocatable() {
             .status.allocatable |
             {
                 cpu: ((.cpu // "0") | if test("m$") then (.[:-1] | tonumber) else ((. | tonumber) * 1000) end),
-                mem: (((.memory // "0") | gsub("Ki$"; "") | tonumber) / 1024)
+                mem: ((.memory // "0") | if test("Gi$") then ((.[:-2] | tonumber) * 1024) elif test("Mi$") then (.[:-2] | tonumber) elif test("Ki$") then ((.[:-2] | tonumber) / 1024) else 0 end)
             }
         ' 2>/dev/null || echo '{"cpu":0,"mem":0}')
 
@@ -192,7 +192,7 @@ else
         echo "  - Need ${required_cpu}m CPU, only ${remaining_cpu}m available"
     fi
     if [[ $remaining_mem -lt $required_mem ]]; then
-        echo "  - Need ${required_mem}Mi MEM, only ${remaining_mem}mi available"
+        echo "  - Need ${required_mem}Mi MEM, only ${remaining_mem}Mi available"
     fi
     echo "  - Already running ${existing_clusters} cluster(s)"
     exit 1

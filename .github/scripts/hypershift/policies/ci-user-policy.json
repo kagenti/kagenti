@@ -98,7 +98,12 @@
         "ec2:DeleteNetworkInterface",
         "ec2:ModifyNetworkInterfaceAttribute"
       ],
-      "Resource": "*"
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/kagenti.io/managed-by": "${MANAGED_BY_TAG}"
+        }
+      }
     },
     {
       "Sid": "ELBDescribeReadOnly",
