@@ -196,6 +196,20 @@ fi
 SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
 CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-$SANITIZED_USER}"
 
+# Validate cluster suffix for RFC1123 compliance (lowercase, alphanumeric, hyphens only)
+if ! [[ "$CLUSTER_SUFFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+    echo -e "\033[0;31m✗\033[0m Error: Invalid cluster suffix '$CLUSTER_SUFFIX'" >&2
+    echo "" >&2
+    echo "Cluster names must be valid RFC1123 labels:" >&2
+    echo "  - Only lowercase letters (a-z), numbers (0-9), and hyphens (-)" >&2
+    echo "  - Must start and end with an alphanumeric character" >&2
+    echo "  - No underscores, uppercase letters, or special characters" >&2
+    echo "" >&2
+    echo "Examples of valid suffixes: pr529, test-1, my-cluster" >&2
+    echo "Examples of invalid suffixes: PR529, test_1, -cluster-, my.cluster" >&2
+    exit 1
+fi
+
 # Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'

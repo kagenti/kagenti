@@ -179,3 +179,5 @@ node_modules/
 .bin/
 
 # HyperShift CI credentials (covered by .env.* above)
+.env.kagenti-*
+.env.hypershift-ci

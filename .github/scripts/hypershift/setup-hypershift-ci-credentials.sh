@@ -65,12 +65,14 @@
 # USAGE:
 #   ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
 #   ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh --rotate
-#   ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh --update-quotas
 #   MANAGED_BY_TAG=myproject-ci ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
 #
 # OPTIONS:
 #   --rotate         Delete existing access keys and .env file, then create fresh credentials
-#   --update-quotas  Request quota increases for quotas below required levels (requires AWS approval)
+#
+# QUOTA CHECK:
+#   For AWS quota analysis, use the standalone script:
+#     ./.github/scripts/hypershift/check-quotas.sh
 #
 
 set -euo pipefail
@@ -725,148 +727,15 @@ fi
 echo ""
 
 # ============================================================================
-# 4b. CHECK AWS SERVICE QUOTAS
+# 4b. AWS SERVICE QUOTAS (Optional)
 # ============================================================================
-# AWS Service Quotas are ACCOUNT-LEVEL limits, not per-user.
-# We check if the account has sufficient quotas for our expected usage.
-# With --update-quotas, we request increases for insufficient quotas.
-
-log_info "Checking AWS Service Quotas..."
-
-# =============================================================================
-# Expected quotas for 3 clusters x 2 nodes each
-# These match the resources our CI user and HCP role can create/manage
-# =============================================================================
-
-QUOTA_WARNINGS=0
-QUOTAS_TO_UPDATE=()
-
-# Function to check a single quota
-check_quota() {
-    local service_code="$1"
-    local quota_code="$2"
-    local quota_name="$3"
-    local required="$4"
-
-    local current
-    current=$(aws service-quotas get-service-quota \
-        --service-code "$service_code" \
-        --quota-code "$quota_code" \
-        --query 'Quota.Value' \
-        --output text 2>/dev/null || echo "0")
-
-    if [ "$current" = "None" ] || [ -z "$current" ]; then
-        current=0
-    fi
-
-    # Convert to integer for comparison
-    current_int=${current%.*}
-
-    if [ "$current_int" -lt "$required" ]; then
-        log_warn "⚠️  $quota_name: current=$current_int, required=$required"
-        QUOTA_WARNINGS=$((QUOTA_WARNINGS + 1))
-        QUOTAS_TO_UPDATE+=("$service_code|$quota_code|$quota_name|$required")
-        return 1
-    else
-        echo "  ✓ $quota_name: $current_int (required: $required)"
-        return 0
-    fi
-}
-
-echo "Checking quotas for 3 clusters x 2 worker nodes..."
-echo ""
-
-# -----------------------------------------------------------------------------
-# VPC Quotas (per region)
-# -----------------------------------------------------------------------------
-echo "VPC Resources:"
-check_quota "vpc" "L-F678F1CE" "  VPCs per region" 5 || true
-check_quota "vpc" "L-407747CB" "  Subnets per VPC" 25 || true
-check_quota "vpc" "L-A4707A72" "  Internet gateways per region" 5 || true
-check_quota "vpc" "L-FE5A380F" "  NAT gateways per AZ" 15 || true
-check_quota "vpc" "L-589F43AA" "  Route tables per VPC" 15 || true
-check_quota "vpc" "L-29B6F2EB" "  VPC endpoints per VPC" 20 || true
-echo ""
-
-# -----------------------------------------------------------------------------
-# EC2 Quotas
-# -----------------------------------------------------------------------------
-echo "EC2 Resources:"
-check_quota "ec2" "L-0263D0A3" "  Elastic IPs" 15 || true
-check_quota "ec2" "L-0EA8095F" "  Security groups per VPC" 50 || true
-check_quota "ec2" "L-74FC7D96" "  Launch templates" 10 || true
-# vCPU limits vary by instance family - check On-Demand Standard
-check_quota "ec2" "L-1216C47A" "  Running On-Demand Standard (A,C,D,H,I,M,R,T,Z) instances" 40 || true
-echo ""
-
-# -----------------------------------------------------------------------------
-# ELB Quotas (HyperShift creates NLBs for API server, etc.)
-# -----------------------------------------------------------------------------
-echo "ELB Resources:"
-check_quota "elasticloadbalancing" "L-69A177A2" "  Network Load Balancers per region" 10 || true
-check_quota "elasticloadbalancing" "L-B6DF7632" "  Target groups per region" 30 || true
-check_quota "elasticloadbalancing" "L-7E6692B2" "  Listeners per NLB" 20 || true
-echo ""
-
-# -----------------------------------------------------------------------------
-# S3 Quotas (OIDC bucket per cluster)
-# -----------------------------------------------------------------------------
-echo "S3 Resources:"
-check_quota "s3" "L-DC2B2D3D" "  Buckets per account" 10 || true
-echo ""
-
-# -----------------------------------------------------------------------------
-# IAM Quotas (roles, instance profiles per cluster)
-# -----------------------------------------------------------------------------
-echo "IAM Resources:"
-check_quota "iam" "L-FE177D64" "  Roles per account" 50 || true
-check_quota "iam" "L-6E65F664" "  Instance profiles per account" 20 || true
-echo ""
-
-# -----------------------------------------------------------------------------
-# Route53 Quotas (private hosted zone per cluster)
-# -----------------------------------------------------------------------------
-echo "Route53 Resources:"
-check_quota "route53" "L-4EA4796A" "  Hosted zones per account" 10 || true
-echo ""
-
-if [ "$QUOTA_WARNINGS" -gt 0 ]; then
-    echo ""
-    log_warn "Found $QUOTA_WARNINGS quota(s) below recommended levels"
-
-    if [ "$UPDATE_QUOTAS" = true ]; then
-        log_info "Requesting quota increases (--update-quotas specified)..."
-        echo ""
-        for quota_entry in "${QUOTAS_TO_UPDATE[@]}"; do
-            IFS='|' read -r svc_code q_code q_name desired <<< "$quota_entry"
-            log_info "Requesting $q_name increase to $desired..."
-
-            request_id=$(aws service-quotas request-service-quota-increase \
-                --service-code "$svc_code" \
-                --quota-code "$q_code" \
-                --desired-value "$desired" \
-                --query 'RequestedQuota.Id' \
-                --output text 2>/dev/null || echo "FAILED")
-
-            if [ "$request_id" != "FAILED" ] && [ -n "$request_id" ]; then
-                log_success "  Request submitted: $request_id"
-                log_info "  Check status: aws service-quotas get-requested-service-quota-change --request-id $request_id"
-            else
-                log_warn "  Failed to request increase (may already have pending request)"
-            fi
-        done
-        echo ""
-        log_info "Quota increase requests typically take 1-3 business days for approval"
-    else
-        log_info "To request quota increases, re-run with --update-quotas:"
-        log_info "  ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh --update-quotas"
-        echo ""
-        log_info "Continuing anyway - quotas may be sufficient for single cluster..."
-    fi
-else
-    log_success "All checked quotas are sufficient"
-fi
-
+# AWS Service Quotas are ACCOUNT-LEVEL limits. For detailed quota and usage
+# information, run the standalone check-quotas.sh script:
+#
+#   ./.github/scripts/hypershift/check-quotas.sh
+#   ./.github/scripts/hypershift/check-quotas.sh --request-increases
+#
+log_info "Skipping quota check (run check-quotas.sh for detailed quota analysis)"
 echo ""
 
 # ============================================================================

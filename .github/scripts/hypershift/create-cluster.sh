@@ -91,6 +91,20 @@ if [ -z "$CLUSTER_SUFFIX" ]; then
     CLUSTER_SUFFIX=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6)
 fi
 
+# Validate cluster suffix for RFC1123 compliance (lowercase, alphanumeric, hyphens only)
+if ! [[ "$CLUSTER_SUFFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+    echo "Error: Invalid cluster suffix '$CLUSTER_SUFFIX'" >&2
+    echo "" >&2
+    echo "Cluster names must be valid RFC1123 labels:" >&2
+    echo "  - Only lowercase letters (a-z), numbers (0-9), and hyphens (-)" >&2
+    echo "  - Must start and end with an alphanumeric character" >&2
+    echo "  - No underscores, uppercase letters, or special characters" >&2
+    echo "" >&2
+    echo "Examples of valid suffixes: pr529, test-1, my-cluster" >&2
+    echo "Examples of invalid suffixes: PR529, test_1, -cluster-, my.cluster" >&2
+    exit 1
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -290,6 +304,8 @@ CLUSTER_KUBECONFIG="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
 CLUSTER_INFO="$HOME/clusters/hcp/$CLUSTER_NAME/cluster-info.txt"
 
 # Wait for cluster to be ready (both CI and local mode)
+# Save management cluster kubeconfig before switching (needed for diagnostics)
+MGMT_KUBECONFIG="$KUBECONFIG"
 export KUBECONFIG="$CLUSTER_KUBECONFIG"
 log_info "Waiting for cluster API to be reachable..."
 
@@ -309,6 +325,7 @@ done
 
 log_info "Waiting for at least one node to be ready..."
 # Wait for at least one node to exist first
+CONTROL_PLANE_NS="clusters-$CLUSTER_NAME"
 for i in {1..60}; do
     NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
     if [ "$NODE_COUNT" -gt 0 ]; then
@@ -317,9 +334,47 @@ for i in {1..60}; do
     fi
     if [ $i -eq 60 ]; then
         log_error "No nodes appeared after 10 minutes"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "DIAGNOSTIC INFO"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "HostedCluster status (check conditions for errors):"
+        KUBECONFIG="$MGMT_KUBECONFIG" oc get hostedcluster -n clusters "$CLUSTER_NAME" -o wide 2>/dev/null || true
+        echo ""
+        echo "HostedCluster conditions:"
+        KUBECONFIG="$MGMT_KUBECONFIG" oc get hostedcluster -n clusters "$CLUSTER_NAME" \
+            -o jsonpath='{range .status.conditions[*]}{.type}{": "}{.status}{" - "}{.message}{"\n"}{end}' 2>/dev/null || true
+        echo ""
+        echo "NodePool status:"
+        KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters "$CLUSTER_NAME" -o wide 2>/dev/null || true
+        echo ""
+        echo "NodePool conditions:"
+        KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters "$CLUSTER_NAME" \
+            -o jsonpath='{range .status.conditions[*]}{.type}{": "}{.status}{" - "}{.message}{"\n"}{end}' 2>/dev/null || true
+        echo ""
+        echo "Machine status:"
+        KUBECONFIG="$MGMT_KUBECONFIG" oc get machines -n "$CONTROL_PLANE_NS" 2>/dev/null || true
+        echo ""
+        echo "EC2 instances:"
+        aws ec2 describe-instances --region "$AWS_REGION" \
+            --filters "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" \
+            --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType]' \
+            --output table 2>/dev/null || true
+        echo ""
+        echo "Console URL: https://console-openshift-console.apps.base.octo-emerging.redhataicoe.com/multicloud/infrastructure/clusters/managed/$CLUSTER_NAME/overview"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         exit 1
     fi
-    echo "  Attempt $i/60 - waiting for nodes to appear..."
+    # Show status every 5 attempts
+    if [ $((i % 5)) -eq 0 ]; then
+        HC_PROGRESS=$(KUBECONFIG="$MGMT_KUBECONFIG" oc get hostedcluster -n clusters "$CLUSTER_NAME" -o jsonpath='{.status.conditions[?(@.type=="Available")].message}' 2>/dev/null || echo "unknown")
+        NP_STATUS=$(KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters "$CLUSTER_NAME" -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || echo "unknown")
+        echo "  Attempt $i/60 - HostedCluster: $HC_PROGRESS"
+        echo "               - NodePool: $NP_STATUS"
+    else
+        echo "  Attempt $i/60 - waiting for nodes to appear..."
+    fi
     sleep 10
 done
 # Now wait for nodes to be Ready

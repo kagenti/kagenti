@@ -33,8 +33,9 @@ if ! grep -q "clusters:" ~/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig 2>/dev/null; 
 fi
 chmod 600 ~/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig
 
-# Export KUBECONFIG for subsequent steps
+# Export KUBECONFIG for subsequent steps (and MGMT_KUBECONFIG for failure diagnostics)
 echo "KUBECONFIG=$HOME/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig" >> "$GITHUB_ENV"
+echo "MGMT_KUBECONFIG=$HOME/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig" >> "$GITHUB_ENV"
 
 # Pull secret
 mkdir -p ~/.docker
