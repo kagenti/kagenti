@@ -69,7 +69,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import yaml from 'js-yaml';
 
-import { toolService, configService } from '@/services/api';
+import { toolService, configService, toolShipwrightService, ToolShipwrightBuildInfo } from '@/services/api';
 
 interface StatusCondition {
   type: string;
@@ -181,6 +181,16 @@ export const ToolDetailPage: React.FC = () => {
     onSuccess: (data) => {
       setInvokeResult(data.result as InvokeResult);
     },
+  });
+
+  // Check if tool was built with Shipwright (has annotation)
+  const shipwrightBuildName = tool?.metadata?.annotations?.['kagenti.io/shipwright-build'];
+
+  // Fetch Shipwright build info if tool has shipwright annotation
+  const { data: shipwrightBuildStatus, isLoading: isShipwrightBuildStatusLoading } = useQuery<ToolShipwrightBuildInfo>({
+    queryKey: ['toolShipwrightBuildStatus', namespace, shipwrightBuildName],
+    queryFn: () => toolShipwrightService.getBuildInfo(namespace!, shipwrightBuildName!),
+    enabled: !!namespace && !!shipwrightBuildName && !!tool,
   });
 
   // Open invoke modal for a specific tool
@@ -520,52 +530,205 @@ export const ToolDetailPage: React.FC = () => {
           </Tab>
 
           <Tab eventKey={1} title={<TabTitleText>Status</TabTitleText>}>
-            <Card style={{ marginTop: '16px' }}>
-              <CardTitle>Status Conditions</CardTitle>
-              <CardBody>
-                {conditions.length === 0 ? (
-                  <Alert variant="info" title="No status conditions available" isInline />
-                ) : (
-                  <Table aria-label="Status conditions" variant="compact">
-                    <Thead>
-                      <Tr>
-                        <Th>Type</Th>
-                        <Th>Status</Th>
-                        <Th>Reason</Th>
-                        <Th>Message</Th>
-                        <Th>Last Transition</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {conditions.map((condition, index) => (
-                        <Tr key={`${condition.type}-${index}`}>
-                          <Td dataLabel="Type">{condition.type}</Td>
-                          <Td dataLabel="Status">
-                            <Label
-                              color={condition.status === 'True' ? 'green' : 'red'}
-                              isCompact
-                            >
-                              {condition.status}
-                            </Label>
-                          </Td>
-                          <Td dataLabel="Reason">{condition.reason || '-'}</Td>
-                          <Td dataLabel="Message">
-                            {condition.message || '-'}
-                          </Td>
-                          <Td dataLabel="Last Transition">
-                            {(condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time)
-                              ? new Date(
-                                  (condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time) as string
-                                ).toLocaleString()
-                              : '-'}
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                )}
-              </CardBody>
-            </Card>
+            <Grid hasGutter style={{ marginTop: '16px' }}>
+              {/* Tool Runtime Status */}
+              <GridItem md={12}>
+                <Card>
+                  <CardTitle>Tool Status</CardTitle>
+                  <CardBody>
+                    {conditions.length === 0 ? (
+                      <Alert variant="info" title="No status conditions available" isInline />
+                    ) : (
+                      <Table aria-label="Status conditions" variant="compact">
+                        <Thead>
+                          <Tr>
+                            <Th>Type</Th>
+                            <Th>Status</Th>
+                            <Th>Reason</Th>
+                            <Th>Message</Th>
+                            <Th>Last Transition</Th>
+                          </Tr>
+                        </Thead>
+                        <Tbody>
+                          {conditions.map((condition, index) => (
+                            <Tr key={`${condition.type}-${index}`}>
+                              <Td dataLabel="Type">{condition.type}</Td>
+                              <Td dataLabel="Status">
+                                <Label
+                                  color={condition.status === 'True' ? 'green' : 'red'}
+                                  isCompact
+                                >
+                                  {condition.status}
+                                </Label>
+                              </Td>
+                              <Td dataLabel="Reason">{condition.reason || '-'}</Td>
+                              <Td dataLabel="Message">
+                                {condition.message || '-'}
+                              </Td>
+                              <Td dataLabel="Last Transition">
+                                {(condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time)
+                                  ? new Date(
+                                      (condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time) as string
+                                    ).toLocaleString()
+                                  : '-'}
+                              </Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    )}
+                  </CardBody>
+                </Card>
+              </GridItem>
+
+              {/* Shipwright Build Status - shown when tool was built with Shipwright */}
+              {shipwrightBuildName && (
+                <GridItem md={12}>
+                  <Card>
+                    <CardTitle>Shipwright Build Status</CardTitle>
+                    <CardBody>
+                      {isShipwrightBuildStatusLoading ? (
+                        <Spinner size="md" aria-label="Loading Shipwright build status" />
+                      ) : shipwrightBuildStatus ? (
+                        <>
+                          <DescriptionList isCompact isHorizontal>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Build Name</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                {shipwrightBuildStatus.name}
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Build Registered</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <Label
+                                  color={shipwrightBuildStatus.buildRegistered ? 'green' : 'red'}
+                                  isCompact
+                                >
+                                  {shipwrightBuildStatus.buildRegistered ? 'Yes' : 'No'}
+                                </Label>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Build Strategy</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <Label isCompact color="blue">{shipwrightBuildStatus.strategy}</Label>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Output Image</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <code style={{ fontSize: '0.85em' }}>
+                                  {shipwrightBuildStatus.outputImage}
+                                </code>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Git URL</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <code style={{ fontSize: '0.85em' }}>
+                                  {shipwrightBuildStatus.gitUrl}
+                                </code>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Git Revision</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                {shipwrightBuildStatus.gitRevision}
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            {shipwrightBuildStatus.contextDir && (
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Context Directory</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  {shipwrightBuildStatus.contextDir}
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                            )}
+                          </DescriptionList>
+
+                          {/* BuildRun Status */}
+                          {shipwrightBuildStatus.hasBuildRun && (
+                            <>
+                              <Title headingLevel="h4" size="md" style={{ marginTop: '24px', marginBottom: '16px' }}>
+                                Latest BuildRun
+                              </Title>
+                              <DescriptionList isCompact isHorizontal>
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>BuildRun Name</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    {shipwrightBuildStatus.buildRunName}
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>Phase</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    <Label
+                                      color={
+                                        shipwrightBuildStatus.buildRunPhase === 'Succeeded'
+                                          ? 'green'
+                                          : shipwrightBuildStatus.buildRunPhase === 'Failed'
+                                            ? 'red'
+                                            : 'blue'
+                                      }
+                                    >
+                                      {shipwrightBuildStatus.buildRunPhase}
+                                    </Label>
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                                {shipwrightBuildStatus.buildRunStartTime && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Started</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      {new Date(shipwrightBuildStatus.buildRunStartTime).toLocaleString()}
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                                {shipwrightBuildStatus.buildRunCompletionTime && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Completed</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      {new Date(shipwrightBuildStatus.buildRunCompletionTime).toLocaleString()}
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                                {shipwrightBuildStatus.buildRunOutputImage && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Output Image</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      <code style={{ fontSize: '0.85em' }}>
+                                        {shipwrightBuildStatus.buildRunOutputImage}
+                                        {shipwrightBuildStatus.buildRunOutputDigest && (
+                                          <>@{shipwrightBuildStatus.buildRunOutputDigest.substring(0, 20)}...</>
+                                        )}
+                                      </code>
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                                {shipwrightBuildStatus.buildRunPhase === 'Failed' && shipwrightBuildStatus.buildRunFailureMessage && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Error</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      <Alert variant="danger" isInline isPlain title={shipwrightBuildStatus.buildRunFailureMessage} />
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                              </DescriptionList>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <Alert
+                          variant="info"
+                          title="Shipwright build information not available"
+                          isInline
+                        />
+                      )}
+                    </CardBody>
+                  </Card>
+                </GridItem>
+              )}
+            </Grid>
           </Tab>
 
           <Tab eventKey={2} title={<TabTitleText>MCP Tools</TabTitleText>}>
