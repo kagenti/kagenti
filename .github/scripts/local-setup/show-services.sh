@@ -120,7 +120,7 @@ esac
 # Check if platform is running
 if ! $CLI get namespace kagenti-system &> /dev/null; then
     echo -e "${RED}Error: Platform not deployed (kagenti-system namespace not found)${NC}"
-    echo "  Run: ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install"
+    echo "  Run: ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy"
     exit 1
 fi
 

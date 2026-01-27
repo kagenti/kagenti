@@ -206,7 +206,7 @@ Use `--include-<phase>` to run only specific phases:
 |--------|---------|
 | `kind-full-test.sh` | Unified Kind test runner (same interface as HyperShift) |
 | `hypershift-full-test.sh` | Unified HyperShift test runner with phase control |
-| `show-services.sh` | Display all deployed services (auto-detects environment) |
+| `show-services.sh` | Display all services, URLs, and credentials (auto-detects Kind/OpenShift/HyperShift) |
 
 ### Kind Scripts (`.github/scripts/kind/`)
 
@@ -241,7 +241,8 @@ Use `--include-<phase>` to run only specific phases:
 | `setup-hypershift-ci-credentials.sh` | One-time AWS/OCP credential setup |
 | `local-setup.sh` | Install hcp CLI and ansible collections |
 | `preflight-check.sh` | Verify prerequisites (called by setup script) |
-| `debug-aws-hypershift.sh` | Find orphaned AWS resources (read-only) |
+| `debug-aws-hypershift.sh [suffix]` | Find orphaned AWS resources for a cluster (read-only) |
+| `check-quotas.sh` | Check AWS service quotas and current usage |
 | `setup-autoscaling.sh` | Configure mgmt/nodepool autoscaling |
 
 ## Phase Options (kind-full-test.sh & hypershift-full-test.sh)
@@ -286,4 +287,37 @@ kubectl logs -n kagenti-system deployment/kagenti-operator -f
 
 # Recent events
 kubectl get events -A --sort-by='.lastTimestamp' | tail -30
+```
+
+### HyperShift Debugging & Monitoring
+
+These scripts require AWS credentials. Source the `.env` file first:
+
+```bash
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ Show all deployed services, URLs, and credentials                          │
+# └─────────────────────────────────────────────────────────────────────────────┘
+# Auto-detects environment (Kind/OpenShift/HyperShift)
+./.github/scripts/local-setup/show-services.sh
+
+# For HyperShift with custom .env file:
+source .env.kagenti-hypershift-custom && ./.github/scripts/local-setup/show-services.sh
+
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ Check AWS quotas and capacity                                               │
+# └─────────────────────────────────────────────────────────────────────────────┘
+# Shows VPCs, EIPs, NAT Gateways usage vs limits
+source .env.kagenti-hypershift-custom && ./.github/scripts/hypershift/check-quotas.sh
+
+# Request quota increases if needed
+source .env.kagenti-hypershift-custom && ./.github/scripts/hypershift/check-quotas.sh --request-increases
+
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ Find orphaned AWS resources for a specific cluster                         │
+# └─────────────────────────────────────────────────────────────────────────────┘
+# Useful for debugging failed cluster destroys or VPC deletion errors
+source .env.kagenti-hypershift-custom && ./.github/scripts/hypershift/debug-aws-hypershift.sh pr529
+
+# Using CI credentials for debugging CI runs
+source .env.kagenti-hypershift-ci && ./.github/scripts/hypershift/debug-aws-hypershift.sh pr529
 ```

@@ -82,31 +82,106 @@ cleanup_orphaned_aws_resources() {
 
         if [ "$attempt" -eq 6 ]; then
             echo "::error::Failed to delete orphaned VPCs after 60s: $REMAINING_VPCS"
-            # Show what's blocking VPC deletion
+            # Show what's blocking VPC deletion and try to clean up
             echo "Checking for resources blocking VPC deletion:"
             for vpc in $REMAINING_VPCS; do
                 echo "  VPC: $vpc"
-                echo "  - Tags (check for kagenti.io/managed-by):"
+                echo "  - Tags:"
                 aws ec2 describe-vpcs --region "$AWS_REGION" \
                     --vpc-ids "$vpc" \
                     --query 'Vpcs[*].Tags' \
                     --output table 2>/dev/null || true
+
+                # Check and delete subnets
+                echo "  - Subnets:"
+                SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'Subnets[*].SubnetId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$SUBNETS" ] && [ "$SUBNETS" != "None" ]; then
+                    echo "    Found: $SUBNETS"
+                    for subnet in $SUBNETS; do
+                        echo "    Deleting subnet: $subnet"
+                        aws ec2 delete-subnet --region "$AWS_REGION" --subnet-id "$subnet" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
+
+                # Check and detach/delete internet gateways
+                echo "  - Internet Gateways:"
+                IGWS=$(aws ec2 describe-internet-gateways --region "$AWS_REGION" \
+                    --filters "Name=attachment.vpc-id,Values=$vpc" \
+                    --query 'InternetGateways[*].InternetGatewayId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$IGWS" ] && [ "$IGWS" != "None" ]; then
+                    echo "    Found: $IGWS"
+                    for igw in $IGWS; do
+                        echo "    Detaching and deleting IGW: $igw"
+                        aws ec2 detach-internet-gateway --region "$AWS_REGION" \
+                            --internet-gateway-id "$igw" --vpc-id "$vpc" 2>&1 || true
+                        aws ec2 delete-internet-gateway --region "$AWS_REGION" \
+                            --internet-gateway-id "$igw" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
+
+                # Check and delete NAT gateways
+                echo "  - NAT Gateways:"
+                NATGWS=$(aws ec2 describe-nat-gateways --region "$AWS_REGION" \
+                    --filter "Name=vpc-id,Values=$vpc" "Name=state,Values=available,pending" \
+                    --query 'NatGateways[*].NatGatewayId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$NATGWS" ] && [ "$NATGWS" != "None" ]; then
+                    echo "    Found: $NATGWS"
+                    for natgw in $NATGWS; do
+                        echo "    Deleting NAT Gateway: $natgw"
+                        aws ec2 delete-nat-gateway --region "$AWS_REGION" \
+                            --nat-gateway-id "$natgw" 2>&1 || true
+                    done
+                    echo "    Waiting for NAT Gateway deletion..."
+                    sleep 30
+                else
+                    echo "    None found"
+                fi
+
+                # Check and delete route tables (non-main)
+                echo "  - Route Tables:"
+                RTS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'RouteTables[?!Associations[?Main==`true`]].RouteTableId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
+                    echo "    Found non-main: $RTS"
+                    for rt in $RTS; do
+                        echo "    Deleting route table: $rt"
+                        aws ec2 delete-route-table --region "$AWS_REGION" \
+                            --route-table-id "$rt" 2>&1 || true
+                    done
+                else
+                    echo "    None found (or only main)"
+                fi
+
                 echo "  - ENIs:"
                 aws ec2 describe-network-interfaces --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
                     --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description,Status]' \
                     --output table 2>/dev/null || true
-                echo "  - Security Groups:"
+
+                echo "  - Security Groups (non-default):"
                 aws ec2 describe-security-groups --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'SecurityGroups[*].[GroupId,GroupName]' \
+                    --query 'SecurityGroups[?GroupName!=`default`].[GroupId,GroupName]' \
                     --output table 2>/dev/null || true
+
                 echo "  - VPC Endpoints:"
                 aws ec2 describe-vpc-endpoints --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
                     --query 'VpcEndpoints[*].[VpcEndpointId,State,ServiceName]' \
                     --output table 2>/dev/null || true
-                echo "  - Attempting manual delete:"
+
+                echo "  - Attempting manual VPC delete:"
                 aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1 || true
             done
             echo "Cannot proceed with cluster creation while old VPC exists."
