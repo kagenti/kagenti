@@ -7,6 +7,7 @@ Tool API endpoints.
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from contextlib import AsyncExitStack
 
@@ -47,6 +48,13 @@ from app.core.constants import (
     SHIPWRIGHT_BUILDS_PLURAL,
     SHIPWRIGHT_BUILDRUNS_PLURAL,
     DEFAULT_INTERNAL_REGISTRY,
+    # Migration constants
+    MIGRATION_SOURCE_ANNOTATION,
+    MIGRATION_TIMESTAMP_ANNOTATION,
+    ORIGINAL_SERVICE_ANNOTATION,
+    TOOLHIVE_SERVICE_PREFIX,
+    TOOLHIVE_SERVICE_SUFFIX,
+    MIGRATION_SOURCE_MCPSERVER_CRD,
 )
 from app.models.responses import (
     ToolSummary,
@@ -221,8 +229,83 @@ class MCPInvokeResponse(BaseModel):
     result: Any
 
 
+# =============================================================================
+# Migration Models (Phase 5: MCPServer CRD to Deployment migration)
+# =============================================================================
+
+
+class MigratableToolInfo(BaseModel):
+    """Information about a tool that can be migrated from MCPServer CRD."""
+
+    name: str
+    namespace: str
+    status: str
+    has_deployment: bool  # True if a Deployment already exists with same name
+    has_statefulset: bool  # True if a StatefulSet already exists with same name
+    labels: Dict[str, str]
+    description: Optional[str] = None
+    old_service_name: str  # mcp-{name}-proxy (Toolhive)
+    new_service_name: str  # {name}-mcp (Kagenti)
+
+
+class ListMigratableToolsResponse(BaseModel):
+    """Response containing list of tools that can be migrated."""
+
+    tools: List[MigratableToolInfo]
+    total: int
+    already_migrated: int  # Count of tools that already have Deployments/StatefulSets
+
+
+class MigrateToolRequest(BaseModel):
+    """Request to migrate a tool from MCPServer CRD to Deployment."""
+
+    workload_type: str = WORKLOAD_TYPE_DEPLOYMENT  # "deployment" or "statefulset"
+    delete_old: bool = False  # Delete MCPServer CRD after migration
+
+
+class MigrateToolResponse(BaseModel):
+    """Response after migrating a tool."""
+
+    success: bool
+    name: str
+    namespace: str
+    message: str
+    deployment_created: bool = False
+    service_created: bool = False
+    mcpserver_deleted: bool = False
+    old_service_name: str = ""  # mcp-{name}-proxy
+    new_service_name: str = ""  # {name}-mcp
+
+
+class BatchMigrateToolsRequest(BaseModel):
+    """Request to migrate multiple tools in a namespace."""
+
+    workload_type: str = WORKLOAD_TYPE_DEPLOYMENT
+    delete_old: bool = False
+    dry_run: bool = True
+
+
+class BatchMigrateToolsResponse(BaseModel):
+    """Response after batch migration."""
+
+    total: int
+    migrated: int
+    skipped: int
+    failed: int
+    results: List[MigrateToolResponse]
+    dry_run: bool
+
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
+
+
+def _get_toolhive_service_name(tool_name: str) -> str:
+    """Get the old Toolhive-style service name.
+
+    Toolhive creates services named: mcp-{name}-proxy
+    """
+    return f"{TOOLHIVE_SERVICE_PREFIX}{tool_name}{TOOLHIVE_SERVICE_SUFFIX}"
 
 
 def _is_mcpserver_ready(resource_data: dict) -> str:
@@ -413,10 +496,14 @@ async def list_tools(
 
     Returns tools that have the kagenti.io/type=tool label.
     Queries both Deployments and StatefulSets.
+
+    If enable_legacy_mcpserver_crd is enabled, also includes MCPServer CRDs
+    that haven't been migrated yet.
     """
     try:
         label_selector = f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_TOOL}"
         tools = []
+        existing_names = set()  # Track names to avoid duplicates with legacy CRDs
 
         # Query Deployments with tool label
         try:
@@ -424,10 +511,12 @@ async def list_tools(
             for deploy in deployments:
                 metadata = deploy.get("metadata", {})
                 annotations = metadata.get("annotations", {})
+                name = metadata.get("name", "")
+                existing_names.add(name)
 
                 tools.append(
                     ToolSummary(
-                        name=metadata.get("name", ""),
+                        name=name,
                         namespace=metadata.get("namespace", namespace),
                         description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
                         status=_get_workload_status(deploy),
@@ -448,10 +537,12 @@ async def list_tools(
             for sts in statefulsets:
                 metadata = sts.get("metadata", {})
                 annotations = metadata.get("annotations", {})
+                name = metadata.get("name", "")
+                existing_names.add(name)
 
                 tools.append(
                     ToolSummary(
-                        name=metadata.get("name", ""),
+                        name=name,
                         namespace=metadata.get("namespace", namespace),
                         description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
                         status=_get_workload_status(sts),
@@ -465,6 +556,43 @@ async def list_tools(
         except ApiException as e:
             if e.status != 404:
                 logger.warning(f"Error listing StatefulSets: {e}")
+
+        # If legacy MCPServer CRD support is enabled, include unmigrated CRDs
+        if settings.enable_legacy_mcpserver_crd:
+            try:
+                mcpserver_crds = kube.list_custom_resources(
+                    group=TOOLHIVE_CRD_GROUP,
+                    version=TOOLHIVE_CRD_VERSION,
+                    namespace=namespace,
+                    plural=TOOLHIVE_MCP_PLURAL,
+                    label_selector=label_selector,
+                )
+                for mcpserver in mcpserver_crds:
+                    metadata = mcpserver.get("metadata", {})
+                    name = metadata.get("name", "")
+
+                    # Skip if already migrated (has Deployment or StatefulSet)
+                    if name in existing_names:
+                        continue
+
+                    annotations = metadata.get("annotations", {})
+                    tools.append(
+                        ToolSummary(
+                            name=name,
+                            namespace=metadata.get("namespace", namespace),
+                            description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
+                            status=_is_mcpserver_ready(mcpserver),
+                            labels=_extract_labels(metadata.get("labels", {})),
+                            createdAt=_format_timestamp(
+                                metadata.get("creation_timestamp")
+                                or metadata.get("creationTimestamp")
+                            ),
+                            workloadType="mcpserver",  # Legacy workload type
+                        )
+                    )
+            except ApiException as e:
+                if e.status != 404:
+                    logger.warning(f"Error listing MCPServer CRDs: {e}")
 
         return ToolListResponse(items=tools)
 
@@ -1799,3 +1927,642 @@ async def invoke_tool(
             status_code=500,
             detail=f"Error invoking MCP tool: {str(e)}",
         )
+
+
+# =============================================================================
+# MIGRATION ENDPOINTS (Phase 5: MCPServer CRD to Deployment migration)
+# =============================================================================
+
+
+def _build_deployment_from_mcpserver(mcpserver: Dict, namespace: str) -> Dict:
+    """
+    Build a Kubernetes Deployment manifest from an MCPServer CRD.
+
+    Args:
+        mcpserver: The MCPServer CRD resource dictionary.
+        namespace: Kubernetes namespace.
+
+    Returns:
+        Deployment manifest dictionary.
+    """
+    metadata = mcpserver.get("metadata", {})
+    spec = mcpserver.get("spec", {})
+    name = metadata.get("name", "")
+
+    # Get labels from MCPServer CRD and update for Deployment
+    labels = metadata.get("labels", {}).copy()
+
+    # Ensure required labels are set
+    labels[KAGENTI_TYPE_LABEL] = RESOURCE_TYPE_TOOL
+    labels[APP_KUBERNETES_IO_NAME] = name
+    labels[KAGENTI_PROTOCOL_LABEL] = VALUE_PROTOCOL_MCP
+    labels[KAGENTI_TRANSPORT_LABEL] = VALUE_TRANSPORT_STREAMABLE_HTTP
+    labels[KAGENTI_WORKLOAD_TYPE_LABEL] = WORKLOAD_TYPE_DEPLOYMENT
+    labels[APP_KUBERNETES_IO_MANAGED_BY] = KAGENTI_UI_CREATOR_LABEL
+
+    # Preserve framework label if present
+    if KAGENTI_FRAMEWORK_LABEL not in labels:
+        labels[KAGENTI_FRAMEWORK_LABEL] = "Python"
+
+    # Build annotations with migration tracking
+    annotations = metadata.get("annotations", {}).copy()
+    annotations[MIGRATION_SOURCE_ANNOTATION] = MIGRATION_SOURCE_MCPSERVER_CRD
+    annotations[MIGRATION_TIMESTAMP_ANNOTATION] = datetime.now(timezone.utc).isoformat()
+    annotations[ORIGINAL_SERVICE_ANNOTATION] = _get_toolhive_service_name(name)
+
+    # Get image from spec
+    image = spec.get("image", "")
+    if not image:
+        raise ValueError(f"MCPServer CRD '{name}' has no image specified")
+
+    # Get port configuration
+    target_port = spec.get("targetPort", DEFAULT_IN_CLUSTER_PORT)
+
+    # Extract pod template from MCPServer CRD
+    pod_template_spec = spec.get("podTemplateSpec", {})
+    pod_spec = pod_template_spec.get("spec", {})
+
+    # Get containers from pod template or build default
+    containers = pod_spec.get("containers", [])
+    if containers:
+        # Use existing container configuration
+        container = containers[0].copy()
+        # Ensure image is set (override if different in spec.image)
+        if image:
+            container["image"] = image
+        # Ensure imagePullPolicy is set
+        if "imagePullPolicy" not in container:
+            container["imagePullPolicy"] = "Always"
+        # Ensure ports are set
+        if "ports" not in container:
+            container["ports"] = [{"name": "http", "containerPort": target_port, "protocol": "TCP"}]
+        # Ensure resources are set
+        if "resources" not in container:
+            container["resources"] = {
+                "limits": DEFAULT_RESOURCE_LIMITS,
+                "requests": DEFAULT_RESOURCE_REQUESTS,
+            }
+        # Ensure volumeMounts are set
+        if "volumeMounts" not in container:
+            container["volumeMounts"] = [
+                {"name": "cache", "mountPath": "/app/.cache"},
+                {"name": "tmp", "mountPath": "/tmp"},
+            ]
+    else:
+        # Build default container spec
+        env_vars = list(DEFAULT_ENV_VARS)
+        container = {
+            "name": "mcp",
+            "image": image,
+            "imagePullPolicy": "Always",
+            "env": env_vars,
+            "ports": [{"name": "http", "containerPort": target_port, "protocol": "TCP"}],
+            "resources": {
+                "limits": DEFAULT_RESOURCE_LIMITS,
+                "requests": DEFAULT_RESOURCE_REQUESTS,
+            },
+            "volumeMounts": [
+                {"name": "cache", "mountPath": "/app/.cache"},
+                {"name": "tmp", "mountPath": "/tmp"},
+            ],
+            "securityContext": {
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+                "runAsUser": 1000,
+            },
+        }
+
+    # Get volumes from pod template or use defaults
+    volumes = pod_spec.get(
+        "volumes",
+        [
+            {"name": "cache", "emptyDir": {}},
+            {"name": "tmp", "emptyDir": {}},
+        ],
+    )
+
+    # Get security context from pod template or use defaults
+    security_context = pod_spec.get(
+        "securityContext",
+        {
+            "runAsNonRoot": True,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
+    )
+
+    # Get image pull secrets
+    image_pull_secrets = pod_spec.get("imagePullSecrets", [])
+
+    # Get service account name
+    service_account_name = pod_spec.get("serviceAccountName")
+
+    # Build selector labels
+    selector_labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        APP_KUBERNETES_IO_NAME: name,
+    }
+
+    # Build pod template labels
+    pod_labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        APP_KUBERNETES_IO_NAME: name,
+        KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+    }
+    # Add framework if present
+    if KAGENTI_FRAMEWORK_LABEL in labels:
+        pod_labels[KAGENTI_FRAMEWORK_LABEL] = labels[KAGENTI_FRAMEWORK_LABEL]
+
+    # Build pod spec
+    new_pod_spec = {
+        "securityContext": security_context,
+        "containers": [container],
+        "volumes": volumes,
+    }
+
+    if service_account_name:
+        new_pod_spec["serviceAccountName"] = service_account_name
+
+    if image_pull_secrets:
+        new_pod_spec["imagePullSecrets"] = image_pull_secrets
+
+    return {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+            "annotations": annotations,
+        },
+        "spec": {
+            "replicas": 1,
+            "selector": {
+                "matchLabels": selector_labels,
+            },
+            "template": {
+                "metadata": {
+                    "labels": pod_labels,
+                },
+                "spec": new_pod_spec,
+            },
+        },
+    }
+
+
+def _build_service_from_mcpserver(mcpserver: Dict, namespace: str) -> Dict:
+    """
+    Build a Kubernetes Service manifest from an MCPServer CRD.
+
+    Uses the new naming convention: {name}-mcp
+
+    Args:
+        mcpserver: The MCPServer CRD resource dictionary.
+        namespace: Kubernetes namespace.
+
+    Returns:
+        Service manifest dictionary.
+    """
+    metadata = mcpserver.get("metadata", {})
+    spec = mcpserver.get("spec", {})
+    name = metadata.get("name", "")
+
+    # New service name
+    service_name = _get_tool_service_name(name)
+
+    # Get labels
+    labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+        APP_KUBERNETES_IO_NAME: name,
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+    }
+
+    # Build selector labels
+    selector_labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        APP_KUBERNETES_IO_NAME: name,
+    }
+
+    # Get port from MCPServer spec
+    port = spec.get("port", DEFAULT_IN_CLUSTER_PORT)
+    target_port = spec.get("targetPort", DEFAULT_IN_CLUSTER_PORT)
+
+    return {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": service_name,
+            "namespace": namespace,
+            "labels": labels,
+        },
+        "spec": {
+            "type": "ClusterIP",
+            "selector": selector_labels,
+            "ports": [
+                {
+                    "name": "http",
+                    "port": port,
+                    "targetPort": target_port,
+                    "protocol": "TCP",
+                }
+            ],
+        },
+    }
+
+
+@router.get(
+    "/migration/migratable",
+    response_model=ListMigratableToolsResponse,
+    summary="List tools that can be migrated from MCPServer CRD to Deployment",
+    tags=["migration"],
+)
+async def list_migratable_tools(
+    namespace: str = Query(default="default", description="Kubernetes namespace"),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> ListMigratableToolsResponse:
+    """
+    List all MCPServer CRDs in a namespace that can be migrated to Deployments.
+
+    Returns information about each tool including whether a Deployment
+    already exists (indicating migration is complete).
+    """
+    try:
+        # List MCPServer CRDs with kagenti.io/type=tool label
+        mcpserver_crds = kube.list_custom_resources(
+            group=TOOLHIVE_CRD_GROUP,
+            version=TOOLHIVE_CRD_VERSION,
+            namespace=namespace,
+            plural=TOOLHIVE_MCP_PLURAL,
+            label_selector=f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_TOOL}",
+        )
+    except ApiException as e:
+        if e.status == 404:
+            # CRD not installed
+            return ListMigratableToolsResponse(tools=[], total=0, already_migrated=0)
+        raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Get list of existing Deployments and StatefulSets to check for already-migrated tools
+    existing_deployment_names = set()
+    existing_statefulset_names = set()
+
+    try:
+        existing_deployments = kube.list_deployments(
+            namespace=namespace,
+            label_selector=f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_TOOL}",
+        )
+        existing_deployment_names = {
+            d.get("metadata", {}).get("name") for d in existing_deployments
+        }
+    except ApiException:
+        pass
+
+    try:
+        existing_statefulsets = kube.list_statefulsets(
+            namespace=namespace,
+            label_selector=f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_TOOL}",
+        )
+        existing_statefulset_names = {
+            s.get("metadata", {}).get("name") for s in existing_statefulsets
+        }
+    except ApiException:
+        pass
+
+    tools = []
+    already_migrated = 0
+
+    for mcpserver in mcpserver_crds:
+        metadata = mcpserver.get("metadata", {})
+        name = metadata.get("name", "")
+        labels = metadata.get("labels", {})
+        has_deployment = name in existing_deployment_names
+        has_statefulset = name in existing_statefulset_names
+
+        if has_deployment or has_statefulset:
+            already_migrated += 1
+
+        # Get description from annotations
+        description = metadata.get("annotations", {}).get(KAGENTI_DESCRIPTION_ANNOTATION, "")
+
+        # Determine status
+        status = _is_mcpserver_ready(mcpserver)
+
+        tools.append(
+            MigratableToolInfo(
+                name=name,
+                namespace=namespace,
+                status=status,
+                has_deployment=has_deployment,
+                has_statefulset=has_statefulset,
+                labels=labels,
+                description=description,
+                old_service_name=_get_toolhive_service_name(name),
+                new_service_name=_get_tool_service_name(name),
+            )
+        )
+
+    return ListMigratableToolsResponse(
+        tools=tools,
+        total=len(tools),
+        already_migrated=already_migrated,
+    )
+
+
+@router.post(
+    "/{namespace}/{name}/migrate",
+    response_model=MigrateToolResponse,
+    summary="Migrate an MCPServer CRD to a Deployment",
+    tags=["migration"],
+)
+async def migrate_tool(
+    namespace: str,
+    name: str,
+    request: MigrateToolRequest = MigrateToolRequest(),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> MigrateToolResponse:
+    """
+    Migrate an MCPServer CRD to a Deployment.
+
+    This endpoint:
+    1. Reads the existing MCPServer CRD specification
+    2. Creates a Deployment with the same pod template
+    3. Creates a Service with new naming convention ({name}-mcp)
+    4. Optionally deletes the MCPServer CRD (if delete_old=True)
+
+    Note: After migration, MCP connection URLs need to be updated:
+    - Old: http://mcp-{name}-proxy.{namespace}.svc.cluster.local:8000/mcp
+    - New: http://{name}-mcp.{namespace}.svc.cluster.local:8000/mcp
+    """
+    logger.info(f"Starting migration of MCPServer CRD '{name}' in namespace '{namespace}'")
+
+    deployment_created = False
+    service_created = False
+    mcpserver_deleted = False
+    old_service_name = _get_toolhive_service_name(name)
+    new_service_name = _get_tool_service_name(name)
+
+    # Only deployment is currently supported for migration
+    if request.workload_type != WORKLOAD_TYPE_DEPLOYMENT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported workload type for migration: {request.workload_type}. "
+            f"Only 'deployment' is currently supported.",
+        )
+
+    # Step 1: Get the MCPServer CRD
+    try:
+        mcpserver = kube.get_custom_resource(
+            group=TOOLHIVE_CRD_GROUP,
+            version=TOOLHIVE_CRD_VERSION,
+            namespace=namespace,
+            plural=TOOLHIVE_MCP_PLURAL,
+            name=name,
+        )
+    except ApiException as e:
+        if e.status == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"MCPServer CRD '{name}' not found in namespace '{namespace}'",
+            )
+        raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 2: Check if Deployment already exists
+    try:
+        kube.get_deployment(namespace=namespace, name=name)
+        # Deployment already exists - skip migration
+        return MigrateToolResponse(
+            success=True,
+            name=name,
+            namespace=namespace,
+            message=f"Tool '{name}' already has a Deployment. Migration skipped.",
+            deployment_created=False,
+            service_created=False,
+            mcpserver_deleted=False,
+            old_service_name=old_service_name,
+            new_service_name=new_service_name,
+        )
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 3: Check if StatefulSet already exists
+    try:
+        kube.get_statefulset(namespace=namespace, name=name)
+        # StatefulSet already exists - skip migration
+        return MigrateToolResponse(
+            success=True,
+            name=name,
+            namespace=namespace,
+            message=f"Tool '{name}' already has a StatefulSet. Migration skipped.",
+            deployment_created=False,
+            service_created=False,
+            mcpserver_deleted=False,
+            old_service_name=old_service_name,
+            new_service_name=new_service_name,
+        )
+    except ApiException as e:
+        if e.status != 404:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 4: Build and create Deployment
+    try:
+        deployment_manifest = _build_deployment_from_mcpserver(mcpserver, namespace)
+        kube.create_deployment(namespace, deployment_manifest)
+        deployment_created = True
+        logger.info(f"Created Deployment '{name}'")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ApiException as e:
+        raise HTTPException(
+            status_code=e.status,
+            detail=f"Failed to create Deployment: {e.reason}",
+        )
+
+    # Step 5: Check if new Service already exists, create if not
+    try:
+        kube.get_service(namespace=namespace, name=new_service_name)
+        logger.info(f"Service '{new_service_name}' already exists")
+    except ApiException as e:
+        if e.status == 404:
+            # Create new Service
+            try:
+                service_manifest = _build_service_from_mcpserver(mcpserver, namespace)
+                kube.create_service(namespace, service_manifest)
+                service_created = True
+                logger.info(f"Created Service '{new_service_name}'")
+            except ApiException as e2:
+                logger.error(f"Failed to create Service '{new_service_name}': {e2}")
+                # Continue - Deployment was created, Service failure is not fatal
+        else:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Step 6: Delete MCPServer CRD (if requested)
+    if request.delete_old:
+        try:
+            kube.delete_custom_resource(
+                group=TOOLHIVE_CRD_GROUP,
+                version=TOOLHIVE_CRD_VERSION,
+                namespace=namespace,
+                plural=TOOLHIVE_MCP_PLURAL,
+                name=name,
+            )
+            mcpserver_deleted = True
+            logger.info(f"Deleted MCPServer CRD '{name}'")
+        except ApiException as e:
+            logger.error(f"Failed to delete MCPServer CRD '{name}': {e}")
+            # Continue - this is not fatal
+
+    return MigrateToolResponse(
+        success=True,
+        name=name,
+        namespace=namespace,
+        message=f"Tool '{name}' migrated successfully. "
+        f"Update MCP URLs: {old_service_name} -> {new_service_name}",
+        deployment_created=deployment_created,
+        service_created=service_created,
+        mcpserver_deleted=mcpserver_deleted,
+        old_service_name=old_service_name,
+        new_service_name=new_service_name,
+    )
+
+
+@router.post(
+    "/migration/migrate-all",
+    response_model=BatchMigrateToolsResponse,
+    summary="Migrate all MCPServer CRDs in a namespace to Deployments",
+    tags=["migration"],
+)
+async def batch_migrate_tools(
+    namespace: str = Query(default="default", description="Kubernetes namespace"),
+    request: BatchMigrateToolsRequest = BatchMigrateToolsRequest(),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> BatchMigrateToolsResponse:
+    """
+    Migrate all MCPServer CRDs in a namespace to Deployments.
+
+    By default, performs a dry-run. Set dry_run=false to actually migrate.
+    """
+    logger.info(
+        f"Starting batch migration of MCPServer CRDs in namespace '{namespace}' "
+        f"(dry_run={request.dry_run})"
+    )
+
+    # List all MCPServer CRDs with kagenti.io/type=tool label
+    try:
+        mcpserver_crds = kube.list_custom_resources(
+            group=TOOLHIVE_CRD_GROUP,
+            version=TOOLHIVE_CRD_VERSION,
+            namespace=namespace,
+            plural=TOOLHIVE_MCP_PLURAL,
+            label_selector=f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_TOOL}",
+        )
+    except ApiException as e:
+        if e.status == 404:
+            return BatchMigrateToolsResponse(
+                total=0,
+                migrated=0,
+                skipped=0,
+                failed=0,
+                results=[],
+                dry_run=request.dry_run,
+            )
+        raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    results = []
+    migrated = 0
+    skipped = 0
+    failed = 0
+
+    for mcpserver in mcpserver_crds:
+        mcpserver_name = mcpserver.get("metadata", {}).get("name", "")
+        old_service_name = _get_toolhive_service_name(mcpserver_name)
+        new_service_name = _get_tool_service_name(mcpserver_name)
+
+        if request.dry_run:
+            # Dry run - check if would be migrated or skipped
+            would_skip = False
+            try:
+                kube.get_deployment(namespace=namespace, name=mcpserver_name)
+                would_skip = True
+            except ApiException:
+                pass
+
+            if not would_skip:
+                try:
+                    kube.get_statefulset(namespace=namespace, name=mcpserver_name)
+                    would_skip = True
+                except ApiException:
+                    pass
+
+            if would_skip:
+                skipped += 1
+                results.append(
+                    MigrateToolResponse(
+                        success=True,
+                        name=mcpserver_name,
+                        namespace=namespace,
+                        message="Would be skipped (Deployment/StatefulSet already exists)",
+                        deployment_created=False,
+                        service_created=False,
+                        mcpserver_deleted=False,
+                        old_service_name=old_service_name,
+                        new_service_name=new_service_name,
+                    )
+                )
+            else:
+                migrated += 1
+                results.append(
+                    MigrateToolResponse(
+                        success=True,
+                        name=mcpserver_name,
+                        namespace=namespace,
+                        message="Would be migrated",
+                        deployment_created=True,
+                        service_created=True,
+                        mcpserver_deleted=request.delete_old,
+                        old_service_name=old_service_name,
+                        new_service_name=new_service_name,
+                    )
+                )
+        else:
+            # Actual migration
+            try:
+                result = await migrate_tool(
+                    namespace=namespace,
+                    name=mcpserver_name,
+                    request=MigrateToolRequest(
+                        workload_type=request.workload_type,
+                        delete_old=request.delete_old,
+                    ),
+                    kube=kube,
+                )
+                results.append(result)
+
+                if result.deployment_created:
+                    migrated += 1
+                else:
+                    skipped += 1
+            except HTTPException as e:
+                failed += 1
+                results.append(
+                    MigrateToolResponse(
+                        success=False,
+                        name=mcpserver_name,
+                        namespace=namespace,
+                        message=f"Migration failed: {e.detail}",
+                        deployment_created=False,
+                        service_created=False,
+                        mcpserver_deleted=False,
+                        old_service_name=old_service_name,
+                        new_service_name=new_service_name,
+                    )
+                )
+
+    return BatchMigrateToolsResponse(
+        total=len(results),
+        migrated=migrated,
+        skipped=skipped,
+        failed=failed,
+        results=results,
+        dry_run=request.dry_run,
+    )

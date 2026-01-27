@@ -1,6 +1,6 @@
 # Migration Plan: MCPServer CRD to Standard Kubernetes Workloads
 
-**Status:** Draft
+**Status:** In Progress
 **Created:** 2026-01-26
 **Target:** Kagenti UI v2.x
 
@@ -21,6 +21,14 @@ operator while maintaining full MCP tool functionality.
 - Deployments (primary workload type)
 - StatefulSets (for tools requiring persistent state)
 - Services (must be created by UI - previously handled by Toolhive operator)
+
+**Phase Status:**
+- [x] Phase 1: Backend Infrastructure
+- [x] Phase 2: Deployment Support
+- [x] Phase 3: StatefulSet Support
+- [x] Phase 4: Frontend Updates
+- [x] Phase 5: Migration Tooling ✅ (Implemented 2026-01-27)
+- [ ] Phase 6: CI/E2E Test Updates
 
 ---
 
@@ -880,17 +888,21 @@ Add workload type selector:
 
 ### Phase 5: Migration Tooling
 
+**Status:** ✅ Implemented (2026-01-27)
+
 **Goal:** Provide tools to migrate existing MCPServer CRD resources to Deployments/StatefulSets.
 
 #### 5.1 CLI Migration Script
 
 **File:** `kagenti/tools/migrate_tools.py`
 
+##### Basic Usage
+
 ```bash
 # List tools that can be migrated (dry-run by default)
 python -m kagenti.tools.migrate_tools --namespace <namespace>
 
-# Dry-run migration
+# Dry-run migration (shows what would happen)
 python -m kagenti.tools.migrate_tools --namespace team1 --dry-run
 
 # Actually perform the migration
@@ -902,8 +914,80 @@ python -m kagenti.tools.migrate_tools --namespace team1 --no-dry-run --delete-ol
 # Migrate a specific tool only
 python -m kagenti.tools.migrate_tools --namespace team1 --tool my-tool --no-dry-run
 
-# Output results as JSON
+# Output results as JSON (for scripting)
 python -m kagenti.tools.migrate_tools --namespace team1 --json
+
+# Verbose output
+python -m kagenti.tools.migrate_tools --namespace team1 -v
+```
+
+##### Example Output
+
+```
+============================================================
+Kagenti MCPServer CRD Migration - DRY-RUN
+============================================================
+Namespace: team1
+Delete old CRDs: False
+Total MCPServer CRDs found: 3
+============================================================
+
+🔍 weather-tool: dry-run
+   Old service: mcp-weather-tool-proxy
+   New service: weather-tool-mcp
+   - Would create Deployment
+   - Would create Service 'weather-tool-mcp'
+
+🔍 github-tool: dry-run
+   Old service: mcp-github-tool-proxy
+   New service: github-tool-mcp
+   - Would create Deployment
+   - Would create Service 'github-tool-mcp'
+
+⏭️ slack-tool: skipped
+   Old service: mcp-slack-tool-proxy
+   New service: slack-tool-mcp
+   - Deployment already exists
+
+============================================================
+SUMMARY
+============================================================
+Total: 3
+Would migrate: 2
+Skipped (already migrated): 1
+Failed: 0
+============================================================
+
+💡 This was a dry-run. Use --no-dry-run to actually perform the migration.
+```
+
+##### JSON Output Example
+
+```json
+{
+  "namespace": "team1",
+  "dry_run": true,
+  "delete_old": false,
+  "total": 3,
+  "migrated": 0,
+  "skipped": 1,
+  "failed": 0,
+  "dry_run_count": 2,
+  "results": [
+    {
+      "name": "weather-tool",
+      "namespace": "team1",
+      "status": "dry-run",
+      "deployment_created": false,
+      "service_created": false,
+      "mcpserver_deleted": false,
+      "messages": ["Would create Deployment", "Would create Service 'weather-tool-mcp'"],
+      "errors": [],
+      "old_service": "mcp-weather-tool-proxy",
+      "new_service": "weather-tool-mcp"
+    }
+  ]
+}
 ```
 
 #### 5.2 Migration Logic
@@ -937,12 +1021,32 @@ annotations:
 GET /tools/migration/migratable?namespace=team1
 ```
 
-Returns a list of MCPServer CRDs that can be migrated.
+**Response:**
+
+```json
+{
+  "tools": [
+    {
+      "name": "weather-tool",
+      "namespace": "team1",
+      "status": "Ready",
+      "has_deployment": false,
+      "has_statefulset": false,
+      "labels": {"kagenti.io/type": "tool", "kagenti.io/protocol": "mcp"},
+      "description": "Weather MCP tool",
+      "old_service_name": "mcp-weather-tool-proxy",
+      "new_service_name": "weather-tool-mcp"
+    }
+  ],
+  "total": 1,
+  "already_migrated": 0
+}
+```
 
 ##### Migrate Single Tool
 
 ```http
-POST /tools/{namespace}/{name}/migrate
+POST /tools/team1/weather-tool/migrate
 Content-Type: application/json
 
 {
@@ -951,10 +1055,46 @@ Content-Type: application/json
 }
 ```
 
+**Response:**
+
+```json
+{
+  "success": true,
+  "name": "weather-tool",
+  "namespace": "team1",
+  "message": "Tool 'weather-tool' migrated successfully. Update MCP URLs: mcp-weather-tool-proxy -> weather-tool-mcp",
+  "deployment_created": true,
+  "service_created": true,
+  "mcpserver_deleted": false,
+  "old_service_name": "mcp-weather-tool-proxy",
+  "new_service_name": "weather-tool-mcp"
+}
+```
+
 ##### Batch Migration
 
 ```http
-POST /tools/migration/migrate-all?namespace=team1&dry_run=true&delete_old=false
+POST /tools/migration/migrate-all?namespace=team1
+Content-Type: application/json
+
+{
+  "workload_type": "deployment",
+  "delete_old": false,
+  "dry_run": true
+}
+```
+
+**Response:**
+
+```json
+{
+  "total": 3,
+  "migrated": 2,
+  "skipped": 1,
+  "failed": 0,
+  "results": [...],
+  "dry_run": true
+}
 ```
 
 #### 5.5 Backward Compatibility Period
@@ -963,7 +1103,8 @@ POST /tools/migration/migrate-all?namespace=team1&dry_run=true&delete_old=false
 
 ```python
 # config.py
-enable_legacy_mcpserver_crd: bool = True  # Set to False after full migration
+# Set to True during migration period to see both old MCPServer CRDs and new Deployments
+enable_legacy_mcpserver_crd: bool = False  # Default is False, set to True during migration
 ```
 
 When enabled, the `list_tools` endpoint will:
@@ -972,6 +1113,24 @@ When enabled, the `list_tools` endpoint will:
 2. Query MCPServer CRDs in the namespace
 3. Skip MCPServer CRDs that already have a corresponding Deployment (already migrated)
 4. Return a combined list of both Deployment-based and CRD-based tools
+
+#### 5.6 Post-Migration: Updating MCP Connection URLs
+
+After migration, any code or configuration that references MCP tool URLs must be updated:
+
+| Before (Toolhive) | After (Kagenti) |
+|-------------------|-----------------|
+| `http://mcp-{name}-proxy.{ns}.svc.cluster.local:8000/mcp` | `http://{name}-mcp.{ns}.svc.cluster.local:8000/mcp` |
+
+**Example:**
+
+```yaml
+# Before
+mcpUrl: "http://mcp-weather-tool-proxy.team1.svc.cluster.local:8000/mcp"
+
+# After
+mcpUrl: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
+```
 
 ---
 

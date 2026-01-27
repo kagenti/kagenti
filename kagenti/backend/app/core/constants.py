@@ -111,6 +111,16 @@ MIGRATION_TIMESTAMP_ANNOTATION = "kagenti.io/migration-timestamp"
 # Label to identify legacy Agent CRD resources
 LEGACY_AGENT_CRD_LABEL = "kagenti.io/legacy-crd"
 
+# Migration (Phase 5: MCPServer CRD to Deployment migration)
+# Annotation to track original Toolhive service name
+ORIGINAL_SERVICE_ANNOTATION = "kagenti.io/original-service"
+# Toolhive service naming pattern: mcp-{name}-proxy
+TOOLHIVE_SERVICE_PREFIX = "mcp-"
+TOOLHIVE_SERVICE_SUFFIX = "-proxy"
+# Migration source values
+MIGRATION_SOURCE_AGENT_CRD = "agent-crd"
+MIGRATION_SOURCE_MCPSERVER_CRD = "mcpserver-crd"
+
 # Default environment variables for agents
 DEFAULT_ENV_VARS = [
     {"name": "PORT", "value": "8000"},
