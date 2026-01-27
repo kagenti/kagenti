@@ -91,12 +91,23 @@ class ServicePort(BaseModel):
     protocol: str = "TCP"
 
 
+class PersistentStorageConfig(BaseModel):
+    """Persistent storage configuration for StatefulSet tools."""
+
+    enabled: bool = False
+    size: str = "1Gi"
+
+
 class CreateToolRequest(BaseModel):
     """Request to create a new MCP tool.
 
     Tools can be deployed from:
     1. Existing container images (deploymentMethod="image")
     2. Source code via Shipwright build (deploymentMethod="source")
+
+    Workload types:
+    - "deployment" (default): Standard Kubernetes Deployment
+    - "statefulset": StatefulSet with persistent storage
     """
 
     name: str
@@ -105,6 +116,12 @@ class CreateToolRequest(BaseModel):
     framework: str = "Python"
     envVars: Optional[List[EnvVar]] = None
     servicePorts: Optional[List[ServicePort]] = None
+
+    # Workload type: "deployment" (default) or "statefulset"
+    workloadType: str = "deployment"
+
+    # Persistent storage config (for StatefulSet)
+    persistentStorage: Optional[PersistentStorageConfig] = None
 
     # Deployment method: "image" (existing) or "source" (Shipwright build)
     deploymentMethod: str = "image"
@@ -127,10 +144,12 @@ class CreateToolRequest(BaseModel):
 
 
 class FinalizeToolBuildRequest(BaseModel):
-    """Request to finalize a tool Shipwright build by creating the MCPServer."""
+    """Request to finalize a tool Shipwright build by creating the Deployment/StatefulSet."""
 
     protocol: Optional[str] = None
     framework: Optional[str] = None
+    workloadType: Optional[str] = None  # "deployment" or "statefulset"
+    persistentStorage: Optional[PersistentStorageConfig] = None
     envVars: Optional[List[EnvVar]] = None
     servicePorts: Optional[List[ServicePort]] = None
     createHttpRoute: Optional[bool] = None
@@ -206,8 +225,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
-def _is_deployment_ready(resource_data: dict) -> str:
-    """Check if a tool deployment is ready based on status phase.
+def _is_mcpserver_ready(resource_data: dict) -> str:
+    """Check if an MCPServer CRD is ready based on status phase.
 
     For MCPServer CRD, the authoritative ready state is .status.phase == "Running".
     Conditions can be used for intermediate states but phase is the final indicator.
@@ -221,6 +240,71 @@ def _is_deployment_ready(resource_data: dict) -> str:
         return "Ready"
 
     return "Not Ready"
+
+
+def _get_workload_status(workload: dict) -> str:
+    """Get status for a Deployment or StatefulSet workload.
+
+    Args:
+        workload: Deployment or StatefulSet resource dict
+
+    Returns:
+        Status string: "Ready", "Progressing", "Failed", or "Not Ready"
+    """
+    status = workload.get("status", {})
+    spec = workload.get("spec", {})
+
+    # Get replica counts
+    desired_replicas = spec.get("replicas", 1)
+    ready_replicas = status.get("ready_replicas") or status.get("readyReplicas", 0)
+    available_replicas = status.get("available_replicas") or status.get("availableReplicas", 0)
+
+    # Check conditions for more detail
+    conditions = status.get("conditions", [])
+    for condition in conditions:
+        cond_type = condition.get("type", "")
+        cond_status = condition.get("status", "")
+        cond_reason = condition.get("reason", "")
+
+        # Check for failure conditions
+        if cond_type == "Available" and cond_status == "False":
+            if "ProgressDeadlineExceeded" in cond_reason:
+                return "Failed"
+
+        # Check for progressing
+        if cond_type == "Progressing" and cond_status == "True":
+            if ready_replicas < desired_replicas:
+                return "Progressing"
+
+    # Check if all replicas are ready
+    if ready_replicas >= desired_replicas and available_replicas >= desired_replicas:
+        return "Ready"
+
+    # Still progressing
+    if ready_replicas > 0:
+        return "Progressing"
+
+    return "Not Ready"
+
+
+def _get_workload_type_from_resource(resource: dict) -> str:
+    """Determine workload type from a Kubernetes resource.
+
+    Args:
+        resource: Kubernetes resource dict
+
+    Returns:
+        Workload type: "deployment", "statefulset", or "unknown"
+    """
+    kind = resource.get("kind", "")
+    if kind == "Deployment":
+        return WORKLOAD_TYPE_DEPLOYMENT
+    elif kind == "StatefulSet":
+        return WORKLOAD_TYPE_STATEFULSET
+    else:
+        # Check labels
+        labels = resource.get("metadata", {}).get("labels", {})
+        return labels.get(KAGENTI_WORKLOAD_TYPE_LABEL, "unknown")
 
 
 def _extract_labels(labels: dict) -> ResourceLabels:
@@ -309,42 +393,61 @@ async def list_tools(
     List all MCP tools in the specified namespace.
 
     Returns tools that have the kagenti.io/type=tool label.
+    Queries both Deployments and StatefulSets.
     """
     try:
         label_selector = f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_TOOL}"
-
-        items = kube.list_custom_resources(
-            group=TOOLHIVE_CRD_GROUP,
-            version=TOOLHIVE_CRD_VERSION,
-            namespace=namespace,
-            plural=TOOLHIVE_MCP_PLURAL,
-            label_selector=label_selector,
-        )
-
         tools = []
-        for item in items:
-            metadata = item.get("metadata", {})
-            spec = item.get("spec", {})
 
-            tools.append(
-                ToolSummary(
-                    name=metadata.get("name", ""),
-                    namespace=metadata.get("namespace", namespace),
-                    description=spec.get("description", "No description"),
-                    status=_is_deployment_ready(item),
-                    labels=_extract_labels(metadata.get("labels", {})),
-                    createdAt=metadata.get("creationTimestamp"),
+        # Query Deployments with tool label
+        try:
+            deployments = kube.list_deployments(namespace, label_selector)
+            for deploy in deployments:
+                metadata = deploy.get("metadata", {})
+                annotations = metadata.get("annotations", {})
+
+                tools.append(
+                    ToolSummary(
+                        name=metadata.get("name", ""),
+                        namespace=metadata.get("namespace", namespace),
+                        description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
+                        status=_get_workload_status(deploy),
+                        labels=_extract_labels(metadata.get("labels", {})),
+                        createdAt=metadata.get("creation_timestamp")
+                        or metadata.get("creationTimestamp"),
+                        workloadType=WORKLOAD_TYPE_DEPLOYMENT,
+                    )
                 )
-            )
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Error listing Deployments: {e}")
+
+        # Query StatefulSets with tool label
+        try:
+            statefulsets = kube.list_statefulsets(namespace, label_selector)
+            for sts in statefulsets:
+                metadata = sts.get("metadata", {})
+                annotations = metadata.get("annotations", {})
+
+                tools.append(
+                    ToolSummary(
+                        name=metadata.get("name", ""),
+                        namespace=metadata.get("namespace", namespace),
+                        description=annotations.get(KAGENTI_DESCRIPTION_ANNOTATION, ""),
+                        status=_get_workload_status(sts),
+                        labels=_extract_labels(metadata.get("labels", {})),
+                        createdAt=metadata.get("creation_timestamp")
+                        or metadata.get("creationTimestamp"),
+                        workloadType=WORKLOAD_TYPE_STATEFULSET,
+                    )
+                )
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Error listing StatefulSets: {e}")
 
         return ToolListResponse(items=tools)
 
     except ApiException as e:
-        if e.status == 404:
-            raise HTTPException(
-                status_code=404,
-                detail="MCPServer CRD not found. Is ToolHive installed?",
-            )
         if e.status == 403:
             raise HTTPException(
                 status_code=403,
@@ -359,24 +462,52 @@ async def get_tool(
     name: str,
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> Any:
-    """Get detailed information about a specific tool."""
-    try:
-        tool = kube.get_custom_resource(
-            group=TOOLHIVE_CRD_GROUP,
-            version=TOOLHIVE_CRD_VERSION,
-            namespace=namespace,
-            plural=TOOLHIVE_MCP_PLURAL,
-            name=name,
-        )
-        return tool
+    """Get detailed information about a specific tool.
 
+    Tries to find the tool as a Deployment first, then as a StatefulSet.
+    Returns the workload details along with associated Service information.
+    """
+    workload = None
+    workload_type = None
+
+    # Try Deployment first
+    try:
+        workload = kube.get_deployment(namespace, name)
+        workload_type = WORKLOAD_TYPE_DEPLOYMENT
     except ApiException as e:
-        if e.status == 404:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Tool '{name}' not found in namespace '{namespace}'",
-            )
-        raise HTTPException(status_code=e.status, detail=str(e.reason))
+        if e.status != 404:
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Try StatefulSet if Deployment not found
+    if workload is None:
+        try:
+            workload = kube.get_statefulset(namespace, name)
+            workload_type = WORKLOAD_TYPE_STATEFULSET
+        except ApiException as e:
+            if e.status == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Tool '{name}' not found in namespace '{namespace}'",
+                )
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    # Get associated Service
+    service = None
+    service_name = _get_tool_service_name(name)
+    try:
+        service = kube.get_service(namespace, service_name)
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning(f"Error getting Service '{service_name}': {e}")
+
+    # Build response with workload and service details
+    return {
+        "metadata": workload.get("metadata", {}),
+        "spec": workload.get("spec", {}),
+        "status": _get_workload_status(workload),
+        "workloadType": workload_type,
+        "service": service,
+    }
 
 
 @router.get("/{namespace}/{name}/route-status")
@@ -396,7 +527,14 @@ async def delete_tool(
     name: str,
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> DeleteResponse:
-    """Delete a tool and associated Shipwright resources from the cluster."""
+    """Delete a tool and associated resources from the cluster.
+
+    Deletes in order:
+    1. Shipwright BuildRuns (if any)
+    2. Shipwright Build (if any)
+    3. Deployment or StatefulSet
+    4. Service
+    """
     deleted_resources = []
 
     # Delete BuildRuns first (they reference the Build)
@@ -439,22 +577,30 @@ async def delete_tool(
         if e.status != 404:
             logger.warning(f"Failed to delete Shipwright Build '{name}': {e}")
 
-    # Delete MCPServer
+    # Delete Deployment (if exists)
     try:
-        kube.delete_custom_resource(
-            group=TOOLHIVE_CRD_GROUP,
-            version=TOOLHIVE_CRD_VERSION,
-            namespace=namespace,
-            plural=TOOLHIVE_MCP_PLURAL,
-            name=name,
-        )
-        deleted_resources.append(f"MCPServer/{name}")
+        kube.delete_deployment(namespace, name)
+        deleted_resources.append(f"Deployment/{name}")
     except ApiException as e:
-        if e.status == 404:
-            # MCPServer not found is OK - might only have a Build
-            pass
-        else:
-            raise HTTPException(status_code=e.status, detail=str(e.reason))
+        if e.status != 404:
+            logger.warning(f"Failed to delete Deployment '{name}': {e}")
+
+    # Delete StatefulSet (if exists)
+    try:
+        kube.delete_statefulset(namespace, name)
+        deleted_resources.append(f"StatefulSet/{name}")
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning(f"Failed to delete StatefulSet '{name}': {e}")
+
+    # Delete Service
+    service_name = _get_tool_service_name(name)
+    try:
+        kube.delete_service(namespace, service_name)
+        deleted_resources.append(f"Service/{service_name}")
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning(f"Failed to delete Service '{service_name}': {e}")
 
     if deleted_resources:
         return DeleteResponse(
@@ -930,13 +1076,25 @@ async def create_tool(
     Create a new MCP tool.
 
     Supports two deployment methods:
-    1. "image" - Deploy from existing container image (MCPServer CRD)
+    1. "image" - Deploy from existing container image (Deployment + Service)
     2. "source" - Build from source using Shipwright, then deploy
 
+    Supports two workload types:
+    1. "deployment" (default) - Standard Kubernetes Deployment
+    2. "statefulset" - StatefulSet with persistent storage
+
     For source builds, creates a Shipwright Build + BuildRun and returns.
-    The MCPServer is created later via the finalize-shipwright-build endpoint.
+    The Deployment/StatefulSet is created later via the finalize-shipwright-build endpoint.
     """
     try:
+        # Validate workload type
+        if request.workloadType not in [WORKLOAD_TYPE_DEPLOYMENT, WORKLOAD_TYPE_STATEFULSET]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported workload type: {request.workloadType}. "
+                f"Supported types: {WORKLOAD_TYPE_DEPLOYMENT}, {WORKLOAD_TYPE_STATEFULSET}",
+            )
+
         if request.deploymentMethod == "source":
             # Source build using Shipwright
             if not request.gitUrl:
@@ -991,37 +1149,89 @@ async def create_tool(
             )
 
         else:
-            # Image deployment (existing flow)
+            # Image deployment - create Deployment/StatefulSet + Service
             if not request.containerImage:
                 raise HTTPException(
                     status_code=400,
                     detail="containerImage is required for image deployment",
                 )
 
-            manifest = _build_mcpserver_manifest(request)
+            # Prepare env vars
+            env_vars = None
+            if request.envVars:
+                env_vars = [{"name": ev.name, "value": ev.value} for ev in request.envVars]
 
-            kube.create_custom_resource(
-                group=TOOLHIVE_CRD_GROUP,
-                version=TOOLHIVE_CRD_VERSION,
+            # Prepare service ports
+            service_ports = None
+            if request.servicePorts:
+                service_ports = [sp.model_dump() for sp in request.servicePorts]
+
+            # Create workload (Deployment or StatefulSet)
+            if request.workloadType == WORKLOAD_TYPE_STATEFULSET:
+                # Determine storage size
+                storage_size = "1Gi"
+                if request.persistentStorage and request.persistentStorage.enabled:
+                    storage_size = request.persistentStorage.size
+
+                workload_manifest = _build_tool_statefulset_manifest(
+                    name=request.name,
+                    namespace=request.namespace,
+                    image=request.containerImage,
+                    protocol=request.protocol,
+                    framework=request.framework,
+                    env_vars=env_vars,
+                    service_ports=service_ports,
+                    image_pull_secret=request.imagePullSecret,
+                    storage_size=storage_size,
+                )
+                kube.create_statefulset(request.namespace, workload_manifest)
+                logger.info(
+                    f"Created StatefulSet '{request.name}' for tool in namespace '{request.namespace}'"
+                )
+            else:
+                # Default: Deployment
+                workload_manifest = _build_tool_deployment_manifest(
+                    name=request.name,
+                    namespace=request.namespace,
+                    image=request.containerImage,
+                    protocol=request.protocol,
+                    framework=request.framework,
+                    env_vars=env_vars,
+                    service_ports=service_ports,
+                    image_pull_secret=request.imagePullSecret,
+                )
+                kube.create_deployment(request.namespace, workload_manifest)
+                logger.info(
+                    f"Created Deployment '{request.name}' for tool in namespace '{request.namespace}'"
+                )
+
+            # Create Service for the tool
+            service_manifest = _build_tool_service_manifest(
+                name=request.name,
                 namespace=request.namespace,
-                plural=TOOLHIVE_MCP_PLURAL,
-                body=manifest,
+                service_ports=service_ports,
+            )
+            kube.create_service(request.namespace, service_manifest)
+            service_name = _get_tool_service_name(request.name)
+            logger.info(
+                f"Created Service '{service_name}' for tool in namespace '{request.namespace}'"
             )
 
-            message = f"Tool '{request.name}' deployment started."
+            message = f"Tool '{request.name}' deployment started ({request.workloadType})."
 
             # Create HTTPRoute/Route if requested
-            # ToolHive creates a proxy service named mcp-{name}-proxy on port 8000
+            # Service is now {name}-mcp on port 8000
             if request.createHttpRoute:
-                proxy_service_name = f"mcp-{request.name}-proxy"
-                proxy_service_port = 8000
+                service_port = DEFAULT_IN_CLUSTER_PORT
+                if service_ports and len(service_ports) > 0:
+                    service_port = service_ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
 
                 create_route_for_agent_or_tool(
                     kube=kube,
                     name=request.name,
                     namespace=request.namespace,
-                    service_name=proxy_service_name,
-                    service_port=proxy_service_port,
+                    service_name=service_name,
+                    service_port=service_port,
                 )
                 message += " HTTPRoute/Route created for external access."
 
@@ -1041,7 +1251,7 @@ async def create_tool(
         if e.status == 404:
             raise HTTPException(
                 status_code=404,
-                detail="MCPServer CRD or Shipwright CRDs not found. Is ToolHive/Shipwright installed?",
+                detail="Failed to create tool resources. Check cluster connectivity.",
             )
         logger.error(f"Failed to create tool: {e}")
         raise HTTPException(status_code=e.status, detail=str(e.reason))
@@ -1213,15 +1423,16 @@ async def finalize_tool_shipwright_build(
     request: FinalizeToolBuildRequest,
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> CreateToolResponse:
-    """Create MCPServer CRD after Shipwright build completes successfully.
+    """Create Deployment/StatefulSet + Service after Shipwright build completes successfully.
 
     This endpoint:
     1. Gets the latest BuildRun and verifies it succeeded
     2. Extracts the output image from BuildRun status
     3. Reads tool config from Build annotations
-    4. Creates MCPServer CRD with the built image
-    5. Creates HTTPRoute if createHttpRoute is true
-    6. Adds kagenti.io/shipwright-build annotation to MCPServer
+    4. Creates Deployment or StatefulSet with the built image
+    5. Creates Service for the tool
+    6. Creates HTTPRoute if createHttpRoute is true
+    7. Adds kagenti.io/shipwright-build annotation to workload
     """
     try:
         # Get the Build resource
@@ -1296,119 +1507,95 @@ async def finalize_tool_shipwright_build(
             else tool_config_dict.get("createHttpRoute", False)
         )
 
+        # Determine workload type
+        workload_type = request.workloadType or tool_config_dict.get(
+            "workloadType", WORKLOAD_TYPE_DEPLOYMENT
+        )
+
         # Build env vars
-        env_vars = list(DEFAULT_ENV_VARS)
+        env_vars = None
         if request.envVars:
-            for ev in request.envVars:
-                env_vars.append({"name": ev.name, "value": ev.value})
+            env_vars = [{"name": ev.name, "value": ev.value} for ev in request.envVars]
         elif tool_config_dict.get("envVars"):
-            for ev in tool_config_dict["envVars"]:
-                env_vars.append({"name": ev.get("name"), "value": ev.get("value", "")})
+            env_vars = tool_config_dict["envVars"]
 
         # Build service ports
+        service_ports = None
         if request.servicePorts:
-            port = request.servicePorts[0].port
-            target_port = request.servicePorts[0].targetPort
+            service_ports = [sp.model_dump() for sp in request.servicePorts]
         elif tool_config_dict.get("servicePorts"):
-            ports = tool_config_dict["servicePorts"]
-            port = ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
-            target_port = ports[0].get("targetPort", DEFAULT_IN_CLUSTER_PORT)
+            service_ports = tool_config_dict["servicePorts"]
+
+        # Determine image pull secret
+        image_pull_secret = request.imagePullSecret or tool_config_dict.get("registrySecret")
+
+        # Create workload (Deployment or StatefulSet)
+        if workload_type == WORKLOAD_TYPE_STATEFULSET:
+            # Determine storage size
+            storage_size = "1Gi"
+            if request.persistentStorage and request.persistentStorage.enabled:
+                storage_size = request.persistentStorage.size
+
+            workload_manifest = _build_tool_statefulset_manifest(
+                name=name,
+                namespace=namespace,
+                image=image_with_digest,
+                protocol=protocol,
+                framework=framework,
+                env_vars=env_vars,
+                service_ports=service_ports,
+                image_pull_secret=image_pull_secret,
+                shipwright_build_name=name,
+                storage_size=storage_size,
+            )
+            kube.create_statefulset(namespace, workload_manifest)
+            logger.info(
+                f"Created StatefulSet '{name}' in namespace '{namespace}' from Shipwright build"
+            )
         else:
-            port = DEFAULT_IN_CLUSTER_PORT
-            target_port = DEFAULT_IN_CLUSTER_PORT
+            # Default: Deployment
+            workload_manifest = _build_tool_deployment_manifest(
+                name=name,
+                namespace=namespace,
+                image=image_with_digest,
+                protocol=protocol,
+                framework=framework,
+                env_vars=env_vars,
+                service_ports=service_ports,
+                image_pull_secret=image_pull_secret,
+                shipwright_build_name=name,
+            )
+            kube.create_deployment(namespace, workload_manifest)
+            logger.info(
+                f"Created Deployment '{name}' in namespace '{namespace}' from Shipwright build"
+            )
 
-        # Build MCPServer manifest
-        manifest = {
-            "apiVersion": f"{TOOLHIVE_CRD_GROUP}/{TOOLHIVE_CRD_VERSION}",
-            "kind": "MCPServer",
-            "metadata": {
-                "name": name,
-                "namespace": namespace,
-                "labels": {
-                    APP_KUBERNETES_IO_CREATED_BY: KAGENTI_UI_CREATOR_LABEL,
-                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
-                    KAGENTI_PROTOCOL_LABEL: protocol,
-                    KAGENTI_FRAMEWORK_LABEL: framework,
-                },
-                "annotations": {
-                    "kagenti.io/shipwright-build": name,
-                },
-            },
-            "spec": {
-                "image": image_with_digest,
-                "transport": "streamable-http",
-                "port": port,
-                "targetPort": target_port,
-                "proxyPort": DEFAULT_IN_CLUSTER_PORT,
-                "podTemplateSpec": {
-                    "spec": {
-                        "serviceAccountName": name,
-                        "securityContext": {
-                            "runAsNonRoot": True,
-                            "seccompProfile": {"type": "RuntimeDefault"},
-                        },
-                        "volumes": [
-                            {"name": "cache", "emptyDir": {}},
-                            {"name": "tmp-dir", "emptyDir": {}},
-                        ],
-                        "containers": [
-                            {
-                                "name": "mcp",
-                                "securityContext": {
-                                    "allowPrivilegeEscalation": False,
-                                    "capabilities": {"drop": ["ALL"]},
-                                    "runAsUser": 1000,
-                                },
-                                "resources": {
-                                    "limits": DEFAULT_RESOURCE_LIMITS,
-                                    "requests": DEFAULT_RESOURCE_REQUESTS,
-                                },
-                                "env": env_vars,
-                                "volumeMounts": [
-                                    {
-                                        "name": "cache",
-                                        "mountPath": "/app/.cache",
-                                        "readOnly": False,
-                                    },
-                                    {"name": "tmp-dir", "mountPath": "/tmp", "readOnly": False},
-                                ],
-                            }
-                        ],
-                    },
-                },
-            },
-        }
-
-        # Add image pull secrets if specified
-        if request.imagePullSecret or tool_config_dict.get("registrySecret"):
-            secret_name = request.imagePullSecret or tool_config_dict.get("registrySecret")
-            manifest["spec"]["podTemplateSpec"]["spec"]["imagePullSecrets"] = [
-                {"name": secret_name}
-            ]
-
-        # Create MCPServer
-        kube.create_custom_resource(
-            group=TOOLHIVE_CRD_GROUP,
-            version=TOOLHIVE_CRD_VERSION,
+        # Create Service for the tool
+        service_manifest = _build_tool_service_manifest(
+            name=name,
             namespace=namespace,
-            plural=TOOLHIVE_MCP_PLURAL,
-            body=manifest,
+            service_ports=service_ports,
         )
-        logger.info(f"Created MCPServer '{name}' in namespace '{namespace}' from Shipwright build")
+        kube.create_service(namespace, service_manifest)
+        service_name = _get_tool_service_name(name)
+        logger.info(
+            f"Created Service '{service_name}' in namespace '{namespace}' from Shipwright build"
+        )
 
-        message = f"Tool '{name}' created from Shipwright build."
+        message = f"Tool '{name}' created from Shipwright build ({workload_type})."
 
         # Create HTTPRoute if requested
         if create_http_route:
-            proxy_service_name = f"mcp-{name}-proxy"
-            proxy_service_port = 8000
+            service_port = DEFAULT_IN_CLUSTER_PORT
+            if service_ports and len(service_ports) > 0:
+                service_port = service_ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
 
             create_route_for_agent_or_tool(
                 kube=kube,
                 name=name,
                 namespace=namespace,
-                service_name=proxy_service_name,
-                service_port=proxy_service_port,
+                service_name=service_name,
+                service_port=service_port,
             )
             message += " HTTPRoute/Route created for external access."
 
@@ -1436,18 +1623,18 @@ async def finalize_tool_shipwright_build(
 def _get_tool_url(name: str, namespace: str) -> str:
     """Get the URL for an MCP tool server.
 
-    ToolHive creates a proxy service with the naming pattern:
-    - Service name: mcp-{name}-proxy
+    Service naming convention:
+    - Service name: {name}-mcp
     - Port: 8000
 
     Returns different URL formats based on deployment context:
-    - In-cluster: http://mcp-{name}-proxy.{namespace}.svc.cluster.local:8000
+    - In-cluster: http://{name}-mcp.{namespace}.svc.cluster.local:8000
     - Off-cluster (local dev): http://{name}.{domain}:8080 (via HTTPRoute)
     """
     if settings.is_running_in_cluster:
-        # In-cluster: use ToolHive proxy service DNS
-        # ToolHive creates services named mcp-{name}-proxy on port 8000
-        return f"http://mcp-{name}-proxy.{namespace}.svc.cluster.local:8000"
+        # In-cluster: use service DNS with new naming convention
+        service_name = _get_tool_service_name(name)
+        return f"http://{service_name}.{namespace}.svc.cluster.local:{DEFAULT_IN_CLUSTER_PORT}"
     else:
         # Off-cluster: use external domain (e.g., localtest.me) via HTTPRoute
         domain = settings.domain_name

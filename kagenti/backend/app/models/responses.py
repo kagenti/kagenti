@@ -44,6 +44,7 @@ class ToolSummary(BaseModel):
     status: str
     labels: ResourceLabels
     createdAt: Optional[str] = None
+    workloadType: Optional[str] = None  # "deployment" or "statefulset"
 
 
 class ToolListResponse(BaseModel):
