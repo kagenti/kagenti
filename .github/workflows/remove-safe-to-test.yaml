@@ -1,0 +1,72 @@
+name: Remove safe-to-test on New Commits
+
+# When new commits are pushed to a PR, remove the safe-to-test label.
+# This forces maintainers to re-review new changes before E2E tests run.
+# This is critical TOCTOU (Time-of-Check Time-of-Use) protection.
+
+on:
+  pull_request_target:
+    types: [synchronize]  # Triggered when new commits pushed
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  remove-label:
+    runs-on: ubuntu-latest
+    # Only run if the label exists
+    if: contains(github.event.pull_request.labels.*.name, 'safe-to-test')
+    steps:
+      - name: Remove safe-to-test label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Remove the safe-to-test label
+            try {
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: prNumber,
+                name: 'safe-to-test'
+              });
+              console.log('Removed safe-to-test label');
+            } catch (error) {
+              // Label might already be removed
+              console.log('Label removal failed (may already be removed):', error.message);
+            }
+
+            // Post a comment explaining why
+            const newSha = context.payload.pull_request.head.sha.substring(0, 7);
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `## 🔄 New Commits Detected
+
+The \`safe-to-test\` label has been automatically removed because new commits were pushed.
+
+**New HEAD**: \`${newSha}\`
+
+**For maintainers**: Please review the new changes and re-add the \`safe-to-test\` label to run E2E tests.
+
+<details>
+<summary>Security checklist</summary>
+
+Before re-adding the label, verify the PR does NOT contain:
+- [ ] Changes to \`.github/workflows/\` that bypass security
+- [ ] Changes to \`.github/scripts/\` that could exfiltrate secrets
+- [ ] \`curl\`, \`wget\`, or \`nc\` commands to external URLs in scripts
+- [ ] Base64 encoding of environment variables
+- [ ] Printing secrets to logs (\`echo $SECRET\`)
+- [ ] Suspicious package installations
+
+</details>
+
+---
+🤖 *This is an automated security measure to prevent TOCTOU attacks*`
+            });
