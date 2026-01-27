@@ -192,8 +192,9 @@ else
     [ "$SKIP_DESTROY" = "true" ] && RUN_DESTROY=false
 fi
 
-# Default suffix
-CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-local}"
+# Default suffix - use sanitized username for local development
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
+CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-$SANITIZED_USER}"
 
 # Colors
 GREEN='\033[0;32m'
@@ -214,6 +215,23 @@ cd "$REPO_ROOT"
 # Detect CI mode (GitHub Actions sets GITHUB_ACTIONS=true)
 CI_MODE="${GITHUB_ACTIONS:-false}"
 
+# MANAGED_BY_TAG controls cluster naming and IAM scoping:
+#   - Local: defaults to kagenti-hypershift-custom (shared by all developers)
+#   - CI: set via secrets (kagenti-hypershift-ci)
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+find_env_file() {
+    if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
+        echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
+    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+        echo "$REPO_ROOT/.env.hypershift-ci"
+    else
+        # Find any .env.kagenti-* file
+        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+    fi
+}
+
 if [ "$CI_MODE" = "true" ]; then
     # CI mode: credentials are passed via environment variables from GitHub secrets
     # Required: MANAGED_BY_TAG, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
@@ -221,16 +239,18 @@ if [ "$CI_MODE" = "true" ]; then
     log_step "Using CI credentials from environment"
 else
     # Local mode: load from .env file
-    if [ ! -f ".env.hypershift-ci" ]; then
-        log_error ".env.hypershift-ci not found. Run setup-hypershift-ci-credentials.sh first."
+    ENV_FILE=$(find_env_file)
+    if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+        log_error "No .env file found. Run setup-hypershift-ci-credentials.sh first."
+        log_error "Expected: .env.${MANAGED_BY_TAG} or .env.hypershift-ci"
         exit 1
     fi
     # shellcheck source=/dev/null
-    source .env.hypershift-ci
-    log_step "Loaded credentials from .env.hypershift-ci"
+    source "$ENV_FILE"
+    log_step "Loaded credentials from $(basename "$ENV_FILE")"
+    # Update MANAGED_BY_TAG from env file if it was set there
+    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 fi
-
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
 CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
 
 echo ""
@@ -416,10 +436,13 @@ fi
 if [ "$RUN_DESTROY" = "true" ]; then
     log_phase "PHASE 6: Destroy Cluster"
 
-    # Reload CI creds (in case KUBECONFIG was changed)
+    # Reload credentials (in case KUBECONFIG was changed)
     if [ "$CI_MODE" != "true" ]; then
-        # shellcheck source=/dev/null
-        source .env.hypershift-ci
+        ENV_FILE=$(find_env_file)
+        if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
+            # shellcheck source=/dev/null
+            source "$ENV_FILE"
+        fi
     fi
 
     ./.github/scripts/hypershift/destroy-cluster.sh "$CLUSTER_SUFFIX"
@@ -427,7 +450,6 @@ else
     log_phase "PHASE 6: Skipping Cluster Destruction"
     echo ""
     echo "Cluster kept for debugging. To destroy later:"
-    echo "  source .env.hypershift-ci"
     echo "  ./.github/scripts/hypershift/destroy-cluster.sh $CLUSTER_SUFFIX"
     echo ""
 fi
