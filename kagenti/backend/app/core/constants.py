@@ -22,6 +22,7 @@ TOOLHIVE_MCP_PLURAL = settings.toolhive_mcp_plural
 KAGENTI_TYPE_LABEL = settings.kagenti_type_label
 KAGENTI_PROTOCOL_LABEL = settings.kagenti_protocol_label
 KAGENTI_FRAMEWORK_LABEL = settings.kagenti_framework_label
+KAGENTI_TRANSPORT_LABEL = "kagenti.io/transport"
 KAGENTI_WORKLOAD_TYPE_LABEL = "kagenti.io/workload-type"
 KAGENTI_DESCRIPTION_ANNOTATION = "kagenti.io/description"
 APP_KUBERNETES_IO_CREATED_BY = "app.kubernetes.io/created-by"
@@ -36,6 +37,18 @@ KAGENTI_OPERATOR_LABEL_NAME = "kagenti-operator"
 # Resource types
 RESOURCE_TYPE_AGENT = "agent"
 RESOURCE_TYPE_TOOL = "tool"
+
+# Protocol values
+VALUE_PROTOCOL_A2A = "a2a"
+VALUE_PROTOCOL_MCP = "mcp"
+
+# Transport values (for MCP tools)
+VALUE_TRANSPORT_STREAMABLE_HTTP = "streamable_http"
+VALUE_TRANSPORT_SSE = "sse"
+
+# Service naming for tools
+# Tools use {name}-mcp service naming convention
+TOOL_SERVICE_SUFFIX = "-mcp"
 
 # Workload types for agent deployment
 WORKLOAD_TYPE_DEPLOYMENT = "deployment"

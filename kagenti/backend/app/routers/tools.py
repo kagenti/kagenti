@@ -24,9 +24,19 @@ from app.core.constants import (
     KAGENTI_TYPE_LABEL,
     KAGENTI_PROTOCOL_LABEL,
     KAGENTI_FRAMEWORK_LABEL,
+    KAGENTI_TRANSPORT_LABEL,
+    KAGENTI_WORKLOAD_TYPE_LABEL,
+    KAGENTI_DESCRIPTION_ANNOTATION,
     APP_KUBERNETES_IO_CREATED_BY,
+    APP_KUBERNETES_IO_NAME,
+    APP_KUBERNETES_IO_MANAGED_BY,
     KAGENTI_UI_CREATOR_LABEL,
     RESOURCE_TYPE_TOOL,
+    VALUE_PROTOCOL_MCP,
+    VALUE_TRANSPORT_STREAMABLE_HTTP,
+    TOOL_SERVICE_SUFFIX,
+    WORKLOAD_TYPE_DEPLOYMENT,
+    WORKLOAD_TYPE_STATEFULSET,
     DEFAULT_IN_CLUSTER_PORT,
     DEFAULT_RESOURCE_LIMITS,
     DEFAULT_RESOURCE_REQUESTS,
@@ -536,6 +546,379 @@ def _build_mcpserver_manifest(request: CreateToolRequest) -> dict:
         ]
 
     return manifest
+
+
+def _build_tool_deployment_manifest(
+    name: str,
+    namespace: str,
+    image: str,
+    protocol: str = "streamable_http",
+    framework: str = "Python",
+    description: str = "",
+    env_vars: Optional[List[Dict[str, str]]] = None,
+    service_ports: Optional[List[Dict[str, Any]]] = None,
+    image_pull_secret: Optional[str] = None,
+    shipwright_build_name: Optional[str] = None,
+) -> dict:
+    """
+    Build a Kubernetes Deployment manifest for an MCP tool.
+
+    This replaces the MCPServer CRD approach by directly creating Deployments.
+
+    Args:
+        name: Tool name
+        namespace: Kubernetes namespace
+        image: Container image URL (may include digest)
+        protocol: Tool protocol (default: streamable_http)
+        framework: Tool framework (default: Python)
+        description: Tool description
+        env_vars: Additional environment variables
+        service_ports: Service port configuration
+        image_pull_secret: Image pull secret name
+        shipwright_build_name: Name of Shipwright build (if built from source)
+
+    Returns:
+        Deployment manifest dict
+    """
+    # Build environment variables
+    all_env_vars = list(DEFAULT_ENV_VARS)
+    if env_vars:
+        all_env_vars.extend(env_vars)
+
+    # Determine target port
+    target_port = DEFAULT_IN_CLUSTER_PORT
+    if service_ports and len(service_ports) > 0:
+        target_port = service_ports[0].get("targetPort", DEFAULT_IN_CLUSTER_PORT)
+
+    # Build labels - required labels per migration plan
+    labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        APP_KUBERNETES_IO_NAME: name,
+        KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+        KAGENTI_FRAMEWORK_LABEL: framework,
+        KAGENTI_WORKLOAD_TYPE_LABEL: WORKLOAD_TYPE_DEPLOYMENT,
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+    }
+
+    # Build annotations
+    annotations = {}
+    if description:
+        annotations[KAGENTI_DESCRIPTION_ANNOTATION] = description
+    if shipwright_build_name:
+        annotations["kagenti.io/shipwright-build"] = shipwright_build_name
+
+    manifest = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+            "annotations": annotations if annotations else None,
+        },
+        "spec": {
+            "replicas": 1,
+            "selector": {
+                "matchLabels": {
+                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                    APP_KUBERNETES_IO_NAME: name,
+                }
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                        APP_KUBERNETES_IO_NAME: name,
+                        KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+                        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+                        KAGENTI_FRAMEWORK_LABEL: framework,
+                    }
+                },
+                "spec": {
+                    "serviceAccountName": name,
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [
+                        {
+                            "name": "mcp",
+                            "image": image,
+                            "imagePullPolicy": "Always",
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                                "runAsUser": 1000,
+                            },
+                            "env": all_env_vars,
+                            "ports": [
+                                {
+                                    "containerPort": target_port,
+                                    "name": "http",
+                                    "protocol": "TCP",
+                                }
+                            ],
+                            "resources": {
+                                "limits": DEFAULT_RESOURCE_LIMITS,
+                                "requests": DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "volumeMounts": [
+                                {"name": "cache", "mountPath": "/app/.cache"},
+                                {"name": "tmp", "mountPath": "/tmp"},
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {"name": "cache", "emptyDir": {}},
+                        {"name": "tmp", "emptyDir": {}},
+                    ],
+                },
+            },
+        },
+    }
+
+    # Remove None annotations
+    if manifest["metadata"]["annotations"] is None:
+        del manifest["metadata"]["annotations"]
+
+    # Add image pull secrets if specified
+    if image_pull_secret:
+        manifest["spec"]["template"]["spec"]["imagePullSecrets"] = [{"name": image_pull_secret}]
+
+    return manifest
+
+
+def _build_tool_statefulset_manifest(
+    name: str,
+    namespace: str,
+    image: str,
+    protocol: str = "streamable_http",
+    framework: str = "Python",
+    description: str = "",
+    env_vars: Optional[List[Dict[str, str]]] = None,
+    service_ports: Optional[List[Dict[str, Any]]] = None,
+    image_pull_secret: Optional[str] = None,
+    shipwright_build_name: Optional[str] = None,
+    storage_size: str = "1Gi",
+) -> dict:
+    """
+    Build a Kubernetes StatefulSet manifest for an MCP tool.
+
+    Use StatefulSet for tools that require persistent storage.
+
+    Args:
+        name: Tool name
+        namespace: Kubernetes namespace
+        image: Container image URL (may include digest)
+        protocol: Tool protocol (default: streamable_http)
+        framework: Tool framework (default: Python)
+        description: Tool description
+        env_vars: Additional environment variables
+        service_ports: Service port configuration
+        image_pull_secret: Image pull secret name
+        shipwright_build_name: Name of Shipwright build (if built from source)
+        storage_size: PVC storage size (default: 1Gi)
+
+    Returns:
+        StatefulSet manifest dict
+    """
+    # Build environment variables
+    all_env_vars = list(DEFAULT_ENV_VARS)
+    if env_vars:
+        all_env_vars.extend(env_vars)
+
+    # Determine target port
+    target_port = DEFAULT_IN_CLUSTER_PORT
+    if service_ports and len(service_ports) > 0:
+        target_port = service_ports[0].get("targetPort", DEFAULT_IN_CLUSTER_PORT)
+
+    # Service name for StatefulSet (must match the headless service)
+    service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
+
+    # Build labels - required labels per migration plan
+    labels = {
+        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+        APP_KUBERNETES_IO_NAME: name,
+        KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+        KAGENTI_FRAMEWORK_LABEL: framework,
+        KAGENTI_WORKLOAD_TYPE_LABEL: WORKLOAD_TYPE_STATEFULSET,
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+    }
+
+    # Build annotations
+    annotations = {}
+    if description:
+        annotations[KAGENTI_DESCRIPTION_ANNOTATION] = description
+    if shipwright_build_name:
+        annotations["kagenti.io/shipwright-build"] = shipwright_build_name
+
+    manifest = {
+        "apiVersion": "apps/v1",
+        "kind": "StatefulSet",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": labels,
+            "annotations": annotations if annotations else None,
+        },
+        "spec": {
+            "serviceName": service_name,
+            "replicas": 1,
+            "selector": {
+                "matchLabels": {
+                    KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                    APP_KUBERNETES_IO_NAME: name,
+                }
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                        APP_KUBERNETES_IO_NAME: name,
+                        KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+                        KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
+                        KAGENTI_FRAMEWORK_LABEL: framework,
+                    }
+                },
+                "spec": {
+                    "serviceAccountName": name,
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [
+                        {
+                            "name": "mcp",
+                            "image": image,
+                            "imagePullPolicy": "Always",
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "capabilities": {"drop": ["ALL"]},
+                                "runAsUser": 1000,
+                            },
+                            "env": all_env_vars,
+                            "ports": [
+                                {
+                                    "containerPort": target_port,
+                                    "name": "http",
+                                    "protocol": "TCP",
+                                }
+                            ],
+                            "resources": {
+                                "limits": DEFAULT_RESOURCE_LIMITS,
+                                "requests": DEFAULT_RESOURCE_REQUESTS,
+                            },
+                            "volumeMounts": [
+                                {"name": "data", "mountPath": "/data"},
+                                {"name": "cache", "mountPath": "/app/.cache"},
+                                {"name": "tmp", "mountPath": "/tmp"},
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {"name": "cache", "emptyDir": {}},
+                        {"name": "tmp", "emptyDir": {}},
+                    ],
+                },
+            },
+            "volumeClaimTemplates": [
+                {
+                    "metadata": {"name": "data"},
+                    "spec": {
+                        "accessModes": ["ReadWriteOnce"],
+                        "resources": {"requests": {"storage": storage_size}},
+                    },
+                }
+            ],
+        },
+    }
+
+    # Remove None annotations
+    if manifest["metadata"]["annotations"] is None:
+        del manifest["metadata"]["annotations"]
+
+    # Add image pull secrets if specified
+    if image_pull_secret:
+        manifest["spec"]["template"]["spec"]["imagePullSecrets"] = [{"name": image_pull_secret}]
+
+    return manifest
+
+
+def _build_tool_service_manifest(
+    name: str,
+    namespace: str,
+    service_ports: Optional[List[Dict[str, Any]]] = None,
+) -> dict:
+    """
+    Build a Kubernetes Service manifest for an MCP tool.
+
+    Service naming convention: {name}-mcp
+    This creates a ClusterIP service that routes to the tool pods.
+
+    Args:
+        name: Tool name
+        namespace: Kubernetes namespace
+        service_ports: Service port configuration
+
+    Returns:
+        Service manifest dict
+    """
+    # Determine ports
+    if service_ports and len(service_ports) > 0:
+        port = service_ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
+        target_port = service_ports[0].get("targetPort", DEFAULT_IN_CLUSTER_PORT)
+    else:
+        port = DEFAULT_IN_CLUSTER_PORT
+        target_port = DEFAULT_IN_CLUSTER_PORT
+
+    # Service name follows the convention: {name}-mcp
+    service_name = f"{name}{TOOL_SERVICE_SUFFIX}"
+
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": service_name,
+            "namespace": namespace,
+            "labels": {
+                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
+                APP_KUBERNETES_IO_NAME: name,
+                APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+            },
+        },
+        "spec": {
+            "type": "ClusterIP",
+            "selector": {
+                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_TOOL,
+                APP_KUBERNETES_IO_NAME: name,
+            },
+            "ports": [
+                {
+                    "name": "http",
+                    "port": port,
+                    "targetPort": target_port,
+                    "protocol": "TCP",
+                }
+            ],
+        },
+    }
+
+    return manifest
+
+
+def _get_tool_service_name(name: str) -> str:
+    """Get the service name for a tool.
+
+    Args:
+        name: Tool name
+
+    Returns:
+        Service name following convention: {name}-mcp
+    """
+    return f"{name}{TOOL_SERVICE_SUFFIX}"
 
 
 @router.post("", response_model=CreateToolResponse)
