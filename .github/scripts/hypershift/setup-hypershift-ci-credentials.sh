@@ -60,7 +60,7 @@
 #     ${MANAGED_BY_TAG} namespace              - Namespace for CI resources
 #     ${MANAGED_BY_TAG} SA                     - Service account for HyperShift
 #   Local:
-#     .env.hypershift-ci                       - All credentials in sourceable format
+#     .env.${MANAGED_BY_TAG}                       - All credentials in sourceable format
 #
 # USAGE:
 #   ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
@@ -94,7 +94,7 @@ export AWS_PAGER=""
 
 # Handle --rotate: delete .env file early so we start fresh
 if [ "$ROTATE_KEYS" = true ]; then
-    ENV_FILE=".env.hypershift-ci"
+    ENV_FILE=".env.${MANAGED_BY_TAG}"
     if [ -f "$ENV_FILE" ]; then
         echo "Rotating credentials: removing existing $ENV_FILE"
         rm -f "$ENV_FILE"
@@ -140,7 +140,11 @@ base64_decode() {
 
 # Primary identifier - used for naming, IAM scoping, and tagging
 # Format: lowercase alphanumeric with hyphens, 5-30 chars
-MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
+#
+# For CI: Set via secrets (MANAGED_BY_TAG=kagenti-hypershift-ci)
+# For local: Defaults to kagenti-hypershift-custom (shared by all developers)
+#
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 
 # Validate (must be lowercase alphanumeric, can include hyphens, 5-30 chars)
 if ! [[ "$MANAGED_BY_TAG" =~ ^[a-z][a-z0-9-]{4,29}$ ]]; then
@@ -363,7 +367,7 @@ setup_access_keys() {
             EXISTING_KEYS=""
         else
             log_warn "  Access keys already exist: $EXISTING_KEYS"
-            log_warn "  Keeping existing keys (will preserve from .env.hypershift-ci)"
+            log_warn "  Keeping existing keys (will preserve from .env.${MANAGED_BY_TAG})"
             log_warn "  To rotate: $0 --rotate"
             return 1
         fi
@@ -713,7 +717,7 @@ else
     log_warn "Could not find a PUBLIC Route53 hosted zone"
     log_info "Available public zones:"
     aws route53 list-hosted-zones --query "HostedZones[?Config.PrivateZone==\`false\`].Name" --output text 2>/dev/null | tr '\t' '\n' | sed 's/\.$//; s/^/  /' || true
-    log_warn "Set BASE_DOMAIN manually in .env.hypershift-ci after setup"
+    log_warn "Set BASE_DOMAIN manually in .env.${MANAGED_BY_TAG} after setup"
     export BASE_DOMAIN=""
 fi
 
@@ -868,9 +872,9 @@ echo ""
 # 5. SAVE TO .env FILE
 # ============================================================================
 
-log_info "Saving credentials to .env.hypershift-ci..."
+log_info "Saving credentials to .env.${MANAGED_BY_TAG}..."
 
-ENV_FILE=".env.hypershift-ci"
+ENV_FILE=".env.${MANAGED_BY_TAG}"
 
 # Preserve existing CI credentials if we didn't create new ones
 # (extract values without sourcing to avoid overriding admin AWS creds)
@@ -985,18 +989,24 @@ ENVFILE
 
 chmod 600 "$ENV_FILE"
 
-# Add to .gitignore if not already there
+# Add to .gitignore if not already there (use pattern to cover all variations)
 if [ -f .gitignore ]; then
-    if ! grep -q "^\.env\.hypershift-ci$" .gitignore 2>/dev/null; then
-        echo ".env.hypershift-ci" >> .gitignore
-        log_success "Added .env.hypershift-ci to .gitignore"
+    if ! grep -q "^\.env\.kagenti-\*$" .gitignore 2>/dev/null; then
+        # Add pattern for all kagenti .env files
+        echo ".env.kagenti-*" >> .gitignore
+        # Also keep legacy pattern for backwards compatibility
+        grep -q "^\.env\.hypershift-ci$" .gitignore 2>/dev/null || echo ".env.hypershift-ci" >> .gitignore
+        log_success "Added .env.kagenti-* pattern to .gitignore"
     fi
 else
-    echo ".env.hypershift-ci" > .gitignore
-    log_success "Created .gitignore with .env.hypershift-ci"
+    cat > .gitignore << 'GITIGNORE'
+.env.kagenti-*
+.env.hypershift-ci
+GITIGNORE
+    log_success "Created .gitignore with .env patterns"
 fi
 
-log_success "Saved to .env.hypershift-ci"
+log_success "Saved to .env.${MANAGED_BY_TAG}"
 
 echo ""
 
@@ -1073,7 +1083,7 @@ echo "For GitHub Actions - add secrets (copy & paste after sourcing):"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 cat << 'SECRETS'
-source .env.hypershift-ci && \
+source .env.${MANAGED_BY_TAG} && \
 gh secret set HYPERSHIFT_MGMT_KUBECONFIG -a actions --body "$HYPERSHIFT_MGMT_KUBECONFIG_BASE64" && \
 gh secret set AWS_ACCESS_KEY_ID -a actions --body "$AWS_ACCESS_KEY_ID" && \
 gh secret set AWS_SECRET_ACCESS_KEY -a actions --body "$AWS_SECRET_ACCESS_KEY" && \

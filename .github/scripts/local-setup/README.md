@@ -101,15 +101,27 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 
 ```bash
 # Requires: AWS admin + OCP cluster-admin on management cluster
-./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh    # Creates IAM + .env.hypershift-ci
+./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh    # Creates IAM + .env.kagenti-hypershift-custom
 ./.github/scripts/hypershift/local-setup.sh                        # Installs hcp CLI + ansible
 ```
+
+#### Naming Conventions
+
+| Component | Local Default | CI Default |
+|-----------|--------------|------------|
+| MANAGED_BY_TAG | `kagenti-hypershift-custom` | `kagenti-hypershift-ci` |
+| .env file | `.env.kagenti-hypershift-custom` | (from secrets) |
+| Cluster suffix | `$USER` (e.g., `ladas`) | varies |
+| Full cluster name | `kagenti-hypershift-custom-ladas` | `kagenti-hypershift-ci-<suffix>` |
+
+Customize the cluster suffix by passing it as an argument (e.g., `pr529` → `kagenti-hypershift-custom-pr529`).
 
 #### Main Testing Flow
 
 ```bash
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ STEP 1: Run tests, keep cluster for debugging (~25 min)                     │
+# │ STEP 1: Run tests, keep cluster for debugging                               │
+# │         Default cluster: kagenti-hypershift-custom-$USER                     │
 # └─────────────────────────────────────────────────────────────────────────────┘
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 
@@ -122,12 +134,30 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 #### Common Examples
 
 ```bash
-# Default cluster (kagenti-hypershift-ci-local)
+# Default cluster (uses your username as suffix)
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
+# Creates: kagenti-hypershift-custom-ladas
 
-# Custom cluster suffix (kagenti-hypershift-ci-pr123)
-./.github/scripts/local-setup/hypershift-full-test.sh pr123 --skip-cluster-destroy
-./.github/scripts/local-setup/hypershift-full-test.sh pr123 --include-cluster-destroy
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ Custom cluster suffix - useful for testing specific PRs or features         │
+# └─────────────────────────────────────────────────────────────────────────────┘
+./.github/scripts/local-setup/hypershift-full-test.sh pr529 --skip-cluster-destroy
+# Creates: kagenti-hypershift-custom-pr529
+
+./.github/scripts/local-setup/hypershift-full-test.sh feature1 --skip-cluster-destroy
+# Creates: kagenti-hypershift-custom-feature1
+
+# Destroy specific cluster
+./.github/scripts/hypershift/destroy-cluster.sh pr529
+
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ Direct script usage (more control)                                          │
+# └─────────────────────────────────────────────────────────────────────────────┘
+# Create with custom suffix
+./.github/scripts/hypershift/create-cluster.sh mytest
+
+# Create with random suffix (CLUSTER_SUFFIX="" triggers random 6-char suffix)
+CLUSTER_SUFFIX="" ./.github/scripts/hypershift/create-cluster.sh
 
 # Full CI run: create → deploy → test → destroy (~35 min)
 ./.github/scripts/local-setup/hypershift-full-test.sh

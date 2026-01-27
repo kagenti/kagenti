@@ -8,9 +8,9 @@
 #   ./.github/scripts/hypershift/destroy-cluster.sh <cluster-suffix-or-full-name>
 #
 # EXAMPLES:
-#   ./.github/scripts/hypershift/destroy-cluster.sh local      # destroys kagenti-hypershift-ci-local
-#   ./.github/scripts/hypershift/destroy-cluster.sh pr123      # destroys kagenti-hypershift-ci-pr123
-#   ./.github/scripts/hypershift/destroy-cluster.sh kagenti-hypershift-ci-local  # full name also works
+#   ./.github/scripts/hypershift/destroy-cluster.sh ladas        # destroys kagenti-hypershift-custom-ladas
+#   ./.github/scripts/hypershift/destroy-cluster.sh pr529        # destroys kagenti-hypershift-custom-pr529
+#   ./.github/scripts/hypershift/destroy-cluster.sh kagenti-hypershift-custom-ladas  # full name
 #
 
 set -euo pipefail
@@ -45,17 +45,32 @@ else
     HYPERSHIFT_AUTOMATION_DIR="$PARENT_DIR/hypershift-automation"
 fi
 
+# Sanitized username for default cluster suffix
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
+
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+find_env_file() {
+    if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
+        echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
+    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+        echo "$REPO_ROOT/.env.hypershift-ci"
+    else
+        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+    fi
+}
+
 # Require cluster name/suffix
 if [ $# -lt 1 ]; then
     # Load credentials to get MANAGED_BY_TAG for dynamic help message
-    if [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+    ENV_FILE=$(find_env_file)
+    if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
         # shellcheck source=/dev/null
-        source "$REPO_ROOT/.env.hypershift-ci"
+        source "$ENV_FILE"
     fi
-    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-ci}"
     echo "Usage: $0 <cluster-suffix-or-full-name>" >&2
-    echo "Example: $0 local                    # destroys ${MANAGED_BY_TAG}-local" >&2
-    echo "Example: $0 ${MANAGED_BY_TAG}-local  # full name also works" >&2
+    echo "Example: $0 ${SANITIZED_USER}           # destroys ${MANAGED_BY_TAG}-${SANITIZED_USER}" >&2
+    echo "Example: $0 pr529               # destroys ${MANAGED_BY_TAG}-pr529" >&2
     exit 1
 fi
 
@@ -87,14 +102,15 @@ if [ "$CI_MODE" = "true" ]; then
     #           HCP_ROLE_NAME, KUBECONFIG (already set in GITHUB_ENV)
     log_success "Using CI credentials from environment"
 else
-    # Local mode: load from .env file
-    if [ ! -f "$REPO_ROOT/.env.hypershift-ci" ]; then
-        echo "Error: .env.hypershift-ci not found." >&2
+    # Local mode: find and load .env file
+    ENV_FILE=$(find_env_file)
+    if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+        echo "Error: No .env file found. Run setup-hypershift-ci-credentials.sh first." >&2
         exit 1
     fi
     # shellcheck source=/dev/null
-    source "$REPO_ROOT/.env.hypershift-ci"
-    log_success "Loaded credentials from .env.hypershift-ci"
+    source "$ENV_FILE"
+    log_success "Loaded credentials from $(basename "$ENV_FILE")"
 fi
 
 # Construct full cluster name if only suffix was provided

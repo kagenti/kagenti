@@ -376,10 +376,10 @@ if [ -n "$BASE_DOMAIN" ]; then
         log_info "  HyperShift requires a public hosted zone for DNS records"
         log_info "  Available public zones:"
         aws route53 list-hosted-zones --query "HostedZones[?Config.PrivateZone==\`false\`].Name" --output text 2>/dev/null | tr '\t' '\n' | sed 's/\.$//; s/^/    /' || true
-        log_info "  Set BASE_DOMAIN in .env.hypershift-ci to match an available zone"
+        log_info "  Set BASE_DOMAIN in .env.kagenti-$USER (or .env.hypershift-ci) to match an available zone"
     elif [ "$ZONE_FOUND" != "$BASE_DOMAIN" ]; then
         log_warn "Auto-detected BASE_DOMAIN=$BASE_DOMAIN but public zone is: $ZONE_FOUND"
-        log_info "  You may need to update BASE_DOMAIN in .env.hypershift-ci to: $ZONE_FOUND"
+        log_info "  You may need to update BASE_DOMAIN in .env.kagenti-$USER (or .env.hypershift-ci) to: $ZONE_FOUND"
     fi
 else
     log_warn "Cannot check Route53 - no base domain detected"

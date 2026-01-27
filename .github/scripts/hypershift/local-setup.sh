@@ -44,14 +44,31 @@ echo ""
 # 1. Load credentials
 # ============================================================================
 
-if [ ! -f "$REPO_ROOT/.env.hypershift-ci" ]; then
-    echo "Error: .env.hypershift-ci not found. Run setup-hypershift-ci-credentials.sh first." >&2
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+find_env_file() {
+    if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
+        echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
+    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+        echo "$REPO_ROOT/.env.hypershift-ci"
+    else
+        # Find any .env.kagenti-* file
+        local found
+        found=$(ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1)
+        echo "${found:-}"
+    fi
+}
+
+ENV_FILE=$(find_env_file)
+if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+    log_error "No .env file found. Run setup-hypershift-ci-credentials.sh first."
+    echo "  Expected: .env.${MANAGED_BY_TAG} or .env.hypershift-ci" >&2
     exit 1
 fi
 
 # shellcheck source=/dev/null
-source "$REPO_ROOT/.env.hypershift-ci"
-log_success "Loaded credentials from .env.hypershift-ci"
+source "$ENV_FILE"
+log_success "Loaded credentials from $(basename "$ENV_FILE")"
 
 # ============================================================================
 # 2. Install hcp CLI if missing

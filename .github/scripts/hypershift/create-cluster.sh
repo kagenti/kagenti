@@ -11,16 +11,25 @@
 #
 # CLUSTER NAMING:
 #   - Full name: ${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}
-#   - MANAGED_BY_TAG comes from .env.hypershift-ci (default: kagenti-hypershift-ci)
-#   - Default suffix: "local"
+#   - Default suffix: $USER (your username)
 #   - Custom suffix: passed as argument
 #   - Random suffix: CLUSTER_SUFFIX="" generates random 6-char suffix
 #
+# MANAGED_BY_TAG (controls cluster prefix and IAM scoping):
+#   - Local: defaults to kagenti-hypershift-custom (shared by all developers)
+#   - CI: set via secrets (kagenti-hypershift-ci)
+#
 # EXAMPLES:
-#   ./.github/scripts/hypershift/create-cluster.sh              # ${MANAGED_BY_TAG}-local
-#   ./.github/scripts/hypershift/create-cluster.sh pr123        # ${MANAGED_BY_TAG}-pr123
-#   CLUSTER_SUFFIX=test ./.github/scripts/hypershift/create-cluster.sh  # ${MANAGED_BY_TAG}-test
-#   CLUSTER_SUFFIX="" ./.github/scripts/hypershift/create-cluster.sh    # ${MANAGED_BY_TAG}-<random>
+#   # Using defaults (creates kagenti-hypershift-custom-ladas)
+#   ./.github/scripts/hypershift/create-cluster.sh
+#
+#   # Custom suffix (creates kagenti-hypershift-custom-pr529)
+#   ./.github/scripts/hypershift/create-cluster.sh pr529
+#
+#   # Random suffix (creates kagenti-hypershift-custom-<random>)
+#   CLUSTER_SUFFIX="" ./.github/scripts/hypershift/create-cluster.sh
+#
+#   # Custom instance type and replicas
 #   REPLICAS=3 INSTANCE_TYPE=m5.2xlarge ./.github/scripts/hypershift/create-cluster.sh
 #
 
@@ -61,15 +70,20 @@ REPLICAS="${REPLICAS:-2}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-m5.xlarge}"
 OCP_VERSION="${OCP_VERSION:-4.20.10}"
 
-# Cluster suffix - if not set, use positional arg, then default to "local"
+# Cluster suffix - if not set, use positional arg, then default to username
 # Set CLUSTER_SUFFIX="" to generate a random suffix
+#
+# Cluster name: ${MANAGED_BY_TAG}-${suffix}
+# Default suffix: sanitized username (e.g., "ladas")
+# Custom suffix: passed as argument (e.g., "pr529")
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
 if [ -n "${CLUSTER_SUFFIX+x}" ]; then
     # CLUSTER_SUFFIX is explicitly set (even if empty)
     :
 elif [ $# -ge 1 ]; then
     CLUSTER_SUFFIX="$1"
 else
-    CLUSTER_SUFFIX="local"
+    CLUSTER_SUFFIX="$SANITIZED_USER"
 fi
 
 # Generate random suffix if empty
@@ -105,14 +119,28 @@ if [ "$CI_MODE" = "true" ]; then
     #           BASE_DOMAIN, HCP_ROLE_NAME, KUBECONFIG (already set in GITHUB_ENV)
     log_success "Using CI credentials from environment"
 else
-    # Local mode: load from .env file
-    if [ ! -f "$REPO_ROOT/.env.hypershift-ci" ]; then
-        echo "Error: .env.hypershift-ci not found. Run setup-hypershift-ci-credentials.sh first." >&2
+    # Local mode: find and load .env file
+    # Priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    find_env_file() {
+        if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
+            echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
+        elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+            echo "$REPO_ROOT/.env.hypershift-ci"
+        else
+            ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+        fi
+    }
+
+    ENV_FILE=$(find_env_file)
+    if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+        log_error "No .env file found. Run setup-hypershift-ci-credentials.sh first."
+        echo "  Expected: .env.${MANAGED_BY_TAG} or .env.hypershift-ci" >&2
         exit 1
     fi
     # shellcheck source=/dev/null
-    source "$REPO_ROOT/.env.hypershift-ci"
-    log_success "Loaded credentials from .env.hypershift-ci"
+    source "$ENV_FILE"
+    log_success "Loaded credentials from $(basename "$ENV_FILE")"
 fi
 
 # Construct cluster name: ${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}

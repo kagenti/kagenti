@@ -37,20 +37,37 @@ for arg in "$@"; do
     esac
 done
 
-# Load credentials
-if [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+# Sanitized username for default cluster suffix
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
+
+# Find and load .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+find_env_file() {
+    if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
+        echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
+    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+        echo "$REPO_ROOT/.env.hypershift-ci"
+    else
+        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+    fi
+}
+
+ENV_FILE=$(find_env_file)
+if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
     # shellcheck source=/dev/null
-    source "$REPO_ROOT/.env.hypershift-ci"
+    source "$ENV_FILE"
 fi
+
+# MANAGED_BY_TAG may have been overridden by sourcing the .env file above
 
 # Default cluster name
 if [ -z "$CLUSTER_NAME" ]; then
-    CLUSTER_NAME="${MANAGED_BY_TAG:-kagenti-hypershift-ci}-local"
+    CLUSTER_NAME="${MANAGED_BY_TAG}-${SANITIZED_USER}"
 fi
 
 # Handle suffix-only input (add prefix if needed)
-if [[ "$CLUSTER_NAME" != "${MANAGED_BY_TAG:-kagenti-hypershift-ci}-"* ]]; then
-    CLUSTER_NAME="${MANAGED_BY_TAG:-kagenti-hypershift-ci}-${CLUSTER_NAME}"
+if [[ "$CLUSTER_NAME" != "${MANAGED_BY_TAG}-"* ]]; then
+    CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_NAME}"
 fi
 
 # Track if any resources are found
