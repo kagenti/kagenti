@@ -234,6 +234,61 @@ fi
 echo ""
 
 # ============================================================================
+# 6b. HYPERSHIFT OPERATOR OIDC CONFIGURATION
+# ============================================================================
+
+log_info "Checking HyperShift operator OIDC configuration..."
+
+# Get operator args
+OPERATOR_ARGS=$(oc get deployment operator -n hypershift -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || echo "")
+
+if [ -z "$OPERATOR_ARGS" ]; then
+    log_warn "Cannot read HyperShift operator deployment (may need cluster-admin)"
+else
+    # Check for OIDC configuration
+    if echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
+        # Extract bucket name
+        OIDC_BUCKET=$(echo "$OPERATOR_ARGS" | grep -o 'oidc-storage-provider-s3-bucket-name=[^"]*' | cut -d= -f2 | tr -d '",]' || echo "")
+        log_success "HyperShift operator has OIDC S3 configured (bucket: $OIDC_BUCKET)"
+    else
+        log_error "HyperShift operator MISSING OIDC S3 configuration!"
+        echo ""
+        echo "  The operator was likely upgraded and lost OIDC configuration."
+        echo "  AWS hosted clusters CANNOT be created without OIDC."
+        echo ""
+        echo "  A cluster-admin must run the following to fix this:"
+        echo ""
+        echo "  ────────────────────────────────────────────────────────────"
+        cat << 'OIDC_FIX'
+  # First, verify the OIDC secret exists:
+  oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift
+
+  # Get the bucket name and region from the secret:
+  BUCKET=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+      -o jsonpath='{.data.bucket}' | base64 -d)
+  REGION=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+      -o jsonpath='{.data.region}' | base64 -d)
+  echo "Bucket: $BUCKET, Region: $REGION"
+
+  # Patch the operator to add OIDC configuration:
+  oc patch deployment operator -n hypershift --type='json' -p="[
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$BUCKET\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$REGION\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"}
+  ]"
+
+  # Verify the operator restarts and has the new args:
+  oc rollout status deployment/operator -n hypershift
+  oc get deployment operator -n hypershift -o jsonpath='{.spec.template.spec.containers[0].args}' | tr ',' '\n' | grep oidc
+OIDC_FIX
+        echo "  ────────────────────────────────────────────────────────────"
+        echo ""
+    fi
+fi
+
+echo ""
+
+# ============================================================================
 # 7. PULL SECRET
 # ============================================================================
 
