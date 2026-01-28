@@ -126,13 +126,14 @@ cleanup_orphaned_aws_resources() {
 
                 # ============================================================
                 # CLEANUP ORDER (respecting AWS resource dependencies):
+                # Based on hypershift-automation proven approach
                 # 1. NAT Gateways (use ENIs, must delete first and wait)
                 # 2. Internet Gateways (attached to VPC)
                 # 3. VPC Endpoints (use ENIs and subnets)
                 # 4. ENIs (attached to instances/services, block SG/subnet deletion)
                 # 5. Security Groups (referenced by ENIs)
-                # 6. Route Tables (associated with subnets)
-                # 7. Subnets (contain ENIs, must be last before VPC)
+                # 6. Subnets (delete FIRST - removes route table associations automatically)
+                # 7. Route Tables (after subnets - no associations to worry about)
                 # 8. VPC
                 # ============================================================
 
@@ -227,6 +228,9 @@ cleanup_orphaned_aws_resources() {
                         aws ec2 delete-network-interface --region "$AWS_REGION" \
                             --network-interface-id "$eni" 2>&1 || true
                     done
+                    # Wait for ENI deletions to propagate before proceeding
+                    echo "    Waiting 5s for ENI deletions to propagate..."
+                    sleep 5
                 else
                     echo "    None found"
                 fi
@@ -257,36 +261,8 @@ cleanup_orphaned_aws_resources() {
                     echo "    None found"
                 fi
 
-                # 6. Delete route tables (non-main, disassociate first)
-                echo "  - Route Tables:"
-                RTS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
-                    --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'RouteTables[?!Associations[?Main==`true`]].RouteTableId' \
-                    --output text 2>/dev/null || echo "")
-                if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
-                    echo "    Found non-main: $RTS"
-                    for rt in $RTS; do
-                        # First, disassociate from all subnets
-                        ASSOCS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
-                            --route-table-ids "$rt" \
-                            --query 'RouteTables[0].Associations[?!Main].RouteTableAssociationId' \
-                            --output text 2>/dev/null || echo "")
-                        if [ -n "$ASSOCS" ] && [ "$ASSOCS" != "None" ]; then
-                            for assoc in $ASSOCS; do
-                                echo "    Disassociating $assoc from $rt"
-                                aws ec2 disassociate-route-table --region "$AWS_REGION" \
-                                    --association-id "$assoc" 2>&1 || true
-                            done
-                        fi
-                        echo "    Deleting route table: $rt"
-                        aws ec2 delete-route-table --region "$AWS_REGION" \
-                            --route-table-id "$rt" 2>&1 || true
-                    done
-                else
-                    echo "    None found (or only main)"
-                fi
-
-                # 7. Delete subnets (LAST before VPC - they contain ENIs)
+                # 6. Delete subnets FIRST (this removes route table associations automatically)
+                # Following hypershift-automation proven approach: subnets before route tables
                 echo "  - Subnets:"
                 SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
@@ -298,8 +274,43 @@ cleanup_orphaned_aws_resources() {
                         echo "    Deleting subnet: $subnet"
                         aws ec2 delete-subnet --region "$AWS_REGION" --subnet-id "$subnet" 2>&1 || true
                     done
+                    # Brief wait for subnet deletion to propagate
+                    echo "    Waiting 5s for subnet deletion to propagate..."
+                    sleep 5
                 else
                     echo "    None found"
+                fi
+
+                # 7. Delete route tables (after subnets - associations already removed)
+                # Note: Main route table cannot be deleted (auto-deleted with VPC)
+                # Query catches both orphaned route tables (no associations) and non-main ones
+                echo "  - Route Tables (non-main):"
+                RTS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'RouteTables[?!Associations[?Main==`true`]].RouteTableId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
+                    echo "    Found non-main: $RTS"
+                    for rt in $RTS; do
+                        echo "    Deleting route table: $rt"
+                        # Show any remaining associations for debugging
+                        REMAINING_ASSOCS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
+                            --route-table-ids "$rt" \
+                            --query 'RouteTables[0].Associations[*].RouteTableAssociationId' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -n "$REMAINING_ASSOCS" ] && [ "$REMAINING_ASSOCS" != "None" ]; then
+                            echo "      Warning: Still has associations: $REMAINING_ASSOCS"
+                            # Try to disassociate any non-main associations
+                            for assoc in $REMAINING_ASSOCS; do
+                                aws ec2 disassociate-route-table --region "$AWS_REGION" \
+                                    --association-id "$assoc" 2>/dev/null || true
+                            done
+                        fi
+                        aws ec2 delete-route-table --region "$AWS_REGION" \
+                            --route-table-id "$rt" 2>&1 || true
+                    done
+                else
+                    echo "    None found (or only main route table)"
                 fi
 
                 echo "  - Attempting manual VPC delete:"
