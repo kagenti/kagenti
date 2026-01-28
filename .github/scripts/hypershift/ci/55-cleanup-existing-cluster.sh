@@ -67,8 +67,10 @@ cleanup_orphaned_aws_resources() {
     cd "$REPO_ROOT"
 
     # Verify VPCs are deleted (with retries - VPC deletion can take time)
+    # NAT Gateways can take 2-3 minutes to delete, so allow up to 5 minutes total
     echo "Verifying VPC cleanup..."
-    for attempt in {1..6}; do
+    MAX_VPC_ATTEMPTS=10
+    for attempt in $(seq 1 $MAX_VPC_ATTEMPTS); do
         REMAINING_VPCS=$(aws ec2 describe-vpcs \
             --region "$AWS_REGION" \
             --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
@@ -80,11 +82,11 @@ cleanup_orphaned_aws_resources() {
             break
         fi
 
-        if [ "$attempt" -eq 6 ]; then
-            echo "::error::Failed to delete orphaned VPCs after 60s: $REMAINING_VPCS"
-            # Show what's blocking VPC deletion and try to clean up
-            echo "Checking for resources blocking VPC deletion:"
-            for vpc in $REMAINING_VPCS; do
+        echo "  Attempt $attempt/$MAX_VPC_ATTEMPTS - VPCs still exist: $REMAINING_VPCS"
+
+        # On each attempt (not just the last), try to clean up blocking resources
+        echo "  Cleaning up resources blocking VPC deletion..."
+        for vpc in $REMAINING_VPCS; do
                 echo "  VPC: $vpc"
                 echo "  - Tags:"
                 aws ec2 describe-vpcs --region "$AWS_REGION" \
@@ -303,12 +305,24 @@ cleanup_orphaned_aws_resources() {
                 echo "  - Attempting manual VPC delete:"
                 aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1 || true
             done
-            echo "Cannot proceed with cluster creation while old VPC exists."
-            exit 1
+
+        # Check if this was the last attempt
+        if [ "$attempt" -eq "$MAX_VPC_ATTEMPTS" ]; then
+            # Final check after cleanup
+            FINAL_CHECK=$(aws ec2 describe-vpcs \
+                --region "$AWS_REGION" \
+                --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
+                --query 'Vpcs[*].VpcId' \
+                --output text 2>/dev/null || echo "")
+            if [ -n "$FINAL_CHECK" ] && [ "$FINAL_CHECK" != "None" ]; then
+                echo "::error::Failed to delete orphaned VPCs after $MAX_VPC_ATTEMPTS attempts: $FINAL_CHECK"
+                echo "Cannot proceed with cluster creation while old VPC exists."
+                exit 1
+            fi
         fi
 
-        echo "  Attempt $attempt/6 - VPCs still exist: $REMAINING_VPCS (waiting 10s...)"
-        sleep 10
+        echo "  Waiting 30s before next check..."
+        sleep 30
     done
 
     echo "AWS orphaned resource cleanup complete"
