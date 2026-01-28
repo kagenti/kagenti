@@ -356,6 +356,11 @@ for i in {1..60}; do
         echo "Machine status:"
         KUBECONFIG="$MGMT_KUBECONFIG" oc get machines -n "$CONTROL_PLANE_NS" 2>/dev/null || true
         echo ""
+        echo "Machine failure reasons (if any):"
+        # Get status message for each machine in Failed phase
+        KUBECONFIG="$MGMT_KUBECONFIG" oc get machines -n "$CONTROL_PLANE_NS" -o json 2>/dev/null | \
+            jq -r '.items[] | select(.status.phase == "Failed") | "  \(.metadata.name): \(.status.errorMessage // .status.conditions[-1].message // "unknown")"' 2>/dev/null || true
+        echo ""
         echo "EC2 instances:"
         aws ec2 describe-instances --region "$AWS_REGION" \
             --filters "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" \

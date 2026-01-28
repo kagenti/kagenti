@@ -46,27 +46,5 @@ jobs:
               owner,
               repo,
               issue_number: prNumber,
-              body: `## 🔄 New Commits Detected
-
-The \`safe-to-test\` label has been automatically removed because new commits were pushed.
-
-**New HEAD**: \`${newSha}\`
-
-**For maintainers**: Please review the new changes and re-add the \`safe-to-test\` label to run E2E tests.
-
-<details>
-<summary>Security checklist</summary>
-
-Before re-adding the label, verify the PR does NOT contain:
-- [ ] Changes to \`.github/workflows/\` that bypass security
-- [ ] Changes to \`.github/scripts/\` that could exfiltrate secrets
-- [ ] \`curl\`, \`wget\`, or \`nc\` commands to external URLs in scripts
-- [ ] Base64 encoding of environment variables
-- [ ] Printing secrets to logs (\`echo $SECRET\`)
-- [ ] Suspicious package installations
-
-</details>
-
----
-🤖 *This is an automated security measure to prevent TOCTOU attacks*`
+              body: `## 🔄 New Commits Detected\n\nThe \`safe-to-test\` label has been automatically removed because new commits were pushed.\n\n**New HEAD**: \`${newSha}\`\n\n**For maintainers**: Please review the new changes and re-add the \`safe-to-test\` label to run E2E tests.\n\n<details>\n<summary>Security checklist</summary>\n\nBefore re-adding the label, verify the PR does NOT contain:\n- [ ] Changes to \`.github/workflows/\` that bypass security\n- [ ] Changes to \`.github/scripts/\` that could exfiltrate secrets\n- [ ] \`curl\`, \`wget\`, or \`nc\` commands to external URLs in scripts\n- [ ] Base64 encoding of environment variables\n- [ ] Printing secrets to logs (\`echo $SECRET\`)\n- [ ] Suspicious package installations\n\n</details>\n\n---\n🤖 *This is an automated security measure to prevent TOCTOU attacks*`
             });
