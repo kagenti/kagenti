@@ -17,15 +17,49 @@ if [ -z "$HCP_DOWNLOAD_URL" ]; then
     sudo chmod +x /usr/local/bin/hcp
     rm -rf /tmp/hypershift
 else
-    echo "Downloading from: $HCP_DOWNLOAD_URL"
+    # Mask the cluster domain in logs for security
+    MASKED_URL=$(echo "$HCP_DOWNLOAD_URL" | sed 's|https://[^/]*|https://<management-cluster>|')
+    echo "Downloading from: $MASKED_URL"
+
     # Get bearer token for authenticated download
     # Use -k to skip SSL verification (cluster uses self-signed certs)
     TOKEN=$(oc whoami -t 2>/dev/null || echo "")
-    if [ -n "$TOKEN" ]; then
-        curl -fsSLk -H "Authorization: Bearer $TOKEN" -o /tmp/hcp.tar.gz "$HCP_DOWNLOAD_URL"
-    else
-        curl -fsSLk -o /tmp/hcp.tar.gz "$HCP_DOWNLOAD_URL"
-    fi
+
+    # Download with retry logic (503 errors are transient - service may not be ready)
+    MAX_RETRIES=5
+    RETRY_DELAY=10
+    for attempt in $(seq 1 $MAX_RETRIES); do
+        echo "  Download attempt $attempt/$MAX_RETRIES..."
+        if [ -n "$TOKEN" ]; then
+            if curl -fsSLk -H "Authorization: Bearer $TOKEN" -o /tmp/hcp.tar.gz "$HCP_DOWNLOAD_URL" 2>/dev/null; then
+                echo "  Download successful"
+                break
+            fi
+        else
+            if curl -fsSLk -o /tmp/hcp.tar.gz "$HCP_DOWNLOAD_URL" 2>/dev/null; then
+                echo "  Download successful"
+                break
+            fi
+        fi
+
+        if [ "$attempt" -eq "$MAX_RETRIES" ]; then
+            echo "Error: Failed to download hcp CLI after $MAX_RETRIES attempts"
+            echo "Falling back to building from source..."
+            git clone --depth 1 https://github.com/openshift/hypershift.git /tmp/hypershift
+            cd /tmp/hypershift
+            make product-cli
+            sudo mv bin/hcp /usr/local/bin/hcp
+            sudo chmod +x /usr/local/bin/hcp
+            rm -rf /tmp/hypershift
+            echo "hcp CLI installed (built from source):"
+            hcp version
+            exit 0
+        fi
+
+        echo "  Download failed, retrying in ${RETRY_DELAY}s..."
+        sleep $RETRY_DELAY
+        RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+    done
     # Extract to temp dir and find hcp binary (archive structure varies)
     mkdir -p /tmp/hcp-extract
     tar -xzf /tmp/hcp.tar.gz -C /tmp/hcp-extract
