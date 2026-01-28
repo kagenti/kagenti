@@ -147,6 +147,7 @@ cleanup_orphaned_aws_resources() {
                 fi
 
                 # Check and delete route tables (non-main)
+                # Must disassociate from subnets first before deletion
                 echo "  - Route Tables:"
                 RTS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
@@ -155,6 +156,18 @@ cleanup_orphaned_aws_resources() {
                 if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
                     echo "    Found non-main: $RTS"
                     for rt in $RTS; do
+                        # First, disassociate from all subnets (required before deletion)
+                        ASSOCS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
+                            --route-table-ids "$rt" \
+                            --query 'RouteTables[0].Associations[?!Main].RouteTableAssociationId' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -n "$ASSOCS" ] && [ "$ASSOCS" != "None" ]; then
+                            for assoc in $ASSOCS; do
+                                echo "    Disassociating $assoc from $rt"
+                                aws ec2 disassociate-route-table --region "$AWS_REGION" \
+                                    --association-id "$assoc" 2>&1 || true
+                            done
+                        fi
                         echo "    Deleting route table: $rt"
                         aws ec2 delete-route-table --region "$AWS_REGION" \
                             --route-table-id "$rt" 2>&1 || true
@@ -163,23 +176,67 @@ cleanup_orphaned_aws_resources() {
                     echo "    None found (or only main)"
                 fi
 
+                # Delete ENIs (detach first if attached)
                 echo "  - ENIs:"
-                aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+                ENIS=$(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description,Status]' \
-                    --output table 2>/dev/null || true
+                    --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$ENIS" ] && [ "$ENIS" != "None" ]; then
+                    echo "    Found: $ENIS"
+                    for eni in $ENIS; do
+                        # Check if attached and detach first
+                        ATTACHMENT=$(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+                            --network-interface-ids "$eni" \
+                            --query 'NetworkInterfaces[0].Attachment.AttachmentId' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -n "$ATTACHMENT" ] && [ "$ATTACHMENT" != "None" ]; then
+                            echo "    Detaching ENI: $eni (attachment: $ATTACHMENT)"
+                            aws ec2 detach-network-interface --region "$AWS_REGION" \
+                                --attachment-id "$ATTACHMENT" --force 2>&1 || true
+                            sleep 2
+                        fi
+                        echo "    Deleting ENI: $eni"
+                        aws ec2 delete-network-interface --region "$AWS_REGION" \
+                            --network-interface-id "$eni" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
 
+                # Delete security groups (non-default)
                 echo "  - Security Groups (non-default):"
-                aws ec2 describe-security-groups --region "$AWS_REGION" \
+                SGS=$(aws ec2 describe-security-groups --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'SecurityGroups[?GroupName!=`default`].[GroupId,GroupName]' \
-                    --output table 2>/dev/null || true
+                    --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$SGS" ] && [ "$SGS" != "None" ]; then
+                    echo "    Found: $SGS"
+                    for sg in $SGS; do
+                        echo "    Deleting security group: $sg"
+                        aws ec2 delete-security-group --region "$AWS_REGION" \
+                            --group-id "$sg" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
 
+                # Delete VPC endpoints
                 echo "  - VPC Endpoints:"
-                aws ec2 describe-vpc-endpoints --region "$AWS_REGION" \
+                ENDPOINTS=$(aws ec2 describe-vpc-endpoints --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'VpcEndpoints[*].[VpcEndpointId,State,ServiceName]' \
-                    --output table 2>/dev/null || true
+                    --query 'VpcEndpoints[*].VpcEndpointId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$ENDPOINTS" ] && [ "$ENDPOINTS" != "None" ]; then
+                    echo "    Found: $ENDPOINTS"
+                    for ep in $ENDPOINTS; do
+                        echo "    Deleting VPC endpoint: $ep"
+                        aws ec2 delete-vpc-endpoints --region "$AWS_REGION" \
+                            --vpc-endpoint-ids "$ep" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
 
                 echo "  - Attempting manual VPC delete:"
                 aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1 || true
