@@ -2,17 +2,28 @@
 # Show Services Script - Display all Kagenti services, URLs, and credentials
 #
 # Usage:
-#   ./.github/scripts/local-setup/show-services.sh               # Auto-detect environment
-#   MANAGED_BY_TAG=kagenti-hypershift-custom ./.github/scripts/local-setup/show-services.sh
+#   ./.github/scripts/local-setup/show-services.sh [cluster-suffix]
+#   source .env.kagenti-hypershift-custom && ./.github/scripts/local-setup/show-services.sh
+#   source .env.kagenti-hypershift-ci && ./.github/scripts/local-setup/show-services.sh pr529
+#
+# For HyperShift:
+#   - Source .env file first to set MANAGED_BY_TAG
+#   - Pass cluster suffix as argument (defaults to $USER)
+#   - Script will load the hosted cluster kubeconfig automatically
 #
 # Environment detection:
-#   - HyperShift: Uses MANAGED_BY_TAG and CLUSTER_SUFFIX, loads .env file, shows OpenShift routes
+#   - HyperShift: Uses MANAGED_BY_TAG and CLUSTER_SUFFIX, loads hosted cluster kubeconfig
 #   - Kind: Uses kubectl with localtest.me URLs
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+
+# Accept cluster suffix as argument
+if [ $# -ge 1 ]; then
+    CLUSTER_SUFFIX="$1"
+fi
 
 # Colors for output (use $'...' for proper escape interpretation)
 RED=$'\033[0;31m'
@@ -25,18 +36,34 @@ NC=$'\033[0m' # No Color
 
 # Detect environment
 detect_environment() {
-    # Check if we're on OpenShift (HyperShift or regular OCP)
-    if command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
-        # Check if MANAGED_BY_TAG is set (HyperShift)
-        if [ -n "${MANAGED_BY_TAG:-}" ]; then
-            echo "hypershift"
-        else
-            echo "openshift"
-        fi
+    # Check if MANAGED_BY_TAG is set (HyperShift mode - set kubeconfig first)
+    if [ -n "${MANAGED_BY_TAG:-}" ]; then
+        echo "hypershift"
+    # Check if we're on OpenShift (regular OCP)
+    elif command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
+        echo "openshift"
     elif command -v kubectl &>/dev/null && kubectl get namespace default &>/dev/null 2>&1; then
         echo "kind"
     else
         echo "unknown"
+    fi
+}
+
+# Set KUBECONFIG for HyperShift hosted cluster
+setup_hypershift_kubeconfig() {
+    local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+    local cluster_suffix="${CLUSTER_SUFFIX:-$USER}"
+    local cluster_name="${managed_by_tag}-${cluster_suffix}"
+    local kubeconfig_path="$HOME/clusters/hcp/${cluster_name}/auth/kubeconfig"
+
+    if [ -f "$kubeconfig_path" ]; then
+        export KUBECONFIG="$kubeconfig_path"
+        return 0
+    else
+        echo -e "${RED}Error: Kubeconfig not found at ${kubeconfig_path}${NC}" >&2
+        echo "  The cluster may not exist or was not created locally." >&2
+        echo "  Create it with: ./.github/scripts/local-setup/hypershift-full-test.sh ${cluster_suffix} --skip-cluster-destroy" >&2
+        return 1
     fi
 }
 
@@ -90,13 +117,14 @@ echo ""
 # Check environment and display info
 case "$ENV_TYPE" in
     hypershift)
-        ENV_FILE=$(load_env_file)
         CLUSTER_NAME=$(get_cluster_name)
+        # Set KUBECONFIG for the hosted cluster
+        if ! setup_hypershift_kubeconfig; then
+            exit 1
+        fi
         echo -e "${CYAN}Environment:${NC}  HyperShift"
         echo -e "${CYAN}Cluster:${NC}      $CLUSTER_NAME"
-        if [ -n "$ENV_FILE" ]; then
-            echo -e "${CYAN}Credentials:${NC}  $(basename "$ENV_FILE")"
-        fi
+        echo -e "${CYAN}Kubeconfig:${NC}   $KUBECONFIG"
         echo ""
         ;;
     openshift)
@@ -267,18 +295,18 @@ fi
 echo ""
 
 echo "==========================================================================="
-echo -e "${MAGENTA}6. Platform Operator${NC}"
+echo -e "${MAGENTA}6. Kagenti Operator${NC}"
 echo "==========================================================================="
 
-OPERATOR_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-platform-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+OPERATOR_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}           $OPERATOR_STATUS"
 echo -e "${BLUE}Namespace:${NC}        kagenti-system"
 echo ""
 echo -e "${YELLOW}View logs:${NC}"
-echo "  $CLI logs -n kagenti-system deployment/kagenti-platform-operator --tail=100 -f"
+echo "  $CLI logs -n kagenti-system deployment/kagenti-operator --tail=100 -f"
 echo ""
-echo -e "${YELLOW}View managed components:${NC}"
-echo "  $CLI get components -n team1"
+echo -e "${YELLOW}View managed agents:${NC}"
+echo "  $CLI get agents -A"
 echo ""
 
 echo "==========================================================================="
