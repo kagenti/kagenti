@@ -72,9 +72,8 @@
       fail:
         msg: >-
           Current kubectl context '{{ current_context.stdout }}' does not match the expected
-          kind cluster context 'kind-{{ kind_cluster_name }}'. Please switch to the correct context
-          or set create_kind_cluster=true to auto-create the cluster.
-      when: current_context.stdout != 'kind-{{ kind_cluster_name }}'
+          kind cluster context 'kind-{{ kind_cluster_name }}'. Please switch to the correct context manually.
+      when: current_context.stdout != "kind-" + kind_cluster_name
   when: create_kind_cluster | default(false)
 
 - name: Preload images into kind cluster when requested
@@ -86,12 +85,28 @@
       failed_when: false
       changed_when: false
 
-    - name: Verify kind cluster exists (or create it) before preloading
+    - name: Create kind cluster if missing before preloading
       command: >-
         kind create cluster --name {{ kind_cluster_name }} --config {{ (kind_container_registry_enabled | default(true)) | ternary(kind_config_registry, kind_config) }}
       args:
         chdir: "{{ playbook_dir }}"
       when: kind_cluster_name not in (kind_clusters_for_preload.stdout | default(''))
+
+    # Begin modifications with assistance from Copilot
+    - name: Verify kubectl context for kind cluster before preloading
+      command: kubectl config current-context
+      register: kubectl_current_context
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if kube context is not pointing to the kagenti cluster before preloading
+      fail:
+        msg: >-
+          Kubectl current context ('{{ kubectl_current_context.stdout | default ('')}}') does not
+          match the expected context ('kind-{{ kind_cluster_name }}'). Please ensure your kubeconfig
+          is configured correctly.
+      when: kubectl_current_context.stdout != "kind-" + kind_cluster_name
+    # End modifications with assistance from Copilot
 
     - name: Stat preload images file
       stat:
