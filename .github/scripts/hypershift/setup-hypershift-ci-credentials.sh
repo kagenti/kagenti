@@ -141,7 +141,7 @@ base64_decode() {
 # ============================================================================
 
 # Primary identifier - used for naming, IAM scoping, and tagging
-# Format: lowercase alphanumeric with hyphens, 5-30 chars
+# Format: lowercase alphanumeric with hyphens, 5-27 chars
 #
 # For CI: Set via secrets (MANAGED_BY_TAG=kagenti-hypershift-ci)
 # For local: Defaults to kagenti-hypershift-custom (shared by all developers)
@@ -149,9 +149,51 @@ base64_decode() {
 # IMPORTANT: Must export for envsubst to work in render_policy()
 export MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 
-# Validate (must be lowercase alphanumeric, can include hyphens, 5-30 chars)
-if ! [[ "$MANAGED_BY_TAG" =~ ^[a-z][a-z0-9-]{4,29}$ ]]; then
-    echo "Error: MANAGED_BY_TAG must be 5-30 chars, start with letter, contain only lowercase letters, numbers, hyphens" >&2
+# ============================================================================
+# Validate MANAGED_BY_TAG format and length
+# ============================================================================
+# AWS IAM role names have a 64-character limit.
+# HyperShift creates roles with pattern: <cluster-name>-<role-suffix>
+# The longest role suffix is "cloud-network-config-controller" (32 chars).
+#
+# Cluster name format: ${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}
+# To allow at least 4-char suffix: MANAGED_BY_TAG + 1 (hyphen) + 4 <= 32
+# So max MANAGED_BY_TAG = 27 characters
+#
+MAX_MANAGED_BY_TAG_LENGTH=27
+MIN_CLUSTER_SUFFIX_LENGTH=4
+
+# Validate format (must be lowercase alphanumeric, can include hyphens, 5-27 chars)
+if ! [[ "$MANAGED_BY_TAG" =~ ^[a-z][a-z0-9-]{4,26}$ ]]; then
+    echo "" >&2
+    echo "╔════════════════════════════════════════════════════════════════════════════╗" >&2
+    echo "║   ERROR: Invalid MANAGED_BY_TAG format                                     ║" >&2
+    echo "╚════════════════════════════════════════════════════════════════════════════╝" >&2
+    echo "" >&2
+    echo "MANAGED_BY_TAG: $MANAGED_BY_TAG" >&2
+    echo "Length: ${#MANAGED_BY_TAG} characters" >&2
+    echo "" >&2
+    echo "Requirements:" >&2
+    echo "  - 5 to $MAX_MANAGED_BY_TAG_LENGTH characters" >&2
+    echo "  - Must start with a lowercase letter" >&2
+    echo "  - Only lowercase letters (a-z), numbers (0-9), and hyphens (-)" >&2
+    echo "" >&2
+    if [ "${#MANAGED_BY_TAG}" -gt "$MAX_MANAGED_BY_TAG_LENGTH" ]; then
+        echo "WHY THE LENGTH LIMIT:" >&2
+        echo "  AWS IAM role names have a 64-character limit." >&2
+        echo "  HyperShift creates roles like: <cluster-name>-cloud-network-config-controller" >&2
+        echo "  Cluster name = MANAGED_BY_TAG + hyphen + suffix" >&2
+        echo "" >&2
+        echo "  To allow at least $MIN_CLUSTER_SUFFIX_LENGTH-char cluster suffix:" >&2
+        echo "    MANAGED_BY_TAG ($MAX_MANAGED_BY_TAG_LENGTH max) + '-' (1) + suffix ($MIN_CLUSTER_SUFFIX_LENGTH min) = 32 chars max cluster name" >&2
+        echo "    32 + 32 (longest IAM suffix) = 64 chars (AWS limit)" >&2
+        echo "" >&2
+    fi
+    echo "Examples of valid values:" >&2
+    echo "  - kagenti-hypershift-ci     (21 chars)" >&2
+    echo "  - kagenti-hypershift-custom (26 chars)" >&2
+    echo "  - myproject-ci              (12 chars)" >&2
+    echo "" >&2
     exit 1
 fi
 

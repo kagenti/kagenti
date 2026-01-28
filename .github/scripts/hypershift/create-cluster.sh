@@ -74,9 +74,12 @@ OCP_VERSION="${OCP_VERSION:-4.20.11}"
 # Set CLUSTER_SUFFIX="" to generate a random suffix
 #
 # Cluster name: ${MANAGED_BY_TAG}-${suffix}
-# Default suffix: sanitized username (e.g., "ladas")
+# Default suffix: sanitized username (truncated to 5 chars for AWS IAM limits)
 # Custom suffix: passed as argument (e.g., "pr529")
-SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
+#
+# Note: Truncated to 5 chars because default MANAGED_BY_TAG is 26 chars,
+# max cluster name is 32 chars (AWS IAM limit), so 32-26-1=5 chars for suffix
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-5)
 if [ -n "${CLUSTER_SUFFIX+x}" ]; then
     # CLUSTER_SUFFIX is explicitly set (even if empty)
     :
