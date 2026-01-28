@@ -130,25 +130,27 @@ jobs:
             exit 0
           fi
 
-          echo "Found scripts:"
-          echo "$SCRIPTS"
+          echo "Found $(echo "$SCRIPTS" | wc -l | tr -d ' ') scripts"
           echo ""
 
-          # Run shellcheck with error severity (fail on errors only)
-          # Warnings are reported but don't fail the build
+          # Run shellcheck with warning severity (fail on warnings and errors)
+          # Exclude:
+          #   SC1091: Can't follow non-constant source (external/dynamic files)
+          #   SC1090: Can't follow non-constant source
           FAILED=0
           for script in $SCRIPTS; do
             echo "Checking: $script"
-            if ! shellcheck --severity=error "$script"; then
+            if ! shellcheck --severity=warning --exclude=SC1091,SC1090 "$script"; then
               FAILED=1
             fi
           done
 
           if [ $FAILED -eq 1 ]; then
             echo ""
-            echo "ERROR: Some scripts have shellcheck errors. Please fix them."
+            echo "ERROR: Some scripts have shellcheck warnings. Please fix them."
+            echo "Run locally: shellcheck --severity=warning --exclude=SC1091,SC1090 <script>"
             exit 1
           fi
 
           echo ""
-          echo "All scripts passed shellcheck (error level)"
+          echo "All scripts passed shellcheck (warning level)"

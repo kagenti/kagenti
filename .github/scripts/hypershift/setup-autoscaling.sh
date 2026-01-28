@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2155
+# SC2155: Declare and assign separately - safe here as assignments use fallback defaults
 #
 # HyperShift Autoscaling Setup
 #
@@ -408,8 +410,7 @@ else
 
         while IFS= read -r node_line; do
             [[ -z "$node_line" ]] && continue
-            # Check if worker node
-            is_worker=$(oc get node "$node_line" -o jsonpath='{.metadata.labels.node-role\.kubernetes\.io/worker}' 2>/dev/null)
+            # Skip master nodes (only process workers)
             is_master=$(oc get node "$node_line" -o jsonpath='{.metadata.labels.node-role\.kubernetes\.io/master}' 2>/dev/null)
             [[ -n "$is_master" ]] && continue
 

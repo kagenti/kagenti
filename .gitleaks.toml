@@ -1,21 +1,42 @@
 # Gitleaks configuration for Kagenti HyperShift CI
 # See: https://github.com/gitleaks/gitleaks
+#
+# SECURITY POLICY: Scan ALL files, only allow specific patterns
+# Do NOT exclude paths - docs and policies can contain accidental secrets
 
 title = "Kagenti Gitleaks Configuration"
 
 [allowlist]
-  description = "Allowlisted files and patterns"
-
-  # Policy files contain example ARNs and resource patterns, not real secrets
-  paths = [
-    '''^\.github/scripts/hypershift/policies/.*\.json$''',
-    '''^docs/.*\.md$''',
-  ]
+  description = "Allowlisted patterns (not paths - we scan everything)"
 
   # Regex patterns for allowed strings (false positives)
   regexes = [
-    # Example ARNs in documentation
+    # Example/placeholder ARNs in documentation and policy templates
     '''arn:aws:iam::\d{12}:role/example-.*''',
-    # Placeholder values
-    '''PLACEHOLDER|EXAMPLE|TODO|CHANGEME''',
+    '''arn:aws:iam::\$\{.*\}:.*''',
+    '''arn:aws:iam::ACCOUNT_ID:.*''',
+
+    # Template variables (not real secrets)
+    '''\$\{[A-Z_]+\}''',
+    '''\{\{.*\}\}''',
+
+    # Placeholder/example values
+    '''PLACEHOLDER|EXAMPLE|TODO|CHANGEME|YOUR_.*_HERE''',
+    '''<your-.*>''',
+    '''xxx+|XXX+''',
+
+    # AWS resource patterns in policy documents (not secrets)
+    '''arn:aws:s3:::.*\*''',
+    '''arn:aws:ec2:\*:\*:.*''',
+
+    # Base64-encoded placeholders in examples
+    '''base64-encoded-.*''',
+
+    # OIDC provider URLs (not secrets)
+    '''https://.*\.s3\..*\.amazonaws\.com/.*''',
   ]
+
+# Extend default rules - we want strict detection
+[extend]
+  # Use default gitleaks rules
+  useDefault = true

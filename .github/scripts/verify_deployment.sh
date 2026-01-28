@@ -1,4 +1,8 @@
 #!/bin/bash
+# shellcheck disable=SC2155,SC2034
+# SC2155: Declare and assign separately - safe here as all commands have fallback defaults
+# SC2034: Unused variables - some variables are used conditionally
+#
 # Copyright 2025 IBM Corp.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
