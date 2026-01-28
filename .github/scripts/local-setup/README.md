@@ -123,7 +123,15 @@ Customize the cluster suffix by passing it as an argument (e.g., `pr529` → `ka
 # │ STEP 1: Run tests, keep cluster for debugging                               │
 # │         Default cluster: kagenti-hypershift-custom-$USER                     │
 # └─────────────────────────────────────────────────────────────────────────────┘
+
+# source the env created by setup-hypershift-ci-credentials.sh
+source .env.kagenti-hypershift-custom
+
+# Deploy the cluster with kagenti example stack
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
+
+# Show services urls and credentials
+./.github/scripts/local-setup/show-services.sh
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
 # │ STEP 2: When done - destroy cluster                                         │
@@ -142,7 +150,10 @@ Customize the cluster suffix by passing it as an argument (e.g., `pr529` → `ka
 # │ Custom cluster suffix - useful for testing specific PRs or features         │
 # └─────────────────────────────────────────────────────────────────────────────┘
 ./.github/scripts/local-setup/hypershift-full-test.sh pr529 --skip-cluster-destroy
-# Creates: kagenti-hypershift-custom-pr529
+# Creates: kagenti-hypershift-custom-pr529 cluster
+
+# Show services urls and credentials of the custom kagenti-hypershift-custom-pr529 cluster
+./.github/scripts/local-setup/show-services.sh pr529
 
 ./.github/scripts/local-setup/hypershift-full-test.sh feature1 --skip-cluster-destroy
 # Creates: kagenti-hypershift-custom-feature1

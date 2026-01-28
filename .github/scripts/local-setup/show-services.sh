@@ -3,8 +3,14 @@
 #
 # Usage:
 #   ./.github/scripts/local-setup/show-services.sh [cluster-suffix]
-#   source .env.kagenti-hypershift-custom && ./.github/scripts/local-setup/show-services.sh
-#   source .env.kagenti-hypershift-ci && ./.github/scripts/local-setup/show-services.sh pr529
+#
+# Examples:
+#   # HyperShift - source .env file first to set MANAGED_BY_TAG
+#   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh
+#   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh pr529
+#
+#   # Kind - no env file needed
+#   ./.github/scripts/local-setup/show-services.sh
 #
 # For HyperShift:
 #   - Source .env file first to set MANAGED_BY_TAG
@@ -64,30 +70,6 @@ setup_hypershift_kubeconfig() {
         echo "  The cluster may not exist or was not created locally." >&2
         echo "  Create it with: ./.github/scripts/local-setup/hypershift-full-test.sh ${cluster_suffix} --skip-cluster-destroy" >&2
         return 1
-    fi
-}
-
-# Find and load .env file for HyperShift
-load_env_file() {
-    local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
-
-    if [ -f "$REPO_ROOT/.env.${managed_by_tag}" ]; then
-        # shellcheck source=/dev/null
-        source "$REPO_ROOT/.env.${managed_by_tag}"
-        echo "$REPO_ROOT/.env.${managed_by_tag}"
-    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
-        # shellcheck source=/dev/null
-        source "$REPO_ROOT/.env.hypershift-ci"
-        echo "$REPO_ROOT/.env.hypershift-ci"
-    else
-        # Find any .env.kagenti-* file
-        local env_file
-        env_file=$(ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1 || true)
-        if [ -n "$env_file" ] && [ -f "$env_file" ]; then
-            # shellcheck source=/dev/null
-            source "$env_file"
-            echo "$env_file"
-        fi
     fi
 }
 
@@ -152,180 +134,234 @@ if ! $CLI get namespace kagenti-system &> /dev/null; then
     exit 1
 fi
 
-echo "==========================================================================="
-echo -e "${MAGENTA}1. Keycloak (Identity & Access Management)${NC}"
-echo "==========================================================================="
+# =============================================================================
+#                     KEYCLOAK AUTHENTICATION
+#        Services using Keycloak for authentication (use creds below)
+# =============================================================================
 
-KEYCLOAK_STATUS=$($CLI get pods -n keycloak -l app.kubernetes.io/name=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}      $KEYCLOAK_STATUS"
-
-# Get Keycloak URL based on environment
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Access URL:${NC}  http://keycloak.localtest.me:8080"
-    echo ""
-    echo -e "${YELLOW}Port-forward command:${NC}"
-    echo "  kubectl port-forward -n keycloak svc/keycloak 8080:8080"
-else
-    KEYCLOAK_ROUTE=$($CLI get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$KEYCLOAK_ROUTE" ]; then
-        echo -e "${BLUE}Access URL:${NC}  https://$KEYCLOAK_ROUTE"
-    else
-        echo -e "${BLUE}Access URL:${NC}  (no route found - create one or use port-forward)"
-        echo ""
-        echo -e "${YELLOW}Port-forward command:${NC}"
-        echo "  oc port-forward -n keycloak svc/keycloak 8080:8080"
-    fi
-fi
+echo "##########################################################################"
+echo -e "${CYAN}                    KEYCLOAK AUTHENTICATION                           ${NC}"
+echo -e "${CYAN}        (Services using Keycloak - use credentials below)             ${NC}"
+echo "##########################################################################"
 echo ""
-echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share this output)${NC}"
 
-# Try to get admin credentials from secret
-KEYCLOAK_ADMIN_USER=$($CLI get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
-KEYCLOAK_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-admin-credentials -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+# Get Keycloak credentials first (shared by services below)
+KEYCLOAK_ADMIN_USER=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+KEYCLOAK_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 
+echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share)${NC}"
 echo "  Username: ${KEYCLOAK_ADMIN_USER}"
 echo "  Password: ${KEYCLOAK_ADMIN_PASS}"
 echo ""
-echo -e "${YELLOW}Realm:${NC}        kagenti"
+
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Keycloak (Identity Provider)${NC}"
+echo "---------------------------------------------------------------------------"
+KEYCLOAK_STATUS=$($CLI get pods -n keycloak -l app=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $KEYCLOAK_STATUS"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}Admin URL:${NC}    http://keycloak.localtest.me:8080/admin"
+else
+    KEYCLOAK_ROUTE=$($CLI get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$KEYCLOAK_ROUTE" ]; then
+        echo -e "${BLUE}Admin URL:${NC}    https://$KEYCLOAK_ROUTE/admin"
+    fi
+fi
+echo -e "${BLUE}Realm:${NC}        kagenti"
 echo ""
 
-echo "==========================================================================="
-echo -e "${MAGENTA}2. Kagenti UI (Web Dashboard)${NC}"
-echo "==========================================================================="
-
-UI_STATUS=$($CLI get pods -n kagenti-system -l app=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}      $UI_STATUS"
-
-# Get UI URL based on environment
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Kagenti UI (Web Dashboard)${NC}"
+echo "---------------------------------------------------------------------------"
+UI_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $UI_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Access URL:${NC}  http://kagenti-ui.localtest.me:8080"
-    echo ""
-    echo -e "${YELLOW}Port-forward command:${NC}"
-    echo "  kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
+    echo -e "${BLUE}URL:${NC}          http://kagenti-ui.localtest.me:8080"
 else
     UI_ROUTE=$($CLI get route -n kagenti-system kagenti-ui -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$UI_ROUTE" ]; then
-        echo -e "${BLUE}Access URL:${NC}  https://$UI_ROUTE"
-    else
-        echo -e "${BLUE}Access URL:${NC}  (no route found)"
+        echo -e "${BLUE}URL:${NC}          https://$UI_ROUTE"
     fi
 fi
-echo ""
-echo -e "${GREEN}Authentication:${NC} Via Keycloak OAuth2"
-echo "  Click 'Login' and use Keycloak credentials above"
+echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
 echo ""
 
-echo "==========================================================================="
-echo -e "${MAGENTA}3. Weather Agent (A2A Protocol)${NC}"
-echo "==========================================================================="
+# =============================================================================
+#                     OPENSHIFT CLUSTER ACCESS
+#        Services using OpenShift OAuth (use kubeadmin credentials)
+# =============================================================================
 
-AGENT_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}           $AGENT_STATUS"
-echo -e "${BLUE}Namespace:${NC}        team1"
-
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Service URL:${NC}      http://weather-service.team1.svc.cluster.local:8000"
+if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
+    echo "##########################################################################"
+    echo -e "${CYAN}                    OPENSHIFT CLUSTER ACCESS                          ${NC}"
+    echo -e "${CYAN}        (Services using OpenShift OAuth - use kubeadmin creds)        ${NC}"
+    echo "##########################################################################"
     echo ""
-    echo -e "${YELLOW}Port-forward command:${NC}"
-    echo "  kubectl port-forward -n team1 svc/weather-service 8000:8000"
+
+    # Get kubeadmin credentials (for HyperShift, from kubeconfig directory)
+    if [ "$ENV_TYPE" = "hypershift" ]; then
+        KUBEADMIN_PASS_FILE="$(dirname "$KUBECONFIG")/kubeadmin-password"
+        if [ -f "$KUBEADMIN_PASS_FILE" ]; then
+            KUBEADMIN_PASS=$(cat "$KUBEADMIN_PASS_FILE")
+        else
+            KUBEADMIN_PASS="N/A (check $KUBEADMIN_PASS_FILE)"
+        fi
+    else
+        KUBEADMIN_PASS=$($CLI get secret -n kube-system kubeadmin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+    fi
+
+    echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share)${NC}"
+    echo "  Username: kubeadmin"
+    echo "  Password: ${KUBEADMIN_PASS}"
+    echo ""
+
+    echo "---------------------------------------------------------------------------"
+    echo -e "${MAGENTA}OpenShift Console${NC}"
+    echo "---------------------------------------------------------------------------"
+    CONSOLE_ROUTE=$($CLI get route -n openshift-console console -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$CONSOLE_ROUTE" ]; then
+        echo -e "${BLUE}URL:${NC}          https://$CONSOLE_ROUTE"
+    else
+        echo -e "${BLUE}URL:${NC}          (no route found)"
+    fi
+    echo -e "${BLUE}Auth:${NC}         Use kubeadmin credentials above"
+    echo ""
+
+    echo "---------------------------------------------------------------------------"
+    echo -e "${MAGENTA}Kiali (Service Mesh Observability)${NC}"
+    echo "---------------------------------------------------------------------------"
+    KIALI_STATUS=$($CLI get pods -n istio-system -l app=kiali -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+    echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
+    KIALI_ROUTE=$($CLI get route -n istio-system kiali -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$KIALI_ROUTE" ]; then
+        echo -e "${BLUE}URL:${NC}          https://$KIALI_ROUTE"
+    else
+        echo -e "${BLUE}URL:${NC}          (no route found)"
+    fi
+    echo -e "${BLUE}Auth:${NC}         Use kubeadmin credentials above"
+    echo ""
+fi
+
+# =============================================================================
+#                         OBSERVABILITY
+#                    (No authentication required)
+# =============================================================================
+
+echo "##########################################################################"
+echo -e "${CYAN}                         OBSERVABILITY                                ${NC}"
+echo -e "${CYAN}                    (No authentication required)                      ${NC}"
+echo "##########################################################################"
+echo ""
+
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Phoenix (LLM Traces)${NC}"
+echo "---------------------------------------------------------------------------"
+PHOENIX_STATUS=$($CLI get pods -n kagenti-system -l app=phoenix -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $PHOENIX_STATUS"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}URL:${NC}          http://phoenix.localtest.me:8080"
+else
+    PHOENIX_ROUTE=$($CLI get route -n kagenti-system phoenix -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$PHOENIX_ROUTE" ]; then
+        echo -e "${BLUE}URL:${NC}          https://$PHOENIX_ROUTE"
+    else
+        echo -e "${BLUE}URL:${NC}          (no route found)"
+    fi
+fi
+echo -e "${BLUE}Auth:${NC}         None required"
+echo ""
+
+# Kind environment - show Kiali here since no OpenShift OAuth
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo "---------------------------------------------------------------------------"
+    echo -e "${MAGENTA}Kiali (Service Mesh Observability)${NC}"
+    echo "---------------------------------------------------------------------------"
+    KIALI_STATUS=$($CLI get pods -n istio-system -l app=kiali -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+    echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
+    echo -e "${BLUE}URL:${NC}          http://kiali.localtest.me:8080"
+    echo -e "${BLUE}Auth:${NC}         None required (Kind mode)"
+    echo ""
+fi
+
+# =============================================================================
+#                       EXAMPLE WORKLOADS
+#                  (Weather Agent & Tool in team1)
+# =============================================================================
+
+echo "##########################################################################"
+echo -e "${CYAN}                       EXAMPLE WORKLOADS                              ${NC}"
+echo -e "${CYAN}                  (Weather Agent & Tool in team1)                     ${NC}"
+echo "##########################################################################"
+echo ""
+
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Weather Agent (A2A Protocol)${NC}"
+echo "---------------------------------------------------------------------------"
+AGENT_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].status.phase}' 2>/dev/null \
+    || $CLI get pods -n team1 -l app=weather-service -o jsonpath='{.items[0].status.phase}' 2>/dev/null \
+    || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $AGENT_STATUS"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}URL:${NC}          http://weather-service.team1.svc.cluster.local:8000"
 else
     AGENT_ROUTE=$($CLI get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$AGENT_ROUTE" ]; then
-        echo -e "${BLUE}External URL:${NC}     https://$AGENT_ROUTE"
+        echo -e "${BLUE}URL:${NC}          https://$AGENT_ROUTE"
     fi
 fi
-echo ""
-echo -e "${YELLOW}Test with A2A client:${NC}"
-if [ "$ENV_TYPE" != "kind" ] && [ -n "${AGENT_ROUTE:-}" ]; then
-    echo "  AGENT_URL=https://$AGENT_ROUTE pytest kagenti/tests/e2e/test_agent_conversation.py -v"
-else
-    echo "  AGENT_URL=http://localhost:8000 pytest kagenti/tests/e2e/test_agent_conversation.py -v"
-fi
-echo ""
-echo -e "${YELLOW}View logs:${NC}"
-echo "  $CLI logs -n team1 deployment/weather-service --tail=100 -f"
+echo -e "${BLUE}Logs:${NC}         $CLI logs -n team1 -l app.kubernetes.io/name=weather-service -f"
 echo ""
 
-echo "==========================================================================="
-echo -e "${MAGENTA}4. Weather Tool (MCP Protocol)${NC}"
-echo "==========================================================================="
-
-TOOL_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-tool -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}           $TOOL_STATUS"
-echo -e "${BLUE}Namespace:${NC}        team1"
-
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Weather Tool (MCP Protocol)${NC}"
+echo "---------------------------------------------------------------------------"
+TOOL_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-tool -o jsonpath='{.items[0].status.phase}' 2>/dev/null \
+    || $CLI get pods -n team1 -l app=weather-tool -o jsonpath='{.items[0].status.phase}' 2>/dev/null \
+    || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $TOOL_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Service URL:${NC}      http://weather-tool.team1.svc.cluster.local:8000"
-    echo ""
-    echo -e "${YELLOW}Port-forward command:${NC}"
-    echo "  kubectl port-forward -n team1 svc/weather-tool 8001:8000"
+    echo -e "${BLUE}URL:${NC}          http://weather-tool.team1.svc.cluster.local:8000"
 else
     TOOL_ROUTE=$($CLI get route -n team1 weather-tool -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$TOOL_ROUTE" ]; then
-        echo -e "${BLUE}External URL:${NC}     https://$TOOL_ROUTE"
+        echo -e "${BLUE}URL:${NC}          https://$TOOL_ROUTE"
     fi
 fi
-echo ""
-echo -e "${YELLOW}View logs:${NC}"
-echo "  $CLI logs -n team1 deployment/weather-tool --tail=100 -f"
+echo -e "${BLUE}Logs:${NC}         $CLI logs -n team1 -l app.kubernetes.io/name=weather-tool -f"
 echo ""
 
-echo "==========================================================================="
-echo -e "${MAGENTA}5. Ollama (Local LLM)${NC}"
-echo "==========================================================================="
+# =============================================================================
+#                        INFRASTRUCTURE
+#                    (Operator and Database)
+# =============================================================================
 
-if pgrep -x "ollama" > /dev/null 2>&1; then
-    echo -e "${BLUE}Status:${NC}           ${GREEN}Running${NC}"
-    echo -e "${BLUE}Access URL:${NC}       http://localhost:11434"
-    echo ""
-    echo -e "${YELLOW}Available models:${NC}"
-    ollama list 2>/dev/null || echo "  Unable to list models"
-    echo ""
-    echo -e "${YELLOW}Test API:${NC}"
-    echo "  curl http://localhost:11434/api/tags"
-else
-    echo -e "${BLUE}Status:${NC}           ${RED}Not Running${NC}"
-    echo ""
-    echo -e "${YELLOW}Start Ollama:${NC}"
-    echo "  ollama serve &"
-    echo ""
-    echo -e "${YELLOW}Pull model:${NC}"
-    echo "  ollama pull qwen2.5:0.5b"
-fi
+echo "##########################################################################"
+echo -e "${CYAN}                        INFRASTRUCTURE                                ${NC}"
+echo -e "${CYAN}                    (Operator and Database)                           ${NC}"
+echo "##########################################################################"
 echo ""
 
-echo "==========================================================================="
-echo -e "${MAGENTA}6. Kagenti Operator${NC}"
-echo "==========================================================================="
-
-OPERATOR_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-operator -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}           $OPERATOR_STATUS"
-echo -e "${BLUE}Namespace:${NC}        kagenti-system"
-echo ""
-echo -e "${YELLOW}View logs:${NC}"
-echo "  $CLI logs -n kagenti-system deployment/kagenti-operator --tail=100 -f"
-echo ""
-echo -e "${YELLOW}View managed agents:${NC}"
-echo "  $CLI get agents -A"
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Kagenti Operator${NC}"
+echo "---------------------------------------------------------------------------"
+OPERATOR_STATUS=$($CLI get pods -n kagenti-system -l control-plane=controller-manager -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $OPERATOR_STATUS"
+echo -e "${BLUE}Namespace:${NC}    kagenti-system"
+echo -e "${BLUE}Agents:${NC}       $CLI get agents -A"
+echo -e "${BLUE}Logs:${NC}         $CLI logs -n kagenti-system -l control-plane=controller-manager -f"
 echo ""
 
-echo "==========================================================================="
-echo -e "${MAGENTA}7. PostgreSQL Database${NC}"
-echo "==========================================================================="
-
-POSTGRES_STATUS=$($CLI get pods -n keycloak -l app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}           $POSTGRES_STATUS"
-echo -e "${BLUE}Namespace:${NC}        keycloak"
-echo -e "${BLUE}Service:${NC}          postgresql.keycloak.svc.cluster.local:5432"
-echo ""
-echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share this output)${NC}"
-POSTGRES_PASS=$($CLI get secret -n keycloak postgresql -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
-echo "  Username: postgres"
-echo "  Password: ${POSTGRES_PASS}"
-echo "  Database: keycloak"
-echo ""
-echo -e "${YELLOW}Connect from pod:${NC}"
-echo "  $CLI run psql --rm -it --image=postgres:16 -n keycloak -- psql -h postgresql -U postgres -d keycloak"
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}PostgreSQL (Keycloak DB)${NC}"
+echo "---------------------------------------------------------------------------"
+POSTGRES_STATUS=$($CLI get pods -n keycloak -l app=postgres-kc -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $POSTGRES_STATUS"
+echo -e "${BLUE}Service:${NC}      postgres-kc.keycloak.svc.cluster.local:5432"
+POSTGRES_USER=$($CLI get secret -n keycloak keycloak-db-secret -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+POSTGRES_PASS=$($CLI get secret -n keycloak keycloak-db-secret -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+echo -e "${BLUE}Username:${NC}     ${POSTGRES_USER}"
+echo -e "${BLUE}Password:${NC}     ${POSTGRES_PASS}"
+echo -e "${BLUE}Database:${NC}     keycloak"
 echo ""
 
 echo "========================================================================="
