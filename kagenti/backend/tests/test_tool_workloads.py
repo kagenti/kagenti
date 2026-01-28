@@ -6,7 +6,6 @@ used when creating MCP tools as Kubernetes workloads.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 # Import the manifest builder functions
 # These are private functions in tools.py that we're testing
