@@ -58,7 +58,7 @@ metadata:
     "helm.sh/hook": post-install, post-upgrade
     "helm.sh/hook-delete-policy": hook-succeeded
 spec:
-  backoffLimit: 1
+  backoffLimit: 4
   ttlSecondsAfterFinished: 300
   template:
     metadata:
@@ -76,8 +76,28 @@ spec:
             - -c
           args:
             - |
-              kubectl label namespace "{{ .Values.mcpGateway.namespaces.mcpSystem }}" \
-                istio-discovery=enabled istio.io/dataplane-mode=ambient --overwrite && \
-              kubectl label namespace "{{ .Release.Namespace }}" \
-                istio-discovery=enabled istio.io/dataplane-mode=ambient shared-gateway-access="true" --overwrite
+              # Wait for RBAC to propagate (especially on HyperShift where control plane is remote)
+              echo "Waiting 10s for RBAC propagation..."
+              sleep 10
+
+              # Retry loop for labeling namespaces
+              MAX_RETRIES=5
+              RETRY_DELAY=5
+
+              for ns in "{{ .Values.mcpGateway.namespaces.mcpSystem }}" "{{ .Release.Namespace }}"; do
+                echo "Labeling namespace: $ns"
+                for i in $(seq 1 $MAX_RETRIES); do
+                  if [ "$ns" = "{{ .Values.mcpGateway.namespaces.mcpSystem }}" ]; then
+                    kubectl label namespace "$ns" \
+                      istio-discovery=enabled istio.io/dataplane-mode=ambient --overwrite && break
+                  else
+                    kubectl label namespace "$ns" \
+                      istio-discovery=enabled istio.io/dataplane-mode=ambient shared-gateway-access="true" --overwrite && break
+                  fi
+                  echo "  Attempt $i/$MAX_RETRIES failed, retrying in ${RETRY_DELAY}s..."
+                  sleep $RETRY_DELAY
+                done
+              done
+
+              echo "Namespace labeling complete"
 {{- end }}  
