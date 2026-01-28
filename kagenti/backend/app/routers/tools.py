@@ -2219,6 +2219,7 @@ async def list_migratable_tools(
             d.get("metadata", {}).get("name") for d in existing_deployments
         }
     except ApiException:
+        # If listing deployments fails, continue with empty set - not critical for operation
         pass
 
     try:
@@ -2230,6 +2231,7 @@ async def list_migratable_tools(
             s.get("metadata", {}).get("name") for s in existing_statefulsets
         }
     except ApiException:
+        # If listing statefulsets fails, continue with empty set - not critical for operation
         pass
 
     tools = []

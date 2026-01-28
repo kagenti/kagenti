@@ -465,8 +465,6 @@ def _build_tool_deployment_manifest(
 
     if image_pull_secret:
         pod_spec["imagePullSecrets"] = [{"name": image_pull_secret}]
-    else:
-        pod_spec["imagePullSecrets"] = []
 
     manifest = {
         "apiVersion": "apps/v1",
