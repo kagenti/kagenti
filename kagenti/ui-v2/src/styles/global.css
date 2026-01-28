@@ -721,6 +721,21 @@ code {
   color: var(--pf-v5-global--Color--100);
 }
 
+/* Tooltip styling - always dark background with white text */
+.pf-v5-c-tooltip {
+  --pf-v5-c-tooltip--BackgroundColor: #151515;
+  --pf-v5-c-tooltip--Color: #ffffff;
+}
+
+.pf-v5-c-tooltip__content {
+  background-color: #151515 !important;
+  color: #ffffff !important;
+}
+
+.pf-v5-c-tooltip__arrow {
+  --pf-v5-c-tooltip__arrow--BackgroundColor: #151515;
+}
+
 /* Tabs styling */
 .pf-v5-c-tabs__link {
   color: var(--pf-v5-global--Color--100);
