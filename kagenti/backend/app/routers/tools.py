@@ -2487,14 +2487,22 @@ async def batch_migrate_tools(
                 kube.get_deployment(namespace=namespace, name=mcpserver_name)
                 would_skip = True
             except ApiException:
-                pass
+                logging.debug(
+                    "Deployment %s not found in namespace %s during dry-run migration",
+                    mcpserver_name,
+                    namespace,
+                )
 
             if not would_skip:
                 try:
                     kube.get_statefulset(namespace=namespace, name=mcpserver_name)
                     would_skip = True
                 except ApiException:
-                    pass
+                    logging.debug(
+                        "StatefulSet %s not found in namespace %s during dry-run migration",
+                        mcpserver_name,
+                        namespace,
+                    )
 
             if would_skip:
                 skipped += 1
