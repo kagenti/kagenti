@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { copyToClipboard } from '../utils/clipboard';
 import {
   PageSection,
   Title,
@@ -473,7 +474,7 @@ export const ToolDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>MCP Server URL</DescriptionListTerm>
                         <DescriptionListDescription>
-                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied">
+                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
                             {toolExternalUrl}
                           </ClipboardCopy>
                         </DescriptionListDescription>
@@ -836,7 +837,7 @@ export const ToolDetailPage: React.FC = () => {
                   <DescriptionListGroup>
                     <DescriptionListTerm>MCP Server URL (in-cluster)</DescriptionListTerm>
                     <DescriptionListDescription>
-                      <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied">
+                      <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
                         {mcpInClusterUrl}
                       </ClipboardCopy>
                     </DescriptionListDescription>
