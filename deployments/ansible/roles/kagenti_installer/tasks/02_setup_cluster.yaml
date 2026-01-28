@@ -57,7 +57,25 @@
       args:
         chdir: "{{ playbook_dir }}"
       when: kind_cluster_name not in (kind_clusters.stdout | default(''))
-  when: kubectl_api.rc != 0 and create_kind_cluster | default(false)
+
+    - name: Switch kubectl context to kagenti cluster
+      command: kubectl config use-context kind-{{ kind_cluster_name }}
+      when: kind_cluster_name in (kind_clusters.stdout | default(''))
+    
+    - name: Verify current context is the kagenti cluster
+      shell: kubectl config current-context
+      register: current_context
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if context is not the kagenti cluster
+      fail:
+        msg: >-
+          Current kubectl context '{{ current_context.stdout }}' does not match the expected
+          kind cluster context 'kind-{{ kind_cluster_name }}'. Please switch to the correct context
+          or set create_kind_cluster=true to auto-create the cluster.
+      when: current_context.stdout != 'kind-{{ kind_cluster_name }}'
+  when: create_kind_cluster | default(false)
 
 - name: Preload images into kind cluster when requested
   when: (kind_images_preload | default(false)) and not (enable_openshift | default(false))
