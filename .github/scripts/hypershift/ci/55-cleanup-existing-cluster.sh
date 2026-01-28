@@ -92,23 +92,79 @@ cleanup_orphaned_aws_resources() {
                     --query 'Vpcs[*].Tags' \
                     --output table 2>/dev/null || true
 
-                # Check and delete subnets
-                echo "  - Subnets:"
-                SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
-                    --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'Subnets[*].SubnetId' \
+                # FIRST: Terminate any EC2 instances in the VPC
+                # This must happen before ENI/SG/subnet cleanup as instances hold these resources
+                echo "  - EC2 Instances:"
+                INSTANCES=$(aws ec2 describe-instances --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+                    --query 'Reservations[*].Instances[*].InstanceId' \
                     --output text 2>/dev/null || echo "")
-                if [ -n "$SUBNETS" ] && [ "$SUBNETS" != "None" ]; then
-                    echo "    Found: $SUBNETS"
-                    for subnet in $SUBNETS; do
-                        echo "    Deleting subnet: $subnet"
-                        aws ec2 delete-subnet --region "$AWS_REGION" --subnet-id "$subnet" 2>&1 || true
+                if [ -n "$INSTANCES" ] && [ "$INSTANCES" != "None" ]; then
+                    echo "    Found running/stopped instances: $INSTANCES"
+                    echo "    Terminating instances..."
+                    aws ec2 terminate-instances --region "$AWS_REGION" \
+                        --instance-ids $INSTANCES 2>&1 || true
+                    # Wait for instances to terminate (up to 3 minutes)
+                    echo "    Waiting for instances to terminate..."
+                    for term_attempt in {1..18}; do
+                        REMAINING=$(aws ec2 describe-instances --region "$AWS_REGION" \
+                            --instance-ids $INSTANCES \
+                            --query 'Reservations[*].Instances[?State.Name!=`terminated`].InstanceId' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -z "$REMAINING" ] || [ "$REMAINING" = "None" ]; then
+                            echo "    All instances terminated"
+                            break
+                        fi
+                        echo "    [$term_attempt/18] Waiting for termination: $REMAINING"
+                        sleep 10
                     done
                 else
                     echo "    None found"
                 fi
 
-                # Check and detach/delete internet gateways
+                # ============================================================
+                # CLEANUP ORDER (respecting AWS resource dependencies):
+                # 1. NAT Gateways (use ENIs, must delete first and wait)
+                # 2. Internet Gateways (attached to VPC)
+                # 3. VPC Endpoints (use ENIs and subnets)
+                # 4. ENIs (attached to instances/services, block SG/subnet deletion)
+                # 5. Security Groups (referenced by ENIs)
+                # 6. Route Tables (associated with subnets)
+                # 7. Subnets (contain ENIs, must be last before VPC)
+                # 8. VPC
+                # ============================================================
+
+                # 1. Delete NAT gateways (they use ENIs and EIPs)
+                echo "  - NAT Gateways:"
+                NATGWS=$(aws ec2 describe-nat-gateways --region "$AWS_REGION" \
+                    --filter "Name=vpc-id,Values=$vpc" "Name=state,Values=available,pending,deleting" \
+                    --query 'NatGateways[*].NatGatewayId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$NATGWS" ] && [ "$NATGWS" != "None" ]; then
+                    echo "    Found: $NATGWS"
+                    for natgw in $NATGWS; do
+                        echo "    Deleting NAT Gateway: $natgw"
+                        aws ec2 delete-nat-gateway --region "$AWS_REGION" \
+                            --nat-gateway-id "$natgw" 2>&1 || true
+                    done
+                    echo "    Waiting for NAT Gateway deletion (up to 2 min)..."
+                    for nat_wait in {1..12}; do
+                        REMAINING_NAT=$(aws ec2 describe-nat-gateways --region "$AWS_REGION" \
+                            --filter "Name=vpc-id,Values=$vpc" "Name=state,Values=available,pending,deleting" \
+                            --query 'NatGateways[*].NatGatewayId' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -z "$REMAINING_NAT" ] || [ "$REMAINING_NAT" = "None" ]; then
+                            echo "    NAT Gateways deleted"
+                            break
+                        fi
+                        echo "    [$nat_wait/12] Still deleting: $REMAINING_NAT"
+                        sleep 10
+                    done
+                else
+                    echo "    None found"
+                fi
+
+                # 2. Detach and delete internet gateways
                 echo "  - Internet Gateways:"
                 IGWS=$(aws ec2 describe-internet-gateways --region "$AWS_REGION" \
                     --filters "Name=attachment.vpc-id,Values=$vpc" \
@@ -127,27 +183,79 @@ cleanup_orphaned_aws_resources() {
                     echo "    None found"
                 fi
 
-                # Check and delete NAT gateways
-                echo "  - NAT Gateways:"
-                NATGWS=$(aws ec2 describe-nat-gateways --region "$AWS_REGION" \
-                    --filter "Name=vpc-id,Values=$vpc" "Name=state,Values=available,pending" \
-                    --query 'NatGateways[*].NatGatewayId' \
+                # 3. Delete VPC endpoints (they use ENIs)
+                echo "  - VPC Endpoints:"
+                ENDPOINTS=$(aws ec2 describe-vpc-endpoints --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'VpcEndpoints[*].VpcEndpointId' \
                     --output text 2>/dev/null || echo "")
-                if [ -n "$NATGWS" ] && [ "$NATGWS" != "None" ]; then
-                    echo "    Found: $NATGWS"
-                    for natgw in $NATGWS; do
-                        echo "    Deleting NAT Gateway: $natgw"
-                        aws ec2 delete-nat-gateway --region "$AWS_REGION" \
-                            --nat-gateway-id "$natgw" 2>&1 || true
+                if [ -n "$ENDPOINTS" ] && [ "$ENDPOINTS" != "None" ]; then
+                    echo "    Found: $ENDPOINTS"
+                    for ep in $ENDPOINTS; do
+                        echo "    Deleting VPC endpoint: $ep"
+                        aws ec2 delete-vpc-endpoints --region "$AWS_REGION" \
+                            --vpc-endpoint-ids "$ep" 2>&1 || true
                     done
-                    echo "    Waiting for NAT Gateway deletion..."
-                    sleep 30
+                    sleep 5  # Brief wait for endpoint ENIs to be released
                 else
                     echo "    None found"
                 fi
 
-                # Check and delete route tables (non-main)
-                # Must disassociate from subnets first before deletion
+                # 4. Delete ENIs (should be mostly gone after instance termination)
+                echo "  - ENIs:"
+                ENIS=$(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$ENIS" ] && [ "$ENIS" != "None" ]; then
+                    echo "    Found: $ENIS"
+                    for eni in $ENIS; do
+                        # Check if attached and detach first
+                        ATTACHMENT=$(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+                            --network-interface-ids "$eni" \
+                            --query 'NetworkInterfaces[0].Attachment.AttachmentId' \
+                            --output text 2>/dev/null || echo "")
+                        if [ -n "$ATTACHMENT" ] && [ "$ATTACHMENT" != "None" ]; then
+                            echo "    Detaching ENI: $eni (attachment: $ATTACHMENT)"
+                            aws ec2 detach-network-interface --region "$AWS_REGION" \
+                                --attachment-id "$ATTACHMENT" --force 2>&1 || true
+                            sleep 3
+                        fi
+                        echo "    Deleting ENI: $eni"
+                        aws ec2 delete-network-interface --region "$AWS_REGION" \
+                            --network-interface-id "$eni" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
+
+                # 5. Delete security groups (non-default, after ENIs are gone)
+                echo "  - Security Groups (non-default):"
+                SGS=$(aws ec2 describe-security-groups --region "$AWS_REGION" \
+                    --filters "Name=vpc-id,Values=$vpc" \
+                    --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+                    --output text 2>/dev/null || echo "")
+                if [ -n "$SGS" ] && [ "$SGS" != "None" ]; then
+                    echo "    Found: $SGS"
+                    # First, remove all ingress/egress rules that reference other SGs
+                    for sg in $SGS; do
+                        echo "    Revoking rules for: $sg"
+                        aws ec2 revoke-security-group-ingress --region "$AWS_REGION" \
+                            --group-id "$sg" --source-group "$sg" 2>/dev/null || true
+                        aws ec2 revoke-security-group-egress --region "$AWS_REGION" \
+                            --group-id "$sg" --source-group "$sg" 2>/dev/null || true
+                    done
+                    # Now delete the security groups
+                    for sg in $SGS; do
+                        echo "    Deleting security group: $sg"
+                        aws ec2 delete-security-group --region "$AWS_REGION" \
+                            --group-id "$sg" 2>&1 || true
+                    done
+                else
+                    echo "    None found"
+                fi
+
+                # 6. Delete route tables (non-main, disassociate first)
                 echo "  - Route Tables:"
                 RTS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
@@ -156,7 +264,7 @@ cleanup_orphaned_aws_resources() {
                 if [ -n "$RTS" ] && [ "$RTS" != "None" ]; then
                     echo "    Found non-main: $RTS"
                     for rt in $RTS; do
-                        # First, disassociate from all subnets (required before deletion)
+                        # First, disassociate from all subnets
                         ASSOCS=$(aws ec2 describe-route-tables --region "$AWS_REGION" \
                             --route-table-ids "$rt" \
                             --query 'RouteTables[0].Associations[?!Main].RouteTableAssociationId' \
@@ -176,63 +284,17 @@ cleanup_orphaned_aws_resources() {
                     echo "    None found (or only main)"
                 fi
 
-                # Delete ENIs (detach first if attached)
-                echo "  - ENIs:"
-                ENIS=$(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
+                # 7. Delete subnets (LAST before VPC - they contain ENIs)
+                echo "  - Subnets:"
+                SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
                     --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+                    --query 'Subnets[*].SubnetId' \
                     --output text 2>/dev/null || echo "")
-                if [ -n "$ENIS" ] && [ "$ENIS" != "None" ]; then
-                    echo "    Found: $ENIS"
-                    for eni in $ENIS; do
-                        # Check if attached and detach first
-                        ATTACHMENT=$(aws ec2 describe-network-interfaces --region "$AWS_REGION" \
-                            --network-interface-ids "$eni" \
-                            --query 'NetworkInterfaces[0].Attachment.AttachmentId' \
-                            --output text 2>/dev/null || echo "")
-                        if [ -n "$ATTACHMENT" ] && [ "$ATTACHMENT" != "None" ]; then
-                            echo "    Detaching ENI: $eni (attachment: $ATTACHMENT)"
-                            aws ec2 detach-network-interface --region "$AWS_REGION" \
-                                --attachment-id "$ATTACHMENT" --force 2>&1 || true
-                            sleep 2
-                        fi
-                        echo "    Deleting ENI: $eni"
-                        aws ec2 delete-network-interface --region "$AWS_REGION" \
-                            --network-interface-id "$eni" 2>&1 || true
-                    done
-                else
-                    echo "    None found"
-                fi
-
-                # Delete security groups (non-default)
-                echo "  - Security Groups (non-default):"
-                SGS=$(aws ec2 describe-security-groups --region "$AWS_REGION" \
-                    --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
-                    --output text 2>/dev/null || echo "")
-                if [ -n "$SGS" ] && [ "$SGS" != "None" ]; then
-                    echo "    Found: $SGS"
-                    for sg in $SGS; do
-                        echo "    Deleting security group: $sg"
-                        aws ec2 delete-security-group --region "$AWS_REGION" \
-                            --group-id "$sg" 2>&1 || true
-                    done
-                else
-                    echo "    None found"
-                fi
-
-                # Delete VPC endpoints
-                echo "  - VPC Endpoints:"
-                ENDPOINTS=$(aws ec2 describe-vpc-endpoints --region "$AWS_REGION" \
-                    --filters "Name=vpc-id,Values=$vpc" \
-                    --query 'VpcEndpoints[*].VpcEndpointId' \
-                    --output text 2>/dev/null || echo "")
-                if [ -n "$ENDPOINTS" ] && [ "$ENDPOINTS" != "None" ]; then
-                    echo "    Found: $ENDPOINTS"
-                    for ep in $ENDPOINTS; do
-                        echo "    Deleting VPC endpoint: $ep"
-                        aws ec2 delete-vpc-endpoints --region "$AWS_REGION" \
-                            --vpc-endpoint-ids "$ep" 2>&1 || true
+                if [ -n "$SUBNETS" ] && [ "$SUBNETS" != "None" ]; then
+                    echo "    Found: $SUBNETS"
+                    for subnet in $SUBNETS; do
+                        echo "    Deleting subnet: $subnet"
+                        aws ec2 delete-subnet --region "$AWS_REGION" --subnet-id "$subnet" 2>&1 || true
                     done
                 else
                     echo "    None found"
