@@ -1338,6 +1338,7 @@ async def create_tool(
                     service_ports=service_ports,
                     image_pull_secret=request.imagePullSecret,
                     storage_size=storage_size,
+                    description=getattr(request, "description", None),
                 )
                 kube.create_statefulset(request.namespace, workload_manifest)
                 logger.info(
