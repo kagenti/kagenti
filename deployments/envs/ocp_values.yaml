@@ -81,11 +81,11 @@ charts:
           enabled: true
         platformOperator:
           enabled: true
-        # Disable platformWebhook - it injects SPIFFE sidecars into MCPServers
-        # but Tools don't need SPIFFE (they use delegated tokens from Agents)
-        # and the SPIFFE CSI driver isn't available on OpenShift (ZTWIM uses different approach)
+        # Enable platformWebhook for SPIFFE identity injection
+        # Works with ZTWIM operator on OCP 4.19+ via SpiffeCSIDriver
+        # Injects: spiffe-helper sidecar, kagenti-client-registration init container
         platformWebhook:
-          enabled: false
+          enabled: true
         ui:
           enabled: true
         # additional artifacts required by MCP gateway
