@@ -997,21 +997,60 @@
     # it will deploy Shipwright components. Without this wait, the Builds
     # operator will be stuck in a retry loop waiting for Tekton.
     - name: Wait for TektonConfig to be Ready
-      command: >-
-        kubectl get tektonconfig config
-        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-      register: tektonconfig_ready_status
-      retries: 60
-      delay: 10
-      until: tektonconfig_ready_status.stdout == "True"
-      changed_when: false
+      block:
+        - name: Wait for TektonConfig Ready condition
+          command: >-
+            kubectl get tektonconfig config
+            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+          register: tektonconfig_ready_status
+          retries: 60
+          delay: 10
+          until: tektonconfig_ready_status.stdout == "True"
+          changed_when: false
+      rescue:
+        - name: Get TektonConfig full status for debugging
+          command: kubectl get tektonconfig config -o yaml
+          register: tektonconfig_full_status
+          failed_when: false
 
-    - name: Display TektonConfig status if not ready
-      debug:
-        msg: |
-          TektonConfig status: {{ tektonconfig_ready_status.stdout | default('unknown') }}
-          Waiting for TektonConfig to report Ready=True before proceeding to OpenShift Builds.
-      when: tektonconfig_ready_status.stdout != "True"
+        - name: Get Tekton operator pod status
+          command: kubectl get pods -n openshift-operators -l app=tekton-operator -o wide
+          register: tekton_operator_pods
+          failed_when: false
+
+        - name: Get Tekton operator logs
+          shell: kubectl logs -n openshift-operators -l app=tekton-operator --tail=100 2>&1 || echo "No logs available"
+          register: tekton_operator_logs
+          failed_when: false
+
+        - name: Get Tekton pipelines controller status
+          command: kubectl get pods -n openshift-pipelines -o wide
+          register: tekton_pipelines_pods
+          failed_when: false
+
+        - name: Display TektonConfig failure diagnostics
+          debug:
+            msg: |
+              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              TektonConfig Failed to Become Ready
+              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+              TEKTONCONFIG STATUS:
+              {{ tektonconfig_full_status.stdout | default('unable to get status') }}
+
+              TEKTON OPERATOR PODS:
+              {{ tekton_operator_pods.stdout | default('unable to get pods') }}
+
+              TEKTON OPERATOR LOGS (last 100 lines):
+              {{ tekton_operator_logs.stdout | default('no logs') }}
+
+              TEKTON PIPELINES PODS:
+              {{ tekton_pipelines_pods.stdout | default('unable to get pods') }}
+              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        - name: Fail with TektonConfig error
+          fail:
+            msg: "TektonConfig did not become Ready after 10 minutes. See diagnostics above."
   when: enable_openshift | default(false)
 
 # Wait for OpenShift Builds operator to be ready.
