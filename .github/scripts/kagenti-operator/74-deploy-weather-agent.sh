@@ -76,8 +76,12 @@ log_success "BuildRun completed successfully"
 
 log_info "Creating Deployment and Service..."
 
-# Apply Deployment manifest
-kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment.yaml"
+# Apply Deployment manifest (use OCP-specific file with correct registry on OpenShift)
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
+else
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment.yaml"
+fi
 
 # Apply Service manifest
 kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_service.yaml"
