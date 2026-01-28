@@ -162,8 +162,7 @@ INSTANCE_COUNT=$(aws ec2 describe-instances --region "$AWS_REGION" \
     --query 'Reservations[*].Instances | length(@)' --output text 2>/dev/null || echo "0")
 # On-Demand vCPU quota (this is vCPUs, not instances)
 VCPU_QUOTA=$(get_quota "ec2" "L-1216C47A")
-# Estimate vCPUs (assume 4 per instance for m5.xlarge)
-VCPU_USED=$((INSTANCE_COUNT * 4))
+# Show as instance count (quota is in vCPUs, divide by 4 for m5.xlarge)
 show_quota_line "Running instances (estimated)" "$INSTANCE_COUNT" "$((VCPU_QUOTA / 4))" 10
 
 # Count Security Groups

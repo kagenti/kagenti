@@ -104,7 +104,6 @@ echo ""
 log_info "Checking AWS authentication..."
 
 if aws sts get-caller-identity &>/dev/null; then
-    AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
     AWS_ARN=$(aws sts get-caller-identity --query Arn --output text)
     log_success "AWS authenticated: $AWS_ARN"
 else

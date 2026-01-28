@@ -79,14 +79,10 @@ set -euo pipefail
 
 # Parse arguments
 ROTATE_KEYS=false
-UPDATE_QUOTAS=false
 for arg in "$@"; do
     case $arg in
         --rotate)
             ROTATE_KEYS=true
-            ;;
-        --update-quotas)
-            UPDATE_QUOTAS=true
             ;;
     esac
 done
@@ -236,7 +232,6 @@ log_success "All pre-flight checks passed"
 
 # Extract values needed for setup (preflight already validated these work)
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-AWS_USER_ARN=$(aws sts get-caller-identity --query Arn --output text)
 
 # ============================================================================
 # AUTO-DETECT FROM MANAGEMENT CLUSTER (after preflight validates oc access)
@@ -628,7 +623,7 @@ log_success "Token secret '${SA_NAME}-token' exists"
 
 # Wait for token to be populated by the controller (up to 30 seconds)
 log_info "Waiting for token to be populated..."
-for i in {1..30}; do
+for _ in {1..30}; do
     SA_TOKEN=$(oc get secret "${SA_NAME}-token" -n "$SA_NAMESPACE" -o jsonpath='{.data.token}' 2>/dev/null || echo "")
     if [ -n "$SA_TOKEN" ]; then
         break

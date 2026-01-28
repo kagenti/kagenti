@@ -10,7 +10,8 @@ REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../../.." && pwd)}"
 echo "Deploying Kagenti to cluster..."
 
 # Set Python interpreter for Ansible (required in CI where .venv doesn't exist)
-export ANSIBLE_PYTHON_INTERPRETER=$(which python3)
+ANSIBLE_PYTHON_INTERPRETER=$(which python3)
+export ANSIBLE_PYTHON_INTERPRETER
 
 # Create minimal secrets file for CI with auto-generated values
 SECRETS_FILE="$REPO_ROOT/deployments/envs/.secret_values.yaml"

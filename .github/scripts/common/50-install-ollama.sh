@@ -13,7 +13,7 @@ fi
 
 # Download Ollama install script with retry logic for rate limiting
 INSTALL_SCRIPT=$(mktemp)
-trap "rm -f $INSTALL_SCRIPT" EXIT
+trap 'rm -f "$INSTALL_SCRIPT"' EXIT
 
 MAX_RETRIES=5
 RETRY_COUNT=0

@@ -23,9 +23,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
-
 # Accept cluster suffix as argument
 if [ $# -ge 1 ]; then
     CLUSTER_SUFFIX="$1"
