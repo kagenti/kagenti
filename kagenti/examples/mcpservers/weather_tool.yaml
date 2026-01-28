@@ -11,6 +11,7 @@ metadata:
     kagenti.io/protocol: mcp
     kagenti.io/transport: streamable_http
     kagenti.io/framework: Python
+    kagenti.io/workload-type: deployment
     app.kubernetes.io/name: weather-tool
     app.kubernetes.io/managed-by: example
   annotations:
