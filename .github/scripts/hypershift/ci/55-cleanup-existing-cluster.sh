@@ -22,28 +22,9 @@ CLUSTER_TAG="kubernetes.io/cluster/${CLUSTER_NAME}"
 echo "Checking for existing cluster: $CLUSTER_NAME"
 
 # ============================================================================
-# Check for Orphaned AWS Resources
-# If found, use hypershift-automation playbook with cluster_exists=true to cleanup
+# Cleanup Orphaned AWS Resources
+# Uses hypershift-automation playbook with cluster_exists=true to force cleanup
 # ============================================================================
-
-check_orphaned_aws_resources() {
-    echo "Checking for orphaned AWS resources tagged with: $CLUSTER_TAG"
-
-    # Check for orphaned VPCs
-    ORPHANED_VPCS=$(aws ec2 describe-vpcs \
-        --region "$AWS_REGION" \
-        --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
-        --query 'Vpcs[*].VpcId' \
-        --output text 2>/dev/null || echo "")
-
-    if [ -n "$ORPHANED_VPCS" ] && [ "$ORPHANED_VPCS" != "None" ]; then
-        echo "Found orphaned VPCs: $ORPHANED_VPCS"
-        return 0  # orphaned resources exist
-    else
-        echo "No orphaned AWS resources found"
-        return 1  # no orphaned resources
-    fi
-}
 
 cleanup_orphaned_aws_resources() {
     echo "Cleaning up orphaned AWS resources using hypershift-automation playbook..."
@@ -71,9 +52,11 @@ cleanup_orphaned_aws_resources() {
     echo "Verifying VPC cleanup..."
     MAX_VPC_ATTEMPTS=10
     for attempt in $(seq 1 $MAX_VPC_ATTEMPTS); do
+        # Use tag-key filter to find VPCs with the cluster tag (any value)
+        # This is more robust than requiring tag value to be exactly "owned"
         REMAINING_VPCS=$(aws ec2 describe-vpcs \
             --region "$AWS_REGION" \
-            --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
+            --filters "Name=tag-key,Values=${CLUSTER_TAG}" \
             --query 'Vpcs[*].VpcId' \
             --output text 2>/dev/null || echo "")
 
@@ -319,10 +302,10 @@ cleanup_orphaned_aws_resources() {
 
         # Check if this was the last attempt
         if [ "$attempt" -eq "$MAX_VPC_ATTEMPTS" ]; then
-            # Final check after cleanup
+            # Final check after cleanup (use tag-key filter for consistency)
             FINAL_CHECK=$(aws ec2 describe-vpcs \
                 --region "$AWS_REGION" \
-                --filters "Name=tag:${CLUSTER_TAG},Values=owned" \
+                --filters "Name=tag-key,Values=${CLUSTER_TAG}" \
                 --query 'Vpcs[*].VpcId' \
                 --output text 2>/dev/null || echo "")
             if [ -n "$FINAL_CHECK" ] && [ "$FINAL_CHECK" != "None" ]; then
@@ -339,12 +322,12 @@ cleanup_orphaned_aws_resources() {
     echo "AWS orphaned resource cleanup complete"
 }
 
-# Check and cleanup orphaned AWS resources (before k8s cleanup)
-if check_orphaned_aws_resources; then
-    cleanup_orphaned_aws_resources
-fi
+# ============================================================================
+# STEP 1: Delete HostedCluster if exists (let operator do graceful cleanup)
+# ============================================================================
+# This must happen FIRST so the operator can clean up AWS resources properly.
+# If we delete AWS resources while HostedCluster exists, operator may recreate them.
 
-# Check if HostedCluster OR its namespace exists (namespace can be orphaned)
 HC_EXISTS=false
 NS_EXISTS=false
 
@@ -359,7 +342,7 @@ if oc get ns "$CONTROL_PLANE_NS" &>/dev/null; then
 fi
 
 if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
-    echo "Cleaning up existing cluster resources..."
+    echo "Cleaning up existing cluster resources via operator..."
 
     # Use hypershift-full-test.sh --include-cluster-destroy for consistent cleanup logic
     # hypershift-full-test.sh now detects CI mode (GITHUB_ACTIONS env var) and skips .env loading
@@ -367,7 +350,7 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
         --include-cluster-destroy \
         "$CLUSTER_SUFFIX" || true
 
-    # Verify cleanup completed
+    # Verify HostedCluster cleanup completed
     if oc get hostedcluster "$CLUSTER_NAME" -n clusters &>/dev/null; then
         echo "::warning::HostedCluster still exists after cleanup"
     fi
@@ -440,9 +423,60 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
         fi
     fi
 
-    echo "Cleanup complete"
+    echo "Kubernetes cleanup complete"
 else
-    echo "No existing cluster or namespace found, proceeding with creation"
+    echo "No existing HostedCluster or namespace found"
+fi
+
+# ============================================================================
+# STEP 2: Check for orphaned AWS resources and clean up if needed
+# ============================================================================
+# This runs AFTER HostedCluster deletion so we're only cleaning up true orphans,
+# not fighting against the operator.
+
+echo ""
+echo "=== Checking for orphaned AWS resources ==="
+
+DEBUG_SCRIPT="$REPO_ROOT/.github/scripts/hypershift/debug-aws-hypershift.sh"
+
+# Check for orphaned VPCs specifically (these block cluster creation)
+# Other resources (IAM, S3, OIDC) don't block and may be cleaned up by hcp CLI later
+check_orphaned_vpcs() {
+    ORPHANED_VPCS=$(aws ec2 describe-vpcs \
+        --region "$AWS_REGION" \
+        --filters "Name=tag-key,Values=${CLUSTER_TAG}" \
+        --query 'Vpcs[*].VpcId' \
+        --output text 2>/dev/null || echo "")
+    if [ -n "$ORPHANED_VPCS" ] && [ "$ORPHANED_VPCS" != "None" ]; then
+        return 0  # VPCs exist (orphans found)
+    else
+        return 1  # No VPCs (clean)
+    fi
+}
+
+# Use debug script to detect any orphans, but only fail on VPCs (they block cluster creation)
+if ! "$DEBUG_SCRIPT" --check "$CLUSTER_NAME"; then
+    echo "Orphaned AWS resources detected, running cleanup..."
+    cleanup_orphaned_aws_resources
+
+    # Final verification - only fail if VPCs still remain
+    # Other resources (IAM, S3, OIDC) don't block and will be overwritten/reused
+    echo ""
+    echo "=== Final VPC verification ==="
+    if check_orphaned_vpcs; then
+        echo "::error::VPCs still remain after cleanup - these block cluster creation"
+        echo "Cannot proceed with cluster creation while old VPC exists."
+        echo ""
+        echo "Orphaned VPCs: $ORPHANED_VPCS"
+        echo ""
+        echo "Run the following for full details:"
+        echo "  $DEBUG_SCRIPT $CLUSTER_NAME"
+        exit 1
+    fi
+    echo "VPCs cleaned up successfully"
+    echo "::notice::Some non-blocking resources (IAM, S3, OIDC) may still exist - they will be overwritten/reused"
+else
+    echo "No orphaned AWS resources found"
 fi
 
 # ============================================================================
