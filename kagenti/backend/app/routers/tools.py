@@ -1354,6 +1354,7 @@ async def create_tool(
                     env_vars=env_vars,
                     service_ports=service_ports,
                     image_pull_secret=request.imagePullSecret,
+                    description=request.description or "",
                 )
                 kube.create_deployment(request.namespace, workload_manifest)
                 logger.info(
