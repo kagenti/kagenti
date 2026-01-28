@@ -74,10 +74,10 @@ rules:
     resources: ["machines", "machinesets", "machinedeployments", "clusters"]
     verbs: ["get", "list", "watch", "patch"]
 
-  # AWS CAPI resources
+  # AWS CAPI resources - patch needed to remove finalizers from orphaned resources
   - apiGroups: ["infrastructure.cluster.x-k8s.io"]
     resources: ["awsmachines", "awsmachinetemplates", "awsclusters"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
 
   # Deployments and other workloads for debugging and orphan cleanup
   # Note: patch is needed to remove finalizers from orphaned deployments

@@ -367,10 +367,15 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
         echo "Force-deleting orphaned namespace..."
 
         # Remove finalizers from ALL resources in the namespace
-        # Include HyperShift-specific resources that can block deletion
+        # Include HyperShift-specific and Cluster API resources that can block deletion
         echo "Removing finalizers from remaining resources..."
-        for resource in hostedcontrolplane clusters.cluster.x-k8s.io \
+        for resource in hostedcontrolplane hostedcluster \
+                        clusters.cluster.x-k8s.io \
+                        machinedeployments.cluster.x-k8s.io \
                         machinepools machinesets machines \
+                        awsmachines.infrastructure.cluster.x-k8s.io \
+                        awsclusters.infrastructure.cluster.x-k8s.io \
+                        awsmachinetemplates.infrastructure.cluster.x-k8s.io \
                         etcdclusters etcds \
                         deployments statefulsets replicasets pods \
                         services endpoints configmaps secrets pvc \
