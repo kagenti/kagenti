@@ -7,6 +7,14 @@ Environment markers:
 - @pytest.mark.openshift_only - Test only runs on OpenShift
 - @pytest.mark.kind_only - Test only runs on Kind cluster
 - @pytest.mark.requires_features(["feature1", "feature2"]) - Test requires specific features
+- @pytest.mark.observability - Test should run AFTER other tests (for traffic analysis)
+
+Running tests in two phases:
+    # Phase 1: Run all tests except observability (generates traffic)
+    pytest kagenti/tests/e2e/ -v -m "not observability"
+
+    # Phase 2: Run observability tests (validates traffic patterns)
+    pytest kagenti/tests/e2e/ -v -m "observability"
 """
 
 import base64
@@ -18,6 +26,24 @@ import tempfile
 import httpx
 import pytest
 import yaml
+
+
+def pytest_configure(config):
+    """Register custom pytest markers."""
+    config.addinivalue_line(
+        "markers", "openshift_only: Test only runs on OpenShift environment"
+    )
+    config.addinivalue_line(
+        "markers", "kind_only: Test only runs on Kind cluster environment"
+    )
+    config.addinivalue_line(
+        "markers",
+        "requires_features(features): Test requires specific features to be enabled",
+    )
+    config.addinivalue_line(
+        "markers",
+        "observability: Test should run AFTER other tests (for traffic analysis)",
+    )
 
 
 @pytest.fixture(scope="session")
