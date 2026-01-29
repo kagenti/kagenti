@@ -21,7 +21,13 @@ jobs:
           - name: ui-v2
             path: ./kagenti
           - name: backend
-            path: ./kagenti    
+            path: ./kagenti
+          - name: ui-oauth-secret
+            path: ./kagenti/auth
+          - name: agent-oauth-secret
+            path: ./kagenti/auth
+          - name: phoenix-oauth-secret
+            path: ./kagenti/auth
 
     steps:
       - name: Checkout repository
