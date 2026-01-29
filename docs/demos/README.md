@@ -8,7 +8,7 @@ Detailed overview of the identity concepts are covered in the [Kagenti Identity 
 
 Check the details for running various demos:
 
-- **AuthBridge demo - Identity and the new webhook** - [Simple demo showing AuthBridge functionallity](https://github.com/kagenti/kagenti-extensions/blob/main/AuthBridge/demo-webhook.md) with the mutating webhook controller
+- **AuthBridge demo - Identity and the new webhook** - [Simple demo showing AuthBridge functionality](https://github.com/kagenti/kagenti-extensions/blob/main/AuthBridge/demo-webhook.md) with the mutating webhook controller
 - **Interactive online demo at KubeCon NA 2025**: [Tutorial: Build-a-Bot Workshop: Enabling Trusted Agents With SPIRE + MCP](https://red.ht/3WL5Loc)
 - **Simplest Demo** - [Weather Service](./demo-weather-agent.md): Deploy your first agent and tool
 - **Identity & Auth Demo** - [Slack Authentication](./demo-slack-research-agent.md): Deploy an agent and MCP Server tool to talk to the Slack API
