@@ -11,8 +11,23 @@ exposing endpoints for managing agents, tools, and platform configuration.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    """Middleware to prevent browser caching of API responses."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        # Add no-cache headers to API endpoints to prevent stale data
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
 
 from app.core.config import settings
 from app.routers import agents, tools, namespaces, config, auth, chat
@@ -54,6 +69,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prevent browser caching of API responses
+app.add_middleware(NoCacheMiddleware)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1")
