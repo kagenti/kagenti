@@ -1,0 +1,172 @@
+{{- if .Values.components.mlflow.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mlflow
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+      - name: mlflow
+        image: ghcr.io/mlflow/mlflow:v3.9.0
+        command:
+        - mlflow
+        - server
+        - --host=0.0.0.0
+        - --port=5000
+        - --backend-store-uri=postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-otel:5432/mlflow
+        - --default-artifact-root=/mlflow/artifacts
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+        - name: MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD
+          value: "true"
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 30  # Allow up to 5 minutes for startup
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        volumeMounts:
+        - name: mlflow-artifacts
+          mountPath: /mlflow/artifacts
+      initContainers:
+      - name: create-db
+        image: {{ .Values.common.postgresImage | default "postgres:16" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 60); do
+            if PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres-otel -U $POSTGRES_USER -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Waiting for PostgreSQL... ($i/60)"
+            sleep 2
+          done
+          echo "Creating MLflow database if not exists..."
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres-otel -U $POSTGRES_USER -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" | grep -q 1 || \
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres-otel -U $POSTGRES_USER -d postgres -c "CREATE DATABASE mlflow"
+          echo "Database ready"
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+      volumes:
+      - name: mlflow-artifacts
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mlflow
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: mlflow
+  ports:
+  - name: http
+    port: 5000
+    targetPort: 5000
+    protocol: TCP
+  type: ClusterIP
+---
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: 5000
+  to:
+    kind: Service
+    name: mlflow
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- else }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app: mlflow
+spec:
+  parentRefs:
+    - name: http
+      namespace: {{ .Release.Namespace }}
+  hostnames:
+    - mlflow.{{ .Values.domain | default "localtest.me" }}
+  rules:
+    - backendRefs:
+        - name: mlflow
+          port: 5000
+{{- end }}
+{{- end }}

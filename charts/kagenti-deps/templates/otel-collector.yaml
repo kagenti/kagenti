@@ -91,6 +91,12 @@ data:
         endpoint: phoenix:4317
         tls:
           insecure: true
+      {{- if $.Values.components.mlflow.enabled }}
+      otlphttp/mlflow:
+        endpoint: http://mlflow:5000
+        tls:
+          insecure: true
+      {{- end }}
 
     processors:
       memory_limiter:
@@ -116,4 +122,10 @@ data:
           receivers: [ otlp ]
           processors: [ memory_limiter, filter/phoenix, batch ]
           exporters: [ otlp/phoenix ]
+        {{- if $.Values.components.mlflow.enabled }}
+        traces/mlflow:
+          receivers: [ otlp ]
+          processors: [ memory_limiter, filter/phoenix, batch ]
+          exporters: [ otlphttp/mlflow ]
+        {{- end }}
 {{- end }}

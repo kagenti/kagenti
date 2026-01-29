@@ -32,6 +32,8 @@ charts:
           enabled: true
         otel:
           enabled: true
+        mlflow:
+          enabled: true
         mcpInspector:
           enabled: true
         metricsServer:
