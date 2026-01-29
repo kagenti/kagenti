@@ -1003,6 +1003,8 @@
             kubectl get tektonconfig config
             -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
           register: tektonconfig_ready_status
+          # Increased timeout: HyperShift clusters can take 15+ minutes for TektonConfig
+          # due to distributed control plane and component initialization
           retries: 90
           delay: 10
           until: tektonconfig_ready_status.stdout == "True"
@@ -1028,6 +1030,18 @@
           register: tekton_pipelines_pods
           failed_when: false
 
+        - name: Get TektonInstallerset status (shows which components are blocking)
+          shell: >-
+            kubectl get tektoninstallersets.operator.tekton.dev -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,MESSAGE:.status.conditions[?(@.type=="Ready")].message' 2>&1 || echo "Unable to get installersets"
+          register: tekton_installersets
+          failed_when: false
+
+        - name: Get TektonConfig all conditions
+          shell: >-
+            kubectl get tektonconfig config -o jsonpath='{range .status.conditions[*]}{.type}: {.status} - {.message}{"\n"}{end}' 2>&1 || echo "Unable to get conditions"
+          register: tektonconfig_conditions
+          failed_when: false
+
         - name: Display TektonConfig failure diagnostics
           debug:
             msg: |
@@ -1035,7 +1049,13 @@
               TektonConfig Failed to Become Ready
               ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-              TEKTONCONFIG STATUS:
+              TEKTONCONFIG CONDITIONS:
+              {{ tektonconfig_conditions.stdout | default('unable to get conditions') }}
+
+              TEKTON INSTALLERSETS (components):
+              {{ tekton_installersets.stdout | default('unable to get installersets') }}
+
+              TEKTONCONFIG FULL STATUS:
               {{ tektonconfig_full_status.stdout | default('unable to get status') }}
 
               TEKTON OPERATOR PODS:
