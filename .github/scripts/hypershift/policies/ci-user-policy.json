@@ -82,7 +82,8 @@
         "ec2:AuthorizeSecurityGroupEgress",
         "ec2:RevokeSecurityGroupIngress",
         "ec2:RevokeSecurityGroupEgress",
-        "ec2:ModifyInstanceAttribute"
+        "ec2:ModifyInstanceAttribute",
+        "ec2:DetachNetworkInterface"
       ],
       "Resource": "*",
       "Condition": {
@@ -95,6 +96,7 @@
       "Sid": "EC2NetworkInterfaceMutate",
       "Effect": "Allow",
       "Action": [
+        "ec2:DetachNetworkInterface",
         "ec2:DeleteNetworkInterface",
         "ec2:ModifyNetworkInterfaceAttribute"
       ],

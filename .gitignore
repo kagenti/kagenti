@@ -181,3 +181,6 @@ node_modules/
 # HyperShift CI credentials (covered by .env.* above)
 .env.kagenti-*
 .env.hypershift-ci
+
+# Git worktrees for parallel development
+.worktrees/
