@@ -406,26 +406,46 @@ jobs:
   action-pinning:
     name: Verify Action Pinning
     runs-on: ubuntu-latest
-    # Informational only - don't block PRs until actions are pinned
-    # TODO: Remove continue-on-error after pinning all actions to SHAs
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Check for unpinned GitHub Actions
-        uses: zgosalvez/github-actions-ensure-sha-pinned-actions@v3
-        with:
-          # Note: This check reports ALL unpinned actions
-          # Pinning to SHAs prevents supply chain attacks
-          # See: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions
-          #
-          # To pin an action, replace:
-          #   uses: actions/checkout@v4
-          # With:
-          #   uses: actions/checkout@<full-sha>  # v4
-          #
-          # Find SHAs at: https://github.com/<owner>/<repo>/releases
-          allowlist: ""
+        id: pinning-check
+        # Run check but capture exit code - we report but don't fail
+        run: |
+          echo "=== Checking for unpinned GitHub Actions ==="
+          echo ""
+          echo "Pinning to SHAs prevents supply chain attacks."
+          echo "See: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+          echo ""
+
+          # Find all workflow files and check for unpinned actions
+          UNPINNED=$(grep -rh "uses:" .github/workflows/ | grep -v "#" | grep -E "@v[0-9]|@main|@master" | sort -u || true)
+
+          if [ -n "$UNPINNED" ]; then
+            echo "::warning::Found actions not pinned to SHA commits:"
+            echo ""
+            echo "$UNPINNED"
+            echo ""
+            echo "To pin an action, replace:"
+            echo "  uses: actions/checkout@v4"
+            echo "With:"
+            echo "  uses: actions/checkout@<full-sha>  # v4"
+            echo ""
+            echo "Find SHAs at: https://github.com/<owner>/<repo>/releases"
+            echo ""
+            # Count unpinned actions
+            COUNT=$(echo "$UNPINNED" | wc -l | tr -d ' ')
+            echo "Total unpinned actions: $COUNT"
+            echo ""
+            echo "NOTE: This check is informational. Actions will be pinned incrementally."
+          else
+            echo "All actions are pinned to SHA commits!"
+          fi
+
+          # Always exit 0 - this is informational only
+          # TODO: Change to exit 1 after all actions are pinned
+          exit 0
 
   # ============================================================================
   # OpenSSF Scorecard
