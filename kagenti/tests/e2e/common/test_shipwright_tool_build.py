@@ -6,6 +6,9 @@ Integration tests for Shipwright tool builds.
 
 These tests validate end-to-end flows for building and deploying MCP tools
 using the Shipwright build system. They run against a real Kubernetes cluster.
+
+After a successful build, tools are deployed as standard Kubernetes Deployments
++ Services (not MCPServer CRDs).
 """
 
 import json
@@ -19,11 +22,6 @@ SHIPWRIGHT_GROUP = "shipwright.io"
 SHIPWRIGHT_VERSION = "v1beta1"
 SHIPWRIGHT_BUILDS_PLURAL = "builds"
 SHIPWRIGHT_BUILDRUNS_PLURAL = "buildruns"
-
-# ToolHive CRD definitions
-TOOLHIVE_GROUP = "toolhive.stacklok.dev"
-TOOLHIVE_VERSION = "v1alpha1"
-TOOLHIVE_MCP_PLURAL = "mcpservers"
 
 # Test constants
 TEST_NAMESPACE = "team1"

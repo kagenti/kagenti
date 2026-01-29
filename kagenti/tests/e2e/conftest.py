@@ -69,6 +69,8 @@ def enabled_features(kagenti_config):
         "certManager",
         "tekton",
         "kiali",
+        # Deprecated: tools now use standard Kubernetes Deployments + Services
+        # Kept for backward compatibility during migration period
         "toolhiveCRDs",
         "toolhiveOperator",
     ]
@@ -305,6 +307,7 @@ def pytest_collection_modifyitems(config, items):
         "certManager",
         "tekton",
         "kiali",
+        # Deprecated: tools now use standard Kubernetes Deployments + Services
         "toolhiveCRDs",
         "toolhiveOperator",
     ]

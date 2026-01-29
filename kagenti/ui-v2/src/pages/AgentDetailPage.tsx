@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { copyToClipboard } from '../utils/clipboard';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -482,7 +483,7 @@ export const AgentDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>Agent URL</DescriptionListTerm>
                         <DescriptionListDescription>
-                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied">
+                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
                             {agentUrl}
                           </ClipboardCopy>
                         </DescriptionListDescription>

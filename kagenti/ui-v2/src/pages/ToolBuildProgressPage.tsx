@@ -77,7 +77,10 @@ export const ToolBuildProgressPage: React.FC = () => {
 
   // Mutation for finalizing the build
   const finalizeMutation = useMutation({
-    mutationFn: () => toolShipwrightService.finalizeBuild(namespace!, name!, {}),
+    mutationFn: () => toolShipwrightService.finalizeBuild(namespace!, name!, {
+      workloadType: buildInfo?.toolConfig?.workloadType,
+      persistentStorage: buildInfo?.toolConfig?.persistentStorage,
+    }),
     onSuccess: () => {
       // Invalidate queries and navigate to tool detail page
       queryClient.invalidateQueries({ queryKey: ['tools'] });
@@ -250,7 +253,7 @@ export const ToolBuildProgressPage: React.FC = () => {
               <FlexItem>
                 <Spinner size="md" />
               </FlexItem>
-              <FlexItem>Build succeeded! Creating the MCPServer deployment...</FlexItem>
+              <FlexItem>Build succeeded! Creating the tool deployment...</FlexItem>
             </Flex>
           </Alert>
         )}
@@ -368,10 +371,18 @@ export const ToolBuildProgressPage: React.FC = () => {
             <CardBody>
               <TextContent style={{ marginBottom: '16px' }}>
                 <Text>
-                  The following configuration will be applied when the MCPServer is created:
+                  The following configuration will be applied when the tool workload is created:
                 </Text>
               </TextContent>
               <DescriptionList>
+                <DescriptionListGroup>
+                  <DescriptionListTerm>Workload Type</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    <Label color="grey">
+                      {buildInfo.toolConfig.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment'}
+                    </Label>
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
                 <DescriptionListGroup>
                   <DescriptionListTerm>Protocol</DescriptionListTerm>
                   <DescriptionListDescription>
@@ -394,6 +405,14 @@ export const ToolBuildProgressPage: React.FC = () => {
                     )}
                   </DescriptionListDescription>
                 </DescriptionListGroup>
+                {buildInfo.toolConfig.persistentStorage?.enabled && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Persistent Storage</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      <Label color="blue">{buildInfo.toolConfig.persistentStorage.size}</Label>
+                    </DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
                 {buildInfo.toolConfig.envVars && buildInfo.toolConfig.envVars.length > 0 && (
                   <DescriptionListGroup>
                     <DescriptionListTerm>Environment Variables</DescriptionListTerm>

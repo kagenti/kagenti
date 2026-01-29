@@ -440,6 +440,10 @@ export const toolService = {
       targetPort: number;
       protocol: string;
     }>;
+    // Workload type
+    workloadType?: 'deployment' | 'statefulset';
+    // Persistent storage (for StatefulSet)
+    persistentStorage?: { enabled: boolean; size: string };
     // Deployment method
     deploymentMethod?: 'image' | 'source';
     // Image deployment fields
@@ -520,6 +524,8 @@ export interface ToolShipwrightBuildInfo {
     framework: string;
     createHttpRoute: boolean;
     registrySecret?: string;
+    workloadType?: 'deployment' | 'statefulset';
+    persistentStorage?: { enabled: boolean; size: string };
     envVars?: Array<{ name: string; value: string }>;
     servicePorts?: Array<{
       name: string;
@@ -557,7 +563,7 @@ export const toolShipwrightService = {
   },
 
   /**
-   * Finalize a Shipwright build by creating the MCPServer
+   * Finalize a Shipwright build by creating the Deployment/StatefulSet + Service
    */
   async finalizeBuild(
     namespace: string,
@@ -565,6 +571,8 @@ export const toolShipwrightService = {
     data: {
       protocol?: string;
       framework?: string;
+      workloadType?: 'deployment' | 'statefulset';
+      persistentStorage?: { enabled: boolean; size: string };
       envVars?: Array<{ name: string; value: string }>;
       servicePorts?: Array<{
         name: string;

@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { copyToClipboard } from '../utils/clipboard';
 import {
   PageSection,
   Title,
@@ -69,7 +70,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import yaml from 'js-yaml';
 
-import { toolService, configService } from '@/services/api';
+import { toolService, configService, toolShipwrightService, ToolShipwrightBuildInfo } from '@/services/api';
 
 interface StatusCondition {
   type: string;
@@ -144,13 +145,8 @@ export const ToolDetailPage: React.FC = () => {
     enabled: !!namespace && !!name,
     refetchInterval: (query) => {
       // Poll every 5 seconds if tool is not ready
-      const status = query.state.data?.status || {};
-      const phase = status.phase || '';
-      const conditions = status.conditions || [];
-      const isReady = phase === 'Running' || conditions.some(
-        (c: { type: string; status: string }) => c.type === 'Ready' && c.status === 'True'
-      );
-      return isReady ? false : 5000;
+      const readyStatus = query.state.data?.readyStatus || '';
+      return readyStatus === 'Ready' ? false : 5000;
     },
   });
 
@@ -186,6 +182,16 @@ export const ToolDetailPage: React.FC = () => {
     onSuccess: (data) => {
       setInvokeResult(data.result as InvokeResult);
     },
+  });
+
+  // Check if tool was built with Shipwright (has annotation)
+  const shipwrightBuildName = tool?.metadata?.annotations?.['kagenti.io/shipwright-build'];
+
+  // Fetch Shipwright build info if tool has shipwright annotation
+  const { data: shipwrightBuildStatus, isLoading: isShipwrightBuildStatusLoading } = useQuery<ToolShipwrightBuildInfo>({
+    queryKey: ['toolShipwrightBuildStatus', namespace, shipwrightBuildName],
+    queryFn: () => toolShipwrightService.getBuildInfo(namespace!, shipwrightBuildName!),
+    enabled: !!namespace && !!shipwrightBuildName && !!tool,
   });
 
   // Open invoke modal for a specific tool
@@ -265,30 +271,32 @@ export const ToolDetailPage: React.FC = () => {
 
   const metadata = tool.metadata || {};
   const spec = tool.spec || {};
-  const status = tool.status || {};
+  const rawStatus = tool.status || {};
   const labels = metadata.labels || {};
-  const conditions: StatusCondition[] = status.conditions || [];
+  const annotations = metadata.annotations || {};
 
-  // MCPServer CRD uses status.phase for ready state, not conditions
-  const phase = status.phase || '';
-  const isReady = phase === 'Running' || conditions.some(
-    (c) => c.type === 'Ready' && c.status === 'True'
-  );
+  // Extract conditions from raw Deployment/StatefulSet status
+  const statusObj = typeof rawStatus === 'object' && rawStatus !== null ? rawStatus : {};
+  const conditions: StatusCondition[] = (statusObj as Record<string, unknown>).conditions as StatusCondition[] || [];
+
+  // Use computed readyStatus from backend
+  const readyStatus = tool.readyStatus || 'Not Ready';
+  const isReady = readyStatus === 'Ready';
 
   // If route check fails or is loading, default to false (in-cluster URL is safer default)
   const hasRoute = routeStatusData?.hasRoute ?? false;
 
   // Determine the appropriate URL based on route existence
-  // External URL: http://{name}.{namespace}.{domainName}:8080 (via HTTPRoute)
-  // In-cluster URL: http://mcp-{name}-proxy.{namespace}.svc.cluster.local:8000
+  // External URL: http://{name}.{namespace}.{domainName}:8080/mcp (via HTTPRoute)
+  // In-cluster URL: http://{name}-mcp.{namespace}.svc.cluster.local:8000/mcp
   const domainName = dashboardConfig?.domainName || 'localtest.me';
   const toolExternalUrl = hasRoute
-    ? `http://${name}.${namespace}.${domainName}:8080`
-    : `http://mcp-${name}-proxy.${namespace}.svc.cluster.local:8000`;
+    ? `http://${name}.${namespace}.${domainName}:8080/mcp`
+    : `http://${name}-mcp.${namespace}.svc.cluster.local:8000/mcp`;
 
   // In-cluster URL for MCP server (used by MCP Inspector which runs in-cluster)
-  // ToolHive creates proxy services with pattern: mcp-{name}-proxy on port 8000
-  const mcpInClusterUrl = `http://mcp-${name}-proxy.${namespace}.svc.cluster.local:8000/mcp`;
+  // Service naming: {name}-mcp on port 8000
+  const mcpInClusterUrl = `http://${name}-mcp.${namespace}.svc.cluster.local:8000/mcp`;
 
   // Construct MCP Inspector URL with pre-configured server
   // MCP Inspector runs in-cluster, so it needs the in-cluster URL
@@ -327,8 +335,13 @@ export const ToolDetailPage: React.FC = () => {
             <Title headingLevel="h1">{name}</Title>
           </SplitItem>
           <SplitItem>
-            <Label color={isReady ? 'green' : 'red'}>
-              {isReady ? 'Ready' : 'Not Ready'}
+            <Label color={
+              readyStatus === 'Ready' ? 'green'
+                : readyStatus === 'Progressing' ? 'blue'
+                : readyStatus === 'Failed' ? 'red'
+                : 'orange'
+            }>
+              {readyStatus}
             </Label>
           </SplitItem>
           <SplitItem isFilled />
@@ -339,6 +352,13 @@ export const ToolDetailPage: React.FC = () => {
                   {labels['kagenti.io/protocol']?.toUpperCase() || 'MCP'}
                 </Label>
               </FlexItem>
+              {tool.workloadType && (
+                <FlexItem>
+                  <Label color="grey">
+                    {tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment'}
+                  </Label>
+                </FlexItem>
+              )}
               <FlexItem>
                 <Dropdown
                   isOpen={actionsMenuOpen}
@@ -402,14 +422,34 @@ export const ToolDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>Description</DescriptionListTerm>
                         <DescriptionListDescription>
-                          {spec.description || 'No description available'}
+                          {annotations['kagenti.io/description'] || spec.description || 'No description available'}
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Workload Type</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          <Label color="grey" isCompact>
+                            {tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment'}
+                          </Label>
+                        </DescriptionListDescription>
+                      </DescriptionListGroup>
+                      <DescriptionListGroup>
+                        <DescriptionListTerm>Replicas</DescriptionListTerm>
+                        <DescriptionListDescription>
+                          {(() => {
+                            const desired = spec.replicas ?? 1;
+                            const ready = (statusObj as Record<string, unknown>).readyReplicas
+                              || (statusObj as Record<string, unknown>).ready_replicas
+                              || 0;
+                            return `${ready}/${desired}`;
+                          })()}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                       <DescriptionListGroup>
                         <DescriptionListTerm>Created</DescriptionListTerm>
                         <DescriptionListDescription>
-                          {metadata.creationTimestamp
-                            ? new Date(metadata.creationTimestamp).toLocaleString()
+                          {(metadata.creationTimestamp || metadata.creation_timestamp)
+                            ? new Date(metadata.creationTimestamp || metadata.creation_timestamp!).toLocaleString()
                             : 'N/A'}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
@@ -427,14 +467,14 @@ export const ToolDetailPage: React.FC = () => {
               </GridItem>
 
               <GridItem md={6}>
-                <Card>
+                <Card style={{ marginBottom: '16px' }}>
                   <CardTitle>Endpoint</CardTitle>
                   <CardBody>
                     <DescriptionList isCompact>
                       <DescriptionListGroup>
                         <DescriptionListTerm>MCP Server URL</DescriptionListTerm>
                         <DescriptionListDescription>
-                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied">
+                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
                             {toolExternalUrl}
                           </ClipboardCopy>
                         </DescriptionListDescription>
@@ -442,55 +482,254 @@ export const ToolDetailPage: React.FC = () => {
                     </DescriptionList>
                   </CardBody>
                 </Card>
+
+                {tool.service && (
+                  <Card>
+                    <CardTitle>Service</CardTitle>
+                    <CardBody>
+                      <DescriptionList isCompact>
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>Service Name</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {tool.service.name}
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                        {tool.service.type && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Type</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {tool.service.type}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                        {tool.service.clusterIP && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Cluster IP</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {tool.service.clusterIP}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                        {tool.service.ports && tool.service.ports.length > 0 && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Ports</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              {tool.service.ports.map((port) => (
+                                <Label key={port.name || port.port} isCompact style={{ marginRight: '4px' }}>
+                                  {port.name ? `${port.name}: ` : ''}{port.port}{port.targetPort ? ` → ${port.targetPort}` : ''}/{port.protocol || 'TCP'}
+                                </Label>
+                              ))}
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
+                      </DescriptionList>
+                    </CardBody>
+                  </Card>
+                )}
               </GridItem>
             </Grid>
           </Tab>
 
           <Tab eventKey={1} title={<TabTitleText>Status</TabTitleText>}>
-            <Card style={{ marginTop: '16px' }}>
-              <CardTitle>Status Conditions</CardTitle>
-              <CardBody>
-                {conditions.length === 0 ? (
-                  <Alert variant="info" title="No status conditions available" isInline />
-                ) : (
-                  <Table aria-label="Status conditions" variant="compact">
-                    <Thead>
-                      <Tr>
-                        <Th>Type</Th>
-                        <Th>Status</Th>
-                        <Th>Reason</Th>
-                        <Th>Message</Th>
-                        <Th>Last Transition</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {conditions.map((condition, index) => (
-                        <Tr key={`${condition.type}-${index}`}>
-                          <Td dataLabel="Type">{condition.type}</Td>
-                          <Td dataLabel="Status">
-                            <Label
-                              color={condition.status === 'True' ? 'green' : 'red'}
-                              isCompact
-                            >
-                              {condition.status}
-                            </Label>
-                          </Td>
-                          <Td dataLabel="Reason">{condition.reason || '-'}</Td>
-                          <Td dataLabel="Message">
-                            {condition.message || '-'}
-                          </Td>
-                          <Td dataLabel="Last Transition">
-                            {condition.lastTransitionTime
-                              ? new Date(condition.lastTransitionTime).toLocaleString()
-                              : '-'}
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                )}
-              </CardBody>
-            </Card>
+            <Grid hasGutter style={{ marginTop: '16px' }}>
+              {/* Tool Runtime Status */}
+              <GridItem md={12}>
+                <Card>
+                  <CardTitle>Tool Status</CardTitle>
+                  <CardBody>
+                    {conditions.length === 0 ? (
+                      <Alert variant="info" title="No status conditions available" isInline />
+                    ) : (
+                      <Table aria-label="Status conditions" variant="compact">
+                        <Thead>
+                          <Tr>
+                            <Th>Type</Th>
+                            <Th>Status</Th>
+                            <Th>Reason</Th>
+                            <Th>Message</Th>
+                            <Th>Last Transition</Th>
+                          </Tr>
+                        </Thead>
+                        <Tbody>
+                          {conditions.map((condition, index) => (
+                            <Tr key={`${condition.type}-${index}`}>
+                              <Td dataLabel="Type">{condition.type}</Td>
+                              <Td dataLabel="Status">
+                                <Label
+                                  color={condition.status === 'True' ? 'green' : 'red'}
+                                  isCompact
+                                >
+                                  {condition.status}
+                                </Label>
+                              </Td>
+                              <Td dataLabel="Reason">{condition.reason || '-'}</Td>
+                              <Td dataLabel="Message">
+                                {condition.message || '-'}
+                              </Td>
+                              <Td dataLabel="Last Transition">
+                                {(condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time)
+                                  ? new Date(
+                                      (condition.lastTransitionTime || (condition as unknown as Record<string, unknown>).last_transition_time) as string
+                                    ).toLocaleString()
+                                  : '-'}
+                              </Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    )}
+                  </CardBody>
+                </Card>
+              </GridItem>
+
+              {/* Shipwright Build Status - shown when tool was built with Shipwright */}
+              {shipwrightBuildName && (
+                <GridItem md={12}>
+                  <Card>
+                    <CardTitle>Shipwright Build Status</CardTitle>
+                    <CardBody>
+                      {isShipwrightBuildStatusLoading ? (
+                        <Spinner size="md" aria-label="Loading Shipwright build status" />
+                      ) : shipwrightBuildStatus ? (
+                        <>
+                          <DescriptionList isCompact isHorizontal>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Build Name</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                {shipwrightBuildStatus.name}
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Build Registered</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <Label
+                                  color={shipwrightBuildStatus.buildRegistered ? 'green' : 'red'}
+                                  isCompact
+                                >
+                                  {shipwrightBuildStatus.buildRegistered ? 'Yes' : 'No'}
+                                </Label>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Build Strategy</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <Label isCompact color="blue">{shipwrightBuildStatus.strategy}</Label>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Output Image</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <code style={{ fontSize: '0.85em' }}>
+                                  {shipwrightBuildStatus.outputImage}
+                                </code>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Git URL</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                <code style={{ fontSize: '0.85em' }}>
+                                  {shipwrightBuildStatus.gitUrl}
+                                </code>
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                              <DescriptionListTerm>Git Revision</DescriptionListTerm>
+                              <DescriptionListDescription>
+                                {shipwrightBuildStatus.gitRevision}
+                              </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            {shipwrightBuildStatus.contextDir && (
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Context Directory</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  {shipwrightBuildStatus.contextDir}
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                            )}
+                          </DescriptionList>
+
+                          {/* BuildRun Status */}
+                          {shipwrightBuildStatus.hasBuildRun && (
+                            <>
+                              <Title headingLevel="h4" size="md" style={{ marginTop: '24px', marginBottom: '16px' }}>
+                                Latest BuildRun
+                              </Title>
+                              <DescriptionList isCompact isHorizontal>
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>BuildRun Name</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    {shipwrightBuildStatus.buildRunName}
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>Phase</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    <Label
+                                      color={
+                                        shipwrightBuildStatus.buildRunPhase === 'Succeeded'
+                                          ? 'green'
+                                          : shipwrightBuildStatus.buildRunPhase === 'Failed'
+                                            ? 'red'
+                                            : 'blue'
+                                      }
+                                    >
+                                      {shipwrightBuildStatus.buildRunPhase}
+                                    </Label>
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                                {shipwrightBuildStatus.buildRunStartTime && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Started</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      {new Date(shipwrightBuildStatus.buildRunStartTime).toLocaleString()}
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                                {shipwrightBuildStatus.buildRunCompletionTime && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Completed</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      {new Date(shipwrightBuildStatus.buildRunCompletionTime).toLocaleString()}
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                                {shipwrightBuildStatus.buildRunOutputImage && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Output Image</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      <code style={{ fontSize: '0.85em' }}>
+                                        {shipwrightBuildStatus.buildRunOutputImage}
+                                        {shipwrightBuildStatus.buildRunOutputDigest && (
+                                          <>@{shipwrightBuildStatus.buildRunOutputDigest.substring(0, 20)}...</>
+                                        )}
+                                      </code>
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                                {shipwrightBuildStatus.buildRunPhase === 'Failed' && shipwrightBuildStatus.buildRunFailureMessage && (
+                                  <DescriptionListGroup>
+                                    <DescriptionListTerm>Error</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                      <Alert variant="danger" isInline isPlain title={shipwrightBuildStatus.buildRunFailureMessage} />
+                                    </DescriptionListDescription>
+                                  </DescriptionListGroup>
+                                )}
+                              </DescriptionList>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <Alert
+                          variant="info"
+                          title="Shipwright build information not available"
+                          isInline
+                        />
+                      )}
+                    </CardBody>
+                  </Card>
+                </GridItem>
+              )}
+            </Grid>
           </Tab>
 
           <Tab eventKey={2} title={<TabTitleText>MCP Tools</TabTitleText>}>
@@ -598,7 +837,7 @@ export const ToolDetailPage: React.FC = () => {
                   <DescriptionListGroup>
                     <DescriptionListTerm>MCP Server URL (in-cluster)</DescriptionListTerm>
                     <DescriptionListDescription>
-                      <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied">
+                      <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
                         {mcpInClusterUrl}
                       </ClipboardCopy>
                     </DescriptionListDescription>
@@ -657,8 +896,8 @@ export const ToolDetailPage: React.FC = () => {
                 >
                   {yaml.dump(
                     {
-                      apiVersion: 'mcp.kagenti.dev/v1alpha1',
-                      kind: 'MCPServer',
+                      apiVersion: 'apps/v1',
+                      kind: tool.workloadType === 'statefulset' ? 'StatefulSet' : 'Deployment',
                       metadata: {
                         ...tool.metadata,
                         managedFields: undefined,

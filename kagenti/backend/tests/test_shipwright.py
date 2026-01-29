@@ -19,8 +19,8 @@ from app.routers.agents import (
     ShipwrightBuildConfig,
     EnvVar,
     ServicePort,
-    _build_shipwright_build_manifest,
-    _build_shipwright_buildrun_manifest,
+    _build_agent_shipwright_build_manifest,
+    _build_agent_shipwright_buildrun_manifest,
 )
 from app.core.constants import (
     SHIPWRIGHT_CRD_GROUP,
@@ -41,7 +41,7 @@ from app.core.constants import (
 
 
 class TestBuildShipwrightBuildManifest:
-    """Tests for _build_shipwright_build_manifest function."""
+    """Tests for _build_agent_shipwright_build_manifest function."""
 
     def test_basic_build_manifest_with_internal_registry(self):
         """Test basic build manifest generation for internal registry."""
@@ -57,7 +57,7 @@ class TestBuildShipwrightBuildManifest:
             deploymentMethod="source",
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Check API version and kind
         assert manifest["apiVersion"] == f"{SHIPWRIGHT_CRD_GROUP}/{SHIPWRIGHT_CRD_VERSION}"
@@ -112,7 +112,7 @@ class TestBuildShipwrightBuildManifest:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Check strategy - should be secure for external registry
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_SECURE
@@ -139,7 +139,7 @@ class TestBuildShipwrightBuildManifest:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Should be overridden to insecure for internal registry
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_INSECURE
@@ -162,7 +162,7 @@ class TestBuildShipwrightBuildManifest:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Should be overridden to insecure for cluster-local registry
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_INSECURE
@@ -184,7 +184,7 @@ class TestBuildShipwrightBuildManifest:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Check dockerfile param
         dockerfile_param = next(
@@ -211,7 +211,7 @@ class TestBuildShipwrightBuildManifest:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Check build-args param
         build_args_param = next(
@@ -240,7 +240,7 @@ class TestBuildShipwrightBuildManifest:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         assert manifest["spec"]["timeout"] == "30m"
 
@@ -260,7 +260,7 @@ class TestBuildShipwrightBuildManifest:
             registrySecret="my-secret",
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Check annotation exists
         assert "kagenti.io/agent-config" in manifest["metadata"]["annotations"]
@@ -290,7 +290,7 @@ class TestBuildShipwrightBuildManifest:
             ],
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         stored_config = json.loads(manifest["metadata"]["annotations"]["kagenti.io/agent-config"])
         assert "envVars" in stored_config
@@ -316,7 +316,7 @@ class TestBuildShipwrightBuildManifest:
             ],
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         stored_config = json.loads(manifest["metadata"]["annotations"]["kagenti.io/agent-config"])
         assert "servicePorts" in stored_config
@@ -338,18 +338,18 @@ class TestBuildShipwrightBuildManifest:
             deploymentMethod="source",
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Should default to "."
         assert manifest["spec"]["source"]["contextDir"] == "."
 
 
 class TestBuildShipwrightBuildRunManifest:
-    """Tests for _build_shipwright_buildrun_manifest function."""
+    """Tests for _build_agent_shipwright_buildrun_manifest function."""
 
     def test_basic_buildrun_manifest(self):
         """Test basic BuildRun manifest generation."""
-        manifest = _build_shipwright_buildrun_manifest(
+        manifest = _build_agent_shipwright_buildrun_manifest(
             build_name="test-agent",
             namespace="team1",
         )
@@ -377,7 +377,7 @@ class TestBuildShipwrightBuildRunManifest:
             "custom-label": "custom-value",
         }
 
-        manifest = _build_shipwright_buildrun_manifest(
+        manifest = _build_agent_shipwright_buildrun_manifest(
             build_name="test-agent",
             namespace="team1",
             labels=additional_labels,
@@ -397,7 +397,7 @@ class TestBuildShipwrightBuildRunManifest:
             "kagenti.io/build-name": "overridden-name",  # This will override
         }
 
-        manifest = _build_shipwright_buildrun_manifest(
+        manifest = _build_agent_shipwright_buildrun_manifest(
             build_name="test-agent",
             namespace="team1",
             labels=additional_labels,
@@ -425,7 +425,7 @@ class TestBuildStrategySelection:
             # No registry specified = internal registry
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_INSECURE
 
     def test_insecure_strategy_preserved_for_external_registry(self):
@@ -446,7 +446,7 @@ class TestBuildStrategySelection:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
 
         # Insecure strategy is preserved even for external registry
         # (user explicitly chose it)
@@ -470,7 +470,7 @@ class TestBuildStrategySelection:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_SECURE
 
     def test_docker_hub_registry(self):
@@ -491,7 +491,7 @@ class TestBuildStrategySelection:
             ),
         )
 
-        manifest = _build_shipwright_build_manifest(request)
+        manifest = _build_agent_shipwright_build_manifest(request)
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_SECURE
 
 
@@ -502,7 +502,8 @@ class TestShipwrightBuildConfig:
         """Test default values for ShipwrightBuildConfig."""
         config = ShipwrightBuildConfig()
 
-        assert config.buildStrategy == SHIPWRIGHT_STRATEGY_INSECURE
+        # buildStrategy defaults to None to allow automatic selection based on registry type
+        assert config.buildStrategy is None
         assert config.dockerfile == SHIPWRIGHT_DEFAULT_DOCKERFILE
         assert config.buildArgs is None
         assert config.buildTimeout == SHIPWRIGHT_DEFAULT_TIMEOUT
@@ -602,12 +603,12 @@ class TestBuildRunPhaseDetection:
         assert phase == "Succeeded"
 
 
-class TestAgentConfigFromBuild:
-    """Tests for parsing agent config from Build annotations."""
+class TestResourceConfigFromBuild:
+    """Tests for parsing resource config from Build annotations."""
 
     def test_parse_basic_config(self):
-        """Test parsing basic agent config."""
-        from app.routers.agents import AgentConfigFromBuild
+        """Test parsing basic resource config."""
+        from app.models.shipwright import ResourceConfigFromBuild
 
         config_dict = {
             "protocol": "a2a",
@@ -616,7 +617,7 @@ class TestAgentConfigFromBuild:
             "registrySecret": "my-secret",
         }
 
-        config = AgentConfigFromBuild(**config_dict)
+        config = ResourceConfigFromBuild(**config_dict)
 
         assert config.protocol == "a2a"
         assert config.framework == "LangGraph"
@@ -625,7 +626,7 @@ class TestAgentConfigFromBuild:
 
     def test_parse_config_with_env_vars(self):
         """Test parsing config with environment variables."""
-        from app.routers.agents import AgentConfigFromBuild
+        from app.models.shipwright import ResourceConfigFromBuild
 
         config_dict = {
             "protocol": "a2a",
@@ -637,7 +638,7 @@ class TestAgentConfigFromBuild:
             ],
         }
 
-        config = AgentConfigFromBuild(**config_dict)
+        config = ResourceConfigFromBuild(**config_dict)
 
         assert config.envVars is not None
         assert len(config.envVars) == 2
@@ -645,7 +646,7 @@ class TestAgentConfigFromBuild:
 
     def test_parse_config_with_service_ports(self):
         """Test parsing config with service ports."""
-        from app.routers.agents import AgentConfigFromBuild
+        from app.models.shipwright import ResourceConfigFromBuild
 
         config_dict = {
             "protocol": "a2a",
@@ -656,7 +657,7 @@ class TestAgentConfigFromBuild:
             ],
         }
 
-        config = AgentConfigFromBuild(**config_dict)
+        config = ResourceConfigFromBuild(**config_dict)
 
         assert config.servicePorts is not None
         assert len(config.servicePorts) == 1
@@ -664,7 +665,7 @@ class TestAgentConfigFromBuild:
 
     def test_parse_config_minimal(self):
         """Test parsing minimal config with only required fields."""
-        from app.routers.agents import AgentConfigFromBuild
+        from app.models.shipwright import ResourceConfigFromBuild
 
         config_dict = {
             "protocol": "mcp",
@@ -672,7 +673,7 @@ class TestAgentConfigFromBuild:
             "createHttpRoute": False,
         }
 
-        config = AgentConfigFromBuild(**config_dict)
+        config = ResourceConfigFromBuild(**config_dict)
 
         assert config.protocol == "mcp"
         assert config.framework == "Python"
@@ -687,11 +688,12 @@ class TestShipwrightBuildInfoResponse:
 
     def test_response_without_buildrun(self):
         """Test response when no BuildRun exists."""
-        from app.routers.agents import ShipwrightBuildInfoResponse
+        from app.models.shipwright import ShipwrightBuildInfoResponse
 
         response = ShipwrightBuildInfoResponse(
             name="test-agent",
             namespace="team1",
+            resourceType="agent",
             buildRegistered=True,
             outputImage="registry/test-agent:v1",
             strategy="buildah-insecure-push",
@@ -707,11 +709,12 @@ class TestShipwrightBuildInfoResponse:
 
     def test_response_with_buildrun(self):
         """Test response with BuildRun info."""
-        from app.routers.agents import ShipwrightBuildInfoResponse
+        from app.models.shipwright import ShipwrightBuildInfoResponse
 
         response = ShipwrightBuildInfoResponse(
             name="test-agent",
             namespace="team1",
+            resourceType="agent",
             buildRegistered=True,
             outputImage="registry/test-agent:v1",
             strategy="buildah-insecure-push",
@@ -734,11 +737,12 @@ class TestShipwrightBuildInfoResponse:
 
     def test_response_with_failed_buildrun(self):
         """Test response with failed BuildRun."""
-        from app.routers.agents import ShipwrightBuildInfoResponse
+        from app.models.shipwright import ShipwrightBuildInfoResponse
 
         response = ShipwrightBuildInfoResponse(
             name="test-agent",
             namespace="team1",
+            resourceType="agent",
             buildRegistered=True,
             outputImage="registry/test-agent:v1",
             strategy="buildah",
