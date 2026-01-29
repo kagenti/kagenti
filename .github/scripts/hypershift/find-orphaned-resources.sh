@@ -29,13 +29,9 @@ set -euo pipefail
 # Configuration
 # ============================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-
 # Default values - MANAGED_BY_TAG from environment, must not be empty
 CUSTOM_PREFIX=""
 REGION="${AWS_REGION:-us-east-1}"
-NO_COLOR=false
 SUMMARY_ONLY=false
 DELETE_ALL=false
 
@@ -68,7 +64,6 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --no-color)
-            NO_COLOR=true
             RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' DIM='' NC=''
             shift
             ;;
