@@ -5,7 +5,7 @@ source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
 source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
-log_step "74" "Deploying weather-service agent via Shipwright + Deployment"
+log_step "74" "Deploying weather-service agent via Shipwright + Agent CRD"
 
 # ============================================================================
 # Step 1: Build the weather-service image using Shipwright
@@ -70,56 +70,79 @@ run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buil
 log_success "BuildRun completed successfully"
 
 # ============================================================================
-# Step 2: Deploy using standard Kubernetes Deployment + Service
-# (No longer uses Agent CRD - direct Deployment for operator independence)
+# Step 2: Deploy using Agent CRD (operator-managed)
+# This provides: auto-created Deployment, Service, RBAC, AgentCard
 # ============================================================================
 
-log_info "Creating Deployment and Service..."
+log_info "Creating Agent CRD..."
 
-# Apply Deployment manifest (use OCP-specific file with correct registry on OpenShift)
+# Apply Agent CRD manifest (use OCP-specific file with correct registry on OpenShift)
 if [ "$IS_OPENSHIFT" = "true" ]; then
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_ocp.yaml"
 else
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment.yaml"
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright.yaml"
 fi
 
-# Apply Service manifest
-kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_service.yaml"
-
-# Wait for Deployment to be created
-run_with_timeout 60 'kubectl get deployment weather-service -n team1 &> /dev/null' || {
-    log_error "Deployment not created"
-    kubectl get deployments -n team1
+# Wait for Agent to be created
+run_with_timeout 60 'kubectl get agent weather-service -n team1 &> /dev/null' || {
+    log_error "Agent not created"
+    kubectl get agents -n team1 2>&1 || echo "  (none or CRD not installed)"
     exit 1
 }
 
-# Wait for Deployment to be available
-kubectl wait --for=condition=available --timeout=300s deployment/weather-service -n team1 || {
-    log_error "Deployment not available"
+# Wait for Agent to be Ready (operator creates Deployment, Service, RBAC automatically)
+log_info "Waiting for Agent to become Ready..."
+for _ in {1..60}; do
+    PHASE=$(kubectl get agent weather-service -n team1 -o jsonpath='{.status.deploymentStatus.phase}' 2>/dev/null || echo "Unknown")
+    log_info "Agent phase: $PHASE"
+    if [ "$PHASE" = "Ready" ]; then
+        log_success "Agent is Ready"
+        break
+    elif [ "$PHASE" = "Failed" ]; then
+        log_error "Agent deployment failed"
+        kubectl describe agent weather-service -n team1
+        exit 1
+    fi
+    sleep 5
+done
+
+if [ "$PHASE" != "Ready" ]; then
+    log_error "Agent did not become Ready after 5 minutes"
+    kubectl describe agent weather-service -n team1
     kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service
-    kubectl get events -n team1 --sort-by='.lastTimestamp'
+    kubectl get events -n team1 --sort-by='.lastTimestamp' | tail -20
+    exit 1
+fi
+
+# Verify Deployment was created by operator
+kubectl get deployment weather-service -n team1 || {
+    log_error "Deployment not created by operator"
     exit 1
 }
 
-# Verify Service exists
+# Verify Service was created by operator
 kubectl get service weather-service -n team1 || {
-    log_error "Service not found"
+    log_error "Service not created by operator"
     exit 1
 }
 
-log_success "Weather-service deployed via Deployment + Service (operator-independent)"
+log_success "Weather-service deployed via Agent CRD (operator-managed)"
 
-# WORKAROUND: Fix Service targetPort mismatch
-# The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
-# Patch the Service to use the correct targetPort until the operator is fixed
-# TODO: Remove this workaround once kagenti-operator is fixed to use port from Agent spec
-log_info "Patching Service to use correct targetPort (8000)..."
-kubectl patch svc weather-service -n team1 --type=json \
-    -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
-    log_error "Failed to patch Service targetPort"
-    kubectl get svc weather-service -n team1 -o yaml
-    exit 1
-}
+# WORKAROUND: Fix Service targetPort mismatch if needed
+# The kagenti-operator may create Service with targetPort: 8080, but the agent listens on 8000
+# Check and patch if necessary
+CURRENT_TARGET_PORT=$(kubectl get svc weather-service -n team1 -o jsonpath='{.spec.ports[0].targetPort}' 2>/dev/null || echo "unknown")
+if [ "$CURRENT_TARGET_PORT" != "8000" ]; then
+    log_info "Patching Service targetPort from $CURRENT_TARGET_PORT to 8000..."
+    kubectl patch svc weather-service -n team1 --type=json \
+        -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
+        log_error "Failed to patch Service targetPort"
+        kubectl get svc weather-service -n team1 -o yaml
+        exit 1
+    }
+else
+    log_info "Service targetPort is already correct (8000)"
+fi
 
 # Create OpenShift Route for the agent (on OpenShift only)
 # The kagenti-operator doesn't create routes automatically - they're created by the UI backend
