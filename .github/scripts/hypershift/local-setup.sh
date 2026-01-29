@@ -141,10 +141,10 @@ fi
 # 3. Clone hypershift-automation repository
 # ============================================================================
 
-# Note: We use the upstream repo. No fork needed since we rely on HyperShift's
-# built-in tagging (kubernetes.io/cluster/<cluster-name>=owned) for IAM scoping.
-HYPERSHIFT_AUTOMATION_REPO="https://github.com/validatedpatterns-sandbox/hypershift-automation.git"
-HYPERSHIFT_AUTOMATION_BRANCH="main"
+# Note: Use the same fork/branch as CI (40-clone-hypershift-automation.sh)
+# This fork has additional-tags-support needed for proper IAM scoping
+HYPERSHIFT_AUTOMATION_REPO="https://github.com/Ladas/hypershift-automation.git"
+HYPERSHIFT_AUTOMATION_BRANCH="add-additional-tags-support"
 
 log_info "Checking hypershift-automation..."
 
