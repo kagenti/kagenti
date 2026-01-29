@@ -48,6 +48,24 @@ def phoenix_url():
 
 
 @pytest.fixture(scope="module")
+def require_phoenix_url():
+    """Skip tests if PHOENIX_URL is not explicitly set.
+
+    This fixture ensures Phoenix auth tests only run when PHOENIX_URL
+    is explicitly configured (e.g., in OpenShift CI or local testing
+    with port-forward). Without this, tests would try localhost:6006
+    which may not be accessible in all CI environments.
+    """
+    phoenix_url = os.getenv("PHOENIX_URL")
+    if not phoenix_url:
+        pytest.skip(
+            "PHOENIX_URL not set - Phoenix auth tests require explicit endpoint. "
+            "Set PHOENIX_URL or use port-forward: kubectl port-forward svc/phoenix 6006:6006 -n kagenti-system"
+        )
+    return phoenix_url
+
+
+@pytest.fixture(scope="module")
 def keycloak_url():
     """Keycloak endpoint URL.
 
@@ -143,7 +161,9 @@ class TestPhoenixAuth:
     """Test Phoenix Keycloak OAuth2 authentication."""
 
     @pytest.mark.asyncio
-    async def test_phoenix_graphql_api_accessible(self, phoenix_url, is_openshift):
+    async def test_phoenix_graphql_api_accessible(
+        self, require_phoenix_url, is_openshift
+    ):
         """
         Test Phoenix GraphQL API responds to requests.
 
@@ -151,6 +171,7 @@ class TestPhoenixAuth:
         the API should return 200. When auth is enabled, it may
         return 401 or 302 (redirect to login).
         """
+        phoenix_url = require_phoenix_url
         logger.info("=" * 70)
         logger.info("Testing: Phoenix GraphQL API Accessibility")
         logger.info(f"Phoenix URL: {phoenix_url}")
@@ -196,7 +217,7 @@ class TestPhoenixAuth:
 
     @pytest.mark.asyncio
     async def test_phoenix_unauthenticated_blocked_or_allowed(
-        self, phoenix_url, is_openshift
+        self, require_phoenix_url, is_openshift
     ):
         """
         Test Phoenix behavior for unauthenticated requests.
@@ -204,6 +225,7 @@ class TestPhoenixAuth:
         When auth is disabled: Should return 200 with valid GraphQL response.
         When auth is enabled: Should return 401 or redirect to Keycloak.
         """
+        phoenix_url = require_phoenix_url
         logger.info("=" * 70)
         logger.info("Testing: Phoenix Unauthenticated Request Handling")
         logger.info("=" * 70)
@@ -246,7 +268,7 @@ class TestPhoenixAuth:
 
     @pytest.mark.asyncio
     async def test_phoenix_graphql_accessible_with_token(
-        self, phoenix_url, keycloak_admin_credentials, is_openshift
+        self, require_phoenix_url, keycloak_admin_credentials, is_openshift
     ):
         """
         Test Phoenix GraphQL API is accessible with valid Keycloak token.
@@ -259,6 +281,7 @@ class TestPhoenixAuth:
         Note: This works for admin users. For regular users, they would
         need to be registered in Phoenix or PHOENIX_OAUTH2_KEYCLOAK_ALLOW_SIGN_UP=true.
         """
+        phoenix_url = require_phoenix_url
         logger.info("=" * 70)
         logger.info("Testing: Phoenix GraphQL with Keycloak Token")
         logger.info("=" * 70)
@@ -413,13 +436,16 @@ class TestPhoenixBackend:
         logger.info(f"Phoenix pod running: {phoenix_pod.metadata.name}")
 
     @pytest.mark.asyncio
-    async def test_phoenix_graphql_introspection(self, phoenix_url, is_openshift):
+    async def test_phoenix_graphql_introspection(
+        self, require_phoenix_url, is_openshift
+    ):
         """
         Test Phoenix GraphQL API responds to introspection query.
 
         This basic test verifies Phoenix is running and the GraphQL
         endpoint is reachable, regardless of auth configuration.
         """
+        phoenix_url = require_phoenix_url
         query = """
         query {
           __schema {
