@@ -17,12 +17,28 @@ echo "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
 mkdir -p "$REPO_ROOT/test-results"
 
-pytest tests/e2e/common tests/e2e/kagenti_operator -v \
+# Phase 1: Run all tests EXCEPT observability (generates traffic)
+# This runs standard E2E tests that exercise the platform and generate traffic patterns
+log_step "90" "Phase 1: Running E2E tests (excluding observability)"
+pytest tests/e2e/ -v \
+    -m "not observability" \
     --timeout=300 \
     --tb=short \
     --junit-xml=../test-results/e2e-results.xml || {
-    log_error "E2E tests failed"
+    log_error "E2E tests (phase 1) failed"
     exit 1
 }
 
-log_success "E2E tests passed"
+# Phase 2: Run ONLY observability tests (validates traffic patterns from phase 1)
+# These tests check Kiali for Istio config issues, traffic errors, and mTLS compliance
+log_step "90" "Phase 2: Running observability tests (Kiali validation)"
+pytest tests/e2e/ -v \
+    -m "observability" \
+    --timeout=300 \
+    --tb=short \
+    --junit-xml=../test-results/e2e-observability-results.xml || {
+    log_error "Observability tests (phase 2) failed"
+    exit 1
+}
+
+log_success "E2E tests passed (both phases)"
