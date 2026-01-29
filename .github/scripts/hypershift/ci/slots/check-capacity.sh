@@ -21,8 +21,13 @@ CLUSTER_MEM_REQ_MI="${CLUSTER_MEM_REQ_MI:-12000}" # ~12 Gi in MiB
 # Safety margin (no buffer - Kubernetes scheduling is the real arbiter)
 SAFETY_MARGIN="${SAFETY_MARGIN:-1.0}"
 
-# When close to capacity but not blocking, warn but proceed
-WARN_ONLY="${WARN_ONLY:-false}"
+# Overcommit ratio - Kubernetes allows requests to exceed allocatable
+# since actual usage is typically less than requests
+# 1.5 means we can request 150% of allocatable capacity
+OVERCOMMIT_RATIO="${OVERCOMMIT_RATIO:-1.5}"
+
+# Maximum clusters based on slot system (default from MAX_SLOTS env or 6)
+MAX_CLUSTERS="${MAX_CLUSTERS:-${MAX_SLOTS:-6}}"
 
 echo "Checking cluster capacity..."
 echo ""
@@ -108,9 +113,14 @@ current_workers=$(get_current_workers)
 max_workers=$(get_max_autoscale_nodes)
 read -r avg_cpu avg_mem <<< "$(get_avg_node_allocatable)"
 
-# Total potential capacity (including autoscale headroom)
-total_cpu=$((max_workers * avg_cpu))
-total_mem=$((max_workers * avg_mem))
+# Total potential capacity (including autoscale headroom and overcommit)
+# Kubernetes allows overcommitting - requests can exceed allocatable since
+# actual usage is typically less than requests
+base_cpu=$((max_workers * avg_cpu))
+base_mem=$((max_workers * avg_mem))
+# Apply overcommit ratio using bc for float math
+total_cpu=$(echo "$base_cpu * $OVERCOMMIT_RATIO" | bc | cut -d'.' -f1)
+total_mem=$(echo "$base_mem * $OVERCOMMIT_RATIO" | bc | cut -d'.' -f1)
 
 # Current usage
 usage=$(get_current_usage)
@@ -132,13 +142,16 @@ echo "Capacity Analysis:"
 echo "  Current workers:     $current_workers"
 echo "  Max workers:         $max_workers (with autoscaling)"
 echo "  Avg per node:        ${avg_cpu}m CPU, ${avg_mem}Mi MEM"
+echo "  Overcommit ratio:    ${OVERCOMMIT_RATIO}x"
 echo ""
-echo "  Total capacity:      ${total_cpu}m CPU, ${total_mem}Mi MEM"
+echo "  Base capacity:       ${base_cpu}m CPU, ${base_mem}Mi MEM"
+echo "  With overcommit:     ${total_cpu}m CPU, ${total_mem}Mi MEM"
 echo "  Current usage:       ${used_cpu}m CPU, ${used_mem}Mi MEM"
 echo "  Remaining:           ${remaining_cpu}m CPU, ${remaining_mem}Mi MEM"
 echo ""
 echo "  Required (+ buffer): ${required_cpu}m CPU, ${required_mem}Mi MEM"
 echo "  Existing clusters:   $existing_clusters"
+echo "  Max clusters (slot): $MAX_CLUSTERS"
 echo ""
 
 # Calculate autoscaler headroom
@@ -175,25 +188,19 @@ elif [[ $autoscale_headroom -gt 0 ]]; then
         exit 1
     fi
 else
-    # Check if we can fit based on existing cluster count
-    # We know from experience that 2 clusters can run on 6 workers
-    MAX_CLUSTERS_AT_CAPACITY="${MAX_CLUSTERS_AT_CAPACITY:-2}"
-
-    if [[ $existing_clusters -lt $MAX_CLUSTERS_AT_CAPACITY ]]; then
-        echo "RESULT: Capacity tight but proceeding (${existing_clusters}/${MAX_CLUSTERS_AT_CAPACITY} clusters)"
+    # Trust the slot system: if we're under MAX_CLUSTERS, proceed
+    # The slot system (acquire.sh) already limits concurrent clusters
+    # and Kubernetes scheduler handles actual per-node placement
+    if [[ $existing_clusters -lt $MAX_CLUSTERS ]]; then
+        echo "RESULT: Trusting slot system (${existing_clusters}/${MAX_CLUSTERS} clusters)"
         echo "  - Remaining: ${remaining_cpu}m CPU, ${remaining_mem}Mi MEM"
-        echo "  - Experience shows ${MAX_CLUSTERS_AT_CAPACITY} clusters can run at this capacity"
+        echo "  - Slot system limits to $MAX_CLUSTERS concurrent clusters"
         echo "  - Kubernetes scheduler will handle actual placement"
         exit 0
     fi
 
-    echo "RESULT: Insufficient capacity (no autoscaling headroom)"
-    if [[ $remaining_cpu -lt $required_cpu ]]; then
-        echo "  - Need ${required_cpu}m CPU, only ${remaining_cpu}m available"
-    fi
-    if [[ $remaining_mem -lt $required_mem ]]; then
-        echo "  - Need ${required_mem}Mi MEM, only ${remaining_mem}Mi available"
-    fi
-    echo "  - Already running ${existing_clusters} cluster(s)"
+    echo "RESULT: At maximum cluster count ($MAX_CLUSTERS)"
+    echo "  - Already running ${existing_clusters}/${MAX_CLUSTERS} cluster(s)"
+    echo "  - Wait for existing clusters to complete or increase MAX_SLOTS"
     exit 1
 fi
