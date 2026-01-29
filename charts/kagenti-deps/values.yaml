@@ -172,7 +172,10 @@ mcpInspector:
 phoenix:
   auth:
     # Enable Keycloak OAuth2 authentication for Phoenix dashboard
-    # Set to true in ocp_values.yaml for production deployments
+    # When enabled, Phoenix expects OAuth env vars from the phoenix-oauth-secret
+    # NOTE: Default is false because the secret is created by a job in kagenti chart
+    # (installed after kagenti-deps). Enable via ocp_values.yaml where Ansible
+    # handles the sequencing by restarting Phoenix after the secret is created.
     enabled: false
     secretName: phoenix-oauth-secret
 
