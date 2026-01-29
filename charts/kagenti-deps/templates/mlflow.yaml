@@ -24,7 +24,7 @@ spec:
         - /bin/bash
         - -c
         - |
-          pip install --quiet psycopg2-binary && \
+          pip install --quiet "psycopg[binary]" && \
           mlflow server \
             --host=0.0.0.0 \
             --port=5000 \
