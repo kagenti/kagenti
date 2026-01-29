@@ -8,7 +8,7 @@
 run_with_timeout() {
     local timeout_seconds="$1"
     shift
-    local command="$@"
+    local command="$*"
 
     if command -v timeout &> /dev/null; then
         # Linux/GNU timeout available

@@ -195,7 +195,7 @@ if [ -n "$HC_EXISTS" ] && [ -n "$DELETION_TS" ]; then
 
             # Wait for deletion
             log_info "Waiting for HostedCluster to be deleted..."
-            for i in {1..30}; do
+            for _ in {1..30}; do
                 if ! oc get hostedcluster -n clusters "$CLUSTER_NAME" &>/dev/null; then
                     log_success "HostedCluster deleted"
                     break
@@ -251,7 +251,7 @@ if [ "${SKIP_ANSIBLE:-false}" != "true" ]; then
                     log_success "Finalizer removed"
 
                     log_info "Waiting for HostedCluster to be deleted..."
-                    for i in {1..30}; do
+                    for _ in {1..30}; do
                         if ! oc get hostedcluster -n clusters "$CLUSTER_NAME" &>/dev/null; then
                             log_success "HostedCluster deleted"
                             break

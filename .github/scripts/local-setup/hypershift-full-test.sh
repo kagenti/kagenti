@@ -193,7 +193,9 @@ else
 fi
 
 # Default suffix - use sanitized username for local development
-SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
+# Truncate to 5 chars to fit within AWS IAM role name limits with default MANAGED_BY_TAG
+# (default prefix is 26 chars, max cluster name is 32, so 32-26-1=5 chars for suffix)
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-5)
 CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-$SANITIZED_USER}"
 
 # Validate cluster suffix for RFC1123 compliance (lowercase, alphanumeric, hyphens only)
@@ -266,6 +268,49 @@ else
     MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 fi
 CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
+
+# ============================================================================
+# Validate cluster name length (AWS IAM role name limit)
+# ============================================================================
+# AWS IAM role names have a 64-character limit.
+# HyperShift creates roles with pattern: <cluster-name>-<role-suffix>
+# The longest suffix is "cloud-network-config-controller" (32 chars)
+# So max cluster name = 64 - 32 = 32 characters
+#
+MAX_CLUSTER_NAME_LENGTH=32
+LONGEST_IAM_SUFFIX="cloud-network-config-controller"
+CLUSTER_NAME_LENGTH=${#CLUSTER_NAME}
+
+if [ "$CLUSTER_NAME_LENGTH" -gt "$MAX_CLUSTER_NAME_LENGTH" ]; then
+    echo ""
+    echo -e "${RED}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║   ERROR: Cluster name too long for AWS IAM                                 ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "Cluster name: $CLUSTER_NAME"
+    echo "Length: $CLUSTER_NAME_LENGTH characters (max: $MAX_CLUSTER_NAME_LENGTH)"
+    echo ""
+    echo "WHY THIS LIMIT EXISTS:"
+    echo "  AWS IAM role names have a 64-character limit."
+    echo "  HyperShift creates roles with pattern: <cluster-name>-<role-suffix>"
+    echo "  The longest role suffix is '$LONGEST_IAM_SUFFIX' (${#LONGEST_IAM_SUFFIX} chars)."
+    echo ""
+    echo "  Your cluster name: $CLUSTER_NAME_LENGTH chars"
+    echo "  Longest role suffix: ${#LONGEST_IAM_SUFFIX} chars + 1 hyphen"
+    echo "  Total: $((CLUSTER_NAME_LENGTH + ${#LONGEST_IAM_SUFFIX} + 1)) chars (exceeds 64)"
+    echo ""
+    MAX_SUFFIX_LENGTH=$((MAX_CLUSTER_NAME_LENGTH - ${#MANAGED_BY_TAG} - 1))
+    echo "HOW TO FIX:"
+    echo "  With your current MANAGED_BY_TAG '$MANAGED_BY_TAG' (${#MANAGED_BY_TAG} chars),"
+    echo "  your cluster suffix can be at most $MAX_SUFFIX_LENGTH characters."
+    echo ""
+    echo "  Examples of valid suffixes: ci, dev, pr42, test1"
+    echo ""
+    echo "  Note: If you didn't specify a suffix, your username was used."
+    echo "        Try passing an explicit short suffix as an argument."
+    echo ""
+    exit 1
+fi
 
 echo ""
 echo "Configuration:"

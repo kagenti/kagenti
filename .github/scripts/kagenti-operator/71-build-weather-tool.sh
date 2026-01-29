@@ -38,7 +38,7 @@ if [ "$IS_OPENSHIFT" = "true" ]; then
     log_info "Build started: $BUILD_NAME"
 
     # Wait for build to complete
-    for i in {1..120}; do
+    for _ in {1..120}; do
         phase=$(kubectl get "$BUILD_NAME" -n team1 -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
         log_info "Build phase: $phase"
         if [ "$phase" = "Complete" ]; then
@@ -69,7 +69,7 @@ else
     }
 
     # Wait for build to succeed
-    for i in {1..60}; do
+    for _ in {1..60}; do
         phase=$(kubectl get agentbuild weather-tool-build -n team1 -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
         log_info "AgentBuild phase: $phase"
         if [ "$phase" = "Succeeded" ]; then

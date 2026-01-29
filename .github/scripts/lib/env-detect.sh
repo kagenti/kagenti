@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2155
+# SC2155: Declare and assign separately - safe here as assignments use fallback defaults
+#
 # Environment Detection Library
 # Detects if running in CI or locally and sets environment variables
 
