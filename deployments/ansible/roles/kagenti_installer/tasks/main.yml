@@ -1495,6 +1495,20 @@
       namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
     failed_when: false
 
+  # On HyperShift/OpenShift clusters, verify API server stability before Helm install.
+  # HyperShift control planes can become transiently unavailable during heavy load.
+  - name: Verify OpenShift API server is responsive before Helm install
+    command: >-
+      kubectl get --raw /healthz
+    register: api_health_check
+    retries: 30
+    delay: 10
+    until: api_health_check.rc == 0 and 'ok' in api_health_check.stdout
+    changed_when: false
+    when: enable_openshift | default(false)
+
+  # Helm install with retries for HyperShift/OpenShift API transient issues.
+  # HyperShift control planes can become temporarily unavailable during heavy load.
   - name: Install/upgrade Kagenti chart
     kubernetes.core.helm:
       release_name: "{{ (charts['kagenti'] | default({})).get('release_name', 'kagenti') }}"
@@ -1518,6 +1532,11 @@
         {{ (global_value_files | default([]) | list) +
           (((charts['kagenti'] | default({}))['values_files'] | default([])) | list)
         }}
+    # Retry on transient API failures (common on HyperShift during control plane churn)
+    retries: 3
+    delay: 30
+    register: kagenti_helm_result
+    until: kagenti_helm_result is succeeded
 
   # TODO: Move github-clone-step fixes to kagenti-operator.
   # The kagenti-operator creates the github-clone-step ConfigMap for Tekton pipelines.
