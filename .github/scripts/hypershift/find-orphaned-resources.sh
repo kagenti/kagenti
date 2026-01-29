@@ -965,12 +965,12 @@ delete_all_resources() {
                 echo "    $vpc_result"
                 # Show remaining dependencies for debugging
                 echo "    Remaining ENIs in VPC:"
-                aws ec2 describe-network-interfaces --region "$REGION" \
+                while read -r line; do
+                    echo "      $line"
+                done < <(aws ec2 describe-network-interfaces --region "$REGION" \
                     --filters "Name=vpc-id,Values=$id" \
                     --query 'NetworkInterfaces[*].[NetworkInterfaceId,Description]' \
-                    --output text 2>/dev/null | head -5 | while read -r line; do
-                    echo "      $line"
-                done || true
+                    --output text 2>/dev/null | head -5) || true
                 return 1
             fi
         done
@@ -983,14 +983,14 @@ delete_all_resources() {
         for zone_id in $ALL_ZONES; do
             echo "    Cleaning zone: $zone_id"
             # Delete all records except NS and SOA
-            aws route53 list-resource-record-sets --hosted-zone-id "$zone_id" \
-                --query "ResourceRecordSets[?Type != 'NS' && Type != 'SOA']" \
-                --output json 2>/dev/null | jq -c '.[]' | while read -r record; do
+            while read -r record; do
                 if [[ -n "$record" ]]; then
                     aws route53 change-resource-record-sets --hosted-zone-id "$zone_id" \
                         --change-batch "{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":$record}]}" 2>/dev/null || true
                 fi
-            done
+            done < <(aws route53 list-resource-record-sets --hosted-zone-id "$zone_id" \
+                --query "ResourceRecordSets[?Type != 'NS' && Type != 'SOA']" \
+                --output json 2>/dev/null | jq -c '.[]' 2>/dev/null)
             echo "    Deleting: $zone_id"
             aws route53 delete-hosted-zone --id "$zone_id" 2>/dev/null || true
         done
@@ -1011,28 +1011,28 @@ delete_all_resources() {
             if [[ "$versioning" == "Enabled" || "$versioning" == "Suspended" ]]; then
                 echo "      Bucket has versioning, deleting all versions..."
                 # Delete all object versions
-                aws s3api list-object-versions --bucket "$bucket" \
-                    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
-                    --output json 2>/dev/null | jq -c '.Objects[]?' 2>/dev/null | while read -r obj; do
+                while read -r obj; do
                     if [[ -n "$obj" && "$obj" != "null" ]]; then
                         local key version_id
                         key=$(echo "$obj" | jq -r '.Key')
                         version_id=$(echo "$obj" | jq -r '.VersionId')
                         aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version_id" 2>/dev/null || true
                     fi
-                done
+                done < <(aws s3api list-object-versions --bucket "$bucket" \
+                    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+                    --output json 2>/dev/null | jq -c '.Objects[]?' 2>/dev/null)
 
                 # Delete all delete markers
-                aws s3api list-object-versions --bucket "$bucket" \
-                    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
-                    --output json 2>/dev/null | jq -c '.Objects[]?' 2>/dev/null | while read -r obj; do
+                while read -r obj; do
                     if [[ -n "$obj" && "$obj" != "null" ]]; then
                         local key version_id
                         key=$(echo "$obj" | jq -r '.Key')
                         version_id=$(echo "$obj" | jq -r '.VersionId')
                         aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version_id" 2>/dev/null || true
                     fi
-                done
+                done < <(aws s3api list-object-versions --bucket "$bucket" \
+                    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+                    --output json 2>/dev/null | jq -c '.Objects[]?' 2>/dev/null)
             else
                 echo "      Emptying bucket (no versioning)..."
                 aws s3 rm "s3://$bucket" --recursive 2>/dev/null || true
