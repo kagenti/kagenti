@@ -1,0 +1,71 @@
+# Agent manifest for weather-service built with Shipwright
+# This version uses a direct image reference instead of buildRef
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: Agent
+metadata:
+  labels:
+    app.kubernetes.io/created-by: e2e-test
+    app.kubernetes.io/name: weather-service
+    kagenti.io/framework: LangGraph
+    kagenti.io/protocol: a2a
+    kagenti.io/agent-protocol: a2a
+    kagenti.io/type: agent
+  name: weather-service
+  namespace: team1
+  annotations:
+    description: "Weather service agent for E2E testing"
+    # Reference to the Shipwright build (for status display)
+    kagenti.io/shipwright-build: weather-service
+spec:
+  description: "Agent that processes weather data"
+
+  replicas: 1
+
+  # Direct image reference (built by Shipwright)
+  imageSource:
+    image: registry.cr-system.svc.cluster.local:5000/weather-service:v0.0.1
+
+  podTemplateSpec:
+    spec:
+      containers:
+      - name: agent
+        env:
+        - name: PORT
+          value: "8000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: KEYCLOAK_URL
+          value: "http://keycloak.keycloak.svc.cluster.local:8080"
+        - name: UV_CACHE_DIR
+          value: "/app/.cache/uv"
+        - name: LLM_API_BASE
+          value: "http://dockerhost:11434/v1"
+        - name: LLM_API_KEY
+          value: "dummy"
+        - name: LLM_MODEL
+          value: "qwen2.5:0.5b"
+        - name: GITHUB_SECRET_NAME
+          value: "github-token-secret"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /app/.cache
+          name: cache
+        - mountPath: /.marvin
+          name: marvin
+      volumes:
+      - name: cache
+        emptyDir: {}
+      - name: marvin
+        emptyDir: {}
