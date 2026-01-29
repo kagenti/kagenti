@@ -11,9 +11,13 @@ cd "$REPO_ROOT/kagenti"
 # Use environment variables if set, otherwise default
 export AGENT_URL="${AGENT_URL:-http://localhost:8000}"
 export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/dev_values.yaml}"
+export PHOENIX_URL="${PHOENIX_URL:-http://localhost:6006}"
+export KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8081}"
 
 echo "AGENT_URL: $AGENT_URL"
 echo "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+echo "PHOENIX_URL: $PHOENIX_URL"
+echo "KEYCLOAK_URL: $KEYCLOAK_URL"
 
 mkdir -p "$REPO_ROOT/test-results"
 

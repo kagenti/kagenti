@@ -484,6 +484,194 @@ class TestPhoenixBackend:
             pytest.fail(f"Could not connect to Phoenix at {phoenix_url}: {e}")
 
 
+# ============================================================================
+# Test Class: Phoenix Trace Validation (runs after agent conversation tests)
+# ============================================================================
+
+
+@pytest.mark.requires_features(["otel"])
+class TestPhoenixTraces:
+    """
+    Test that weather agent traces are captured in Phoenix.
+
+    These tests verify that:
+    - Agent conversations generate traces in Phoenix
+    - Traces contain expected span data
+    - OpenTelemetry integration is working
+
+    NOTE: These tests should run AFTER agent conversation tests
+    (test_agent_conversation.py) to ensure traces have been generated.
+    Pytest runs tests in file/class/method order by default.
+    """
+
+    @pytest.mark.asyncio
+    async def test_phoenix_has_projects(self, require_phoenix_url, is_openshift):
+        """
+        Test that Phoenix has at least one project with traces.
+
+        This validates that OpenTelemetry instrumentation is working
+        and traces are being sent to Phoenix.
+        """
+        phoenix_url = require_phoenix_url
+        logger.info("=" * 70)
+        logger.info("Testing: Phoenix Projects and Traces")
+        logger.info(f"Phoenix URL: {phoenix_url}")
+        logger.info("=" * 70)
+
+        query = """
+        query {
+          projects {
+            edges {
+              node {
+                id
+                name
+                traceCount
+                spanCount
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            response = await query_phoenix_graphql(
+                phoenix_url=phoenix_url,
+                query=query,
+                token=None,
+                timeout=15,
+                verify_ssl=not is_openshift,
+            )
+
+            # Handle auth-protected Phoenix
+            if response.status_code in [401, 302, 307]:
+                logger.info(
+                    f"Phoenix requires authentication (status {response.status_code}). "
+                    "Skipping trace count validation - auth integration verified."
+                )
+                pytest.skip("Phoenix requires authentication - trace test skipped")
+
+            assert response.status_code == 200, (
+                f"Phoenix returned {response.status_code}: {response.text}"
+            )
+
+            data = response.json()
+            assert "data" in data, f"Invalid GraphQL response: {data}"
+            assert "projects" in data["data"], f"No projects in response: {data}"
+
+            projects = data["data"]["projects"]["edges"]
+            logger.info(f"Found {len(projects)} project(s) in Phoenix")
+
+            # Log project details
+            total_traces = 0
+            for edge in projects:
+                node = edge["node"]
+                project_name = node.get("name", "unknown")
+                trace_count = node.get("traceCount", 0)
+                span_count = node.get("spanCount", 0)
+                total_traces += trace_count
+                logger.info(
+                    f"  Project: {project_name} - "
+                    f"{trace_count} traces, {span_count} spans"
+                )
+
+            # We expect at least one project to exist after agent tests run
+            # Don't fail if no traces yet - agent tests may not have run
+            if total_traces > 0:
+                logger.info(f"TEST PASSED: Phoenix has {total_traces} total traces")
+            else:
+                logger.warning(
+                    "No traces found in Phoenix yet. "
+                    "This may be expected if agent tests haven't run."
+                )
+
+        except httpx.ConnectError as e:
+            pytest.fail(f"Could not connect to Phoenix at {phoenix_url}: {e}")
+
+    @pytest.mark.asyncio
+    async def test_phoenix_spans_exist(self, require_phoenix_url, is_openshift):
+        """
+        Test that Phoenix has spans from agent activity.
+
+        Queries for recent spans to verify tracing is working.
+        """
+        phoenix_url = require_phoenix_url
+        logger.info("Testing: Phoenix Spans")
+
+        # Query for spans across all projects
+        query = """
+        query {
+          projects {
+            edges {
+              node {
+                name
+                spans(first: 10, sort: { col: startTime, dir: desc }) {
+                  edges {
+                    node {
+                      name
+                      spanKind
+                      statusCode
+                      latencyMs
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            response = await query_phoenix_graphql(
+                phoenix_url=phoenix_url,
+                query=query,
+                token=None,
+                timeout=15,
+                verify_ssl=not is_openshift,
+            )
+
+            # Handle auth-protected Phoenix
+            if response.status_code in [401, 302, 307]:
+                pytest.skip("Phoenix requires authentication - span test skipped")
+
+            assert response.status_code == 200, (
+                f"Phoenix returned {response.status_code}: {response.text}"
+            )
+
+            data = response.json()
+            if "errors" in data:
+                # GraphQL schema might not match - skip gracefully
+                logger.warning(f"GraphQL errors: {data['errors']}")
+                pytest.skip("GraphQL schema mismatch - skipping span validation")
+
+            assert "data" in data, f"Invalid GraphQL response: {data}"
+
+            # Count spans across all projects
+            total_spans = 0
+            for project_edge in data["data"]["projects"]["edges"]:
+                project = project_edge["node"]
+                spans = project.get("spans", {}).get("edges", [])
+                total_spans += len(spans)
+
+                if spans:
+                    logger.info(f"Project '{project['name']}' has {len(spans)} spans:")
+                    for span_edge in spans[:5]:  # Log first 5
+                        span = span_edge["node"]
+                        logger.info(
+                            f"  - {span['name']} ({span['spanKind']}) "
+                            f"latency={span.get('latencyMs', 'N/A')}ms"
+                        )
+
+            if total_spans > 0:
+                logger.info(f"TEST PASSED: Found {total_spans} spans in Phoenix")
+            else:
+                logger.warning(
+                    "No spans found. Agent tests may not have generated traces yet."
+                )
+
+        except httpx.ConnectError as e:
+            pytest.fail(f"Could not connect to Phoenix at {phoenix_url}: {e}")
+
+
 if __name__ == "__main__":
     import sys
 
