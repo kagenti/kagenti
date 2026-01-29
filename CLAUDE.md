@@ -106,15 +106,17 @@ kagenti/
 
   - `../envs/.secret_values.yaml` - Secret configuration (not committed)
 
-### 3. Platform Operator (external repo)
+### 3. Agent Deployment Model
 
-- **Repository**: `github.com/kagenti/kagenti-operator`
+- **Architecture**: Direct Kubernetes workload management (no operator required)
 
-- **Purpose**: Kubernetes operator for agent lifecycle management
+- **Workload Types**: Deployments (primary), with future support for StatefulSets and Jobs
 
-- **CRDs**: `Agent`, `Component`, `AgentBuild`
+- **Resources Created**: Deployment, Service, HTTPRoute (for ingress)
 
-- **Namespace**: `kagenti-system`
+- **Labels**: `kagenti.io/type=agent`, `kagenti.io/protocol=a2a`, `app.kubernetes.io/name=<agent-name>`
+
+- **Namespace**: Agents deploy to team namespaces (`team1`, `team2`, etc.)
 
 ### 4. MCP Gateway (external repo)
 
@@ -325,15 +327,15 @@ test MCP tools through the gateway.
 
 1. Create agent code following A2A protocol
 
-2. Use UI "Import New Agent" or apply Component CRD
+2. Use UI "Import New Agent" (from image or source)
 
-3. Agent builds automatically via Shipwright Build/BuildRun
+3. For source builds: Shipwright Build/BuildRun created automatically
 
 4. Build Progress page shows status (Pending → Running → Succeeded)
 
-5. Agent CRD created automatically after successful build
+5. Deployment + Service created automatically after successful build
 
-6. Access via HTTPRoute at `<agent-name>.localtest.me:8080`
+6. HTTPRoute created for external access at `<agent-name>.localtest.me:8080`
 
 ### Adding a New MCP Tool
 
@@ -355,7 +357,9 @@ test MCP tools through the gateway.
 
 - Check pod logs: `kubectl logs -n <namespace> <pod-name>`
 
-- Check operator logs: `kubectl logs -n kagenti-system -l app=kagenti-operator`
+- Check Deployment status: `kubectl get deployments -n <namespace> -l kagenti.io/type=agent`
+
+- Check build logs: `kubectl logs -n <namespace> -l build.shipwright.io/name=<agent-name>`
 
 - View traces: Phoenix dashboard
 
@@ -365,9 +369,9 @@ test MCP tools through the gateway.
 
 | Repository | Description |
 |------------|-------------|
-| kagenti/kagenti-operator | Kubernetes operator (Go) |
 | kagenti/mcp-gateway | MCP Gateway (Go) |
 | kagenti/agent-examples | Example agents and tools |
+| kagenti/kagenti-extensions | Auth Bridge, webhooks, and other extensions |
 
 ## License
 
