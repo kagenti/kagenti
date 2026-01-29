@@ -7,33 +7,64 @@
 title = "Kagenti Gitleaks Configuration"
 
 [allowlist]
-  description = "Allowlisted patterns (not paths - we scan everything)"
+  description = "Allowlisted patterns - STRICT: only explicit placeholders allowed"
 
-  # Regex patterns for allowed strings (false positives)
+  # SECURITY PRINCIPLE: Only allow patterns with EXPLICIT placeholder markers
+  # Do NOT add broad patterns like "arn:aws:iam::\d{12}:role/example-.*"
+  # which could match real ARNs that happen to contain "example"
+
   regexes = [
-    # Example/placeholder ARNs in documentation and policy templates
-    '''arn:aws:iam::\d{12}:role/example-.*''',
-    '''arn:aws:iam::\$\{.*\}:.*''',
+    # =========================================================================
+    # EXPLICIT PLACEHOLDER MARKERS (safe - clearly not real secrets)
+    # =========================================================================
+
+    # Strings containing explicit placeholder words
+    '''(?i).*PLACEHOLDER.*''',
+    '''(?i).*YOUR[-_].*[-_]HERE.*''',
+    '''(?i).*CHANGE[-_]?ME.*''',
+    '''(?i).*INSERT[-_].*[-_]HERE.*''',
+    '''(?i).*REPLACE[-_]?THIS.*''',
+    '''(?i).*FIXME.*''',
+
+    # Explicit example/test markers in the VALUE (not just nearby)
+    '''(?i)^example[-_].*''',
+    '''(?i)^test[-_].*''',
+    '''(?i)^dummy[-_].*''',
+    '''(?i)^fake[-_].*''',
+    '''(?i)^sample[-_].*''',
+
+    # Placeholder patterns: xxx, XXX, etc.
+    '''x{3,}''',
+    '''X{3,}''',
+    '''0{12,}''',
+
+    # Angle bracket placeholders
+    '''<[A-Za-z_-]+>''',
+    '''<your[-_].*>''',
+
+    # =========================================================================
+    # TEMPLATE VARIABLES (safe - clearly templated, not real values)
+    # =========================================================================
+
+    # Shell/environment variable substitution
+    '''\$\{[A-Za-z_][A-Za-z0-9_]*\}''',
+
+    # Jinja/Ansible/Helm template syntax
+    '''\{\{.*\}\}''',
+    '''\{%.*%\}''',
+
+    # =========================================================================
+    # DOCUMENTATION PATTERNS (safe - only in policy doc wildcards)
+    # =========================================================================
+
+    # Wildcard-only resource patterns (not real ARNs)
+    '''arn:aws:[a-z0-9-]+:\*:\*:.*''',
+
+    # Account ID is literally "ACCOUNT_ID" (placeholder text)
     '''arn:aws:iam::ACCOUNT_ID:.*''',
 
-    # Template variables (not real secrets)
-    '''\$\{[A-Z_]+\}''',
-    '''\{\{.*\}\}''',
-
-    # Placeholder/example values
-    '''PLACEHOLDER|EXAMPLE|TODO|CHANGEME|YOUR_.*_HERE''',
-    '''<your-.*>''',
-    '''xxx+|XXX+''',
-
-    # AWS resource patterns in policy documents (not secrets)
-    '''arn:aws:s3:::.*\*''',
-    '''arn:aws:ec2:\*:\*:.*''',
-
-    # Base64-encoded placeholders in examples
-    '''base64-encoded-.*''',
-
-    # OIDC provider URLs (not secrets)
-    '''https://.*\.s3\..*\.amazonaws\.com/.*''',
+    # Account ID is a template variable
+    '''arn:aws:iam::\$\{[A-Za-z_]+\}:.*''',
   ]
 
 # Extend default rules - we want strict detection
