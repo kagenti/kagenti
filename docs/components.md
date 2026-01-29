@@ -48,9 +48,9 @@ All the Kagenti components and their deployment namespaces
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │                      kagenti-system Namespace                   │  │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │  │
-│  │  │ Kagenti UI │  │  Agent     │  │  Ingress   │  │   Kiali    │ │  │
-│  │  │            │  │  Lifecycle │  │  Gateway   │  │            │ │  │
-│  │  │            │  │  Operator  │  │            │  │            │ │  │
+│  │  │ Kagenti UI │  │ Shipwright │  │  Ingress   │  │   Kiali    │ │  │
+│  │  │            │  │  (Builds)  │  │  Gateway   │  │            │ │  │
+│  │  │            │  │            │  │            │  │            │ │  │
 │  │  └────────────┘  └────────────┘  └────────────┘  └────────────┘ │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                       │
@@ -82,77 +82,104 @@ All the Kagenti components and their deployment namespaces
 
 ---
 
-## Agent Lifecycle Operator
+## Agent Deployment Architecture
 
-**Repository**: [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator)
-
-The Kubernetes Platform Operator facilitates the deployment and configuration of agents along with infrastructure dependencies on Kubernetes. It enables scaling and updating configurations seamlessly.
+Kagenti deploys agents using standard Kubernetes workloads (Deployments + Services), providing a simple, portable, and operator-free deployment model.
 
 ### Capabilities
 
 | Feature | Description |
 |---------|-------------|
-| **Agent Deployment** | Deploy agents from source code or container images |
-| **Build Automation** | Build agent containers using Shipwright (recommended) or Tekton pipelines |
-| **Lifecycle Management** | Handle agent updates, rollbacks, and scaling |
-| **Configuration Management** | Manage environment variables, secrets, and config maps |
+| **Agent Deployment** | Deploy agents from source code or container images as Kubernetes Deployments |
+| **Build Automation** | Build agent containers using Shipwright with Buildah |
+| **Lifecycle Management** | Standard Kubernetes Deployment lifecycle (rolling updates, rollbacks, scaling) |
+| **Configuration Management** | Environment variables, secrets, and config maps via Deployment spec |
 | **Multi-Namespace Support** | Deploy agents to isolated team namespaces |
 
-### Container Build Systems
+### Container Build System
 
-Kagenti supports two container build systems:
+Kagenti uses [Shipwright](https://shipwright.io) for building container images from source:
 
-| System | Status | Description |
-|--------|--------|-------------|
-| **Shipwright** | Recommended | Cloud-native build framework using Buildah. Supports `buildah` (for external registries with TLS) and `buildah-insecure-push` (for internal registries without TLS) strategies. |
-| **AgentBuild/Tekton** | Deprecated | Legacy build system using Tekton pipelines. Will be removed in a future version. |
+| Strategy | Use Case | Description |
+|----------|----------|-------------|
+| `buildah-insecure-push` | Internal registries | For registries without TLS (dev/Kind clusters) |
+| `buildah` | External registries | For registries with TLS (quay.io, ghcr.io, docker.io) |
 
 **Shipwright Build Flow:**
 1. UI creates a Shipwright `Build` CR with source configuration
 2. UI creates a `BuildRun` CR to trigger the build
 3. UI polls `BuildRun` status until completion
-4. On success, UI creates the `Agent` CR with the built image
+4. On success, UI creates the Deployment + Service for the agent
 
-**ClusterBuildStrategies:**
-- `buildah-insecure-push` - For internal registries without TLS (dev/Kind clusters)
-- `buildah` - For external registries with TLS (quay.io, ghcr.io, docker.io)
+### Agent Resources
 
-### Custom Resources
-
-The operator manages several Custom Resource Definitions (CRDs):
+Agents are deployed as standard Kubernetes resources:
 
 ```yaml
-# Agent - Defines an agent deployment
-apiVersion: agent.kagenti.dev/v1alpha1
-kind: Agent
+# Deployment - Manages agent pods
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: weather-service
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+    app.kubernetes.io/name: weather-service
+    app.kubernetes.io/managed-by: kagenti-ui
 spec:
-  image: ghcr.io/kagenti/weather-service:latest
   replicas: 1
-  env:
-    - name: OPENAI_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: openai-secret
-          key: api-key
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: weather-service
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        app.kubernetes.io/name: weather-service
+    spec:
+      containers:
+        - name: agent
+          image: ghcr.io/kagenti/weather-service:latest
+          env:
+            - name: PORT
+              value: "8000"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-secret
+                  key: api-key
+          ports:
+            - containerPort: 8000
+              name: http
 ```
 
 ```yaml
-# AgentBuild - Triggers a build from source (DEPRECATED - use Shipwright instead)
-apiVersion: agent.kagenti.dev/v1alpha1
-kind: AgentBuild
+# Service - Exposes the agent within the cluster
+apiVersion: v1
+kind: Service
 metadata:
-  name: weather-service-build
+  name: weather-service
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: weather-service
 spec:
-  source:
-    git:
-      url: https://github.com/kagenti/agent-examples
-      path: agents/weather-service
+  type: ClusterIP
+  selector:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: weather-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8000
 ```
 
 ```yaml
-# Shipwright Build - Recommended for building from source
+# Shipwright Build - For building from source
 apiVersion: shipwright.io/v1beta1
 kind: Build
 metadata:
@@ -178,21 +205,32 @@ spec:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│              Platform Operator                      │
+│                    Kagenti UI                       │
 ├─────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
-│  │   Agent     │  │ AgentBuild  │  │ AgentCard   │  │
-│  │ Controller  │  │ Controller  │  │ Controller  │  │
+│  │   Import    │  │   Build     │  │   Deploy    │  │
+│  │   Agent     │  │   (Source)  │  │   Agent     │  │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  │
 │         │                │                │         │
 │         ▼                ▼                ▼         │
 │  ┌─────────────────────────────────────────────┐    │
 │  │            Kubernetes API Server            │    │
+│  │  (Deployment, Service, Build, HTTPRoute)    │    │
 │  └─────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
 
-For installation and operation help, see our [Agent Lifecycle Operator Guide](https://github.com/kagenti/kagenti-operator/blob/main/kagenti-operator/GETTING_STARTED.md).
+### Label Standards
+
+All agent workloads use consistent labels for discovery:
+
+| Label | Value | Purpose |
+|-------|-------|---------|
+| `kagenti.io/type` | `agent` | Identifies resource as a Kagenti agent |
+| `kagenti.io/protocol` | `a2a` | Protocol type |
+| `kagenti.io/framework` | `LangGraph`, `CrewAI`, etc. | Agent framework |
+| `app.kubernetes.io/name` | `<agent-name>` | Standard K8s app name |
+| `app.kubernetes.io/managed-by` | `kagenti-ui` | Resource manager |
 
 ---
 
@@ -261,12 +299,12 @@ For detailed gateway configuration, see [MCP Gateway Instructions](./gateway.md)
 
 ### MCP Tool Builds with Shipwright
 
-Similar to agents, MCP tools can be built from source using Shipwright. The build process is the same:
+Similar to agents, MCP tools can be built from source using Shipwright. The build process is:
 
 1. UI creates a Shipwright `Build` CR with source configuration
 2. UI creates a `BuildRun` CR to trigger the build
 3. UI polls `BuildRun` status until completion
-4. On success, UI creates the `MCPServer` CR with the built image
+4. On success, UI creates a Deployment + Service for the MCP tool
 
 ```yaml
 # Shipwright Build for MCP Tool
@@ -292,18 +330,36 @@ spec:
 ```
 
 ```yaml
-# MCPServer - Deployed after successful build
-apiVersion: toolhive.io/v1alpha1
-kind: MCPServer
+# Deployment - Manages MCP tool pods
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: weather-tool
+  namespace: team1
   labels:
     kagenti.io/type: tool
-    kagenti.io/built-by: shipwright
+    kagenti.io/protocol: mcp
+    kagenti.io/transport: streamable_http
+    app.kubernetes.io/name: weather-tool
 spec:
-  image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
-  protocol: streamable_http
   replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: tool
+      app.kubernetes.io/name: weather-tool
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: tool
+        kagenti.io/protocol: mcp
+        app.kubernetes.io/name: weather-tool
+    spec:
+      containers:
+        - name: mcp
+          image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+          ports:
+            - containerPort: 8000
+              name: http
 ```
 
 For detailed tool deployment instructions, see [Importing a New Tool](./new-tool.md).

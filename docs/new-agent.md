@@ -158,7 +158,7 @@ Press the "Build New Agent" button. You will be redirected to a **Build Progress
 - Agent configuration that will be applied
 
 Once the build succeeds, Kagenti automatically:
-1. Creates the Agent CR with the built image
+1. Creates a Deployment + Service with the built image
 2. Creates an HTTPRoute for external access (if enabled, via "Enable external access to the agent endpoint" in the UI)
 3. Redirects you to the Agent detail page
 
@@ -196,18 +196,21 @@ Common build issues:
 
 ### Deployment Issues
 
-* The `Agent` custom resource manages the agent deployment
-* The `Agent` creates a `Deployment`, which in turn creates pods
+* Agents are deployed as standard Kubernetes Deployments
+* The Deployment creates and manages the agent pods
 * You can tail the logs of the pods to troubleshoot any errors
 
 ```bash
-# Check Agent status
-kubectl get agents -n <namespace>
-kubectl describe agent <agent-name> -n <namespace>
+# Check Deployment status
+kubectl get deployments -n <namespace> -l kagenti.io/type=agent
+kubectl describe deployment <agent-name> -n <namespace>
 
 # Check pod status and logs
-kubectl get pods -n <namespace> -l kagenti.io/type=agent
-kubectl logs -n <namespace> <pod-name>
+kubectl get pods -n <namespace> -l kagenti.io/type=agent,app.kubernetes.io/name=<agent-name>
+kubectl logs -n <namespace> -l app.kubernetes.io/name=<agent-name>
+
+# Check Service status
+kubectl get services -n <namespace> -l kagenti.io/type=agent
 ```
 
 By following these steps and troubleshooting tips, you can successfully import and deploy your new agent into the platform.
