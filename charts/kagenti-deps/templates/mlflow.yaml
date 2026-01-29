@@ -21,12 +21,15 @@ spec:
       - name: mlflow
         image: ghcr.io/mlflow/mlflow:v3.9.0
         command:
-        - mlflow
-        - server
-        - --host=0.0.0.0
-        - --port=5000
-        - --backend-store-uri=postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-otel:5432/mlflow
-        - --default-artifact-root=/mlflow/artifacts
+        - /bin/bash
+        - -c
+        - |
+          pip install --quiet psycopg2-binary && \
+          mlflow server \
+            --host=0.0.0.0 \
+            --port=5000 \
+            --backend-store-uri=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-otel:5432/mlflow \
+            --default-artifact-root=/mlflow/artifacts
         env:
         - name: POSTGRES_USER
           valueFrom:
