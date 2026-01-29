@@ -29,9 +29,9 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 
 | Component | Description |
 |-----------|-------------|
-| **[Kagenti UI](./kagenti/ui-v2/)** | Dashboard for deploying agents/tools, interactive testing, and monitoring |
+| **[Kagenti UI](./kagenti/ui-v2/)** | Dashboard for deploying agents/tools as Kubernetes Deployments, interactive testing, and monitoring |
 | **[Identity & Auth Bridge](./docs/identity-guide.md)** | Identity pattern assets that capture common authorization scenarios and provide reusable building blocks for implementing consistent authorization across services |
-| **[Agent Lifecycle Operator](https://github.com/kagenti/kagenti-extensions/tree/main/kagenti-webhook)** | Kubernetes admission webhook for building agents from source, managing lifecycle, and coordinating platform services |
+| **[Shipwright Builds](https://shipwright.io)** | Cloud-native container build system for building agents and tools from source code |
 | **[MCP Gateway](https://github.com/kagenti/mcp-gateway/blob/main/README.md)** | Unified gateway for Model Context Protocol (MCP) servers and tools. It acts as the entry point for policy enforcement, handling requests and routing them through the appropriate authorization patterns |
 
 ## Architecture
@@ -44,9 +44,9 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │                      kagenti-system Namespace                   │  │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐ │  │
-│  │  │ Kagenti UI │  │  Agent     │  │  Ingress   │  │   Kiali    │ │  │
-│  │  │            │  │  Lifecycle │  │  Gateway   │  │            │ │  │
-│  │  │            │  │  Operator  │  │            │  │            │ │  │
+│  │  │ Kagenti UI │  │ Shipwright │  │  Ingress   │  │   Kiali    │ │  │
+│  │  │            │  │  (Builds)  │  │  Gateway   │  │            │ │  │
+│  │  │            │  │            │  │            │  │            │ │  │
 │  │  └────────────┘  └────────────┘  └────────────┘  └────────────┘ │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                       │

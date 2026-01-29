@@ -104,10 +104,10 @@ APP_CONFIG='{"valueFrom": {"configMapKeyRef": {"name": "app-settings", "key": "c
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Kubernetes Agent CRD                        │
+│                   Kubernetes Deployment                       │
 ├─────────────────────────────────────────────────────────────┤
 │  spec:                                                        │
-│    podTemplateSpec:                                           │
+│    template:                                                  │
 │      spec:                                                    │
 │        containers:                                            │
 │          - env:                                               │
