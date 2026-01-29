@@ -1,0 +1,65 @@
+# OpenSSF Scorecard - Security health metrics for Open Source
+#
+# Measures repository security posture and provides recommendations.
+# Results are uploaded to GitHub Security tab and OpenSSF Scorecard API.
+#
+# NOTE: Scorecard only works on 'schedule' and 'push' triggers, NOT 'pull_request'
+# This is a GitHub/Scorecard limitation for result publishing.
+# See: https://github.com/ossf/scorecard-action#workflow-restrictions
+#
+# Token Requirements:
+# - No external tokens needed
+# - Uses GITHUB_TOKEN for API access
+# - id-token: write needed for OIDC verification when publishing results
+#
+# Reference: https://securityscorecards.dev/
+#
+name: OpenSSF Scorecard
+
+on:
+  # Run weekly on Monday at 6 AM UTC
+  schedule:
+    - cron: '0 6 * * 1'
+  # Run on push to main
+  push:
+    branches: [main]
+  # Allow manual trigger
+  workflow_dispatch:
+
+# Scorecard requires specific permissions structure
+# Cannot have workflow-level env vars when publishing results
+permissions:
+  security-events: write  # Upload SARIF to Security tab
+  id-token: write         # OIDC token for result verification
+  contents: read          # Read repository contents
+  actions: read           # Read workflow runs
+
+jobs:
+  scorecard:
+    name: Scorecard Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          # Publish results to OpenSSF API (enables badge)
+          publish_results: true
+
+      - name: Upload SARIF to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scorecard.sarif
+
+      - name: Upload Scorecard results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-results
+          path: scorecard.sarif
+          retention-days: 30

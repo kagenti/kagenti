@@ -1,9 +1,23 @@
-# Security Scans - Phase 0 of TODO_GH_APPROVAL_AND_LABELING.md
+# Security Scans - Comprehensive security checks from TODO_IMPORTANT_GH_ACTIONS.md
+#
+# Phases implemented:
+# - Phase 0: Gitleaks (commented - needs license), Dependency Review, Shellcheck
+# - Phase A: Stricter dependency review, YAML lint, Helm lint
+# - Phase B: Python security (Bandit)
+# - Phase C: Container/IaC (Hadolint, Trivy)
+# - Phase D: CodeQL, Action pinning (OpenSSF Scorecard in separate workflow)
 #
 # These scans run on pull_request (not pull_request_target), so they:
 # - Use the workflow file from the PR branch (works without stub PR)
 # - Do NOT have access to secrets (safe for fork PRs)
 # - Run automatically on all PRs
+#
+# Token/License Requirements:
+# - Gitleaks: Requires GITLEAKS_LICENSE for org repos (free at gitleaks.io for OSS)
+# - CodeQL: Free for public repos on GitHub.com (no token needed)
+# - Trivy: Free, no token needed
+# - Bandit/Hadolint: Free, open source (Apache 2.0 / GPL-3)
+# - OpenSSF Scorecard: See .github/workflows/scorecard.yaml (separate workflow)
 #
 name: Security Scans
 
@@ -237,3 +251,208 @@ jobs:
           fi
 
           echo "All Helm charts passed linting"
+
+  # ============================================================================
+  # Phase B: Python Security
+  # ============================================================================
+
+  bandit:
+    name: Python Security (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Bandit
+        run: pip install bandit[toml]
+
+      - name: Run Bandit security scan
+        run: |
+          echo "=== Bandit Python Security Scan ==="
+          echo ""
+
+          # Check if kagenti directory exists
+          if [ ! -d "kagenti" ]; then
+            echo "No kagenti/ directory found, skipping Python security scan"
+            exit 0
+          fi
+
+          # Run Bandit with medium severity threshold
+          # Exclude tests and virtual environments
+          bandit -r kagenti/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --exclude '**/tests/*,**/.venv/*,**/node_modules/*' \
+            -f txt || BANDIT_EXIT=$?
+
+          # Bandit exits with 1 if issues found, we want to report but not fail on low severity
+          if [ "${BANDIT_EXIT:-0}" -eq 1 ]; then
+            echo ""
+            echo "WARNING: Bandit found security issues. Please review above."
+            # Don't fail the build for now - enable strict mode later
+            # exit 1
+          fi
+
+  # ============================================================================
+  # Phase C: Container/IaC Security
+  # ============================================================================
+
+  hadolint:
+    name: Dockerfile Lint (Hadolint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find Dockerfiles
+        id: find-dockerfiles
+        run: |
+          DOCKERFILES=$(find . -name "Dockerfile*" -type f 2>/dev/null | grep -v node_modules | grep -v ".git/" || true)
+          if [ -z "$DOCKERFILES" ]; then
+            echo "No Dockerfiles found"
+            echo "has_dockerfiles=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found Dockerfiles:"
+            echo "$DOCKERFILES"
+            echo "has_dockerfiles=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Hadolint
+        if: steps.find-dockerfiles.outputs.has_dockerfiles == 'true'
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: "**/Dockerfile*"
+          recursive: true
+          # Start with warning threshold, tighten later
+          failure-threshold: error
+          # Common ignores for development Dockerfiles
+          # DL3008: Pin versions in apt-get
+          # DL3013: Pin versions in pip
+          ignore: DL3008,DL3013
+
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          # Don't fail initially - review results first
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'table'
+
+      - name: Run Trivy config scan (IaC)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          # Don't fail on config issues initially
+          exit-code: '0'
+          format: 'table'
+
+  # ============================================================================
+  # Phase D: Advanced Security
+  # ============================================================================
+
+  # CodeQL - Free for public repositories on GitHub.com
+  # License: https://github.com/github/codeql/blob/main/LICENSE
+  # "If the Open Source Codebase is hosted and maintained on GitHub.com,
+  #  generate CodeQL databases for or during automated analysis, CI, or CD."
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          # Use security-extended queries for more thorough analysis
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+  action-pinning:
+    name: Verify Action Pinning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unpinned GitHub Actions
+        uses: zgosalvez/github-actions-ensure-sha-pinned-actions@v3
+        with:
+          # Start with allowlist for common trusted actions
+          # Remove from allowlist as you pin them to SHAs
+          allowlist: |
+            actions/*
+            github/*
+            azure/*
+            aquasecurity/*
+            hadolint/*
+
+  # ============================================================================
+  # OpenSSF Scorecard
+  # ============================================================================
+  # NOTE: OpenSSF Scorecard only works on 'schedule' and 'push' triggers,
+  # NOT on 'pull_request'. This is a GitHub/Scorecard limitation.
+  #
+  # To enable Scorecard, create a separate workflow file:
+  #   .github/workflows/scorecard.yaml
+  #
+  # See: https://github.com/ossf/scorecard-action#workflow-restrictions
+  #
+  # Required permissions for Scorecard with publish_results:
+  #   - id-token: write (for OIDC token to verify authenticity)
+  #   - security-events: write (to upload SARIF)
+  #   - contents: read
+  #
+  # Example workflow (create as separate file):
+  # ```yaml
+  # name: OpenSSF Scorecard
+  # on:
+  #   schedule:
+  #     - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM
+  #   push:
+  #     branches: [main]
+  #
+  # permissions:
+  #   security-events: write
+  #   id-token: write
+  #   contents: read
+  #
+  # jobs:
+  #   scorecard:
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #         with:
+  #           persist-credentials: false
+  #       - uses: ossf/scorecard-action@v2
+  #         with:
+  #           results_file: scorecard.sarif
+  #           results_format: sarif
+  #           publish_results: true
+  #       - uses: github/codeql-action/upload-sarif@v3
+  #         with:
+  #           sarif_file: scorecard.sarif
+  # ```
