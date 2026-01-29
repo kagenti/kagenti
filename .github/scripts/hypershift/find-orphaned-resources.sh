@@ -857,6 +857,9 @@ delete_all_resources() {
                 echo -e "      ${YELLOW}Warning: Failed to delete $id (may be managed by AWS service)${NC}"
             }
         done
+        # Wait for ENI deletions to propagate before proceeding (matches CI cleanup)
+        echo "    Waiting 5s for ENI deletions to propagate..."
+        sleep 5
         echo -e "    ${GREEN}Done${NC}"
     fi
 
@@ -903,7 +906,7 @@ delete_all_resources() {
         echo -e "    ${GREEN}Done${NC}"
     fi
 
-    # 9. Delete Subnets
+    # 9. Delete Subnets (this removes route table associations automatically)
     if [[ -n "${ALL_SUBNETS// /}" ]]; then
         echo "  [9/16] Deleting Subnets..."
         for id in $ALL_SUBNETS; do
@@ -916,13 +919,34 @@ delete_all_resources() {
                 return 1
             fi
         done
+        # Wait for subnet deletion to propagate (matches CI cleanup)
+        echo "    Waiting 5s for subnet deletion to propagate..."
+        sleep 5
         echo -e "    ${GREEN}Done${NC}"
     fi
 
-    # 10. Delete Route Tables
+    # 10. Delete Route Tables (disassociate first, matching CI cleanup approach)
     if [[ -n "${ALL_RTBS// /}" ]]; then
         echo "  [10/16] Deleting Route Tables..."
         for id in $ALL_RTBS; do
+            echo "    Processing: $id"
+
+            # Check for remaining associations and disassociate them first
+            # This is critical - route tables can't be deleted while associated
+            local remaining_assocs
+            remaining_assocs=$(aws ec2 describe-route-tables --region "$REGION" \
+                --route-table-ids "$id" \
+                --query 'RouteTables[0].Associations[?Main!=`true`].RouteTableAssociationId' \
+                --output text 2>/dev/null || echo "")
+
+            if [[ -n "$remaining_assocs" && "$remaining_assocs" != "None" ]]; then
+                echo "      Disassociating: $remaining_assocs"
+                for assoc in $remaining_assocs; do
+                    aws ec2 disassociate-route-table --region "$REGION" \
+                        --association-id "$assoc" 2>/dev/null || true
+                done
+            fi
+
             echo "    Deleting: $id"
             local rtb_result
             rtb_result=$(aws ec2 delete-route-table --region "$REGION" --route-table-id "$id" 2>&1)
