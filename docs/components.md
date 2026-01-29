@@ -34,6 +34,8 @@ Despite the extensive variety of frameworks available for developing agent-based
 
 Kagenti addresses this gap by enhancing existing agent frameworks with production-ready infrastructure.
 
+For a detailed architecture diagram showing component interactions and data flow, see [Technical Details](./tech-details.md).
+
 ---
 
 ## Architecture Diagram

@@ -1,11 +1,6 @@
-# Design and Implementation for the Demos
+# Cloud Native Agent Platform
 
-This section provides details on the implementation of the demos.
-
-
-## Cloud Native Agent Platform Demo
-
-The Cloud Native Agent Platform demo architecture is organized into multiple components that  demonstrate the integration of services and systems within a Kubernetes-based cloud native environment.
+The Kagenti Cloud Native Agent Platform architecture is organized into multiple components that  support the integration of services and systems within a Kubernetes-based cloud native environment.
 
 ```mermaid
 %%{ init: {"themeVariables": { 'fontFamily': "Arial", 'primaryColor': '#1f77b4', 'edgeLabelBackground':'#ffffff'}} }%%
@@ -16,13 +11,24 @@ graph TB
     
     subgraph kagenti-system ["kagenti-system Namespace"]
       IngressGateway["Ingress Gateway"]
+      KagentiUI["Kagenti UI"]
+      Shipwright["Shipwright (Builds)"]
+      Kiali["Kiali"]
+    end
+
+    subgraph gateway-system ["gateway-system Namespace"]
+      MCPGateway["MCP Gateway (Envoy)"]
     end
 
     subgraph keycloak ["keycloak Namespace"]
-      Keycloak["Keycloak"]
+      Keycloak["Keycloak (IAM)"]
     end
 
-    subgraph default_namespace ["default Namespace"]
+    subgraph spire-system ["spire-system Namespace"]
+      SPIRE["SPIRE (Identity)"]
+    end
+
+    subgraph default_namespace ["Workload Namespace (default)"]
       A2AContactExtractorAgent(a2a-contact-extractor-agent)
       A2ACurrencyAgent(a2a-currency-agent)
       OllamaResearcher(ollama-researcher)
@@ -46,14 +52,18 @@ graph TB
   
   style Kubernetes fill:#f9f9f9,stroke:#333,stroke-width:2px;
   style kagenti-system fill:#f1f3f4,stroke:#888;
+  style gateway-system fill:#e8f4ea,stroke:#888;
+  style spire-system fill:#fef3e8,stroke:#888;
   style default_namespace fill:#f1f3f4,stroke:#888;
   style MCPGetWeather fill:#ffffff,stroke:#aaaaaa,stroke-dasharray: 5 5;
 
+  Client --> IngressGateway
   IngressGateway -->|HTTP Routes| A2AContactExtractorAgent
   IngressGateway -->|HTTP Routes| A2ACurrencyAgent
   IngressGateway -->|HTTP Routes| OllamaResearcher
   IngressGateway -->|HTTP Routes| WeatherService
-  WeatherService --> Service
+  WeatherService --> MCPGateway
+  MCPGateway --> Service
   Service --> Deployment
 
   A2AContactExtractorAgent -.->|Istio Mesh| ZTunnel
@@ -62,11 +72,10 @@ graph TB
   WeatherService -.->|Istio Mesh| ZTunnel
   Service -.->|Istio Mesh| ZTunnel
   WeatherService -.-> Keycloak
-
-  Client --> IngressGateway
+  SPIRE -.->|Workload Identity| ZTunnel
 ```
 
-### Infrastructure
+## Infrastructure
 
 - **Ingress Gateway**: serves as the entry point for routing external HTTP requests to internal services within the platform.
 It is deployed in the `kagenti-system` namespace.
@@ -79,8 +88,10 @@ It is deployed in the `kagenti-system` namespace.
 
 - **Shipwright Build System**: [Shipwright](https://shipwright.io) is a cloud-native build framework for building container images directly in Kubernetes. Kagenti uses Shipwright to build both agents and MCP tools from source code. Shipwright supports multiple build strategies including `buildah` for external registries with TLS and `buildah-insecure-push` for internal registries without TLS verification.
 
+- **MCP Gateway**: The MCP Gateway provides a unified entry point for [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers and tools. Deployed in the `gateway-system` namespace, it acts as a routing layer that enables agents to discover and invoke MCP tools. The gateway uses Envoy as a proxy for request routing, load balancing, and authentication. Agents access MCP tools through the gateway using standard HTTP requests, which are then routed to the appropriate tool services.
+
  
-### Agents
+## Agents
 
 - **a2a-contact-extractor-agent**: Marvin agent exposed via [A2A](https://google.github.io/A2A) protocol. 
 It extracts structured contact information from text using Marvin's extraction capabilities
@@ -88,7 +99,7 @@ It extracts structured contact information from text using Marvin's extraction c
 - **slack-researcher**: Autogen agent exposed via A2A protocol. It implements a slack assistant to perform various research tasks on slack.
 - **weather-service**: LangGraph agent exposed via A2A protocol, that provides a simple weather info assistant.
 
-### Tools 
+## Tools 
 
 - **mcp-get-weather**: an [MCP](https://modelcontextprotocol.io) tool to provide weather info
 - **mcp-web-fetch**: an MCP tool to fetch the content of a web page
