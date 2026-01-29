@@ -1003,7 +1003,7 @@
             kubectl get tektonconfig config
             -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
           register: tektonconfig_ready_status
-          retries: 60
+          retries: 90
           delay: 10
           until: tektonconfig_ready_status.stdout == "True"
           changed_when: false
@@ -1050,7 +1050,7 @@
 
         - name: Fail with TektonConfig error
           fail:
-            msg: "TektonConfig did not become Ready after 10 minutes. See diagnostics above."
+            msg: "TektonConfig did not become Ready after 15 minutes. See diagnostics above."
   when: enable_openshift | default(false)
 
 # Wait for OpenShift Builds operator to be ready.
