@@ -2,22 +2,24 @@
 #
 # Find Orphaned AWS Resources
 #
-# Searches for AWS resources matching a prefix (default: kagenti-hypershift).
+# Searches for AWS resources matching a prefix.
+# Default prefix: $MANAGED_BY_TAG (from environment)
 # Useful for identifying orphaned resources from failed cluster creations.
 #
 # USAGE:
-#   ./.github/scripts/hypershift/find-orphaned-resources.sh [OPTIONS] [prefix]
+#   ./.github/scripts/hypershift/find-orphaned-resources.sh [OPTIONS]
 #
 # OPTIONS:
-#   --region REGION    AWS region (default: from env or us-east-1)
-#   --no-color         Disable colored output
-#   --summary-only     Only show summary, not individual resources
-#   -h, --help         Show this help
+#   --custom-prefix PREFIX   Override the default prefix (default: $MANAGED_BY_TAG)
+#   --region REGION          AWS region (default: from env or us-east-1)
+#   --no-color               Disable colored output
+#   --summary-only           Only show summary, not individual resources
+#   -h, --help               Show this help
 #
 # EXAMPLES:
-#   ./find-orphaned-resources.sh                           # Search for kagenti-hypershift*
-#   ./find-orphaned-resources.sh kagenti-hypershift-custom # More specific prefix
-#   ./find-orphaned-resources.sh --summary-only            # Just show counts
+#   source .env.kagenti-hypershift-ci && ./find-orphaned-resources.sh
+#   ./find-orphaned-resources.sh --custom-prefix kagenti-hypershift
+#   ./find-orphaned-resources.sh --summary-only
 #
 
 set -euo pipefail
@@ -29,8 +31,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# Default values
-PREFIX="kagenti-hypershift"
+# Default values - MANAGED_BY_TAG from environment, must not be empty
+CUSTOM_PREFIX=""
 REGION="${AWS_REGION:-us-east-1}"
 NO_COLOR=false
 SUMMARY_ONLY=false
@@ -55,6 +57,10 @@ fi
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --custom-prefix)
+            CUSTOM_PREFIX="$2"
+            shift 2
+            ;;
         --region)
             REGION="$2"
             shift 2
@@ -69,19 +75,39 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            head -30 "$0" | tail -25
+            head -28 "$0" | tail -23
             exit 0
             ;;
         -*)
             echo "Unknown option: $1" >&2
+            echo "Use --help for usage information" >&2
             exit 1
             ;;
         *)
-            PREFIX="$1"
+            # Backwards compatibility: positional arg sets custom prefix
+            CUSTOM_PREFIX="$1"
             shift
             ;;
     esac
 done
+
+# Determine prefix to use
+if [[ -n "$CUSTOM_PREFIX" ]]; then
+    PREFIX="$CUSTOM_PREFIX"
+elif [[ -n "${MANAGED_BY_TAG:-}" ]]; then
+    PREFIX="$MANAGED_BY_TAG"
+else
+    echo "Error: No prefix specified." >&2
+    echo "" >&2
+    echo "Either:" >&2
+    echo "  1. Set MANAGED_BY_TAG environment variable (e.g., source .env.kagenti-hypershift-ci)" >&2
+    echo "  2. Use --custom-prefix <prefix> option" >&2
+    echo "" >&2
+    echo "Example:" >&2
+    echo "  source .env.kagenti-hypershift-ci && $0" >&2
+    echo "  $0 --custom-prefix kagenti-hypershift" >&2
+    exit 1
+fi
 
 # ============================================================================
 # Helper Functions
@@ -110,44 +136,58 @@ log_resource() {
     echo -e "    ${DIM}$1${NC}"
 }
 
-log_none() {
-    echo -e "    ${DIM}(none)${NC}"
-}
+# Simple counter variables (bash 3.x compatible)
+COUNT_VPCS=0
+COUNT_INSTANCES=0
+COUNT_NATS=0
+COUNT_IGWS=0
+COUNT_ENDPOINTS=0
+COUNT_ENIS=0
+COUNT_SGS=0
+COUNT_SUBNETS=0
+COUNT_RTBS=0
+COUNT_EIPS=0
+COUNT_VOLUMES=0
+COUNT_ELBS=0
+COUNT_S3=0
+COUNT_ROLES=0
+COUNT_PROFILES=0
+COUNT_OIDC=0
+COUNT_ZONES=0
+
+# Store VPC info in simple arrays (bash 3.x compatible)
+VPC_IDS=""
+VPC_NAMES_LIST=""
 
 # ============================================================================
 # Resource Discovery Functions
 # ============================================================================
-
-# Associative arrays for tracking
-declare -A VPC_NAMES
-declare -A VPC_CLUSTERS
-declare -A CLUSTER_RESOURCES
-declare -a ORPHANED_RESOURCES
-
-# Counters
-declare -A RESOURCE_COUNTS
 
 # Find VPCs by name prefix
 find_vpcs() {
     aws ec2 describe-vpcs \
         --region "$REGION" \
         --filters "Name=tag:Name,Values=*${PREFIX}*" \
-        --query 'Vpcs[*].[VpcId,State,CidrBlock,Tags[?Key==`Name`].Value|[0],Tags[?Key==`kubernetes.io/cluster`]|[0].Key]' \
+        --query 'Vpcs[*].[VpcId,State,CidrBlock,Tags[?Key==`Name`].Value|[0]]' \
         --output text 2>/dev/null || echo ""
 }
 
-# Find EC2 instances by name or cluster tag
+# Find EC2 instances
 find_instances() {
     local vpc_id="${1:-}"
-    local filters="Name=tag:Name,Values=*${PREFIX}*"
     if [[ -n "$vpc_id" ]]; then
-        filters="Name=vpc-id,Values=$vpc_id"
+        aws ec2 describe-instances \
+            --region "$REGION" \
+            --filters "Name=vpc-id,Values=$vpc_id" "Name=instance-state-name,Values=pending,running,stopping,stopped,shutting-down" \
+            --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
+            --output text 2>/dev/null || echo ""
+    else
+        aws ec2 describe-instances \
+            --region "$REGION" \
+            --filters "Name=tag:Name,Values=*${PREFIX}*" "Name=instance-state-name,Values=pending,running,stopping,stopped,shutting-down" \
+            --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
+            --output text 2>/dev/null || echo ""
     fi
-    aws ec2 describe-instances \
-        --region "$REGION" \
-        --filters "$filters" "Name=instance-state-name,Values=pending,running,stopping,stopped,shutting-down" \
-        --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
-        --output text 2>/dev/null || echo ""
 }
 
 # Find NAT Gateways
@@ -158,12 +198,6 @@ find_nat_gateways() {
             --region "$REGION" \
             --filter "Name=vpc-id,Values=$vpc_id" "Name=state,Values=pending,available,deleting,failed" \
             --query 'NatGateways[*].[NatGatewayId,State,SubnetId]' \
-            --output text 2>/dev/null || echo ""
-    else
-        aws ec2 describe-nat-gateways \
-            --region "$REGION" \
-            --filter "Name=tag:Name,Values=*${PREFIX}*" "Name=state,Values=pending,available,deleting,failed" \
-            --query 'NatGateways[*].[NatGatewayId,State,VpcId]' \
             --output text 2>/dev/null || echo ""
     fi
 }
@@ -176,12 +210,6 @@ find_internet_gateways() {
             --region "$REGION" \
             --filters "Name=attachment.vpc-id,Values=$vpc_id" \
             --query 'InternetGateways[*].[InternetGatewayId,Attachments[0].State,Tags[?Key==`Name`].Value|[0]]' \
-            --output text 2>/dev/null || echo ""
-    else
-        aws ec2 describe-internet-gateways \
-            --region "$REGION" \
-            --filters "Name=tag:Name,Values=*${PREFIX}*" \
-            --query 'InternetGateways[*].[InternetGatewayId,Attachments[0].State,Attachments[0].VpcId]' \
             --output text 2>/dev/null || echo ""
     fi
 }
@@ -218,12 +246,6 @@ find_security_groups() {
             --region "$REGION" \
             --filters "Name=vpc-id,Values=$vpc_id" \
             --query 'SecurityGroups[?GroupName!=`default`].[GroupId,GroupName]' \
-            --output text 2>/dev/null || echo ""
-    else
-        aws ec2 describe-security-groups \
-            --region "$REGION" \
-            --filters "Name=tag:Name,Values=*${PREFIX}*" \
-            --query 'SecurityGroups[*].[GroupId,GroupName,VpcId]' \
             --output text 2>/dev/null || echo ""
     fi
 }
@@ -322,6 +344,18 @@ find_route53_zones() {
 }
 
 # ============================================================================
+# Count lines helper
+# ============================================================================
+count_lines() {
+    local data="$1"
+    if [[ -z "$data" ]]; then
+        echo 0
+    else
+        echo "$data" | grep -c . 2>/dev/null || echo 0
+    fi
+}
+
+# ============================================================================
 # Main Logic
 # ============================================================================
 
@@ -350,73 +384,57 @@ echo ""
 echo "Searching for resources..."
 
 VPCS=$(find_vpcs)
-VPC_COUNT=0
 
 if [[ -n "$VPCS" ]]; then
-    while IFS=$'\t' read -r vpc_id state cidr name cluster_tag; do
+    while IFS=$'\t' read -r vpc_id state cidr name; do
         if [[ -n "$vpc_id" && "$vpc_id" != "None" ]]; then
-            VPC_NAMES["$vpc_id"]="$name"
-            VPC_COUNT=$((VPC_COUNT + 1))
-
-            # Extract cluster name from tag if present
-            if [[ -n "$cluster_tag" && "$cluster_tag" != "None" ]]; then
-                cluster_name="${cluster_tag#kubernetes.io/cluster/}"
-                VPC_CLUSTERS["$vpc_id"]="$cluster_name"
-            fi
+            VPC_IDS="$VPC_IDS $vpc_id"
+            VPC_NAMES_LIST="$VPC_NAMES_LIST|$vpc_id:$name"
+            COUNT_VPCS=$((COUNT_VPCS + 1))
         fi
     done <<< "$VPCS"
 fi
-
-RESOURCE_COUNTS["VPCs"]=$VPC_COUNT
 
 # ============================================================================
 # Phase 2: For each VPC, find associated resources
 # ============================================================================
 
 if [[ $SUMMARY_ONLY == false ]]; then
-    for vpc_id in "${!VPC_NAMES[@]}"; do
-        vpc_name="${VPC_NAMES[$vpc_id]}"
-        cluster="${VPC_CLUSTERS[$vpc_id]:-unknown}"
+    for vpc_id in $VPC_IDS; do
+        # Extract VPC name from our list
+        vpc_name=$(echo "$VPC_NAMES_LIST" | tr '|' '\n' | grep "^$vpc_id:" | cut -d: -f2-)
+        [[ -z "$vpc_name" ]] && vpc_name="(unnamed)"
 
         log_section "VPC: $vpc_id ($vpc_name)"
-        if [[ -n "${VPC_CLUSTERS[$vpc_id]:-}" ]]; then
-            echo -e "Cluster: ${CYAN}${VPC_CLUSTERS[$vpc_id]}${NC}"
-        fi
 
         # EC2 Instances (delete first)
         instances=$(find_instances "$vpc_id")
         if [[ -n "$instances" ]]; then
             log_resource_type "EC2 Instances"
-            while IFS=$'\t' read -r id state type name; do
-                [[ -n "$id" ]] && log_resource "$id  $state  $type  $name"
+            while IFS=$'\t' read -r id inst_state type inst_name; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $inst_state  $type  $inst_name"
             done <<< "$instances"
-            count=$(echo "$instances" | grep -c . || echo 0)
-            RESOURCE_COUNTS["EC2 Instances"]=$((${RESOURCE_COUNTS["EC2 Instances"]:-0} + count))
+            COUNT_INSTANCES=$((COUNT_INSTANCES + $(count_lines "$instances")))
         fi
-
-        # Load Balancers (delete early)
-        # (checked globally, not per-VPC for simplicity)
 
         # NAT Gateways
         nats=$(find_nat_gateways "$vpc_id")
         if [[ -n "$nats" ]]; then
             log_resource_type "NAT Gateways"
-            while IFS=$'\t' read -r id state subnet; do
-                [[ -n "$id" ]] && log_resource "$id  $state  subnet: $subnet"
+            while IFS=$'\t' read -r id nat_state subnet; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $nat_state  subnet: $subnet"
             done <<< "$nats"
-            count=$(echo "$nats" | grep -c . || echo 0)
-            RESOURCE_COUNTS["NAT Gateways"]=$((${RESOURCE_COUNTS["NAT Gateways"]:-0} + count))
+            COUNT_NATS=$((COUNT_NATS + $(count_lines "$nats")))
         fi
 
         # VPC Endpoints
         endpoints=$(find_vpc_endpoints "$vpc_id")
         if [[ -n "$endpoints" ]]; then
             log_resource_type "VPC Endpoints"
-            while IFS=$'\t' read -r id state service; do
-                [[ -n "$id" ]] && log_resource "$id  $state  $service"
+            while IFS=$'\t' read -r id ep_state service; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $ep_state  $service"
             done <<< "$endpoints"
-            count=$(echo "$endpoints" | grep -c . || echo 0)
-            RESOURCE_COUNTS["VPC Endpoints"]=$((${RESOURCE_COUNTS["VPC Endpoints"]:-0} + count))
+            COUNT_ENDPOINTS=$((COUNT_ENDPOINTS + $(count_lines "$endpoints")))
         fi
 
         # Network Interfaces
@@ -424,59 +442,68 @@ if [[ $SUMMARY_ONLY == false ]]; then
         if [[ -n "$enis" ]]; then
             log_resource_type "Network Interfaces"
             while IFS=$'\t' read -r id status desc; do
-                [[ -n "$id" ]] && log_resource "$id  $status  ${desc:0:50}"
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $status  ${desc:0:50}"
             done <<< "$enis"
-            count=$(echo "$enis" | grep -c . || echo 0)
-            RESOURCE_COUNTS["Network Interfaces"]=$((${RESOURCE_COUNTS["Network Interfaces"]:-0} + count))
+            COUNT_ENIS=$((COUNT_ENIS + $(count_lines "$enis")))
         fi
 
         # Security Groups
         sgs=$(find_security_groups "$vpc_id")
         if [[ -n "$sgs" ]]; then
             log_resource_type "Security Groups"
-            while IFS=$'\t' read -r id name; do
-                [[ -n "$id" ]] && log_resource "$id  $name"
+            while IFS=$'\t' read -r id sg_name; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $sg_name"
             done <<< "$sgs"
-            count=$(echo "$sgs" | grep -c . || echo 0)
-            RESOURCE_COUNTS["Security Groups"]=$((${RESOURCE_COUNTS["Security Groups"]:-0} + count))
+            COUNT_SGS=$((COUNT_SGS + $(count_lines "$sgs")))
         fi
 
         # Subnets
         subnets=$(find_subnets "$vpc_id")
         if [[ -n "$subnets" ]]; then
             log_resource_type "Subnets"
-            while IFS=$'\t' read -r id state cidr az; do
-                [[ -n "$id" ]] && log_resource "$id  $state  $cidr  $az"
+            while IFS=$'\t' read -r id sub_state sub_cidr az; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $sub_state  $sub_cidr  $az"
             done <<< "$subnets"
-            count=$(echo "$subnets" | grep -c . || echo 0)
-            RESOURCE_COUNTS["Subnets"]=$((${RESOURCE_COUNTS["Subnets"]:-0} + count))
+            COUNT_SUBNETS=$((COUNT_SUBNETS + $(count_lines "$subnets")))
         fi
 
         # Internet Gateways
         igws=$(find_internet_gateways "$vpc_id")
         if [[ -n "$igws" ]]; then
             log_resource_type "Internet Gateways"
-            while IFS=$'\t' read -r id state name; do
-                [[ -n "$id" ]] && log_resource "$id  $state  $name"
+            while IFS=$'\t' read -r id igw_state igw_name; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $igw_state  $igw_name"
             done <<< "$igws"
-            count=$(echo "$igws" | grep -c . || echo 0)
-            RESOURCE_COUNTS["Internet Gateways"]=$((${RESOURCE_COUNTS["Internet Gateways"]:-0} + count))
+            COUNT_IGWS=$((COUNT_IGWS + $(count_lines "$igws")))
         fi
 
         # Route Tables
         rtbs=$(find_route_tables "$vpc_id")
         if [[ -n "$rtbs" ]]; then
             log_resource_type "Route Tables"
-            while IFS=$'\t' read -r id name; do
-                [[ -n "$id" ]] && log_resource "$id  $name"
+            while IFS=$'\t' read -r id rtb_name; do
+                [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $rtb_name"
             done <<< "$rtbs"
-            count=$(echo "$rtbs" | grep -c . || echo 0)
-            RESOURCE_COUNTS["Route Tables"]=$((${RESOURCE_COUNTS["Route Tables"]:-0} + count))
+            COUNT_RTBS=$((COUNT_RTBS + $(count_lines "$rtbs")))
         fi
 
         # VPC itself
         log_resource_type "VPC"
         log_resource "$vpc_id  $vpc_name"
+    done
+fi
+
+# If summary only, still need to count VPC resources
+if [[ $SUMMARY_ONLY == true ]]; then
+    for vpc_id in $VPC_IDS; do
+        COUNT_INSTANCES=$((COUNT_INSTANCES + $(count_lines "$(find_instances "$vpc_id")")))
+        COUNT_NATS=$((COUNT_NATS + $(count_lines "$(find_nat_gateways "$vpc_id")")))
+        COUNT_ENDPOINTS=$((COUNT_ENDPOINTS + $(count_lines "$(find_vpc_endpoints "$vpc_id")")))
+        COUNT_ENIS=$((COUNT_ENIS + $(count_lines "$(find_enis "$vpc_id")")))
+        COUNT_SGS=$((COUNT_SGS + $(count_lines "$(find_security_groups "$vpc_id")")))
+        COUNT_SUBNETS=$((COUNT_SUBNETS + $(count_lines "$(find_subnets "$vpc_id")")))
+        COUNT_IGWS=$((COUNT_IGWS + $(count_lines "$(find_internet_gateways "$vpc_id")")))
+        COUNT_RTBS=$((COUNT_RTBS + $(count_lines "$(find_route_tables "$vpc_id")")))
     done
 fi
 
@@ -495,19 +522,17 @@ if [[ -n "$elbs" || -n "$elbv2s" ]]; then
     if [[ $SUMMARY_ONLY == false ]]; then
         log_resource_type "Load Balancers"
         if [[ -n "$elbs" ]]; then
-            while IFS=$'\t' read -r name scheme vpc; do
-                [[ -n "$name" ]] && log_resource "(classic) $name  $scheme  vpc: $vpc"
+            while IFS=$'\t' read -r lb_name scheme vpc; do
+                [[ -n "$lb_name" && "$lb_name" != "None" ]] && log_resource "(classic) $lb_name  $scheme  vpc: $vpc"
             done <<< "$elbs"
         fi
         if [[ -n "$elbv2s" ]]; then
-            while IFS=$'\t' read -r name type state vpc; do
-                [[ -n "$name" ]] && log_resource "($type) $name  $state  vpc: $vpc"
+            while IFS=$'\t' read -r lb_name type lb_state vpc; do
+                [[ -n "$lb_name" && "$lb_name" != "None" ]] && log_resource "($type) $lb_name  $lb_state  vpc: $vpc"
             done <<< "$elbv2s"
         fi
     fi
-    count1=$(echo "$elbs" | grep -c . 2>/dev/null || echo 0)
-    count2=$(echo "$elbv2s" | grep -c . 2>/dev/null || echo 0)
-    RESOURCE_COUNTS["Load Balancers"]=$((count1 + count2))
+    COUNT_ELBS=$(($(count_lines "$elbs") + $(count_lines "$elbv2s")))
 fi
 
 # Elastic IPs
@@ -515,12 +540,11 @@ eips=$(find_eips)
 if [[ -n "$eips" ]]; then
     if [[ $SUMMARY_ONLY == false ]]; then
         log_resource_type "Elastic IPs"
-        while IFS=$'\t' read -r alloc_id ip assoc name; do
-            [[ -n "$alloc_id" ]] && log_resource "$alloc_id  $ip  ${assoc:-not-associated}  $name"
+        while IFS=$'\t' read -r alloc_id ip assoc eip_name; do
+            [[ -n "$alloc_id" && "$alloc_id" != "None" ]] && log_resource "$alloc_id  $ip  ${assoc:-not-associated}  $eip_name"
         done <<< "$eips"
     fi
-    count=$(echo "$eips" | grep -c . || echo 0)
-    RESOURCE_COUNTS["Elastic IPs"]=$count
+    COUNT_EIPS=$(count_lines "$eips")
 fi
 
 # EBS Volumes
@@ -528,12 +552,11 @@ volumes=$(find_volumes)
 if [[ -n "$volumes" ]]; then
     if [[ $SUMMARY_ONLY == false ]]; then
         log_resource_type "EBS Volumes"
-        while IFS=$'\t' read -r id state size name; do
-            [[ -n "$id" ]] && log_resource "$id  $state  ${size}GB  $name"
+        while IFS=$'\t' read -r id vol_state size vol_name; do
+            [[ -n "$id" && "$id" != "None" ]] && log_resource "$id  $vol_state  ${size}GB  $vol_name"
         done <<< "$volumes"
     fi
-    count=$(echo "$volumes" | grep -c . || echo 0)
-    RESOURCE_COUNTS["EBS Volumes"]=$count
+    COUNT_VOLUMES=$(count_lines "$volumes")
 fi
 
 # S3 Buckets
@@ -545,8 +568,7 @@ if [[ -n "$buckets" ]]; then
             log_resource "$bucket"
         done
     fi
-    count=$(echo "$buckets" | wc -w | tr -d ' ')
-    RESOURCE_COUNTS["S3 Buckets"]=$count
+    COUNT_S3=$(echo "$buckets" | wc -w | tr -d ' ')
 fi
 
 # IAM Roles
@@ -558,8 +580,7 @@ if [[ -n "$roles" ]]; then
             log_resource "$role"
         done
     fi
-    count=$(echo "$roles" | wc -w | tr -d ' ')
-    RESOURCE_COUNTS["IAM Roles"]=$count
+    COUNT_ROLES=$(echo "$roles" | wc -w | tr -d ' ')
 fi
 
 # Instance Profiles
@@ -571,8 +592,7 @@ if [[ -n "$profiles" ]]; then
             log_resource "$profile"
         done
     fi
-    count=$(echo "$profiles" | wc -w | tr -d ' ')
-    RESOURCE_COUNTS["Instance Profiles"]=$count
+    COUNT_PROFILES=$(echo "$profiles" | wc -w | tr -d ' ')
 fi
 
 # OIDC Providers
@@ -584,8 +604,7 @@ if [[ -n "$oidc" ]]; then
             [[ -n "$arn" ]] && log_resource "$arn"
         done <<< "$oidc"
     fi
-    count=$(echo "$oidc" | grep -c . || echo 0)
-    RESOURCE_COUNTS["OIDC Providers"]=$count
+    COUNT_OIDC=$(count_lines "$oidc")
 fi
 
 # Route53 Zones
@@ -593,12 +612,11 @@ zones=$(find_route53_zones)
 if [[ -n "$zones" ]]; then
     if [[ $SUMMARY_ONLY == false ]]; then
         log_resource_type "Route53 Hosted Zones"
-        while IFS=$'\t' read -r name id private; do
-            [[ -n "$name" ]] && log_resource "$name  $id  private: $private"
+        while IFS=$'\t' read -r zone_name id private; do
+            [[ -n "$zone_name" && "$zone_name" != "None" ]] && log_resource "$zone_name  $id  private: $private"
         done <<< "$zones"
     fi
-    count=$(echo "$zones" | grep -c . || echo 0)
-    RESOURCE_COUNTS["Route53 Zones"]=$count
+    COUNT_ZONES=$(count_lines "$zones")
 fi
 
 # ============================================================================
@@ -608,43 +626,43 @@ fi
 log_header "SUMMARY"
 
 echo ""
-echo "VPCs found: ${RESOURCE_COUNTS["VPCs"]:-0}"
-for vpc_id in "${!VPC_NAMES[@]}"; do
-    echo "  - ${VPC_NAMES[$vpc_id]}"
+echo "VPCs found: $COUNT_VPCS"
+for vpc_id in $VPC_IDS; do
+    vpc_name=$(echo "$VPC_NAMES_LIST" | tr '|' '\n' | grep "^$vpc_id:" | cut -d: -f2-)
+    echo "  - $vpc_name"
 done
 
 echo ""
 echo "Total resources by type:"
 
-# Define display order (roughly dependency order for cleanup)
-DISPLAY_ORDER=(
-    "VPCs"
-    "EC2 Instances"
-    "Load Balancers"
-    "NAT Gateways"
-    "VPC Endpoints"
-    "Network Interfaces"
-    "Elastic IPs"
-    "EBS Volumes"
-    "Security Groups"
-    "Subnets"
-    "Internet Gateways"
-    "Route Tables"
-    "S3 Buckets"
-    "IAM Roles"
-    "Instance Profiles"
-    "OIDC Providers"
-    "Route53 Zones"
-)
-
-total_resources=0
-for resource_type in "${DISPLAY_ORDER[@]}"; do
-    count="${RESOURCE_COUNTS[$resource_type]:-0}"
+# Print counts if > 0
+print_count() {
+    local label="$1"
+    local count="$2"
     if [[ $count -gt 0 ]]; then
-        printf "  %-20s %d\n" "$resource_type:" "$count"
-        total_resources=$((total_resources + count))
+        printf "  %-22s %d\n" "$label:" "$count"
     fi
-done
+}
+
+print_count "VPCs" "$COUNT_VPCS"
+print_count "EC2 Instances" "$COUNT_INSTANCES"
+print_count "Load Balancers" "$COUNT_ELBS"
+print_count "NAT Gateways" "$COUNT_NATS"
+print_count "VPC Endpoints" "$COUNT_ENDPOINTS"
+print_count "Network Interfaces" "$COUNT_ENIS"
+print_count "Elastic IPs" "$COUNT_EIPS"
+print_count "EBS Volumes" "$COUNT_VOLUMES"
+print_count "Security Groups" "$COUNT_SGS"
+print_count "Subnets" "$COUNT_SUBNETS"
+print_count "Internet Gateways" "$COUNT_IGWS"
+print_count "Route Tables" "$COUNT_RTBS"
+print_count "S3 Buckets" "$COUNT_S3"
+print_count "IAM Roles" "$COUNT_ROLES"
+print_count "Instance Profiles" "$COUNT_PROFILES"
+print_count "OIDC Providers" "$COUNT_OIDC"
+print_count "Route53 Zones" "$COUNT_ZONES"
+
+total_resources=$((COUNT_VPCS + COUNT_INSTANCES + COUNT_ELBS + COUNT_NATS + COUNT_ENDPOINTS + COUNT_ENIS + COUNT_EIPS + COUNT_VOLUMES + COUNT_SGS + COUNT_SUBNETS + COUNT_IGWS + COUNT_RTBS + COUNT_S3 + COUNT_ROLES + COUNT_PROFILES + COUNT_OIDC + COUNT_ZONES))
 
 echo ""
 echo -e "${BOLD}Total: $total_resources resources${NC}"
