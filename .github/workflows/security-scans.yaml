@@ -76,7 +76,10 @@ jobs:
         id: dependency-review
         uses: actions/dependency-review-action@v4
         with:
-          fail-on-severity: high
+          # Stricter security settings (Phase A improvement)
+          fail-on-severity: moderate
+          # Block strong copyleft licenses that could affect project licensing
+          deny-licenses: GPL-3.0, AGPL-3.0
           # Post a comment on the PR showing what was scanned
           comment-summary-in-pr: always
 
@@ -152,3 +155,85 @@ jobs:
 
           echo ""
           echo "All scripts passed shellcheck (error level)"
+
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Create config
+        run: |
+          cat > .yamllint.yaml << 'EOF'
+          extends: relaxed
+          rules:
+            line-length:
+              max: 150
+              level: warning
+            truthy:
+              check-keys: false  # Allow 'on:' in workflows
+            document-start: disable
+            comments:
+              min-spaces-from-content: 1
+          EOF
+
+      - name: Lint YAML files
+        run: |
+          echo "=== Linting YAML files ==="
+          yamllint -c .yamllint.yaml \
+            .github/workflows/ \
+            charts/ \
+            deployments/ || true
+
+          # Show summary
+          echo ""
+          echo "=== Summary ==="
+          ERROR_COUNT=$(yamllint -c .yamllint.yaml -f parsable \
+            .github/workflows/ charts/ deployments/ 2>&1 | grep -c ":error:" || echo "0")
+          WARNING_COUNT=$(yamllint -c .yamllint.yaml -f parsable \
+            .github/workflows/ charts/ deployments/ 2>&1 | grep -c ":warning:" || echo "0")
+          echo "Errors: $ERROR_COUNT"
+          echo "Warnings: $WARNING_COUNT"
+
+          # Fail only on errors (not warnings)
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo ""
+            echo "ERROR: YAML files have syntax errors. Please fix them."
+            exit 1
+          fi
+
+  helm-lint:
+    name: Helm Chart Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Lint Helm charts
+        run: |
+          echo "=== Linting Helm charts ==="
+          FAILED=0
+
+          for chart in charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              echo "Linting: $chart"
+              if ! helm lint "$chart" --strict; then
+                FAILED=1
+              fi
+              echo ""
+            fi
+          done
+
+          if [ $FAILED -eq 1 ]; then
+            echo "ERROR: Some Helm charts have linting issues."
+            exit 1
+          fi
+
+          echo "All Helm charts passed linting"
