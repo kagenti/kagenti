@@ -17,7 +17,7 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
 
 # === PINNED VERSIONS ===
 # Update these to upgrade tooling
-ARG OC_VERSION=4.20.10
+ARG OC_VERSION=4.20.11
 ARG AWS_CLI_VERSION=2.15.0
 ARG GO_VERSION=1.23.5
 

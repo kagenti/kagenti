@@ -27,7 +27,7 @@ on:
       ocp_version:
         description: 'OpenShift version'
         required: false
-        default: '4.20.10'
+        default: '4.20.11'
       skip_destroy:
         description: 'Skip cluster destruction (for debugging)'
         required: false
@@ -50,7 +50,7 @@ env:
   # For push to main: run number (each push gets fresh cluster)
   # For workflow_dispatch: user-provided or run_number
   CLUSTER_SUFFIX: ${{ inputs.cluster_name || (github.event.pull_request.number && format('pr{0}', github.event.pull_request.number)) || github.run_number }}
-  OCP_VERSION: ${{ inputs.ocp_version || '4.20.10' }}
+  OCP_VERSION: ${{ inputs.ocp_version || '4.20.11' }}
   # Slot management for parallel CI runs
   MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
   SLOT_TIMEOUT: '60'  # Minutes to wait for an available slot

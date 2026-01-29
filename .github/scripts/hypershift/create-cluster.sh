@@ -68,7 +68,7 @@ fi
 # Configuration with defaults
 REPLICAS="${REPLICAS:-2}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-m5.xlarge}"
-OCP_VERSION="${OCP_VERSION:-4.20.10}"
+OCP_VERSION="${OCP_VERSION:-4.20.11}"
 
 # Cluster suffix - if not set, use positional arg, then default to username
 # Set CLUSTER_SUFFIX="" to generate a random suffix
