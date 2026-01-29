@@ -327,13 +327,15 @@ find_subnets() {
 }
 
 # Find Route Tables in VPC (non-main)
+# Note: Use Associations[0].Main != `true` instead of !Associations[?Main==`true`]
+# because the latter doesn't work correctly when Associations is empty
 find_route_tables() {
     local vpc_id="${1:-}"
     if [[ -n "$vpc_id" ]]; then
         aws ec2 describe-route-tables \
             --region "$REGION" \
             --filters "Name=vpc-id,Values=$vpc_id" \
-            --query 'RouteTables[?!Associations[?Main==`true`]].[RouteTableId,Tags]' \
+            --query 'RouteTables[?Associations[0].Main != `true`].[RouteTableId,Tags]' \
             --output json 2>/dev/null || echo "[]"
     fi
 }
