@@ -352,6 +352,7 @@ spec:
       labels:
         kagenti.io/type: tool
         kagenti.io/protocol: mcp
+        kagenti.io/transport: streamable_http
         app.kubernetes.io/name: weather-tool
     spec:
       containers:
