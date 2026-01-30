@@ -159,7 +159,7 @@ Press the "Build New Agent" button. You will be redirected to a **Build Progress
 
 Once the build succeeds, Kagenti automatically:
 1. Creates the Agent CR with the built image
-2. Creates an HTTPRoute for external access (if enabled)
+2. Creates an HTTPRoute for external access (if enabled, via "Enable external access to the agent endpoint" in the UI)
 3. Redirects you to the Agent detail page
 
 ## Testing agents

@@ -101,7 +101,7 @@ Expand "Advanced Build Options" to configure:
 
 ### Step 6: Build and Deploy
 
-Press the "Build & Deploy New Tool" button. 
+Press the "Build & Deploy New Tool" button.
 
 For source builds, you will be redirected to a **Build Progress** page that shows:
 - Build phase (Pending → Running → Succeeded/Failed)
@@ -111,7 +111,7 @@ For source builds, you will be redirected to a **Build Progress** page that show
 
 Once the build succeeds, Kagenti automatically:
 1. Creates the MCPServer CR with the built image
-2. Creates an HTTPRoute for gateway access (if enabled)
+2. Creates an HTTPRoute for gateway access (if enabled, via "Enable external access to the agent endpoint" in the UI)
 3. Redirects you to the Tool detail page
 
 For image deployments, the MCPServer is created immediately.
