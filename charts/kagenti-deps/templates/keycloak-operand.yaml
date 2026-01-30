@@ -33,7 +33,7 @@ spec:
     enabled: true
   update:
     strategy: RecreateOnImageChange
-  db: 
+  db:
     host: postgres-kc
     database: postgres
     passwordSecret:
@@ -42,7 +42,7 @@ spec:
     usernameSecret:
       key: username
       name: keycloak-db-secret
-    vendor: postgres  
+    vendor: postgres
   unsupported:
     podTemplate:
       spec:
@@ -64,7 +64,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    openshift.io/host.generated: "true"  
+    openshift.io/host.generated: "true"
 spec:
   path: /
   port:

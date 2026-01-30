@@ -1,7 +1,7 @@
 {{- if and .Values.components.certManager.enabled .Values.openshift }}
-{{- /* 
+{{- /*
   Cert-Manager Operator Installation
-  
+
   NOTE: Resources use helm.sh/resource-policy: keep to prevent deletion on helm uninstall.
   This avoids the namespace getting stuck in Terminating state due to operator-managed
   resources with finalizers that can only be removed by the operator controller.

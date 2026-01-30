@@ -90,8 +90,8 @@ jobs:
           helm dependency update
           yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
-          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}   
-      
+          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
+
       - name: Package and push kagenti-deps chart
         run: |
           chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
@@ -101,4 +101,5 @@ jobs:
           helm dependency update
           yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
-          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}       
+          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
+

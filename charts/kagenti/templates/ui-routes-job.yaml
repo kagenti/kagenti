@@ -25,9 +25,9 @@ rules:
 - apiGroups: ["route.openshift.io"]
   resources: ["routes"]
   verbs: ["get", "list"]
-- apiGroups: [""] 
+- apiGroups: [""]
   resources: ["configmaps"]
-  verbs: ["create", "get", "patch", "update"] 
+  verbs: ["create", "get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -57,7 +57,7 @@ metadata:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-install, pre-upgrade, pre-delete
-    "helm.sh/hook-weight": "-5" 
+    "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 data:
   process_routes.sh: |
@@ -113,7 +113,7 @@ data:
       "istio-system,kiali,true,NETWORK_TRAFFIC_DASHBOARD_URL"
       "keycloak,keycloak,true,KEYCLOAK_CONSOLE_URL"
     )
-    
+
     output_keys=()
     output_values=()
 
@@ -143,10 +143,10 @@ data:
 
     echo
     echo "--- Completed Route Processing ---"
-    
+
     # --- Generate and Apply ConfigMap ---
     echo "--- Generating and Applying ConfigMap ---"
-    
+
     configmap_yaml=$(cat <<EOF
     apiVersion: v1
     kind: ConfigMap
@@ -162,7 +162,7 @@ data:
       configmap_yaml+=$'\n'
       configmap_yaml+="  $key: \"$value\""
     done
-    
+
     echo "$configmap_yaml" | kubectl apply -f -
     if [[ $? -eq 0 ]]; then
         echo "ConfigMap '$CONFIGMAP_NAME' applied successfully in namespace '$CONFIGMAP_NAMESPACE'."
@@ -182,8 +182,6 @@ metadata:
     "helm.sh/hook": pre-install, pre-upgrade
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": hook-succeeded
-  labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
 spec:
   template:
     spec:

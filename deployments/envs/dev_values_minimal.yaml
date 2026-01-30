@@ -1,27 +1,27 @@
 # Kagenti minimal installation configuration
 # No Auth is enabled in this config
 
-#################################################################### 
-# kagenti-deps 
+####################################################################
+# kagenti-deps
 ####################################################################
 gatewayApi:
   enabled: true
 
 certManager:
-  enabled: true  
+  enabled: true
 
 tekton:
-  enabled: true 
+  enabled: true
 
 toolhiveCRDs:
   enabled: true
-  
+
 toolhiveOperator:
   enabled: true
 
 charts:
-  #################################################################### 
-  # kagenti-deps 
+  ####################################################################
+  # kagenti-deps
   ####################################################################
   kagenti-deps:
     enabled: true
@@ -31,11 +31,11 @@ charts:
         ingressGateway:
           enabled: true
         containerRegistry:
-          enabled: true  
+          enabled: true
 
-  #################################################################### 
-  # kagenti 
-  ####################################################################        
+  ####################################################################
+  # kagenti
+  ####################################################################
   kagenti:
     enabled: true
     values:
@@ -48,16 +48,16 @@ charts:
         ui:
           enabled: true
      # configs
-     ui:      
+     ui:
       auth:
-        enabled: false         
+        enabled: false
 
-  #################################################################### 
+  ####################################################################
   # istio  - required for the ingress gateway
-  ####################################################################    
+  ####################################################################
   istio:
     enabled: true
- 
+
 kind_images_preload: false
 # docker or podman
 container_engine: docker

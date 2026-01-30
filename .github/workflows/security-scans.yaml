@@ -350,16 +350,17 @@ jobs:
 
       - name: Run Hadolint
         if: steps.find-dockerfiles.outputs.has_dockerfiles == 'true'
-        uses: hadolint/hadolint-action@v3.1.0
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: "**/Dockerfile*"
           recursive: true
-          # Start with warning threshold, tighten later
-          failure-threshold: error
+          # Fail on warnings and errors
+          failure-threshold: warning
           # Common ignores for development Dockerfiles
-          # DL3008: Pin versions in apt-get
-          # DL3013: Pin versions in pip
-          ignore: DL3008,DL3013
+          # DL3008: Pin versions in apt-get (apt-get install -y without versions)
+          # DL3013: Pin versions in pip (pip install without --no-cache-dir)
+          # DL3059: Multiple consecutive RUN instructions (sometimes intentional for clarity)
+          ignore: DL3008,DL3013,DL3059
 
   trivy-fs:
     name: Trivy Filesystem Scan
@@ -367,36 +368,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+      # Step 1: Show all dependency vulnerabilities (informational)
+      - name: Show all dependency vulnerabilities (informational)
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
-          # Don't fail initially - review results first
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Don't fail - just display all issues for visibility
           exit-code: '0'
           ignore-unfixed: true
           format: 'table'
 
+      # Step 2: Fail only on CRITICAL dependency vulnerabilities
+      - name: Check for CRITICAL dependency vulnerabilities
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL'
+          # Fail only on CRITICAL - these must be fixed
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'
+
       - name: Run Trivy config scan on production code (IaC)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: 'config'
           # Scan only production directories, exclude examples
           scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH,MEDIUM'
           # Skip examples directory - contains intentional simplified configs for demos
           skip-dirs: 'kagenti/examples'
-          exit-code: '0'
+          # Fail on misconfigurations in production code
+          exit-code: '1'
           format: 'table'
 
       - name: Run Trivy config scan on examples (informational)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           scan-type: 'config'
           scan-ref: 'kagenti/examples'
-          severity: 'CRITICAL,HIGH'
-          # Examples are informational only
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Examples are informational only - don't fail the build
           exit-code: '0'
           format: 'table'
         continue-on-error: true

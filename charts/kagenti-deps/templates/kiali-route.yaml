@@ -22,4 +22,4 @@ spec:
       backendRefs:
         - name: kiali
           port: 20001
-{{- end }}  
+{{- end }}

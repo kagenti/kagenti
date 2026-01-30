@@ -14,14 +14,14 @@ jobs:
   build-and-push:
     if: contains(github.event.pull_request.labels.*.name, 'run-build')
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         image_config:
           - name: ui-v2
             path: ./kagenti
           - name: backend
-            path: ./kagenti    
+            path: ./kagenti
 
     steps:
       - name: Checkout repository

@@ -128,7 +128,7 @@ spec:
               ALLOWED_ORIGINS: "${PROTOCOL}://${INSPECTOR_HOST}{{ if .Values.openshift | not }}:${PORT}{{ end }}"
             EOF
 
-            echo "ConfigMap 'mcp-inspector-config' applied successfully."  
+            echo "ConfigMap 'mcp-inspector-config' applied successfully."
       containers:
         - name: mcp-inspector
           image: "{{ .Values.mcpInspector.image }}:{{ .Values.mcpInspector.tag }}"
@@ -204,7 +204,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    openshift.io/host.generated: "true"  
+    openshift.io/host.generated: "true"
 spec:
   path: /
   port:
@@ -263,4 +263,4 @@ spec:
     - name: mcp-inspector
       port: 6277 # from service port defined above
 {{- end }}
-{{- end }}  
+{{- end }}

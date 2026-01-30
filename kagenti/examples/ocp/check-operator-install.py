@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import subprocess
+import shlex
 import time
 import argparse
 import sys
@@ -26,8 +27,9 @@ POLL_INTERVAL = 10
 def run_kubectl_command(command):
     """Executes a kubectl command and returns its output."""
     try:
+        # Use shlex.split() for safe command parsing instead of shell=True
         result = subprocess.run(
-            command, capture_output=True, text=True, check=True, shell=True
+            shlex.split(command), capture_output=True, text=True, check=True
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
