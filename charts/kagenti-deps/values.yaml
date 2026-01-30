@@ -33,18 +33,12 @@ components:
     enabled: true
   shipwright:
     enabled: true
-  toolhiveCRDs:
-    enabled: true
-  toolhiveOperator:
-    enabled: true
   certManager:
-    enabled: true  
-  gatewayApi:  
+    enabled: true
+  gatewayApi:
     enabled: false
   ingressGateway:
-    enabled: false 
-  toolhive:
-    enabled: true
+    enabled: false
 
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"

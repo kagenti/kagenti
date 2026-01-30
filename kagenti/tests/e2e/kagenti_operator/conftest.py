@@ -22,6 +22,6 @@ def weather_tool_service_name():
     """
     Weather tool service name in kagenti-operator mode.
 
-    Toolhive creates headless service with mcp- prefix and -headless suffix.
+    Tools use standard Kubernetes Deployments + Services with {name}-mcp naming.
     """
-    return "mcp-weather-tool-headless"
+    return "weather-tool-mcp"

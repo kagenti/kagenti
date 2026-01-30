@@ -16,12 +16,6 @@ tekton:
 shipwright:
   enabled: true
 
-toolhiveCRDs:
-  enabled: true
-  
-toolhiveOperator:
-  enabled: true
-
 kiali:
   enabled: true  
 
@@ -47,9 +41,7 @@ charts:
         ingressGateway:
           enabled: true
         kiali:
-          enabled: true  
-        toolhive:
-          enabled: true 
+          enabled: true
 
   #################################################################### 
   # kagenti 

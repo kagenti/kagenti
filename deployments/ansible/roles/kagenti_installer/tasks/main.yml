@@ -156,87 +156,6 @@
   ansible.builtin.import_tasks: 04_install_shipwright.yaml
 
 #
-#  Toolhive
-#
-- name: Install Toolhive CRDs
-  kubernetes.core.helm:
-    release_name: "{{ toolhiveOperator.release_name }}-crds"
-    chart_ref: "oci://ghcr.io/stacklok/toolhive/toolhive-operator-crds"
-    chart_version: "{{ toolhiveCRDs.version }}"
-    release_namespace: "{{ toolhiveOperator.namespace }}"
-    create_namespace: true
-    state: present
-    wait: true
-    timeout: "{{ helm_wait_timeout }}s"
-  register: toolhive_crds_result
-  retries: 3
-  delay: 15
-  until: toolhive_crds_result is not failed
-  when: toolhiveCRDs.enabled | default(false)
-
-# TODO: Request Toolhive operator helm chart to support OpenShift SCC.
-# The Toolhive operator chart hardcodes runAsUser: 1000 which conflicts with
-# OpenShift's restricted SCC (requires UID from namespace range).
-# Proper fix: The chart should either:
-# 1. Not specify runAsUser and let OpenShift assign one from the namespace range
-# 2. Add an openshift.enabled value that omits runAsUser or includes an SCC
-# 3. Use a SecurityContextConstraints resource in the chart for OpenShift
-# Workaround: We install with wait=false, grant privileged SCC to the SA
-# (which helm created), then wait for the deployment separately.
-- name: Install Toolhive Operator
-  kubernetes.core.helm:
-    release_name: "{{ toolhiveOperator.release_name }}"
-    chart_ref: "oci://ghcr.io/stacklok/toolhive/toolhive-operator"
-    chart_version: "{{ toolhiveOperator.version }}"
-    release_namespace: "{{ toolhiveOperator.namespace }}"
-    create_namespace: true
-    state: present
-    # On OpenShift (wait=false): Don't wait here because pods can't start until
-    # SCC is granted. We grant SCC after this task and wait for rollout separately.
-    # On Kubernetes (wait=true): Wait normally since there's no SCC requirement.
-    wait: "{{ not (enable_openshift | default(false)) }}"
-    timeout: "{{ helm_wait_timeout }}s"
-  register: toolhive_operator_result
-  retries: 3
-  delay: 15
-  until: toolhive_operator_result is not failed
-  when: toolhiveOperator.enabled | default(false)
-
-- name: Grant privileged SCC to Toolhive operator for OpenShift
-  command: oc adm policy add-scc-to-user privileged -z toolhive-operator -n {{ toolhiveOperator.namespace }}
-  when:
-    - enable_openshift | default(false)
-    - toolhiveOperator.enabled | default(false)
-
-# After granting SCC, scale deployment to 0 then back to 1 to force pod recreation.
-# This avoids the "old replicas pending termination" issue that rollout restart causes.
-- name: Scale Toolhive operator to 0 to clear stuck pods
-  command: kubectl scale deployment/toolhive-operator -n {{ toolhiveOperator.namespace }} --replicas=0
-  when:
-    - enable_openshift | default(false)
-    - toolhiveOperator.enabled | default(false)
-
-- name: Wait for Toolhive operator scale down
-  command: kubectl rollout status deployment/toolhive-operator -n {{ toolhiveOperator.namespace }} --timeout=60s
-  when:
-    - enable_openshift | default(false)
-    - toolhiveOperator.enabled | default(false)
-
-- name: Scale Toolhive operator back to 1
-  command: kubectl scale deployment/toolhive-operator -n {{ toolhiveOperator.namespace }} --replicas=1
-  when:
-    - enable_openshift | default(false)
-    - toolhiveOperator.enabled | default(false)
-
-- name: Wait for Toolhive operator deployment to be ready on OpenShift
-  command: >-
-    kubectl rollout status deployment/toolhive-operator
-    -n {{ toolhiveOperator.namespace }} --timeout=300s
-  when:
-    - enable_openshift | default(false)
-    - toolhiveOperator.enabled | default(false)
-
-#
 #  Spire (Helm-based for Kubernetes, or OpenShift < 4.19 where ZTWIM operator is not available)
 #
 - name: Install SPIRE via Helm charts
@@ -1603,9 +1522,8 @@
     - enable_openshift | default(false)
     - (((charts['kagenti'] | default({})).get('values')) | default({})).get('agentNamespaces', []) | length > 0
 
-# TODO: Move spiffe-helper-config ConfigMap creation to kagenti-operator or toolhive operator.
-# Toolhive-created StatefulSets expect this ConfigMap to exist for the spiffe-helper sidecar,
-# but neither the Toolhive operator nor the kagenti operator creates it.
+# TODO: Move spiffe-helper-config ConfigMap creation to kagenti-operator.
+# Agent/tool workloads with SPIFFE identity injection expect this ConfigMap for the spiffe-helper sidecar.
 # For now, we create it in each agent namespace.
 - name: Create spiffe-helper-config ConfigMap in agent namespaces
   block:

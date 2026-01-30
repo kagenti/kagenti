@@ -425,7 +425,6 @@ oc get nodes
 ./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
 ./.github/scripts/kagenti-operator/41-wait-crds.sh
 ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
-./.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
 
 ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
 ./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh

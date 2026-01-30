@@ -17,19 +17,6 @@ create_kind_cluster: false
 #   oc version
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-####################################################################
-# Toolhive - MCP server operator (must be at root level for Ansible installer)
-####################################################################
-toolhiveCRDs:
-  enabled: true
-  version: "0.0.83"
-
-toolhiveOperator:
-  enabled: true
-  version: "0.5.12"
-  release_name: toolhive-operator
-  namespace: toolhive-system
-
 charts:
   ####################################################################
   # kagenti-deps
@@ -61,16 +48,10 @@ charts:
           # Skip Helm hook for OpenShiftBuild operand - Ansible creates it after CRD is ready
           # This is needed on HyperShift/fresh installs where the CRD doesn't exist yet
           skipOpenShiftBuildOperand: true
-        toolhiveCRDs:
-          enabled: true
-        toolhiveOperator:
-          enabled: true
         certManager:
           enabled: true
         gatewayApi:
           enabled: false
-        toolhive:
-          enabled: true
 
   ####################################################################
   # kagenti

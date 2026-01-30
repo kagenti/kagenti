@@ -387,9 +387,6 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     log_step "Applying pipeline template..."
     ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
-
-    log_step "Waiting for Toolhive CRDs..."
-    ./.github/scripts/kagenti-operator/43-wait-toolhive-crds.sh
 else
     log_phase "PHASE 2: Skipping Kagenti Installation"
 fi

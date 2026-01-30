@@ -28,16 +28,6 @@ shipwright:
   enabled: false
   version: v0.14.0
 
-toolhiveCRDs:
-  enabled: false
-  version: 0.0.60
-
-toolhiveOperator:
-  enabled: false
-  version: 0.5.3
-  release_name: "toolhive-operator"
-  namespace: "toolhive-system"
-
 kiali:
   enabled: false
   version: release-1.28  
@@ -85,25 +75,11 @@ charts:
       # components settings    
       containerRegistry:
         namespace: cr-system
-        name: registry  
+        name: registry
 
-  #################################################################### 
-  # toolhive CRDs chart
-  ####################################################################        
-  toolhiveCRDs:
-    namespace: "kagenti-system"
-    enabled: true
-    version: 0.0.60
-  #################################################################### 
-  # toolhive operator chart
-  ####################################################################        
-  toolhiveOperator:
-    namespace: "kagenti-system"
-    enabled: true
-    version: 0.5.3
-  #################################################################### 
+  ####################################################################
   # mcp-gateway chart
-  ####################################################################        
+  ####################################################################
   mcpGateway:
     enabled: false
     namespace: mcp-system
@@ -184,7 +160,6 @@ charts:
             - kagenti-system
             - tekton-*
             - istio-*
-            - toolhive-*
           identities:
             clusterSPIFFEIDs:
               default:

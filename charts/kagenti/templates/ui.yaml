@@ -325,9 +325,6 @@ rules:
   - apiGroups: ["agent.kagenti.dev"]
     resources: ["agents", "agentbuilds"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["toolhive.stacklok.dev"]
-    resources: ["mcpservers"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Shipwright build resources for building agents and tools from source
   - apiGroups: ["shipwright.io"]
     resources: ["builds", "buildruns"]

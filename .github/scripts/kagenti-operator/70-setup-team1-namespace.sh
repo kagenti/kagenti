@@ -31,7 +31,7 @@ kubectl label namespace team1 \
     --overwrite
 
 if [ "$IS_OPENSHIFT" = "true" ]; then
-    # Grant Toolhive operator access to pull images from internal registry
+    # Grant workloads access to pull images from internal registry
     log_info "Granting image pull access for OpenShift..."
     oc policy add-role-to-user system:image-puller system:serviceaccount:team1:default -n team1 || true
 fi

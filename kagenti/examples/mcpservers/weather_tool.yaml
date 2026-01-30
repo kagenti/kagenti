@@ -1,6 +1,5 @@
 # Deployment for weather-tool MCP server
-# Replaces the previous MCPServer CRD (toolhive.stacklok.dev/v1alpha1)
-# Tools are now deployed as standard Kubernetes Deployments + Services
+# Tools are deployed as standard Kubernetes Deployments + Services
 apiVersion: apps/v1
 kind: Deployment
 metadata:

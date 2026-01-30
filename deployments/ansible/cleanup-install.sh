@@ -14,7 +14,7 @@ echo ""
 TEAM_NAMESPACES=("team1" "team2")
 
 # Platform namespaces
-PLATFORM_NAMESPACES=("kagenti-system" "kagenti-webhook-system" "mcp-system" "spire-mgmt" "spire-server" "spire-system" "toolhive-system" "gateway-system")
+PLATFORM_NAMESPACES=("kagenti-system" "kagenti-webhook-system" "mcp-system" "spire-mgmt" "spire-server" "spire-system" "gateway-system")
 
 # OpenShift operator namespaces (managed by OLM, may have finalizers)
 OPENSHIFT_OPERATOR_NAMESPACES=("openshift-builds" "cert-manager-operator" "zero-trust-workload-identity-manager")
@@ -33,8 +33,6 @@ for ns in "${TEAM_NAMESPACES[@]}"; do
     kubectl delete agents.agent.kagenti.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
     kubectl delete agentbuilds.agent.kagenti.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
     kubectl delete agentcards.agent.kagenti.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
-    # Delete MCPServer CRs (toolhive-operator)
-    kubectl delete mcpservers.toolhive.stacklok.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
     # Delete MCP Gateway CRs
     kubectl delete mcpservers.mcp.kagenti.com --all -n "$ns" --ignore-not-found 2>/dev/null || true
   fi
@@ -53,8 +51,6 @@ HELM_RELEASES=(
   "kagenti-deps:kagenti-system"
   "spire:spire-mgmt"
   "spire-crds:spire-mgmt"
-  "toolhive-operator:toolhive-system"
-  "toolhive-operator-crds:toolhive-system"
   # The following are only installed on non-OpenShift (Kind) clusters
   "ztunnel:istio-system"
   "istio-cni:istio-system"
@@ -204,11 +200,6 @@ for ns in "${TEAM_NAMESPACES[@]}"; do
         echo "Removing finalizers from $name..."
         kubectl patch $name -n "$ns" --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true
       done
-    done
-    # Remove finalizers from MCPServer CRs
-    for name in $(kubectl get mcpservers.toolhive.stacklok.dev -n "$ns" -o name 2>/dev/null); do
-      echo "Removing finalizers from $name..."
-      kubectl patch $name -n "$ns" --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true
     done
   fi
 done

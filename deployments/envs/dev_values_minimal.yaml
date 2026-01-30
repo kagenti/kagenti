@@ -11,12 +11,6 @@ certManager:
   enabled: true  
 
 tekton:
-  enabled: true 
-
-toolhiveCRDs:
-  enabled: true
-  
-toolhiveOperator:
   enabled: true
 
 charts:

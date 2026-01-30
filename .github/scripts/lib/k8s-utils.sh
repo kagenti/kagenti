@@ -54,7 +54,7 @@ wait_for_crd() {
 
     kubectl wait --for condition=established --timeout="${timeout}s" "crd/$crd" || {
         echo "ERROR: CRD $crd not established"
-        kubectl get crds | grep -E 'kagenti|mcp|toolhive' || echo "No related CRDs found"
+        kubectl get crds | grep -E 'kagenti|mcp' || echo "No related CRDs found"
         return 1
     }
 }
