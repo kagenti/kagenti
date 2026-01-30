@@ -12,7 +12,7 @@ This plan outlines the refactoring of the Kagenti UI to trigger container image 
 ### Target State
 - **UI** creates Shipwright `Build` + `BuildRun` CRDs directly for both agents and tools
 - **Agent/Tool CRDs** are created with direct image reference after build completes
-- UI polls BuildRun status and creates Agent/Tool Deployment when build succeeds
+- UI polls BuildRun status and creates Agent/MCPServer when build succeeds
 - User can select `ClusterBuildStrategy` in UI
 - Shared build infrastructure for both resource types
 
@@ -881,7 +881,7 @@ export const shipwrightService = {
   },
 
   /**
-   * Finalize a build (create Agent/Tool Deployment).
+   * Finalize a build (create Agent/MCPServer).
    */
   finalizeBuild: async (
     resourceType: ResourceType,
@@ -1042,7 +1042,7 @@ Add new endpoints for Shipwright builds:
 |----------|--------|---------|
 | `/tools/{namespace}/{name}/shipwright-build-info` | GET | Get Build + BuildRun status |
 | `/tools/{namespace}/{name}/shipwright-buildrun` | POST | Trigger new BuildRun |
-| `/tools/{namespace}/{name}/finalize-shipwright-build` | POST | Create Deployment after build |
+| `/tools/{namespace}/{name}/finalize-shipwright-build` | POST | Create MCPServer after build |
 
 ```python
 @router.get("/{namespace}/{name}/shipwright-build-info")
@@ -1070,14 +1070,14 @@ async def finalize_tool_shipwright_build(
     request: FinalizeToolBuildRequest,
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> CreateToolResponse:
-    """Create Tool Deployment after Shipwright build completes.
+    """Create MCPServer CRD after Shipwright build completes.
 
     1. Get latest BuildRun, verify success
     2. Extract output image from BuildRun status
     3. Read tool config from Build annotations
-    4. Create Deployment + Service with built image
+    4. Create MCPServer CRD with built image
     5. Create HTTPRoute if createHttpRoute is true
-    6. Add kagenti.io/shipwright-build annotation to Deployment
+    6. Add kagenti.io/shipwright-build annotation to MCPServer
     """
 ```
 
@@ -1180,9 +1180,14 @@ async def delete_tool(
     except ApiException:
         pass  # Ignore if not found
 
-    # Delete Tool Deployment and Service
-    kube.delete_deployment(namespace=namespace, name=name)
-    kube.delete_service(namespace=namespace, name=f"{name}-mcp")
+    # Delete MCPServer
+    kube.delete_custom_resource(
+        group=TOOLHIVE_CRD_GROUP,
+        version=TOOLHIVE_CRD_VERSION,
+        namespace=namespace,
+        plural=TOOLHIVE_MCP_PLURAL,
+        name=name,
+    )
 
     return DeleteResponse(success=True, message=f"Tool '{name}' deleted")
 ```
@@ -1328,7 +1333,7 @@ Test cases:
 - Create Shipwright Build for a tool
 - Create BuildRun and verify status progression
 - Tool config stored in Build annotations
-- Deployment + Service created after successful build
+- MCPServer created after successful build
 
 ### 9.4 CI Script Updates
 
@@ -1350,8 +1355,8 @@ BUILDRUN_NAME=$(kubectl create -f "$REPO_ROOT/kagenti/examples/tools/weather_too
 # 3. Wait for BuildRun to succeed
 kubectl wait --for=condition=Succeeded --timeout=600s buildrun/$BUILDRUN_NAME -n team1
 
-# 4. Apply Deployment + Service with built image
-kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_deployment.yaml"
+# 4. Apply MCPServer with built image
+kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright.yaml"
 ```
 
 ### 9.5 Example Tool Manifests
@@ -1359,7 +1364,7 @@ kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_deployment.yaml
 **Files** (NEW):
 - `kagenti/examples/tools/weather_tool_shipwright_build.yaml`
 - `kagenti/examples/tools/weather_tool_shipwright_buildrun.yaml`
-- `kagenti/examples/tools/weather_tool_deployment.yaml`
+- `kagenti/examples/tools/weather_tool_shipwright.yaml`
 
 ### 9.6 Manual Testing Checklist
 
@@ -1367,7 +1372,7 @@ kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_deployment.yaml
 - [ ] Tool build with `buildah` pushing to quay.io
 - [ ] Tool build progress display
 - [ ] Tool build failure handling
-- [ ] Deployment + Service creation after successful build
+- [ ] MCPServer creation after successful build
 - [ ] Tool deletion cleans up Shipwright resources
 - [ ] Existing image deployment still works
 
@@ -1464,7 +1469,7 @@ spec:
 | Registry push failures | Clear error messages with troubleshooting steps |
 | Backward compatibility | Keep AgentBuild support read-only for existing builds |
 | Code duplication (agent/tool) | Extract shared utilities in Stage 6 before tool implementation |
-| Tool Deployment creation | Verify Deployment + Service created correctly with built image |
+| ToolHive CRD incompatibility | Verify MCPServer spec supports direct image references |
 
 ---
 

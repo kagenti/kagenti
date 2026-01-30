@@ -1,8 +1,7 @@
 # Migration Plan: MCPServer CRD to Standard Kubernetes Workloads
 
-**Status:** Completed
+**Status:** In Progress
 **Created:** 2026-01-26
-**Completed:** 2026-01-30
 **Target:** Kagenti UI v2.x
 
 ## Executive Summary
