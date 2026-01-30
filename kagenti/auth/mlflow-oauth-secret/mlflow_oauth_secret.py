@@ -98,47 +98,58 @@ def get_openshift_route_url(
 
         return f"https://{host}"
     except Exception as e:
-        error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {e}"
+        # Sanitize error message to avoid logging sensitive data
+        error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {type(e).__name__}"
         logger.error(error_msg)
         raise KubernetesResourceError(error_msg) from e
 
 
 def read_keycloak_credentials(
     v1_client: client.CoreV1Api,
-    secret_name: str,
+    k8s_resource: str,
     namespace: str,
-    username_key: str,
-    password_key: str,
+    user_key: str,
+    pw_key: str,
 ) -> Tuple[str, str]:
-    """Read Keycloak admin credentials from a Kubernetes secret."""
+    """Read Keycloak admin credentials from a Kubernetes secret.
+
+    Args:
+        v1_client: Kubernetes CoreV1Api client
+        k8s_resource: Name of the Kubernetes Secret resource
+        namespace: Namespace where the resource exists
+        user_key: Key in data for username
+        pw_key: Key in data for password
+
+    Returns:
+        Tuple of (username, password)
+    """
     try:
         logger.info(
-            f"Reading Keycloak admin credentials from secret {secret_name} "
-            f"in namespace {namespace}"
+            "Reading Keycloak admin credentials from resource '%s' in namespace '%s'",
+            k8s_resource,
+            namespace,
         )
-        secret = v1_client.read_namespaced_secret(secret_name, namespace)
+        k8s_data = v1_client.read_namespaced_secret(k8s_resource, namespace)
 
-        if username_key not in secret.data:
+        if user_key not in k8s_data.data:
             raise KubernetesResourceError(
-                f"Secret {secret_name} in namespace {namespace} "
-                f"missing key '{username_key}'"
+                f"Resource {k8s_resource} in namespace {namespace} "
+                f"missing key '{user_key}'"
             )
-        if password_key not in secret.data:
+        if pw_key not in k8s_data.data:
             raise KubernetesResourceError(
-                f"Secret {secret_name} in namespace {namespace} "
-                f"missing key '{password_key}'"
+                f"Resource {k8s_resource} in namespace {namespace} "
+                f"missing key '{pw_key}'"
             )
 
-        username = base64.b64decode(secret.data[username_key]).decode("utf-8").strip()
-        password = base64.b64decode(secret.data[password_key]).decode("utf-8").strip()
+        username = base64.b64decode(k8s_data.data[user_key]).decode("utf-8").strip()
+        pw_value = base64.b64decode(k8s_data.data[pw_key]).decode("utf-8").strip()
 
-        logger.info("Successfully read credentials from secret")
-        return username, password
+        logger.info("Successfully read credentials from resource")
+        return username, pw_value
     except client.exceptions.ApiException as e:
-        error_msg = (
-            f"Could not read Keycloak admin secret {secret_name} "
-            f"in namespace {namespace}: {e}"
-        )
+        # Sanitize error message to avoid logging sensitive data
+        error_msg = f"Could not read Keycloak admin resource: status={e.status}"
         logger.error(error_msg)
         raise KubernetesResourceError(error_msg) from e
 
@@ -167,7 +178,7 @@ def register_confidential_client(
 ) -> Tuple[str, str]:
     """Register a confidential OAuth2 client in Keycloak.
 
-    Unlike public clients (SPAs), MLflow needs a confidential client with a secret
+    Unlike public clients (SPAs), MLflow needs a confidential client
     since it runs on the server and can securely store credentials.
 
     Args:
@@ -177,7 +188,7 @@ def register_confidential_client(
         redirect_uri: OAuth2 redirect URI
 
     Returns:
-        Tuple of (internal_client_id, client_secret)
+        Tuple of (internal_client_id, oidc_value)
     """
     client_payload = {
         "clientId": client_id,
@@ -204,7 +215,10 @@ def register_confidential_client(
         internal_client_id = keycloak_admin.create_client(client_payload)
         logger.info(f'Created Keycloak client "{client_id}": {internal_client_id}')
     except KeycloakPostError as e:
-        logger.debug(f'Keycloak client creation error for "{client_id}": {e}')
+        # Log without sensitive details from exception
+        logger.debug(
+            f'Keycloak client creation error for "{client_id}": {type(e).__name__}'
+        )
 
         try:
             error_json = json.loads(e.error_message)
@@ -216,58 +230,71 @@ def register_confidential_client(
             else:
                 raise
         except (json.JSONDecodeError, KeyError, TypeError):
-            error_msg = (
-                f'Failed to create or retrieve Keycloak client "{client_id}": {e}'
-            )
+            # Sanitize error message to avoid logging sensitive data
+            error_msg = f'Failed to create or retrieve Keycloak client "{client_id}"'
             logger.error(error_msg)
             raise KeycloakOperationError(error_msg) from e
 
-    # Get or regenerate client secret for confidential client
-    secrets = keycloak_admin.get_client_secrets(internal_client_id)
-    client_secret = secrets.get("value", "") if secrets else ""
+    # Get or regenerate OIDC client credential for confidential client
+    oidc_creds = keycloak_admin.get_client_secrets(internal_client_id)
+    oidc_value = oidc_creds.get("value", "") if oidc_creds else ""
 
-    if not client_secret:
-        # Regenerate secret if empty
-        logger.info(f"Regenerating client secret for {client_id}")
-        new_secrets = keycloak_admin.generate_client_secrets(internal_client_id)
-        client_secret = new_secrets.get("value", "")
+    if not oidc_value:
+        # Regenerate if empty
+        logger.info("Regenerating OIDC credential for client '%s'", client_id)
+        new_creds = keycloak_admin.generate_client_secrets(internal_client_id)
+        oidc_value = new_creds.get("value", "")
 
-    if not client_secret:
+    if not oidc_value:
         raise KeycloakOperationError(
-            f"Could not obtain client secret for confidential client {client_id}"
+            f"Could not obtain OIDC credential for confidential client {client_id}"
         )
 
-    logger.info(f"Successfully obtained client secret for {client_id}")
-    return internal_client_id, client_secret
+    logger.info("Successfully obtained OIDC credential for client '%s'", client_id)
+    return internal_client_id, oidc_value
 
 
-def create_or_update_secret(
-    v1_client: client.CoreV1Api, namespace: str, secret_name: str, data: Dict[str, str]
+def create_or_update_k8s_resource(
+    v1_client: client.CoreV1Api,
+    namespace: str,
+    resource_name: str,
+    data: Dict[str, str],
 ) -> None:
-    """Create or update a Kubernetes secret."""
+    """Create or update a Kubernetes Secret resource.
+
+    Args:
+        v1_client: Kubernetes CoreV1Api client
+        namespace: Target namespace
+        resource_name: Name of the K8s Secret resource
+        data: Data dictionary for the resource
+    """
     try:
-        secret_body = client.V1Secret(
+        resource_body = client.V1Secret(
             api_version="v1",
             kind="Secret",
-            metadata=client.V1ObjectMeta(name=secret_name),
+            metadata=client.V1ObjectMeta(name=resource_name),
             type="Opaque",
             string_data=data,
         )
-        v1_client.create_namespaced_secret(namespace=namespace, body=secret_body)
-        logger.info(f"Created new secret '{secret_name}'")
+        v1_client.create_namespaced_secret(namespace=namespace, body=resource_body)
+        logger.info("Created new K8s resource '%s'", resource_name)
     except client.exceptions.ApiException as e:
         if e.status == 409:
             try:
                 v1_client.patch_namespaced_secret(
-                    name=secret_name, namespace=namespace, body={"stringData": data}
+                    name=resource_name, namespace=namespace, body={"stringData": data}
                 )
-                logger.info(f"Updated existing secret '{secret_name}'")
+                logger.info("Updated existing K8s resource '%s'", resource_name)
             except Exception as patch_error:
-                error_msg = f"Failed to update secret '{secret_name}': {patch_error}"
+                # Sanitize error message to avoid logging sensitive data
+                error_msg = (
+                    f"Failed to update K8s resource: {type(patch_error).__name__}"
+                )
                 logger.error(error_msg)
                 raise KubernetesResourceError(error_msg) from patch_error
         else:
-            error_msg = f"Failed to create secret '{secret_name}': {e}"
+            # Sanitize error message to avoid logging sensitive data
+            error_msg = f"Failed to create K8s resource: status={e.status}"
             logger.error(error_msg)
             raise KubernetesResourceError(error_msg) from e
 
@@ -279,7 +306,7 @@ def main() -> None:
         keycloak_realm = get_required_env("KEYCLOAK_REALM")
         namespace = get_required_env("NAMESPACE")
         client_id = get_required_env("CLIENT_ID")
-        secret_name = get_required_env("SECRET_NAME")
+        output_resource = get_required_env("SECRET_NAME")
 
         # Load optional configuration
         openshift_enabled = (
@@ -292,18 +319,18 @@ def main() -> None:
             "MLFLOW_NAMESPACE", DEFAULT_MLFLOW_NAMESPACE
         )
 
-        admin_secret_name = get_optional_env(
+        admin_resource = get_optional_env(
             "KEYCLOAK_ADMIN_SECRET_NAME", DEFAULT_ADMIN_SECRET_NAME
         )
-        admin_username_key = get_optional_env(
+        admin_user_key = get_optional_env(
             "KEYCLOAK_ADMIN_USERNAME_KEY", DEFAULT_ADMIN_USERNAME_KEY
         )
-        admin_password_key = get_optional_env(
+        admin_pw_key = get_optional_env(
             "KEYCLOAK_ADMIN_PASSWORD_KEY", DEFAULT_ADMIN_PASSWORD_KEY
         )
 
-        keycloak_admin_username = get_optional_env("KEYCLOAK_ADMIN_USERNAME")
-        keycloak_admin_password = get_optional_env("KEYCLOAK_ADMIN_PASSWORD")
+        keycloak_admin_user = get_optional_env("KEYCLOAK_ADMIN_USERNAME")
+        keycloak_admin_pw = get_optional_env("KEYCLOAK_ADMIN_PASSWORD")
         ssl_cert_file = get_optional_env("SSL_CERT_FILE")
 
         # For vanilla k8s
@@ -321,20 +348,18 @@ def main() -> None:
         dyn_client = dynamic.DynamicClient(api_client.ApiClient())
 
         # Load Keycloak admin credentials
-        if not keycloak_admin_username or not keycloak_admin_password:
-            keycloak_admin_username, keycloak_admin_password = (
-                read_keycloak_credentials(
-                    v1_client,
-                    admin_secret_name,
-                    keycloak_namespace,
-                    admin_username_key,
-                    admin_password_key,
-                )
+        if not keycloak_admin_user or not keycloak_admin_pw:
+            keycloak_admin_user, keycloak_admin_pw = read_keycloak_credentials(
+                v1_client,
+                admin_resource,
+                keycloak_namespace,
+                admin_user_key,
+                admin_pw_key,
             )
 
-        if not keycloak_admin_username or not keycloak_admin_password:
+        if not keycloak_admin_user or not keycloak_admin_pw:
             raise ConfigurationError(
-                "Keycloak admin credentials must be provided via env vars or secret"
+                "Keycloak admin credentials must be provided via env vars or resource"
             )
 
         # Determine URLs based on environment
@@ -381,8 +406,8 @@ def main() -> None:
         # Initialize Keycloak admin client
         keycloak_admin = KeycloakAdmin(
             server_url=keycloak_url,
-            username=keycloak_admin_username,
-            password=keycloak_admin_password,
+            username=keycloak_admin_user,
+            password=keycloak_admin_pw,
             realm_name=keycloak_realm,
             user_realm_name=DEFAULT_KEYCLOAK_REALM,
             verify=(verify_ssl if verify_ssl is not None else True),
@@ -393,7 +418,7 @@ def main() -> None:
         redirect_uri = f"{mlflow_url}/callback"
 
         # Register confidential client
-        internal_client_id, client_secret = register_confidential_client(
+        internal_client_id, oidc_client_value = register_confidential_client(
             keycloak_admin=keycloak_admin,
             client_id=client_id,
             root_url=mlflow_url,
@@ -411,15 +436,15 @@ def main() -> None:
         logger.info(f"  OIDC_DISCOVERY_URL: {oidc_discovery_url}")
         logger.info(f"  REDIRECT_URI: {redirect_uri}")
 
-        # Prepare secret data with mlflow-oidc-auth expected environment variable names
+        # Prepare resource data with mlflow-oidc-auth expected environment variable names
         # See: https://pypi.org/project/mlflow-oidc-auth/
-        secret_data = {
+        resource_data = {
             # Enable OIDC authentication via mlflow-oidc-auth app
             "MLFLOW_AUTH_ENABLED": "true",
             # OIDC provider configuration
             "OIDC_PROVIDER_DISPLAY_NAME": "Keycloak SSO",
             "OIDC_CLIENT_ID": client_id,
-            "OIDC_CLIENT_SECRET": client_secret,
+            "OIDC_CLIENT_SECRET": oidc_client_value,
             "OIDC_DISCOVERY_URL": oidc_discovery_url,
             "OIDC_REDIRECT_URI": redirect_uri,
             # Additional settings
@@ -428,16 +453,20 @@ def main() -> None:
             "OIDC_GROUPS_CLAIM": "groups",
         }
 
-        # Create or update Kubernetes secret
-        create_or_update_secret(v1_client, namespace, secret_name, secret_data)
+        # Create or update Kubernetes resource
+        create_or_update_k8s_resource(
+            v1_client, namespace, output_resource, resource_data
+        )
 
-        logger.info("MLflow OAuth secret creation completed successfully")
+        logger.info("MLflow OAuth resource creation completed successfully")
 
     except (ConfigurationError, KubernetesResourceError, KeycloakOperationError) as e:
-        logger.error(f"Error: {e}")
+        # Log error type without potentially sensitive details
+        logger.error(f"Error: {type(e).__name__}: {e}")
         sys.exit(1)
     except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
+        # Log error type without potentially sensitive details
+        logger.error(f"Unexpected error: {type(e).__name__}")
         sys.exit(1)
 
 

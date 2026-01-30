@@ -145,7 +145,7 @@ def get_keycloak_token(
         "password": password,
     }
 
-    response = requests.post(token_url, data=data, timeout=10, verify=False)
+    response = requests.post(token_url, data=data, timeout=10)
     response.raise_for_status()
     return response.json()
 
