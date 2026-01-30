@@ -95,6 +95,7 @@ From the UI you can:
 | **Components** | [Component Details](./docs/components.md) |
 | **Demos & Tutorials** | [Demo Documentation](./docs/demos/README.md) |
 | **Import Your Own Agent** | [New Agent Guide](./docs/new-agent.md) |
+| **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
 | **Architecture Details** | [Technical Details](./docs/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |

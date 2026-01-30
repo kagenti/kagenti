@@ -193,14 +193,56 @@ kubectl get gateways -n gateway-system
 
 ## Using Tools with Agents
 
-Once deployed, tools can be used by agents through the MCP Gateway. Agents discover tools via the gateway and invoke them using the MCP protocol.
+Once deployed, tools can be used by agents through direct connection or via the MCP Gateway. Agents invoke tools using the MCP protocol.
 
-To connect an agent to your tool:
+### Configuring MCP_URL
 
-1. Ensure the agent has the `MCP_URL` environment variable pointing to the MCP Gateway
-2. The agent can then discover and use tools via the standard MCP protocol
+Agents connect to tools using the `MCP_URL` environment variable. The example agents in the [agent-examples repository](https://github.com/kagenti/agent-examples) include `.env.openai` or `.env.ollama` files with a default `MCP_URL` value that assumes the tool is deployed in the **same namespace** as the agent.
 
-For more details, see the [MCP Gateway documentation](./gateway.md).
+#### Same Namespace (Default)
+
+If you deploy both the agent and tool in the same namespace, the default `.env` file provided with the agent works as-is. The URL format uses the service name directly:
+
+```
+MCP_URL=http://weather-tool:8000/mcp
+```
+
+No changes are required in this case.
+
+#### Different Namespaces
+
+If the agent and tool are deployed in **different namespaces**, you must update the `MCP_URL` to include the namespace. You have several options:
+
+**Option 1: Edit the MCP_URL manually**
+
+After importing the agent, edit the `MCP_URL` environment variable to use the fully qualified service name:
+
+```
+MCP_URL=http://<tool-name>.<tool-namespace>.svc.cluster.local:8000/mcp
+```
+
+For example, if your tool is named `weather-tool` and deployed in the `tools` namespace:
+
+```
+MCP_URL=http://weather-tool.tools.svc.cluster.local:8000/mcp
+```
+
+**Option 2: Copy the URL from the Tool Detail Page**
+
+1. Navigate to the Tool Catalog in the Kagenti UI
+2. Click on your tool to open its detail page
+3. Copy the MCP server URL displayed on the page
+4. Update your agent's `MCP_URL` environment variable with this value
+
+**Option 3: Use the MCP Gateway**
+
+Register your tool with the MCP Gateway and configure the agent to use the gateway URL:
+
+```
+MCP_URL=http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp
+```
+
+This approach allows agents to access multiple tools through a single endpoint. For details on registering tools with the gateway, see the [MCP Gateway documentation](./gateway.md).
 
 ## Related Documentation
 
