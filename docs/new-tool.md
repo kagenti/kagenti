@@ -111,7 +111,7 @@ For source builds, you will be redirected to a **Build Progress** page that show
 
 Once the build succeeds, Kagenti automatically:
 1. Creates a Deployment and Service for the tool with the built image
-2. Creates an HTTPRoute for gateway access (if enabled, via "Enable external access to the agent endpoint" in the UI)
+2. Creates an HTTPRoute for gateway access (if enabled, via "Enable external access to the tool endpoint" in the UI)
 3. Redirects you to the Tool detail page
 
 For image deployments, the Deployment and Service are created immediately.
