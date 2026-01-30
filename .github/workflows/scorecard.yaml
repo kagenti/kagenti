@@ -58,7 +58,7 @@ jobs:
           sarif_file: scorecard.sarif
 
       - name: Upload Scorecard results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: scorecard-results
           path: scorecard.sarif
