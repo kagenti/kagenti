@@ -33,7 +33,55 @@ The goal of Kagenti is to provide a pluggable agentic platform blueprint. Key fu
 
 Under each of these pillars are logical components that support the workload runtime. 
 
-![Kagenti Architecture](./docs/images/kagenti-architecture.drawio.png)
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                    KAGENTI PLATFORM                                 │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                     │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
+│  │                              KAGENTI UI                                       │  │
+│  │            (Dashboard: Deploy, Test, Monitor Agents & Tools)                  │  │
+│  └───────────────────────────────────────────────────────────────────────────────┘  │
+│                                        │                                            │
+│                                        ▼                                            │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
+│  │                          WORKLOAD RUNTIME                                     │  │
+│  │  ┌─────────────────────────────┐    ┌─────────────────────────────┐           │  │
+│  │  │       A2A AGENTS            │    │        MCP TOOLS            │           │  │
+│  │  │  (LangGraph, CrewAI, AG2,   │    │   (MCP Protocol Servers)    │           │  │
+│  │  │   Marvin, Autogen, etc.)    │    │                             │           │  │
+│  │  └─────────────────────────────┘    └─────────────────────────────┘           │  │
+│  └───────────────────────────────────────────────────────────────────────────────┘  │
+│                                        │                                            │
+├────────────────────────────────────────┼────────────────────────────────────────────┤
+│                            PLATFORM PILLARS                                         │
+│                                        │                                            │
+│  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌────────────────┐  │
+│  │    LIFECYCLE     │ │    NETWORKING    │ │     SECURITY     │ │  OBSERVABILITY │  │
+│  │  ORCHESTRATION   │ │                  │ │                  │ │                │  │
+│  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
+│  │                  │ │                  │ │                  │ │                │  │
+│  │ Agent Lifecycle  │ │   MCP Gateway    │ │  Identity &      │ │    Phoenix     │  │
+│  │   Operator       │ │   (Tool Routing  │ │  Auth Bridge     │ │    MLFlow      │  │
+│  │ (Build, Deploy,  │ │   & Policy)      │ │                  │ │    LangFlow    │  │
+│  │  Manage)         │ │                  │ │                  │ │   (Tracing)    │  │
+│  │                  │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
+│  │                  │ │                  │ │                  │ │                │  │
+│  │ Shipwright       │ │ Istio Ambient    │ │    Keycloak      │ │     Kiali      │  │
+│  │ (Container       │ │ (Service Mesh,   │ │   (OAuth/OIDC)   │ │   (Network     │  │
+│  │  Builds)         │ │  mTLS, Traffic)  │ │                  │ │  Visualization)│  │
+│  │                  │ │                  │ │                  │ │                │  │
+│  │                  │ ├──────────────────┤ ├──────────────────┤ │                │  │
+│  │                  │ │                  │ │                  │ │                │  │
+│  │                  │ │ Gateway API      │ │     SPIRE        │ │                │  │
+│  │                  │ │ (Ingress/Routing)│ │ (Workload SPIFFE │ │                │  │
+│  │                  │ │                  │ │  Identity)       │ │                │  │
+│  └──────────────────┘ └──────────────────┘ └──────────────────┘ └────────────────┘  │
+│                                                                                     │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                               KUBERNETES / OPENSHIFT                                │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Core Components
 
