@@ -157,3 +157,23 @@ metricsServer:
 mcpInspector:
   image: ghcr.io/modelcontextprotocol/inspector
   tag: 0.17.2
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: phoenix-oauth-secret
+
+# ------------------------------------------------------------------
+#  MLflow Configuration
+# ------------------------------------------------------------------
+mlflow:
+  auth:
+    # Enable Keycloak OAuth2 authentication for MLflow
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: mlflow-oauth-secret

@@ -1,4 +1,44 @@
 {{- if .Values.components.mlflow.enabled }}
+{{- if .Values.mlflow.auth.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlflow-secret-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlflow-secret-reader-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: mlflow
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: mlflow-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,6 +57,9 @@ spec:
       labels:
         app: mlflow
     spec:
+      {{- if .Values.mlflow.auth.enabled }}
+      serviceAccountName: mlflow
+      {{- end }}
       containers:
       - name: mlflow
         image: ghcr.io/mlflow/mlflow:v3.9.0
@@ -26,12 +69,23 @@ spec:
         - |
           export HOME=/tmp && \
           pip install --no-cache-dir --quiet "psycopg[binary]" && \
+          {{- if .Values.mlflow.auth.enabled }}
+          pip install --no-cache-dir --quiet "mlflow-oidc-auth" && \
+          {{- end }}
           mlflow server \
             --host=0.0.0.0 \
             --port=5000 \
+            {{- if .Values.mlflow.auth.enabled }}
+            --app-name=mlflow_oidc_auth \
+            {{- end }}
             --allowed-hosts "mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1" \
             --backend-store-uri=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow \
             --default-artifact-root=/mlflow/artifacts
+        {{- if .Values.mlflow.auth.enabled }}
+        envFrom:
+        - secretRef:
+            name: {{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
+        {{- end }}
         env:
         - name: POSTGRES_USER
           valueFrom:
@@ -80,6 +134,22 @@ spec:
         - name: mlflow-artifacts
           mountPath: /mlflow/artifacts
       initContainers:
+      {{- if .Values.mlflow.auth.enabled }}
+      # Wait for OAuth secret to exist before starting MLflow
+      # This prevents MLflow from running unauthenticated
+      - name: wait-for-oauth-secret
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for mlflow-oauth-secret to be created..."
+          until kubectl get secret {{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }} -n {{ .Release.Namespace }} 2>/dev/null; do
+            echo "Secret not found, waiting..."
+            sleep 5
+          done
+          echo "OAuth secret found, MLflow can start with authentication enabled"
+      {{- end }}
       - name: create-db
         image: {{ .Values.common.postgresImage | default "postgres:16" }}
         command:
