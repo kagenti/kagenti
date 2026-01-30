@@ -185,8 +185,6 @@ def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
     return None
 
 
-
-
 def create_or_update_secret(
     v1_client: client.CoreV1Api, namespace: str, secret_name: str, data: Dict[str, str]
 ) -> None:
