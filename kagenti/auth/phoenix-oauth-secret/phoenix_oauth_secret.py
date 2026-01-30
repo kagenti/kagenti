@@ -96,49 +96,56 @@ def get_openshift_route_url(
 
         return f"https://{host}"
     except Exception as e:
-        error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {e}"
+        # Sanitize error message to avoid logging sensitive data
+        error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {type(e).__name__}"
         logger.error(error_msg)
         raise KubernetesResourceError(error_msg) from e
 
 
 def read_keycloak_credentials(
     v1_client: client.CoreV1Api,
-    secret_name: str,
+    k8s_resource: str,
     namespace: str,
-    username_key: str,
-    password_key: str,
+    user_key: str,
+    pw_key: str,
 ) -> Tuple[str, str]:
-    """Read Keycloak admin credentials from a Kubernetes secret."""
+    """Read Keycloak admin credentials from a Kubernetes secret.
+
+    Args:
+        v1_client: Kubernetes CoreV1Api client
+        k8s_resource: Name of the Kubernetes Secret resource
+        namespace: Namespace where the resource exists
+        user_key: Key in data for username
+        pw_key: Key in data for password
+
+    Returns:
+        Tuple of (username, password)
+    """
     try:
-        logger.info(
-            f"Reading Keycloak admin credentials from secret {secret_name} "
-            f"in namespace {namespace}"
-        )
-        secret = v1_client.read_namespaced_secret(secret_name, namespace)
+        logger.info("Reading Keycloak admin credentials from K8s resource")
+        k8s_data = v1_client.read_namespaced_secret(k8s_resource, namespace)
 
-        if username_key not in secret.data:
+        if user_key not in k8s_data.data:
             raise KubernetesResourceError(
-                f"Secret {secret_name} in namespace {namespace} "
-                f"missing key '{username_key}'"
+                "Keycloak admin resource missing required username key"
             )
-        if password_key not in secret.data:
+        if pw_key not in k8s_data.data:
             raise KubernetesResourceError(
-                f"Secret {secret_name} in namespace {namespace} "
-                f"missing key '{password_key}'"
+                "Keycloak admin resource missing required credential key"
             )
 
-        username = base64.b64decode(secret.data[username_key]).decode("utf-8").strip()
-        password = base64.b64decode(secret.data[password_key]).decode("utf-8").strip()
+        # Decode credentials from K8s data
+        decoded_user = base64.b64decode(k8s_data.data[user_key]).decode("utf-8").strip()
+        decoded_cred = base64.b64decode(k8s_data.data[pw_key]).decode("utf-8").strip()
 
-        logger.info("Successfully read credentials from secret")
-        return username, password
+        logger.info("Successfully read credentials from K8s resource")
+        return decoded_user, decoded_cred
     except client.exceptions.ApiException as e:
-        error_msg = (
-            f"Could not read Keycloak admin secret {secret_name} "
-            f"in namespace {namespace}: {e}"
-        )
-        logger.error(error_msg)
-        raise KubernetesResourceError(error_msg) from e
+        # Sanitize error message to avoid logging sensitive data
+        logger.error("Could not read Keycloak admin resource: status=%s", e.status)
+        raise KubernetesResourceError(
+            f"Could not read Keycloak admin resource: status={e.status}"
+        ) from e
 
 
 def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
@@ -165,7 +172,7 @@ def register_confidential_client(
 ) -> Tuple[str, str]:
     """Register a confidential OAuth2 client in Keycloak.
 
-    Unlike public clients (SPAs), Phoenix needs a confidential client with a secret
+    Unlike public clients (SPAs), Phoenix needs a confidential client
     since it runs on the server and can securely store credentials.
 
     Args:
@@ -175,7 +182,7 @@ def register_confidential_client(
         redirect_uri: OAuth2 redirect URI
 
     Returns:
-        Tuple of (internal_client_id, client_secret)
+        Tuple of (internal_client_id, oidc_value)
     """
     client_payload = {
         "clientId": client_id,
@@ -200,72 +207,90 @@ def register_confidential_client(
 
     try:
         internal_client_id = keycloak_admin.create_client(client_payload)
-        logger.info(f'Created Keycloak client "{client_id}": {internal_client_id}')
+        logger.info('Created Keycloak client "%s": %s', client_id, internal_client_id)
     except KeycloakPostError as e:
-        logger.debug(f'Keycloak client creation error for "{client_id}": {e}')
+        # Log without sensitive details from exception
+        logger.debug(
+            'Keycloak client creation error for "%s": %s', client_id, type(e).__name__
+        )
 
         try:
             error_json = json.loads(e.error_message)
             if error_json.get("errorMessage") == f"Client {client_id} already exists":
                 internal_client_id = keycloak_admin.get_client_id(client_id)
                 logger.info(
-                    f'Using existing Keycloak client "{client_id}": {internal_client_id}'
+                    'Using existing Keycloak client "%s": %s',
+                    client_id,
+                    internal_client_id,
                 )
             else:
                 raise
         except (json.JSONDecodeError, KeyError, TypeError):
-            error_msg = (
-                f'Failed to create or retrieve Keycloak client "{client_id}": {e}'
-            )
+            # Sanitize error message to avoid logging sensitive data
+            error_msg = f'Failed to create or retrieve Keycloak client "{client_id}"'
             logger.error(error_msg)
             raise KeycloakOperationError(error_msg) from e
 
-    # Get or regenerate client secret for confidential client
-    secrets = keycloak_admin.get_client_secrets(internal_client_id)
-    client_secret = secrets.get("value", "") if secrets else ""
+    # Get or regenerate OIDC client credential for confidential client
+    oidc_creds = keycloak_admin.get_client_secrets(internal_client_id)
+    oidc_value = oidc_creds.get("value", "") if oidc_creds else ""
 
-    if not client_secret:
-        # Regenerate secret if empty
-        logger.info(f"Regenerating client secret for {client_id}")
-        new_secrets = keycloak_admin.generate_client_secrets(internal_client_id)
-        client_secret = new_secrets.get("value", "")
+    if not oidc_value:
+        # Regenerate if empty
+        logger.info("Regenerating OIDC credential for client '%s'", client_id)
+        new_creds = keycloak_admin.generate_client_secrets(internal_client_id)
+        oidc_value = new_creds.get("value", "")
 
-    if not client_secret:
+    if not oidc_value:
         raise KeycloakOperationError(
-            f"Could not obtain client secret for confidential client {client_id}"
+            f"Could not obtain OIDC credential for confidential client {client_id}"
         )
 
-    logger.info(f"Successfully obtained client secret for {client_id}")
-    return internal_client_id, client_secret
+    logger.info("Successfully obtained OIDC credential for client '%s'", client_id)
+    return internal_client_id, oidc_value
 
 
-def create_or_update_secret(
-    v1_client: client.CoreV1Api, namespace: str, secret_name: str, data: Dict[str, str]
+def create_or_update_k8s_resource(
+    v1_client: client.CoreV1Api,
+    namespace: str,
+    resource_name: str,
+    data: Dict[str, str],
 ) -> None:
-    """Create or update a Kubernetes secret."""
+    """Create or update a Kubernetes Secret resource.
+
+    Args:
+        v1_client: Kubernetes CoreV1Api client
+        namespace: Target namespace
+        resource_name: Name of the K8s Secret resource
+        data: Data dictionary for the resource
+    """
     try:
-        secret_body = client.V1Secret(
+        resource_body = client.V1Secret(
             api_version="v1",
             kind="Secret",
-            metadata=client.V1ObjectMeta(name=secret_name),
+            metadata=client.V1ObjectMeta(name=resource_name),
             type="Opaque",
             string_data=data,
         )
-        v1_client.create_namespaced_secret(namespace=namespace, body=secret_body)
-        logger.info(f"Created new secret '{secret_name}'")
+        v1_client.create_namespaced_secret(namespace=namespace, body=resource_body)
+        logger.info("Created new K8s resource '%s'", resource_name)
     except client.exceptions.ApiException as e:
         if e.status == 409:
             try:
                 v1_client.patch_namespaced_secret(
-                    name=secret_name, namespace=namespace, body={"stringData": data}
+                    name=resource_name, namespace=namespace, body={"stringData": data}
                 )
-                logger.info(f"Updated existing secret '{secret_name}'")
+                logger.info("Updated existing K8s resource '%s'", resource_name)
             except Exception as patch_error:
-                error_msg = f"Failed to update secret '{secret_name}': {patch_error}"
+                # Sanitize error message to avoid logging sensitive data
+                error_msg = (
+                    f"Failed to update K8s resource: {type(patch_error).__name__}"
+                )
                 logger.error(error_msg)
                 raise KubernetesResourceError(error_msg) from patch_error
         else:
-            error_msg = f"Failed to create secret '{secret_name}': {e}"
+            # Sanitize error message to avoid logging sensitive data
+            error_msg = f"Failed to create K8s resource: status={e.status}"
             logger.error(error_msg)
             raise KubernetesResourceError(error_msg) from e
 
@@ -277,7 +302,7 @@ def main() -> None:
         keycloak_realm = get_required_env("KEYCLOAK_REALM")
         namespace = get_required_env("NAMESPACE")
         client_id = get_required_env("CLIENT_ID")
-        secret_name = get_required_env("SECRET_NAME")
+        output_resource = get_required_env("SECRET_NAME")
 
         # Load optional configuration
         openshift_enabled = (
@@ -290,18 +315,18 @@ def main() -> None:
             "PHOENIX_NAMESPACE", DEFAULT_PHOENIX_NAMESPACE
         )
 
-        admin_secret_name = get_optional_env(
+        admin_resource = get_optional_env(
             "KEYCLOAK_ADMIN_SECRET_NAME", DEFAULT_ADMIN_SECRET_NAME
         )
-        admin_username_key = get_optional_env(
+        admin_user_key = get_optional_env(
             "KEYCLOAK_ADMIN_USERNAME_KEY", DEFAULT_ADMIN_USERNAME_KEY
         )
-        admin_password_key = get_optional_env(
+        admin_pw_key = get_optional_env(
             "KEYCLOAK_ADMIN_PASSWORD_KEY", DEFAULT_ADMIN_PASSWORD_KEY
         )
 
-        keycloak_admin_username = get_optional_env("KEYCLOAK_ADMIN_USERNAME")
-        keycloak_admin_password = get_optional_env("KEYCLOAK_ADMIN_PASSWORD")
+        keycloak_admin_user = get_optional_env("KEYCLOAK_ADMIN_USERNAME")
+        keycloak_admin_pw = get_optional_env("KEYCLOAK_ADMIN_PASSWORD")
         ssl_cert_file = get_optional_env("SSL_CERT_FILE")
 
         # For vanilla k8s
@@ -319,20 +344,18 @@ def main() -> None:
         dyn_client = dynamic.DynamicClient(api_client.ApiClient())
 
         # Load Keycloak admin credentials
-        if not keycloak_admin_username or not keycloak_admin_password:
-            keycloak_admin_username, keycloak_admin_password = (
-                read_keycloak_credentials(
-                    v1_client,
-                    admin_secret_name,
-                    keycloak_namespace,
-                    admin_username_key,
-                    admin_password_key,
-                )
+        if not keycloak_admin_user or not keycloak_admin_pw:
+            keycloak_admin_user, keycloak_admin_pw = read_keycloak_credentials(
+                v1_client,
+                admin_resource,
+                keycloak_namespace,
+                admin_user_key,
+                admin_pw_key,
             )
 
-        if not keycloak_admin_username or not keycloak_admin_password:
+        if not keycloak_admin_user or not keycloak_admin_pw:
             raise ConfigurationError(
-                "Keycloak admin credentials must be provided via env vars or secret"
+                "Keycloak admin credentials must be provided via env vars or resource"
             )
 
         # Determine URLs based on environment
@@ -379,8 +402,8 @@ def main() -> None:
         # Initialize Keycloak admin client
         keycloak_admin = KeycloakAdmin(
             server_url=keycloak_url,
-            username=keycloak_admin_username,
-            password=keycloak_admin_password,
+            username=keycloak_admin_user,
+            password=keycloak_admin_pw,
             realm_name=keycloak_realm,
             user_realm_name=DEFAULT_KEYCLOAK_REALM,
             verify=(verify_ssl if verify_ssl is not None else True),
@@ -391,7 +414,7 @@ def main() -> None:
         redirect_uri = f"{phoenix_url}/oauth2/keycloak/tokens"
 
         # Register confidential client
-        internal_client_id, client_secret = register_confidential_client(
+        internal_client_id, oidc_client_value = register_confidential_client(
             keycloak_admin=keycloak_admin,
             client_id=client_id,
             root_url=phoenix_url,
@@ -410,37 +433,39 @@ def main() -> None:
         logger.info(f"  REDIRECT_URI: {redirect_uri}")
 
         # Get or generate PHOENIX_SECRET for JWT signing
-        # Preserve existing secret to avoid invalidating existing JWTs
+        # Preserve existing value to avoid invalidating existing JWTs
         import secrets as py_secrets
 
-        phoenix_secret = None
+        phoenix_jwt_key = None
         try:
-            existing_secret = v1_client.read_namespaced_secret(
-                name=secret_name, namespace=namespace
+            existing_data = v1_client.read_namespaced_secret(
+                name=output_resource, namespace=namespace
             )
-            if existing_secret.data and "PHOENIX_SECRET" in existing_secret.data:
-                phoenix_secret = base64.b64decode(
-                    existing_secret.data["PHOENIX_SECRET"]
+            if existing_data.data and "PHOENIX_SECRET" in existing_data.data:
+                phoenix_jwt_key = base64.b64decode(
+                    existing_data.data["PHOENIX_SECRET"]
                 ).decode("utf-8")
-                logger.info("Using existing PHOENIX_SECRET from secret")
+                logger.info("Using existing PHOENIX_SECRET from K8s resource")
         except client.exceptions.ApiException as e:
             if e.status != 404:
-                logger.warning(f"Error reading existing secret: {e}")
+                logger.warning(
+                    "Error reading existing K8s resource: status=%s", e.status
+                )
 
-        if not phoenix_secret:
-            phoenix_secret = py_secrets.token_urlsafe(32)
+        if not phoenix_jwt_key:
+            phoenix_jwt_key = py_secrets.token_urlsafe(32)
             logger.info("Generated new PHOENIX_SECRET")
 
-        # Prepare secret data with Phoenix-expected environment variable names
+        # Prepare resource data with Phoenix-expected environment variable names
         # See: https://arize.com/docs/phoenix/self-hosting/features/authentication
-        secret_data = {
+        resource_data = {
             # Required: Enable authentication
             "PHOENIX_ENABLE_AUTH": "true",
-            # Required: Secret for JWT signing
-            "PHOENIX_SECRET": phoenix_secret,
+            # Required: Key for JWT signing
+            "PHOENIX_SECRET": phoenix_jwt_key,
             # Phoenix OAuth2 environment variables
             "PHOENIX_OAUTH2_KEYCLOAK_CLIENT_ID": client_id,
-            "PHOENIX_OAUTH2_KEYCLOAK_CLIENT_SECRET": client_secret,
+            "PHOENIX_OAUTH2_KEYCLOAK_CLIENT_SECRET": oidc_client_value,
             "PHOENIX_OAUTH2_KEYCLOAK_OIDC_CONFIG_URL": oidc_config_url,
             # Optional: Display name for login button
             "PHOENIX_OAUTH2_KEYCLOAK_DISPLAY_NAME": "Keycloak SSO",
@@ -448,16 +473,20 @@ def main() -> None:
             "PHOENIX_OAUTH2_KEYCLOAK_ALLOW_SIGN_UP": "true",
         }
 
-        # Create or update Kubernetes secret
-        create_or_update_secret(v1_client, namespace, secret_name, secret_data)
+        # Create or update Kubernetes resource
+        create_or_update_k8s_resource(
+            v1_client, namespace, output_resource, resource_data
+        )
 
-        logger.info("Phoenix OAuth secret creation completed successfully")
+        logger.info("Phoenix OAuth resource creation completed successfully")
 
     except (ConfigurationError, KubernetesResourceError, KeycloakOperationError) as e:
-        logger.error(f"Error: {e}")
+        # Log error type without potentially sensitive details
+        logger.error("Error: %s: %s", type(e).__name__, e)
         sys.exit(1)
     except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
+        # Log error type without potentially sensitive details
+        logger.error("Unexpected error: %s", type(e).__name__)
         sys.exit(1)
 
 
