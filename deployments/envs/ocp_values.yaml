@@ -1,6 +1,9 @@
 # Kagenti minimal installation configuration for OpenShift
 # Auth is enabled in this config
 #
+# Disable Kind cluster creation - we're deploying to an existing OpenShift cluster
+create_kind_cluster: false
+
 # ⚠️  IMPORTANT VERSION REQUIREMENTS ⚠️
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # SPIRE/ZTWIM (Zero Trust Workload Identity Manager) requires OpenShift 4.19+
