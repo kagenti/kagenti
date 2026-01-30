@@ -129,8 +129,8 @@ data:
               - set(attributes["llm.token_count.total"], attributes["gen_ai.usage.input_tokens"] + attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil and attributes["gen_ai.usage.output_tokens"] != nil
               # Convert GenAI system to OpenInference provider
               - set(attributes["llm.provider"], attributes["gen_ai.system"]) where attributes["gen_ai.system"] != nil
-              # Convert GenAI invocation parameters
-              - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"])], "")) where attributes["gen_ai.request.temperature"] != nil
+              # Convert GenAI invocation parameters (temperature)
+              - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"], "")], "")) where attributes["gen_ai.request.temperature"] != nil
       {{- end }}
 
     extensions:
