@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # A2A protocol constants
-A2A_AGENT_CARD_PATH = "/.well-known/agent.json"
+A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 
 class ChatMessage(BaseModel):

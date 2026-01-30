@@ -297,13 +297,13 @@ agent_name/
 
 ### A2A (Agent-to-Agent)
 - Google's standard for agent communication
-- Agent discovery via Agent Cards (`/.well-known/agent.json`)
+- Agent discovery via Agent Cards (`/.well-known/agent-card.json`)
 - JSON-RPC based task execution
 - Python SDK: `a2a-sdk`
 
 **Endpoints**:
 ```
-GET  /.well-known/agent.json    # Agent Card discovery
+GET  /.well-known/agent-card.json    # Agent Card discovery
 POST /                          # Send task/message
 GET  /tasks/{id}                # Get task status
 ```

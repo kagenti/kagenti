@@ -546,7 +546,7 @@ Kagenti is framework-neutral and supports agents built with any framework that c
 
 **Endpoints**:
 ```
-GET  /.well-known/agent.json    # Agent Card (discovery)
+GET  /.well-known/agent-card.json    # Agent Card (discovery)
 POST /                          # Send message/task
 GET  /tasks/{id}                # Get task status
 ```

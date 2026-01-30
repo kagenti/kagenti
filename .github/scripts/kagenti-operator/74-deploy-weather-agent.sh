@@ -164,7 +164,7 @@ EOF
         AGENT_URL="https://$ROUTE_HOST"
         for i in {1..60}; do
             # Try to fetch the agent card (A2A discovery endpoint)
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "$AGENT_URL/.well-known/agent.json" 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -k --connect-timeout 5 "$AGENT_URL/.well-known/agent-card.json" 2>/dev/null || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
                 log_success "Agent is ready and responding (HTTP 200)"
                 break

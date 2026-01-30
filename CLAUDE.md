@@ -130,7 +130,7 @@ kagenti/
 
 - Google's standard for agent communication
 
-- Agent discovery via Agent Cards (`/.well-known/agent.json`)
+- Agent discovery via Agent Cards (`/.well-known/agent-card.json`)
 
 - Task execution via JSON-RPC
 
@@ -306,7 +306,7 @@ pre-commit run --all-files
 
 ```bash
 # Get agent card
-curl http://weather-service.localtest.me:8080/.well-known/agent.json
+curl http://weather-service.localtest.me:8080/.well-known/agent-card.json
 
 # Send task
 curl -X POST http://weather-service.localtest.me:8080/ \
