@@ -110,11 +110,11 @@ For source builds, you will be redirected to a **Build Progress** page that show
 - Tool configuration that will be applied
 
 Once the build succeeds, Kagenti automatically:
-1. Creates the MCPServer CR with the built image
+1. Creates a Deployment and Service for the tool with the built image
 2. Creates an HTTPRoute for gateway access (if enabled, via "Enable external access to the agent endpoint" in the UI)
 3. Redirects you to the Tool detail page
 
-For image deployments, the MCPServer is created immediately.
+For image deployments, the Deployment and Service are created immediately.
 
 ## Verifying the Deployment
 
@@ -127,10 +127,10 @@ To verify that your tool is running:
    kubectl get pods -n <namespace> -l kagenti.io/type=tool
    ```
 
-3. Check the MCPServer status:
+3. Check the tool Deployment status:
 
    ```bash
-   kubectl get mcpservers -n <namespace>
+   kubectl get deployments -n <namespace> -l kagenti.io/type=tool
    ```
 
 4. Tail the logs to ensure the service has started:
@@ -170,13 +170,16 @@ Common build issues:
 ### Deployment Issues
 
 ```bash
-# Check MCPServer status
-kubectl get mcpservers -n <namespace>
-kubectl describe mcpserver <tool-name> -n <namespace>
+# Check Deployment status
+kubectl get deployments -n <namespace> -l kagenti.io/type=tool
+kubectl describe deployment <tool-name> -n <namespace>
+
+# Check Service status
+kubectl get services -n <namespace> -l kagenti.io/type=tool
 
 # Check pod status and logs
-kubectl get pods -n <namespace> -l app=<tool-name>
-kubectl logs -n <namespace> -l app=<tool-name>
+kubectl get pods -n <namespace> -l kagenti.io/type=tool,app.kubernetes.io/name=<tool-name>
+kubectl logs -n <namespace> -l app.kubernetes.io/name=<tool-name>
 ```
 
 ### Gateway Registration Issues

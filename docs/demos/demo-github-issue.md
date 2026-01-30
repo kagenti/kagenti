@@ -94,7 +94,7 @@ To deploy the tool using Shipwright:
    - Select: `mcp/github_tool`
 1. Click **Build & Deploy New Tool** button.
 
-You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once the build succeeds, the MCPServer will be created automatically.
+You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once the build succeeds, the Deployment and Service for the tool will be created automatically.
 
 ---
 

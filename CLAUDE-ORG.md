@@ -90,7 +90,7 @@ Legacy operator with:
 - **Agent CR**: Agent deployment and lifecycle
 - **AgentBuild CR**: Build orchestration (deprecated - use Shipwright instead)
 
-**Note**: Container image builds are now handled by Shipwright Build/BuildRun CRDs directly, triggered by the Kagenti UI. The operator manages the resulting Agent and MCPServer CRDs after builds complete.
+**Note**: Container image builds are now handled by Shipwright Build/BuildRun CRDs directly, triggered by the Kagenti UI. The UI creates Deployment + Service resources for both agents and tools after builds complete.
 
 **Key Files**:
 ```

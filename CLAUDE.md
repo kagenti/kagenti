@@ -347,9 +347,9 @@ test MCP tools through the gateway.
 
 4. Build Progress page shows status (Pending → Running → Succeeded)
 
-5. MCPServer CRD created automatically after successful build
+5. Deployment + Service created automatically after successful build
 
-6. Tool registers with MCP Gateway automatically
+6. HTTPRoute created for external access at `<tool-name>.localtest.me:8080`
 
 7. Access via MCP Gateway or direct HTTPRoute
 
@@ -358,6 +358,8 @@ test MCP tools through the gateway.
 - Check pod logs: `kubectl logs -n <namespace> <pod-name>`
 
 - Check Deployment status: `kubectl get deployments -n <namespace> -l kagenti.io/type=agent`
+
+- Check tool Deployment status: `kubectl get deployments -n <namespace> -l kagenti.io/type=tool`
 
 - Check build logs: `kubectl logs -n <namespace> -l build.shipwright.io/name=<agent-name>`
 

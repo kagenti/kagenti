@@ -59,7 +59,7 @@ To deploy the Weather Tool using Shipwright:
 1. Keep the **MCP Transport Portocol** as "Streamable HTTP".
 1. Click **Deploy New Tool** to deploy.
 
-You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once the build succeeds, the MCPServer will be created automatically.
+You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once the build succeeds, the Deployment and Service for the tool will be created automatically.
 
 ---
 

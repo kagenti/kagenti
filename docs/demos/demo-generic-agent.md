@@ -82,7 +82,7 @@ To deploy the Flight Tool using Shipwright:
    - Select: `mcp/flight_tool`
 1. Click **Build & Deploy New Tool** to deploy.
 
-You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once builds succeed, the MCPServer resources will be created automatically.
+You will be redirected to a **Build Progress** page where you can monitor the Shipwright build. Once builds succeed, the Deployments and Services for the tools will be created automatically.
 
 ---
 
