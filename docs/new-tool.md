@@ -195,28 +195,39 @@ kubectl get gateways -n gateway-system
 
 Once deployed, tools can be used by agents through direct connection or via the MCP Gateway. Agents invoke tools using the MCP protocol.
 
-### Configuring MCP_URL
+### Configuring MCP_URL / MCP_URLS
 
-Agents connect to tools using the `MCP_URL` environment variable. The example agents in the [agent-examples repository](https://github.com/kagenti/agent-examples) include `.env.openai` or `.env.ollama` files with a default `MCP_URL` value that assumes the tool is deployed in the **same namespace** as the agent.
+Agents connect to tools using environment variables:
+- `MCP_URL` (singular) - For agents that use a single tool or connect via the MCP Gateway
+- `MCP_URLS` (plural) - For agents that connect directly to multiple tools (comma-separated list)
+
+The example agents in the [agent-examples repository](https://github.com/kagenti/agent-examples) include `.env.openai` or `.env.ollama` files with default values that assume the tool is deployed in the **same namespace** as the agent.
 
 #### Same Namespace (Default)
 
-If you deploy both the agent and tool in the same namespace, the default `.env` file provided with the agent works as-is. The URL format uses the service name directly:
+If you deploy the agent and tool(s) in the same namespace, the default `.env` file provided with the agent works as-is. The URL format uses the service name directly:
 
+**Single tool:**
 ```
 MCP_URL=http://weather-tool:8000/mcp
+```
+
+**Multiple tools:**
+```
+MCP_URLS=http://movie-tool:8000/mcp, http://flight-tool:8000/mcp
 ```
 
 No changes are required in this case.
 
 #### Different Namespaces
 
-If the agent and tool are deployed in **different namespaces**, you must update the `MCP_URL` from the default value. You have several options:
+If the agent and tool(s) are deployed in **different namespaces**, you must update the environment variable from the default value. You have several options:
 
 **Option 1: Use a namespace-qualified service name**
 
-After importing the agent, edit the `MCP_URL` environment variable to use the fully qualified service name that includes the namespace:
+After importing the agent, edit the environment variable to use the fully qualified service name that includes the namespace:
 
+**Single tool:**
 ```
 MCP_URL=http://<tool-name>.<tool-namespace>.svc.cluster.local:8000/mcp
 ```
@@ -227,22 +238,27 @@ For example, if your tool is named `weather-tool` and deployed in the `tools` na
 MCP_URL=http://weather-tool.tools.svc.cluster.local:8000/mcp
 ```
 
+**Multiple tools:**
+```
+MCP_URLS=http://movie-tool.tools.svc.cluster.local:8000/mcp, http://flight-tool.tools.svc.cluster.local:8000/mcp
+```
+
 **Option 2: Copy the namespace-qualified URL from the Tool Detail Page**
 
 1. Navigate to the Tool Catalog in the Kagenti UI
 2. Click on your tool to open its detail page
 3. Copy the MCP server URL displayed on the page (which includes the namespace)
-4. Update your agent's `MCP_URL` environment variable with this value
+4. Update your agent's `MCP_URL` (or `MCP_URLS` for multiple tools) environment variable with this value
 
 **Option 3: Use the MCP Gateway (no namespace qualification needed)**
 
-Register your tool with the MCP Gateway and configure the agent to use the gateway URL instead:
+Register your tool(s) with the MCP Gateway and configure the agent to use the gateway URL instead:
 
 ```
 MCP_URL=http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp
 ```
 
-This approach allows agents to access multiple tools through a single endpoint. For details on registering tools with the gateway, see the [MCP Gateway documentation](./gateway.md).
+This approach allows agents to access multiple tools through a single endpoint, eliminating the need for namespace qualification or the `MCP_URLS` variable. For details on registering tools with the gateway, see the [MCP Gateway documentation](./gateway.md).
 
 ## Related Documentation
 
