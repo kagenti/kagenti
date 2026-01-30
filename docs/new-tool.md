@@ -211,11 +211,11 @@ No changes are required in this case.
 
 #### Different Namespaces
 
-If the agent and tool are deployed in **different namespaces**, you must update the `MCP_URL` to include the namespace. You have several options:
+If the agent and tool are deployed in **different namespaces**, you must update the `MCP_URL` from the default value. You have several options:
 
-**Option 1: Edit the MCP_URL manually**
+**Option 1: Use a namespace-qualified service name**
 
-After importing the agent, edit the `MCP_URL` environment variable to use the fully qualified service name:
+After importing the agent, edit the `MCP_URL` environment variable to use the fully qualified service name that includes the namespace:
 
 ```
 MCP_URL=http://<tool-name>.<tool-namespace>.svc.cluster.local:8000/mcp
@@ -227,16 +227,16 @@ For example, if your tool is named `weather-tool` and deployed in the `tools` na
 MCP_URL=http://weather-tool.tools.svc.cluster.local:8000/mcp
 ```
 
-**Option 2: Copy the URL from the Tool Detail Page**
+**Option 2: Copy the namespace-qualified URL from the Tool Detail Page**
 
 1. Navigate to the Tool Catalog in the Kagenti UI
 2. Click on your tool to open its detail page
-3. Copy the MCP server URL displayed on the page
+3. Copy the MCP server URL displayed on the page (which includes the namespace)
 4. Update your agent's `MCP_URL` environment variable with this value
 
-**Option 3: Use the MCP Gateway**
+**Option 3: Use the MCP Gateway (no namespace qualification needed)**
 
-Register your tool with the MCP Gateway and configure the agent to use the gateway URL:
+Register your tool with the MCP Gateway and configure the agent to use the gateway URL instead:
 
 ```
 MCP_URL=http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp
