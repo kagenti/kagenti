@@ -26,18 +26,18 @@ on:
   # Allow manual trigger
   workflow_dispatch:
 
-# Scorecard requires specific permissions structure
-# Cannot have workflow-level env vars when publishing results
-permissions:
-  security-events: write  # Upload SARIF to Security tab
-  id-token: write         # OIDC token for result verification
-  contents: read          # Read repository contents
-  actions: read           # Read workflow runs
+# Scorecard requires job-level permissions (no workflow-level write permissions allowed)
+# See: https://github.com/ossf/scorecard-action#workflow-restrictions
 
 jobs:
   scorecard:
     name: Scorecard Analysis
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # Upload SARIF to Security tab
+      id-token: write         # OIDC token for result verification
+      contents: read          # Read repository contents
+      actions: read           # Read workflow runs
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
