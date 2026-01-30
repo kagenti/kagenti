@@ -202,18 +202,18 @@ jobs:
             charts/ \
             deployments/ || true
 
-          # Show summary
+          # Show summary - capture output to file to avoid subshell issues
           echo ""
           echo "=== Summary ==="
-          ERROR_COUNT=$(yamllint -c .yamllint.yaml -f parsable \
-            .github/workflows/ charts/ deployments/ 2>&1 | grep -c ":error:" || echo "0")
-          WARNING_COUNT=$(yamllint -c .yamllint.yaml -f parsable \
-            .github/workflows/ charts/ deployments/ 2>&1 | grep -c ":warning:" || echo "0")
+          yamllint -c .yamllint.yaml -f parsable \
+            .github/workflows/ charts/ deployments/ 2>&1 > /tmp/yamllint_output.txt || true
+          ERROR_COUNT=$(grep -c ":error:" /tmp/yamllint_output.txt 2>/dev/null || echo "0")
+          WARNING_COUNT=$(grep -c ":warning:" /tmp/yamllint_output.txt 2>/dev/null || echo "0")
           echo "Errors: $ERROR_COUNT"
           echo "Warnings: $WARNING_COUNT"
 
           # Fail only on errors (not warnings)
-          if [ "$ERROR_COUNT" -gt 0 ]; then
+          if [ "$ERROR_COUNT" -gt 0 ] 2>/dev/null; then
             echo ""
             echo "ERROR: YAML files have syntax errors. Please fix them."
             exit 1
@@ -292,21 +292,38 @@ jobs:
             exit 0
           fi
 
-          # Run Bandit with medium severity threshold
-          # Exclude tests and virtual environments
+          # Run Bandit - scan main code (excluding examples which may have intentional patterns)
+          # First pass: HIGH severity only on main code - this WILL fail the build
+          echo "--- Checking for HIGH severity issues in main code ---"
+          HIGH_ISSUES=$(bandit -r kagenti/ \
+            --severity-level high \
+            --confidence-level high \
+            --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
+            -f json 2>/dev/null | jq '.results | length' 2>/dev/null || echo "0")
+
+          if [ "$HIGH_ISSUES" -gt 0 ]; then
+            echo "Found $HIGH_ISSUES HIGH severity issues in main code:"
+            bandit -r kagenti/ \
+              --severity-level high \
+              --confidence-level high \
+              --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
+              -f txt
+            echo ""
+            echo "ERROR: HIGH severity security issues found. Please fix them."
+            exit 1
+          fi
+
+          # Second pass: Show all issues (including examples) for visibility
+          echo ""
+          echo "--- Full scan (informational) ---"
           bandit -r kagenti/ \
             --severity-level medium \
             --confidence-level medium \
             --exclude '**/tests/*,**/.venv/*,**/node_modules/*' \
-            -f txt || BANDIT_EXIT=$?
+            -f txt || true
 
-          # Bandit exits with 1 if issues found, we want to report but not fail on low severity
-          if [ "${BANDIT_EXIT:-0}" -eq 1 ]; then
-            echo ""
-            echo "WARNING: Bandit found security issues. Please review above."
-            # Don't fail the build for now - enable strict mode later
-            # exit 1
-          fi
+          echo ""
+          echo "NOTE: Examples directory issues are informational only."
 
   # ============================================================================
   # Phase C: Container/IaC Security
@@ -361,15 +378,28 @@ jobs:
           ignore-unfixed: true
           format: 'table'
 
-      - name: Run Trivy config scan (IaC)
+      - name: Run Trivy config scan on production code (IaC)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'config'
+          # Scan only production directories, exclude examples
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
-          # Don't fail on config issues initially
+          # Skip examples directory - contains intentional simplified configs for demos
+          skip-dirs: 'kagenti/examples'
           exit-code: '0'
           format: 'table'
+
+      - name: Run Trivy config scan on examples (informational)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'kagenti/examples'
+          severity: 'CRITICAL,HIGH'
+          # Examples are informational only
+          exit-code: '0'
+          format: 'table'
+        continue-on-error: true
 
   # ============================================================================
   # Phase D: Advanced Security
