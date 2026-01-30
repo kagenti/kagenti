@@ -40,42 +40,41 @@ Under each of these pillars are logical components that support the workload run
 │                                                                                     │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐  │
 │  │                              KAGENTI UI                                       │  │
-│  │            (Dashboard: Deploy, Test, Monitor Agents & Tools)                  │  │
+│  │      (Dashboard: Deploy, Test, Monitor Agents & Tools + Backend API)          │  │
 │  └───────────────────────────────────────────────────────────────────────────────┘  │
 │                                        │                                            │
 │                                        ▼                                            │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐  │
 │  │                          WORKLOAD RUNTIME                                     │  │
-│  │  ┌─────────────────────────────┐    ┌─────────────────────────────┐           │  │
-│  │  │       A2A AGENTS            │    │        MCP TOOLS            │           │  │
-│  │  │  (LangGraph, CrewAI, AG2,   │    │   (MCP Protocol Servers)    │           │  │
-│  │  │   Marvin, Autogen, etc.)    │    │                             │           │  │
-│  │  └─────────────────────────────┘    └─────────────────────────────┘           │  │
+│  │      ┌─────────────────────────────┐    ┌─────────────────────────────┐       │  │
+│  │      │          AGENTS             │    │           TOOLS             │       │  │
+│  │      │  (A2A - LangGraph, CrewAI   │    │   (MCP Protocol Servers)    │       │  │
+│  │      │   Marvin, Autogen, etc.)    │    │                             │       │  │
+│  │      └─────────────────────────────┘    └─────────────────────────────┘       │  │
 │  └───────────────────────────────────────────────────────────────────────────────┘  │
 │                                        │                                            │
 ├────────────────────────────────────────┼────────────────────────────────────────────┤
-│                            PLATFORM PILLARS                                         │
+│                                PLATFORM PILLARS                                     │
 │                                        │                                            │
 │  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌────────────────┐  │
 │  │    LIFECYCLE     │ │    NETWORKING    │ │     SECURITY     │ │  OBSERVABILITY │  │
 │  │  ORCHESTRATION   │ │                  │ │                  │ │                │  │
 │  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
 │  │                  │ │                  │ │                  │ │                │  │
-│  │ Agent Lifecycle  │ │   MCP Gateway    │ │  Identity &      │ │    Phoenix     │  │
-│  │   Operator       │ │   (Tool Routing  │ │  Auth Bridge     │ │    MLFlow      │  │
-│  │ (Build, Deploy,  │ │   & Policy)      │ │                  │ │    LangFlow    │  │
-│  │  Manage)         │ │                  │ │                  │ │   (Tracing)    │  │
+│  │ Agents/Tools     │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
+│  │   Lifecycle      │ │    & Policy      │ │   (AuthBridge)   │ │(MLflow,Langflow│  │
+│  │ (k8s workloads,  │ │  (MCP Gateway)   │ │                  │ │ Phoenix)       |  |
+│  │labels, AgentCard)│ │                  │ │                  │ │                │  │
 │  │                  │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
 │  │                  │ │                  │ │                  │ │                │  │
-│  │ Shipwright       │ │ Istio Ambient    │ │    Keycloak      │ │     Kiali      │  │
-│  │ (Container       │ │ (Service Mesh,   │ │   (OAuth/OIDC)   │ │   (Network     │  │
-│  │  Builds)         │ │  mTLS, Traffic)  │ │                  │ │  Visualization)│  │
-│  │                  │ │                  │ │                  │ │                │  │
+│  │  Container       │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
+│  │   Builds         │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
+│  │  (Shipwright)    │ │                  │ │                  │ │   (Kiali)│     │  |
 │  │                  │ ├──────────────────┤ ├──────────────────┤ │                │  │
 │  │                  │ │                  │ │                  │ │                │  │
-│  │                  │ │ Gateway API      │ │     SPIRE        │ │                │  │
-│  │                  │ │ (Ingress/Routing)│ │ (Workload SPIFFE │ │                │  │
-│  │                  │ │                  │ │  Identity)       │ │                │  │
+│  │                  │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
+│  │                  │ │ (Gateway API)    │ │ (SPIFFE/SPIRE)   │ │                │  │
+│  │                  │ │                  │ │                  │ │                │  │
 │  └──────────────────┘ └──────────────────┘ └──────────────────┘ └────────────────┘  │
 │                                                                                     │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
