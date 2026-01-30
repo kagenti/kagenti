@@ -111,6 +111,27 @@ data:
             #### - crewAI exception `crewai.telemetry`
             #### Javascript format `@arizeai/openinference-instrumentation-${packageName}`
             - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry")
+      {{- if $.Values.components.mlflow.enabled }}
+      # Transform processor to convert OpenTelemetry GenAI semantic conventions
+      # to OpenInference format for compatibility with both Phoenix and MLflow
+      # See: https://opentelemetry.io/docs/specs/semconv/gen-ai/
+      # See: https://github.com/Arize-ai/openinference
+      transform/genai_to_openinference:
+        trace_statements:
+          - context: span
+            statements:
+              # Convert GenAI model name to OpenInference format
+              - set(attributes["llm.model_name"], attributes["gen_ai.request.model"]) where attributes["gen_ai.request.model"] != nil
+              - set(attributes["llm.model_name"], attributes["gen_ai.response.model"]) where attributes["gen_ai.response.model"] != nil and attributes["llm.model_name"] == nil
+              # Convert GenAI token counts to OpenInference format
+              - set(attributes["llm.token_count.prompt"], attributes["gen_ai.usage.input_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil
+              - set(attributes["llm.token_count.completion"], attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.output_tokens"] != nil
+              - set(attributes["llm.token_count.total"], attributes["gen_ai.usage.input_tokens"] + attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil and attributes["gen_ai.usage.output_tokens"] != nil
+              # Convert GenAI system to OpenInference provider
+              - set(attributes["llm.provider"], attributes["gen_ai.system"]) where attributes["gen_ai.system"] != nil
+              # Convert GenAI invocation parameters
+              - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"])], "")) where attributes["gen_ai.request.temperature"] != nil
+      {{- end }}
 
     extensions:
       health_check:
@@ -125,7 +146,7 @@ data:
         {{- if $.Values.components.mlflow.enabled }}
         traces/mlflow:
           receivers: [ otlp ]
-          processors: [ memory_limiter, filter/phoenix, batch ]
+          processors: [ memory_limiter, transform/genai_to_openinference, batch ]
           exporters: [ otlphttp/mlflow ]
         {{- end }}
 {{- end }}
