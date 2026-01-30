@@ -8,6 +8,7 @@ This document provides detailed information about each component of the Kagenti 
 - [Architecture Diagram](#architecture-diagram)
 - [Agent Lifecycle Operator](#agent-lifecycle-operator)
 - [MCP Gateway](#mcp-gateway)
+- [Plugins adapter](#plugins-adapter)
 - [Kagenti UI](#kagenti-ui)
 - [Identity & Auth Bridge](#identity--auth-bridge)
 - [Infrastructure Services](#infrastructure-services)
@@ -197,7 +198,7 @@ For installation and operation help, see our [Agent Lifecycle Operator Guide](ht
 
 ## MCP Gateway
 
-**Repository**: [kagenti/mcp-gateway](https://github.com/kagenti/mcp-gateway)
+**Repository**: [Kuadrant/mcp-gateway](https://github.com/Kuadrant/mcp-gateway)
 
 The MCP Gateway provides a unified entry point for [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers and tools. It acts as a "front door" for all MCP-based tool interactions.
 
@@ -306,6 +307,24 @@ spec:
 ```
 
 For detailed tool deployment instructions, see [Importing a New Tool](./new-tool.md).
+
+---
+
+
+## Plugins Adapter
+
+**Repository**: [kagenti/plugins-adapter](https://github.com/kagenti/plugins-adapter)
+
+The Plugins Adapter enables dynamic plugin loading and execution within Envoy-based gateways, including the [MCP gateway](#mcp-gateway), via Envoy's External Processing API (ext_proc). It allows runtime extension of gateway capabilities without recompiling or redeploying the gateway.
+
+### Capabilities
+
+| Feature | Description |
+|---------|-------------|
+| **Dynamic Plugin Loading** | Load and update plugins without traffic disruption |
+| **Request/Response Control** | Inspect, modify, or block based on headers and body |
+| **Bring-Your-Own (BYO) Logic** | Implement plugins in any language  |
+| **Guardrails Enforcement** | Implement security policies, content filtering, and compliance checks |
 
 ---
 
