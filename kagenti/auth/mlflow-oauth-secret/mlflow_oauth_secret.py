@@ -124,34 +124,30 @@ def read_keycloak_credentials(
         Tuple of (username, password)
     """
     try:
-        logger.info(
-            "Reading Keycloak admin credentials from resource '%s' in namespace '%s'",
-            k8s_resource,
-            namespace,
-        )
+        logger.info("Reading Keycloak admin credentials from K8s resource")
         k8s_data = v1_client.read_namespaced_secret(k8s_resource, namespace)
 
         if user_key not in k8s_data.data:
             raise KubernetesResourceError(
-                f"Resource {k8s_resource} in namespace {namespace} "
-                f"missing key '{user_key}'"
+                "Keycloak admin resource missing required username key"
             )
         if pw_key not in k8s_data.data:
             raise KubernetesResourceError(
-                f"Resource {k8s_resource} in namespace {namespace} "
-                f"missing key '{pw_key}'"
+                "Keycloak admin resource missing required credential key"
             )
 
-        username = base64.b64decode(k8s_data.data[user_key]).decode("utf-8").strip()
-        pw_value = base64.b64decode(k8s_data.data[pw_key]).decode("utf-8").strip()
+        # Decode credentials from K8s data
+        decoded_user = base64.b64decode(k8s_data.data[user_key]).decode("utf-8").strip()
+        decoded_cred = base64.b64decode(k8s_data.data[pw_key]).decode("utf-8").strip()
 
-        logger.info("Successfully read credentials from resource")
-        return username, pw_value
+        logger.info("Successfully read credentials from K8s resource")
+        return decoded_user, decoded_cred
     except client.exceptions.ApiException as e:
         # Sanitize error message to avoid logging sensitive data
-        error_msg = f"Could not read Keycloak admin resource: status={e.status}"
-        logger.error(error_msg)
-        raise KubernetesResourceError(error_msg) from e
+        logger.error("Could not read Keycloak admin resource: status=%s", e.status)
+        raise KubernetesResourceError(
+            f"Could not read Keycloak admin resource: status={e.status}"
+        ) from e
 
 
 def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
