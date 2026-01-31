@@ -47,8 +47,8 @@ class TestUIAgentDiscovery:
                 "KAGENTI_BACKEND_URL not set. Set it to your OpenShift backend route."
             )
         else:
-            # Kind cluster with port-forward
-            return "http://localhost:8000"
+            # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
+            return "http://localhost:8002"
 
     @pytest.mark.critical
     def test_weather_service_agent_discoverable(
@@ -202,7 +202,8 @@ class TestToolDiscovery:
         if is_openshift:
             pytest.skip("KAGENTI_BACKEND_URL not set for OpenShift")
 
-        return "http://localhost:8000"
+        # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
+        return "http://localhost:8002"
 
     def test_weather_tool_discoverable(self, backend_url, k8s_apps_client):
         """

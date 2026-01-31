@@ -65,4 +65,35 @@ for _ in {1..10}; do
     sleep 1
 done
 
+# ============================================================================
+# Port-forward kagenti-backend to localhost:8002
+# Required for UI agent/tool discovery E2E tests
+# ============================================================================
+
+log_info "Port-forwarding kagenti-backend service -> localhost:8002"
+
+# Check if backend is deployed
+if kubectl get svc -n kagenti-system kagenti-backend >/dev/null 2>&1; then
+    kubectl port-forward -n kagenti-system svc/kagenti-backend 8002:8000 > /tmp/port-forward-backend.log 2>&1 &
+    BACKEND_PORT_FORWARD_PID=$!
+
+    if [ "$IS_CI" = true ]; then
+        echo "BACKEND_PORT_FORWARD_PID=$BACKEND_PORT_FORWARD_PID" >> $GITHUB_ENV
+        echo "KAGENTI_BACKEND_URL=http://localhost:8002" >> $GITHUB_ENV
+    else
+        echo $BACKEND_PORT_FORWARD_PID > /tmp/port-forward-backend.pid
+    fi
+
+    # Wait for backend port-forward to be ready
+    for _ in {1..10}; do
+        if curl -s http://localhost:8002/health >/dev/null 2>&1 || curl -s http://localhost:8002/api/v1/ >/dev/null 2>&1; then
+            log_success "Backend port-forward is ready (localhost:8002)"
+            break
+        fi
+        sleep 1
+    done
+else
+    log_info "kagenti-backend not deployed, skipping port-forward"
+fi
+
 log_success "All port-forwards started"
