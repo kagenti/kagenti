@@ -181,7 +181,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Install yamllint
         run: pip install yamllint
@@ -232,7 +231,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Set up Helm
@@ -335,7 +333,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Find Dockerfiles
         id: find-dockerfiles
@@ -369,7 +366,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Run Trivy filesystem scan
@@ -412,20 +408,12 @@ jobs:
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
         with:
           languages: python
           # Use security-extended queries for more thorough analysis
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
         uses: github/codeql-action/autobuild@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
 
       - name: Perform CodeQL Analysis
@@ -439,7 +427,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Check for unpinned GitHub Actions
@@ -461,10 +448,9 @@ jobs:
             echo "$UNPINNED"
             echo ""
             echo "To pin an action, replace:"
-            echo "  uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6"
-            echo "  uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6"
+            echo "  uses: actions/checkout@v6"
             echo "With:"
-            echo "  uses: actions/checkout@<full-sha>  # v4"
+            echo "  uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6"
             echo ""
             echo "Find SHAs at: https://github.com/<owner>/<repo>/releases"
             echo ""
@@ -515,7 +501,6 @@ jobs:
   #   scorecard:
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
   #       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
   #         with:
   #           persist-credentials: false
