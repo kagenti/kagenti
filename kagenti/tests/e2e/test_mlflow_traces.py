@@ -32,12 +32,47 @@ Usage:
     python kagenti/tests/e2e/test_mlflow_traces.py
 """
 
+import logging
 import os
 import subprocess
 import time
 
 import httpx
 import pytest
+
+logger = logging.getLogger(__name__)
+
+
+def get_keycloak_url() -> str | None:
+    """Get Keycloak URL from environment or auto-detect from cluster."""
+    url = os.getenv("KEYCLOAK_URL")
+    if url:
+        return url
+
+    # Try to get from OpenShift route
+    try:
+        result = subprocess.run(
+            [
+                "oc",
+                "get",
+                "route",
+                "keycloak",
+                "-n",
+                "keycloak",
+                "-o",
+                "jsonpath={.spec.host}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout:
+            return f"https://{result.stdout}"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fall back to Kind cluster URL
+    return "http://keycloak.localtest.me:8080"
 
 
 def get_mlflow_url() -> str | None:
@@ -72,18 +107,68 @@ def get_mlflow_url() -> str | None:
     return "http://mlflow.localtest.me:8080"
 
 
+def get_keycloak_token(
+    keycloak_url: str,
+    realm: str = "demo",
+    client_id: str = "mlflow",
+    client_secret: str | None = None,
+    verify_ssl: bool = True,
+) -> str | None:
+    """Get access token from Keycloak using client credentials flow."""
+    if not client_secret:
+        client_secret = os.getenv("MLFLOW_CLIENT_SECRET")
+        if not client_secret:
+            logger.warning("No MLFLOW_CLIENT_SECRET set, skipping authentication")
+            return None
+
+    token_url = f"{keycloak_url}/realms/{realm}/protocol/openid-connect/token"
+
+    try:
+        response = httpx.post(
+            token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            verify=verify_ssl,
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        return response.json().get("access_token")
+    except httpx.HTTPError as e:
+        logger.warning(f"Failed to get Keycloak token: {e}")
+        return None
+
+
 class MLflowClient:
     """Client for MLflow REST API to query traces."""
 
-    def __init__(self, base_url: str, verify_ssl: bool = True):
+    def __init__(
+        self,
+        base_url: str,
+        verify_ssl: bool = True,
+        access_token: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
-        self.client = httpx.Client(verify=verify_ssl, timeout=30.0)
+        self.access_token = access_token
+
+        headers = {}
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+
+        self.client = httpx.Client(
+            verify=verify_ssl,
+            timeout=30.0,
+            headers=headers,
+        )
 
     def health_check(self) -> bool:
         """Check if MLflow is accessible."""
         try:
-            response = self.client.get(f"{self.base_url}/health")
+            # Use /version endpoint which is typically unauthenticated
+            response = self.client.get(f"{self.base_url}/version")
             return response.status_code == 200
         except httpx.RequestError:
             return False
@@ -96,6 +181,10 @@ class MLflowClient:
             )
             if response.status_code == 200:
                 return response.json().get("experiments", [])
+            if response.status_code == 401:
+                logger.warning(
+                    "MLflow returned 401 Unauthorized - token may be invalid"
+                )
             return []
         except httpx.RequestError:
             return []
@@ -235,7 +324,23 @@ def mlflow_client():
 
     # Disable SSL verification for self-signed certs on OpenShift
     verify_ssl = os.getenv("MLFLOW_VERIFY_SSL", "true").lower() != "false"
-    return MLflowClient(url, verify_ssl=verify_ssl)
+
+    # Get Keycloak token for authenticated access
+    access_token = None
+    keycloak_url = get_keycloak_url()
+    if keycloak_url and os.getenv("MLFLOW_CLIENT_SECRET"):
+        access_token = get_keycloak_token(
+            keycloak_url,
+            realm=os.getenv("KEYCLOAK_REALM", "demo"),
+            client_id=os.getenv("MLFLOW_CLIENT_ID", "mlflow"),
+            verify_ssl=verify_ssl,
+        )
+        if access_token:
+            logger.info("Successfully obtained Keycloak token for MLflow")
+        else:
+            logger.warning("Could not get Keycloak token, proceeding without auth")
+
+    return MLflowClient(url, verify_ssl=verify_ssl, access_token=access_token)
 
 
 @pytest.mark.observability
@@ -373,6 +478,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="Debug MLflow traces")
     parser.add_argument("--url", help="MLflow URL (default: auto-detect)")
+    parser.add_argument("--keycloak-url", help="Keycloak URL (default: auto-detect)")
+    parser.add_argument("--client-secret", help="MLflow OAuth client secret")
     parser.add_argument(
         "--no-verify-ssl", action="store_true", help="Disable SSL verification"
     )
@@ -386,7 +493,27 @@ def main():
 
     print(f"MLflow URL: {url}")
 
-    client = MLflowClient(url, verify_ssl=not args.no_verify_ssl)
+    verify_ssl = not args.no_verify_ssl
+
+    # Get Keycloak token if credentials provided
+    access_token = None
+    keycloak_url = args.keycloak_url or get_keycloak_url()
+    client_secret = args.client_secret or os.getenv("MLFLOW_CLIENT_SECRET")
+    if keycloak_url and client_secret:
+        print(f"Keycloak URL: {keycloak_url}")
+        access_token = get_keycloak_token(
+            keycloak_url,
+            client_secret=client_secret,
+            verify_ssl=verify_ssl,
+        )
+        if access_token:
+            print("Authentication: Token obtained")
+        else:
+            print("Authentication: Failed to get token")
+    else:
+        print("Authentication: Disabled (no client secret)")
+
+    client = MLflowClient(url, verify_ssl=verify_ssl, access_token=access_token)
 
     # Health check
     if not client.health_check():
