@@ -83,7 +83,8 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            runAsUser: 1000
+            # Note: runAsUser removed for OpenShift compatibility
+            # OpenShift assigns UID from namespace's allowed range
       volumes:
         - name: cache
           emptyDir: {}
