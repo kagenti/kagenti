@@ -54,7 +54,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: List dependency manifests
         run: |
@@ -90,7 +90,7 @@ jobs:
 
       - name: Dependency Review
         id: dependency-review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@46a3c492319c890177366b6ef46d6b4f89743ed4  # v4
         with:
           # Stricter security settings (Phase A improvement)
           fail-on-severity: moderate
@@ -134,7 +134,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
@@ -180,7 +180,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Install yamllint
         run: pip install yamllint
@@ -231,10 +232,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a  # v4
         with:
           version: 'v3.14.0'
 
@@ -281,10 +283,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.11'
 
@@ -328,7 +334,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Find Dockerfiles
         id: find-dockerfiles
@@ -345,7 +352,7 @@ jobs:
 
       - name: Run Hadolint
         if: steps.find-dockerfiles.outputs.has_dockerfiles == 'true'
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5  # v3.3.0
         with:
           dockerfile: "**/Dockerfile*"
           recursive: true
@@ -362,10 +369,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # master
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -376,7 +384,7 @@ jobs:
           format: 'table'
 
       - name: Run Trivy config scan (IaC)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # master
         with:
           scan-type: 'config'
           scan-ref: '.'
@@ -400,20 +408,28 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
         with:
           languages: python
           # Use security-extended queries for more thorough analysis
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
+        uses: github/codeql-action/autobuild@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
         with:
           category: "/language:python"
 
@@ -423,7 +439,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Check for unpinned GitHub Actions
         id: pinning-check
@@ -444,7 +461,8 @@ jobs:
             echo "$UNPINNED"
             echo ""
             echo "To pin an action, replace:"
-            echo "  uses: actions/checkout@v6"
+            echo "  uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6"
+            echo "  uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6"
             echo "With:"
             echo "  uses: actions/checkout@<full-sha>  # v4"
             echo ""
@@ -497,7 +515,8 @@ jobs:
   #   scorecard:
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@v6
+  #       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+  #       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
   #         with:
   #           persist-credentials: false
   #       - uses: ossf/scorecard-action@v2

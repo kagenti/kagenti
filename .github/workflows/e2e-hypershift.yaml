@@ -8,22 +8,8 @@ on:
       - 'charts/**'
       - 'deployments/**'
       - '.github/**'
-  # Use pull_request_target for fork PRs to access secrets
-  # SECURITY NOTE: This pattern is flagged by Scorecard's "Dangerous-Workflow" check
-  # because it checks out untrusted PR code with elevated permissions.
-  # Mitigations in place:
-  # 1. Requires 'safe-to-test' label (maintainer review)
-  # 2. Label auto-removed on new commits (TOCTOU protection via remove-safe-to-test.yaml)
-  # 3. Types: [labeled] ensures only label addition triggers the workflow
-  # See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
-  pull_request_target:
-    branches: [main]
-    types: [labeled]  # Only trigger when label is added
-    paths:
-      - 'kagenti/**'
-      - 'charts/**'
-      - 'deployments/**'
-      - '.github/**'
+  # NOTE: For PR E2E testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
+  # This workflow only handles push to main and manual dispatch.
   workflow_dispatch:
     inputs:
       cluster_name:
@@ -44,10 +30,9 @@ on:
         required: false
         default: '6'
 
-# Only allow one run per PR to avoid resource conflicts
-# When a new commit is pushed, the old run is cancelled but cleanup job still runs
+# Only allow one run per branch to avoid resource conflicts
 concurrency:
-  group: e2e-hypershift-${{ github.head_ref || github.run_id }}
+  group: e2e-hypershift-${{ github.ref }}
   cancel-in-progress: true
 
 # Explicit permissions - principle of least privilege
@@ -55,11 +40,9 @@ permissions:
   contents: read
 
 env:
-  # Cluster suffix - deterministic per PR to enable cleanup-first strategy
-  # For PRs: pr<number> (e.g., pr529) - same name for all commits in a PR
-  # For push to main: run number (each push gets fresh cluster)
-  # For workflow_dispatch: user-provided or run_number
-  CLUSTER_SUFFIX: ${{ inputs.cluster_name || (github.event.pull_request.number && format('pr{0}', github.event.pull_request.number)) || github.run_number }}
+  # Cluster suffix - for push to main uses run number, for workflow_dispatch uses user input
+  # For PR testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
+  CLUSTER_SUFFIX: ${{ inputs.cluster_name || github.run_number }}
   OCP_VERSION: ${{ inputs.ocp_version || '4.20.11' }}
   # Slot management for parallel CI runs
   MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
@@ -74,25 +57,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
-    # SECURITY: Only run E2E tests if:
-    # - Push to main (trusted code)
-    # - Manual workflow dispatch (maintainer triggered)
-    # - PR has 'safe-to-test' label (maintainer reviewed)
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request_target' &&
-       contains(github.event.pull_request.labels.*.name, 'safe-to-test'))
+    # This workflow runs on push to main or manual dispatch only.
+    # For PR testing, use /run-e2e comment (see e2e-hypershift-pr.yaml)
 
     outputs:
       slot_id: ${{ steps.acquire-slot.outputs.slot_id }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          # For pull_request_target, checkout the PR head (not base branch)
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Validate secrets are configured
         run: bash .github/scripts/hypershift/ci/00-validate-secrets.sh
@@ -119,7 +92,7 @@ jobs:
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5  # v6
         with:
           go-version: '1.23'
 
@@ -179,7 +152,7 @@ jobs:
 
       - name: Set up Python
         if: success()
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.11'
 
@@ -211,9 +184,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Setup credentials
         run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
@@ -228,7 +199,7 @@ jobs:
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5  # v6
         with:
           go-version: '1.23'
 

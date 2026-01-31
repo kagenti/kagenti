@@ -1,8 +1,12 @@
 name: Remove safe-to-test on New Commits
 
 # When new commits are pushed to a PR, remove the safe-to-test label.
-# This forces maintainers to re-review new changes before E2E tests run.
+# This forces maintainers to re-review new changes and comment /run-e2e again.
 # This is critical TOCTOU (Time-of-Check Time-of-Use) protection.
+#
+# The safe-to-test label serves as a visual indicator that a commit has been
+# approved for E2E testing. E2E tests are triggered by the /run-e2e comment
+# (see e2e-hypershift-pr.yaml), which also adds this label.
 
 on:
   pull_request_target:
@@ -21,7 +25,7 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'safe-to-test')
     steps:
       - name: Remove safe-to-test label
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
@@ -48,5 +52,5 @@ jobs:
               owner,
               repo,
               issue_number: prNumber,
-              body: `## 🔄 New Commits Detected\n\nThe \`safe-to-test\` label has been automatically removed because new commits were pushed.\n\n**New HEAD**: \`${newSha}\`\n\n**For maintainers**: Please review the new changes and re-add the \`safe-to-test\` label to run E2E tests.\n\n<details>\n<summary>Security checklist</summary>\n\nBefore re-adding the label, verify the PR does NOT contain:\n- [ ] Changes to \`.github/workflows/\` that bypass security\n- [ ] Changes to \`.github/scripts/\` that could exfiltrate secrets\n- [ ] \`curl\`, \`wget\`, or \`nc\` commands to external URLs in scripts\n- [ ] Base64 encoding of environment variables\n- [ ] Printing secrets to logs (\`echo $SECRET\`)\n- [ ] Suspicious package installations\n\n</details>\n\n---\n🤖 *This is an automated security measure to prevent TOCTOU attacks*`
+              body: `### New Commits Detected\n\nThe \`safe-to-test\` label has been automatically removed because new commits were pushed.\n\n**New HEAD**: \`${newSha}\`\n\n**For maintainers**: Please review the new changes and comment \`/run-e2e\` to trigger E2E tests.\n\n<details>\n<summary>Security checklist</summary>\n\nBefore running E2E tests, verify the PR does NOT contain:\n- [ ] Changes to \`.github/workflows/\` that bypass security\n- [ ] Changes to \`.github/scripts/\` that could exfiltrate secrets\n- [ ] \`curl\`, \`wget\`, or \`nc\` commands to external URLs in scripts\n- [ ] Base64 encoding of environment variables\n- [ ] Printing secrets to logs (\`echo $SECRET\`)\n- [ ] Suspicious package installations\n\n</details>\n\n---\n<sub>This is an automated security measure to prevent TOCTOU attacks</sub>`
             });

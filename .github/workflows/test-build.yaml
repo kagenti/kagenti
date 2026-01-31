@@ -1,59 +1,98 @@
 name: TestBuild
 
-on:
-  # SECURITY NOTE: This pattern is flagged by Scorecard's "Dangerous-Workflow" check
-  # because it checks out untrusted PR code with elevated permissions.
-  # Mitigations in place:
-  # 1. Requires 'run-build' label (maintainer review required)
-  # 2. Only builds images, no arbitrary code execution with secrets
-  # See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
-  pull_request_target:
-    types: [labeled, synchronize]
-    branches:
-      - main
+# Build and push test images when maintainer comments /run-build
+# This passes OpenSSF Scorecard by using issue_comment instead of pull_request_target.
+#
+# Usage:
+#   - Maintainer reviews PR code for security
+#   - Maintainer comments: /run-build
+#   - Workflow builds and pushes test images
 
-# Explicit permissions - jobs request only what they need
+on:
+  issue_comment:
+    types: [created]
+
+# No workflow-level permissions - jobs define their own
 permissions: {}
 
 jobs:
+  authorize:
+    name: Authorize
+    runs-on: ubuntu-latest
+    # Only run for PR comments starting with /run-build
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run-build')
+    permissions:
+      pull-requests: read
+    outputs:
+      authorized: ${{ steps.check-permission.outputs.has-permission }}
+      pr_sha: ${{ steps.pr-info.outputs.sha }}
+    steps:
+      - name: Check user write permission
+        id: check-permission
+        uses: actions-cool/check-user-permission@7b90a27f92f3961b368376107661682c441f6103  # v2
+        with:
+          require: write
+          username: ${{ github.event.comment.user.login }}
+
+      - name: Reject unauthorized user
+        if: steps.check-permission.outputs.check-result == 'false'
+        run: |
+          echo "::error::User ${{ github.event.comment.user.login }} does not have write permission"
+          exit 1
+
+      - name: Get PR information
+        id: pr-info
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('sha', pr.head.sha);
+            console.log(`PR #${pr.number} at commit ${pr.head.sha}`);
+
   build-and-push:
-    if: contains(github.event.pull_request.labels.*.name, 'run-build')
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    
+
     strategy:
       matrix:
         image_config:
           - name: ui-v2
             path: ./kagenti
           - name: backend
-            path: ./kagenti    
+            path: ./kagenti
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
         with:
-          # CRITICAL: We must explicitly checkout the code from the PR (the fork)
-          # Otherwise, pull_request_target will checkout the 'main' branch code.
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.authorize.outputs.pr_sha }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
       - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ${{ matrix.image_config.name }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6
         with:
           context: ${{ matrix.image_config.path }}/${{ matrix.image_config.name }}
           file: ${{ matrix.image_config.path }}/${{ matrix.image_config.name }}/Dockerfile
