@@ -8,13 +8,15 @@ on:
   pull_request_target:
     types: [synchronize]  # Triggered when new commits pushed
 
-permissions:
-  pull-requests: write
-  issues: write
+# Explicit permissions - jobs request only what they need
+permissions: {}
 
 jobs:
   remove-label:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
     # Only run if the label exists
     if: contains(github.event.pull_request.labels.*.name, 'safe-to-test')
     steps:

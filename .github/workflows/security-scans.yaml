@@ -25,9 +25,8 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-  pull-requests: write
+# Explicit permissions - jobs request only what they need
+permissions: {}
 
 jobs:
   # NOTE: Gitleaks CI action requires a license for organization repos
@@ -51,6 +50,9 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
 
@@ -129,6 +131,8 @@ jobs:
   shellcheck:
     name: Shell Script Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -173,6 +177,8 @@ jobs:
   yamllint:
     name: YAML Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -222,6 +228,8 @@ jobs:
   helm-lint:
     name: Helm Chart Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -270,6 +278,8 @@ jobs:
   bandit:
     name: Python Security (Bandit)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -315,6 +325,8 @@ jobs:
   hadolint:
     name: Dockerfile Lint (Hadolint)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -347,6 +359,8 @@ jobs:
   trivy-fs:
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -406,6 +420,8 @@ jobs:
   action-pinning:
     name: Verify Action Pinning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 

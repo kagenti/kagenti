@@ -12,6 +12,9 @@ on:
       - '.github/workflows/build-hypershift-ci-image.yaml'
   workflow_dispatch:
 
+# Explicit permissions - jobs request only what they need
+permissions: {}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/hypershift-ci

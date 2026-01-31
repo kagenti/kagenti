@@ -9,6 +9,10 @@ on:
       - '.github/**'
       - 'charts/**'
 
+# Explicit permissions - principle of least privilege
+permissions:
+  contents: read
+
 jobs:
   e2e-dev-kagenti-operator:
     name: e2e (Dev, Kagenti Operator)

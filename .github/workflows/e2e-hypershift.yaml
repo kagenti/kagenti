@@ -9,7 +9,13 @@ on:
       - 'deployments/**'
       - '.github/**'
   # Use pull_request_target for fork PRs to access secrets
-  # SECURITY: Maintainer must add 'safe-to-test' label after reviewing PR
+  # SECURITY NOTE: This pattern is flagged by Scorecard's "Dangerous-Workflow" check
+  # because it checks out untrusted PR code with elevated permissions.
+  # Mitigations in place:
+  # 1. Requires 'safe-to-test' label (maintainer review)
+  # 2. Label auto-removed on new commits (TOCTOU protection via remove-safe-to-test.yaml)
+  # 3. Types: [labeled] ensures only label addition triggers the workflow
+  # See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
   pull_request_target:
     branches: [main]
     types: [labeled]  # Only trigger when label is added
@@ -43,6 +49,10 @@ on:
 concurrency:
   group: e2e-hypershift-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
+
+# Explicit permissions - principle of least privilege
+permissions:
+  contents: read
 
 env:
   # Cluster suffix - deterministic per PR to enable cleanup-first strategy

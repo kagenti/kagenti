@@ -7,6 +7,9 @@ on:
   # This allows the workflow to be run manually from the Actions tab in GitHub.
   workflow_dispatch:
 
+# Explicit permissions - jobs request only what they need
+permissions: {}
+
 jobs:
   build-and-push:
     # The job will run on the latest version of Ubuntu.
