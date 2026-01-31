@@ -1,5 +1,5 @@
 {{- if .Values.components.mlflow.enabled }}
-{{- if .Values.mlflow.auth.enabled }}
+{{- if or .Values.mlflow.auth.enabled .Values.openshift }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -12,20 +12,29 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: mlflow-secret-reader
+  name: mlflow-resource-reader
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
 rules:
+  {{- if .Values.mlflow.auth.enabled }}
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames: [{{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" | quote }}]
     verbs: ["get"]
+  {{- end }}
+  {{- if .Values.openshift }}
+  # Allow reading route to auto-detect hostname for allowed-hosts
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    resourceNames: ["mlflow"]
+    verbs: ["get"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: mlflow-secret-reader-binding
+  name: mlflow-resource-reader-binding
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
@@ -35,7 +44,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: mlflow-secret-reader
+  name: mlflow-resource-reader
   apiGroup: rbac.authorization.k8s.io
 {{- end }}
 ---
@@ -57,7 +66,7 @@ spec:
       labels:
         app: mlflow
     spec:
-      {{- if .Values.mlflow.auth.enabled }}
+      {{- if or .Values.mlflow.auth.enabled .Values.openshift }}
       serviceAccountName: mlflow
       {{- end }}
       containers:
@@ -72,17 +81,28 @@ spec:
           {{- if .Values.mlflow.auth.enabled }}
           pip install --no-cache-dir --quiet "mlflow-oidc-auth" && \
           {{- end }}
+          {{- if .Values.openshift }}
+          # Read auto-detected route hostname if available
+          ROUTE_HOST=""
+          if [ -f /tmp/route-config/hostname ]; then
+            ROUTE_HOST=$(cat /tmp/route-config/hostname)
+            echo "Auto-detected route hostname: $ROUTE_HOST"
+          fi
+          # Build allowed hosts list
+          ALLOWED_HOSTS="mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          if [ -n "$ROUTE_HOST" ]; then
+            ALLOWED_HOSTS="$ROUTE_HOST,$ALLOWED_HOSTS"
+          fi
+          {{- else }}
+          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          {{- end }}
           mlflow server \
             --host=0.0.0.0 \
             --port=5000 \
             {{- if .Values.mlflow.auth.enabled }}
             --app-name=oidc-auth \
             {{- end }}
-            {{- if .Values.openshift }}
-            --allowed-hosts "mlflow-{{ .Release.Namespace }}.apps.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1" \
-            {{- else }}
-            --allowed-hosts "mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1" \
-            {{- end }}
+            --allowed-hosts "$ALLOWED_HOSTS" \
             --backend-store-uri=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow \
             --default-artifact-root=/mlflow/artifacts
         {{- if .Values.mlflow.auth.enabled }}
@@ -143,7 +163,39 @@ spec:
         volumeMounts:
         - name: mlflow-artifacts
           mountPath: /mlflow/artifacts
+        {{- if .Values.openshift }}
+        - name: route-config
+          mountPath: /tmp/route-config
+          readOnly: true
+        {{- end }}
       initContainers:
+      {{- if .Values.openshift }}
+      # Detect route hostname for allowed-hosts configuration
+      - name: detect-route-hostname
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Detecting MLflow route hostname..."
+          # Wait for route to exist (may take a moment after initial deploy)
+          for i in $(seq 1 30); do
+            HOSTNAME=$(kubectl get route mlflow -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}' 2>/dev/null)
+            if [ -n "$HOSTNAME" ]; then
+              echo "Route hostname: $HOSTNAME"
+              echo "$HOSTNAME" > /tmp/route-config/hostname
+              exit 0
+            fi
+            echo "Waiting for route... ($i/30)"
+            sleep 2
+          done
+          echo "Warning: Could not detect route hostname, using fallback"
+          # Fallback to default pattern if route detection fails
+          echo "mlflow-{{ .Release.Namespace }}.apps.{{ .Values.domain | default "cluster.local" }}" > /tmp/route-config/hostname
+        volumeMounts:
+        - name: route-config
+          mountPath: /tmp/route-config
+      {{- end }}
       {{- if .Values.mlflow.auth.enabled }}
       # Wait for OAuth secret to exist before starting MLflow
       # This prevents MLflow from running unauthenticated
@@ -193,6 +245,10 @@ spec:
       volumes:
       - name: mlflow-artifacts
         emptyDir: {}
+      {{- if .Values.openshift }}
+      - name: route-config
+        emptyDir: {}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
