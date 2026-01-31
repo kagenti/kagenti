@@ -83,8 +83,7 @@ ui:
 #  UI OAuth Secret Creator Configuration
 # ------------------------------------------------------------------
 uiOAuthSecret:
-  #image: ghcr.io/kagenti/kagenti/ui-oauth-secret
-  image: quay.io/pdettori/ui-oauth-secret
+  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
   tag: latest
   # When true, mount the in-cluster serviceaccount CA 
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
@@ -98,7 +97,7 @@ uiOAuthSecret:
 agentOAuthSecret:
   image: ghcr.io/kagenti/kagenti/agent-oauth-secret
   tag: latest
-  # When true, mount the in-cluster serviceaccount CA 
+  # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
   # and will usually not validate external OpenShift route certificates.
@@ -106,6 +105,31 @@ agentOAuthSecret:
   spiffePrefix: spiffe://localtest.me/sa
   updateEnvConfigMaps: true
   clientName: kagenti-keycloak-client
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  namespace: kagenti-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://phoenix.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    enabled: true
+
+# ------------------------------------------------------------------
+#  Phoenix OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+phoenixOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
+  tag: latest
+  # Keycloak client ID for Phoenix
+  clientId: phoenix
+  # Kubernetes secret name to store OAuth credentials
+  secretName: phoenix-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the phoenix-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
 
 # ------------------------------------------------------------------
 #  Keycloak Configuration
