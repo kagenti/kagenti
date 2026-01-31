@@ -195,8 +195,10 @@ mlflow:
 # ------------------------------------------------------------------
 #  MLflow OAuth Secret Creator Configuration
 # ------------------------------------------------------------------
+# TODO: Change back to ghcr.io/kagenti/kagenti/mlflow-oauth-secret once
+# the image is published via Build-Publish workflow (on version tag)
 mlflowOAuthSecret:
-  image: ghcr.io/kagenti/kagenti/mlflow-oauth-secret
+  image: quay.io/ladas/mlflow-oauth-secret
   tag: latest
   # Keycloak client ID for MLflow
   clientId: mlflow
