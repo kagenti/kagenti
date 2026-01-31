@@ -7,13 +7,14 @@ source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
 log_step "72" "Deploying weather-tool via Deployment + Service"
 
-# Set image based on environment (OpenShift vs Kind)
+# Set image based on platform
 if [ "$IS_OPENSHIFT" = "true" ]; then
     WEATHER_TOOL_IMAGE="image-registry.openshift-image-registry.svc:5000/team1/weather-tool:v0.0.1"
+    log_info "Using OpenShift internal registry: $WEATHER_TOOL_IMAGE"
 else
     WEATHER_TOOL_IMAGE="registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1"
+    log_info "Using Kind registry: $WEATHER_TOOL_IMAGE"
 fi
-log_info "Using image: $WEATHER_TOOL_IMAGE"
 
 # Create Deployment
 cat <<DEPLOYMENT_EOF | kubectl apply -f -
