@@ -76,7 +76,7 @@ spec:
             --host=0.0.0.0 \
             --port=5000 \
             {{- if .Values.mlflow.auth.enabled }}
-            --app-name=mlflow_oidc_auth \
+            --app-name=oidc-auth \
             {{- end }}
             {{- if .Values.openshift }}
             --allowed-hosts "mlflow-{{ .Release.Namespace }}.apps.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1" \
@@ -103,6 +103,12 @@ spec:
               key: password
         - name: MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD
           value: "true"
+        {{- if .Values.mlflow.auth.enabled }}
+        - name: OIDC_USERS_DB_URI
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/mlflow"
+        - name: OIDC_ALEMBIC_VERSION_TABLE
+          value: "mlflow_oidc_alembic_version"
+        {{- end }}
         ports:
         - containerPort: 5000
           name: http
