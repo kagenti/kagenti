@@ -13,7 +13,6 @@ components:
     enabled: true
   platformWebhook:
     enabled: true
-
   ui:
     enabled: true
   istio:
@@ -118,7 +117,7 @@ keycloak:
   adminPasswordKey: password
   url: http://keycloak-service.keycloak:8080
   publicUrl: http://keycloak.localtest.me:8080
-  realm: demo
+  realm: master
 
 # ------------------------------------------------------------------
 #  Kagenti Operator Configuration
