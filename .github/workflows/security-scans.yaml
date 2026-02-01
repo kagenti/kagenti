@@ -399,14 +399,14 @@ jobs:
           ignore-unfixed: true
           format: 'table'
 
-      # Step 2: Fail only on CRITICAL dependency vulnerabilities
-      - name: Check for CRITICAL dependency vulnerabilities
+      # Step 2: Fail on CRITICAL and HIGH dependency vulnerabilities
+      - name: Check for CRITICAL and HIGH dependency vulnerabilities
         uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          severity: 'CRITICAL'
-          # Fail only on CRITICAL - these must be fixed
+          severity: 'CRITICAL,HIGH'
+          # Fail on CRITICAL and HIGH - these must be fixed
           exit-code: '1'
           ignore-unfixed: true
           format: 'table'
