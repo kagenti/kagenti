@@ -29,7 +29,7 @@ test = [
 
     # Kubernetes client
     "kubernetes>=34",
-    "urllib3>=1.26.0,<2.1.0",  # Pin to avoid HTTPResponse.getheaders() deprecation
+    "urllib3>=2.6.3",  # Minimum version for CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 fixes
 
     # HTTP requests
     "requests>=2.31.0",
