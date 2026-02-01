@@ -55,5 +55,5 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   namespace: "{{ .Values.istio.ztunnel.namespace }}"
-  profile: ambient      
+  profile: ambient
 {{- end }}

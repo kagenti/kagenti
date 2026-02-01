@@ -10,14 +10,14 @@ components:
   mcpGateway:
     enabled: true
   agentOperator:
-    enabled: true   
+    enabled: true
   platformWebhook:
-    enabled: true    
+    enabled: true
 
   ui:
     enabled: true
   istio:
-    enabled: true  
+    enabled: true
 
 # Environment variables for secrets - they should be overriden by a .secrets.yaml file
 # or by using --set secrets.githubUser="" etc.
@@ -83,10 +83,10 @@ ui:
 #  UI OAuth Secret Creator Configuration
 # ------------------------------------------------------------------
 uiOAuthSecret:
-  #image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  # image: ghcr.io/kagenti/kagenti/ui-oauth-secret
   image: quay.io/pdettori/ui-oauth-secret
   tag: latest
-  # When true, mount the in-cluster serviceaccount CA 
+  # When true, mount the in-cluster serviceaccount CA
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
   # and will usually not validate external OpenShift route certificates.
@@ -98,7 +98,7 @@ uiOAuthSecret:
 agentOAuthSecret:
   image: ghcr.io/kagenti/kagenti/agent-oauth-secret
   tag: latest
-  # When true, mount the in-cluster serviceaccount CA 
+  # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
   # and will usually not validate external OpenShift route certificates.
@@ -152,7 +152,7 @@ mcpGateway:
   # Observed behavior: When using this hostname, the MCP Gateway is accessible and functions as expected.
   # Other values tried:  'mcp.localtest.me', and 'mcp.sslip.io' were tested but failed to route traffic correctly.
   # Expected behavior: The MCP Gateway should work with any valid hostname or IP address configured for local development.
-  hostname: 'mcp.127-0-0-1.sslip.io'  
+  hostname: 'mcp.127-0-0-1.sslip.io'
 
 # ------------------------------------------------------------------
 #  Spiffe/Spire configs

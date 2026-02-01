@@ -163,6 +163,48 @@ jobs:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           KAGENTI_CONFIG_FILE: deployments/envs/ocp_values.yaml
 
+      # Security: Scan deployed cluster for vulnerabilities and misconfigurations
+      - name: Run Trivy Kubernetes cluster scan
+        if: success()
+        run: |
+          echo "=== Trivy Kubernetes Cluster Security Scan ==="
+          echo ""
+          echo "Scanning deployed Kagenti platform for security issues..."
+          echo ""
+
+          # Install Trivy
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+          # Scan Kagenti namespaces for misconfigurations
+          echo "--- Scanning kagenti-system namespace ---"
+          trivy k8s --kubeconfig "$KUBECONFIG" \
+            --include-namespaces kagenti-system \
+            --severity HIGH,CRITICAL \
+            --report summary \
+            --timeout 10m || true
+
+          echo ""
+          echo "--- Scanning keycloak namespace ---"
+          trivy k8s --kubeconfig "$KUBECONFIG" \
+            --include-namespaces keycloak \
+            --severity HIGH,CRITICAL \
+            --report summary \
+            --timeout 5m || true
+
+          echo ""
+          echo "--- Scanning mcp-system namespace ---"
+          trivy k8s --kubeconfig "$KUBECONFIG" \
+            --include-namespaces mcp-system \
+            --severity HIGH,CRITICAL \
+            --report summary \
+            --timeout 5m || true
+
+          echo ""
+          echo "NOTE: Trivy k8s scan is informational. Issues are logged but don't fail the build."
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+        continue-on-error: true
+
       - name: Collect cluster info on failure
         if: failure()
         run: bash .github/scripts/hypershift/ci/85-collect-failure-info.sh

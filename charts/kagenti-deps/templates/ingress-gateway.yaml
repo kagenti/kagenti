@@ -19,7 +19,7 @@ spec:
         selector:
           matchLabels:
             shared-gateway-access: "true"
----            
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -39,5 +39,5 @@ spec:
     targetPort: 80
   selector:
     gateway.networking.k8s.io/gateway-name: http
-  type: NodePort                        
+  type: NodePort
 {{- end }}

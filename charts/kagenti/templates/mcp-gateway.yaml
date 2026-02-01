@@ -26,8 +26,8 @@ spec:
       hostname: '*.mcp.local' # this hostname can be any wildcard. It is here to simplify routing, ensure the MCP Server routes attach to this listener only, can be protected by the AuthPolicy and routed to via envoy and the MCPRouter.
       allowedRoutes:
         namespaces:
-          from: All #any namespace can register an MCP server route      
----  
+          from: All #any namespace can register an MCP server route
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -90,5 +90,5 @@ spec:
     name: mcp-gateway-istio
     weight: 100
   wildcardPolicy: None
-{{- end }}         
+{{- end }}
 {{- end }}

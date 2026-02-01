@@ -35,7 +35,7 @@ data:
   init.sh: |
     #!/bin/bash
     set -e
-    
+
     psql -v ON_ERROR_STOP=1  <<-EOSQL
         ALTER DATABASE postgres OWNER TO testuser;
     EOSQL
@@ -66,7 +66,7 @@ spec:
       - name: init-script
         configMap:
           name: postgres-otel-init-script
-          defaultMode: 0755 
+          defaultMode: 0755
       containers:
       - env:
         - name: POSTGRESQL_DATABASE
@@ -75,7 +75,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: otel-db-secret
-              key: username  
+              key: username
         - name: POSTGRESQL_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -99,12 +99,12 @@ spec:
             drop:
             - ALL
           seccompProfile:
-            type: RuntimeDefault    
+            type: RuntimeDefault
         volumeMounts:
         - mountPath: /var/lib/pgsql/data
           name: postgres-data
         - name: init-script
-          mountPath: /usr/share/container-scripts/postgresql/start/ 
+          mountPath: /usr/share/container-scripts/postgresql/start/
           readOnly: false
   volumeClaimTemplates:
   - metadata:
@@ -142,7 +142,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
 stringData:
-  password: thisisonly4testingNOT4prod 
+  password: thisisonly4testingNOT4prod
   username: testuser
-type: Opaque  
+type: Opaque
 {{- end }}
