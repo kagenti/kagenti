@@ -1,13 +1,14 @@
 # Trivy Ignore File
 # These are intentional exceptions with documented rationale
+# Use AVD- prefix format (e.g., AVD-DS-0002, AVD-KSV-0041)
 
-# DS-0002: Base images intentionally don't include USER directives
+# AVD-DS-0002: Base images intentionally don't include USER directives
 # The python12 Dockerfile is a base image meant to be extended by other Dockerfiles.
 # Child images need to run as root to install packages before adding their own USER directive.
 # File: .github/dockerfiles/python12/Dockerfile
-DS-0002
+AVD-DS-0002
 
-# KSV046, KSV041, KSV044: HyperShift CI ClusterRole RBAC permissions
+# HyperShift CI ClusterRole RBAC permissions
 # The k8s-ci-clusterrole.yaml has documented security notes explaining why broad permissions
 # are required:
 # 1. Kubernetes RBAC doesn't support namespace prefix wildcards
@@ -15,4 +16,12 @@ DS-0002
 # 3. The operator, not CI, creates these namespaces so we can't pre-create RoleBindings
 # 4. Permissions are minimized to specific resources (not wildcards)
 # See file comments for full security analysis: .github/scripts/hypershift/policies/k8s-ci-clusterrole.yaml
-# These may trigger: wildcard verbs, create secrets, delete pods, etc.
+
+# AVD-KSV-0041: ClusterRole managing secrets (required for HyperShift kubeconfig)
+AVD-KSV-0041
+
+# AVD-KSV-0048: ClusterRole managing pods/deployments (required for CI cleanup)
+AVD-KSV-0048
+
+# AVD-KSV-0049: ClusterRole managing configmaps (required for Kagenti config)
+AVD-KSV-0049
