@@ -1,0 +1,312 @@
+{{- if .Values.components.mlflow.enabled }}
+{{- if or .Values.mlflow.auth.enabled .Values.openshift }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlflow-resource-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+  {{- if .Values.mlflow.auth.enabled }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" | quote }}]
+    verbs: ["get"]
+  {{- end }}
+  {{- if .Values.openshift }}
+  # Allow reading route to auto-detect hostname for allowed-hosts
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    resourceNames: ["mlflow"]
+    verbs: ["get"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlflow-resource-reader-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: mlflow
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: mlflow-resource-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mlflow
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      {{- if or .Values.mlflow.auth.enabled .Values.openshift }}
+      serviceAccountName: mlflow
+      {{- end }}
+      containers:
+      - name: mlflow
+        image: ghcr.io/mlflow/mlflow:v3.9.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          export HOME=/tmp && \
+          pip install --no-cache-dir --quiet "psycopg[binary]" && \
+          {{- if .Values.mlflow.auth.enabled }}
+          pip install --no-cache-dir --quiet "mlflow-oidc-auth" && \
+          {{- end }}
+          {{- if .Values.openshift }}
+          # Read auto-detected route hostname if available
+          ROUTE_HOST=""
+          if [ -f /tmp/route-config/hostname ]; then
+            ROUTE_HOST=$(cat /tmp/route-config/hostname)
+            echo "Auto-detected route hostname: $ROUTE_HOST"
+          fi
+          # Build allowed hosts list
+          ALLOWED_HOSTS="mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          if [ -n "$ROUTE_HOST" ]; then
+            ALLOWED_HOSTS="$ROUTE_HOST,$ALLOWED_HOSTS"
+          fi
+          {{- else }}
+          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          {{- end }}
+          mlflow server \
+            --host=0.0.0.0 \
+            --port=5000 \
+            {{- if .Values.mlflow.auth.enabled }}
+            --app-name=oidc-auth \
+            {{- end }}
+            --allowed-hosts "$ALLOWED_HOSTS" \
+            --backend-store-uri=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow \
+            --default-artifact-root=/mlflow/artifacts
+        {{- if .Values.mlflow.auth.enabled }}
+        envFrom:
+        - secretRef:
+            name: {{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
+        {{- end }}
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+        - name: MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD
+          value: "true"
+        {{- if .Values.mlflow.auth.enabled }}
+        - name: OIDC_USERS_DB_URI
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/mlflow"
+        - name: OIDC_ALEMBIC_VERSION_TABLE
+          value: "mlflow_oidc_alembic_version"
+        {{- end }}
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        startupProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 30  # Allow up to 5 minutes for startup
+        readinessProbe:
+          httpGet:
+            path: /version
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /version
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "100m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: mlflow-artifacts
+          mountPath: /mlflow/artifacts
+        {{- if .Values.openshift }}
+        - name: route-config
+          mountPath: /tmp/route-config
+          readOnly: true
+        {{- end }}
+      initContainers:
+      {{- if .Values.openshift }}
+      # Detect route hostname for allowed-hosts configuration
+      - name: detect-route-hostname
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Detecting MLflow route hostname..."
+          # Wait for route to exist (may take a moment after initial deploy)
+          for i in $(seq 1 30); do
+            HOSTNAME=$(kubectl get route mlflow -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}' 2>/dev/null)
+            if [ -n "$HOSTNAME" ]; then
+              echo "Route hostname: $HOSTNAME"
+              echo "$HOSTNAME" > /tmp/route-config/hostname
+              exit 0
+            fi
+            echo "Waiting for route... ($i/30)"
+            sleep 2
+          done
+          echo "Warning: Could not detect route hostname, using fallback"
+          # Fallback to default pattern if route detection fails
+          echo "mlflow-{{ .Release.Namespace }}.apps.{{ .Values.domain | default "cluster.local" }}" > /tmp/route-config/hostname
+        volumeMounts:
+        - name: route-config
+          mountPath: /tmp/route-config
+      {{- end }}
+      {{- if .Values.mlflow.auth.enabled }}
+      # Wait for OAuth secret to exist before starting MLflow
+      # This prevents MLflow from running unauthenticated
+      - name: wait-for-oauth-secret
+        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for mlflow-oauth-secret to be created..."
+          until kubectl get secret {{ .Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }} -n {{ .Release.Namespace }} 2>/dev/null; do
+            echo "Secret not found, waiting..."
+            sleep 5
+          done
+          echo "OAuth secret found, MLflow can start with authentication enabled"
+      {{- end }}
+      - name: create-db
+        image: {{ .Values.common.postgresImage | default "postgres:16" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 60); do
+            if PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Waiting for PostgreSQL... ($i/60)"
+            sleep 2
+          done
+          echo "Creating MLflow database if not exists..."
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" | grep -q 1 || \
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h postgres -U $POSTGRES_USER -d postgres -c "CREATE DATABASE mlflow"
+          echo "Database ready"
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: otel-db-secret
+              key: password
+      volumes:
+      - name: mlflow-artifacts
+        emptyDir: {}
+      {{- if .Values.openshift }}
+      - name: route-config
+        emptyDir: {}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: mlflow
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: mlflow
+  ports:
+  - name: http
+    port: 5000
+    targetPort: 5000
+    protocol: TCP
+  type: ClusterIP
+---
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: 5000
+  to:
+    kind: Service
+    name: mlflow
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- else }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mlflow
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app: mlflow
+spec:
+  parentRefs:
+    - name: http
+      namespace: {{ .Release.Namespace }}
+  hostnames:
+    - mlflow.{{ .Values.domain | default "localtest.me" }}
+  rules:
+    - backendRefs:
+        - name: mlflow
+          port: 5000
+{{- end }}
+{{- end }}

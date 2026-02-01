@@ -7,8 +7,16 @@ source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
 log_step "72" "Deploying weather-tool via Deployment + Service"
 
+# Set image based on environment
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    WEATHER_TOOL_IMAGE="image-registry.openshift-image-registry.svc:5000/team1/weather-tool:v0.0.1"
+else
+    WEATHER_TOOL_IMAGE="registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1"
+fi
+log_info "Using image: $WEATHER_TOOL_IMAGE"
+
 # Create Deployment
-cat <<'DEPLOYMENT_EOF' | kubectl apply -f -
+cat <<DEPLOYMENT_EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,7 +52,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mcp
-          image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+          image: ${WEATHER_TOOL_IMAGE}
           imagePullPolicy: Always
           env:
             - name: PORT
@@ -53,6 +61,12 @@ spec:
               value: "0.0.0.0"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+            - name: OTEL_SERVICE_NAME
+              value: "weather-tool"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=team1,mlflow.experimentName=team1"
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "team1"
             - name: KEYCLOAK_URL
               value: "http://keycloak.keycloak.svc.cluster.local:8080"
             - name: UV_NO_CACHE
@@ -83,7 +97,6 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            runAsUser: 1000
       volumes:
         - name: cache
           emptyDir: {}

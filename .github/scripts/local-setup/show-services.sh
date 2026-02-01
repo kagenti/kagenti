@@ -268,6 +268,24 @@ fi
 echo -e "${BLUE}Auth:${NC}         None required"
 echo ""
 
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}MLflow (LLM Traces & Experiments)${NC}"
+echo "---------------------------------------------------------------------------"
+MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}URL:${NC}          http://mlflow.localtest.me:8080"
+else
+    MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$MLFLOW_ROUTE" ]; then
+        echo -e "${BLUE}URL:${NC}          https://$MLFLOW_ROUTE"
+    else
+        echo -e "${BLUE}URL:${NC}          (no route found - mlflow may not be enabled)"
+    fi
+fi
+echo -e "${BLUE}Auth:${NC}         None required"
+echo ""
+
 # Kind environment - show Kiali here since no OpenShift OAuth
 if [ "$ENV_TYPE" = "kind" ]; then
     echo "---------------------------------------------------------------------------"

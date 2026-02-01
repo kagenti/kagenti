@@ -36,6 +36,8 @@ charts:
           enabled: true
         otel:
           enabled: true
+        mlflow:
+          enabled: true
         spire:
           # ⚠️  REQUIRES OpenShift 4.19 or higher
           # The ZTWIM (Zero Trust Workload Identity Manager) operator is only available on OCP 4.19+
@@ -52,6 +54,10 @@ charts:
           enabled: true
         gatewayApi:
           enabled: false
+      # MLflow authentication - requires Keycloak OAuth2
+      mlflow:
+        auth:
+          enabled: true  # Require authentication for MLflow access
 
   ####################################################################
   # kagenti

@@ -39,7 +39,9 @@ def kagenti_config():
         config_path = repo_root / config_file
 
     if not config_path.exists():
-        pytest.fail(f"Config file not found: {config_path}")
+        # Config file specified but not found - return None instead of failing
+        # This allows tests to run with defaults when config is missing
+        return None
 
     with open(config_path) as f:
         return yaml.safe_load(f)

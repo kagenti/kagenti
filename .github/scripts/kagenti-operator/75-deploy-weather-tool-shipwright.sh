@@ -183,7 +183,6 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            runAsUser: 1000
       volumes:
         - name: tmp
           emptyDir: {}
