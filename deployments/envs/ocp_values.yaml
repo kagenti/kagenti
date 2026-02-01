@@ -54,6 +54,10 @@ charts:
           enabled: true
         gatewayApi:
           enabled: false
+      # MLflow authentication - requires Keycloak OAuth2
+      mlflow:
+        auth:
+          enabled: true  # Require authentication for MLflow access
 
   ####################################################################
   # kagenti
