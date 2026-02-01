@@ -94,7 +94,10 @@ class PhoenixClient:
         try:
             response = self.client.get(f"{self.base_url}/v1/projects")
             if response.status_code == 200:
-                return response.json().get("data", [])
+                try:
+                    return response.json().get("data", [])
+                except (ValueError, KeyError):
+                    return []
             return []
         except httpx.RequestError:
             return []
@@ -107,7 +110,10 @@ class PhoenixClient:
                 params={"limit": limit},
             )
             if response.status_code == 200:
-                return response.json().get("data", [])
+                try:
+                    return response.json().get("data", [])
+                except (ValueError, KeyError):
+                    return []
             return []
         except httpx.RequestError:
             return []
@@ -203,6 +209,7 @@ class TestPhoenixConnectivity:
 
 
 @pytest.mark.observability
+@pytest.mark.openshift_only
 @pytest.mark.requires_features(["otel"])
 class TestWeatherAgentTracesInPhoenix:
     """
@@ -210,6 +217,8 @@ class TestWeatherAgentTracesInPhoenix:
 
     These tests verify that traces from test_agent_conversation.py
     (which queries the weather agent) are visible in Phoenix.
+
+    OpenShift only: Kind CI doesn't have full OTEL instrumentation.
     """
 
     def test_phoenix_has_traces(self, phoenix_client: PhoenixClient):
