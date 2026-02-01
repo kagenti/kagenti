@@ -193,6 +193,11 @@ jobs:
         run: |
           cat > .yamllint.yaml << 'EOF'
           extends: relaxed
+          # Ignore Helm templates - they contain Go templating syntax ({{- if ... }})
+          # that is not valid YAML until rendered by Helm
+          ignore: |
+            charts/*/templates/
+            charts/*/*/templates/
           rules:
             line-length:
               max: 150
