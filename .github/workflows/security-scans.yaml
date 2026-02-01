@@ -375,8 +375,9 @@ jobs:
           # Common ignores for development Dockerfiles
           # DL3008: Pin versions in apt-get (apt-get install -y without versions)
           # DL3013: Pin versions in pip (pip install without --no-cache-dir)
+          # DL3018: Pin versions in apk add (examples use unpinned for simplicity)
           # DL3059: Multiple consecutive RUN instructions (sometimes intentional for clarity)
-          ignore: DL3008,DL3013,DL3059
+          ignore: DL3008,DL3013,DL3018,DL3059
 
   trivy-fs:
     name: Trivy Filesystem Scan
@@ -419,6 +420,8 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
           # Skip examples directory - contains intentional simplified configs for demos
           skip-dirs: 'kagenti/examples'
+          # Use .trivyignore for documented exceptions (base images, CI RBAC)
+          trivyignores: '.trivyignore'
           # Fail on misconfigurations in production code
           exit-code: '1'
           format: 'table'
