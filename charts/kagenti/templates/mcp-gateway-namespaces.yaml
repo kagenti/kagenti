@@ -7,4 +7,4 @@ metadata:
     {{- include "kagenti.labels" . | nindent 4 }}
     istio-discovery: enabled
     istio.io/dataplane-mode: ambient
-{{- end }}  
+{{- end }}

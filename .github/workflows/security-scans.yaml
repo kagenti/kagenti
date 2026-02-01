@@ -25,9 +25,8 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-  pull-requests: write
+# Explicit permissions - jobs request only what they need
+permissions: {}
 
 jobs:
   # NOTE: Gitleaks CI action requires a license for organization repos
@@ -51,8 +50,11 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: List dependency manifests
         run: |
@@ -88,7 +90,7 @@ jobs:
 
       - name: Dependency Review
         id: dependency-review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@46a3c492319c890177366b6ef46d6b4f89743ed4  # v4
         with:
           # Stricter security settings (Phase A improvement)
           fail-on-severity: moderate
@@ -129,8 +131,10 @@ jobs:
   shellcheck:
     name: Shell Script Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
@@ -173,8 +177,10 @@ jobs:
   yamllint:
     name: YAML Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Install yamllint
         run: pip install yamllint
@@ -202,18 +208,18 @@ jobs:
             charts/ \
             deployments/ || true
 
-          # Show summary
+          # Show summary - capture output to file to avoid subshell issues
           echo ""
           echo "=== Summary ==="
-          ERROR_COUNT=$(yamllint -c .yamllint.yaml -f parsable \
-            .github/workflows/ charts/ deployments/ 2>&1 | grep -c ":error:" || echo "0")
-          WARNING_COUNT=$(yamllint -c .yamllint.yaml -f parsable \
-            .github/workflows/ charts/ deployments/ 2>&1 | grep -c ":warning:" || echo "0")
+          yamllint -c .yamllint.yaml -f parsable \
+            .github/workflows/ charts/ deployments/ 2>&1 > /tmp/yamllint_output.txt || true
+          ERROR_COUNT=$(grep -c ":error:" /tmp/yamllint_output.txt 2>/dev/null || echo "0")
+          WARNING_COUNT=$(grep -c ":warning:" /tmp/yamllint_output.txt 2>/dev/null || echo "0")
           echo "Errors: $ERROR_COUNT"
           echo "Warnings: $WARNING_COUNT"
 
           # Fail only on errors (not warnings)
-          if [ "$ERROR_COUNT" -gt 0 ]; then
+          if [ "$ERROR_COUNT" -gt 0 ] 2>/dev/null; then
             echo ""
             echo "ERROR: YAML files have syntax errors. Please fix them."
             exit 1
@@ -222,11 +228,13 @@ jobs:
   helm-lint:
     name: Helm Chart Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a  # v4
         with:
           version: 'v3.14.0'
 
@@ -270,11 +278,17 @@ jobs:
   bandit:
     name: Python Security (Bandit)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.11'
 
@@ -292,21 +306,38 @@ jobs:
             exit 0
           fi
 
-          # Run Bandit with medium severity threshold
-          # Exclude tests and virtual environments
+          # Run Bandit - scan main code (excluding examples which may have intentional patterns)
+          # First pass: HIGH severity only on main code - this WILL fail the build
+          echo "--- Checking for HIGH severity issues in main code ---"
+          HIGH_ISSUES=$(bandit -r kagenti/ \
+            --severity-level high \
+            --confidence-level high \
+            --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
+            -f json 2>/dev/null | jq '.results | length' 2>/dev/null || echo "0")
+
+          if [ "$HIGH_ISSUES" -gt 0 ]; then
+            echo "Found $HIGH_ISSUES HIGH severity issues in main code:"
+            bandit -r kagenti/ \
+              --severity-level high \
+              --confidence-level high \
+              --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
+              -f txt
+            echo ""
+            echo "ERROR: HIGH severity security issues found. Please fix them."
+            exit 1
+          fi
+
+          # Second pass: Show all issues (including examples) for visibility
+          echo ""
+          echo "--- Full scan (informational) ---"
           bandit -r kagenti/ \
             --severity-level medium \
             --confidence-level medium \
             --exclude '**/tests/*,**/.venv/*,**/node_modules/*' \
-            -f txt || BANDIT_EXIT=$?
+            -f txt || true
 
-          # Bandit exits with 1 if issues found, we want to report but not fail on low severity
-          if [ "${BANDIT_EXIT:-0}" -eq 1 ]; then
-            echo ""
-            echo "WARNING: Bandit found security issues. Please review above."
-            # Don't fail the build for now - enable strict mode later
-            # exit 1
-          fi
+          echo ""
+          echo "NOTE: Examples directory issues are informational only."
 
   # ============================================================================
   # Phase C: Container/IaC Security
@@ -315,8 +346,10 @@ jobs:
   hadolint:
     name: Dockerfile Lint (Hadolint)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Find Dockerfiles
         id: find-dockerfiles
@@ -333,43 +366,76 @@ jobs:
 
       - name: Run Hadolint
         if: steps.find-dockerfiles.outputs.has_dockerfiles == 'true'
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5  # v3.3.0
         with:
           dockerfile: "**/Dockerfile*"
           recursive: true
-          # Start with warning threshold, tighten later
-          failure-threshold: error
+          # Fail on warnings and errors
+          failure-threshold: warning
           # Common ignores for development Dockerfiles
-          # DL3008: Pin versions in apt-get
-          # DL3013: Pin versions in pip
-          ignore: DL3008,DL3013
+          # DL3008: Pin versions in apt-get (apt-get install -y without versions)
+          # DL3013: Pin versions in pip (pip install without --no-cache-dir)
+          # DL3018: Pin versions in apk add (examples use unpinned for simplicity)
+          # DL3059: Multiple consecutive RUN instructions (sometimes intentional for clarity)
+          ignore: DL3008,DL3013,DL3018,DL3059
 
   trivy-fs:
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+      # Step 1: Show all dependency vulnerabilities (informational)
+      - name: Show all dependency vulnerabilities (informational)
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
-          # Don't fail initially - review results first
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Don't fail - just display all issues for visibility
           exit-code: '0'
           ignore-unfixed: true
           format: 'table'
 
-      - name: Run Trivy config scan (IaC)
-        uses: aquasecurity/trivy-action@master
+      # Step 2: Fail on CRITICAL and HIGH dependency vulnerabilities
+      - name: Check for CRITICAL and HIGH dependency vulnerabilities
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
         with:
-          scan-type: 'config'
+          scan-type: 'fs'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
-          # Don't fail on config issues initially
+          # Fail on CRITICAL and HIGH - these must be fixed
+          exit-code: '1'
+          ignore-unfixed: true
+          format: 'table'
+
+      - name: Run Trivy config scan on production code (IaC)
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
+        with:
+          scan-type: 'config'
+          # Scan only production directories, exclude examples
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Skip examples directory - contains intentional simplified configs for demos
+          skip-dirs: 'kagenti/examples'
+          # Use .trivyignore for documented exceptions (base images, CI RBAC)
+          trivyignores: '.trivyignore'
+          # Fail on misconfigurations in production code
+          exit-code: '1'
+          format: 'table'
+
+      - name: Run Trivy config scan on examples (informational)
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
+        with:
+          scan-type: 'config'
+          scan-ref: 'kagenti/examples'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Examples are informational only - don't fail the build
           exit-code: '0'
           format: 'table'
+        continue-on-error: true
 
   # ============================================================================
   # Phase D: Advanced Security
@@ -386,28 +452,30 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
         with:
           languages: python
           # Use security-extended queries for more thorough analysis
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@ab28d5ce09b08e4700b2296d39d684a7ac71d1e7  # v4
         with:
           category: "/language:python"
 
   action-pinning:
     name: Verify Action Pinning
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
 
       - name: Check for unpinned GitHub Actions
         id: pinning-check
@@ -430,7 +498,7 @@ jobs:
             echo "To pin an action, replace:"
             echo "  uses: actions/checkout@v6"
             echo "With:"
-            echo "  uses: actions/checkout@<full-sha>  # v4"
+            echo "  uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6"
             echo ""
             echo "Find SHAs at: https://github.com/<owner>/<repo>/releases"
             echo ""
@@ -481,7 +549,7 @@ jobs:
   #   scorecard:
   #     runs-on: ubuntu-latest
   #     steps:
-  #       - uses: actions/checkout@v6
+  #       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
   #         with:
   #           persist-credentials: false
   #       - uses: ossf/scorecard-action@v2

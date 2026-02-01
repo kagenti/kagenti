@@ -18,7 +18,7 @@ components:
   istio:
     enabled: true
   kiali:
-    enabled: true  
+    enabled: true
   keycloak:
     enabled: true
   metricsServer:
@@ -83,9 +83,9 @@ istio:
     profile: ambient
     namespace: istio-cni
   ztunnel:
-    namespace: istio-ztunnel  
+    namespace: istio-ztunnel
   base: {}
-  istiod: 
+  istiod:
     profile: ambient
     namespace: '{{ .Values.istio.namespace | quote }}'
 
@@ -122,12 +122,12 @@ containerRegistry:
     repository: ghcr.io/distribution/distribution
     tag: "3.0.0"
     pullPolicy: IfNotPresent
-  
+
   service:
     type: ClusterIP
     port: 5000
     targetPort: 5000
-  
+
   env:
     otelTracesExporter: "none"
     logLevel: "info"

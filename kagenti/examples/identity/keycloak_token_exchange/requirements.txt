@@ -3,4 +3,4 @@ charset-normalizer==3.4.1
 idna==3.10
 pydantic==2.6.0
 requests==2.32.4
-urllib3==2.3.0
+urllib3==2.6.3

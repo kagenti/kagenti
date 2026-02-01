@@ -5,7 +5,7 @@ metadata:
   name: keycloak-service
   namespace: {{ .Values.keycloak.namespace }}
   labels:
-  {{- include "kagenti.labels" . | nindent 4 }}  
+  {{- include "kagenti.labels" . | nindent 4 }}
     app: keycloak
 spec:
   ports:
@@ -40,7 +40,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: keycloak
-  namespace: {{ .Values.keycloak.namespace }}  
+  namespace: {{ .Values.keycloak.namespace }}
 spec:
   serviceName: keycloak-discovery
   # Run with one replica to save resources, or with two replicas to allow for rolling updates for configuration changes
@@ -146,7 +146,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: {{ .Values.keycloak.namespace }}  
+  namespace: {{ .Values.keycloak.namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: postgres
@@ -201,7 +201,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: postgres
-  namespace: {{ .Values.keycloak.namespace }}  
+  namespace: {{ .Values.keycloak.namespace }}
   name: postgres
 spec:
   selector:
@@ -215,8 +215,8 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: keycloak-initial-admin  
-  namespace: {{ .Values.keycloak.namespace }}  
+  name: keycloak-initial-admin
+  namespace: {{ .Values.keycloak.namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: keycloak
@@ -224,13 +224,13 @@ metadata:
 data:
   password: YWRtaW4=
   username: YWRtaW4=
-type: kubernetes.io/basic-auth  
+type: kubernetes.io/basic-auth
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: keycloak 
-  namespace: {{ .Values.keycloak.namespace }}  
+  name: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   {{- with .Values.keycloak.httpRoute.annotations }}
@@ -258,7 +258,7 @@ spec:
       {{- end }}
         backendRefs:
           - name: keycloak-service
-            port: 8080 
+            port: 8080
             weight: 1
     {{- end }}
 {{- end}}

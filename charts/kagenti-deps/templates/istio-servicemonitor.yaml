@@ -11,7 +11,7 @@ spec:
   selector:
     app: ztunnel
   ports:
-  - name: ztunnel-stats 
+  - name: ztunnel-stats
     port: 15020
     targetPort: 15020
 ---

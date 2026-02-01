@@ -17,7 +17,7 @@ metadata:
   name: "{{ .Values.istio.ztunnel.namespace }}"
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
-    istio-discovery: enabled    
+    istio-discovery: enabled
 ---
 apiVersion: v1
 kind: Namespace

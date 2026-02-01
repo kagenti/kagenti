@@ -119,7 +119,7 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
   annotations:
-    openshift.io/host.generated: "true"  
+    openshift.io/host.generated: "true"
 spec:
   path: /
   port:

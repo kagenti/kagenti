@@ -7,10 +7,12 @@
 #   docker build -t ghcr.io/kagenti/hypershift-ci:latest .
 #
 # USAGE:
-#   docker run -v ~/.pullsecret.json:/root/.pullsecret.json \
+#   docker run -v ~/.pullsecret.json:/home/ci/.pullsecret.json \
 #     -e KUBECONFIG=/tmp/mgmt -e AWS_ACCESS_KEY_ID=... -e AWS_SECRET_ACCESS_KEY=... \
 #     ghcr.io/kagenti/hypershift-ci:latest \
 #     ansible-playbook site.yml -e create=true -e "additional_tags=ManagedBy=hypershift-ci" ...
+#
+# SECURITY: Container runs as non-root user (UID 1001) by default
 #
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
@@ -56,35 +58,50 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go
     rm /tmp/go.tar.gz
 
 ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/root/go"
+ENV GOPATH="/tmp/go"
 
 # Build hcp CLI from source (no pre-built binaries available)
-RUN git clone --depth 1 https://github.com/openshift/hypershift.git /tmp/hypershift && \
-    cd /tmp/hypershift && \
+WORKDIR /tmp/hypershift
+RUN git clone --depth 1 https://github.com/openshift/hypershift.git . && \
     make product-cli && \
     mv bin/hcp /usr/local/bin/hcp && \
     chmod +x /usr/local/bin/hcp && \
-    rm -rf /tmp/hypershift /root/go
+    rm -rf /tmp/hypershift /tmp/go
 
 # Install AWS CLI v2
-RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip && \
-    cd /tmp && unzip awscliv2.zip && \
+WORKDIR /tmp
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip && \
+    unzip awscliv2.zip && \
     ./aws/install && \
-    rm -rf /tmp/aws /tmp/awscliv2.zip
+    rm -rf aws awscliv2.zip
 
 # Clone hypershift-automation with additional_tags support
 RUN git clone --branch ${HYPERSHIFT_AUTOMATION_BRANCH} --depth 1 \
         ${HYPERSHIFT_AUTOMATION_REPO} /opt/hypershift-automation && \
     rm -rf /opt/hypershift-automation/.git
 
-# Install ansible collections required by the playbook
-RUN ansible-galaxy collection install kubernetes.core amazon.aws community.general
+# Create non-root user for runtime security
+# Using UID 1001 for compatibility with OpenShift restricted SCC
+RUN microdnf install -y shadow-utils && \
+    useradd -u 1001 -m -d /home/ci -s /bin/bash ci && \
+    microdnf remove -y shadow-utils && \
+    microdnf clean all
+
+# Set up ansible collections path for non-root user
+ENV ANSIBLE_COLLECTIONS_PATH="/opt/ansible-collections"
+RUN mkdir -p ${ANSIBLE_COLLECTIONS_PATH} && \
+    ansible-galaxy collection install -p ${ANSIBLE_COLLECTIONS_PATH} \
+        kubernetes.core amazon.aws community.general && \
+    chown -R ci:ci ${ANSIBLE_COLLECTIONS_PATH} /opt/hypershift-automation
 
 # Add playbook directory to PATH
 ENV PATH="/opt/hypershift-automation:${PATH}"
 
 # Default working directory
 WORKDIR /opt/hypershift-automation
+
+# Switch to non-root user
+USER 1001
 
 # Default entrypoint (can be overridden)
 ENTRYPOINT ["/bin/bash"]

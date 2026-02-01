@@ -1,13 +1,13 @@
 {{- if and .Values.components.shipwright.enabled .Values.openshift }}
-{{- /* 
+{{- /*
   OpenShift Builds Operator Installation
-  
+
   NOTE: The namespace is NOT created by this template to avoid helm ownership.
   When helm uninstalls, it would delete the namespace, but the operator's managed
   resources have finalizers (operator.openshift.io/openshiftbuilds) that can only
   be removed by the operator controller. Without the operator, the namespace gets
   stuck in Terminating state.
-  
+
   The namespace should be created externally or will be auto-created by OLM
   when the Subscription is created.
 */}}
