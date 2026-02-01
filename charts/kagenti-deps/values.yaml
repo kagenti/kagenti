@@ -155,3 +155,27 @@ metricsServer:
 mcpInspector:
   image: ghcr.io/modelcontextprotocol/inspector
   tag: 0.17.2
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  namespace: kagenti-system
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: phoenix-oauth-secret
+
+# ------------------------------------------------------------------
+#  Phoenix OAuth Secret Job Configuration
+# ------------------------------------------------------------------
+phoenixOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
+  tag: latest
+  # Keycloak client ID for Phoenix
+  clientId: phoenix
+  # Kubernetes secret name to store OAuth credentials
+  secretName: phoenix-oauth-secret
+  # Use OpenShift service account CA for SSL verification
+  useServiceAccountCA: true
