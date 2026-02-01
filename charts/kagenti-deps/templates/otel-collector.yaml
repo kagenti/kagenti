@@ -93,9 +93,13 @@ data:
           insecure: true
       {{- if $.Values.components.mlflow.enabled }}
       otlphttp/mlflow:
-        endpoint: http://mlflow:5000
+        endpoint: http://mlflow:5000/v1/traces
         tls:
           insecure: true
+        headers:
+          # Default experiment ID (0 = Default experiment)
+          # Traces can override via x-mlflow-experiment-id attribute
+          x-mlflow-experiment-id: "0"
       {{- end }}
 
     processors:
