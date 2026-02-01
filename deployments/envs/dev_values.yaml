@@ -33,7 +33,7 @@ charts:
         otel:
           enabled: true
         mlflow:
-          enabled: true
+          enabled: false  # Disabled for Kind - requires full OTEL instrumentation
         mcpInspector:
           enabled: true
         metricsServer:

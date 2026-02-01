@@ -357,6 +357,7 @@ class TestMLflowConnectivity:
 
 
 @pytest.mark.observability
+@pytest.mark.openshift_only
 @pytest.mark.requires_features(["mlflow"])
 class TestWeatherAgentTracesInMLflow:
     """
@@ -364,6 +365,8 @@ class TestWeatherAgentTracesInMLflow:
 
     These tests verify that traces from test_agent_conversation.py
     (which queries the weather agent) are visible in MLflow.
+
+    OpenShift only: Kind CI doesn't have full OTEL instrumentation.
     """
 
     def test_mlflow_has_traces(self, mlflow_client: MLflowClient):
