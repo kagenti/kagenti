@@ -103,29 +103,31 @@ jobs:
 
       - name: Show scan results
         if: always()
+        env:
+          # Use env vars to avoid shell interpolation issues with special characters
+          CHANGES: ${{ steps.dependency-review.outputs.dependency-changes }}
+          VULNS: ${{ steps.dependency-review.outputs.vulnerable-changes }}
+          LICENSES: ${{ steps.dependency-review.outputs.invalid-license-changes }}
         run: |
           echo "=== Dependency Review Results ==="
           echo ""
           echo "--- Dependency Changes ---"
-          CHANGES='${{ steps.dependency-review.outputs.dependency-changes }}'
           if [ -n "$CHANGES" ] && [ "$CHANGES" != "null" ] && [ "$CHANGES" != "[]" ]; then
-            echo "$CHANGES" | jq '.' 2>/dev/null || echo "$CHANGES"
+            echo "$CHANGES" | jq '.' 2>/dev/null || echo "(raw output available in action logs)"
           else
             echo "No dependency changes detected in this PR."
           fi
           echo ""
           echo "--- Vulnerable Dependencies ---"
-          VULNS='${{ steps.dependency-review.outputs.vulnerable-changes }}'
           if [ -n "$VULNS" ] && [ "$VULNS" != "null" ] && [ "$VULNS" != "[]" ]; then
-            echo "$VULNS" | jq '.' 2>/dev/null || echo "$VULNS"
+            echo "$VULNS" | jq '.' 2>/dev/null || echo "(raw output available in action logs)"
           else
             echo "No vulnerabilities found."
           fi
           echo ""
           echo "--- License Issues ---"
-          LICENSES='${{ steps.dependency-review.outputs.invalid-license-changes }}'
           if [ -n "$LICENSES" ] && [ "$LICENSES" != "null" ] && [ "$LICENSES" != "[]" ]; then
-            echo "$LICENSES" | jq '.' 2>/dev/null || echo "$LICENSES"
+            echo "$LICENSES" | jq '.' 2>/dev/null || echo "(raw output available in action logs)"
           else
             echo "No license issues found."
           fi
