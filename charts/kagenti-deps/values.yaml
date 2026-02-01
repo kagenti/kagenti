@@ -65,7 +65,7 @@ keycloak:
   # Internal Keycloak URL for OAuth secret jobs
   url: http://keycloak-service.keycloak:8080
   publicUrl: http://keycloak.localtest.me:8080
-  realm: demo
+  realm: master
   httpRoute:
     annotations: {}
     parentRefs:
@@ -180,6 +180,7 @@ phoenix:
 #  MLflow Configuration
 # ------------------------------------------------------------------
 mlflow:
+  namespace: kagenti-system
   auth:
     # Enable Keycloak OAuth2 authentication for MLflow
     # Set to true in ocp_values.yaml for production deployments
