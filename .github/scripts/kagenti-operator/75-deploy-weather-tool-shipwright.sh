@@ -13,8 +13,20 @@ TOOL_NAME="weather-tool"
 GIT_URL="${GIT_URL:-https://github.com/kagenti/agent-examples}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 GIT_PATH="${GIT_PATH:-mcp/weather_tool}"
-REGISTRY="${REGISTRY:-registry.cr-system.svc.cluster.local:5000}"
 IMAGE_TAG="${IMAGE_TAG:-v0.0.1}"
+
+# Set registry based on environment (OpenShift vs Kind)
+# Source env-detect if available to get IS_OPENSHIFT
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/../lib/env-detect.sh" ]; then
+    source "$SCRIPT_DIR/../lib/env-detect.sh"
+fi
+
+if [ "${IS_OPENSHIFT:-false}" = "true" ]; then
+    REGISTRY="${REGISTRY:-image-registry.openshift-image-registry.svc:5000/${NAMESPACE}}"
+else
+    REGISTRY="${REGISTRY:-registry.cr-system.svc.cluster.local:5000}"
+fi
 
 echo "=== Deploying Weather Tool via Shipwright Build ==="
 echo "Namespace: ${NAMESPACE}"

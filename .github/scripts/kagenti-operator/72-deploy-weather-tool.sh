@@ -7,8 +7,16 @@ source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
 log_step "72" "Deploying weather-tool via Deployment + Service"
 
+# Set image based on environment (OpenShift vs Kind)
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    WEATHER_TOOL_IMAGE="image-registry.openshift-image-registry.svc:5000/team1/weather-tool:v0.0.1"
+else
+    WEATHER_TOOL_IMAGE="registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1"
+fi
+log_info "Using image: $WEATHER_TOOL_IMAGE"
+
 # Create Deployment
-cat <<'DEPLOYMENT_EOF' | kubectl apply -f -
+cat <<DEPLOYMENT_EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,7 +52,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mcp
-          image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+          image: ${WEATHER_TOOL_IMAGE}
           imagePullPolicy: Always
           env:
             - name: PORT
