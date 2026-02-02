@@ -727,14 +727,13 @@
     timeout: "{{ helm_wait_timeout }}s"
     values: >-
       {{ (((charts['kagenti-deps'] | default({})).get('values') ) | default({}))
-        | combine((global_values_merged | default({})), recursive=True)
+        | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
         | combine((((secret_values.get('charts', {}) | default({})).get('kagenti-deps', {}) ).get('values', {})) , recursive=True)
         | combine((secret_values.get('global', {}) | default({})), recursive=True)
         | combine({'openshift': enable_openshift}, recursive=True)
         | combine((kagenti_deps_operator_overrides | default({})), recursive=True) }}
     values_files: >
-      {{ (global_value_files | default([]) | list) +
-        (((charts['kagenti-deps'] | default({}))['values_files'] | default([])) | list)
+      {{ (((charts['kagenti-deps'] | default({}))['values_files'] | default([])) | list)
       }}
   when:
     - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
@@ -1403,7 +1402,7 @@
     timeout: "{{ helm_wait_timeout }}s"
     values: >-
          {{ (((charts['mcpGateway'] | default({})).get('values')) | default({}))
-          | combine((global_values_merged | default({})), recursive=True)
+          | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
           | combine((((secret_values.get('charts', {}) | default({})).get('mcpGateway', {}) ).get('values', {})) , recursive=True)
           | combine((secret_values.get('global', {}) | default({})), recursive=True)
           | combine({'openshift': enable_openshift}, recursive=True) }}
@@ -1494,14 +1493,13 @@
       values: >-
         {{ (((charts['kagenti'] | default({})).get('values')) | default({}))
           | combine({'ui': {'frontend': {'tag': kagenti_latest_tag}, 'backend': {'tag': kagenti_latest_tag}}}, recursive=True)
-          | combine((global_values_merged | default({})), recursive=True)
+          | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
           | combine((((secret_values.get('charts', {}) | default({})).get('kagenti', {}) ).get('values', {})) , recursive=True)
           | combine((secret_values.get('global', {}) | default({})), recursive=True)
           | combine({'openshift': enable_openshift}, recursive=True)
           | combine((kagenti_openshift_overrides | default({})), recursive=True) }}
       values_files: >
-        {{ (global_value_files | default([]) | list) +
-          (((charts['kagenti'] | default({}))['values_files'] | default([])) | list)
+        {{ (((charts['kagenti'] | default({}))['values_files'] | default([])) | list)
         }}
 
   # TODO: Move github-clone-step fixes to kagenti-operator.
