@@ -794,14 +794,18 @@ spec:
     # Value is a decimal string: "0.5" = 50% utilization threshold
     # Lower values = more aggressive scale-down (e.g., "0.3" = 30%)
     # Higher values = keep nodes longer (e.g., "0.7" = 70%)
-    utilizationThreshold: "${UTILIZATION_THRESHOLD}"
+    utilizationThreshold: \"${UTILIZATION_THRESHOLD}\"
 EOF"
             log_cmd "$CA_CMD"
             echo ""
 
             if [[ "$APPLY" == "true" ]]; then
-                eval "$CA_CMD"
-                log_success "ClusterAutoscaler created/updated"
+                if eval "$CA_CMD"; then
+                    log_success "ClusterAutoscaler created/updated"
+                else
+                    log_error "Failed to create/update ClusterAutoscaler"
+                    exit 1
+                fi
                 echo ""
             fi
 
