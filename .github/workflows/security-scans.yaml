@@ -207,6 +207,9 @@ jobs:
             document-start: disable
             comments:
               min-spaces-from-content: 1
+            indentation:
+              spaces: 2
+              indent-sequences: whatever  # Allow GitHub Actions style (steps at 6 spaces)
           EOF
 
       - name: Lint YAML files
