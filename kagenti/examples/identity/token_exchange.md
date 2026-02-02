@@ -67,11 +67,11 @@ Here's how it works, step by step:
   }
   ```  
 
-  ~~Client Self-Registration~~
+* Client Self-Registration
 
-    ~~New agentic workloads (e.g., Agents, Tools) are dynamically provisioned by the platform. These workloads self-register as clients in Keycloak, presenting their SPIFFE identity.~~
+  New agentic workloads (e.g., Agents, Tools) are dynamically provisioned by the platform. These workloads self-register as clients in Keycloak, presenting their SPIFFE identity.
 
-    ~~A human operator (or automated policy engine) then configures Token Exchange permissions in Keycloak, allowing specific clients to exchange tokens for specific downstream audiences. This enables decentralized provisioning with centralized policy enforcement.~~
+  A human operator (or automated policy engine) then configures Token Exchange permissions in Keycloak, allowing specific clients to exchange tokens for specific downstream audiences. This enables decentralized provisioning with centralized policy enforcement.
 
 * Workload Attestation
 
