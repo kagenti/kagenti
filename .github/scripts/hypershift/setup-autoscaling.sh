@@ -738,8 +738,13 @@ spec:
   # skipNodesWithLocalStorage: If true, nodes with pods using local storage
   # (emptyDir, hostPath) will NOT be considered for scale-down.
   #   true  = Protect nodes with local storage (safer for stateful apps)
-  #   false = Allow scale-down even with local storage (more aggressive)
-  skipNodesWithLocalStorage: true
+  #   false = Allow scale-down even with local storage (required for HyperShift)
+  #
+  # IMPORTANT: On HyperShift management clusters, most platform pods (Prometheus,
+  # Alertmanager, Thanos, ACM) use emptyDir for caching. Setting this to 'true'
+  # will BLOCK scale-down of underutilized nodes. These pods are designed to
+  # handle restarts - their emptyDir data (WAL, cache) can be safely recreated.
+  skipNodesWithLocalStorage: false
 
   # ============================================================================
   # RESOURCE LIMITS
