@@ -4,10 +4,9 @@ set -euo pipefail
 
 echo "Cloning hypershift-automation..."
 
-# Clone from Ladas fork with additional tags support, VPC endpoint cleanup, route table fix,
-# and NodePool autoscaling support
+# Clone from Ladas fork with additional tags support, VPC endpoint cleanup, and route table fix
 # Using exact commit for reproducibility and safety
-HYPERSHIFT_AUTOMATION_COMMIT="9dff660"
+HYPERSHIFT_AUTOMATION_COMMIT="59ae16b"
 
 git clone --branch add-additional-tags-support \
     https://github.com/Ladas/hypershift-automation.git /tmp/hypershift-automation

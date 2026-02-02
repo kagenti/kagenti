@@ -32,9 +32,6 @@
 #   # Custom instance type and replicas
 #   REPLICAS=3 INSTANCE_TYPE=m5.2xlarge ./.github/scripts/hypershift/create-cluster.sh
 #
-#   # Enable NodePool autoscaling (min 1, max 3 nodes)
-#   AUTOSCALE_MIN=1 AUTOSCALE_MAX=3 ./.github/scripts/hypershift/create-cluster.sh
-#
 
 set -euo pipefail
 
@@ -72,12 +69,6 @@ fi
 REPLICAS="${REPLICAS:-2}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-m5.xlarge}"
 OCP_VERSION="${OCP_VERSION:-4.20.11}"
-
-# NodePool autoscaling (optional)
-# Set AUTOSCALE_MIN and AUTOSCALE_MAX to enable autoscaling
-# When set, the NodePool will be configured with cluster-autoscaler after creation
-AUTOSCALE_MIN="${AUTOSCALE_MIN:-}"
-AUTOSCALE_MAX="${AUTOSCALE_MAX:-}"
 
 # Cluster suffix - if not set, use positional arg, then default to username
 # Set CLUSTER_SUFFIX="" to generate a random suffix
@@ -238,9 +229,6 @@ echo "Cluster configuration:"
 echo "  Name:          $CLUSTER_NAME"
 echo "  Region:        $AWS_REGION"
 echo "  Replicas:      $REPLICAS"
-if [[ -n "$AUTOSCALE_MIN" ]] && [[ -n "$AUTOSCALE_MAX" ]]; then
-    echo "  Autoscaling:   min=$AUTOSCALE_MIN, max=$AUTOSCALE_MAX"
-fi
 echo "  Instance Type: $INSTANCE_TYPE"
 echo "  OCP Version:   $OCP_VERSION"
 echo "  Base Domain:   $BASE_DOMAIN"
@@ -304,22 +292,12 @@ cd "$HYPERSHIFT_AUTOMATION_DIR"
 # to all AWS resources (VPC, subnets, security groups, EC2 instances, etc.) and
 # allows IAM policies to restrict operations to only resources tagged with this value.
 # The tag key follows Kubernetes label conventions to avoid conflicts with other tools.
-
-# Build cluster config JSON
-CLUSTER_CONFIG='"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'", "replicas": '"$REPLICAS"', "instance_type": "'"$INSTANCE_TYPE"'", "image": "'"$OCP_VERSION"'"'
-
-# Add autoscaling config if min and max are set
-if [[ -n "$AUTOSCALE_MIN" ]] && [[ -n "$AUTOSCALE_MAX" ]]; then
-    log_info "Autoscaling enabled: min=$AUTOSCALE_MIN, max=$AUTOSCALE_MAX"
-    CLUSTER_CONFIG="$CLUSTER_CONFIG"', "autoscaling": {"min": '"$AUTOSCALE_MIN"', "max": '"$AUTOSCALE_MAX"'}'
-fi
-
 ansible-playbook site.yml \
     -e '{"create": true, "destroy": false, "create_iam": false}' \
     -e '{"iam": {"hcp_role_name": "'"$HCP_ROLE_NAME"'"}}' \
     -e "domain=$BASE_DOMAIN" \
     -e "additional_tags=kagenti.io/managed-by=${MANAGED_BY_TAG}" \
-    -e '{"clusters": [{'"$CLUSTER_CONFIG"'}]}'
+    -e '{"clusters": [{"name": "'"$CLUSTER_NAME"'", "region": "'"$AWS_REGION"'", "replicas": '"$REPLICAS"', "instance_type": "'"$INSTANCE_TYPE"'", "image": "'"$OCP_VERSION"'"}]}'
 
 # ============================================================================
 # 7. Summary and Next Steps
