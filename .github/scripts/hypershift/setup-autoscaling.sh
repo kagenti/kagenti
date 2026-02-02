@@ -39,6 +39,7 @@
 #   --aggressive            Use aggressive cost-optimization settings (faster scale-down)
 #   --descheduler           Enable Kube Descheduler to rebalance existing pods
 #   --apply                 Actually run the commands (default: dry-run, just print)
+#   --debug                 Show autoscaler config and tail logs for troubleshooting
 #   --help                  Show this help message
 #
 # SCHEDULER PROFILES:
@@ -76,6 +77,7 @@ SCHEDULER_PROFILE="HighNodeUtilization"  # Default to bin-packing for cost optim
 AGGRESSIVE=false
 DESCHEDULER=false  # Enable Kube Descheduler for pod rebalancing
 APPLY=false
+DEBUG=false  # Show debug info and tail autoscaler logs
 
 show_help() {
     cat << 'EOF'
@@ -118,6 +120,7 @@ OPTIONS:
 
   General:
     --apply                 Actually run the commands (default: dry-run, just print)
+    --debug                 Show autoscaler config and tail logs for troubleshooting
     --help, -h              Show this help message
 
 SCHEDULER PROFILES:
@@ -169,6 +172,7 @@ while [[ $# -gt 0 ]]; do
         --aggressive) AGGRESSIVE=true; shift ;;
         --descheduler) DESCHEDULER=true; shift ;;
         --apply) APPLY=true; shift ;;
+        --debug) DEBUG=true; shift ;;
         --help|-h) show_help ;;
         *) log_error "Unknown option: $1"; show_help ;;
     esac
@@ -1401,4 +1405,54 @@ else
     fi
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+fi
+
+# ============================================================================
+# DEBUG MODE
+# ============================================================================
+
+if [[ "$DEBUG" == "true" ]]; then
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                        DEBUG MODE                              ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    echo -e "${BOLD}ClusterAutoscaler Configuration:${NC}"
+    echo ""
+    CA_SPEC=$(oc get clusterautoscaler default -o json 2>/dev/null | jq -r '.spec // empty')
+    if [[ -n "$CA_SPEC" ]]; then
+        echo "$CA_SPEC" | jq -r '
+            "  balanceSimilarNodeGroups: \(.balanceSimilarNodeGroups // "not set")",
+            "  ignoreDaemonsetsUtilization: \(.ignoreDaemonsetsUtilization // "not set")",
+            "  skipNodesWithLocalStorage: \(.skipNodesWithLocalStorage // "not set")",
+            "  podPriorityThreshold: \(.podPriorityThreshold // "not set")",
+            "  maxNodesTotal: \(.resourceLimits.maxNodesTotal // "not set")",
+            "  scaleDown.enabled: \(.scaleDown.enabled // "not set")",
+            "  scaleDown.delayAfterAdd: \(.scaleDown.delayAfterAdd // "not set")",
+            "  scaleDown.delayAfterDelete: \(.scaleDown.delayAfterDelete // "not set")",
+            "  scaleDown.unneededTime: \(.scaleDown.unneededTime // "not set")",
+            "  scaleDown.utilizationThreshold: \(.scaleDown.utilizationThreshold // "not set")"
+        '
+    else
+        echo -e "  ${YELLOW}ClusterAutoscaler not configured${NC}"
+    fi
+    echo ""
+
+    echo -e "${BOLD}Autoscaler Pod:${NC}"
+    oc get pods -n openshift-machine-api -l cluster-autoscaler=default \
+        -o custom-columns='NAME:.metadata.name,STATUS:.status.phase,RESTARTS:.status.containerStatuses[0].restartCount,AGE:.metadata.creationTimestamp' 2>/dev/null | while IFS= read -r line; do echo "  $line"; done
+    echo ""
+
+    echo -e "${BOLD}Recent Autoscaler Events:${NC}"
+    echo ""
+    oc logs -n openshift-machine-api -l cluster-autoscaler=default --tail=20 2>/dev/null | \
+        grep -i "scale\|removing\|unremovable\|cannot\|error\|taint" | \
+        while IFS= read -r line; do echo "  $line"; done
+    echo ""
+
+    echo -e "${BOLD}Tailing autoscaler logs (Ctrl+C to stop):${NC}"
+    echo ""
+    oc logs -n openshift-machine-api -l cluster-autoscaler=default -f 2>/dev/null | \
+        grep --line-buffered -i "scale\|removing\|unremovable\|cannot\|deleted\|taint"
 fi
