@@ -87,13 +87,8 @@ spec:
               for ns in "{{ .Values.mcpGateway.namespaces.mcpSystem }}" "{{ .Release.Namespace }}"; do
                 echo "Labeling namespace: $ns"
                 for i in $(seq 1 $MAX_RETRIES); do
-                  if [ "$ns" = "{{ .Values.mcpGateway.namespaces.mcpSystem }}" ]; then
-                    kubectl label namespace "$ns" \
-                      istio-discovery=enabled istio.io/dataplane-mode=ambient --overwrite && break
-                  else
-                    kubectl label namespace "$ns" \
+                  kubectl label namespace "$ns" \
                       istio-discovery=enabled istio.io/dataplane-mode=ambient shared-gateway-access="true" --overwrite && break
-                  fi
                   echo "  Attempt $i/$MAX_RETRIES failed, retrying in ${RETRY_DELAY}s..."
                   sleep $RETRY_DELAY
                 done

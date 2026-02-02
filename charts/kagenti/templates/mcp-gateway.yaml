@@ -37,8 +37,8 @@ metadata:
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
   parentRefs:
-    - name: mcp-gateway
-      namespace: "{{ .Values.mcpGateway.namespaces.gatewaySystem }}"
+    - name: http
+      namespace: kagenti-system
   hostnames:
   - "{{ .Values.mcpGateway.hostname }}"
   rules:
