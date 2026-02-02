@@ -64,6 +64,7 @@ log_cmd() { echo -e "  ${CYAN}\$${NC} $1"; }
 # Default values
 NODEPOOL_MIN=""
 NODEPOOL_MAX=""
+NODEPOOL_ALL=false  # Apply to all NodePools
 MGMT_MIN="1"
 MGMT_MAX=""
 SCHEDULER_PROFILE="HighNodeUtilization"  # Default to bin-packing for cost optimization
@@ -96,15 +97,21 @@ USAGE:
   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 3 --apply
 
 OPTIONS:
-  --nodepool-min N        Minimum nodes for hosted cluster NodePool (default: current replicas)
-  --nodepool-max N        Maximum nodes for hosted cluster NodePool
-  --mgmt-min N            Minimum workers per MachineSet (default: 1)
-  --mgmt-max N            Maximum workers per MachineSet (e.g., 3 means up to 3 per zone)
-  --scheduler-profile P   Set scheduler profile (default: HighNodeUtilization)
-                          Valid values: LowNodeUtilization, HighNodeUtilization, NoScoring
-  --aggressive            Use aggressive cost-optimization settings (faster scale-down)
-  --apply                 Actually run the commands (default: dry-run, just print)
-  --help, -h              Show this help message
+  Management Cluster (MachineSets):
+    --mgmt-min N            Minimum workers per MachineSet (default: 1)
+    --mgmt-max N            Maximum workers per MachineSet (e.g., 4 means up to 4 per zone)
+    --scheduler-profile P   Set scheduler profile (default: HighNodeUtilization)
+                            Valid values: LowNodeUtilization, HighNodeUtilization, NoScoring
+    --aggressive            Use aggressive cost-optimization settings (faster scale-down)
+
+  Hosted Cluster NodePools:
+    --nodepool-min N        Minimum nodes for NodePool (default: current replicas)
+    --nodepool-max N        Maximum nodes for NodePool
+    --nodepool-all          Apply autoscaling to ALL NodePools (not just first found)
+
+  General:
+    --apply                 Actually run the commands (default: dry-run, just print)
+    --help, -h              Show this help message
 
 SCHEDULER PROFILES:
   LowNodeUtilization    Default OpenShift behavior. Spreads pods evenly across nodes.
@@ -117,18 +124,24 @@ SCHEDULER PROFILES:
                         Use for very large clusters where scheduling latency matters.
 
 EXAMPLES:
-  # Preview balanced autoscaling (no changes made)
+  # Preview balanced autoscaling for management cluster (no changes made)
   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4
 
   # Apply aggressive autoscaling for maximum cost savings
   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive --apply
 
-  # Configure NodePool autoscaling for hosted clusters
-  ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-max 6 --apply
+  # Configure NodePool autoscaling for ALL hosted clusters
+  ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-min 1 --nodepool-max 3 --nodepool-all --apply
 
-  # Rollback (remove autoscaling)
+  # Configure both management cluster and all NodePools
+  ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 4 --nodepool-max 3 --nodepool-all --aggressive --apply
+
+  # Rollback management cluster autoscaling
   oc delete clusterautoscaler default
   oc delete machineautoscaler -n openshift-machine-api --all
+
+  # Disable NodePool autoscaling (set fixed replicas)
+  oc patch nodepool/<name> -n clusters --type=merge -p '{"spec":{"autoScaling":null,"replicas":2}}'
 
 EOF
     exit 0
@@ -139,6 +152,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --nodepool-min) NODEPOOL_MIN="$2"; shift 2 ;;
         --nodepool-max) NODEPOOL_MAX="$2"; shift 2 ;;
+        --nodepool-all) NODEPOOL_ALL=true; shift ;;
         --mgmt-min) MGMT_MIN="$2"; shift 2 ;;
         --mgmt-max) MGMT_MAX="$2"; shift 2 ;;
         --scheduler-profile) SCHEDULER_PROFILE="$2"; shift 2 ;;
@@ -821,15 +835,79 @@ EOF"
         fi
     fi
 
-    # NodePool autoscaling
+    # ========================================================================
+    # NodePool Autoscaling (Hosted Cluster Worker Nodes)
+    # ========================================================================
+    #
+    # NodePool autoscaling controls the worker nodes of a HyperShift hosted cluster.
+    # When enabled, the cluster-autoscaler running in the hosted control plane
+    # will automatically scale the NodePool between min and max replicas.
+    #
+    # Key behaviors:
+    # - spec.replicas and spec.autoScaling are MUTUALLY EXCLUSIVE
+    #   (we set replicas: null when enabling autoScaling)
+    # - min can be 0 on AWS for "scale-from-zero" functionality
+    # - The cluster-autoscaler is disabled if NO NodePools have autoScaling set
+    #
+    # API: hypershift.openshift.io/v1beta1 NodePool
+    # ========================================================================
+
     if [[ -n "$NODEPOOL_MAX" ]]; then
-        echo -e "${BOLD}NodePool Autoscaling Commands:${NC}"
+        echo ""
+        echo -e "${BOLD}NodePool Autoscaling (Hosted Cluster Workers):${NC}"
         echo ""
 
-        if [[ -z "$NODEPOOL_NAME" ]]; then
-            log_warn "No NodePool found to configure"
+        # Get list of NodePools to configure
+        if [[ "$NODEPOOL_ALL" == "true" ]]; then
+            # Configure all NodePools
+            ALL_NODEPOOLS=$(oc get nodepools -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}/{.spec.replicas}{"\n"}{end}' 2>/dev/null || echo "")
+            if [[ -z "$ALL_NODEPOOLS" ]]; then
+                log_warn "No NodePools found to configure"
+            else
+                echo "  # Configure autoscaling for ALL NodePools"
+                echo "  # This enables the cluster-autoscaler in each hosted control plane"
+                echo ""
+
+                while IFS='/' read -r np_ns np_name np_replicas; do
+                    [[ -z "$np_name" ]] && continue
+
+                    # Use specified min or current replicas as default
+                    NP_MIN="${NODEPOOL_MIN:-${np_replicas:-2}}"
+
+                    echo "  # NodePool: ${np_name} (namespace: ${np_ns})"
+                    echo "  # Min: ${NP_MIN}, Max: ${NODEPOOL_MAX}"
+
+                    NP_CMD="oc patch nodepool/${np_name} -n ${np_ns} --type=merge -p '{\"spec\":{\"replicas\":null,\"autoScaling\":{\"min\":${NP_MIN},\"max\":${NODEPOOL_MAX}}}}'"
+                    log_cmd "$NP_CMD"
+                    echo ""
+
+                    if [[ "$APPLY" == "true" ]]; then
+                        eval "$NP_CMD"
+                        log_success "NodePool ${np_name} autoscaling configured (min=${NP_MIN}, max=${NODEPOOL_MAX})"
+                        echo ""
+                    fi
+                done <<< "$ALL_NODEPOOLS"
+
+                if [[ "$APPLY" == "true" ]]; then
+                    # Show all NodePools with autoscaling status
+                    echo -e "${BOLD}All NodePools After Configuration:${NC}"
+                    oc get nodepools -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,REPLICAS:.spec.replicas,MIN:.spec.autoScaling.min,MAX:.spec.autoScaling.max,CURRENT:.status.replicas' 2>/dev/null | while IFS= read -r line; do echo "  $line"; done
+                    echo ""
+                fi
+            fi
+        elif [[ -z "$NODEPOOL_NAME" ]]; then
+            log_warn "No NodePool found to configure. Use --nodepool-all to configure all NodePools."
         else
+            # Configure single NodePool (legacy behavior)
             NP_MIN="${NODEPOOL_MIN:-${NODEPOOL_CURRENT_REPLICAS}}"
+
+            echo "  # Configure NodePool autoscaling for hosted cluster workers"
+            echo "  # This enables the cluster-autoscaler in the hosted control plane"
+            echo "  #"
+            echo "  # NodePool: ${NODEPOOL_NAME}"
+            echo "  # Min replicas: ${NP_MIN} (current or specified)"
+            echo "  # Max replicas: ${NODEPOOL_MAX}"
+            echo ""
 
             NP_CMD="oc patch nodepool/${NODEPOOL_NAME} -n ${NODEPOOL_NS} --type=merge -p '{
   \"spec\": {
@@ -842,10 +920,18 @@ EOF"
 }'"
             log_cmd "$NP_CMD"
             echo ""
+            echo "  # Note: replicas is set to null because autoScaling and replicas"
+            echo "  # are mutually exclusive in the NodePool API"
+            echo ""
 
             if [[ "$APPLY" == "true" ]]; then
                 eval "$NP_CMD"
-                log_success "NodePool ${NODEPOOL_NAME} autoscaling configured"
+                log_success "NodePool ${NODEPOOL_NAME} autoscaling configured (min=${NP_MIN}, max=${NODEPOOL_MAX})"
+                echo ""
+
+                # Show all NodePools with autoscaling status
+                echo -e "${BOLD}All NodePools:${NC}"
+                oc get nodepools -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,REPLICAS:.spec.replicas,MIN:.spec.autoScaling.min,MAX:.spec.autoScaling.max,CURRENT:.status.replicas' 2>/dev/null | while IFS= read -r line; do echo "  $line"; done
                 echo ""
             fi
         fi
@@ -998,14 +1084,19 @@ else
         echo ""
     fi
 
-    if [[ -n "$NODEPOOL_NAME" ]]; then
-        echo -e "${BOLD}[5] NODEPOOL AUTOSCALING${NC} — scale hosted cluster workers"
+    # Show NodePool options if any NodePools exist
+    NODEPOOL_COUNT=$(oc get nodepools -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$NODEPOOL_COUNT" -gt 0 ]]; then
+        echo -e "${BOLD}[5] NODEPOOL AUTOSCALING${NC} — scale hosted cluster workers (${NODEPOOL_COUNT} NodePools found)"
         echo ""
-        echo "    # Preview:"
-        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-max 6"
+        echo "    # Preview autoscaling for ALL NodePools (min=1, max=3):"
+        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-min 1 --nodepool-max 3 --nodepool-all"
         echo ""
-        echo "    # Apply:"
-        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-max 6 --apply"
+        echo "    # Apply to ALL NodePools:"
+        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-min 1 --nodepool-max 3 --nodepool-all --apply"
+        echo ""
+        echo "    # Disable autoscaling (set fixed replicas):"
+        echo "    oc patch nodepool/<name> -n clusters --type=merge -p '{\"spec\":{\"autoScaling\":null,\"replicas\":2}}'"
         echo ""
     fi
 
