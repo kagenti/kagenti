@@ -8,6 +8,7 @@
 # - Scheduler profile for filling existing nodes before adding new ones
 # - ClusterAutoscaler for automatic scale-up/scale-down
 # - MachineAutoscalers for per-zone scaling limits
+# - Descheduler for rebalancing existing pods onto fewer nodes
 #
 # USAGE:
 #   # Show current utilization and scaling options (default)
@@ -22,6 +23,9 @@
 #   # Aggressive cost optimization (faster scale-down, tighter packing)
 #   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 3 --aggressive
 #
+#   # Enable descheduler to rebalance existing pods (requires --aggressive or explicit)
+#   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 3 --aggressive --descheduler
+#
 #   # Apply the generated commands
 #   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 3 --apply
 #
@@ -33,6 +37,7 @@
 #   --scheduler-profile P   Set scheduler profile: LowNodeUtilization, HighNodeUtilization, NoScoring
 #                           (default: HighNodeUtilization for bin-packing)
 #   --aggressive            Use aggressive cost-optimization settings (faster scale-down)
+#   --descheduler           Enable Kube Descheduler to rebalance existing pods
 #   --apply                 Actually run the commands (default: dry-run, just print)
 #   --help                  Show this help message
 #
@@ -69,6 +74,7 @@ MGMT_MIN="1"
 MGMT_MAX=""
 SCHEDULER_PROFILE="HighNodeUtilization"  # Default to bin-packing for cost optimization
 AGGRESSIVE=false
+DESCHEDULER=false  # Enable Kube Descheduler for pod rebalancing
 APPLY=false
 
 show_help() {
@@ -103,6 +109,7 @@ OPTIONS:
     --scheduler-profile P   Set scheduler profile (default: HighNodeUtilization)
                             Valid values: LowNodeUtilization, HighNodeUtilization, NoScoring
     --aggressive            Use aggressive cost-optimization settings (faster scale-down)
+    --descheduler           Enable Kube Descheduler to rebalance existing pods
 
   Hosted Cluster NodePools:
     --nodepool-min N        Minimum nodes for NodePool (default: current replicas)
@@ -129,6 +136,9 @@ EXAMPLES:
 
   # Apply aggressive autoscaling for maximum cost savings
   ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive --apply
+
+  # Enable descheduler to rebalance existing pods onto fewer nodes
+  ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive --descheduler --apply
 
   # Configure NodePool autoscaling for ALL hosted clusters
   ./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-min 1 --nodepool-max 3 --nodepool-all --apply
@@ -157,6 +167,7 @@ while [[ $# -gt 0 ]]; do
         --mgmt-max) MGMT_MAX="$2"; shift 2 ;;
         --scheduler-profile) SCHEDULER_PROFILE="$2"; shift 2 ;;
         --aggressive) AGGRESSIVE=true; shift ;;
+        --descheduler) DESCHEDULER=true; shift ;;
         --apply) APPLY=true; shift ;;
         --help|-h) show_help ;;
         *) log_error "Unknown option: $1"; show_help ;;
@@ -832,6 +843,257 @@ EOF"
                     echo ""
                 fi
             done <<< "$WORKER_MS"
+
+            # ================================================================
+            # Step 4: Configure Descheduler (optional)
+            # ================================================================
+            #
+            # The Kube Descheduler evicts pods from underutilized nodes so they
+            # can be rescheduled onto more utilized nodes (when using
+            # HighNodeUtilization scheduler profile).
+            #
+            # Without the descheduler, existing pods stay where they are and
+            # the ClusterAutoscaler cannot scale down nodes with running pods.
+            #
+            # The LowNodeUtilization profile (confusing name!) evicts pods FROM
+            # nodes that are underutilized, allowing them to be rescheduled.
+            # ================================================================
+
+            if [[ "$DESCHEDULER" == "true" ]]; then
+                echo ""
+                echo "  # Step 4: Configure Kube Descheduler for pod rebalancing"
+                echo ""
+                echo "  # The descheduler evicts pods from underutilized nodes so they can be"
+                echo "  # rescheduled onto more utilized nodes (with HighNodeUtilization scheduler)."
+                echo ""
+
+                # Check if the operator is installed
+                DESCHED_SUB=$(oc get subscription -n openshift-kube-descheduler-operator cluster-kube-descheduler-operator 2>/dev/null || echo "")
+
+                if [[ -z "$DESCHED_SUB" ]]; then
+                    echo "  # Install Kube Descheduler Operator from OperatorHub"
+                    echo ""
+                    DESCHED_OP_CMD="oc apply -f - <<'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-kube-descheduler-operator
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-kube-descheduler-operator
+  namespace: openshift-kube-descheduler-operator
+spec:
+  targetNamespaces:
+    - openshift-kube-descheduler-operator
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-kube-descheduler-operator
+  namespace: openshift-kube-descheduler-operator
+spec:
+  channel: stable
+  name: cluster-kube-descheduler-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF"
+                    log_cmd "$DESCHED_OP_CMD"
+                    echo ""
+
+                    if [[ "$APPLY" == "true" ]]; then
+                        eval "$DESCHED_OP_CMD"
+                        log_success "Kube Descheduler Operator installed"
+                        echo ""
+                        log_info "Waiting for operator to be ready..."
+                        # Wait for the operator deployment to be available
+                        for i in {1..30}; do
+                            if oc get deployment -n openshift-kube-descheduler-operator descheduler-operator &>/dev/null; then
+                                oc rollout status deployment/descheduler-operator -n openshift-kube-descheduler-operator --timeout=60s && break
+                            fi
+                            sleep 5
+                        done
+                        log_success "Operator ready"
+                        echo ""
+                    fi
+                else
+                    log_success "Kube Descheduler Operator already installed"
+                    echo ""
+                fi
+
+                # Create KubeDescheduler CR with LowNodeUtilization profile
+                # LowNodeUtilization = evict pods FROM underutilized nodes
+                if [[ "$AGGRESSIVE" == "true" ]]; then
+                    DESCHED_INTERVAL="1m"  # Run every minute for aggressive mode
+                else
+                    DESCHED_INTERVAL="5m"  # Run every 5 minutes for balanced mode
+                fi
+
+                echo "  # Create KubeDescheduler with LowNodeUtilization profile"
+                echo "  # This evicts pods from nodes below the utilization thresholds"
+                echo ""
+
+                # Discover all HyperShift hosted cluster control plane namespaces
+                # These MUST be excluded to avoid destabilizing hosted clusters
+                HOSTED_CP_NAMESPACES=$(oc get namespaces -o name 2>/dev/null | grep "namespace/clusters-" | sed 's|namespace/||' | tr '\n' ',' | sed 's/,$//')
+                if [[ -n "$HOSTED_CP_NAMESPACES" ]]; then
+                    echo "  # Excluding hosted cluster control plane namespaces:"
+                    echo "  #   ${HOSTED_CP_NAMESPACES}"
+                    echo ""
+                fi
+
+                # Build the excluded namespaces YAML list
+                EXCLUDED_NS_YAML="        - clusters"
+                if [[ -n "$HOSTED_CP_NAMESPACES" ]]; then
+                    for ns in ${HOSTED_CP_NAMESPACES//,/ }; do
+                        EXCLUDED_NS_YAML="${EXCLUDED_NS_YAML}
+        - ${ns}"
+                    done
+                fi
+
+                DESCHED_CR_CMD="oc apply -f - <<EOF
+apiVersion: operator.openshift.io/v1
+kind: KubeDescheduler
+metadata:
+  name: cluster
+  namespace: openshift-kube-descheduler-operator
+spec:
+  # ============================================================================
+  # DESCHEDULING INTERVAL
+  # ============================================================================
+  # deschedulingIntervalSeconds: How often the descheduler runs (in seconds).
+  #   Default: 3600 (1 hour). For cost optimization, use shorter intervals.
+  #   Aggressive: 60 (every minute)
+  #   Balanced: 300 (every 5 minutes)
+  #   Conservative: 3600 (every hour)
+  #
+  # The descheduler only EVICTS pods - the scheduler handles rescheduling.
+  # Too frequent runs may cause excessive pod churn.
+  # ============================================================================
+  deschedulingIntervalSeconds: $(echo "$DESCHED_INTERVAL" | sed 's/m/*60/' | bc)
+
+  # ============================================================================
+  # PROFILES
+  # ============================================================================
+  # Profiles are predefined combinations of descheduling strategies.
+  # Each profile enables specific strategies for different use cases.
+  #
+  # AffinityAndTaints: Evicts pods violating affinity/anti-affinity rules.
+  #   Strategies: RemovePodsViolatingInterPodAntiAffinity,
+  #               RemovePodsViolatingNodeTaints,
+  #               RemovePodsViolatingNodeAffinity
+  #   Use when: Pod placement rules changed after scheduling
+  #
+  # TopologyAndDuplicates: Removes duplicate pods and topology violations.
+  #   Strategies: RemovePodsViolatingTopologySpreadConstraint,
+  #               RemoveDuplicates
+  #   Use when: You need pods spread across zones/nodes
+  #
+  # SoftTopologyAndDuplicates: Like TopologyAndDuplicates but for soft
+  #   (preferredDuringSchedulingIgnoredDuringExecution) constraints.
+  #   Use when: You use soft topology spread constraints
+  #
+  # LifecycleAndUtilization: THE KEY PROFILE FOR COST OPTIMIZATION.
+  #   Strategies: LowNodeUtilization - evicts pods from underutilized nodes
+  #               PodLifeTime - evicts pods older than 24 hours
+  #               RemovePodsHavingTooManyRestarts - evicts pods with 100+ restarts
+  #   Use when: You want to consolidate workloads onto fewer nodes
+  #
+  # LongLifecycle: Like LifecycleAndUtilization but without PodLifeTime.
+  #   Use when: You have long-running pods that shouldn't be evicted by age
+  #
+  # CompactAndScale: Experimental. Uses HighNodeUtilization strategy.
+  #   Evicts pods from nodes ABOVE target utilization to spread load.
+  #   Use when: You want to avoid hotspots (opposite of consolidation)
+  #
+  # EvictPodsWithLocalStorage: Allows evicting pods with emptyDir volumes.
+  #   By default, pods with local storage are NOT evicted (data loss risk).
+  #   Add this profile to enable eviction of emptyDir pods.
+  #
+  # EvictPodsWithPVC: Allows evicting pods with PersistentVolumeClaims.
+  #   By default, pods with PVCs are NOT evicted.
+  #   Add this profile if PVC pods should be evictable.
+  # ============================================================================
+  profiles:
+    # LongLifecycle: RECOMMENDED FOR COST OPTIMIZATION
+    # Similar to LifecycleAndUtilization but WITHOUT PodLifeTime eviction.
+    # LifecycleAndUtilization evicts pods older than 24 hours which can be
+    # disruptive. LongLifecycle provides the same LowNodeUtilization benefits
+    # without evicting long-running pods.
+    #
+    # Strategies enabled by LongLifecycle:
+    #   - LowNodeUtilization: evicts pods from underutilized nodes
+    #   - RemovePodsHavingTooManyRestarts: evicts pods with 100+ restarts
+    #   (NO PodLifeTime - pods are not evicted based on age)
+    - LongLifecycle
+    # Enable eviction of pods with emptyDir volumes (most workloads use these)
+    - EvictPodsWithLocalStorage
+
+  # ============================================================================
+  # PROFILE CUSTOMIZATIONS
+  # ============================================================================
+  # Fine-tune the behavior of strategies within profiles.
+  profileCustomizations:
+    # --------------------------------------------------------------------------
+    # NAMESPACE FILTERING
+    # --------------------------------------------------------------------------
+    # By default, the descheduler excludes: openshift-*, kube-system, hypershift
+    # We add HyperShift hosted cluster namespaces to avoid evicting control
+    # plane pods which would destabilize hosted clusters.
+    # NOTE: Glob patterns are NOT supported - must list each namespace explicitly
+    namespaces:
+      excluded:
+${EXCLUDED_NS_YAML}
+
+    # --------------------------------------------------------------------------
+    # LOW NODE UTILIZATION THRESHOLDS
+    # --------------------------------------------------------------------------
+    # devLowNodeUtilizationThresholds: Sets the underutilized/overutilized
+    # thresholds for the LowNodeUtilization strategy.
+    #
+    # The descheduler needs BOTH conditions to trigger eviction:
+    #   1. At least one node BELOW the underutilized threshold
+    #   2. At least one node ABOVE the overutilized threshold
+    #
+    # Available values (underutilized:overutilized):
+    #   Low:    10%:30% - More aggressive eviction, consolidates more
+    #   Medium: 20%:50% - Default balanced settings
+    #   High:   40%:70% - Conservative, only evicts very imbalanced nodes
+    #
+    # For cost optimization on HyperShift management clusters:
+    #   - Low (10%:30%) is often too conservative because DaemonSets alone
+    #     consume 10-15% of node resources
+    #   - Medium (20%:50%) works better - evicts from nodes below 20%
+    #   - High (40%:70%) is very aggressive, may cause excessive churn
+    #
+    # We use Medium to target nodes with only DaemonSets + minimal workloads.
+    # --------------------------------------------------------------------------
+    devLowNodeUtilizationThresholds: Medium
+
+  # ============================================================================
+  # MODE
+  # ============================================================================
+  # mode: Controls whether the descheduler actually evicts pods.
+  #   Automatic:  Actually evicts pods (production mode)
+  #   Predictive: Dry-run mode, only logs what would be evicted
+  #
+  # Use Predictive first to see what would happen, then switch to Automatic.
+  # ============================================================================
+  mode: Automatic
+EOF"
+                log_cmd "$DESCHED_CR_CMD"
+                echo ""
+                echo "  # Note: The descheduler will evict pods from underutilized nodes every ${DESCHED_INTERVAL}"
+                echo "  # Evicted pods will be rescheduled onto more utilized nodes (bin-packing)"
+                echo ""
+
+                if [[ "$APPLY" == "true" ]]; then
+                    eval "$DESCHED_CR_CMD"
+                    log_success "KubeDescheduler 'cluster' configured with LongLifecycle profile"
+                    echo ""
+                fi
+            fi
         fi
     fi
 
@@ -943,6 +1205,8 @@ EOF"
         echo " To apply, run:"
         cmd="./.github/scripts/hypershift/setup-autoscaling.sh"
         [[ -n "$MGMT_MAX" ]] && cmd="$cmd --mgmt-min $MGMT_MIN --mgmt-max $MGMT_MAX"
+        [[ "$AGGRESSIVE" == "true" ]] && cmd="$cmd --aggressive"
+        [[ "$DESCHEDULER" == "true" ]] && cmd="$cmd --descheduler"
         [[ -n "$NODEPOOL_MAX" ]] && cmd="$cmd --nodepool-max $NODEPOOL_MAX"
         cmd="$cmd --apply"
         echo ""
@@ -978,12 +1242,32 @@ EOF"
         fi
         echo ""
 
-        # Show NodePool autoscaling if configured
-        if [[ -n "$NODEPOOL_NAME" ]]; then
-            echo -e "${BOLD}NodePool Autoscaling:${NC}"
-            oc get nodepool "$NODEPOOL_NAME" -n "$NODEPOOL_NS" -o custom-columns='NAME:.metadata.name,MIN:.spec.autoScaling.min,MAX:.spec.autoScaling.max,CURRENT:.status.replicas' 2>/dev/null | while IFS= read -r line; do echo "  $line"; done
-            echo ""
+        # Show Descheduler status
+        echo -e "${BOLD}Descheduler:${NC}"
+        if oc get kubedescheduler cluster -n openshift-kube-descheduler-operator &>/dev/null; then
+            DESCHED_MODE=$(oc get kubedescheduler cluster -n openshift-kube-descheduler-operator -o jsonpath='{.spec.mode}' 2>/dev/null || echo "unknown")
+            DESCHED_INTERVAL=$(oc get kubedescheduler cluster -n openshift-kube-descheduler-operator -o jsonpath='{.spec.deschedulingIntervalSeconds}' 2>/dev/null || echo "unknown")
+            DESCHED_PROFILES=$(oc get kubedescheduler cluster -n openshift-kube-descheduler-operator -o jsonpath='{.spec.profiles[*]}' 2>/dev/null || echo "unknown")
+            DESCHED_THRESHOLD=$(oc get kubedescheduler cluster -n openshift-kube-descheduler-operator -o jsonpath='{.spec.profileCustomizations.devLowNodeUtilizationThresholds}' 2>/dev/null || echo "not set")
+            echo "  Mode: ${DESCHED_MODE}"
+            echo "  Interval: ${DESCHED_INTERVAL}s"
+            echo "  Profiles: ${DESCHED_PROFILES}"
+            echo "  LowNodeUtilization threshold: ${DESCHED_THRESHOLD}"
+        else
+            echo -e "  ${YELLOW}(not configured)${NC}"
+            echo "  Tip: Add --descheduler to enable pod rebalancing for existing workloads"
         fi
+        echo ""
+
+        # Show NodePool autoscaling status
+        echo -e "${BOLD}NodePool Autoscaling:${NC}"
+        NP_COUNT=$(oc get nodepools -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$NP_COUNT" -gt 0 ]]; then
+            oc get nodepools -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,REPLICAS:.spec.replicas,MIN:.spec.autoScaling.min,MAX:.spec.autoScaling.max,CURRENT:.status.replicas' 2>/dev/null | while IFS= read -r line; do echo "  $line"; done
+        else
+            echo -e "  ${YELLOW}(no NodePools found)${NC}"
+        fi
+        echo ""
 
         # Show current node count
         echo -e "${BOLD}Current Nodes:${NC}"
@@ -1060,21 +1344,28 @@ else
         echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --apply"
         echo ""
 
-        # Option 3: Autoscaling (aggressive)
-        echo -e "${BOLD}[3] ENABLE AUTOSCALING (AGGRESSIVE)${NC} — faster scale-down, cost-optimized"
+        # Option 3: Autoscaling (aggressive + descheduler)
+        echo -e "${BOLD}[3] ENABLE AUTOSCALING (AGGRESSIVE + DESCHEDULER)${NC} — maximum cost optimization"
         echo ""
-        echo "    # Preview with aggressive settings (faster scale-down timers):"
-        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive"
+        echo "    # Preview with aggressive settings + descheduler for pod rebalancing:"
+        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive --descheduler"
         echo ""
-        echo "    # Apply:"
-        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive --apply"
+        echo "    # Apply (required for existing pods to be consolidated):"
+        echo "    ./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-min 1 --mgmt-max 4 --aggressive --descheduler --apply"
+        echo ""
+        echo "    # The descheduler evicts pods from underutilized nodes so they"
+        echo "    # can be rescheduled onto more utilized nodes (bin-packing)."
         echo ""
 
         # Rollback
         echo -e "${BOLD}[4] ROLLBACK AUTOSCALING${NC} — remove autoscaler config"
         echo ""
+        echo "    # Remove ClusterAutoscaler and MachineAutoscalers:"
         echo "    oc delete clusterautoscaler default"
         echo "    oc delete machineautoscaler -n openshift-machine-api --all"
+        echo ""
+        echo "    # Remove Descheduler (optional):"
+        echo "    oc delete kubedescheduler cluster -n openshift-kube-descheduler-operator"
         echo ""
 
     else
