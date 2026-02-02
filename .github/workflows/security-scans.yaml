@@ -96,10 +96,10 @@ jobs:
           fail-on-severity: moderate
           # Block strong copyleft licenses that could affect project licensing
           deny-licenses: GPL-3.0, AGPL-3.0
-          # Allow packages where GitHub can't detect the license (common for PyPI packages)
-          allow-dependencies-without-license: true
+          # Note: Packages without detected license will warn but not fail (default behavior)
           # Post a comment on the PR showing what was scanned
-          comment-summary-in-pr: always
+          # Note: comment-summary-in-pr requires pull-requests:write which doesn't work on fork PRs
+          comment-summary-in-pr: on-failure
 
       - name: Show scan results
         if: always()
