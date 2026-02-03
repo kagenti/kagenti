@@ -63,7 +63,7 @@ Under each of these pillars are logical components that support the workload run
 │  │                  │ │                  │ │                  │ │                │  │
 │  │   Agents/Tools   │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
 │  │   Lifecycle &    │ │    & Policy      │ │   (AuthBridge*)  │ │(MLflow,Langflow│  │
-│  │   Discovery      │ │  (MCP Gateway*)  │ │                  │ │ Phoenix)       │  │
+│  │   Discovery      │ │  (MCP Gateway)   │ │                  │ │ Phoenix)       │  │
 │  │ (k8s workloads,  │ │                  │ │                  │ │                │  │
 │  │ labels,          │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
 │  │  AgentCard CRD*) │ │                  │ │                  │ │                │  │
