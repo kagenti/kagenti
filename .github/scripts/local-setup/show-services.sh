@@ -183,6 +183,33 @@ fi
 echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
 echo ""
 
+# Check if MLflow auth is enabled (mlflow-oauth-secret exists)
+if $CLI get secret -n kagenti-system mlflow-oauth-secret -o name &>/dev/null; then
+    MLFLOW_AUTH_ENABLED="true"
+else
+    MLFLOW_AUTH_ENABLED="false"
+fi
+
+if [ "$MLFLOW_AUTH_ENABLED" = "true" ]; then
+    echo "---------------------------------------------------------------------------"
+    echo -e "${MAGENTA}MLflow (LLM Traces & Experiments)${NC}"
+    echo "---------------------------------------------------------------------------"
+    MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+    echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
+    if [ "$ENV_TYPE" = "kind" ]; then
+        echo -e "${BLUE}URL:${NC}          http://mlflow.localtest.me:8080"
+    else
+        MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$MLFLOW_ROUTE" ]; then
+            echo -e "${BLUE}URL:${NC}          https://$MLFLOW_ROUTE"
+        else
+            echo -e "${BLUE}URL:${NC}          (no route found - mlflow may not be enabled)"
+        fi
+    fi
+    echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
+    echo ""
+fi
+
 # =============================================================================
 #                     OPENSHIFT CLUSTER ACCESS
 #        Services using OpenShift OAuth (use kubeadmin credentials)
@@ -268,23 +295,27 @@ fi
 echo -e "${BLUE}Auth:${NC}         None required"
 echo ""
 
-echo "---------------------------------------------------------------------------"
-echo -e "${MAGENTA}MLflow (LLM Traces & Experiments)${NC}"
-echo "---------------------------------------------------------------------------"
-MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}URL:${NC}          http://mlflow.localtest.me:8080"
-else
-    MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$MLFLOW_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$MLFLOW_ROUTE"
+# Only show MLflow in observability section if auth is NOT enabled
+# (If auth is enabled, it's shown in Keycloak section above)
+if [ "$MLFLOW_AUTH_ENABLED" != "true" ]; then
+    echo "---------------------------------------------------------------------------"
+    echo -e "${MAGENTA}MLflow (LLM Traces & Experiments)${NC}"
+    echo "---------------------------------------------------------------------------"
+    MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+    echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
+    if [ "$ENV_TYPE" = "kind" ]; then
+        echo -e "${BLUE}URL:${NC}          http://mlflow.localtest.me:8080"
     else
-        echo -e "${BLUE}URL:${NC}          (no route found - mlflow may not be enabled)"
+        MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$MLFLOW_ROUTE" ]; then
+            echo -e "${BLUE}URL:${NC}          https://$MLFLOW_ROUTE"
+        else
+            echo -e "${BLUE}URL:${NC}          (no route found - mlflow may not be enabled)"
+        fi
     fi
+    echo -e "${BLUE}Auth:${NC}         None required"
+    echo ""
 fi
-echo -e "${BLUE}Auth:${NC}         None required"
-echo ""
 
 # Kind environment - show Kiali here since no OpenShift OAuth
 if [ "$ENV_TYPE" = "kind" ]; then

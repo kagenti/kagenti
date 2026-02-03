@@ -166,6 +166,106 @@ def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
     return None
 
 
+def update_admin_user_profile(keycloak_admin: KeycloakAdmin) -> None:
+    """Update the Keycloak admin user's profile with required OIDC userinfo fields.
+
+    mlflow-oidc-auth requires users to have a display name in the OIDC userinfo
+    response. Keycloak constructs this from firstName, lastName, and email fields.
+    Without these, users get "No display name provided in OIDC userinfo" error.
+
+    Args:
+        keycloak_admin: Keycloak admin client
+    """
+    try:
+        # Get all users to find the current admin
+        users = keycloak_admin.get_users({"max": 100})
+
+        for user in users:
+            user_id = user.get("id")
+            username = user.get("username", "")
+
+            # Check if profile is incomplete (missing firstName, lastName, or email)
+            first_name = user.get("firstName", "")
+            last_name = user.get("lastName", "")
+            email = user.get("email", "")
+
+            if not first_name or not last_name or not email:
+                # Set default profile values if missing
+                update_payload = {}
+
+                if not first_name:
+                    update_payload["firstName"] = username.capitalize() or "Admin"
+                if not last_name:
+                    update_payload["lastName"] = "User"
+                if not email:
+                    update_payload["email"] = f"{username}@example.com"
+
+                if update_payload:
+                    keycloak_admin.update_user(user_id, update_payload)
+                    logger.info(
+                        f"Updated profile for user '{username}': {list(update_payload.keys())}"
+                    )
+
+    except Exception as e:
+        # Don't fail the job if profile update fails - it's a nice-to-have
+        logger.warning(f"Could not update admin user profiles: {type(e).__name__}")
+
+
+def setup_mlflow_group(
+    keycloak_admin: KeycloakAdmin, group_name: str = "mlflow"
+) -> None:
+    """Create MLflow authorization group and add all existing users to it.
+
+    mlflow-oidc-auth uses group-based authorization. Users must be in the
+    configured group (default: "mlflow") to access MLflow. Without this,
+    users get "User is not allowed to login" error.
+
+    Args:
+        keycloak_admin: Keycloak admin client
+        group_name: Name of the group to create (default: "mlflow")
+    """
+    try:
+        # Create the mlflow group if it doesn't exist
+        try:
+            keycloak_admin.create_group({"name": group_name})
+            logger.info(f"Created Keycloak group '{group_name}'")
+        except KeycloakPostError as e:
+            if "already exists" in str(e).lower():
+                logger.info(f"Keycloak group '{group_name}' already exists")
+            else:
+                raise
+
+        # Get the group ID
+        groups = keycloak_admin.get_groups(query={"search": group_name})
+        group_id = None
+        for group in groups:
+            if group.get("name") == group_name:
+                group_id = group.get("id")
+                break
+
+        if not group_id:
+            logger.warning(f"Could not find group '{group_name}' after creation")
+            return
+
+        # Add all existing users to the group
+        users = keycloak_admin.get_users({"max": 100})
+        for user in users:
+            user_id = user.get("id")
+            username = user.get("username", "")
+
+            # Check if user is already in the group
+            user_groups = keycloak_admin.get_user_groups(user_id)
+            already_member = any(g.get("name") == group_name for g in user_groups)
+
+            if not already_member:
+                keycloak_admin.group_user_add(user_id, group_id)
+                logger.info(f"Added user '{username}' to group '{group_name}'")
+
+    except Exception as e:
+        # Don't fail the job if group setup fails - it's a nice-to-have
+        logger.warning(f"Could not setup MLflow group: {type(e).__name__}: {e}")
+
+
 def register_confidential_client(
     keycloak_admin: KeycloakAdmin,
     client_id: str,
@@ -201,7 +301,7 @@ def register_confidential_client(
         "standardFlowEnabled": True,  # Authorization code flow
         "implicitFlowEnabled": False,
         "directAccessGrantsEnabled": False,
-        "serviceAccountsEnabled": False,
+        "serviceAccountsEnabled": True,  # Enable client credentials flow for OTEL collector
         "frontchannelLogout": True,
         "protocol": "openid-connect",
         "fullScopeAllowed": True,
@@ -245,6 +345,51 @@ def register_confidential_client(
         raise KeycloakOperationError(
             f"Could not obtain OIDC credential for confidential client {client_id}"
         )
+
+    # Add audience mapper to include client_id in token audience
+    # This is required for mlflow-oidc-auth to validate bearer tokens
+    try:
+        audience_mapper = {
+            "name": f"{client_id}-audience-mapper",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-audience-mapper",
+            "consentRequired": False,
+            "config": {
+                "included.client.audience": client_id,
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+            },
+        }
+        keycloak_admin.add_mapper_to_client(internal_client_id, audience_mapper)
+        logger.info("Added audience mapper for client '%s'", client_id)
+    except KeycloakPostError as e:
+        # Mapper may already exist
+        if "already exists" not in str(e).lower():
+            logger.warning("Could not add audience mapper: %s", type(e).__name__)
+
+    # Add groups mapper to include user groups in token
+    # This is required for mlflow-oidc-auth group-based authorization
+    try:
+        groups_mapper = {
+            "name": f"{client_id}-groups-mapper",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-group-membership-mapper",
+            "consentRequired": False,
+            "config": {
+                "full.path": "false",
+                "introspection.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "groups",
+            },
+        }
+        keycloak_admin.add_mapper_to_client(internal_client_id, groups_mapper)
+        logger.info("Added groups mapper for client '%s'", client_id)
+    except KeycloakPostError as e:
+        # Mapper may already exist
+        if "already exists" not in str(e).lower():
+            logger.warning("Could not add groups mapper: %s", type(e).__name__)
 
     logger.info("Successfully obtained OIDC credential for client '%s'", client_id)
     return internal_client_id, oidc_value
@@ -409,6 +554,14 @@ def main() -> None:
             verify=(verify_ssl if verify_ssl is not None else True),
         )
 
+        # Update admin user profile with required OIDC fields (firstName, lastName, email)
+        # This is required for mlflow-oidc-auth which needs a display name in userinfo
+        update_admin_user_profile(keycloak_admin)
+
+        # Create mlflow group and add all users to it for authorization
+        # This is required for mlflow-oidc-auth which uses group-based authorization
+        setup_mlflow_group(keycloak_admin)
+
         # MLflow OIDC redirect URI format for mlflow-oidc-auth plugin
         # See: https://pypi.org/project/mlflow-oidc-auth/
         redirect_uri = f"{mlflow_url}/callback"
@@ -427,6 +580,12 @@ def main() -> None:
             ".well-known/openid-configuration"
         )
 
+        # Construct OIDC token URL for OAuth2 client credentials flow
+        # Used by OTEL collector to authenticate to MLflow
+        oidc_token_url = (
+            f"{keycloak_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
+        )
+
         logger.info("MLflow OAuth Configuration:")
         logger.info(f"  CLIENT_ID: {client_id}")
         logger.info(f"  OIDC_DISCOVERY_URL: {oidc_discovery_url}")
@@ -442,6 +601,7 @@ def main() -> None:
             "OIDC_CLIENT_ID": client_id,
             "OIDC_CLIENT_SECRET": oidc_client_value,
             "OIDC_DISCOVERY_URL": oidc_discovery_url,
+            "OIDC_TOKEN_URL": oidc_token_url,
             "OIDC_REDIRECT_URI": redirect_uri,
             # Additional settings
             "OIDC_SCOPE": "openid email profile",
