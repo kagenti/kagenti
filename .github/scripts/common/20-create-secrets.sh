@@ -10,16 +10,17 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "20" "Creating secret values"
 
-SECRET_FILE="$REPO_ROOT/deployments/envs/.secret_values.yaml"
+# Use MAIN_REPO_ROOT for secrets (worktree-aware - secrets stay in main repo)
+SECRET_FILE="$MAIN_REPO_ROOT/deployments/envs/.secret_values.yaml"
 
-# Check if secrets already exist
+# Check if secrets already exist (in main repo)
 if [ -f "$SECRET_FILE" ]; then
-    log_info "Secrets file already exists, skipping"
+    log_info "Secrets file already exists at $SECRET_FILE, skipping"
     exit 0
 fi
 
-# Create directory
-mkdir -p "$REPO_ROOT/deployments/envs"
+# Create directory in main repo (not worktree)
+mkdir -p "$MAIN_REPO_ROOT/deployments/envs"
 
 if [ "$IS_CI" = true ]; then
     log_info "Creating CI test secrets"

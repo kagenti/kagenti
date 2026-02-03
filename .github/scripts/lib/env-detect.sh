@@ -11,6 +11,7 @@
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
     export IS_CI=true
     export REPO_ROOT="${GITHUB_WORKSPACE}"
+    export MAIN_REPO_ROOT="${GITHUB_WORKSPACE}"
     echo "Running in CI (GitHub Actions)"
 else
     export IS_CI=false
@@ -23,6 +24,17 @@ else
         export REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
     fi
     echo "Running locally"
+
+    # Detect if running from a git worktree - if so, find the main repo root
+    # This is needed because files like .secret_values.yaml may only exist in main repo
+    if [[ "$REPO_ROOT" == *"/.worktrees/"* ]]; then
+        # Extract path before .worktrees - this is the main repo root
+        export MAIN_REPO_ROOT="${REPO_ROOT%%/.worktrees/*}"
+        echo "Detected worktree: using MAIN_REPO_ROOT=$MAIN_REPO_ROOT for shared files"
+    else
+        # Not a worktree - main repo root is same as repo root
+        export MAIN_REPO_ROOT="$REPO_ROOT"
+    fi
 fi
 
 # Detect if running on macOS or Linux

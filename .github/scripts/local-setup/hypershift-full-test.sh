@@ -248,22 +248,51 @@ find_env_file() {
     fi
 }
 
+# Validate required environment variables
+validate_env_vars() {
+    local missing=()
+    [ -z "${AWS_ACCESS_KEY_ID:-}" ] && missing+=("AWS_ACCESS_KEY_ID")
+    [ -z "${AWS_SECRET_ACCESS_KEY:-}" ] && missing+=("AWS_SECRET_ACCESS_KEY")
+    [ -z "${AWS_REGION:-}" ] && missing+=("AWS_REGION")
+    # KUBECONFIG points to management cluster (set by .env file)
+    [ -z "${KUBECONFIG:-}" ] && missing+=("KUBECONFIG")
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        log_error "Missing required environment variables:"
+        for var in "${missing[@]}"; do
+            log_error "  - $var"
+        done
+        log_error ""
+        log_error "Either:"
+        log_error "  1. Run: source .env.${MANAGED_BY_TAG} before this script"
+        log_error "  2. Run setup-hypershift-ci-credentials.sh to create .env file"
+        exit 1
+    fi
+}
+
 if [ "$CI_MODE" = "true" ]; then
     # CI mode: credentials are passed via environment variables from GitHub secrets
     # Required: MANAGED_BY_TAG, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
     #           HCP_ROLE_NAME, KUBECONFIG (already set in GITHUB_ENV)
     log_step "Using CI credentials from environment"
+elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+    # Credentials already in environment (user ran: source .env.xxx before script)
+    log_step "Using pre-sourced credentials from environment"
+    validate_env_vars
 else
     # Local mode: load from .env file
     ENV_FILE=$(find_env_file)
     if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
-        log_error "No .env file found. Run setup-hypershift-ci-credentials.sh first."
-        log_error "Expected: .env.${MANAGED_BY_TAG} or .env.hypershift-ci"
+        log_error "No .env file found. Either:"
+        log_error "  1. Run: source .env.${MANAGED_BY_TAG} before this script"
+        log_error "  2. Run setup-hypershift-ci-credentials.sh to create .env file"
+        log_error "Expected: .env.${MANAGED_BY_TAG} or .env.hypershift-ci in repo root"
         exit 1
     fi
     # shellcheck source=/dev/null
     source "$ENV_FILE"
     log_step "Loaded credentials from $(basename "$ENV_FILE")"
+    validate_env_vars
     # Update MANAGED_BY_TAG from env file if it was set there
     MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 fi

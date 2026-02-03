@@ -38,12 +38,44 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PARENT_DIR="$(cd "$REPO_ROOT/.." && pwd)"
 
-# In CI, hypershift-automation is cloned to /tmp; locally it's a sibling directory
-if [ "$CI_MODE" = "true" ]; then
-    HYPERSHIFT_AUTOMATION_DIR="/tmp/hypershift-automation"
-else
-    HYPERSHIFT_AUTOMATION_DIR="$PARENT_DIR/hypershift-automation"
-fi
+# Find hypershift-automation directory
+# Searches: 1) env override, 2) CI location, 3) sibling of repo, 4) worktree-aware paths
+find_hypershift_automation() {
+    # Allow explicit override
+    if [ -n "${HYPERSHIFT_AUTOMATION_DIR:-}" ] && [ -d "$HYPERSHIFT_AUTOMATION_DIR" ]; then
+        echo "$HYPERSHIFT_AUTOMATION_DIR"
+        return
+    fi
+
+    # CI mode: cloned to /tmp
+    if [ "$CI_MODE" = "true" ] && [ -d "/tmp/hypershift-automation" ]; then
+        echo "/tmp/hypershift-automation"
+        return
+    fi
+
+    # Standard location: sibling of repo root
+    if [ -d "$PARENT_DIR/hypershift-automation" ]; then
+        echo "$PARENT_DIR/hypershift-automation"
+        return
+    fi
+
+    # Worktree-aware: if we're in .worktrees/, look higher up
+    # e.g., /path/kagenti_hypershift_ci/.worktrees/feature -> /path/hypershift-automation
+    if [[ "$REPO_ROOT" == *"/.worktrees/"* ]]; then
+        # Extract path before .worktrees
+        local base_path="${REPO_ROOT%%/.worktrees/*}"
+        local grandparent="$(cd "$base_path/.." && pwd)"
+        if [ -d "$grandparent/hypershift-automation" ]; then
+            echo "$grandparent/hypershift-automation"
+            return
+        fi
+    fi
+
+    # Not found
+    echo ""
+}
+
+HYPERSHIFT_AUTOMATION_DIR=$(find_hypershift_automation)
 
 # Sanitized username for default cluster suffix
 SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-10)
@@ -101,11 +133,16 @@ if [ "$CI_MODE" = "true" ]; then
     # Required: MANAGED_BY_TAG, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
     #           HCP_ROLE_NAME, KUBECONFIG (already set in GITHUB_ENV)
     log_success "Using CI credentials from environment"
+elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] && [ -n "${KUBECONFIG:-}" ]; then
+    # Credentials already in environment (user ran: source .env.xxx before script)
+    log_success "Using pre-sourced credentials from environment"
 else
     # Local mode: find and load .env file
     ENV_FILE=$(find_env_file)
     if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
-        echo "Error: No .env file found. Run setup-hypershift-ci-credentials.sh first." >&2
+        log_error "No .env file found. Either:"
+        log_error "  1. Run: source .env.${MANAGED_BY_TAG} before this script"
+        log_error "  2. Run setup-hypershift-ci-credentials.sh to create .env file"
         exit 1
     fi
     # shellcheck source=/dev/null

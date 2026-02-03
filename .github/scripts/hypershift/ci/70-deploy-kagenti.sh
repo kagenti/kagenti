@@ -7,6 +7,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../../.." && pwd)}"
 
+# Detect main repo root for worktree compatibility (secrets stay in main repo)
+if [[ "$REPO_ROOT" == *"/.worktrees/"* ]]; then
+    MAIN_REPO_ROOT="${REPO_ROOT%%/.worktrees/*}"
+else
+    MAIN_REPO_ROOT="$REPO_ROOT"
+fi
+
 echo "Deploying Kagenti to cluster..."
 
 # Set Python interpreter for Ansible (required in CI where .venv doesn't exist)
@@ -14,7 +21,8 @@ ANSIBLE_PYTHON_INTERPRETER=$(which python3)
 export ANSIBLE_PYTHON_INTERPRETER
 
 # Create minimal secrets file for CI with auto-generated values
-SECRETS_FILE="$REPO_ROOT/deployments/envs/.secret_values.yaml"
+# Use MAIN_REPO_ROOT so secrets are shared across worktrees
+SECRETS_FILE="$MAIN_REPO_ROOT/deployments/envs/.secret_values.yaml"
 if [ ! -f "$SECRETS_FILE" ]; then
     echo "Creating minimal secrets file for CI..."
     cat > "$SECRETS_FILE" << 'EOF'

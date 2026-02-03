@@ -42,9 +42,21 @@ if command -v helm >/dev/null 2>&1; then
 fi
 
 ENV_FILES=()
-# Default secrets file (relative to the script/playbook directory). If the
-# user passes --secret this value will be overridden.
-SECRET_FILE="$SCRIPT_DIR/../envs/.secret_values.yaml"
+# Default secrets file - check multiple locations for worktree compatibility.
+# Priority: 1) main repo (if worktree), 2) current script location
+# If the user passes --secret this value will be overridden.
+SECRET_FILE=""
+if [[ "$SCRIPT_DIR" == *"/.worktrees/"* ]]; then
+    # Running from a worktree - check main repo first
+    MAIN_REPO="${SCRIPT_DIR%%/.worktrees/*}"
+    if [[ -f "$MAIN_REPO/deployments/envs/.secret_values.yaml" ]]; then
+        SECRET_FILE="$MAIN_REPO/deployments/envs/.secret_values.yaml"
+    fi
+fi
+# Fallback to script directory location (normal case or if main repo doesn't have secrets)
+if [[ -z "$SECRET_FILE" ]]; then
+    SECRET_FILE="$SCRIPT_DIR/../envs/.secret_values.yaml"
+fi
 # Track whether the user explicitly provided --secret so we can fail early
 # on a missing file vs. warn+skip when the default is missing.
 SECRET_PROVIDED=false
