@@ -39,7 +39,7 @@ Under each of these pillars are logical components that support the workload run
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                     │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              KAGENTI UI                                       │  │
+│  │                              KAGENTI UI*                                      │  │
 │  │      (Dashboard: Deploy, Test, Monitor Agents & Tools + Backend API)          │  │
 │  └───────────────────────────────────────────────────────────────────────────────┘  │
 │                                        │                                            │
@@ -61,18 +61,18 @@ Under each of these pillars are logical components that support the workload run
 │  │  ORCHESTRATION   │ │                  │ │                  │ │                │  │
 │  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
 │  │                  │ │                  │ │                  │ │                │  │
-│  │ Agents/Tools     │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
-│  │   Lifecycle      │ │    & Policy      │ │   (AuthBridge)   │ │(MLflow,Langflow│  │
-│  │ (k8s workloads,  │ │  (MCP Gateway)   │ │                  │ │ Phoenix)       |  |
-│  │labels, AgentCard)│ │                  │ │                  │ │                │  │
-│  │                  │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
-│  │                  │ │                  │ │                  │ │                │  │
-│  │  Container       │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
-│  │   Builds         │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
-│  │  (Shipwright)    │ │                  │ │                  │ │   (Kiali)│     │  |
-│  │                  │ ├──────────────────┤ ├──────────────────┤ │                │  │
-│  │                  │ │                  │ │                  │ │                │  │
-│  │                  │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
+│  │   Agents/Tools   │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
+│  │   Lifecycle &    │ │    & Policy      │ │   (AuthBridge*)  │ │(MLflow,Langflow│  │
+│  │   Discovery      │ │  (MCP Gateway*)  │ │                  │ │ Phoenix)       |  |
+│  │ (k8s workloads,  │ │                  │ │                  │ │                │  │
+│  │ labels,          │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
+│  │  AgentCard CRD*) │ │                  │ │                  │ │                │  │
+│  │                  │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
+│  │                  │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
+│  │                  │ │                  │ │                  │ │   (Kiali)│     │  |
+│  │   Containers     │ ├──────────────────┤ ├──────────────────┤ │                │  │
+│  │     Builds       │ │                  │ │                  │ │                │  │
+│  │  (Shipwright)    │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
 │  │                  │ │ (Gateway API)    │ │ (SPIFFE/SPIRE)   │ │                │  │
 │  │                  │ │                  │ │                  │ │                │  │
 │  └──────────────────┘ └──────────────────┘ └──────────────────┘ └────────────────┘  │
@@ -80,6 +80,7 @@ Under each of these pillars are logical components that support the workload run
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                               KUBERNETES / OPENSHIFT                                │
 └─────────────────────────────────────────────────────────────────────────────────────┘
+* Built by Kagenti 
 ```
 
 ## Core Components
