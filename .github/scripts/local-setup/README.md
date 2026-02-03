@@ -59,15 +59,25 @@ kubectl port-forward -n kagenti-system svc/http-istio 8080:80
 
 **Prerequisites**: oc CLI, OpenShift cluster-admin access
 
+No AWS credentials or `.env` file needed - just `oc login` and run.
+
 ```bash
 # ┌─────────────────────────────────────────────────────────────────────────────┐
-# │ OPTION A: Use HyperShift runner (skipping cluster ops)                      │
+# │ OPTION A: Unified test runner (recommended)                                 │
 # └─────────────────────────────────────────────────────────────────────────────┘
 oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 
-# Full kagenti test cycle (no cluster create/destroy)
-./.github/scripts/local-setup/hypershift-full-test.sh \
-    --skip-cluster-create --skip-cluster-destroy
+# Full kagenti test cycle on any OpenShift cluster
+./.github/scripts/local-setup/openshift-full-test.sh
+
+# Iterate on existing deployment (skip reinstall)
+./.github/scripts/local-setup/openshift-full-test.sh --skip-kagenti-install
+
+# Run only tests
+./.github/scripts/local-setup/openshift-full-test.sh --include-test
+
+# Show help
+./.github/scripts/local-setup/openshift-full-test.sh --help
 
 # ┌─────────────────────────────────────────────────────────────────────────────┐
 # │ OPTION B: Step-by-step (manual control)                                     │
@@ -88,6 +98,9 @@ export AGENT_URL="https://$(oc get route -n team1 weather-service -o jsonpath='{
 export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
 ```
+
+> **Note**: `openshift-full-test.sh` is a thin wrapper around `hypershift-full-test.sh`
+> with `--skip-cluster-create --skip-cluster-destroy` enabled by default.
 
 ---
 
@@ -255,6 +268,62 @@ export KUBECONFIG=~/.kube/config
 oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 ```
 
+### HyperShift: Two Kubeconfigs
+
+HyperShift workflows use **two separate kubeconfigs** - don't mix them up:
+
+| Kubeconfig | Purpose | Location |
+|------------|---------|----------|
+| **Management cluster** | Create/destroy hosted clusters | Set via `KUBECONFIG` in `.env.kagenti-hypershift-custom` |
+| **Hosted cluster** | Deploy Kagenti, run tests | `~/clusters/hcp/<cluster-name>/auth/kubeconfig` |
+
+The full test script handles this automatically:
+- **Phases 1 & 6** (create/destroy): Uses management cluster kubeconfig
+- **Phases 2-5** (install/agents/test): Uses hosted cluster kubeconfig
+
+#### Simplified Usage: Middle Phases Only
+
+When only running middle phases (install/agents/test), you don't need to source the full `.env` file.
+Just set `HOSTED_KUBECONFIG` and skip create/destroy:
+
+```bash
+# Run only middle phases on an existing cluster
+export HOSTED_KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
+
+# Or using whitelist mode (only specified phases run)
+export HOSTED_KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
+./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install --include-agents --include-test
+```
+
+#### Full Usage: With Cluster Create/Destroy
+
+When creating or destroying clusters, you need the full credentials:
+
+```bash
+# Full workflow with cluster operations
+source .env.kagenti-hypershift-custom
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
+
+# Later, destroy the cluster
+source .env.kagenti-hypershift-custom
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
+```
+
+#### Manual Script Usage
+
+When running individual scripts manually, ensure you're using the correct kubeconfig:
+
+```bash
+# For cluster operations (create/destroy)
+source .env.kagenti-hypershift-custom
+# KUBECONFIG now points to management cluster
+
+# For Kagenti operations (install/test)
+export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
+kubectl get pods -n kagenti-system
+```
+
 Then run debugging commands:
 
 ```bash
@@ -321,7 +390,8 @@ source .env.kagenti-hypershift-custom && ./.github/scripts/local-setup/show-serv
 | Script | Purpose |
 |--------|---------|
 | `kind-full-test.sh` | Unified Kind test runner (same interface as HyperShift) |
-| `hypershift-full-test.sh` | Unified HyperShift test runner with phase control |
+| `openshift-full-test.sh` | OpenShift test runner (no cluster create/destroy) |
+| `hypershift-full-test.sh` | HyperShift test runner with full phase control |
 | `show-services.sh` | Display all services, URLs, and credentials (auto-detects Kind/OpenShift/HyperShift) |
 
 ### Kind Scripts (`.github/scripts/kind/`)
