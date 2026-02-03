@@ -29,7 +29,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415  # v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede  # v4
 
       - name: Install Helm
         uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a  # v4
