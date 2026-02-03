@@ -828,9 +828,10 @@ class TestGenAITracesInMLflow:
             print_tree(tree["root_spans"][0])
 
         if tree["total_spans"] == 0:
-            pytest.skip(
+            pytest.fail(
                 "Could not retrieve span details for trace. "
-                "This may be due to API rate limiting or auth issues."
+                "This may be due to API rate limiting or auth issues. "
+                "Fix the auth/API issue - do not skip this test."
             )
 
         assert len(tree["root_spans"]) > 0, "Trace has no root spans"
@@ -900,10 +901,10 @@ class TestGenAITracesInMLflow:
             # If we can't find spans, it may be due to rate limiting after prior tests
             # The test_genai_traces_exist already verified GenAI traces exist
             if not spans:
-                pytest.skip(
+                pytest.fail(
                     "Could not retrieve span details for trace. "
-                    "This may be due to API rate limiting. "
-                    "GenAI traces were verified in test_genai_traces_exist."
+                    "This may be due to API rate limiting or auth issues. "
+                    "Fix the auth/API issue - do not skip this test."
                 )
             else:
                 # Spans exist but none match - print them for debugging
@@ -1141,106 +1142,53 @@ class TestSessionTracking:
         assert len(all_traces) > 0
         print(f"\nSUCCESS: {len(all_traces)} traces available for analysis")
 
-    def test_analyze_session_patterns_in_traces(
+    def test_traces_have_genai_conversation_id(
         self, mlflow_url: str, mlflow_configured: bool
     ):
         """
-        Analyze existing traces for session/context grouping patterns.
+        Assert traces have gen_ai.conversation.id for session tracking.
 
-        Looks for:
-        - a2a.context_id: A2A conversation context
-        - session_id: User session identifier
-        - client_request_id: Per-request identifier
+        This is the standard GenAI semantic convention attribute that enables
+        MLflow to group traces by conversation/session.
         """
         all_traces = self._get_cached_traces()
         if not all_traces:
             pytest.skip("No traces available")
 
         print(f"\n{'=' * 60}")
-        print("Session Pattern Analysis")
+        print("GenAI Conversation ID Check")
         print(f"{'=' * 60}")
 
-        # Analyze trace tags for session patterns
-        session_patterns = {}
-        traces_with_session = 0
+        # Check span attributes for gen_ai.conversation.id
+        traces_with_conversation_id = 0
+        conversation_ids_found = set()
 
-        for trace in all_traces[:20]:
-            trace_info = trace.info if hasattr(trace, "info") else trace
-            tags = getattr(trace_info, "tags", {}) or {}
-            client_request_id = getattr(trace_info, "client_request_id", None)
-
-            has_session = False
-
-            # Check for client_request_id (always present)
-            if client_request_id:
-                has_session = True
-                if "client_request_id" not in session_patterns:
-                    session_patterns["client_request_id"] = 0
-                session_patterns["client_request_id"] += 1
-
-            # Check tag patterns
-            for key in tags:
-                key_lower = key.lower()
-                if any(
-                    p in key_lower
-                    for p in ["session", "context", "conversation", "task"]
-                ):
-                    has_session = True
-                    if key not in session_patterns:
-                        session_patterns[key] = 0
-                    session_patterns[key] += 1
-
-            if has_session:
-                traces_with_session += 1
-
-        # Also check span attributes for session info (context_id is set as span attribute)
-        span_session_patterns = {}
-        for trace in all_traces[:5]:  # Check fewer traces due to API calls
+        for trace in all_traces[:10]:  # Check first 10 traces
             spans = get_trace_span_details(trace)
             for span in spans:
                 attrs = span.get("attributes", {})
-                for key in attrs:
-                    key_lower = key.lower()
-                    if any(
-                        p in key_lower
-                        for p in ["context_id", "session", "task_id", "user_input"]
-                    ):
-                        if key not in span_session_patterns:
-                            span_session_patterns[key] = 0
-                        span_session_patterns[key] += 1
+                conversation_id = attrs.get("gen_ai.conversation.id")
+                if conversation_id:
+                    traces_with_conversation_id += 1
+                    conversation_ids_found.add(conversation_id)
+                    break  # Found in this trace, move to next
 
-        print(f"Traces analyzed: {min(20, len(all_traces))}")
-        print(f"Traces with session info (tags): {traces_with_session}")
-        print(f"\nSession-related tag patterns found:")
+        print(f"Traces checked: {min(10, len(all_traces))}")
+        print(f"Traces with gen_ai.conversation.id: {traces_with_conversation_id}")
+        print(f"Unique conversation IDs: {len(conversation_ids_found)}")
 
-        if session_patterns:
-            for key, count in sorted(session_patterns.items(), key=lambda x: -x[1]):
-                print(f"  - {key}: {count} traces")
-        else:
-            print("  (No session-related tags found)")
+        if conversation_ids_found:
+            print(f"Sample IDs: {list(conversation_ids_found)[:3]}")
 
-        print(f"\nSession-related span attribute patterns found:")
-        if span_session_patterns:
-            for key, count in sorted(
-                span_session_patterns.items(), key=lambda x: -x[1]
-            ):
-                print(f"  - {key}: {count} spans")
-        else:
-            print("  (No session-related span attributes found)")
+        # ASSERT: At least one trace must have gen_ai.conversation.id
+        assert traces_with_conversation_id > 0, (
+            "No traces found with gen_ai.conversation.id attribute. "
+            "Weather agent should set this attribute for MLflow session tracking. "
+            "Ensure the weather agent is using GenAI semantic conventions."
+        )
 
-        # Show recommendations
-        print("\nSession grouping recommendations:")
-        if (
-            "a2a.context_id" not in session_patterns
-            and "a2a.context_id" not in span_session_patterns
-        ):
-            print("  - Add a2a.context_id for conversation grouping")
-        if "session_id" not in session_patterns:
-            print("  - Add session_id for user session tracking")
-
-        # This is informational, not a hard failure
         print(
-            f"\nSUCCESS: Analyzed {min(20, len(all_traces))} traces for session patterns"
+            f"\nSUCCESS: Found {traces_with_conversation_id} traces with conversation ID"
         )
 
     def test_trace_grouping_by_service(self, mlflow_url: str, mlflow_configured: bool):
