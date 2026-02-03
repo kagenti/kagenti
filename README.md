@@ -70,7 +70,7 @@ Under each of these pillars are logical components that support the workload run
 │  │                  │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
 │  │                  │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
 │  │                  │ │                  │ │                  │ │   (Kiali)│     │  │
-│  │   Containers     │ ├──────────────────┤ ├──────────────────┤ │                │  │
+│  │   Container      │ ├──────────────────┤ ├──────────────────┤ │                │  │
 │  │     Builds       │ │                  │ │                  │ │                │  │
 │  │  (Shipwright)    │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
 │  │                  │ │ (Gateway API)    │ │ (SPIFFE/SPIRE)   │ │                │  │
