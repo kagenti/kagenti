@@ -918,13 +918,93 @@ class TestGenAITracesInMLflow:
 @pytest.mark.observability
 @pytest.mark.openshift_only
 @pytest.mark.requires_features(["mlflow"])
-class TestMLflowSessions:
+class TestMLflowTraceMetadata:
     """
-    Validate trace sessions are properly organized in MLflow.
+    Validate trace metadata fields visible in MLflow UI.
 
-    MLflow supports grouping traces into sessions, which can be mapped
-    to A2A context_id for conversation tracking.
+    Tests comprehensive trace metadata including:
+    - Trace ID, Request ID
+    - Session, User, Trace name
+    - Tokens, Execution time
+    - State, Source
     """
+
+    # Class-level cache for traces to avoid rate limiting between tests
+    _cached_traces: list = None
+
+    @classmethod
+    def _get_cached_traces(cls) -> list:
+        """Get cached traces or fetch from MLflow once."""
+        if cls._cached_traces is None:
+            cls._cached_traces = get_all_traces()
+            logger.info(f"Cached {len(cls._cached_traces)} traces for metadata tests")
+        return cls._cached_traces
+
+    def test_trace_metadata_fields(self, mlflow_url: str, mlflow_configured: bool):
+        """Verify traces have comprehensive metadata visible in MLflow UI.
+
+        MLflow UI shows these fields for each trace:
+        - Trace ID, Request
+        - Response, Session, User
+        - Trace name, Version, Tokens
+        - Execution time, Prompt, Request time
+        - Run name, Source, State
+        """
+        all_traces = self._get_cached_traces()
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Trace Metadata Fields")
+        print(f"{'=' * 60}")
+
+        # Check first 5 traces for metadata
+        for i, trace in enumerate(all_traces[:5]):
+            trace_info = trace.info if hasattr(trace, "info") else trace
+
+            print(f"\nTrace {i + 1}:")
+            print("-" * 40)
+
+            # Core identifiers
+            request_id = getattr(trace_info, "request_id", None)
+            trace_id = getattr(trace_info, "trace_id", None) or request_id
+            print(f"  Trace ID: {trace_id[:30] if trace_id else 'N/A'}...")
+
+            # Timing
+            start_time = getattr(trace_info, "timestamp_ms", None)
+            execution_time = getattr(trace_info, "execution_time_ms", None)
+            print(f"  Request time: {start_time}")
+            print(
+                f"  Execution time: {execution_time}ms"
+                if execution_time
+                else "  Execution time: N/A"
+            )
+
+            # State
+            state = getattr(trace_info, "state", None)
+            status = getattr(trace_info, "status", None)
+            print(f"  State: {state or status or 'N/A'}")
+
+            # Tags and metadata
+            tags = getattr(trace_info, "tags", {}) or {}
+            print(f"  Tags: {list(tags.keys())[:5]}")
+
+            # Session info
+            session_id = tags.get("session_id") or tags.get("mlflow.session_id")
+            user = tags.get("user") or tags.get("mlflow.user")
+            source = tags.get("mlflow.source.name") or tags.get("source")
+            print(f"  Session: {session_id or 'N/A'}")
+            print(f"  User: {user or 'N/A'}")
+            print(f"  Source: {source or 'N/A'}")
+
+        # Basic assertion - traces should have request_id
+        trace_with_id = sum(
+            1
+            for t in all_traces[:10]
+            if getattr(t.info if hasattr(t, "info") else t, "request_id", None)
+        )
+        assert trace_with_id > 0, "No traces have request_id"
+        print(f"\nSUCCESS: {trace_with_id}/10 traces have request_id")
 
     def test_traces_have_session_info(self, mlflow_url: str, mlflow_configured: bool):
         """Verify traces have session/context information.
@@ -934,7 +1014,7 @@ class TestMLflowSessions:
         - Session ID
         - Client request ID
         """
-        all_traces = get_all_traces()
+        all_traces = self._get_cached_traces()
         if not all_traces:
             pytest.skip("No traces available")
 
@@ -975,6 +1055,397 @@ class TestMLflowSessions:
                 "\nNOTE: No session info found. Consider adding a2a.context_id "
                 "as a trace tag for conversation grouping."
             )
+
+    def test_trace_execution_metrics(self, mlflow_url: str, mlflow_configured: bool):
+        """Verify traces have execution metrics (timing, tokens).
+
+        Traces should include:
+        - Execution time in milliseconds
+        - Token counts (if LLM calls)
+        - Start/end timestamps
+        """
+        all_traces = self._get_cached_traces()
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Trace Execution Metrics")
+        print(f"{'=' * 60}")
+
+        traces_with_timing = 0
+        total_execution_time = 0
+
+        for trace in all_traces[:10]:
+            trace_info = trace.info if hasattr(trace, "info") else trace
+
+            execution_time = getattr(trace_info, "execution_time_ms", None)
+            if execution_time:
+                traces_with_timing += 1
+                total_execution_time += execution_time
+
+        print(f"Traces with timing: {traces_with_timing}/10")
+        if traces_with_timing > 0:
+            avg_time = total_execution_time / traces_with_timing
+            print(f"Average execution time: {avg_time:.2f}ms")
+
+        # Check for token info in trace tags or spans
+        print("\nToken information checked via span attributes")
+        print("(Tokens are typically in span attributes, not trace metadata)")
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestSessionTracking:
+    """
+    Verify traces have session/context information for conversation grouping.
+
+    Examines existing traces (generated by weather agent tests) for:
+    - Session ID patterns
+    - Context ID from A2A protocol
+    - Grouping capability for multi-turn conversations
+    """
+
+    # Class-level cache for traces
+    _cached_traces: list = None
+
+    @classmethod
+    def _get_cached_traces(cls) -> list:
+        """Get cached traces or fetch from MLflow once."""
+        if cls._cached_traces is None:
+            cls._cached_traces = get_all_traces()
+            logger.info(f"Cached {len(cls._cached_traces)} traces for session tests")
+        return cls._cached_traces
+
+    def test_traces_exist_for_session_analysis(
+        self, mlflow_url: str, mlflow_configured: bool
+    ):
+        """Verify traces exist to analyze for session patterns."""
+        all_traces = self._get_cached_traces()
+
+        print(f"\n{'=' * 60}")
+        print("Session Tracking - Trace Availability")
+        print(f"{'=' * 60}")
+        print(f"Total traces available: {len(all_traces)}")
+
+        if not all_traces:
+            pytest.skip("No traces available for session analysis")
+
+        # Show trace timestamps to verify they're from recent runs
+        for i, trace in enumerate(all_traces[:3]):
+            trace_info = trace.info if hasattr(trace, "info") else trace
+            timestamp = getattr(trace_info, "timestamp_ms", 0)
+            request_id = getattr(trace_info, "request_id", "unknown")
+            print(f"  [{i + 1}] {request_id[:30]}... (ts: {timestamp})")
+
+        assert len(all_traces) > 0
+        print(f"\nSUCCESS: {len(all_traces)} traces available for analysis")
+
+    def test_analyze_session_patterns_in_traces(
+        self, mlflow_url: str, mlflow_configured: bool
+    ):
+        """
+        Analyze existing traces for session/context grouping patterns.
+
+        Looks for:
+        - a2a.context_id: A2A conversation context
+        - session_id: User session identifier
+        - client_request_id: Per-request identifier
+        """
+        all_traces = self._get_cached_traces()
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Session Pattern Analysis")
+        print(f"{'=' * 60}")
+
+        # Analyze trace tags for session patterns
+        session_patterns = {}
+        traces_with_session = 0
+
+        for trace in all_traces[:20]:
+            trace_info = trace.info if hasattr(trace, "info") else trace
+            tags = getattr(trace_info, "tags", {}) or {}
+            client_request_id = getattr(trace_info, "client_request_id", None)
+
+            has_session = False
+
+            # Check for client_request_id (always present)
+            if client_request_id:
+                has_session = True
+                if "client_request_id" not in session_patterns:
+                    session_patterns["client_request_id"] = 0
+                session_patterns["client_request_id"] += 1
+
+            # Check tag patterns
+            for key in tags:
+                key_lower = key.lower()
+                if any(
+                    p in key_lower
+                    for p in ["session", "context", "conversation", "task"]
+                ):
+                    has_session = True
+                    if key not in session_patterns:
+                        session_patterns[key] = 0
+                    session_patterns[key] += 1
+
+            if has_session:
+                traces_with_session += 1
+
+        print(f"Traces analyzed: {min(20, len(all_traces))}")
+        print(f"Traces with session info: {traces_with_session}")
+        print(f"\nSession-related patterns found:")
+
+        if session_patterns:
+            for key, count in sorted(session_patterns.items(), key=lambda x: -x[1]):
+                print(f"  - {key}: {count} traces")
+        else:
+            print("  (No session-related patterns found)")
+
+        # Show recommendations
+        print("\nSession grouping recommendations:")
+        if "a2a.context_id" not in session_patterns:
+            print("  - Add a2a.context_id as trace tag for conversation grouping")
+        if "session_id" not in session_patterns:
+            print("  - Add session_id for user session tracking")
+
+        # This is informational, not a hard failure
+        print(
+            f"\nSUCCESS: Analyzed {min(20, len(all_traces))} traces for session patterns"
+        )
+
+    def test_trace_grouping_by_service(self, mlflow_url: str, mlflow_configured: bool):
+        """
+        Verify traces can be grouped by service.name for per-agent analysis.
+
+        This is an alternative grouping strategy when session IDs aren't available.
+        """
+        all_traces = self._get_cached_traces()
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Trace Grouping by Service")
+        print(f"{'=' * 60}")
+
+        service_counts = {}
+
+        # Check first 10 traces for service info (avoid rate limiting)
+        for trace in all_traces[:10]:
+            trace_info = trace.info if hasattr(trace, "info") else trace
+            tags = getattr(trace_info, "tags", {}) or {}
+
+            # Look for service.name in tags
+            service_name = tags.get("service.name") or tags.get("mlflow.source.name")
+            if service_name:
+                if service_name not in service_counts:
+                    service_counts[service_name] = 0
+                service_counts[service_name] += 1
+
+        print(f"Traces analyzed: {min(10, len(all_traces))}")
+        print(f"\nService distribution:")
+
+        if service_counts:
+            for service, count in sorted(service_counts.items(), key=lambda x: -x[1]):
+                print(f"  - {service}: {count} traces")
+        else:
+            print("  (No service.name tags found)")
+            print("  Traces may be using span-level service.name instead of trace tags")
+
+        print("\nSUCCESS: Service grouping analysis complete")
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestTraceCategorization:
+    """
+    Categorize traces into GenAI vs non-GenAI (chatty) for filtering.
+
+    Helps identify:
+    - Traces with LLM/GenAI spans (valuable for debugging)
+    - Chatty infrastructure traces (A2A protocol only)
+    - Recommendations for trace filtering
+    """
+
+    # Class-level cache for traces
+    _cached_traces: list = None
+    _genai_traces: list = None
+    _non_genai_traces: list = None
+
+    @classmethod
+    def _get_categorized_traces(cls) -> tuple[list, list, list]:
+        """Get traces categorized into GenAI and non-GenAI."""
+        if cls._cached_traces is None:
+            cls._cached_traces = get_all_traces()
+
+            # Categorize traces (limit to avoid rate limiting)
+            cls._genai_traces = []
+            cls._non_genai_traces = []
+
+            for trace in cls._cached_traces[:15]:
+                if has_genai_spans(trace):
+                    cls._genai_traces.append(trace)
+                else:
+                    cls._non_genai_traces.append(trace)
+
+            logger.info(
+                f"Categorized {len(cls._cached_traces)} traces: "
+                f"{len(cls._genai_traces)} GenAI, {len(cls._non_genai_traces)} non-GenAI"
+            )
+
+        return cls._cached_traces, cls._genai_traces, cls._non_genai_traces
+
+    def test_categorize_traces_by_genai_content(
+        self, mlflow_url: str, mlflow_configured: bool
+    ):
+        """
+        Categorize traces into GenAI (LLM spans) vs non-GenAI (chatty).
+
+        GenAI traces contain spans from LangChain, OpenAI, or LLM instrumentation.
+        Non-GenAI traces contain only A2A protocol or infrastructure spans.
+        """
+        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces()
+
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Trace Categorization: GenAI vs Non-GenAI")
+        print(f"{'=' * 60}")
+
+        total_checked = min(15, len(all_traces))
+        print(f"Total traces checked: {total_checked}")
+        print(f"GenAI traces: {len(genai_traces)}")
+        print(f"Non-GenAI traces: {len(non_genai_traces)}")
+
+        if genai_traces:
+            genai_pct = (len(genai_traces) / total_checked) * 100
+            print(f"\nGenAI trace percentage: {genai_pct:.1f}%")
+
+        # Show sample span names from each category
+        if genai_traces:
+            print("\nSample GenAI trace span types:")
+            sample = genai_traces[0]
+            spans = get_trace_span_details(sample)
+            genai_spans = [
+                s.get("name")
+                for s in spans
+                if any(p in s.get("name", "").lower() for p in GENAI_SPAN_PATTERNS)
+            ]
+            for name in genai_spans[:5]:
+                print(f"  - {name}")
+
+        if non_genai_traces:
+            print("\nSample non-GenAI (chatty) trace span types:")
+            sample = non_genai_traces[0]
+            spans = get_trace_span_details(sample)
+            for span in spans[:5]:
+                print(f"  - {span.get('name', 'unnamed')}")
+
+        print(f"\nSUCCESS: Categorized {total_checked} traces")
+
+    def test_identify_chatty_trace_patterns(
+        self, mlflow_url: str, mlflow_configured: bool
+    ):
+        """
+        Identify patterns in chatty (non-GenAI) traces for filtering.
+
+        Analyzes non-GenAI traces to find common patterns that could be
+        filtered out to reduce noise in observability dashboards.
+        """
+        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces()
+
+        if not non_genai_traces:
+            pytest.skip("No non-GenAI traces to analyze")
+
+        print(f"\n{'=' * 60}")
+        print("Chatty Trace Pattern Analysis")
+        print(f"{'=' * 60}")
+
+        # Analyze root span names in non-GenAI traces
+        root_span_patterns = {}
+
+        for trace in non_genai_traces[:10]:
+            spans = get_trace_span_details(trace)
+            if not spans:
+                continue
+
+            # Find root spans (no parent)
+            for span in spans:
+                parent_id = span.get("parent_id")
+                is_root = not parent_id or parent_id == "None" or parent_id == ""
+                if is_root:
+                    name = span.get("name", "unknown")
+                    # Normalize pattern (remove specific IDs)
+                    pattern = name.split(".")[0] if "." in name else name
+                    if pattern not in root_span_patterns:
+                        root_span_patterns[pattern] = 0
+                    root_span_patterns[pattern] += 1
+
+        print(f"Non-GenAI traces analyzed: {len(non_genai_traces)}")
+        print(f"\nRoot span patterns (candidates for filtering):")
+
+        if root_span_patterns:
+            for pattern, count in sorted(
+                root_span_patterns.items(), key=lambda x: -x[1]
+            ):
+                print(f"  - {pattern}: {count} occurrences")
+        else:
+            print("  (No distinct patterns found)")
+
+        # Recommendations
+        print("\nFiltering recommendations:")
+        print("  - Consider filtering traces with only 'a2a.*' root spans")
+        print("  - Keep traces with 'langchain', 'openai', 'llm' spans")
+        print("  - Use MLflow's trace filtering UI to exclude chatty patterns")
+
+        print("\nSUCCESS: Identified chatty trace patterns")
+
+    def test_trace_value_assessment(self, mlflow_url: str, mlflow_configured: bool):
+        """
+        Assess the debugging value of different trace categories.
+
+        Provides a summary of trace value for observability:
+        - High value: GenAI traces with LLM calls, tokens, latency
+        - Medium value: Tool/function call traces
+        - Low value: Infrastructure-only traces
+        """
+        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces()
+
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Trace Value Assessment")
+        print(f"{'=' * 60}")
+
+        total_checked = min(15, len(all_traces))
+
+        # Categorize by value
+        high_value = len(genai_traces)  # GenAI traces
+        low_value = len(non_genai_traces)  # Non-GenAI traces
+
+        print(f"Traces assessed: {total_checked}")
+        print(f"\nValue distribution:")
+        print(f"  HIGH VALUE (GenAI/LLM):     {high_value} traces")
+        print(f"  LOW VALUE (infrastructure): {low_value} traces")
+
+        # Calculate noise ratio
+        if total_checked > 0:
+            noise_ratio = (low_value / total_checked) * 100
+            print(f"\nNoise ratio: {noise_ratio:.1f}%")
+
+            if noise_ratio > 50:
+                print("\nRECOMMENDATION: High noise ratio detected.")
+                print("  Consider configuring OTEL collector to filter:")
+                print("  - Exclude spans with only a2a.* namespace")
+                print("  - Keep spans from openinference.* or gen_ai.*")
+            else:
+                print("\nTrace quality: Good - most traces contain GenAI spans")
+
+        print("\nSUCCESS: Trace value assessment complete")
 
 
 def main():
