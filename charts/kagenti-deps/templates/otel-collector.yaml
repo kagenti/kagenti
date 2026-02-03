@@ -1,4 +1,14 @@
 {{- if .Values.components.otel.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: otel-collector
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,6 +27,7 @@ spec:
       labels:
         app: otel-collector
     spec:
+      serviceAccountName: otel-collector
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.122.1
@@ -25,9 +36,35 @@ spec:
           - --config=/etc/otelcol-config/base.yaml
           - --set
           - receivers::otlp::protocols::http::endpoint=0.0.0.0:8335
+          {{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+          env:
+            - name: MLFLOW_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
+                  key: OIDC_CLIENT_ID
+            - name: MLFLOW_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
+                  key: OIDC_CLIENT_SECRET
+            - name: KEYCLOAK_TOKEN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
+                  key: OIDC_TOKEN_URL
+          {{- end }}
           volumeMounts:
             - name: otel-collector-config
               mountPath: /etc/otelcol-config
+            {{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+            - name: trusted-ca
+              mountPath: /etc/pki/ca-trust/extracted/pem
+              readOnly: true
+            - name: ingress-ca
+              mountPath: /etc/pki/ingress-ca
+              readOnly: true
+            {{- end }}
           ports:
             - containerPort: 4317
               name: otlp-grpc
@@ -42,6 +79,23 @@ spec:
         - name: otel-collector-config
           configMap:
             name: otel-collector-config
+        {{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+        # Use OpenShift's pre-existing trusted CA bundle ConfigMap
+        - name: trusted-ca
+          configMap:
+            name: config-trusted-cabundle
+            items:
+              - key: ca-bundle.crt
+                path: tls-ca-bundle.pem
+        # OpenShift ingress CA for external Keycloak HTTPS
+        # Copied from openshift-config-managed/default-ingress-cert by pre-install Job
+        - name: ingress-ca
+          configMap:
+            name: otel-ingress-ca
+            items:
+              - key: ca-bundle.crt
+                path: ingress-ca.pem
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -93,13 +147,19 @@ data:
           insecure: true
       {{- if $.Values.components.mlflow.enabled }}
       otlphttp/mlflow:
-        endpoint: http://mlflow:5000/v1/traces
+        # Use traces_endpoint to specify exact URL (endpoint would append /v1/traces)
+        traces_endpoint: http://mlflow:5000/v1/traces
         tls:
           insecure: true
         headers:
           # Default experiment ID (0 = Default experiment)
           # Traces can override via x-mlflow-experiment-id attribute
           x-mlflow-experiment-id: "0"
+        {{- if $.Values.mlflow.auth.enabled }}
+        # Authenticate to MLflow using OAuth2 client credentials via Keycloak
+        auth:
+          authenticator: oauth2client/mlflow
+        {{- end }}
       {{- end }}
 
     processors:
@@ -139,9 +199,25 @@ data:
 
     extensions:
       health_check:
+      {{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+      oauth2client/mlflow:
+        # OAuth2 client credentials for authenticating to MLflow
+        client_id: ${env:MLFLOW_CLIENT_ID}
+        client_secret: ${env:MLFLOW_CLIENT_SECRET}
+        token_url: ${env:KEYCLOAK_TOKEN_URL}
+        scopes: ["openid"]
+        # Timeout for token requests
+        timeout: 10s
+        {{- if $.Values.openshift }}
+        # Use OpenShift ingress CA for external Keycloak HTTPS endpoint
+        # The ingress CA is copied from openshift-config-managed/default-ingress-cert
+        tls:
+          ca_file: /etc/pki/ingress-ca/ingress-ca.pem
+        {{- end }}
+      {{- end }}
 
     service:
-      extensions: [ health_check ]
+      extensions: [ health_check{{ if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}, oauth2client/mlflow{{ end }} ]
       pipelines:
         traces/phoenix:
           receivers: [ otlp ]
@@ -151,6 +227,6 @@ data:
         traces/mlflow:
           receivers: [ otlp ]
           processors: [ memory_limiter, transform/genai_to_openinference, batch ]
-          exporters: [ otlphttp/mlflow ]
+          exporters: [ debug, otlphttp/mlflow ]
         {{- end }}
 {{- end }}

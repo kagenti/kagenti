@@ -1,0 +1,195 @@
+{{- if and .Values.openshift .Values.components.otel.enabled .Values.components.mlflow.enabled .Values.mlflow.auth.enabled }}
+# Copy OpenShift ingress CA certificate for OTEL collector OAuth2 client
+# The ingress CA is needed to verify TLS when connecting to external Keycloak URL
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-ingress-ca-copier
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: otel-ingress-ca-copier
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+# Role to read ConfigMaps in openshift-config-managed namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: otel-ingress-ca-reader
+  namespace: openshift-config-managed
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["default-ingress-cert"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-ingress-ca-reader
+  namespace: openshift-config-managed
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: otel-ingress-ca-reader
+subjects:
+  - kind: ServiceAccount
+    name: otel-ingress-ca-copier
+    namespace: {{ .Release.Namespace }}
+---
+# Role to read kube-root-ca.crt in openshift-config namespace (for full chain)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: otel-root-ca-reader
+  namespace: openshift-config
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kube-root-ca.crt"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-root-ca-reader
+  namespace: openshift-config
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: otel-root-ca-reader
+subjects:
+  - kind: ServiceAccount
+    name: otel-ingress-ca-copier
+    namespace: {{ .Release.Namespace }}
+---
+# Role to create/update ConfigMap in target namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: otel-ingress-ca-writer
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["otel-ingress-ca"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-ingress-ca-writer
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: otel-ingress-ca-writer
+subjects:
+  - kind: ServiceAccount
+    name: otel-ingress-ca-copier
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: otel-ingress-ca-copier-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: otel-ingress-ca-copier
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: otel-ingress-ca-copier
+    spec:
+      serviceAccountName: otel-ingress-ca-copier
+      restartPolicy: OnFailure
+      containers:
+        - name: copier
+          image: {{ .Values.common.kubectlImage | default "quay.io/kubestellar/kubectl:1.30.14" }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              echo "Fetching ingress CA from openshift-config-managed/default-ingress-cert..."
+
+              # Get the ingress CA certificate
+              INGRESS_CA=$(kubectl get configmap default-ingress-cert \
+                -n openshift-config-managed \
+                -o jsonpath='{.data.ca-bundle\.crt}')
+
+              if [ -z "$INGRESS_CA" ]; then
+                echo "ERROR: Could not fetch ingress CA certificate"
+                exit 1
+              fi
+
+              echo "Successfully fetched ingress CA certificate"
+
+              # Get the root CA from kube-root-ca.crt (contains full chain for HyperShift)
+              # This is needed because ingress CA is signed by root-ca
+              ROOT_CA=$(kubectl get configmap kube-root-ca.crt \
+                -n openshift-config \
+                -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+
+              if [ -n "$ROOT_CA" ]; then
+                echo "Adding root CA to bundle for full certificate chain"
+                # Concatenate with a newline between certificates
+                printf -v INGRESS_CA '%s\n%s' "$INGRESS_CA" "$ROOT_CA"
+              fi
+
+              # Check if ConfigMap exists and update or create
+              if kubectl get configmap otel-ingress-ca -n {{ .Release.Namespace }} >/dev/null 2>&1; then
+                echo "Updating existing otel-ingress-ca ConfigMap..."
+                kubectl create configmap otel-ingress-ca \
+                  --from-literal=ca-bundle.crt="$INGRESS_CA" \
+                  -n {{ .Release.Namespace }} \
+                  --dry-run=client -o yaml | kubectl apply -f -
+              else
+                echo "Creating otel-ingress-ca ConfigMap..."
+                kubectl create configmap otel-ingress-ca \
+                  --from-literal=ca-bundle.crt="$INGRESS_CA" \
+                  -n {{ .Release.Namespace }}
+              fi
+
+              echo "Successfully copied ingress CA to otel-ingress-ca ConfigMap"
+{{- end }}

@@ -81,6 +81,13 @@ spec:
           {{- if .Values.mlflow.auth.enabled }}
           pip install --no-cache-dir --quiet "mlflow-oidc-auth" && \
           {{- end }}
+          {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
+          # Set CA bundle for JWKS verification AFTER pip install
+          # The ingress CA is only for OpenShift routes, not PyPI
+          # SSL_CERT_FILE for httpx/authlib (OIDC), REQUESTS_CA_BUNDLE for requests
+          export SSL_CERT_FILE=/etc/pki/ingress-ca/ingress-ca.pem && \
+          export REQUESTS_CA_BUNDLE=/etc/pki/ingress-ca/ingress-ca.pem && \
+          {{- end }}
           {{- if .Values.openshift }}
           # Read auto-detected route hostname if available
           ROUTE_HOST=""
@@ -96,15 +103,61 @@ spec:
           {{- else }}
           ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
           {{- end }}
+          {{- if .Values.mlflow.auth.enabled }}
+          # Set MLflow config via environment variables (used by mlflow_oidc_auth.app)
+          # Both BACKEND_STORE_URI and TRACKING_URI needed for otel_router to use PostgreSQL
+          export MLFLOW_BACKEND_STORE_URI="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
+          export MLFLOW_TRACKING_URI="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
+          export MLFLOW_ARTIFACTS_DESTINATION="/mlflow/artifacts" && \
+          export MLFLOW_HOST="0.0.0.0" && \
+          export MLFLOW_PORT="5000" && \
+          #
+          # WORKAROUND: mlflow-oidc-auth doesn't include MLflow's otel_router
+          # which provides the /v1/traces OTLP endpoint for trace ingestion.
+          # We patch it at runtime to:
+          # 1. Add the missing otel_router for /v1/traces OTLP endpoint
+          # 2. Exclude /v1/traces from OIDC auth (mTLS via Istio handles auth)
+          # TODO: Remove this workaround when mlflow-oidc-auth includes otel_router
+          #
+          python -c '
+          # IMPORTANT: Patch BEFORE importing app (app is created at import time)
+          from mlflow.server.otel_api import otel_router
+          from mlflow_oidc_auth.middleware.auth_middleware import AuthMiddleware
+          import mlflow_oidc_auth.routers as routers_module
+
+          # Patch 1: Add otel_router to the list returned by get_all_routers()
+          # This must happen BEFORE app.py imports get_all_routers
+          original_get_all_routers = routers_module.get_all_routers
+          def patched_get_all_routers():
+              return original_get_all_routers() + [otel_router]
+          routers_module.get_all_routers = patched_get_all_routers
+          print("Patched get_all_routers() to include otel_router")
+
+          # Patch 2: Exclude /v1/traces from OIDC auth
+          # Security: Istio AuthorizationPolicy enforces mTLS for this path
+          original_is_unprotected = AuthMiddleware._is_unprotected_route
+          def patched_is_unprotected(self, path: str) -> bool:
+              if path.startswith("/v1/traces"):
+                  return True
+              return original_is_unprotected(self, path)
+          AuthMiddleware._is_unprotected_route = patched_is_unprotected
+          print("Excluded /v1/traces from OIDC auth (mTLS via Istio)")
+
+          # NOW import the app (which will use our patched functions)
+          from mlflow_oidc_auth.app import app
+          print("App created with /v1/traces endpoint")
+
+          import uvicorn
+          uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
+          '
+          {{- else }}
           mlflow server \
             --host=0.0.0.0 \
             --port=5000 \
-            {{- if .Values.mlflow.auth.enabled }}
-            --app-name=oidc-auth \
-            {{- end }}
             --allowed-hosts "$ALLOWED_HOSTS" \
             --backend-store-uri=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow \
             --default-artifact-root=/mlflow/artifacts
+          {{- end }}
         {{- if .Values.mlflow.auth.enabled }}
         envFrom:
         - secretRef:
@@ -166,6 +219,12 @@ spec:
         {{- if .Values.openshift }}
         - name: route-config
           mountPath: /tmp/route-config
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
+        # Mount ingress CA for JWKS verification (external Keycloak URL)
+        - name: ingress-ca
+          mountPath: /etc/pki/ingress-ca
           readOnly: true
         {{- end }}
       initContainers:
@@ -248,6 +307,16 @@ spec:
       {{- if .Values.openshift }}
       - name: route-config
         emptyDir: {}
+      {{- end }}
+      {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
+      # OpenShift ingress CA for JWKS verification
+      # Copied from openshift-config-managed/default-ingress-cert by pre-install Job
+      - name: ingress-ca
+        configMap:
+          name: otel-ingress-ca
+          items:
+            - key: ca-bundle.crt
+              path: ingress-ca.pem
       {{- end }}
 ---
 apiVersion: v1
