@@ -1193,20 +1193,48 @@ class TestSessionTracking:
             if has_session:
                 traces_with_session += 1
 
+        # Also check span attributes for session info (context_id is set as span attribute)
+        span_session_patterns = {}
+        for trace in all_traces[:5]:  # Check fewer traces due to API calls
+            spans = get_trace_span_details(trace)
+            for span in spans:
+                attrs = span.get("attributes", {})
+                for key in attrs:
+                    key_lower = key.lower()
+                    if any(
+                        p in key_lower
+                        for p in ["context_id", "session", "task_id", "user_input"]
+                    ):
+                        if key not in span_session_patterns:
+                            span_session_patterns[key] = 0
+                        span_session_patterns[key] += 1
+
         print(f"Traces analyzed: {min(20, len(all_traces))}")
-        print(f"Traces with session info: {traces_with_session}")
-        print(f"\nSession-related patterns found:")
+        print(f"Traces with session info (tags): {traces_with_session}")
+        print(f"\nSession-related tag patterns found:")
 
         if session_patterns:
             for key, count in sorted(session_patterns.items(), key=lambda x: -x[1]):
                 print(f"  - {key}: {count} traces")
         else:
-            print("  (No session-related patterns found)")
+            print("  (No session-related tags found)")
+
+        print(f"\nSession-related span attribute patterns found:")
+        if span_session_patterns:
+            for key, count in sorted(
+                span_session_patterns.items(), key=lambda x: -x[1]
+            ):
+                print(f"  - {key}: {count} spans")
+        else:
+            print("  (No session-related span attributes found)")
 
         # Show recommendations
         print("\nSession grouping recommendations:")
-        if "a2a.context_id" not in session_patterns:
-            print("  - Add a2a.context_id as trace tag for conversation grouping")
+        if (
+            "a2a.context_id" not in session_patterns
+            and "a2a.context_id" not in span_session_patterns
+        ):
+            print("  - Add a2a.context_id for conversation grouping")
         if "session_id" not in session_patterns:
             print("  - Add session_id for user session tracking")
 
