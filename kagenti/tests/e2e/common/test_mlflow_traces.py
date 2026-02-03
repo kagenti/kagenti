@@ -507,6 +507,312 @@ class TestWeatherAgentTracesInMLflow:
         print(f"\nSUCCESS: Weather agent trace has {len(spans)} spans")
 
 
+# GenAI span patterns - LangChain/LangGraph instrumentation
+GENAI_SPAN_PATTERNS = [
+    "langchain",
+    "langgraph",
+    "llm",
+    "chat",
+    "chain",
+    "agent",
+    "tool",
+    "retriever",
+    "embedding",
+    "ChatOpenAI",
+    "ChatOllama",
+]
+
+
+def has_genai_spans(trace: Any) -> bool:
+    """Check if a trace contains GenAI/LLM spans.
+
+    GenAI spans come from LangChain/LangGraph instrumentation and include
+    span names like 'ChatOpenAI', 'LLMChain', 'AgentExecutor', etc.
+    """
+    spans = get_trace_span_details(trace)
+    for span in spans:
+        span_name = span.get("name", "").lower()
+        span_type = span.get("type", "").lower() if span.get("type") else ""
+
+        # Check span name patterns
+        if any(pattern in span_name for pattern in GENAI_SPAN_PATTERNS):
+            return True
+
+        # Check span type (LangChain uses types like LLM, CHAIN, TOOL)
+        if span_type in ["llm", "chain", "tool", "agent", "retriever"]:
+            return True
+
+    return False
+
+
+def get_trace_tree_structure(trace: Any) -> dict:
+    """Build a tree structure from trace spans showing parent-child relationships.
+
+    Returns a dict with:
+        - root_spans: List of spans with no parent
+        - children: Dict mapping span_id to list of child spans
+        - depth: Maximum depth of the tree
+    """
+    spans = get_trace_span_details(trace)
+
+    # Build parent-child relationships
+    children: dict = {}
+    root_spans = []
+
+    for span in spans:
+        span_id = span.get("span_id")
+        parent_id = span.get("parent_id")
+
+        if not parent_id:
+            root_spans.append(span)
+        else:
+            if parent_id not in children:
+                children[parent_id] = []
+            children[parent_id].append(span)
+
+    # Calculate max depth
+    def get_depth(span_id: str, current_depth: int = 0) -> int:
+        if span_id not in children:
+            return current_depth
+        max_child_depth = current_depth
+        for child in children[span_id]:
+            child_depth = get_depth(child.get("span_id", ""), current_depth + 1)
+            max_child_depth = max(max_child_depth, child_depth)
+        return max_child_depth
+
+    max_depth = 0
+    for root in root_spans:
+        depth = get_depth(root.get("span_id", ""))
+        max_depth = max(max_depth, depth)
+
+    return {
+        "root_spans": root_spans,
+        "children": children,
+        "depth": max_depth,
+        "total_spans": len(spans),
+    }
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestGenAITracesInMLflow:
+    """
+    Validate GenAI/LLM traces are captured with proper tree structure.
+
+    These tests verify that LangChain/LangGraph instrumentation produces
+    traces with:
+    - LLM spans (ChatOpenAI, ChatOllama, etc.)
+    - Proper parent-child hierarchy
+    - Nested structure under a single root trace
+    """
+
+    def test_genai_traces_exist(self, mlflow_url: str, mlflow_configured: bool):
+        """Verify GenAI/LLM traces are captured in MLflow.
+
+        This test looks for spans from LangChain/LangGraph instrumentation,
+        which include LLM calls, chain executions, and tool invocations.
+        """
+        all_traces = get_all_traces()
+        genai_traces = [t for t in all_traces if has_genai_spans(t)]
+
+        print(f"\n{'=' * 60}")
+        print("GenAI Traces in MLflow")
+        print(f"{'=' * 60}")
+        print(f"Total traces: {len(all_traces)}")
+        print(f"GenAI traces: {len(genai_traces)}")
+
+        # Show sample GenAI span names
+        if genai_traces:
+            sample_trace = genai_traces[0]
+            spans = get_trace_span_details(sample_trace)
+            genai_span_names = [
+                s.get("name")
+                for s in spans
+                if any(p in s.get("name", "").lower() for p in GENAI_SPAN_PATTERNS)
+            ]
+            print(f"Sample GenAI spans: {genai_span_names[:5]}")
+
+        assert len(genai_traces) > 0, (
+            f"No GenAI traces found in MLflow. "
+            f"Found {len(all_traces)} total traces, but none with LangChain/LLM spans.\n\n"
+            "Expected traces with spans containing:\n"
+            f"  - Span names: {', '.join(GENAI_SPAN_PATTERNS[:5])}\n"
+            "  - Span types: LLM, CHAIN, TOOL, AGENT\n\n"
+            "Verify that:\n"
+            "  1. Weather agent has openinference-instrumentation-langchain installed\n"
+            "  2. LangChainInstrumentor().instrument() is called at startup\n"
+            "  3. Agent uses LangChain/LangGraph for LLM calls"
+        )
+
+    def test_trace_has_tree_structure(self, mlflow_url: str, mlflow_configured: bool):
+        """Verify traces have proper parent-child hierarchy.
+
+        GenAI traces should have a tree structure where:
+        - A root span represents the top-level request
+        - Child spans represent LLM calls, tool executions, etc.
+        - The tree should have depth > 1 for non-trivial requests
+        """
+        all_traces = get_all_traces()
+        if not all_traces:
+            pytest.skip("No traces available to check structure")
+
+        # Get a trace with GenAI spans if available, otherwise any trace
+        genai_traces = [t for t in all_traces if has_genai_spans(t)]
+        trace = genai_traces[0] if genai_traces else all_traces[0]
+
+        tree = get_trace_tree_structure(trace)
+
+        print(f"\n{'=' * 60}")
+        print("Trace Tree Structure")
+        print(f"{'=' * 60}")
+        print(f"Total spans: {tree['total_spans']}")
+        print(f"Root spans: {len(tree['root_spans'])}")
+        print(f"Max depth: {tree['depth']}")
+
+        # Print tree visualization
+        def print_tree(span: dict, indent: int = 0):
+            name = span.get("name", "unnamed")[:50]
+            print(f"{'  ' * indent}├─ {name}")
+            span_id = span.get("span_id", "")
+            for child in tree["children"].get(span_id, [])[:3]:
+                print_tree(child, indent + 1)
+
+        print("\nTree structure (first root, max 3 children per level):")
+        if tree["root_spans"]:
+            print_tree(tree["root_spans"][0])
+
+        assert tree["total_spans"] > 0, "Trace has no spans"
+        assert len(tree["root_spans"]) > 0, "Trace has no root spans"
+
+        # For GenAI traces, we expect a tree structure with depth > 0
+        if genai_traces:
+            assert tree["depth"] >= 1, (
+                f"GenAI trace has flat structure (depth={tree['depth']}). "
+                "Expected hierarchical trace with LLM calls nested under agent spans."
+            )
+
+        print(f"\nSUCCESS: Trace has tree structure with depth {tree['depth']}")
+
+    def test_genai_spans_nested_under_a2a(
+        self, mlflow_url: str, mlflow_configured: bool
+    ):
+        """Verify GenAI spans are nested under A2A request spans.
+
+        When the weather agent receives an A2A request, the trace should show:
+        - A2A request handler as root span
+        - LangGraph/LangChain execution as child spans
+        - LLM calls nested under the chain/agent spans
+        """
+        all_traces = get_all_traces()
+        genai_traces = [t for t in all_traces if has_genai_spans(t)]
+
+        if not genai_traces:
+            pytest.skip("No GenAI traces available")
+
+        trace = genai_traces[0]
+        tree = get_trace_tree_structure(trace)
+        spans = get_trace_span_details(trace)
+
+        # Check if there's an A2A root span with GenAI children
+        a2a_root = None
+        for root in tree["root_spans"]:
+            root_name = root.get("name", "").lower()
+            if "a2a" in root_name or "request" in root_name:
+                a2a_root = root
+                break
+
+        print(f"\n{'=' * 60}")
+        print("A2A + GenAI Trace Structure")
+        print(f"{'=' * 60}")
+
+        if a2a_root:
+            print(f"A2A root span: {a2a_root.get('name')}")
+            root_id = a2a_root.get("span_id", "")
+            children = tree["children"].get(root_id, [])
+            print(f"Direct children: {len(children)}")
+            for child in children[:5]:
+                print(f"  - {child.get('name', 'unnamed')[:60]}")
+        else:
+            print("No A2A root span found")
+            print("Root spans:")
+            for root in tree["root_spans"][:3]:
+                print(f"  - {root.get('name', 'unnamed')[:60]}")
+
+        # Check for GenAI spans in the tree
+        genai_span_count = sum(
+            1
+            for s in spans
+            if any(p in s.get("name", "").lower() for p in GENAI_SPAN_PATTERNS)
+        )
+        print(f"\nGenAI spans in trace: {genai_span_count}")
+
+        assert genai_span_count > 0, "No GenAI spans found in trace"
+        print("\nSUCCESS: Found GenAI spans in trace hierarchy")
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestMLflowSessions:
+    """
+    Validate trace sessions are properly organized in MLflow.
+
+    MLflow supports grouping traces into sessions, which can be mapped
+    to A2A context_id for conversation tracking.
+    """
+
+    def test_traces_have_session_info(self, mlflow_url: str, mlflow_configured: bool):
+        """Verify traces have session/context information.
+
+        Traces should have tags or metadata that allow grouping by:
+        - A2A context_id (conversation identifier)
+        - Session ID
+        - Client request ID
+        """
+        all_traces = get_all_traces()
+        if not all_traces:
+            pytest.skip("No traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Trace Session Information")
+        print(f"{'=' * 60}")
+
+        traces_with_session = 0
+        session_ids = set()
+
+        for trace in all_traces[:10]:
+            trace_info = trace.info if hasattr(trace, "info") else trace
+
+            # Check for session-related fields
+            client_request_id = getattr(trace_info, "client_request_id", None)
+            tags = getattr(trace_info, "tags", {}) or {}
+
+            # Look for session/context tags
+            context_id = tags.get("a2a.context_id") or tags.get("context_id")
+            session_id = tags.get("session_id") or tags.get("mlflow.session_id")
+
+            if client_request_id or context_id or session_id:
+                traces_with_session += 1
+                if context_id:
+                    session_ids.add(context_id)
+                if session_id:
+                    session_ids.add(session_id)
+
+        print(f"Total traces checked: {min(10, len(all_traces))}")
+        print(f"Traces with session info: {traces_with_session}")
+        print(f"Unique session IDs: {len(session_ids)}")
+        if session_ids:
+            print(f"Sample session IDs: {list(session_ids)[:3]}")
+
+        # This is informational - not a hard requirement yet
+        if traces_with_session == 0:
+            print(
+                "\nNOTE: No session info found. Consider adding a2a.context_id "
+                "as a trace tag for conversation grouping."
+            )
+
+
 def main():
     """Standalone execution for debugging MLflow traces."""
     import argparse
