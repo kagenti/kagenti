@@ -165,7 +165,7 @@ SKIP_DESTROY=false
 INCLUDE_KAGENTI_UNINSTALL=false
 CLEAN_KAGENTI=false
 KAGENTI_ENV="${KAGENTI_ENV:-ocp}"
-CLUSTER_SUFFIX=""
+CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-}"  # Preserve env var if set
 WHITELIST_MODE=false
 
 while [[ $# -gt 0 ]]; do

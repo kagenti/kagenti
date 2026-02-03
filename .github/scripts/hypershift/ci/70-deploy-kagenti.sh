@@ -46,13 +46,19 @@ echo "Waiting for cluster nodes to be ready..."
 MAX_RETRIES=30
 RETRY_DELAY=10
 for i in $(seq 1 $MAX_RETRIES); do
-    NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready" | wc -l || echo "999")
-    TOTAL=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "0")
+    # Use tr -d to strip whitespace from wc output
+    NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready" | wc -l | tr -d ' ' || echo "999")
+    TOTAL=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+    # Validate numeric values to avoid arithmetic errors
+    [[ ! "$NOT_READY" =~ ^[0-9]+$ ]] && NOT_READY=999
+    [[ ! "$TOTAL" =~ ^[0-9]+$ ]] && TOTAL=0
     if [[ "$NOT_READY" == "0" && "$TOTAL" -gt 0 ]]; then
         echo "All $TOTAL nodes are ready"
         break
     fi
-    echo "[$i/$MAX_RETRIES] Waiting for nodes... ($((TOTAL - NOT_READY))/$TOTAL ready)"
+    READY_COUNT=$((TOTAL - NOT_READY))
+    [[ $READY_COUNT -lt 0 ]] && READY_COUNT=0
+    echo "[$i/$MAX_RETRIES] Waiting for nodes... ($READY_COUNT/$TOTAL ready)"
     if [[ $i -eq $MAX_RETRIES ]]; then
         echo "ERROR: Nodes not ready after $((MAX_RETRIES * RETRY_DELAY)) seconds"
         kubectl get nodes
