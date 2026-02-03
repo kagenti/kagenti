@@ -60,6 +60,9 @@ metadata:
     "helm.sh/hook-weight": "-10"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
 spec:
+  # Timeout after 20 minutes to prevent indefinite hanging
+  activeDeadlineSeconds: 1200
+  backoffLimit: 3
   template:
     spec:
       serviceAccountName: {{ include "kagenti.fullname" . }}-crd-waiter-sa
@@ -103,16 +106,33 @@ spec:
               {{- if .Values.components.kiali.enabled }}
               CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR kialis.kiali.io"
               {{- end }}
-              {{- if .Values.components.spire.enabled }}
+              {{- if and .Values.components.spire.enabled (not .Values.useSpireHelmChart) }}
               # ZTWIM operator CRDs (Zero Trust Workload Identity Manager)
+              # Only wait for these when using ZTWIM operator (not Helm-based SPIRE)
               CRDS_TO_WAIT_FOR="$CRDS_TO_WAIT_FOR spireservers.operator.openshift.io spireagents.operator.openshift.io spiffecsidrivers.operator.openshift.io"
               {{- end }}
 
+              # Wait for each CRD with a per-CRD timeout (10 minutes each)
+              CRD_TIMEOUT=600
               for crd in $CRDS_TO_WAIT_FOR; do
-                echo "Waiting for CRD '$crd' to be available..."
-                until kubectl get crd $crd -o name > /dev/null 2>&1; do
+                echo "Waiting for CRD '$crd' to be available (timeout: ${CRD_TIMEOUT}s)..."
+                elapsed=0
+                while ! kubectl get crd $crd -o name > /dev/null 2>&1; do
+                  if [ $elapsed -ge $CRD_TIMEOUT ]; then
+                    echo "❌ TIMEOUT: CRD '$crd' not available after ${CRD_TIMEOUT}s"
+                    echo "This may indicate:"
+                    echo "  - The operator subscription failed"
+                    echo "  - The operator package is not available in the catalog"
+                    echo "  - The operator requires additional entitlements"
+                    echo ""
+                    echo "Debug info:"
+                    kubectl get subscription -A 2>/dev/null | head -20 || true
+                    kubectl get csv -A 2>/dev/null | head -20 || true
+                    exit 1
+                  fi
                   echo -n "."
-                  sleep 3
+                  sleep 5
+                  elapsed=$((elapsed + 5))
                 done
                 echo "✅ CRD '$crd' is available."
               done

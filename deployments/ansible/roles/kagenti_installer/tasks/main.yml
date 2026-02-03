@@ -487,10 +487,94 @@
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           OpenShift Version: {{ ocp_version }}
           ZTWIM operator is supported on this cluster version.
+          Checking if ZTWIM package is available in the operator catalog...
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       when:
         - spire_version_compatible is defined
         - spire_version_compatible | bool
+        - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # ZTWIM Package Availability Check
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Even if OCP version is compatible (4.19+), the ZTWIM operator may not be
+    # available in the catalog (e.g., HyperShift clusters, missing entitlements).
+    # Check if the packagemanifest exists before attempting subscription.
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    - name: Check if ZTWIM package is available in operator catalog
+      shell: |
+        # Check if packagemanifest exists for ZTWIM operator
+        # This verifies the operator is actually in the catalog before subscribing
+        kubectl get packagemanifest openshift-zero-trust-workload-identity-manager \
+          -n openshift-marketplace -o name 2>/dev/null
+      args:
+        executable: /bin/bash
+      register: ztwim_package_check
+      failed_when: false
+      changed_when: false
+      when:
+        - spire_version_compatible is defined
+        - spire_version_compatible | bool
+        - not (skip_spire_operator | default(false))
+        - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
+
+    - name: Use SPIRE Helm chart when ZTWIM package not in catalog
+      block:
+        - name: Display ZTWIM package not found notice
+          debug:
+            msg: |
+              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              ⚠️  ZTWIM OPERATOR NOT FOUND IN CATALOG
+              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+              OpenShift Version: {{ ocp_version }} (compatible with ZTWIM)
+              Package: openshift-zero-trust-workload-identity-manager
+              Catalog: redhat-operators
+
+              The ZTWIM operator package was not found in the operator catalog.
+              This can happen on:
+              - HyperShift hosted clusters
+              - Clusters without Red Hat OpenShift Platform Plus subscription
+              - Clusters where the catalog hasn't fully synced yet
+
+              ACTION: Installing SPIRE via Helm charts as fallback.
+
+              Note: If you need the ZTWIM operator, verify:
+              1. Your cluster has the required subscription/entitlement
+              2. The catalog pods are healthy: kubectl get pods -n openshift-marketplace
+              3. Try refreshing the catalog: kubectl delete pods -n openshift-marketplace -l olm.catalogSource=redhat-operators
+              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        - name: Set facts to use SPIRE Helm chart (package not in catalog)
+          set_fact:
+            skip_spire_operator: true
+            use_spire_helm_chart: true
+            spire_install_method: "helm-chart"
+            spire_install_reason: "ZTWIM package not found in redhat-operators catalog (using Helm chart fallback)"
+      when:
+        - spire_version_compatible is defined
+        - spire_version_compatible | bool
+        - ztwim_package_check is defined
+        - ztwim_package_check.rc != 0
+        - not (skip_spire_operator | default(false))
+        - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
+
+    - name: Confirm ZTWIM package is available
+      debug:
+        msg: |
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ✓ ZTWIM Package Available
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          OpenShift Version: {{ ocp_version }}
+          ZTWIM operator package found in catalog.
+          Proceeding with ZTWIM operator installation.
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      when:
+        - spire_version_compatible is defined
+        - spire_version_compatible | bool
+        - ztwim_package_check is defined
+        - ztwim_package_check.rc == 0
+        - not (skip_spire_operator | default(false))
         - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
 
     # Handle case when OpenShift version detection fails
