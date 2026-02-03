@@ -114,7 +114,45 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 
 Customize the cluster suffix by passing it as an argument (e.g., `pr529` → `kagenti-hypershift-custom-pr529`).
 
-#### Main Testing Flow
+#### Main Testing Flow (Worktree Recommended)
+
+The recommended workflow uses git worktrees to test feature branches on HyperShift
+without switching your main working directory. This allows you to:
+
+- Keep your main branch clean for other work
+- Test multiple features in parallel on separate clusters
+- Run tests against feature branch code while credentials stay in repo root
+
+```bash
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ WORKTREE WORKFLOW (RECOMMENDED)                                             │
+# │ Test feature branches without switching directories                         │
+# └─────────────────────────────────────────────────────────────────────────────┘
+
+# 1. Create a worktree for your feature branch (from repo root)
+git worktree add .worktrees/my-feature origin/my-feature-branch
+
+# 2. Source credentials, then run tests from the worktree
+#    Scripts auto-detect pre-sourced env vars and worktree paths
+source .env.kagenti-hypershift-custom && \
+  .worktrees/my-feature/.github/scripts/local-setup/hypershift-full-test.sh \
+  --skip-cluster-destroy
+
+# 3. Show services (credentials still active from step 2)
+.worktrees/my-feature/.github/scripts/local-setup/show-services.sh
+
+# 4. When done - destroy cluster
+source .env.kagenti-hypershift-custom && \
+  .worktrees/my-feature/.github/scripts/local-setup/hypershift-full-test.sh \
+  --include-cluster-destroy
+
+# 5. Optional: clean up worktree
+git worktree remove .worktrees/my-feature
+```
+
+#### Main Testing Flow (Direct)
+
+If testing from the main branch or same directory as your .env file:
 
 ```bash
 # ┌─────────────────────────────────────────────────────────────────────────────┐
