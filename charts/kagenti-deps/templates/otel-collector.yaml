@@ -170,11 +170,12 @@ data:
       filter/phoenix:
         traces:
           span:
-            ## Filter for openinference packages
-            #### Python format `openinference.instrumentation.${package_name}`
-            #### - crewAI exception `crewai.telemetry`
-            #### Javascript format `@arizeai/openinference-instrumentation-${packageName}`
-            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry")
+            ## Filter for openinference packages OR GenAI semantic conventions
+            #### OpenInference Python: `openinference.instrumentation.${package_name}`
+            #### OpenInference JS: `@arizeai/openinference-instrumentation-${packageName}`
+            #### crewAI exception: `crewai.telemetry`
+            #### GenAI: spans with gen_ai.* attributes (from agents using GenAI semantic conventions)
+            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry" or attributes["gen_ai.request.model"] != nil or attributes["gen_ai.agent.name"] != nil)
       # Transform GenAI semantic conventions to OpenInference format for Phoenix
       # See: https://opentelemetry.io/docs/specs/semconv/gen-ai/
       # See: https://github.com/Arize-ai/openinference
