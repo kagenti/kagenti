@@ -15,7 +15,7 @@ pip install -e ".[test]"
 
 # Use hypershift-full-test.sh with whitelist mode (--include-test)
 # hypershift-full-test.sh handles AGENT_URL detection from route and calls 90-run-e2e-tests.sh
+# Note: CLUSTER_SUFFIX is set by the workflow (e.g., pr594), don't override it
 exec "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
     --include-test \
-    --env ocp \
-    ci
+    --env ocp

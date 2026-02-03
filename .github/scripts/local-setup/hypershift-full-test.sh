@@ -128,7 +128,7 @@ EXAMPLES:
 
 CREDENTIALS:
     For cluster create/destroy: source .env.kagenti-hypershift-custom
-    For middle phases only:     export HOSTED_KUBECONFIG=~/clusters/hcp/<name>/auth/kubeconfig
+    For middle phases only:     export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
 
 EOF
     exit 0
@@ -364,7 +364,7 @@ elif [ "$NEEDS_MGMT_CREDS_EARLY" = "true" ]; then
     MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
 else
     # Only running middle phases - management cluster credentials not required
-    # User can set HOSTED_KUBECONFIG directly
+    # User just needs KUBECONFIG pointing to the hosted cluster
     log_step "Skipping .env loading (create/destroy not requested)"
 fi
 
@@ -372,21 +372,37 @@ fi
 CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
 
 # TWO KUBECONFIGS:
+#   KUBECONFIG       - Hosted cluster kubeconfig (for install/agents/test operations)
+#                      Points to the cluster where Kagenti is deployed
 #   MGMT_KUBECONFIG  - Management cluster kubeconfig (for create/destroy cluster operations)
-#                      Set via .env file or CI secrets, points to the HyperShift management cluster
-#   HOSTED_KUBECONFIG - Hosted cluster kubeconfig (for install/agents/test operations)
-#                       Created by cluster creation at ~/clusters/hcp/<cluster-name>/auth/kubeconfig
+#                      Points to the HyperShift management cluster
 #
-# This separation prevents accidentally running kubectl commands against the wrong cluster.
+# This matches CI behavior where KUBECONFIG always points to the target cluster.
 #
-# SIMPLIFIED USAGE:
-#   If only running middle phases (install/agents/test), you can skip sourcing .env and just set:
-#     export HOSTED_KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
-#     ./hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
+# USAGE:
+#   For create/destroy: need both MGMT_KUBECONFIG (from .env) and KUBECONFIG will be set after create
+#   For middle phases:  just need KUBECONFIG pointing to the hosted cluster
 #
-MGMT_KUBECONFIG="${KUBECONFIG:-}"
-# Allow override via HOSTED_KUBECONFIG env var, otherwise compute from cluster name
-HOSTED_KUBECONFIG="${HOSTED_KUBECONFIG:-$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig}"
+#   # Full workflow
+#   source .env.kagenti-hypershift-custom  # Sets MGMT_KUBECONFIG
+#   ./hypershift-full-test.sh --skip-cluster-destroy
+#
+#   # Middle phases only (no create/destroy)
+#   export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
+#   ./hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
+#
+# Note: MGMT_KUBECONFIG can be set by .env file or explicitly before running
+
+# Default hosted cluster kubeconfig path (used after cluster creation)
+HOSTED_KUBECONFIG_PATH="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+
+# In CI mode, MGMT_KUBECONFIG is set separately by the workflow
+# In local mode, it comes from the .env file's KUBECONFIG (before we switch to hosted)
+if [ -z "${MGMT_KUBECONFIG:-}" ]; then
+    # MGMT_KUBECONFIG not set - use current KUBECONFIG as management cluster
+    # (This is the case when user sources .env file which sets KUBECONFIG)
+    MGMT_KUBECONFIG="${KUBECONFIG:-}"
+fi
 
 # ============================================================================
 # Validate cluster name length (AWS IAM role name limit)
@@ -514,9 +530,11 @@ if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
     if [ "$RUN_CREATE" = "true" ]; then
         # Cluster will be created, kubeconfig will be generated
         log_step "Hosted cluster kubeconfig: will be created by cluster-create phase"
-        log_step "  Expected path: $HOSTED_KUBECONFIG"
+        log_step "  Expected path: $HOSTED_KUBECONFIG_PATH"
     else
-        # Cluster creation is skipped, kubeconfig must already exist
+        # Cluster creation is skipped, KUBECONFIG must already point to hosted cluster
+        # Check KUBECONFIG first (may be set by CI or user), fallback to computed path
+        HOSTED_KUBECONFIG="${KUBECONFIG:-$HOSTED_KUBECONFIG_PATH}"
         if [ ! -f "$HOSTED_KUBECONFIG" ]; then
             log_error "Hosted cluster kubeconfig not found: $HOSTED_KUBECONFIG"
             log_error ""
@@ -525,8 +543,8 @@ if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
             log_error ""
             log_error "  Either:"
             log_error "    1. Remove --skip-cluster-create to create the cluster first"
-            log_error "    2. Verify the cluster exists and kubeconfig is at the expected path"
-            log_error "    3. Set KUBECONFIG to the correct path if using a non-default location"
+            log_error "    2. Set KUBECONFIG to the hosted cluster kubeconfig"
+            log_error "    3. Verify the cluster exists at the expected path"
             PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
         else
             log_step "Hosted cluster kubeconfig: $HOSTED_KUBECONFIG"
@@ -572,7 +590,12 @@ if [ "$NEEDS_MGMT_CREDS" = "true" ]; then
     echo "  Management cluster:   $MGMT_KUBECONFIG (for create/destroy)"
 fi
 if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
-    echo "  Hosted cluster:       $HOSTED_KUBECONFIG (for install/agents/test)"
+    # Show the kubeconfig that will be used for hosted cluster
+    if [ "$RUN_CREATE" = "true" ]; then
+        echo "  Hosted cluster:       $HOSTED_KUBECONFIG_PATH (after create)"
+    else
+        echo "  Hosted cluster:       ${KUBECONFIG:-$HOSTED_KUBECONFIG_PATH} (for install/agents/test)"
+    fi
 fi
 echo ""
 
@@ -599,10 +622,17 @@ fi
 # For phases 2-5 (install, agents, test, uninstall), we need the hosted cluster kubeconfig.
 # This is cluster-admin on the hosted cluster, NOT the management cluster.
 if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
-    # In CI, KUBECONFIG may be set by the workflow for each phase
-    # Locally, we always use the hosted cluster kubeconfig
+    # In CI, KUBECONFIG is already set to hosted cluster by the workflow
+    # Locally, switch from management cluster to hosted cluster
     if [ "$CI_MODE" != "true" ]; then
-        export KUBECONFIG="$HOSTED_KUBECONFIG"
+        # Use KUBECONFIG if already pointing to hosted cluster, otherwise use computed path
+        if [ -f "${KUBECONFIG:-}" ] && [ "$KUBECONFIG" != "$MGMT_KUBECONFIG" ]; then
+            # KUBECONFIG already set to something other than mgmt - assume it's hosted
+            :
+        else
+            # Switch to hosted cluster kubeconfig
+            export KUBECONFIG="$HOSTED_KUBECONFIG_PATH"
+        fi
     fi
 
     # Verify the kubeconfig exists (should have been created by phase 1 or pre-existing)
@@ -612,7 +642,7 @@ if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
         exit 1
     fi
 
-    log_step "Switched to hosted cluster: $KUBECONFIG"
+    log_step "Using hosted cluster: $KUBECONFIG"
     if ! oc get nodes 2>/dev/null && ! kubectl get nodes 2>/dev/null; then
         log_warn "Cannot connect to hosted cluster (it may still be initializing)"
     fi
@@ -754,7 +784,7 @@ else
     echo "Cluster kept for debugging."
     echo ""
     echo "To access the hosted cluster:"
-    echo "  export KUBECONFIG=$HOSTED_KUBECONFIG"
+    echo "  export KUBECONFIG=$HOSTED_KUBECONFIG_PATH"
     echo "  kubectl get nodes"
     echo ""
     echo "To destroy the cluster later:"

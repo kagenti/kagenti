@@ -79,8 +79,8 @@ done
 
 # Use hypershift-full-test.sh with whitelist mode (--include-X flags)
 # This runs: install + agents only
+# Note: CLUSTER_SUFFIX is set by the workflow (e.g., pr594), don't override it
 exec "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
     --include-kagenti-install \
     --include-agents \
-    --env ocp \
-    ci
+    --env ocp
