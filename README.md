@@ -80,7 +80,7 @@ Under each of these pillars are logical components that support the workload run
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │                               KUBERNETES / OPENSHIFT                                │
 └─────────────────────────────────────────────────────────────────────────────────────┘
-* Built by Kagenti
+* = Built by Kagenti
 ```
 
 ## Core Components
