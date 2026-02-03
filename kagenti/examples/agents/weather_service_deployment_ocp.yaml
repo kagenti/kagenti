@@ -48,11 +48,19 @@ spec:
         - name: MCP_URL
           value: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
         - name: LLM_API_BASE
-          value: "http://dockerhost:11434/v1"
+          value: "https://api.openai.com/v1"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
         - name: LLM_API_KEY
-          value: "dummy"
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
         - name: LLM_MODEL
-          value: "qwen2.5:0.5b"
+          value: "gpt-4o-mini"
         - name: GITHUB_SECRET_NAME
           value: "github-token-secret"
         ports:
