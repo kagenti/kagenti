@@ -32,6 +32,8 @@
 #   Other options:
 #     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
 #     --env ENV          Environment for Kagenti installer (default: ocp)
+#     --pytest-filter, -k FILTER  Filter tests with pytest -k expression
+#     --pytest-args ARGS Additional pytest arguments (e.g., "-x" to stop on first failure)
 #
 # EXAMPLES:
 #   # Full run (default - everything)
@@ -167,6 +169,8 @@ CLEAN_KAGENTI=false
 KAGENTI_ENV="${KAGENTI_ENV:-ocp}"
 CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-}"  # Preserve env var if set
 WHITELIST_MODE=false
+PYTEST_FILTER=""
+PYTEST_ARGS=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -235,6 +239,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --env)
             KAGENTI_ENV="$2"
+            shift 2
+            ;;
+        --pytest-filter|-k)
+            PYTEST_FILTER="$2"
+            shift 2
+            ;;
+        --pytest-args)
+            PYTEST_ARGS="$2"
             shift 2
             ;;
         *)
@@ -746,6 +758,16 @@ if [ "$RUN_TEST" = "true" ]; then
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
     log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+
+    # Export pytest filter options if specified
+    if [ -n "$PYTEST_FILTER" ]; then
+        export PYTEST_FILTER
+        log_step "PYTEST_FILTER: $PYTEST_FILTER"
+    fi
+    if [ -n "$PYTEST_ARGS" ]; then
+        export PYTEST_ARGS
+        log_step "PYTEST_ARGS: $PYTEST_ARGS"
+    fi
 
     ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
 else

@@ -17,10 +17,26 @@ echo "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
 mkdir -p "$REPO_ROOT/test-results"
 
-pytest tests/e2e/common tests/e2e/kagenti_operator -v \
-    --timeout=300 \
-    --tb=short \
-    --junit-xml=../test-results/e2e-results.xml || {
+# Support filtering tests via PYTEST_FILTER or PYTEST_ARGS
+# PYTEST_FILTER: pytest -k filter expression (e.g., "test_mlflow" or "TestGenAI")
+# PYTEST_ARGS: additional pytest arguments (e.g., "-x" for stop on first failure)
+# Use uv run to ensure we use the project's virtual environment
+PYTEST_CMD="uv run pytest"
+PYTEST_TARGETS="${PYTEST_TARGETS:-tests/e2e/common tests/e2e/kagenti_operator}"
+PYTEST_OPTS="-v --timeout=300 --tb=short --junit-xml=../test-results/e2e-results.xml"
+
+if [ -n "${PYTEST_FILTER:-}" ]; then
+    PYTEST_OPTS="$PYTEST_OPTS -k \"$PYTEST_FILTER\""
+    echo "Filtering tests with: -k \"$PYTEST_FILTER\""
+fi
+
+if [ -n "${PYTEST_ARGS:-}" ]; then
+    PYTEST_OPTS="$PYTEST_OPTS $PYTEST_ARGS"
+    echo "Additional pytest args: $PYTEST_ARGS"
+fi
+
+echo "Running: $PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS"
+eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS" || {
     log_error "E2E tests failed"
     exit 1
 }
