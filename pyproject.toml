@@ -30,6 +30,8 @@ test = [
     # Kubernetes client
     "kubernetes>=34",
     "urllib3>=2.6.3",  # Minimum version for CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 fixes
+    "protobuf>=6.33.5",  # Minimum version for CVE-2026-0994 fix
+    "pyasn1>=0.6.2",  # Minimum version for CVE-2026-23490 fix
 
     # HTTP requests
     "requests>=2.31.0",
