@@ -352,7 +352,7 @@ def mlflow_url():
 
 
 @pytest.fixture(scope="module")
-def mlflow_client_token(k8s_client, is_openshift):
+def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
     """Get OAuth2 token for MLflow using client credentials flow.
 
     Reads MLflow OAuth secret from K8s and uses client credentials grant
@@ -368,8 +368,9 @@ def mlflow_client_token(k8s_client, is_openshift):
     import urllib3
     from kubernetes.client.rest import ApiException
 
-    # Suppress SSL warnings for OpenShift self-signed certs
-    if is_openshift:
+    # Use CA file if available, otherwise disable warnings for self-signed certs
+    ssl_verify = openshift_ingress_ca if openshift_ingress_ca else False
+    if is_openshift and not openshift_ingress_ca:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     try:
@@ -393,7 +394,7 @@ def mlflow_client_token(k8s_client, is_openshift):
                 "client_secret": client_secret,
             },
             timeout=10,
-            verify=False,  # OpenShift self-signed certs
+            verify=ssl_verify,
         )
 
         if response.status_code == 200:
@@ -458,12 +459,19 @@ def mlflow_configured(mlflow_url, mlflow_client_token, is_openshift):
 class TestMLflowConnectivity:
     """Test MLflow service is accessible."""
 
-    def test_mlflow_accessible(self, mlflow_url: str, mlflow_configured: bool):
+    def test_mlflow_accessible(
+        self, mlflow_url: str, mlflow_configured: bool, openshift_ingress_ca
+    ):
         """Verify MLflow is accessible."""
         import httpx
 
+        # Use CA file if available, otherwise disable verification
+        ssl_verify = openshift_ingress_ca if openshift_ingress_ca else False
+
         try:
-            response = httpx.get(f"{mlflow_url}/version", verify=False, timeout=30.0)
+            response = httpx.get(
+                f"{mlflow_url}/version", verify=ssl_verify, timeout=30.0
+            )
             # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
             assert response.status_code in (200, 302, 307), (
                 f"MLflow returned unexpected status {response.status_code}. "
