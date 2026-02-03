@@ -69,7 +69,7 @@ Under each of these pillars are logical components that support the workload run
 │  │  AgentCard CRD*) │ │                  │ │                  │ │                │  │
 │  │                  │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
 │  │                  │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
-│  │                  │ │                  │ │                  │ │   (Kiali)│     │  │
+│  │                  │ │                  │ │                  │ │   (Kiali)      │  │
 │  │   Container      │ ├──────────────────┤ ├──────────────────┤ │                │  │
 │  │     Builds       │ │                  │ │                  │ │                │  │
 │  │  (Shipwright)    │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
