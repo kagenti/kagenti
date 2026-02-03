@@ -90,7 +90,7 @@ jobs:
 
       - name: Dependency Review
         id: dependency-review
-        uses: actions/dependency-review-action@46a3c492319c890177366b6ef46d6b4f89743ed4  # v4
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261  # v4
         with:
           # Stricter security settings (Phase A improvement)
           fail-on-severity: moderate
