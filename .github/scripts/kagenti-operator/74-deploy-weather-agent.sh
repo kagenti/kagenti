@@ -57,14 +57,45 @@ run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buil
     log_info "BuildRun status:"
     kubectl get buildrun "$BUILDRUN_NAME" -n team1 -o yaml
 
-    # Get build pod logs
-    log_info "Build pod logs:"
-    BUILD_POD=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
-    if [ -n "$BUILD_POD" ]; then
-        kubectl logs -n team1 "$BUILD_POD" --all-containers=true || true
-    fi
+    # Check if the failure is just sidecar cleanup (image may still be built)
+    FAILURE_REASON=$(kubectl get buildrun "$BUILDRUN_NAME" -n team1 -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || echo "")
+    if [ "$FAILURE_REASON" = "TaskRunStopSidecarFailed" ]; then
+        log_info "BuildRun failed due to sidecar cleanup issue, checking if image was built..."
 
-    exit 1
+        # Check if image exists in registry (build may have actually succeeded)
+        if [ "$IS_OPENSHIFT" = "true" ]; then
+            IMAGE_EXISTS=$(kubectl get imagestreamtag weather-service:v0.0.1 -n team1 2>/dev/null && echo "yes" || echo "no")
+        else
+            # For Kind, check if we can pull the image tag info
+            IMAGE_EXISTS=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="step-build-and-push")].state.terminated.exitCode}' 2>/dev/null || echo "")
+            if [ "$IMAGE_EXISTS" = "0" ]; then
+                IMAGE_EXISTS="yes"
+            else
+                IMAGE_EXISTS="no"
+            fi
+        fi
+
+        if [ "$IMAGE_EXISTS" = "yes" ]; then
+            log_info "Image was built successfully despite sidecar cleanup failure. Proceeding..."
+        else
+            log_error "Image not found in registry. Build actually failed."
+            # Get build pod logs
+            log_info "Build pod logs:"
+            BUILD_POD=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
+            if [ -n "$BUILD_POD" ]; then
+                kubectl logs -n team1 "$BUILD_POD" --all-containers=true || true
+            fi
+            exit 1
+        fi
+    else
+        # Get build pod logs for other failures
+        log_info "Build pod logs:"
+        BUILD_POD=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
+        if [ -n "$BUILD_POD" ]; then
+            kubectl logs -n team1 "$BUILD_POD" --all-containers=true || true
+        fi
+        exit 1
+    fi
 }
 
 log_success "BuildRun completed successfully"
