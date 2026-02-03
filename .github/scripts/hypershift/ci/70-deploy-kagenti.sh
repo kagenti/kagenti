@@ -42,12 +42,15 @@ cd "$REPO_ROOT"
 
 # Wait for cluster to be fully ready before deploying
 # HyperShift clusters can take time for all components to initialize
+# Wait for nodes - increased timeout for autoscaling scenarios
+# Autoscaling can take 5-10 minutes to provision new nodes
 echo "Waiting for cluster nodes to be ready..."
-MAX_RETRIES=30
+MAX_RETRIES=60
 RETRY_DELAY=10
 for i in $(seq 1 $MAX_RETRIES); do
-    # Use tr -d to strip whitespace from wc output
-    NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready" | wc -l | tr -d ' ' || echo "999")
+    # Count nodes that are NOT in Ready status
+    # Use awk to reliably check the STATUS column (2nd column)
+    NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2 != "Ready" {count++} END {print count+0}' || echo "999")
     TOTAL=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
     # Validate numeric values to avoid arithmetic errors
     [[ ! "$NOT_READY" =~ ^[0-9]+$ ]] && NOT_READY=999
