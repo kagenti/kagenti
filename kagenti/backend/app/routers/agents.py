@@ -323,9 +323,9 @@ def _is_deployment_ready(resource_data: dict) -> str:
             return "Ready"
 
     # Check replica counts for Deployments
-    replicas = status.get("replicas", 0)
+    replicas = status.get("replicas") or 0
     ready_replicas = status.get("ready_replicas") or status.get("readyReplicas", 0)
-    if replicas > 0 and ready_replicas >= replicas:
+    if 0 < replicas <= ready_replicas:
         return "Ready"
 
     # Fallback: check deploymentStatus.phase for older Agent CRD versions
@@ -351,7 +351,7 @@ def _is_statefulset_ready(resource_data: dict) -> str:
     status = resource_data.get("status", {})
 
     # Check replica counts for StatefulSets
-    replicas = status.get("replicas", 0)
+    replicas = status.get("replicas") or 0
     ready_replicas = status.get("ready_replicas") or status.get("readyReplicas", 0)
 
     if replicas == 0:

@@ -5,16 +5,14 @@
 Tool API endpoints.
 """
 
-import json
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from contextlib import AsyncExitStack
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client import ApiException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
