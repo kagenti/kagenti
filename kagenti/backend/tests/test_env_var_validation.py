@@ -31,7 +31,7 @@ class TestAgentEnvVarValidation:
             "lower",
             "MixedCase123",
         ]
-        
+
         for name in valid_names:
             # Should not raise ValidationError
             env_var = AgentEnvVar(name=name, value="test_value")
@@ -51,11 +51,11 @@ class TestAgentEnvVarValidation:
             "MCP_TRANSPORT=http",  # Contains equals (common mistake)
             "",  # Empty name
         ]
-        
+
         for name in invalid_names:
             with pytest.raises(ValidationError) as exc_info:
                 AgentEnvVar(name=name, value="test_value")
-            
+
             # Verify the error message mentions the validation rule
             assert "Invalid environment variable name" in str(exc_info.value)
 
@@ -63,16 +63,15 @@ class TestAgentEnvVarValidation:
         """Test that valueFrom env vars also validate the name."""
         # Valid name with secretKeyRef
         env_var = AgentEnvVar(
-            name="MY_SECRET",
-            valueFrom={"secretKeyRef": {"name": "my-secret", "key": "password"}}
+            name="MY_SECRET", valueFrom={"secretKeyRef": {"name": "my-secret", "key": "password"}}
         )
         assert env_var.name == "MY_SECRET"
-        
+
         # Invalid name with secretKeyRef
         with pytest.raises(ValidationError) as exc_info:
             AgentEnvVar(
                 name="123-INVALID",
-                valueFrom={"secretKeyRef": {"name": "my-secret", "key": "password"}}
+                valueFrom={"secretKeyRef": {"name": "my-secret", "key": "password"}},
             )
         assert "Invalid environment variable name" in str(exc_info.value)
 
@@ -89,7 +88,7 @@ class TestToolEnvVarValidation:
             "var123",
             "_PRIVATE_VAR",
         ]
-        
+
         for name in valid_names:
             # Should not raise ValidationError
             env_var = ToolEnvVar(name=name, value="test_value")
@@ -104,11 +103,11 @@ class TestToolEnvVarValidation:
             "MY VAR",  # Contains space
             "MY=VAR",  # Contains equals
         ]
-        
+
         for name in invalid_names:
             with pytest.raises(ValidationError) as exc_info:
                 ToolEnvVar(name=name, value="test_value")
-            
+
             # Verify the error message mentions the validation rule
             assert "Invalid environment variable name" in str(exc_info.value)
 
@@ -134,7 +133,7 @@ class TestEnvVarNamePatterns:
     def test_special_characters_rejected(self):
         """Test that special characters are rejected."""
         special_chars = ["-", ".", "=", "$", "@", "#", "%", "^", "&", "*", "(", ")", "+"]
-        
+
         for char in special_chars:
             with pytest.raises(ValidationError):
                 AgentEnvVar(name=f"VAR{char}NAME", value="test")
