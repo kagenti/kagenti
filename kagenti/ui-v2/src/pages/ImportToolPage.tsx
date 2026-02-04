@@ -220,15 +220,6 @@ export const ImportToolPage: React.FC = () => {
     }
   };
 
-  // Validate environment variable name according to Kubernetes rules
-  const isValidEnvVarName = (name: string): boolean => {
-    if (!name) return false;
-    // Kubernetes env var name pattern: must start with letter or underscore,
-    // followed by any combination of letters, digits, or underscores
-    const pattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
-    return pattern.test(name);
-  };
-
   // Environment variable handlers
   const addEnvVar = () => {
     setEnvVars([...envVars, { name: '', value: '' }]);
@@ -959,17 +950,7 @@ export const ImportToolPage: React.FC = () => {
                               value={env.name}
                               onChange={(_e, value) => updateEnvVar(index, 'name', value)}
                               placeholder="VAR_NAME"
-                              validated={env.name && !isValidEnvVarName(env.name) ? 'error' : 'default'}
                             />
-                            {env.name && !isValidEnvVarName(env.name) && (
-                              <FormHelperText>
-                                <HelperText>
-                                  <HelperTextItem variant="error">
-                                    Must start with letter or underscore, contain only letters, digits, and underscores
-                                  </HelperTextItem>
-                                </HelperText>
-                              </FormHelperText>
-                            )}
                           </SplitItem>
                           <SplitItem isFilled>
                             <TextInput
