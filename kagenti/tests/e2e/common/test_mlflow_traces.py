@@ -39,11 +39,75 @@ import logging
 import os
 import subprocess
 import time
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Trace Waiting with Exponential Backoff
+# =============================================================================
+
+
+def wait_for_traces(
+    check_fn: Callable[[], list],
+    min_count: int = 1,
+    timeout_seconds: int = 60,
+    poll_interval: float = 2.0,
+    backoff_factor: float = 1.5,
+    max_interval: float = 10.0,
+    description: str = "traces",
+) -> list:
+    """Wait for traces to appear in MLflow with exponential backoff.
+
+    Args:
+        check_fn: Function that returns list of traces to check
+        min_count: Minimum number of traces required
+        timeout_seconds: Maximum time to wait
+        poll_interval: Initial polling interval
+        backoff_factor: Multiplier for interval after each attempt
+        max_interval: Maximum polling interval
+        description: Description for logging
+
+    Returns:
+        List of traces found
+
+    Raises:
+        TimeoutError: If traces don't appear within timeout
+    """
+    start_time = time.time()
+    current_interval = poll_interval
+    attempt = 0
+
+    while time.time() - start_time < timeout_seconds:
+        attempt += 1
+        try:
+            traces = check_fn()
+            if len(traces) >= min_count:
+                logger.info(
+                    f"Found {len(traces)} {description} after {attempt} attempts "
+                    f"({time.time() - start_time:.1f}s)"
+                )
+                return traces
+
+            logger.info(
+                f"Attempt {attempt}: Found {len(traces)} {description}, "
+                f"waiting for {min_count}... (next check in {current_interval:.1f}s)"
+            )
+        except Exception as e:
+            logger.warning(f"Attempt {attempt}: Error checking {description}: {e}")
+
+        time.sleep(current_interval)
+        current_interval = min(current_interval * backoff_factor, max_interval)
+
+    elapsed = time.time() - start_time
+    raise TimeoutError(
+        f"Timed out waiting for {min_count} {description} after {elapsed:.1f}s "
+        f"({attempt} attempts). OTEL collector may not be forwarding traces to MLflow."
+    )
+
 
 # Weather agent identification patterns
 # These patterns match the service.name or span names from weather agent traces
@@ -121,12 +185,74 @@ def setup_mlflow_client(mlflow_url: str) -> bool:
 # Module-level shared MLflow client to avoid creating multiple instances
 _mlflow_client = None
 
+# Token refresh state
+_token_credentials: dict = {}  # Stores client_id, client_secret, token_url, ssl_verify
+_token_issued_at: float = 0  # Time when token was issued
+_token_expires_in: int = 60  # Token lifetime in seconds
+TOKEN_REFRESH_MARGIN = 10  # Refresh token 10 seconds before expiry
+
+
+def _refresh_mlflow_token() -> bool:
+    """Refresh the MLflow tracking token if it's about to expire.
+
+    Returns True if token was refreshed or still valid, False on error.
+    """
+    global _token_issued_at, _token_expires_in
+
+    # Check if we have credentials to refresh
+    if not _token_credentials:
+        logger.warning("No token credentials available for refresh")
+        return False
+
+    # Check if token needs refresh
+    elapsed = time.time() - _token_issued_at
+    if elapsed < (_token_expires_in - TOKEN_REFRESH_MARGIN):
+        # Token is still valid
+        return True
+
+    logger.info(f"Token expired or expiring (elapsed: {elapsed:.0f}s), refreshing...")
+
+    try:
+        import requests
+
+        response = requests.post(
+            _token_credentials["token_url"],
+            data={
+                "grant_type": "client_credentials",
+                "client_id": _token_credentials["client_id"],
+                "client_secret": _token_credentials["client_secret"],
+            },
+            timeout=10,
+            verify=_token_credentials.get("ssl_verify", False),
+        )
+
+        if response.status_code == 200:
+            token_data = response.json()
+            new_token = token_data.get("access_token")
+            _token_expires_in = token_data.get("expires_in", 60)
+            _token_issued_at = time.time()
+
+            # Update the environment variable for MLflow client
+            os.environ["MLFLOW_TRACKING_TOKEN"] = new_token
+
+            logger.info(f"Token refreshed (expires in {_token_expires_in}s)")
+            return True
+        else:
+            logger.error(f"Failed to refresh token: {response.status_code}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error refreshing token: {e}")
+        return False
+
 
 def get_mlflow_client():
     """Get or create a shared MLflow client.
 
     Uses a module-level cached client to avoid creating multiple instances
     which can cause rate limiting issues.
+
+    Automatically refreshes the auth token if it's about to expire.
 
     Raises an error if MLflow is not configured or auth token is missing.
     """
@@ -139,6 +265,10 @@ def get_mlflow_client():
         raise ValueError(
             "MLflow tracking URI not configured - call setup_mlflow_client first"
         )
+
+    # Refresh token if needed (before checking if it's set)
+    if _token_credentials:
+        _refresh_mlflow_token()
 
     # Verify token is set - fail if not
     token = os.environ.get("MLFLOW_TRACKING_TOKEN", "")
@@ -347,7 +477,10 @@ def mlflow_url():
     """Get MLflow URL for tests."""
     url = get_mlflow_url()
     if not url:
-        pytest.skip("MLflow URL not available")
+        pytest.fail(
+            "MLflow URL not available. "
+            "Set MLFLOW_URL env var or ensure mlflow route exists in kagenti-system."
+        )
     return url
 
 
@@ -359,9 +492,13 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
     to get an access token. This is required because mlflow-oidc-auth needs
     a token issued for the 'mlflow' client, not 'admin-cli'.
 
+    Also stores credentials for automatic token refresh during long test runs.
+
     Returns:
         str: Access token, or None if auth is not configured
     """
+    global _token_credentials, _token_issued_at, _token_expires_in
+
     import base64
 
     import requests
@@ -385,6 +522,14 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
 
         logger.info(f"Getting MLflow token from: {token_url}")
 
+        # Store credentials for automatic token refresh
+        _token_credentials = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "token_url": token_url,
+            "ssl_verify": ssl_verify,
+        }
+
         # Get token using client credentials flow
         response = requests.post(
             token_url,
@@ -399,9 +544,9 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
 
         if response.status_code == 200:
             token_data = response.json()
-            logger.info(
-                f"Got MLflow client token (expires in {token_data.get('expires_in')}s)"
-            )
+            _token_expires_in = token_data.get("expires_in", 60)
+            _token_issued_at = time.time()
+            logger.info(f"Got MLflow client token (expires in {_token_expires_in}s)")
             return token_data.get("access_token")
         else:
             logger.warning(f"Failed to get MLflow token: {response.status_code}")
@@ -442,16 +587,58 @@ def mlflow_configured(mlflow_url, mlflow_client_token, is_openshift):
         os.environ["MLFLOW_TRACKING_TOKEN"] = mlflow_client_token
         logger.info("Set MLFLOW_TRACKING_TOKEN from MLflow client credentials")
     else:
-        logger.warning("No MLflow token available - MLflow auth may fail")
+        pytest.fail(
+            "Failed to get MLflow OAuth token from Keycloak. "
+            "Check that mlflow-oauth-secret exists in kagenti-system and "
+            "Keycloak is accessible. Auth must work for tests to run."
+        )
 
     if not setup_mlflow_client(mlflow_url):
-        pytest.skip("Failed to configure MLflow client")
+        pytest.fail(
+            "Failed to configure MLflow client. "
+            "Check MLflow URL and network connectivity."
+        )
 
     # Verify token is set by re-checking
     token = os.environ.get("MLFLOW_TRACKING_TOKEN", "")
     logger.info(f"MLFLOW_TRACKING_TOKEN set: {bool(token)} (length: {len(token)})")
 
     return True
+
+
+@pytest.fixture(scope="module")
+def traces_available(mlflow_configured):
+    """Wait for traces to be available in MLflow before running trace tests.
+
+    This fixture ensures that:
+    1. OTEL collector has time to batch and forward traces
+    2. MLflow has ingested the traces
+    3. Tests don't fail due to timing issues
+
+    Uses exponential backoff to avoid overwhelming MLflow API.
+    Module-scoped so it only runs once for all test classes.
+    """
+    logger.info("Waiting for traces to appear in MLflow...")
+
+    try:
+        traces = wait_for_traces(
+            check_fn=get_all_traces,
+            min_count=1,
+            timeout_seconds=30,
+            poll_interval=2.0,
+            backoff_factor=1.5,
+            description="traces in MLflow",
+        )
+        logger.info(f"Found {len(traces)} traces, proceeding with tests")
+        return traces
+    except TimeoutError as e:
+        pytest.fail(
+            f"No traces appeared in MLflow after waiting: {e}\n\n"
+            "Possible causes:\n"
+            "  1. Weather agent conversation tests didn't run first\n"
+            "  2. OTEL collector not forwarding to MLflow\n"
+            "  3. MLflow OTLP endpoint not configured correctly"
+        )
 
 
 @pytest.mark.observability
@@ -494,12 +681,12 @@ class TestWeatherAgentTracesInMLflow:
     OpenShift only: Kind CI doesn't have full OTEL instrumentation.
     """
 
-    def test_mlflow_has_traces(self, mlflow_url: str, mlflow_configured: bool):
+    def test_mlflow_has_traces(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
         """Verify MLflow received traces from E2E tests."""
-        # Give traces time to be exported (OTEL batching)
-        time.sleep(2)
-
-        traces = get_all_traces()
+        # traces_available fixture already waited for traces with backoff
+        traces = traces_available
         trace_count = len(traces)
 
         print(f"\n{'=' * 60}")
@@ -731,10 +918,13 @@ class TestGenAITracesInMLflow:
     _cached_genai_traces: list = None
 
     @classmethod
-    def _get_cached_traces(cls) -> tuple[list, list]:
-        """Get cached traces or fetch from MLflow once."""
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> tuple[list, list]:
+        """Get cached traces or use traces from fixture."""
         if cls._cached_traces is None:
-            cls._cached_traces = get_all_traces()
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
             cls._cached_genai_traces = [
                 t for t in cls._cached_traces if has_genai_spans(t)
             ]
@@ -791,7 +981,10 @@ class TestGenAITracesInMLflow:
         """
         all_traces, genai_traces = self._get_cached_traces()
         if not all_traces:
-            pytest.skip("No traces available to check structure")
+            pytest.fail(
+                "No traces available to check structure. "
+                "Ensure conversation tests ran first and MLflow auth is working."
+            )
 
         # Find a trace with multiple spans (prefer 3+ for proper hierarchy)
         # Limit API calls to avoid rate limiting issues
@@ -812,7 +1005,7 @@ class TestGenAITracesInMLflow:
             if candidate_traces:
                 trace = candidate_traces[0]
             else:
-                pytest.skip("No candidate traces available")
+                pytest.fail("No candidate traces available - auth or API issue")
 
         tree = get_trace_tree_structure(trace)
 
@@ -942,14 +1135,19 @@ class TestMLflowTraceMetadata:
     _cached_traces: list = None
 
     @classmethod
-    def _get_cached_traces(cls) -> list:
-        """Get cached traces or fetch from MLflow once."""
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> list:
+        """Get cached traces or use traces from fixture."""
         if cls._cached_traces is None:
-            cls._cached_traces = get_all_traces()
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
             logger.info(f"Cached {len(cls._cached_traces)} traces for metadata tests")
         return cls._cached_traces
 
-    def test_trace_metadata_fields(self, mlflow_url: str, mlflow_configured: bool):
+    def test_trace_metadata_fields(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
         """Verify traces have comprehensive metadata visible in MLflow UI.
 
         MLflow UI shows these fields for each trace:
@@ -959,9 +1157,11 @@ class TestMLflowTraceMetadata:
         - Execution time, Prompt, Request time
         - Run name, Source, State
         """
-        all_traces = self._get_cached_traces()
+        all_traces = self._get_cached_traces(traces_available)
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("Trace Metadata Fields")
@@ -1015,7 +1215,9 @@ class TestMLflowTraceMetadata:
         assert trace_with_id > 0, "No traces have request_id"
         print(f"\nSUCCESS: {trace_with_id}/10 traces have request_id")
 
-    def test_traces_have_session_info(self, mlflow_url: str, mlflow_configured: bool):
+    def test_traces_have_session_info(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
         """Verify traces have session/context information.
 
         Traces should have tags or metadata that allow grouping by:
@@ -1023,9 +1225,11 @@ class TestMLflowTraceMetadata:
         - Session ID
         - Client request ID
         """
-        all_traces = self._get_cached_traces()
+        all_traces = self._get_cached_traces(traces_available)
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("Trace Session Information")
@@ -1065,7 +1269,9 @@ class TestMLflowTraceMetadata:
                 "as a trace tag for conversation grouping."
             )
 
-    def test_trace_execution_metrics(self, mlflow_url: str, mlflow_configured: bool):
+    def test_trace_execution_metrics(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
         """Verify traces have execution metrics (timing, tokens).
 
         Traces should include:
@@ -1073,9 +1279,11 @@ class TestMLflowTraceMetadata:
         - Token counts (if LLM calls)
         - Start/end timestamps
         """
-        all_traces = self._get_cached_traces()
+        all_traces = self._get_cached_traces(traces_available)
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("Trace Execution Metrics")
@@ -1117,28 +1325,47 @@ class TestSessionTracking:
 
     # Class-level cache for traces
     _cached_traces: list = None
+    _cached_genai_traces: list = None
 
     @classmethod
-    def _get_cached_traces(cls) -> list:
-        """Get cached traces or fetch from MLflow once."""
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> tuple[list, list]:
+        """Get cached traces or use traces from fixture.
+
+        Returns:
+            Tuple of (all_traces, genai_traces) where genai_traces are filtered
+            to only include traces with GenAI spans.
+        """
         if cls._cached_traces is None:
-            cls._cached_traces = get_all_traces()
-            logger.info(f"Cached {len(cls._cached_traces)} traces for session tests")
-        return cls._cached_traces
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
+            # Filter for GenAI traces - these are the ones with gen_ai.* attributes
+            cls._cached_genai_traces = [
+                t for t in cls._cached_traces if has_genai_spans(t)
+            ]
+            logger.info(
+                f"Cached {len(cls._cached_traces)} traces, "
+                f"{len(cls._cached_genai_traces)} GenAI traces for session tests"
+            )
+        return cls._cached_traces, cls._cached_genai_traces
 
     def test_traces_exist_for_session_analysis(
-        self, mlflow_url: str, mlflow_configured: bool
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
     ):
         """Verify traces exist to analyze for session patterns."""
-        all_traces = self._get_cached_traces()
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
 
         print(f"\n{'=' * 60}")
         print("Session Tracking - Trace Availability")
         print(f"{'=' * 60}")
         print(f"Total traces available: {len(all_traces)}")
+        print(f"GenAI traces available: {len(genai_traces)}")
 
         if not all_traces:
-            pytest.skip("No traces available for session analysis")
+            pytest.fail(
+                "No traces available for session analysis - ensure tests ran first"
+            )
 
         # Show trace timestamps to verify they're from recent runs
         for i, trace in enumerate(all_traces[:3]):
@@ -1151,27 +1378,40 @@ class TestSessionTracking:
         print(f"\nSUCCESS: {len(all_traces)} traces available for analysis")
 
     def test_traces_have_genai_conversation_id(
-        self, mlflow_url: str, mlflow_configured: bool
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
     ):
         """
         Assert traces have gen_ai.conversation.id for session tracking.
 
         This is the standard GenAI semantic convention attribute that enables
         MLflow to group traces by conversation/session.
+
+        NOTE: Due to MLflow async trace hierarchy flattening (see GitHub issue #16880),
+        GenAI spans may be in separate traces from A2A framework spans. This test
+        specifically checks GenAI traces, not all traces.
         """
-        all_traces = self._get_cached_traces()
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("GenAI Conversation ID Check")
         print(f"{'=' * 60}")
+        print(f"Total traces: {len(all_traces)}")
+        print(f"GenAI traces: {len(genai_traces)}")
+
+        # Check GenAI traces specifically - these are the ones that should have
+        # gen_ai.conversation.id set. Due to MLflow's async trace flattening,
+        # A2A framework traces won't have these attributes.
+        traces_to_check = genai_traces if genai_traces else all_traces[:10]
 
         # Check span attributes for gen_ai.conversation.id
         traces_with_conversation_id = 0
         conversation_ids_found = set()
 
-        for trace in all_traces[:10]:  # Check first 10 traces
+        for trace in traces_to_check[:10]:  # Check first 10 GenAI traces
             spans = get_trace_span_details(trace)
             for span in spans:
                 attrs = span.get("attributes", {})
@@ -1181,16 +1421,17 @@ class TestSessionTracking:
                     conversation_ids_found.add(conversation_id)
                     break  # Found in this trace, move to next
 
-        print(f"Traces checked: {min(10, len(all_traces))}")
+        print(f"GenAI traces checked: {min(10, len(traces_to_check))}")
         print(f"Traces with gen_ai.conversation.id: {traces_with_conversation_id}")
         print(f"Unique conversation IDs: {len(conversation_ids_found)}")
 
         if conversation_ids_found:
             print(f"Sample IDs: {list(conversation_ids_found)[:3]}")
 
-        # ASSERT: At least one trace must have gen_ai.conversation.id
+        # ASSERT: At least one GenAI trace must have gen_ai.conversation.id
         assert traces_with_conversation_id > 0, (
-            "No traces found with gen_ai.conversation.id attribute. "
+            "No GenAI traces found with gen_ai.conversation.id attribute. "
+            f"Checked {len(traces_to_check)} GenAI traces out of {len(all_traces)} total. "
             "Weather agent should set this attribute for MLflow session tracking. "
             "Ensure the weather agent is using GenAI semantic conventions."
         )
@@ -1199,15 +1440,19 @@ class TestSessionTracking:
             f"\nSUCCESS: Found {traces_with_conversation_id} traces with conversation ID"
         )
 
-    def test_trace_grouping_by_service(self, mlflow_url: str, mlflow_configured: bool):
+    def test_trace_grouping_by_service(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
         """
         Verify traces can be grouped by service.name for per-agent analysis.
 
         This is an alternative grouping strategy when session IDs aren't available.
         """
-        all_traces = self._get_cached_traces()
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("Trace Grouping by Service")
@@ -1259,10 +1504,15 @@ class TestTraceCategorization:
     _non_genai_traces: list = None
 
     @classmethod
-    def _get_categorized_traces(cls) -> tuple[list, list, list]:
+    def _get_categorized_traces(
+        cls, traces_from_fixture: list = None
+    ) -> tuple[list, list, list]:
         """Get traces categorized into GenAI and non-GenAI."""
         if cls._cached_traces is None:
-            cls._cached_traces = get_all_traces()
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
 
             # Categorize traces (limit to avoid rate limiting)
             cls._genai_traces = []
@@ -1282,7 +1532,7 @@ class TestTraceCategorization:
         return cls._cached_traces, cls._genai_traces, cls._non_genai_traces
 
     def test_categorize_traces_by_genai_content(
-        self, mlflow_url: str, mlflow_configured: bool
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
     ):
         """
         Categorize traces into GenAI (LLM spans) vs non-GenAI (chatty).
@@ -1290,10 +1540,14 @@ class TestTraceCategorization:
         GenAI traces contain spans from LangChain, OpenAI, or LLM instrumentation.
         Non-GenAI traces contain only A2A protocol or infrastructure spans.
         """
-        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces()
+        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces(
+            traces_available
+        )
 
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("Trace Categorization: GenAI vs Non-GenAI")
@@ -1387,7 +1641,9 @@ class TestTraceCategorization:
 
         print("\nSUCCESS: Identified chatty trace patterns")
 
-    def test_trace_value_assessment(self, mlflow_url: str, mlflow_configured: bool):
+    def test_trace_value_assessment(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
         """
         Assess the debugging value of different trace categories.
 
@@ -1396,10 +1652,14 @@ class TestTraceCategorization:
         - Medium value: Tool/function call traces
         - Low value: Infrastructure-only traces
         """
-        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces()
+        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces(
+            traces_available
+        )
 
         if not all_traces:
-            pytest.skip("No traces available")
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
 
         print(f"\n{'=' * 60}")
         print("Trace Value Assessment")

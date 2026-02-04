@@ -47,6 +47,58 @@ roleRef:
   name: mlflow-resource-reader
   apiGroup: rbac.authorization.k8s.io
 {{- end }}
+{{- if and .Values.mlflow.auth.enabled (.Capabilities.APIVersions.Has "security.istio.io/v1") }}
+---
+# Waypoint proxy for MLflow to enable L7 AuthorizationPolicy in Ambient mode.
+# ztunnel (L4) cannot evaluate HTTP path-based rules; waypoint handles L7.
+# NOTE: Requires Istio CRDs to be installed first (security.istio.io/v1)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mlflow-waypoint
+  namespace: {{ .Release.Namespace }}
+  labels:
+    istio.io/waypoint-for: service
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+---
+# AuthorizationPolicy to control access to MLflow /v1/traces endpoint.
+# Uses targetRefs to attach to the waypoint proxy for L7 policy evaluation.
+# The OTEL collector authenticates via OAuth2 client credentials to MLflow.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: mlflow-traces-from-otel
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: mlflow
+  action: ALLOW
+  rules:
+    # Allow OTEL collector to push traces (mTLS + OAuth2 authenticated)
+    # Note: Istio uses cluster.local trust domain, not SPIRE trust domain
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Release.Namespace }}/sa/otel-collector"
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v1/traces", "/v1/traces/*"]
+    # Allow all other traffic (OIDC auth handled at application level)
+    - to:
+        - operation:
+            notPaths: ["/v1/traces", "/v1/traces/*"]
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -95,13 +147,13 @@ spec:
             ROUTE_HOST=$(cat /tmp/route-config/hostname)
             echo "Auto-detected route hostname: $ROUTE_HOST"
           fi
-          # Build allowed hosts list
-          ALLOWED_HOSTS="mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          # Build allowed hosts list (include port variants for internal service access)
+          ALLOWED_HOSTS="mlflow,mlflow:5000,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}:5000,mlflow.{{ .Release.Namespace }}.svc.cluster.local,mlflow.{{ .Release.Namespace }}.svc.cluster.local:5000,localhost,127.0.0.1"
           if [ -n "$ROUTE_HOST" ]; then
             ALLOWED_HOSTS="$ROUTE_HOST,$ALLOWED_HOSTS"
           fi
           {{- else }}
-          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
+          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow:5000,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}:5000,mlflow.{{ .Release.Namespace }}.svc.cluster.local,mlflow.{{ .Release.Namespace }}.svc.cluster.local:5000,localhost,127.0.0.1"
           {{- end }}
           {{- if .Values.mlflow.auth.enabled }}
           # Set MLflow config via environment variables (used by mlflow_oidc_auth.app)
@@ -327,6 +379,11 @@ metadata:
   labels:
     app: mlflow
     {{- include "kagenti.labels" . | nindent 4 }}
+    {{- if and .Values.mlflow.auth.enabled (.Capabilities.APIVersions.Has "security.istio.io/v1") }}
+    # Route traffic through waypoint proxy for L7 AuthorizationPolicy
+    # NOTE: Only applied when Istio CRDs are available
+    istio.io/use-waypoint: mlflow-waypoint
+    {{- end }}
 spec:
   selector:
     app: mlflow
