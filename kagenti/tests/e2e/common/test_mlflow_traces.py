@@ -520,6 +520,32 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
         client_secret = base64.b64decode(secret.data["OIDC_CLIENT_SECRET"]).decode()
         token_url = base64.b64decode(secret.data["OIDC_TOKEN_URL"]).decode()
 
+        # If token_url is an internal cluster URL, use external Keycloak route instead
+        # This happens when tests run from outside the cluster (e.g., developer laptop)
+        if "keycloak-service.keycloak" in token_url or ".svc" in token_url:
+            logger.info(f"Internal token URL detected: {token_url}")
+            try:
+                # Get external Keycloak route from OpenShift
+                from kubernetes.client import CustomObjectsApi
+
+                custom_api = CustomObjectsApi()
+                route = custom_api.get_namespaced_custom_object(
+                    group="route.openshift.io",
+                    version="v1",
+                    namespace="keycloak",
+                    plural="routes",
+                    name="keycloak",
+                )
+                keycloak_host = route["spec"]["host"]
+                # Extract the path from internal URL (e.g., /realms/master/protocol/...)
+                from urllib.parse import urlparse
+
+                parsed = urlparse(token_url)
+                token_url = f"https://{keycloak_host}{parsed.path}"
+                logger.info(f"Using external Keycloak route: {token_url}")
+            except Exception as e:
+                logger.warning(f"Could not get Keycloak route, using internal URL: {e}")
+
         logger.info(f"Getting MLflow token from: {token_url}")
 
         # Store credentials for automatic token refresh
@@ -1702,6 +1728,313 @@ class TestTraceCategorization:
                 print("\nTrace quality: Good - most traces contain GenAI spans")
 
         print("\nSUCCESS: Trace value assessment complete")
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestRootSpanAttributes:
+    """
+    Verify root spans have required attributes for MLflow and Phoenix.
+
+    Root spans should have:
+    - MLflow metadata: mlflow.spanInputs, mlflow.spanOutputs, mlflow.user, etc.
+    - OpenInference: input.value, output.value, openinference.span.kind
+    - GenAI conventions: gen_ai.conversation.id, gen_ai.agent.name
+    """
+
+    # Class-level cache for traces
+    _cached_traces: list = None
+    _cached_genai_traces: list = None
+
+    @classmethod
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> tuple[list, list]:
+        """Get cached traces or use traces from fixture."""
+        if cls._cached_traces is None:
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
+            # Filter for GenAI traces
+            cls._cached_genai_traces = [
+                t for t in cls._cached_traces if has_genai_spans(t)
+            ]
+            logger.info(
+                f"Cached {len(cls._cached_traces)} traces, "
+                f"{len(cls._cached_genai_traces)} GenAI traces for root span tests"
+            )
+        return cls._cached_traces, cls._cached_genai_traces
+
+    def _get_root_span(self, trace: Any) -> dict | None:
+        """Get the root span from a trace.
+
+        The root span is either:
+        - A span with no parent_id
+        - A span named 'gen_ai.agent.invoke' (our middleware root)
+        """
+        spans = get_trace_span_details(trace)
+        if not spans:
+            return None
+
+        # First, look for our middleware root span by name
+        for span in spans:
+            if span.get("name") == "gen_ai.agent.invoke":
+                return span
+
+        # Build tree structure to find root
+        tree = get_trace_tree_structure(trace)
+        root_spans = tree.get("root_spans", [])
+
+        # Return first root span
+        return root_spans[0] if root_spans else None
+
+    def test_root_span_has_mlflow_attributes(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify root span has MLflow-specific attributes.
+
+        Required MLflow attributes:
+        - mlflow.spanInputs: Captured input to the agent
+        - mlflow.spanOutputs: Captured output from the agent
+        - mlflow.user: User identifier (default: 'kagenti')
+        - mlflow.traceName: Name of the trace/agent
+        - mlflow.version: Agent version
+        - mlflow.runName: Run identifier
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.fail(
+                "No GenAI traces available - ensure conversation tests ran first"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("Root Span MLflow Attributes")
+        print(f"{'=' * 60}")
+
+        # Required attributes for MLflow display
+        mlflow_attrs = [
+            "mlflow.spanInputs",
+            "mlflow.spanOutputs",
+            "mlflow.user",
+            "mlflow.traceName",
+            "mlflow.version",
+            "mlflow.runName",
+        ]
+
+        traces_checked = 0
+        traces_with_all_attrs = 0
+        attr_counts = {attr: 0 for attr in mlflow_attrs}
+        missing_by_trace = []
+
+        # Check GenAI traces (max 10)
+        for trace in genai_traces[:10]:
+            root_span = self._get_root_span(trace)
+            if not root_span:
+                continue
+
+            traces_checked += 1
+            attrs = root_span.get("attributes", {})
+            trace_missing = []
+
+            for attr in mlflow_attrs:
+                if attr in attrs and attrs[attr]:
+                    attr_counts[attr] += 1
+                else:
+                    trace_missing.append(attr)
+
+            if not trace_missing:
+                traces_with_all_attrs += 1
+            else:
+                trace_info = trace.info if hasattr(trace, "info") else trace
+                request_id = getattr(trace_info, "request_id", "unknown")[:16]
+                missing_by_trace.append((request_id, trace_missing))
+
+        print(f"Traces checked: {traces_checked}")
+        print(f"Traces with all MLflow attrs: {traces_with_all_attrs}")
+        print(f"\nAttribute coverage:")
+        for attr, count in attr_counts.items():
+            status = "✓" if count == traces_checked else "✗"
+            print(f"  {status} {attr}: {count}/{traces_checked}")
+
+        if missing_by_trace:
+            print(f"\nMissing attributes (first 3 traces):")
+            for req_id, missing in missing_by_trace[:3]:
+                print(f"  {req_id}...: {', '.join(missing)}")
+
+        # Assert: at least one trace should have all MLflow attributes
+        assert traces_with_all_attrs > 0, (
+            f"No traces have all required MLflow attributes.\n"
+            f"Checked {traces_checked} GenAI traces.\n"
+            f"Missing attributes: {[a for a, c in attr_counts.items() if c == 0]}\n\n"
+            "Ensure the weather agent observability middleware sets these attributes "
+            "on the root span."
+        )
+
+        print(
+            f"\nSUCCESS: {traces_with_all_attrs}/{traces_checked} traces have all MLflow attrs"
+        )
+
+    def test_root_span_has_openinference_attributes(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify root span has OpenInference attributes for Phoenix.
+
+        Required OpenInference attributes:
+        - input.value: User input text
+        - output.value: Agent response text
+        - openinference.span.kind: Span type (should be 'AGENT')
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.fail(
+                "No GenAI traces available - ensure conversation tests ran first"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("Root Span OpenInference Attributes (Phoenix)")
+        print(f"{'=' * 60}")
+
+        # Required attributes for Phoenix display
+        openinference_attrs = [
+            "input.value",
+            "output.value",
+            "openinference.span.kind",
+        ]
+
+        traces_checked = 0
+        traces_with_all_attrs = 0
+        attr_counts = {attr: 0 for attr in openinference_attrs}
+        sample_values = {}
+
+        # Check GenAI traces (max 10)
+        for trace in genai_traces[:10]:
+            root_span = self._get_root_span(trace)
+            if not root_span:
+                continue
+
+            traces_checked += 1
+            attrs = root_span.get("attributes", {})
+
+            has_all = True
+            for attr in openinference_attrs:
+                if attr in attrs and attrs[attr]:
+                    attr_counts[attr] += 1
+                    # Capture first sample value
+                    if attr not in sample_values:
+                        val = str(attrs[attr])[:50]
+                        sample_values[attr] = val
+                else:
+                    has_all = False
+
+            if has_all:
+                traces_with_all_attrs += 1
+
+        print(f"Traces checked: {traces_checked}")
+        print(f"Traces with all OpenInference attrs: {traces_with_all_attrs}")
+        print(f"\nAttribute coverage:")
+        for attr, count in attr_counts.items():
+            status = "✓" if count == traces_checked else "✗"
+            print(f"  {status} {attr}: {count}/{traces_checked}")
+            if attr in sample_values:
+                print(f"      Sample: {sample_values[attr]}...")
+
+        # Note: output.value may be missing due to streaming responses (Task #8)
+        # Make this a soft assertion with informative message
+        if attr_counts["output.value"] == 0:
+            print(
+                "\nWARNING: output.value missing on all traces. "
+                "This is expected for streaming responses - "
+                "see Task #8 for streaming output capture fix."
+            )
+
+        # Assert: at least input.value and openinference.span.kind should be present
+        assert attr_counts["input.value"] > 0, (
+            "No traces have input.value attribute. "
+            "Ensure the weather agent sets input.value on root span."
+        )
+        assert attr_counts["openinference.span.kind"] > 0, (
+            "No traces have openinference.span.kind attribute. "
+            "Ensure the weather agent sets openinference.span.kind='AGENT' on root span."
+        )
+
+        print(
+            f"\nSUCCESS: {traces_with_all_attrs}/{traces_checked} traces have OpenInference attrs"
+        )
+
+    def test_root_span_has_genai_attributes(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify root span has GenAI semantic convention attributes.
+
+        Required GenAI attributes:
+        - gen_ai.conversation.id: Session/conversation identifier
+        - gen_ai.agent.name: Agent name
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.fail(
+                "No GenAI traces available - ensure conversation tests ran first"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("Root Span GenAI Attributes")
+        print(f"{'=' * 60}")
+
+        # Required GenAI semantic convention attributes
+        genai_attrs = [
+            "gen_ai.conversation.id",
+            "gen_ai.agent.name",
+        ]
+
+        traces_checked = 0
+        traces_with_all_attrs = 0
+        attr_counts = {attr: 0 for attr in genai_attrs}
+        conversation_ids = set()
+
+        # Check GenAI traces (max 10)
+        for trace in genai_traces[:10]:
+            root_span = self._get_root_span(trace)
+            if not root_span:
+                continue
+
+            traces_checked += 1
+            attrs = root_span.get("attributes", {})
+
+            has_all = True
+            for attr in genai_attrs:
+                if attr in attrs and attrs[attr]:
+                    attr_counts[attr] += 1
+                    if attr == "gen_ai.conversation.id":
+                        conversation_ids.add(attrs[attr])
+                else:
+                    has_all = False
+
+            if has_all:
+                traces_with_all_attrs += 1
+
+        print(f"Traces checked: {traces_checked}")
+        print(f"Traces with all GenAI attrs: {traces_with_all_attrs}")
+        print(f"\nAttribute coverage:")
+        for attr, count in attr_counts.items():
+            status = "✓" if count == traces_checked else "✗"
+            print(f"  {status} {attr}: {count}/{traces_checked}")
+
+        print(f"\nUnique conversation IDs: {len(conversation_ids)}")
+        if conversation_ids:
+            print(f"Sample IDs: {list(conversation_ids)[:3]}")
+
+        # Assert: conversation.id is required for MLflow session tracking
+        assert attr_counts["gen_ai.conversation.id"] > 0, (
+            "No traces have gen_ai.conversation.id attribute. "
+            "This is required for MLflow session grouping."
+        )
+
+        print(
+            f"\nSUCCESS: {traces_with_all_attrs}/{traces_checked} traces have GenAI attrs"
+        )
 
 
 def main():

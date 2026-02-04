@@ -13,10 +13,13 @@ metadata:
   labels:
     app: kagenti
     {{- include "kagenti.labels" . | nindent 4 }}
-  annotations:
-    "helm.sh/hook": post-install, post-upgrade
-    "helm.sh/hook-weight": "1"
-    "helm.sh/hook-delete-policy": before-hook-creation
+  {{- /*
+    NOTE: Removed helm.sh/hook annotations.
+    The Keycloak CR must be created during main install, not as a post-install hook.
+    Otherwise, pods waiting for Keycloak create a circular dependency that prevents
+    the install from completing (context deadline exceeded).
+    The operator will reconcile the CR when it becomes ready.
+  */}}
   name: keycloak
   namespace: {{ .Values.keycloak.namespace }}
 spec:
