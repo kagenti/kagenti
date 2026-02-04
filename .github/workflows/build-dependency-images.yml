@@ -50,7 +50,7 @@ jobs:
 
       - name: Extract Docker metadata for ${{ matrix.image_config.name }}
         id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804  # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5
         with:
           images: ghcr.io/kagenti/${{ matrix.image_config.name }}
           tags: |
