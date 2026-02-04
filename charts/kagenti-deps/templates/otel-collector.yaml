@@ -170,12 +170,9 @@ data:
       filter/phoenix:
         traces:
           span:
-            ## Filter for openinference packages OR GenAI semantic conventions
-            #### OpenInference Python: `openinference.instrumentation.${package_name}`
-            #### OpenInference JS: `@arizeai/openinference-instrumentation-${packageName}`
-            #### crewAI exception: `crewai.telemetry`
-            #### GenAI: spans with gen_ai.* attributes (from agents using GenAI semantic conventions)
-            - not(IsMatch(instrumentation_scope.name, "^openinference\\.instrumentation\\..*") or IsMatch(instrumentation_scope.name, "^@arizeai/openinference-instrumentation-.*") or instrumentation_scope.name == "crewai.telemetry" or attributes["gen_ai.request.model"] != nil or attributes["gen_ai.agent.name"] != nil)
+            ## Filter OUT A2A framework spans (span names starting with "a2a.")
+            ## Keep: OpenInference, LangChain, CrewAI, and GenAI agent spans
+            - IsMatch(name, "^a2a\\..*")
       # Transform GenAI semantic conventions to OpenInference format for Phoenix
       # See: https://opentelemetry.io/docs/specs/semconv/gen-ai/
       # See: https://github.com/Arize-ai/openinference
@@ -196,6 +193,16 @@ data:
               # Convert GenAI invocation parameters (temperature)
               - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"], "")], "")) where attributes["gen_ai.request.temperature"] != nil
       {{- if $.Values.components.mlflow.enabled }}
+      # Filter for MLflow: only keep agent spans, filter out A2A framework spans
+      # A2A framework spans have names starting with "a2a."
+      filter/mlflow:
+        traces:
+          span:
+            # Filter OUT spans that match these conditions (A2A framework spans):
+            # - Span names starting with "a2a." (A2A server framework)
+            # - Spans without any GenAI/agent attributes from our instrumentation
+            # Keep: spans with mlflow.spanInputs (our agent spans), LangChain, OpenInference
+            - IsMatch(name, "^a2a\\..*")
       # Transform GenAI semantic conventions to MLflow-specific metadata
       # MLflow uses its own trace metadata format, not OpenInference
       # See: https://mlflow.org/blog/opentelemetry-tracing-support
@@ -278,7 +285,7 @@ data:
         {{- if $.Values.components.mlflow.enabled }}
         traces/mlflow:
           receivers: [ otlp ]
-          processors: [ memory_limiter, transform/genai_to_mlflow, batch ]
+          processors: [ memory_limiter, filter/mlflow, transform/genai_to_mlflow, batch ]
           exporters: [ debug, otlphttp/mlflow ]
         {{- end }}
 {{- end }}
