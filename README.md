@@ -1,10 +1,13 @@
 
 # Kagenti
 
+[![CI](https://github.com/kagenti/kagenti/actions/workflows/ci.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/ci.yaml)
+[![E2E K8s 1.32.2 (Kind)](https://github.com/kagenti/kagenti/actions/workflows/e2e-kind.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/e2e-kind.yaml)
+[![E2E OCP 4.20.11 (HyperShift)](https://github.com/kagenti/kagenti/actions/workflows/e2e-hypershift.yaml/badge.svg)](https://github.com/kagenti/kagenti/actions/workflows/e2e-hypershift.yaml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/kagenti/kagenti/badge)](https://scorecard.dev/viewer/?uri=github.com/kagenti/kagenti)
+[![GitHub Release](https://img.shields.io/github/v/release/kagenti/kagenti)](https://github.com/kagenti/kagenti/releases/latest)
 [![License](https://img.shields.io/github/license/kagenti/kagenti)](LICENSE)
-![Contributors](https://img.shields.io/github/contributors/kagenti/kagenti)
-![Issues](https://img.shields.io/github/issues/kagenti/kagenti)
-![Pull Requests](https://img.shields.io/github/issues-pr/kagenti/kagenti)
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/aJ92dNDzqB)
 
 **Kagenti** is a cloud-native middleware providing a *framework-neutral*, *scalable*, and *secure* platform for deploying and orchestrating AI agents through standardized agent communication protocols (A2A, MCP).
 

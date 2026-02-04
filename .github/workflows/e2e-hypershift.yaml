@@ -1,4 +1,4 @@
-name: E2E HyperShift
+name: E2E OCP 4.20.11 (HyperShift)
 
 on:
   push:
@@ -39,11 +39,12 @@ concurrency:
 permissions:
   contents: read
 
+# Version tracking - keep workflow name in sync with default OCP_VERSION
 env:
   # Cluster suffix - for push to main uses run number, for workflow_dispatch uses user input
   # For PR testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
   CLUSTER_SUFFIX: ${{ inputs.cluster_name || github.run_number }}
-  OCP_VERSION: ${{ inputs.ocp_version || '4.20.11' }}
+  OCP_VERSION: ${{ inputs.ocp_version || '4.20.11' }}  # Update workflow name when changing default
   # Slot management for parallel CI runs
   MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
   SLOT_TIMEOUT: '60'  # Minutes to wait for an available slot
@@ -53,7 +54,7 @@ jobs:
   # E2E Tests Job - This is the main check that determines PR mergeability
   # ============================================================================
   e2e-ocp-kagenti-operator:
-    name: E2E Tests
+    name: Deploy & Test
     runs-on: ubuntu-latest
     timeout-minutes: 120
 

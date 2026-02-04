@@ -1,4 +1,4 @@
-name: E2E Kind
+name: E2E K8s 1.32.2 (Kind)
 
 on:
   pull_request:
@@ -13,9 +13,13 @@ on:
 permissions:
   contents: read
 
+# Version tracking - keep in sync with deployments/ansible/kind/kind-config.yaml
+env:
+  K8S_VERSION: '1.32.2'  # Must match kindest/node version in kind-config.yaml
+
 jobs:
   e2e-dev-kagenti-operator:
-    name: e2e (Dev, Kagenti Operator)
+    name: Deploy & Test
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
