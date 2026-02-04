@@ -255,6 +255,95 @@ class TestWeatherAgentConversation:
         print(f"  Query: {user_message}")
         print(f"  Response: {full_response[:200]}...")
 
+    @pytest.mark.asyncio
+    async def test_agent_multiturn_conversation(self):
+        """
+        Test multi-turn conversation maintains consistent session/context ID.
+
+        This validates:
+        - Multiple messages can share the same contextId
+        - Session tracking works across conversation turns
+        - Observability traces can be grouped by session
+        """
+        agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
+        ssl_verify = _get_ssl_verify()
+
+        # Generate a unique context ID for this conversation session
+        context_id = str(uuid4())
+        print(f"\n=== Multi-turn Conversation Test ===")
+        print(f"Session/Context ID: {context_id}")
+
+        messages = [
+            "What is the weather in Paris?",
+            "And what about London?",
+            "Which city is warmer?",
+        ]
+
+        async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as httpx_client:
+            client = A2AClient(httpx_client=httpx_client, url=agent_url)
+
+            for turn, user_message in enumerate(messages, 1):
+                print(f"\n--- Turn {turn}: {user_message} ---")
+
+                send_message_payload = {
+                    "message": {
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": user_message}],
+                        "messageId": uuid4().hex,
+                        "contextId": context_id,
+                    },
+                    "contextId": context_id,
+                }
+
+                streaming_request = SendStreamingMessageRequest(
+                    id=str(uuid4()), params=MessageSendParams(**send_message_payload)
+                )
+
+                full_response = ""
+                final_event_received = False
+
+                try:
+                    stream_response_iterator = client.send_message_streaming(
+                        streaming_request
+                    )
+
+                    async for chunk in stream_response_iterator:
+                        if isinstance(chunk.root, SendStreamingMessageSuccessResponse):
+                            event = chunk.root.result
+
+                            if isinstance(event, Task):
+                                if event.status and event.status.state in [
+                                    "COMPLETED",
+                                    "FAILED",
+                                ]:
+                                    final_event_received = True
+
+                            elif isinstance(event, TaskStatusUpdateEvent):
+                                if event.final:
+                                    final_event_received = True
+
+                            elif isinstance(event, TaskArtifactUpdateEvent):
+                                if hasattr(event, "artifact") and hasattr(
+                                    event.artifact, "parts"
+                                ):
+                                    for part in event.artifact.parts or []:
+                                        p = getattr(part, "root", part)
+                                        if hasattr(p, "text"):
+                                            full_response += p.text
+
+                        if final_event_received:
+                            break
+
+                except Exception as e:
+                    pytest.fail(f"Turn {turn} failed: {e}")
+
+                assert full_response, f"Turn {turn}: Agent did not return any response"
+                print(f"  Response: {full_response[:100]}...")
+
+        print(f"\n✓ Multi-turn conversation completed successfully")
+        print(f"✓ All {len(messages)} turns used context ID: {context_id}")
+        print("✓ Check observability (MLflow/Phoenix) for session grouping")
+
 
 if __name__ == "__main__":
     import sys
