@@ -863,13 +863,25 @@ def get_trace_tree_structure(trace: Any) -> dict:
     children: dict = {}
     root_spans = []
 
+    # First pass: collect all span_ids
+    all_span_ids = {span.get("span_id") for span in spans if span.get("span_id")}
+
     for span in spans:
         span_id = span.get("span_id")
         parent_id = span.get("parent_id")
 
-        # MLflow span.parent_id can be None, "None" (string), or empty string for root spans
-        is_root = not parent_id or parent_id == "None" or parent_id == ""
-        if is_root:
+        # MLflow span.parent_id can be None, "None" (string), empty string, or
+        # the OpenTelemetry INVALID_SPAN_ID (16 zeros) for root spans.
+        # Also treat spans as root if parent_id points to a span NOT in this trace
+        # (e.g., parent is in A2A framework trace that was broken).
+        is_explicitly_root = (
+            not parent_id
+            or parent_id == "None"
+            or parent_id == ""
+            or parent_id == "0000000000000000"
+            or (parent_id and parent_id not in all_span_ids)
+        )
+        if is_explicitly_root:
             root_spans.append(span)
         else:
             if parent_id not in children:
