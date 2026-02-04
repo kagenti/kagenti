@@ -123,6 +123,7 @@ class CreateToolRequest(BaseModel):
     namespace: str
     protocol: str = "streamable_http"
     framework: str = "Python"
+    description: Optional[str] = None
     envVars: Optional[List[EnvVar]] = None
     servicePorts: Optional[List[ServicePort]] = None
 
