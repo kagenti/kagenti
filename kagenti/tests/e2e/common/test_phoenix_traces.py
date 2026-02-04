@@ -73,12 +73,33 @@ def get_phoenix_url() -> str | None:
 
 
 class PhoenixClient:
-    """Client for Phoenix REST API to query traces."""
+    """Client for Phoenix GraphQL API to query traces.
+
+    Phoenix 8.x uses GraphQL for trace queries. The REST API endpoints
+    like /v1/projects/{name}/traces return HTML (the web UI), not JSON.
+    """
 
     def __init__(self, base_url: str, verify_ssl: bool = True):
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
         self.client = httpx.Client(verify=verify_ssl, timeout=30.0)
+
+    def _graphql_query(self, query: str) -> dict | None:
+        """Execute a GraphQL query against Phoenix."""
+        try:
+            response = self.client.post(
+                f"{self.base_url}/graphql",
+                json={"query": query},
+                headers={"Content-Type": "application/json"},
+            )
+            if response.status_code == 200:
+                result = response.json()
+                if "errors" in result and result.get("errors"):
+                    return None
+                return result.get("data")
+            return None
+        except (httpx.RequestError, ValueError):
+            return None
 
     def health_check(self) -> bool:
         """Check if Phoenix is accessible."""
@@ -92,6 +113,7 @@ class PhoenixClient:
     def get_projects(self) -> list[dict]:
         """Get all projects from Phoenix."""
         try:
+            # REST API for projects still works
             response = self.client.get(f"{self.base_url}/v1/projects")
             if response.status_code == 200:
                 try:
@@ -102,47 +124,106 @@ class PhoenixClient:
         except httpx.RequestError:
             return []
 
+    def get_trace_count(self, project_name: str = "default") -> int:
+        """Get trace count for a project using GraphQL."""
+        query = """
+        query {
+            projects(first: 10) {
+                edges {
+                    node {
+                        name
+                        traceCount
+                    }
+                }
+            }
+        }
+        """
+        data = self._graphql_query(query)
+        if not data:
+            return 0
+
+        projects = data.get("projects", {}).get("edges", [])
+        for edge in projects:
+            node = edge.get("node", {})
+            if node.get("name") == project_name:
+                return node.get("traceCount", 0)
+        return 0
+
+    def get_spans(self, limit: int = 100) -> list[dict]:
+        """Get spans using GraphQL (Phoenix 8.x doesn't expose traces list via REST)."""
+        query = f"""
+        query {{
+            projects(first: 1) {{
+                edges {{
+                    node {{
+                        spans(first: {limit}) {{
+                            edges {{
+                                node {{
+                                    name
+                                    spanKind
+                                    context {{
+                                        spanId
+                                        traceId
+                                    }}
+                                    attributes
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        }}
+        """
+        data = self._graphql_query(query)
+        if not data:
+            return []
+
+        spans = []
+        projects = data.get("projects", {}).get("edges", [])
+        for project_edge in projects:
+            span_edges = project_edge.get("node", {}).get("spans", {}).get("edges", [])
+            for span_edge in span_edges:
+                node = span_edge.get("node", {})
+                spans.append(
+                    {
+                        "name": node.get("name"),
+                        "span_kind": node.get("spanKind"),
+                        "span_id": node.get("context", {}).get("spanId"),
+                        "trace_id": node.get("context", {}).get("traceId"),
+                        "attributes": node.get("attributes"),
+                    }
+                )
+        return spans
+
     def get_traces(self, project_name: str = "default", limit: int = 100) -> list[dict]:
-        """Get traces for a project."""
-        try:
-            response = self.client.get(
-                f"{self.base_url}/v1/projects/{project_name}/traces",
-                params={"limit": limit},
-            )
-            if response.status_code == 200:
-                try:
-                    return response.json().get("data", [])
-                except (ValueError, KeyError):
-                    return []
-            return []
-        except httpx.RequestError:
-            return []
+        """Get traces for a project by extracting unique trace IDs from spans."""
+        spans = self.get_spans(limit=limit * 10)  # Get more spans to find unique traces
+        trace_ids = set()
+        traces = []
+        for span in spans:
+            trace_id = span.get("trace_id")
+            if trace_id and trace_id not in trace_ids:
+                trace_ids.add(trace_id)
+                traces.append(
+                    {
+                        "id": trace_id,
+                        "trace_id": trace_id,
+                        "name": span.get("name", ""),
+                    }
+                )
+                if len(traces) >= limit:
+                    break
+        return traces
 
     def get_all_traces(self) -> list[dict]:
         """Get all traces across all projects."""
-        all_traces = []
-        projects = self.get_projects()
-
-        # If no projects, try default
-        if not projects:
-            return self.get_traces("default")
-
-        for project in projects:
-            project_name = project.get("name", "default")
-            traces = self.get_traces(project_name)
-            all_traces.extend(traces)
-
-        return all_traces
+        return self.get_traces("default")
 
     def get_trace_spans(self, trace_id: str) -> list[dict]:
-        """Get spans for a specific trace."""
-        try:
-            response = self.client.get(f"{self.base_url}/v1/traces/{trace_id}/spans")
-            if response.status_code == 200:
-                return response.json().get("data", [])
-            return []
-        except httpx.RequestError:
-            return []
+        """Get spans for a specific trace using GraphQL."""
+        # Get all spans and filter by trace_id
+        spans = self.get_spans(limit=500)
+        return [s for s in spans if s.get("trace_id") == trace_id]
 
     def find_llm_traces(self) -> list[dict]:
         """Find traces that contain LLM-related spans."""
@@ -156,29 +237,26 @@ class PhoenixClient:
             "completion",
             "agent",
             "chain",
+            "gen_ai",
         ]
 
-        all_traces = self.get_all_traces()
+        spans = self.get_spans(limit=500)
+        llm_trace_ids = set()
         llm_traces = []
 
-        for trace in all_traces:
-            trace_id = trace.get("id") or trace.get("trace_id")
-            if not trace_id:
-                continue
-
-            # Check trace name/metadata
-            trace_name = (trace.get("name") or "").lower()
-            if any(pattern in trace_name for pattern in llm_patterns):
-                llm_traces.append(trace)
-                continue
-
-            # Check spans
-            spans = self.get_trace_spans(trace_id)
-            for span in spans:
-                span_name = (span.get("name") or "").lower()
-                if any(pattern in span_name for pattern in llm_patterns):
-                    llm_traces.append(trace)
-                    break
+        for span in spans:
+            span_name = (span.get("name") or "").lower()
+            if any(pattern in span_name for pattern in llm_patterns):
+                trace_id = span.get("trace_id")
+                if trace_id and trace_id not in llm_trace_ids:
+                    llm_trace_ids.add(trace_id)
+                    llm_traces.append(
+                        {
+                            "id": trace_id,
+                            "trace_id": trace_id,
+                            "name": span.get("name", ""),
+                        }
+                    )
 
         return llm_traces
 
@@ -229,8 +307,8 @@ class TestWeatherAgentTracesInPhoenix:
         # Give traces time to be exported (OTEL batching)
         time.sleep(2)
 
-        traces = phoenix_client.get_all_traces()
-        trace_count = len(traces)
+        # Use GraphQL to get trace count (more reliable than REST)
+        trace_count = phoenix_client.get_trace_count("default")
 
         print(f"\n{'=' * 60}")
         print("Phoenix Trace Summary")
