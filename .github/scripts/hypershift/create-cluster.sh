@@ -346,6 +346,19 @@ CLUSTER_INFO="$HOME/clusters/hcp/$CLUSTER_NAME/cluster-info.txt"
 # Wait for cluster to be ready (both CI and local mode)
 # Save management cluster kubeconfig before switching (needed for diagnostics)
 MGMT_KUBECONFIG="$KUBECONFIG"
+
+# Check if kubeconfig was created by Ansible
+if [ ! -f "$CLUSTER_KUBECONFIG" ]; then
+    log_error "Cluster kubeconfig not found at: $CLUSTER_KUBECONFIG"
+    echo ""
+    echo "Expected location: $CLUSTER_KUBECONFIG"
+    echo "Checking if Ansible created it elsewhere..."
+    ls -la "$HOME/clusters/hcp/" 2>/dev/null || echo "  Directory $HOME/clusters/hcp/ does not exist"
+    ls -la "$HOME/clusters/hcp/$CLUSTER_NAME/" 2>/dev/null || echo "  Directory $HOME/clusters/hcp/$CLUSTER_NAME/ does not exist"
+    ls -la "$HOME/clusters/hcp/$CLUSTER_NAME/auth/" 2>/dev/null || echo "  Directory $HOME/clusters/hcp/$CLUSTER_NAME/auth/ does not exist"
+    exit 1
+fi
+
 export KUBECONFIG="$CLUSTER_KUBECONFIG"
 log_info "Waiting for cluster API to be reachable..."
 
@@ -367,7 +380,10 @@ log_info "Waiting for at least one node to be ready..."
 # Wait for at least one node to exist first
 CONTROL_PLANE_NS="clusters-$CLUSTER_NAME"
 for i in {1..60}; do
-    NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
+    # Use || true to prevent pipefail from exiting on API errors during wait
+    NODE_COUNT=$(oc get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+    # Validate NODE_COUNT is numeric
+    [[ ! "$NODE_COUNT" =~ ^[0-9]+$ ]] && NODE_COUNT=0
     if [ "$NODE_COUNT" -gt 0 ]; then
         log_info "Found $NODE_COUNT node(s), waiting for Ready condition..."
         break
