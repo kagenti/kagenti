@@ -199,6 +199,32 @@ spec:
           from mlflow_oidc_auth.app import app
           print("App created with /v1/traces endpoint")
 
+          # Create Default experiment if it does not exist
+          # MLflow requires experiment_id=0 (Default) for trace ingestion
+          import os
+          import psycopg
+          db_uri = os.environ.get("MLFLOW_BACKEND_STORE_URI")
+          if db_uri:
+              try:
+                  with psycopg.connect(db_uri) as conn:
+                      with conn.cursor() as cur:
+                          # Check if Default experiment exists
+                          cur.execute("SELECT experiment_id FROM experiments WHERE experiment_id = 0")
+                          if cur.fetchone() is None:
+                              import time
+                              ts = int(time.time() * 1000)
+                              cur.execute(
+                                  "INSERT INTO experiments (experiment_id, name, artifact_location, lifecycle_stage, creation_time, last_update_time) "
+                                  "VALUES (0, %s, %s, %s, %s, %s)",
+                                  ("Default", "/mlflow/artifacts/0", "active", ts, ts)
+                              )
+                              conn.commit()
+                              print("Created Default experiment (id=0)")
+                          else:
+                              print("Default experiment already exists")
+              except Exception as e:
+                  print(f"Warning: Could not create Default experiment: {e}")
+
           import uvicorn
           uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
           '

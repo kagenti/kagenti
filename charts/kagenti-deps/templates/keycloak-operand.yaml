@@ -1,12 +1,11 @@
 {{- if and .Values.components.keycloak.enabled .Values.openshift }}
 {{- /* Check if Keycloak CRD exists first to avoid lookup errors */}}
 {{- $keycloakCRD := lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "keycloaks.k8s.keycloak.org" }}
-{{- /* Only check for existing Keycloak instance if CRD exists */}}
-{{- $existingKeycloak := dict }}
-{{- if $keycloakCRD }}
-{{- $existingKeycloak = lookup "k8s.keycloak.org/v2alpha1" "Keycloak" .Values.keycloak.namespace "keycloak" }}
-{{- end }}
-{{- if not $existingKeycloak }}
+{{- /* Only create Keycloak CR if CRD exists (operator installed) */}}
+{{- if $keycloakCRD.metadata }}
+{{- /* Check for existing Keycloak instance - lookup returns {} when not found */}}
+{{- $existingKeycloak := lookup "k8s.keycloak.org/v2alpha1" "Keycloak" .Values.keycloak.namespace "keycloak" }}
+{{- if not $existingKeycloak.metadata }}
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
@@ -56,9 +55,10 @@ spec:
                 value: "forwarded"
 ---
 {{- end }}
+{{- end }}
 {{- /* Check if Route already exists */}}
 {{- $existingRoute := lookup "route.openshift.io/v1" "Route" .Values.keycloak.namespace "keycloak" }}
-{{- if not $existingRoute }}
+{{- if not $existingRoute.metadata }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
