@@ -555,6 +555,7 @@
         - spire_version_compatible is defined
         - spire_version_compatible | bool
         - ztwim_package_check is defined
+        - ztwim_package_check.rc is defined
         - ztwim_package_check.rc != 0
         - not (skip_spire_operator | default(false))
         - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
@@ -573,6 +574,7 @@
         - spire_version_compatible is defined
         - spire_version_compatible | bool
         - ztwim_package_check is defined
+        - ztwim_package_check.rc is defined
         - ztwim_package_check.rc == 0
         - not (skip_spire_operator | default(false))
         - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
