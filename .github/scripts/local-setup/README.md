@@ -284,15 +284,15 @@ The full test script handles this automatically:
 #### Simplified Usage: Middle Phases Only
 
 When only running middle phases (install/agents/test), you don't need to source the full `.env` file.
-Just set `HOSTED_KUBECONFIG` and skip create/destroy:
+Just set `KUBECONFIG` to point to the hosted cluster and skip create/destroy:
 
 ```bash
 # Run only middle phases on an existing cluster
-export HOSTED_KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
 
 # Or using whitelist mode (only specified phases run)
-export HOSTED_KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
+export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig
 ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install --include-agents --include-test
 ```
 
