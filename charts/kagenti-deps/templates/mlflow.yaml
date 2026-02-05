@@ -222,8 +222,24 @@ spec:
                               print("Created Default experiment (id=0)")
                           else:
                               print("Default experiment already exists")
+
+                          # Create service account user for OTEL collector
+                          # mlflow-oidc-auth requires users to exist in its database
+                          # The OTEL collector authenticates as service-account-mlflow via OAuth2
+                          service_account = "service-account-mlflow"
+                          cur.execute("SELECT id FROM users WHERE username = %s", (service_account,))
+                          if cur.fetchone() is None:
+                              cur.execute(
+                                  "INSERT INTO users (username, display_name, is_admin, is_service_account) "
+                                  "VALUES (%s, %s, %s, %s)",
+                                  (service_account, "MLflow Service Account", False, True)
+                              )
+                              conn.commit()
+                              print(f"Created service account user: {service_account}")
+                          else:
+                              print(f"Service account user already exists: {service_account}")
               except Exception as e:
-                  print(f"Warning: Could not create Default experiment: {e}")
+                  print(f"Warning: Could not initialize database: {e}")
 
           import uvicorn
           uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
