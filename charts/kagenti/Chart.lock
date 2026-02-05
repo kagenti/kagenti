@@ -6,4 +6,4 @@ dependencies:
   repository: oci://ghcr.io/kagenti/kagenti-extensions
   version: 0.4.0-alpha.1
 digest: sha256:b21bcf62137939a32eb2aeb3cae86d5410f051c4644c26b4f911c622b112b7c1
-generated: "2026-02-04T18:43:47.04236-05:00"
+generated: "2026-02-05T15:24:54.508679-05:00"
