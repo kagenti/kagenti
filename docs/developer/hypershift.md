@@ -1,6 +1,6 @@
 # HyperShift Development Guide
 
-This guide covers Kagenti development using HyperShift ephemeral OpenShift clusters on AWS.
+This guide covers Kagenti development using HyperShift to create OpenShift clusters on AWS.
 
 ## Table of Contents
 

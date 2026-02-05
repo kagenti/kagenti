@@ -7,7 +7,7 @@ This directory contains comprehensive development guides for working with Kagent
 | Environment | Use Case | Guide |
 |-------------|----------|-------|
 | **Kind** | Local development, quick iteration, no cloud resources | [kind.md](./kind.md) |
-| **HyperShift** | Ephemeral OpenShift clusters, CI testing, cloud-native features | [hypershift.md](./hypershift.md) |
+| **HyperShift** | Create OpenShift clusters on AWS, CI testing, cloud-native features | [hypershift.md](./hypershift.md) |
 | **OpenShift** | Standard RHOCP clusters, persistent environments | [openshift.md](./openshift.md) |
 
 ## Quick Decision Tree
@@ -16,9 +16,9 @@ This directory contains comprehensive development guides for working with Kagent
 Do you have an OpenShift cluster?
 ├─ No → Use [Kind](./kind.md) (local Docker-based Kubernetes)
 │
-└─ Yes → Is it ephemeral (HyperShift)?
-         ├─ Yes → Use [HyperShift](./hypershift.md)
-         └─ No → Use [OpenShift](./openshift.md)
+└─ Yes → Do you need to create the cluster?
+         ├─ Yes → Use [HyperShift](./hypershift.md) (hosted control plane on AWS)
+         └─ No → Use [OpenShift](./openshift.md) (existing cluster)
 ```
 
 ## Environment Comparison
@@ -28,7 +28,7 @@ Do you have an OpenShift cluster?
 | **Entry Script** | `kind-full-test.sh` | `hypershift-full-test.sh --skip-cluster-*` | `hypershift-full-test.sh` |
 | **SPIRE** | Vanilla | ZTWIM Operator | ZTWIM Operator |
 | **Values File** | `dev_values.yaml` | `ocp_values.yaml` | `ocp_values.yaml` |
-| **Cluster Lifetime** | Persistent | Persistent | Ephemeral |
+| **Cluster Lifecycle** | Persistent | Persistent | Create/Destroy |
 | **AWS Required** | No | No | Yes |
 | **Min OCP Version** | N/A | 4.19+ | 4.19+ |
 
@@ -84,7 +84,7 @@ rm -f deployments/envs/.secret_values.yaml
 docs/developer/
 ├── README.md           # This file - overview and environment selection
 ├── kind.md             # Kind (local Kubernetes) development guide
-├── hypershift.md       # HyperShift (ephemeral OpenShift) development guide
+├── hypershift.md       # HyperShift (hosted OpenShift on AWS) development guide
 └── openshift.md        # Standard OpenShift development guide
 ```
 

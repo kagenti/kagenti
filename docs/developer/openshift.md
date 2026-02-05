@@ -2,7 +2,7 @@
 
 This guide covers Kagenti development on standard OpenShift (RHOCP) clusters.
 
-> **Note:** This guide is for persistent OpenShift clusters. For ephemeral clusters, see [HyperShift Development Guide](./hypershift.md).
+> **Note:** This guide is for existing OpenShift clusters. To create new clusters on AWS, see [HyperShift Development Guide](./hypershift.md).
 
 ## Table of Contents
 
@@ -394,7 +394,7 @@ oc rollout status deployment/weather-service -n team1
 | **Entry Script** | `kind-full-test.sh` | `hypershift-full-test.sh --skip-cluster-*` | `hypershift-full-test.sh` |
 | **SPIRE** | Vanilla | ZTWIM Operator | ZTWIM Operator |
 | **Values File** | `dev_values.yaml` | `ocp_values.yaml` | `ocp_values.yaml` |
-| **Cluster Lifetime** | Persistent | Persistent | Ephemeral |
+| **Cluster Lifecycle** | Persistent | Persistent | Create/Destroy |
 | **AWS Required** | No | No | Yes |
 | **Min OCP Version** | N/A | 4.19+ | 4.19+ |
 
