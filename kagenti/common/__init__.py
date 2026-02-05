@@ -44,4 +44,3 @@ __all__ = [
     "get_optional_env",
     "configure_ssl_verification",
 ]
-

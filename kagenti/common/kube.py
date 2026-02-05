@@ -21,7 +21,7 @@ from kubernetes import config
 
 def is_running_in_cluster() -> bool:
     """Check if running inside a Kubernetes cluster.
-    
+
     Returns:
         True if running in a Kubernetes cluster, False otherwise.
     """
@@ -30,7 +30,7 @@ def is_running_in_cluster() -> bool:
 
 def load_kubernetes_config() -> None:
     """Load Kubernetes configuration based on environment.
-    
+
     Loads in-cluster config if running in a cluster, otherwise loads
     from kubeconfig file.
     """
@@ -38,4 +38,3 @@ def load_kubernetes_config() -> None:
         config.load_incluster_config()
     else:
         config.load_kube_config()
-

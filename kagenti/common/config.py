@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 def get_required_env(key: str) -> str:
     """Get a required environment variable or raise ValueError.
-    
+
     Args:
         key: Environment variable name
-        
+
     Returns:
         The environment variable value
-        
+
     Raises:
         ValueError: If the environment variable is not set or is empty
     """
@@ -43,11 +43,11 @@ def get_required_env(key: str) -> str:
 
 def get_optional_env(key: str, default: Optional[str] = None) -> Optional[str]:
     """Get an optional environment variable with optional default.
-    
+
     Args:
         key: Environment variable name
         default: Default value if not set
-        
+
     Returns:
         The environment variable value or default
     """
@@ -84,4 +84,3 @@ def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
     # No explicit certificate provided or file missing: use system CA bundle
     logger.info("No SSL_CERT_FILE provided - using system CA bundle for verification")
     return None
-
