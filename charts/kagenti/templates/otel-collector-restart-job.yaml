@@ -35,7 +35,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["otel-collector"]
+    resourceNames: ["otel-collector", "mlflow"]
     verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -85,12 +85,14 @@ spec:
         - /bin/sh
         - -c
         - |
+          echo "Restarting mlflow to pick up new OAuth credentials..."
+          kubectl rollout restart deployment/mlflow -n {{ .Values.mlflow.namespace }}
+          kubectl rollout status deployment/mlflow -n {{ .Values.mlflow.namespace }} --timeout=120s
+          echo "mlflow restarted successfully"
+
           echo "Restarting otel-collector to pick up new OAuth credentials..."
           kubectl rollout restart deployment/otel-collector -n {{ .Values.mlflow.namespace }}
-
-          echo "Waiting for rollout to complete..."
           kubectl rollout status deployment/otel-collector -n {{ .Values.mlflow.namespace }} --timeout=120s
-
           echo "otel-collector restarted successfully"
   backoffLimit: 3
 {{- end }}
