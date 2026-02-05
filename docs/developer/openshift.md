@@ -133,7 +133,7 @@ Phase 6: Destroy Cluster    → SKIPPED (cluster is persistent)
 
 ## Step-by-Step Deployment
 
-For manual control over each deployment step:
+For manual control using the Ansible installer directly:
 
 ### Step 1: Login to Cluster
 
@@ -141,7 +141,7 @@ For manual control over each deployment step:
 oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 ```
 
-### Step 2: Create Credentials
+### Step 2: Configure Secrets
 
 ```bash
 # Copy and edit secrets file
@@ -149,43 +149,65 @@ cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.y
 vi deployments/envs/.secret_values.yaml
 ```
 
+Required values:
+
+```yaml
+charts:
+  kagenti:
+    values:
+      secrets:
+        openaiApiKey: "sk-..."      # Required for LLM features
+        githubUser: "your-username"  # Required for Shipwright builds
+        githubToken: "ghp_..."       # Required for private repos
+```
+
 ### Step 3: Install Kagenti Platform
 
 ```bash
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
+# Run the Ansible installer for OpenShift
+deployments/ansible/run-install.sh --env ocp
 ```
 
-### Step 4: Wait for CRDs
+The installer will:
+- Deploy Kagenti platform components
+- Configure Istio Ambient mesh
+- Set up Keycloak authentication
+- Create agent namespaces (team1, team2)
+
+### Step 4: Verify Installation
 
 ```bash
-./.github/scripts/kagenti-operator/41-wait-crds.sh
+# Check platform pods
+oc get pods -n kagenti-system
+
+# Check Keycloak
+oc get pods -n keycloak
+
+# Check CRDs are available
+oc get crds | grep kagenti
 ```
 
-### Step 5: Apply Pipeline Template
+### Step 5: Deploy Example Agents (Optional)
+
+To deploy the example weather agent for testing:
 
 ```bash
-./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
+# Apply the weather agent example
+oc apply -f kagenti/examples/weather-agent/ -n team1
+
+# Wait for deployment
+oc rollout status deployment/weather-service -n team1
 ```
 
-### Step 6: Build and Deploy Weather Tool
+### Step 6: Run E2E Tests (Optional)
 
 ```bash
-./.github/scripts/kagenti-operator/71-build-weather-tool.sh
-./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
-```
-
-### Step 7: Deploy Weather Agent
-
-```bash
-./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
-```
-
-### Step 8: Run E2E Tests
-
-```bash
+# Get the agent URL from the route
 export AGENT_URL="https://$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}')"
 export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
-./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+
+# Run tests
+uv run pytest kagenti/tests/e2e/ -v
 ```
 
 ## Accessing Services
@@ -314,7 +336,7 @@ charts:
 Re-run the installer:
 
 ```bash
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
+deployments/ansible/run-install.sh --env ocp
 ```
 
 ### What Gets Created
@@ -364,17 +386,14 @@ oc rollout status deployment/weather-service -n team1
 | `hypershift-full-test.sh` | Unified test runner (use with `--skip-cluster-*`) |
 | `show-services.sh` | Display all services, URLs, and credentials |
 
-### Kagenti Operator Scripts (`.github/scripts/kagenti-operator/`)
+### Ansible Installer (`deployments/ansible/`)
 
 | Script | Purpose |
 |--------|---------|
-| `30-run-installer.sh [--env ocp]` | Run Ansible installer |
-| `41-wait-crds.sh` | Wait for Kagenti CRDs |
-| `42-apply-pipeline-template.sh` | Apply Tekton pipeline template |
-| `71-build-weather-tool.sh` | Build weather-tool image via Shipwright |
-| `72-deploy-weather-tool.sh` | Deploy weather-tool Deployment + Service |
-| `74-deploy-weather-agent.sh` | Deploy weather-agent Component |
-| `90-run-e2e-tests.sh` | Run E2E tests |
+| `run-install.sh --env ocp` | Install Kagenti platform on OpenShift |
+| `cleanup-install.sh` | Uninstall Kagenti platform |
+
+See [Ansible README](../../deployments/ansible/README.md) for advanced options.
 
 ### Phase Options
 
