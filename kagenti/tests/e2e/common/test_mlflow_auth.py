@@ -199,8 +199,8 @@ class TestMLflowAuth:
         """
         Test MLflow /version endpoint is accessible.
 
-        The /version endpoint should always be accessible regardless of auth
-        configuration, as it's used for health checks.
+        When OIDC auth is enabled, the /version endpoint may redirect (302/307)
+        to the login page. Both 200 (no auth) and 302/307 (auth enabled) are valid.
         """
         mlflow_url = require_mlflow_url
         logger.info("=" * 70)
@@ -220,12 +220,17 @@ class TestMLflowAuth:
         logger.info(f"Response status: {response.status_code}")
         logger.info(f"Response body: {response.text}")
 
-        # Version endpoint should always return 200
-        assert response.status_code == 200, (
+        # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
+        assert response.status_code in (200, 302, 307), (
             f"MLflow /version endpoint failed: {response.status_code} - {response.text}"
         )
 
-        logger.info("TEST PASSED: MLflow version endpoint accessible")
+        if response.status_code == 200:
+            logger.info("TEST PASSED: MLflow version endpoint accessible (no auth)")
+        else:
+            logger.info(
+                f"TEST PASSED: MLflow version endpoint redirects to auth ({response.status_code})"
+            )
 
     @pytest.mark.asyncio
     async def test_mlflow_api_accessible(self, require_mlflow_url, is_openshift):
@@ -460,7 +465,8 @@ class TestMLflowBackend:
         """
         Test MLflow responds to health check.
 
-        Uses /version endpoint which should always be accessible.
+        Uses /version endpoint. When OIDC auth is enabled, a 302/307 redirect
+        to the login page indicates MLflow is healthy and auth is working.
         """
         mlflow_url = require_mlflow_url
         logger.info("Testing: MLflow Health Check")
@@ -474,13 +480,19 @@ class TestMLflowBackend:
                 verify_ssl=not is_openshift,
             )
 
-            assert response.status_code == 200, (
+            # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
+            assert response.status_code in (200, 302, 307), (
                 f"MLflow health check failed: {response.status_code}"
             )
 
-            version = response.text.strip().strip('"')
-            logger.info(f"MLflow version: {version}")
-            logger.info("TEST PASSED: MLflow is healthy")
+            if response.status_code == 200:
+                version = response.text.strip().strip('"')
+                logger.info(f"MLflow version: {version}")
+                logger.info("TEST PASSED: MLflow is healthy (no auth)")
+            else:
+                logger.info(
+                    f"TEST PASSED: MLflow is healthy (auth redirect {response.status_code})"
+                )
 
         except httpx.ConnectError as e:
             pytest.fail(f"Could not connect to MLflow at {mlflow_url}: {e}")
