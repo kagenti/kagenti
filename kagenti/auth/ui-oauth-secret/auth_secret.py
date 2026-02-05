@@ -53,7 +53,6 @@ class KeycloakOperationError(Exception):
     pass
 
 
-
 def get_openshift_route_url(
     dyn_client: dynamic.DynamicClient, namespace: str, route_name: str
 ) -> str:
@@ -88,7 +87,6 @@ def get_openshift_route_url(
         error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {e}"
         logger.error(error_msg)
         raise KubernetesResourceError(error_msg) from e
-
 
 
 def create_or_update_secret(

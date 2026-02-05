@@ -49,9 +49,7 @@ def read_keycloak_credentials(
         ValueError: If required keys are missing from secret
     """
     try:
-        logger.info(
-            f"Reading Keycloak admin credentials in namespace {namespace}"
-        )
+        logger.info(f"Reading Keycloak admin credentials in namespace {namespace}")
         secret = v1_api.read_namespaced_secret(secret_name, namespace)
 
         if username_key not in secret.data:
@@ -69,11 +67,12 @@ def read_keycloak_credentials(
         logger.info("Successfully read credentials from secret")
         return username, password
     except ApiException as e:
-        error_msg = f"Could not read Keycloak admin credentials in namespace {namespace}: {e}"
+        error_msg = (
+            f"Could not read Keycloak admin credentials in namespace {namespace}: {e}"
+        )
         logger.error(error_msg)
         raise
     except Exception as e:
         error_msg = f"Unexpected error reading secret: {e}"
         logger.error(error_msg)
         raise
-
