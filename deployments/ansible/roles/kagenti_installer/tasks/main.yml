@@ -753,6 +753,25 @@
     - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
     - (charts['kagenti-deps'] | default({})).get('chart') is defined
 
+# Create ConfigMap for OpenShift trusted CA bundle injection
+# OpenShift's cluster network operator injects the trusted CA bundle into
+# ConfigMaps that have the label config.openshift.io/inject-trusted-cabundle=true
+- name: Create trusted CA bundle ConfigMap for OpenShift
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: config-trusted-cabundle
+        namespace: "{{ (charts['kagenti-deps'] | default({})).get('namespace', 'kagenti-system') }}"
+        labels:
+          config.openshift.io/inject-trusted-cabundle: "true"
+      data: {}
+  when:
+    - openshift | default(false) | bool
+    - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
+
 # Wait for cert-manager CRDs to be available on OpenShift.
 # The cert-manager operator is installed via OLM subscription in kagenti-deps,
 # but the CRDs take time to be created by the operator. The kagenti chart

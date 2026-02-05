@@ -34,6 +34,8 @@
 #     --env ENV          Environment for Kagenti installer (default: ocp)
 #     --pytest-filter, -k FILTER  Filter tests with pytest -k expression
 #     --pytest-args ARGS Additional pytest arguments (e.g., "-x" to stop on first failure)
+#     --dry-run          Check state only, suggest next command (default if no phase flags)
+#     --full             Run everything including cluster destroy
 #
 # EXAMPLES:
 #   # Full run (default - everything)
@@ -100,6 +102,10 @@ OPTIONS:
         --skip-kagenti-uninstall     Skip Kagenti uninstall (default)
         --skip-cluster-destroy       Skip cluster destruction (keep cluster)
 
+    Run modes:
+        --dry-run                    Check state only, suggest next command (default if no phase flags)
+        --full                       Full run including cluster destroy
+
     Other options:
         --clean-kagenti              Uninstall Kagenti before installing
         --env ENV                    Environment for installer (default: ocp)
@@ -110,8 +116,11 @@ OPTIONS:
         Full cluster name: \${MANAGED_BY_TAG}-\${suffix}
 
 EXAMPLES:
+    # Check state of cluster (default - dry-run mode)
+    $SCRIPT_NAME mlflow
+
     # Full run (create -> deploy -> test -> destroy)
-    $SCRIPT_NAME
+    $SCRIPT_NAME --full
 
     # Dev flow: run everything, keep cluster for debugging
     $SCRIPT_NAME --skip-cluster-destroy
@@ -171,6 +180,9 @@ CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-}"  # Preserve env var if set
 WHITELIST_MODE=false
 PYTEST_FILTER=""
 PYTEST_ARGS=""
+DRY_RUN=true  # Default to dry-run if no phase flags provided
+FULL_RUN=false
+HAS_PHASE_FLAGS=false  # Track if any phase flags were provided
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -181,56 +193,68 @@ while [[ $# -gt 0 ]]; do
         --include-cluster-create)
             INCLUDE_CREATE=true
             WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --include-kagenti-install)
             INCLUDE_INSTALL=true
             WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --include-agents)
             INCLUDE_AGENTS=true
             WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --include-test)
             INCLUDE_TEST=true
             WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --include-kagenti-uninstall)
             INCLUDE_KAGENTI_UNINSTALL=true
             WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --include-cluster-destroy)
             INCLUDE_DESTROY=true
             WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         # Skip flags
         --skip-cluster-create)
             SKIP_CREATE=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --skip-kagenti-install)
             SKIP_INSTALL=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --skip-agents)
             SKIP_AGENTS=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --skip-test)
             SKIP_TEST=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --skip-kagenti-uninstall)
             SKIP_KAGENTI_UNINSTALL=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --skip-cluster-destroy)
             SKIP_DESTROY=true
+            HAS_PHASE_FLAGS=true
             shift
             ;;
         --clean-kagenti)
@@ -249,12 +273,28 @@ while [[ $# -gt 0 ]]; do
             PYTEST_ARGS="$2"
             shift 2
             ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --full)
+            # Full run: everything including destroy
+            FULL_RUN=true
+            HAS_PHASE_FLAGS=true
+            SKIP_DESTROY=false
+            shift
+            ;;
         *)
             CLUSTER_SUFFIX="$1"
             shift
             ;;
     esac
 done
+
+# If any phase flags were provided, disable dry-run (backward compatible)
+if [ "$HAS_PHASE_FLAGS" = "true" ]; then
+    DRY_RUN=false
+fi
 
 # Resolve final phase settings based on mode
 # Whitelist mode: only run phases explicitly included
@@ -610,6 +650,195 @@ if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
     fi
 fi
 echo ""
+
+# ============================================================================
+# STATE DETECTION (for dry-run mode)
+# ============================================================================
+
+check_cluster_state() {
+    local suffix="$1"
+    local cluster_name="${MANAGED_BY_TAG}-${suffix}"
+    local kubeconfig_path="$HOME/clusters/hcp/$cluster_name/auth/kubeconfig"
+
+    # State indicators
+    STATE_CLUSTER_EXISTS=false
+    STATE_KAGENTI_DEPS_DEPLOYED=false
+    STATE_KAGENTI_DEPLOYED=false
+    STATE_AGENTS_DEPLOYED=false
+    STATE_TESTS_RAN=false
+    STATE_TESTS_PASSED=false
+
+    # Check cluster exists
+    if [ -f "$kubeconfig_path" ]; then
+        STATE_CLUSTER_EXISTS=true
+        export KUBECONFIG="$kubeconfig_path"
+
+        # Check if we can connect
+        if kubectl cluster-info &>/dev/null; then
+            # Check kagenti-deps helm release
+            if helm list -n kagenti-system 2>/dev/null | grep -q "kagenti-deps"; then
+                STATE_KAGENTI_DEPS_DEPLOYED=true
+            fi
+
+            # Check kagenti helm release
+            if helm list -n kagenti-system 2>/dev/null | grep -q "kagenti[^-]"; then
+                STATE_KAGENTI_DEPLOYED=true
+            fi
+
+            # Check weather-service deployment
+            if kubectl get deployment weather-service -n team1 &>/dev/null; then
+                STATE_AGENTS_DEPLOYED=true
+            fi
+        fi
+    fi
+
+    # Check test results (look for recent XML file)
+    local test_results_file="$REPO_ROOT/test-results/e2e-results.xml"
+    if [ -f "$test_results_file" ]; then
+        # Check if file was modified in the last 24 hours
+        local file_age_hours=$(( ($(date +%s) - $(stat -f %m "$test_results_file" 2>/dev/null || stat -c %Y "$test_results_file" 2>/dev/null || echo 0)) / 3600 ))
+        if [ "$file_age_hours" -lt 24 ]; then
+            STATE_TESTS_RAN=true
+            # Check for failures in the XML
+            if ! grep -q 'failures="[1-9]' "$test_results_file" 2>/dev/null; then
+                STATE_TESTS_PASSED=true
+            fi
+        fi
+    fi
+}
+
+print_state_summary() {
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════════════════╗"
+    echo "║                           CLUSTER STATE                                    ║"
+    echo "╚════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Cluster: $CLUSTER_NAME"
+    echo ""
+
+    local icon_done="${GREEN}✓${NC}"
+    local icon_pending="${YELLOW}○${NC}"
+    local icon_fail="${RED}✗${NC}"
+
+    # Phase 1: Cluster
+    if [ "$STATE_CLUSTER_EXISTS" = "true" ]; then
+        echo -e "  1. Cluster Created:     $icon_done  (kubeconfig exists)"
+    else
+        echo -e "  1. Cluster Created:     $icon_pending  (not found)"
+    fi
+
+    # Phase 2: kagenti-deps
+    if [ "$STATE_KAGENTI_DEPS_DEPLOYED" = "true" ]; then
+        echo -e "  2. kagenti-deps:        $icon_done  (helm release found)"
+    elif [ "$STATE_CLUSTER_EXISTS" = "true" ]; then
+        echo -e "  2. kagenti-deps:        $icon_pending  (not deployed)"
+    else
+        echo -e "  2. kagenti-deps:        ${YELLOW}—${NC}  (requires cluster)"
+    fi
+
+    # Phase 2b: kagenti
+    if [ "$STATE_KAGENTI_DEPLOYED" = "true" ]; then
+        echo -e "  3. kagenti:             $icon_done  (helm release found)"
+    elif [ "$STATE_KAGENTI_DEPS_DEPLOYED" = "true" ]; then
+        echo -e "  3. kagenti:             $icon_pending  (not deployed)"
+    else
+        echo -e "  3. kagenti:             ${YELLOW}—${NC}  (requires kagenti-deps)"
+    fi
+
+    # Phase 3: Agents
+    if [ "$STATE_AGENTS_DEPLOYED" = "true" ]; then
+        echo -e "  4. Agents Deployed:     $icon_done  (weather-service found)"
+    elif [ "$STATE_KAGENTI_DEPLOYED" = "true" ]; then
+        echo -e "  4. Agents Deployed:     $icon_pending  (not deployed)"
+    else
+        echo -e "  4. Agents Deployed:     ${YELLOW}—${NC}  (requires kagenti)"
+    fi
+
+    # Phase 4: Tests
+    if [ "$STATE_TESTS_RAN" = "true" ]; then
+        if [ "$STATE_TESTS_PASSED" = "true" ]; then
+            echo -e "  5. E2E Tests:           $icon_done  (passed <24h ago)"
+        else
+            echo -e "  5. E2E Tests:           $icon_fail  (failures <24h ago)"
+        fi
+    elif [ "$STATE_AGENTS_DEPLOYED" = "true" ]; then
+        echo -e "  5. E2E Tests:           $icon_pending  (not run)"
+    else
+        echo -e "  5. E2E Tests:           ${YELLOW}—${NC}  (requires agents)"
+    fi
+    echo ""
+}
+
+suggest_next_command() {
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Determine what phase to run next
+    if [ "$STATE_CLUSTER_EXISTS" != "true" ]; then
+        echo "Suggested next step: Create cluster"
+        echo ""
+        echo "  source .env.${MANAGED_BY_TAG}"
+        echo "  $0 $CLUSTER_SUFFIX --include-cluster-create"
+        echo ""
+        echo "Or for full deployment (create + install + agents):"
+        echo ""
+        echo "  source .env.${MANAGED_BY_TAG}"
+        echo "  $0 $CLUSTER_SUFFIX --skip-cluster-destroy"
+        echo ""
+    elif [ "$STATE_KAGENTI_DEPS_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Install kagenti-deps + kagenti"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-kagenti-install"
+        echo ""
+    elif [ "$STATE_KAGENTI_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Complete kagenti installation"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-kagenti-install"
+        echo ""
+        echo "Note: kagenti-deps is installed but kagenti chart is missing."
+        echo ""
+    elif [ "$STATE_AGENTS_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Deploy test agents"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-agents"
+        echo ""
+    elif [ "$STATE_TESTS_RAN" != "true" ] || [ "$STATE_TESTS_PASSED" != "true" ]; then
+        echo "Suggested next step: Run E2E tests"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-test"
+        echo ""
+    else
+        echo -e "${GREEN}All phases complete!${NC}"
+        echo ""
+        echo "To destroy the cluster:"
+        echo ""
+        echo "  source .env.${MANAGED_BY_TAG}"
+        echo "  $0 $CLUSTER_SUFFIX --include-cluster-destroy"
+        echo ""
+        echo "Or keep for further testing."
+        echo ""
+    fi
+}
+
+# ============================================================================
+# DRY-RUN MODE: Check state and suggest next command
+# ============================================================================
+
+if [ "$DRY_RUN" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}┃${NC} DRY-RUN MODE (add phase flags to execute, e.g. --include-test)"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    check_cluster_state "$CLUSTER_SUFFIX"
+    print_state_summary
+    suggest_next_command
+    exit 0
+fi
 
 # ============================================================================
 # PHASE 1: Create Cluster

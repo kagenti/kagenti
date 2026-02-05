@@ -1,24 +1,19 @@
 {{- if and .Values.components.keycloak.enabled .Values.openshift }}
-{{- /* Check if Keycloak CRD exists first to avoid lookup errors */}}
-{{- $keycloakCRD := lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "keycloaks.k8s.keycloak.org" }}
-{{- /* Only create Keycloak CR if CRD exists (operator installed) */}}
-{{- if $keycloakCRD.metadata }}
-{{- /* Check for existing Keycloak instance - lookup returns {} when not found */}}
-{{- $existingKeycloak := lookup "k8s.keycloak.org/v2alpha1" "Keycloak" .Values.keycloak.namespace "keycloak" }}
-{{- if not $existingKeycloak.metadata }}
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
   labels:
     app: kagenti
     {{- include "kagenti.labels" . | nindent 4 }}
-  {{- /*
-    NOTE: Removed helm.sh/hook annotations.
-    The Keycloak CR must be created during main install, not as a post-install hook.
-    Otherwise, pods waiting for Keycloak create a circular dependency that prevents
-    the install from completing (context deadline exceeded).
-    The operator will reconcile the CR when it becomes ready.
-  */}}
+  annotations:
+    # Post-install hook ensures CRD exists before this CR is validated
+    # Weight 1 runs after operator subscription (weight 0)
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "1"
+    # NOTE: No hook-delete-policy - the Keycloak CR must persist across reinstalls.
+    # The RHBK operator creates keycloak-initial-admin secret with ownerReference to this CR.
+    # If CR is deleted, the secret is cascade-deleted, then recreated with NEW credentials,
+    # but PostgreSQL PVC persists with OLD credentials, causing authentication failures.
   name: keycloak
   namespace: {{ .Values.keycloak.namespace }}
 spec:
@@ -54,11 +49,6 @@ spec:
               - name: KC_PROXY_HEADERS
                 value: "forwarded"
 ---
-{{- end }}
-{{- end }}
-{{- /* Check if Route already exists */}}
-{{- $existingRoute := lookup "route.openshift.io/v1" "Route" .Values.keycloak.namespace "keycloak" }}
-{{- if not $existingRoute.metadata }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -79,6 +69,5 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
-{{- end }}
 {{- end }}
 

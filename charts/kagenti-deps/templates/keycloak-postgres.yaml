@@ -138,4 +138,25 @@ stringData:
   password: thisisonly4testingNOT4prod
   username: testuser
 type: Opaque
+---
+# Keycloak admin credentials secret - created by Helm to persist across reinstalls.
+# Uses lookup to preserve existing secret (and its password) on reinstall.
+# This prevents credential mismatch with PostgreSQL database on reinstall.
+{{- $existingSecret := lookup "v1" "Secret" .Values.keycloak.namespace "keycloak-initial-admin" }}
+{{- if not $existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-initial-admin
+  namespace: {{ .Values.keycloak.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app: keycloak
+    app.kubernetes.io/instance: keycloak
+stringData:
+  username: admin
+  # Auto-generate a random 32-character password on first install
+  password: {{ randAlphaNum 32 | quote }}
+type: kubernetes.io/basic-auth
+{{- end }}
 {{- end }}

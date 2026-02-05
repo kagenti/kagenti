@@ -14,10 +14,37 @@ import os
 import pathlib
 import subprocess
 import tempfile
+from uuid import uuid4
 
 import httpx
 import pytest
 import yaml
+
+
+# Module-level cache for test session ID (shared across all tests)
+_test_session_id_cache = None
+
+
+@pytest.fixture(scope="session")
+def test_session_id():
+    """
+    Generate a unique session ID for this test run.
+
+    This ID is used to correlate traces across tests:
+    - Agent conversation tests send this as context_id
+    - Observability tests filter traces by gen_ai.conversation.id or mlflow.trace.session
+
+    Using a shared session ID prevents false positives from old traces when running
+    repeated test runs on the same cluster.
+    """
+    global _test_session_id_cache
+
+    # Use cached value to ensure all tests use the same ID
+    if _test_session_id_cache is None:
+        _test_session_id_cache = str(uuid4())
+        print(f"\n[Session ID] Generated test session ID: {_test_session_id_cache}")
+
+    return _test_session_id_cache
 
 
 @pytest.fixture(scope="session")

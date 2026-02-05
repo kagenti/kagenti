@@ -256,7 +256,7 @@ class TestWeatherAgentConversation:
         print(f"  Response: {full_response[:200]}...")
 
     @pytest.mark.asyncio
-    async def test_agent_multiturn_conversation(self):
+    async def test_agent_multiturn_conversation(self, test_session_id):
         """
         Test multi-turn conversation maintains consistent session/context ID.
 
@@ -264,14 +264,17 @@ class TestWeatherAgentConversation:
         - Multiple messages can share the same contextId
         - Session tracking works across conversation turns
         - Observability traces can be grouped by session
+
+        The test_session_id fixture provides a unique ID for this test run,
+        allowing observability tests to filter traces by this specific session.
         """
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
         ssl_verify = _get_ssl_verify()
 
-        # Generate a unique context ID for this conversation session
-        context_id = str(uuid4())
+        # Use the shared test session ID for trace correlation
+        context_id = test_session_id
         print(f"\n=== Multi-turn Conversation Test ===")
-        print(f"Session/Context ID: {context_id}")
+        print(f"Session/Context ID: {context_id} (shared with observability tests)")
 
         messages = [
             "What is the weather in Paris?",

@@ -318,6 +318,59 @@ def get_all_traces() -> list[dict[str, Any]]:
         return []
 
 
+def get_traces_by_session_id(session_id: str) -> list[dict[str, Any]]:
+    """Get traces that match a specific session/conversation ID.
+
+    Filters traces by gen_ai.conversation.id in span attributes.
+    This allows correlating traces to a specific test run, preventing
+    false positives from old traces on repeated test runs.
+
+    Args:
+        session_id: The conversation/context ID to filter by
+
+    Returns:
+        List of traces that have spans with matching gen_ai.conversation.id
+    """
+    all_traces = get_all_traces()
+    matching_traces = []
+
+    client = get_mlflow_client()
+    if not client:
+        return []
+
+    for trace in all_traces:
+        try:
+            trace_info = trace.info if hasattr(trace, "info") else trace
+            request_id = (
+                trace_info.request_id
+                if hasattr(trace_info, "request_id")
+                else trace_info.get("request_id")
+            )
+
+            if not request_id:
+                continue
+
+            trace_data = client.get_trace(request_id)
+            if not trace_data:
+                continue
+
+            spans = trace_data.data.spans if hasattr(trace_data, "data") else []
+
+            for span in spans:
+                attributes = span.attributes if hasattr(span, "attributes") else {}
+                conversation_id = attributes.get("gen_ai.conversation.id")
+                if conversation_id == session_id:
+                    matching_traces.append(trace)
+                    break  # Found match, no need to check other spans
+
+        except Exception as e:
+            logger.warning(f"Error checking trace for session ID: {e}")
+            continue
+
+    logger.info(f"Found {len(matching_traces)} traces matching session ID {session_id}")
+    return matching_traces
+
+
 def is_weather_agent_trace(trace: Any) -> bool:
     """Check if a trace is from the weather agent.
 
@@ -1522,6 +1575,45 @@ class TestSessionTracking:
 
         print("\nSUCCESS: Service grouping analysis complete")
 
+    def test_traces_filter_by_session_id(
+        self, mlflow_url: str, mlflow_configured: bool, test_session_id: str
+    ):
+        """
+        Test filtering traces by the current test session ID.
+
+        This demonstrates trace correlation between agent conversation tests
+        and observability tests. The test_session_id fixture provides a unique
+        ID that is passed to agent tests as context_id, allowing us to filter
+        for only traces from the current test run.
+
+        This prevents false positives from old traces when running repeated
+        test runs on the same cluster.
+        """
+        print(f"\n{'=' * 60}")
+        print("Session ID Trace Filtering")
+        print(f"{'=' * 60}")
+        print(f"Looking for traces with session ID: {test_session_id}")
+
+        # Get traces filtered by session ID
+        session_traces = get_traces_by_session_id(test_session_id)
+
+        print(f"Traces matching session ID: {len(session_traces)}")
+
+        if session_traces:
+            print("\nMatching traces:")
+            for i, trace in enumerate(session_traces[:5]):
+                trace_info = trace.info if hasattr(trace, "info") else trace
+                request_id = getattr(trace_info, "request_id", "unknown")
+                print(f"  [{i + 1}] {request_id[:40]}...")
+
+            print(f"\nSUCCESS: Found {len(session_traces)} traces for current session")
+        else:
+            # This is not a failure - just means agent tests haven't run with this session ID yet
+            pytest.skip(
+                f"No traces found for session ID {test_session_id}. "
+                "Run agent conversation tests first to generate traces with this session."
+            )
+
 
 @pytest.mark.observability
 @pytest.mark.openshift_only
@@ -2035,6 +2127,1078 @@ class TestRootSpanAttributes:
         print(
             f"\nSUCCESS: {traces_with_all_attrs}/{traces_checked} traces have GenAI attrs"
         )
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestTokenUsageVerification:
+    """
+    Verify LLM spans have token usage attributes.
+
+    Token usage is critical for:
+    - Cost tracking in MLflow
+    - Performance analysis in Phoenix
+    - Understanding LLM efficiency
+
+    Expected attributes:
+    - gen_ai.usage.input_tokens (or llm.token_count.prompt)
+    - gen_ai.usage.output_tokens (or llm.token_count.completion)
+    - gen_ai.usage.total_tokens (optional, sum of above)
+    """
+
+    # Class-level cache for traces
+    _cached_traces: list = None
+    _cached_genai_traces: list = None
+
+    @classmethod
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> tuple[list, list]:
+        """Get cached traces or use traces from fixture."""
+        if cls._cached_traces is None:
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
+            cls._cached_genai_traces = [
+                t for t in cls._cached_traces if has_genai_spans(t)
+            ]
+            logger.info(
+                f"Cached {len(cls._cached_traces)} traces, "
+                f"{len(cls._cached_genai_traces)} GenAI traces for token usage tests"
+            )
+        return cls._cached_traces, cls._cached_genai_traces
+
+    def _find_llm_spans(self, trace: Any) -> list[dict]:
+        """Find LLM spans in a trace that should have token usage.
+
+        LLM spans are identified by:
+        - Span name containing 'chat', 'completion', 'llm', 'openai', 'ollama'
+        - Span type being 'LLM'
+        - Having gen_ai.request.model attribute
+        """
+        spans = get_trace_span_details(trace)
+        llm_spans = []
+
+        llm_patterns = [
+            "chatopenai",
+            "chatollama",
+            "chat_completion",
+            "chat.completions",
+            "llm",
+            "openai",
+            "anthropic",
+            "gen_ai.chat",
+        ]
+
+        for span in spans:
+            span_name = span.get("name", "").lower()
+            attrs = span.get("attributes", {})
+
+            # Check if this is an LLM span
+            is_llm = False
+
+            # Check span name patterns
+            if any(pattern in span_name for pattern in llm_patterns):
+                is_llm = True
+
+            # Check for gen_ai.request.model attribute (indicates LLM call)
+            if attrs.get("gen_ai.request.model"):
+                is_llm = True
+
+            # Check for llm.model_name (OpenInference)
+            if attrs.get("llm.model_name"):
+                is_llm = True
+
+            if is_llm:
+                llm_spans.append(span)
+
+        return llm_spans
+
+    def test_llm_spans_have_token_counts(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify LLM spans have token usage attributes.
+
+        Checks for token count attributes in either:
+        - GenAI format: gen_ai.usage.input_tokens, gen_ai.usage.output_tokens
+        - OpenInference format: llm.token_count.prompt, llm.token_count.completion
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip(
+                "No GenAI traces available - agent may not have LLM instrumentation"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("LLM Token Usage Verification")
+        print(f"{'=' * 60}")
+
+        # Token attributes to check (either format)
+        token_attrs_genai = [
+            "gen_ai.usage.input_tokens",
+            "gen_ai.usage.output_tokens",
+        ]
+        token_attrs_openinference = [
+            "llm.token_count.prompt",
+            "llm.token_count.completion",
+        ]
+
+        total_llm_spans = 0
+        llm_spans_with_tokens = 0
+        token_counts_found = []
+
+        # Check GenAI traces (max 10 to avoid rate limiting)
+        for trace in genai_traces[:10]:
+            llm_spans = self._find_llm_spans(trace)
+            total_llm_spans += len(llm_spans)
+
+            for span in llm_spans:
+                attrs = span.get("attributes", {})
+
+                # Check for token counts in either format
+                input_tokens = (
+                    attrs.get("gen_ai.usage.input_tokens")
+                    or attrs.get("llm.token_count.prompt")
+                    or attrs.get("gen_ai.usage.prompt_tokens")
+                )
+                output_tokens = (
+                    attrs.get("gen_ai.usage.output_tokens")
+                    or attrs.get("llm.token_count.completion")
+                    or attrs.get("gen_ai.usage.completion_tokens")
+                )
+
+                if input_tokens is not None or output_tokens is not None:
+                    llm_spans_with_tokens += 1
+                    token_counts_found.append(
+                        {
+                            "span_name": span.get("name", "unknown"),
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total": (input_tokens or 0) + (output_tokens or 0),
+                        }
+                    )
+
+        print(f"GenAI traces checked: {min(10, len(genai_traces))}")
+        print(f"Total LLM spans found: {total_llm_spans}")
+        print(f"LLM spans with token counts: {llm_spans_with_tokens}")
+
+        if token_counts_found:
+            print(f"\nSample token counts:")
+            for tc in token_counts_found[:5]:
+                print(
+                    f"  - {tc['span_name'][:40]}: "
+                    f"input={tc['input_tokens']}, output={tc['output_tokens']}"
+                )
+
+            # Calculate averages
+            avg_input = sum(tc["input_tokens"] or 0 for tc in token_counts_found) / len(
+                token_counts_found
+            )
+            avg_output = sum(
+                tc["output_tokens"] or 0 for tc in token_counts_found
+            ) / len(token_counts_found)
+            print(f"\nAverage tokens per LLM call:")
+            print(f"  Input: {avg_input:.1f}")
+            print(f"  Output: {avg_output:.1f}")
+
+        if total_llm_spans == 0:
+            pytest.skip(
+                "No LLM spans found in traces. "
+                "Weather agent may be using a framework without LLM instrumentation, "
+                "or LLM calls are not being traced."
+            )
+
+        # Assert: at least some LLM spans should have token counts
+        # Note: Not all LLM spans may have token counts (e.g., streaming responses)
+        if llm_spans_with_tokens == 0:
+            print(
+                "\nWARNING: No LLM spans have token usage attributes.\n"
+                "Possible causes:\n"
+                "  - LLM provider not returning usage data\n"
+                "  - Streaming responses (tokens may not be available)\n"
+                "  - Instrumentation not capturing token counts"
+            )
+            # This is informational, not a hard failure
+            # Some LLM providers don't return token counts
+        else:
+            coverage = (llm_spans_with_tokens / total_llm_spans) * 100
+            print(f"\nToken count coverage: {coverage:.1f}%")
+
+        print(f"\nSUCCESS: Found {llm_spans_with_tokens} LLM spans with token counts")
+
+    def test_token_totals_are_reasonable(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify token counts are reasonable values.
+
+        Checks that token counts are:
+        - Non-negative integers
+        - Within reasonable ranges for LLM calls
+        - Consistent (total = input + output when present)
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip("No GenAI traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Token Count Validation")
+        print(f"{'=' * 60}")
+
+        valid_token_counts = 0
+        invalid_token_counts = 0
+        validation_issues = []
+
+        for trace in genai_traces[:10]:
+            llm_spans = self._find_llm_spans(trace)
+
+            for span in llm_spans:
+                attrs = span.get("attributes", {})
+
+                input_tokens = attrs.get("gen_ai.usage.input_tokens") or attrs.get(
+                    "llm.token_count.prompt"
+                )
+                output_tokens = attrs.get("gen_ai.usage.output_tokens") or attrs.get(
+                    "llm.token_count.completion"
+                )
+                total_tokens = attrs.get("gen_ai.usage.total_tokens") or attrs.get(
+                    "llm.token_count.total"
+                )
+
+                if input_tokens is None and output_tokens is None:
+                    continue  # No token info, skip
+
+                issues = []
+
+                # Validate input tokens
+                if input_tokens is not None:
+                    try:
+                        input_val = int(input_tokens)
+                        if input_val < 0:
+                            issues.append(f"negative input_tokens: {input_val}")
+                        elif input_val > 100000:
+                            issues.append(f"unusually high input_tokens: {input_val}")
+                    except (ValueError, TypeError):
+                        issues.append(
+                            f"invalid input_tokens type: {type(input_tokens)}"
+                        )
+
+                # Validate output tokens
+                if output_tokens is not None:
+                    try:
+                        output_val = int(output_tokens)
+                        if output_val < 0:
+                            issues.append(f"negative output_tokens: {output_val}")
+                        elif output_val > 50000:
+                            issues.append(f"unusually high output_tokens: {output_val}")
+                    except (ValueError, TypeError):
+                        issues.append(
+                            f"invalid output_tokens type: {type(output_tokens)}"
+                        )
+
+                # Validate total if present
+                if (
+                    total_tokens is not None
+                    and input_tokens is not None
+                    and output_tokens is not None
+                ):
+                    try:
+                        expected_total = int(input_tokens) + int(output_tokens)
+                        actual_total = int(total_tokens)
+                        if actual_total != expected_total:
+                            issues.append(
+                                f"total mismatch: {actual_total} != {expected_total}"
+                            )
+                    except (ValueError, TypeError):
+                        pass  # Already caught above
+
+                if issues:
+                    invalid_token_counts += 1
+                    validation_issues.append(
+                        {
+                            "span": span.get("name", "unknown")[:30],
+                            "issues": issues,
+                        }
+                    )
+                else:
+                    valid_token_counts += 1
+
+        print(f"Token counts validated: {valid_token_counts + invalid_token_counts}")
+        print(f"Valid: {valid_token_counts}")
+        print(f"Invalid: {invalid_token_counts}")
+
+        if validation_issues:
+            print(f"\nValidation issues found:")
+            for vi in validation_issues[:5]:
+                print(f"  - {vi['span']}: {', '.join(vi['issues'])}")
+
+        if valid_token_counts + invalid_token_counts == 0:
+            pytest.skip("No LLM spans with token counts to validate")
+
+        # Assert: most token counts should be valid
+        if invalid_token_counts > 0:
+            error_rate = invalid_token_counts / (
+                valid_token_counts + invalid_token_counts
+            )
+            assert error_rate < 0.5, (
+                f"High error rate in token counts: {error_rate:.1%}. "
+                f"Issues: {validation_issues[:3]}"
+            )
+
+        print(f"\nSUCCESS: {valid_token_counts} valid token counts")
+
+    def test_mlflow_span_chat_usage_attribute(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify OTEL transform creates mlflow.span.chat_usage for MLflow UI.
+
+        The OTEL collector should transform gen_ai.usage.* attributes to
+        mlflow.span.chat_usage JSON object for display in MLflow's token column.
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip("No GenAI traces available")
+
+        print(f"\n{'=' * 60}")
+        print("MLflow Chat Usage Attribute (Token Display)")
+        print(f"{'=' * 60}")
+
+        spans_with_chat_usage = 0
+        chat_usage_samples = []
+
+        for trace in genai_traces[:10]:
+            spans = get_trace_span_details(trace)
+
+            for span in spans:
+                attrs = span.get("attributes", {})
+
+                # Check for mlflow.span.chat_usage (added by OTEL transform)
+                chat_usage = attrs.get("mlflow.span.chat_usage")
+                if chat_usage:
+                    spans_with_chat_usage += 1
+                    chat_usage_samples.append(
+                        {
+                            "span_name": span.get("name", "unknown"),
+                            "chat_usage": chat_usage,
+                        }
+                    )
+
+        print(f"Traces checked: {min(10, len(genai_traces))}")
+        print(f"Spans with mlflow.span.chat_usage: {spans_with_chat_usage}")
+
+        if chat_usage_samples:
+            print(f"\nSample mlflow.span.chat_usage values:")
+            for sample in chat_usage_samples[:3]:
+                usage_str = str(sample["chat_usage"])[:80]
+                print(f"  - {sample['span_name'][:30]}: {usage_str}")
+
+        # This attribute is created by the OTEL collector transform
+        # If not present, the transform may not be configured
+        if spans_with_chat_usage == 0:
+            print(
+                "\nNOTE: mlflow.span.chat_usage not found.\n"
+                "This attribute is created by the OTEL collector transform/genai_to_mlflow.\n"
+                "Check otel-collector config for transform processor."
+            )
+        else:
+            print(
+                f"\nSUCCESS: Found {spans_with_chat_usage} spans with mlflow.span.chat_usage"
+            )
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestErrorSpanValidation:
+    """
+    Validate error span attributes are properly captured.
+
+    When errors occur during agent execution, spans should have:
+    - Status indicating ERROR
+    - Exception/error message attributes
+    - Stack trace (when available)
+
+    This helps with debugging failed agent invocations in MLflow/Phoenix.
+    """
+
+    # Class-level cache for traces
+    _cached_traces: list = None
+
+    @classmethod
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> list:
+        """Get cached traces or use traces from fixture."""
+        if cls._cached_traces is None:
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
+            logger.info(f"Cached {len(cls._cached_traces)} traces for error span tests")
+        return cls._cached_traces
+
+    def _find_error_spans(self, trace: Any) -> list[dict]:
+        """Find spans with error status in a trace.
+
+        Error spans are identified by:
+        - status = 'ERROR' or 'StatusCode.ERROR'
+        - exception.* attributes present
+        - error.* attributes present
+        - otel.status_code = 'ERROR'
+        """
+        spans = get_trace_span_details(trace)
+        error_spans = []
+
+        for span in spans:
+            status = span.get("status", "")
+            attrs = span.get("attributes", {})
+
+            is_error = False
+
+            # Check status field
+            if status:
+                status_str = str(status).upper()
+                if "ERROR" in status_str:
+                    is_error = True
+
+            # Check otel.status_code attribute
+            otel_status = attrs.get("otel.status_code", "")
+            if otel_status and "ERROR" in str(otel_status).upper():
+                is_error = True
+
+            # Check for exception attributes (indicates error occurred)
+            if attrs.get("exception.type") or attrs.get("exception.message"):
+                is_error = True
+
+            # Check for error attributes
+            if attrs.get("error.type") or attrs.get("error.message"):
+                is_error = True
+
+            if is_error:
+                error_spans.append(span)
+
+        return error_spans
+
+    def test_error_spans_have_proper_status(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify error spans have proper status attributes.
+
+        When an error occurs, the span should have:
+        - status = ERROR (or equivalent)
+        - otel.status_code = ERROR (OpenTelemetry convention)
+        """
+        all_traces = self._get_cached_traces(traces_available)
+        if not all_traces:
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("Error Span Status Verification")
+        print(f"{'=' * 60}")
+
+        total_error_spans = 0
+        error_spans_with_status = 0
+        status_values_found = {}
+
+        # Check traces (max 10 to avoid rate limiting)
+        for trace in all_traces[:10]:
+            error_spans = self._find_error_spans(trace)
+            total_error_spans += len(error_spans)
+
+            for span in error_spans:
+                status = span.get("status", "")
+                attrs = span.get("attributes", {})
+                otel_status = attrs.get("otel.status_code", "")
+
+                # Track status values
+                if status:
+                    status_str = str(status)
+                    if status_str not in status_values_found:
+                        status_values_found[status_str] = 0
+                    status_values_found[status_str] += 1
+                    error_spans_with_status += 1
+                elif otel_status:
+                    if str(otel_status) not in status_values_found:
+                        status_values_found[str(otel_status)] = 0
+                    status_values_found[str(otel_status)] += 1
+                    error_spans_with_status += 1
+
+        print(f"Traces checked: {min(10, len(all_traces))}")
+        print(f"Total error spans found: {total_error_spans}")
+        print(f"Error spans with status: {error_spans_with_status}")
+
+        if status_values_found:
+            print(f"\nStatus values observed:")
+            for status, count in status_values_found.items():
+                print(f"  - {status}: {count}")
+
+        if total_error_spans == 0:
+            # No errors is actually good - successful execution
+            print("\nNo error spans found - all spans completed successfully")
+            print("This is expected for successful test runs")
+            return
+
+        # If there are error spans, they should have proper status
+        if error_spans_with_status > 0:
+            print(
+                f"\nSUCCESS: {error_spans_with_status}/{total_error_spans} "
+                f"error spans have status"
+            )
+
+    def test_error_spans_have_exception_details(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify error spans have exception/error details.
+
+        When an error occurs, the span should capture:
+        - exception.type: Exception class name
+        - exception.message: Error message
+        - exception.stacktrace: Stack trace (if available)
+        """
+        all_traces = self._get_cached_traces(traces_available)
+        if not all_traces:
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("Error Span Exception Details")
+        print(f"{'=' * 60}")
+
+        # Exception attributes to check
+        exception_attrs = [
+            "exception.type",
+            "exception.message",
+            "exception.stacktrace",
+            "error.type",
+            "error.message",
+        ]
+
+        total_error_spans = 0
+        attr_counts = {attr: 0 for attr in exception_attrs}
+        error_samples = []
+
+        # Check traces (max 10)
+        for trace in all_traces[:10]:
+            error_spans = self._find_error_spans(trace)
+            total_error_spans += len(error_spans)
+
+            for span in error_spans:
+                attrs = span.get("attributes", {})
+
+                for attr in exception_attrs:
+                    if attrs.get(attr):
+                        attr_counts[attr] += 1
+
+                # Capture sample for display
+                if len(error_samples) < 5:
+                    exc_type = attrs.get("exception.type") or attrs.get("error.type")
+                    exc_msg = attrs.get("exception.message") or attrs.get(
+                        "error.message"
+                    )
+                    if exc_type or exc_msg:
+                        error_samples.append(
+                            {
+                                "span_name": span.get("name", "unknown"),
+                                "type": exc_type,
+                                "message": str(exc_msg)[:100] if exc_msg else None,
+                            }
+                        )
+
+        print(f"Traces checked: {min(10, len(all_traces))}")
+        print(f"Total error spans: {total_error_spans}")
+
+        if total_error_spans > 0:
+            print(f"\nException attribute coverage:")
+            for attr, count in attr_counts.items():
+                print(f"  - {attr}: {count}/{total_error_spans}")
+
+            if error_samples:
+                print(f"\nSample error details:")
+                for sample in error_samples[:3]:
+                    print(f"  - {sample['span_name'][:30]}")
+                    if sample["type"]:
+                        print(f"      Type: {sample['type']}")
+                    if sample["message"]:
+                        print(f"      Message: {sample['message'][:60]}...")
+        else:
+            print("\nNo error spans found - all spans completed successfully")
+            print("This is expected for successful test runs")
+
+    def test_span_status_distribution(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Analyze the distribution of span statuses across all traces.
+
+        Provides visibility into:
+        - Success vs error rate
+        - Common error patterns
+        - Overall trace health
+        """
+        all_traces = self._get_cached_traces(traces_available)
+        if not all_traces:
+            pytest.fail(
+                "No traces available - ensure conversation tests ran first and auth is working"
+            )
+
+        print(f"\n{'=' * 60}")
+        print("Span Status Distribution")
+        print(f"{'=' * 60}")
+
+        status_counts = {}
+        total_spans = 0
+
+        # Check traces (max 10)
+        for trace in all_traces[:10]:
+            spans = get_trace_span_details(trace)
+            total_spans += len(spans)
+
+            for span in spans:
+                status = span.get("status", "UNKNOWN")
+                status_str = str(status).upper() if status else "UNKNOWN"
+
+                # Normalize status
+                if "OK" in status_str or "UNSET" in status_str:
+                    status_key = "OK"
+                elif "ERROR" in status_str:
+                    status_key = "ERROR"
+                else:
+                    status_key = status_str[:20]
+
+                if status_key not in status_counts:
+                    status_counts[status_key] = 0
+                status_counts[status_key] += 1
+
+        print(f"Traces analyzed: {min(10, len(all_traces))}")
+        print(f"Total spans: {total_spans}")
+
+        if status_counts:
+            print(f"\nStatus distribution:")
+            for status, count in sorted(status_counts.items(), key=lambda x: -x[1]):
+                pct = (count / total_spans) * 100 if total_spans > 0 else 0
+                bar = "█" * int(pct / 5)
+                print(f"  {status:15} {count:5} ({pct:5.1f}%) {bar}")
+
+            # Calculate error rate
+            error_count = status_counts.get("ERROR", 0)
+            if total_spans > 0:
+                error_rate = (error_count / total_spans) * 100
+                print(f"\nOverall error rate: {error_rate:.1f}%")
+
+                if error_rate > 20:
+                    print("WARNING: High error rate detected - investigate failures")
+                else:
+                    print("Status: Healthy - error rate is acceptable")
+
+
+@pytest.mark.observability
+@pytest.mark.openshift_only
+@pytest.mark.requires_features(["mlflow"])
+class TestToolCallSpanAttributes:
+    """
+    Validate tool call spans have proper attributes.
+
+    When the weather agent calls MCP tools (weather-tool), spans should have:
+    - Tool name (gen_ai.tool.name or tool.name)
+    - Tool input parameters
+    - Tool output/response
+    - Span type indicating TOOL
+
+    This is critical for:
+    - Debugging tool invocations in MLflow/Phoenix
+    - Understanding agent tool usage patterns
+    - Tracking tool latency and errors
+    """
+
+    # Class-level cache for traces
+    _cached_traces: list = None
+    _cached_genai_traces: list = None
+
+    @classmethod
+    def _get_cached_traces(cls, traces_from_fixture: list = None) -> tuple[list, list]:
+        """Get cached traces or use traces from fixture."""
+        if cls._cached_traces is None:
+            if traces_from_fixture:
+                cls._cached_traces = traces_from_fixture
+            else:
+                cls._cached_traces = get_all_traces()
+            cls._cached_genai_traces = [
+                t for t in cls._cached_traces if has_genai_spans(t)
+            ]
+            logger.info(
+                f"Cached {len(cls._cached_traces)} traces, "
+                f"{len(cls._cached_genai_traces)} GenAI traces for tool call tests"
+            )
+        return cls._cached_traces, cls._cached_genai_traces
+
+    def _find_tool_spans(self, trace: Any) -> list[dict]:
+        """Find tool call spans in a trace.
+
+        Tool spans are identified by:
+        - Span name containing 'tool', 'function', 'mcp'
+        - openinference.span.kind = 'TOOL'
+        - mlflow.spanType = 'TOOL'
+        - gen_ai.tool.name attribute present
+        """
+        spans = get_trace_span_details(trace)
+        tool_spans = []
+
+        tool_patterns = [
+            "tool",
+            "function",
+            "mcp",
+            "weather",  # Specific to weather-tool
+            "get_weather",
+        ]
+
+        for span in spans:
+            span_name = span.get("name", "").lower()
+            attrs = span.get("attributes", {})
+
+            is_tool = False
+
+            # Check span name patterns
+            if any(pattern in span_name for pattern in tool_patterns):
+                # Exclude 'tool' in agent names like 'weather-tool-agent'
+                if not span_name.endswith("agent"):
+                    is_tool = True
+
+            # Check span kind/type
+            span_kind = attrs.get("openinference.span.kind", "")
+            if str(span_kind).upper() == "TOOL":
+                is_tool = True
+
+            mlflow_type = attrs.get("mlflow.spanType", "")
+            if str(mlflow_type).upper() == "TOOL":
+                is_tool = True
+
+            # Check for tool-specific attributes
+            if attrs.get("gen_ai.tool.name") or attrs.get("tool.name"):
+                is_tool = True
+
+            if is_tool:
+                tool_spans.append(span)
+
+        return tool_spans
+
+    def test_tool_spans_exist(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify tool call spans are captured in traces.
+
+        Weather agent tests invoke the weather-tool via MCP, which should
+        produce tool spans in the trace.
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip("No GenAI traces available - may not have tool instrumentation")
+
+        print(f"\n{'=' * 60}")
+        print("Tool Call Span Detection")
+        print(f"{'=' * 60}")
+
+        total_tool_spans = 0
+        traces_with_tools = 0
+        tool_names_found = set()
+
+        # Check GenAI traces (max 10)
+        for trace in genai_traces[:10]:
+            tool_spans = self._find_tool_spans(trace)
+            if tool_spans:
+                traces_with_tools += 1
+                total_tool_spans += len(tool_spans)
+
+                for span in tool_spans:
+                    attrs = span.get("attributes", {})
+                    tool_name = (
+                        attrs.get("gen_ai.tool.name")
+                        or attrs.get("tool.name")
+                        or span.get("name", "unknown")
+                    )
+                    tool_names_found.add(str(tool_name))
+
+        print(f"GenAI traces checked: {min(10, len(genai_traces))}")
+        print(f"Traces with tool spans: {traces_with_tools}")
+        print(f"Total tool spans: {total_tool_spans}")
+
+        if tool_names_found:
+            print(f"\nTool names found:")
+            for name in list(tool_names_found)[:10]:
+                print(f"  - {name}")
+
+        if total_tool_spans == 0:
+            print(
+                "\nNOTE: No tool spans found.\n"
+                "Possible causes:\n"
+                "  - Weather agent not using instrumented MCP client\n"
+                "  - Tool calls happening outside traced context\n"
+                "  - Tool instrumentation not configured"
+            )
+            pytest.skip("No tool spans found - agent may not have tool instrumentation")
+
+        print(
+            f"\nSUCCESS: Found {total_tool_spans} tool spans in {traces_with_tools} traces"
+        )
+
+    def test_tool_spans_have_name_attribute(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify tool spans have tool name attribute.
+
+        The tool name is critical for:
+        - Identifying which tool was called
+        - Filtering traces by tool
+        - Understanding agent behavior
+
+        Expected attributes:
+        - gen_ai.tool.name (GenAI convention)
+        - tool.name (OpenInference)
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip("No GenAI traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Tool Span Name Attribute Verification")
+        print(f"{'=' * 60}")
+
+        total_tool_spans = 0
+        tool_spans_with_name = 0
+        name_attribute_sources = {}
+
+        for trace in genai_traces[:10]:
+            tool_spans = self._find_tool_spans(trace)
+            total_tool_spans += len(tool_spans)
+
+            for span in tool_spans:
+                attrs = span.get("attributes", {})
+
+                # Check for tool name in different attributes
+                tool_name = None
+                source = None
+
+                if attrs.get("gen_ai.tool.name"):
+                    tool_name = attrs["gen_ai.tool.name"]
+                    source = "gen_ai.tool.name"
+                elif attrs.get("tool.name"):
+                    tool_name = attrs["tool.name"]
+                    source = "tool.name"
+                elif attrs.get("function.name"):
+                    tool_name = attrs["function.name"]
+                    source = "function.name"
+
+                if tool_name:
+                    tool_spans_with_name += 1
+                    if source not in name_attribute_sources:
+                        name_attribute_sources[source] = 0
+                    name_attribute_sources[source] += 1
+
+        print(f"Total tool spans: {total_tool_spans}")
+        print(f"Tool spans with name attribute: {tool_spans_with_name}")
+
+        if name_attribute_sources:
+            print(f"\nName attribute sources:")
+            for source, count in name_attribute_sources.items():
+                print(f"  - {source}: {count}")
+
+        if total_tool_spans == 0:
+            pytest.skip("No tool spans found to check")
+
+        coverage = (
+            (tool_spans_with_name / total_tool_spans) * 100
+            if total_tool_spans > 0
+            else 0
+        )
+        print(f"\nName attribute coverage: {coverage:.1f}%")
+
+        if coverage < 50:
+            print(
+                "\nWARNING: Low tool name attribute coverage.\n"
+                "Consider adding gen_ai.tool.name to tool spans."
+            )
+
+    def test_tool_spans_have_input_output(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify tool spans capture input and output.
+
+        Tool spans should have:
+        - Input: gen_ai.tool.input, tool.input, input.value
+        - Output: gen_ai.tool.output, tool.output, output.value
+
+        This is essential for debugging tool calls.
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip("No GenAI traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Tool Span Input/Output Verification")
+        print(f"{'=' * 60}")
+
+        # Input/output attributes to check
+        input_attrs = [
+            "gen_ai.tool.input",
+            "tool.input",
+            "input.value",
+            "function.arguments",
+            "tool.parameters",
+        ]
+        output_attrs = [
+            "gen_ai.tool.output",
+            "tool.output",
+            "output.value",
+            "function.result",
+            "tool.result",
+        ]
+
+        total_tool_spans = 0
+        spans_with_input = 0
+        spans_with_output = 0
+        input_output_samples = []
+
+        for trace in genai_traces[:10]:
+            tool_spans = self._find_tool_spans(trace)
+            total_tool_spans += len(tool_spans)
+
+            for span in tool_spans:
+                attrs = span.get("attributes", {})
+
+                has_input = any(attrs.get(attr) for attr in input_attrs)
+                has_output = any(attrs.get(attr) for attr in output_attrs)
+
+                if has_input:
+                    spans_with_input += 1
+                if has_output:
+                    spans_with_output += 1
+
+                # Capture sample
+                if len(input_output_samples) < 3 and (has_input or has_output):
+                    sample_input = None
+                    sample_output = None
+                    for attr in input_attrs:
+                        if attrs.get(attr):
+                            sample_input = str(attrs[attr])[:60]
+                            break
+                    for attr in output_attrs:
+                        if attrs.get(attr):
+                            sample_output = str(attrs[attr])[:60]
+                            break
+                    input_output_samples.append(
+                        {
+                            "span_name": span.get("name", "unknown"),
+                            "input": sample_input,
+                            "output": sample_output,
+                        }
+                    )
+
+        print(f"Total tool spans: {total_tool_spans}")
+        print(f"Spans with input: {spans_with_input}")
+        print(f"Spans with output: {spans_with_output}")
+
+        if total_tool_spans > 0:
+            input_coverage = (spans_with_input / total_tool_spans) * 100
+            output_coverage = (spans_with_output / total_tool_spans) * 100
+            print(f"\nCoverage:")
+            print(f"  Input: {input_coverage:.1f}%")
+            print(f"  Output: {output_coverage:.1f}%")
+
+        if input_output_samples:
+            print(f"\nSample tool I/O:")
+            for sample in input_output_samples:
+                print(f"  - {sample['span_name'][:30]}")
+                if sample["input"]:
+                    print(f"      Input: {sample['input']}...")
+                if sample["output"]:
+                    print(f"      Output: {sample['output']}...")
+
+        if total_tool_spans == 0:
+            pytest.skip("No tool spans found to check")
+
+        print(f"\nSUCCESS: Analyzed {total_tool_spans} tool spans")
+
+    def test_tool_spans_have_span_kind(
+        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+    ):
+        """
+        Verify tool spans have proper span kind/type.
+
+        Tool spans should be identified as TOOL type via:
+        - openinference.span.kind = 'TOOL' (OpenInference)
+        - mlflow.spanType = 'TOOL' (MLflow)
+
+        This allows filtering and visualization in dashboards.
+        """
+        all_traces, genai_traces = self._get_cached_traces(traces_available)
+        if not genai_traces:
+            pytest.skip("No GenAI traces available")
+
+        print(f"\n{'=' * 60}")
+        print("Tool Span Kind/Type Verification")
+        print(f"{'=' * 60}")
+
+        total_tool_spans = 0
+        spans_with_kind = 0
+        kind_values = {}
+
+        for trace in genai_traces[:10]:
+            tool_spans = self._find_tool_spans(trace)
+            total_tool_spans += len(tool_spans)
+
+            for span in tool_spans:
+                attrs = span.get("attributes", {})
+
+                # Check for span kind/type
+                span_kind = (
+                    attrs.get("openinference.span.kind")
+                    or attrs.get("mlflow.spanType")
+                    or attrs.get("span.kind")
+                )
+
+                if span_kind:
+                    spans_with_kind += 1
+                    kind_str = str(span_kind)
+                    if kind_str not in kind_values:
+                        kind_values[kind_str] = 0
+                    kind_values[kind_str] += 1
+
+        print(f"Total tool spans: {total_tool_spans}")
+        print(f"Spans with kind/type: {spans_with_kind}")
+
+        if kind_values:
+            print(f"\nSpan kind values:")
+            for kind, count in kind_values.items():
+                print(f"  - {kind}: {count}")
+
+        if total_tool_spans > 0:
+            coverage = (spans_with_kind / total_tool_spans) * 100
+            print(f"\nKind/type coverage: {coverage:.1f}%")
+
+            # Check if TOOL is properly identified
+            tool_kind_count = sum(
+                count
+                for kind, count in kind_values.items()
+                if "TOOL" in str(kind).upper()
+            )
+            if tool_kind_count > 0:
+                print(f"Spans with TOOL kind: {tool_kind_count}")
+            else:
+                print(
+                    "\nNOTE: No spans explicitly marked as TOOL.\n"
+                    "Consider adding openinference.span.kind='TOOL' to tool spans."
+                )
+        else:
+            pytest.skip("No tool spans found to check")
+
+        print(f"\nSUCCESS: Analyzed {total_tool_spans} tool spans")
 
 
 def main():

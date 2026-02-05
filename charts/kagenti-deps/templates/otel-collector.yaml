@@ -1,4 +1,18 @@
 {{- if .Values.components.otel.enabled }}
+{{- /* Create ConfigMap for OpenShift trusted CA bundle injection */}}
+{{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-trusted-cabundle
+  namespace: {{ .Release.Namespace }}
+  labels:
+    # OpenShift injects trusted CA bundle into ConfigMaps with this label
+    config.openshift.io/inject-trusted-cabundle: "true"
+    {{- include "kagenti.labels" . | nindent 4 }}
+data: {}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -37,22 +51,31 @@ spec:
           - --set
           - receivers::otlp::protocols::http::endpoint=0.0.0.0:8335
           {{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+          # TODO: OAuth tokens are required because MLflow's mlflow-oidc-auth plugin doesn't support
+          # mTLS/mesh authentication. The plugin only validates OIDC tokens, not client certificates.
+          # This means the otel-collector can't use Istio Ambient mesh identity to push traces to MLflow.
+          # The secret is created by mlflow-oauth-secret-job in the kagenti chart (installed after kagenti-deps).
+          # If otel-collector starts before the secret exists, it will start with empty credentials.
+          # Restart the otel-collector deployment after kagenti chart installs to pick up the credentials.
           env:
             - name: MLFLOW_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
                   key: OIDC_CLIENT_ID
+                  optional: true
             - name: MLFLOW_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
                   key: OIDC_CLIENT_SECRET
+                  optional: true
             - name: KEYCLOAK_TOKEN_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.mlflow.auth.secretName | default "mlflow-oauth-secret" }}
                   key: OIDC_TOKEN_URL
+                  optional: true
           {{- end }}
           volumeMounts:
             - name: otel-collector-config

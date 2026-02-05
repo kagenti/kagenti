@@ -187,15 +187,3 @@ mlflow:
     enabled: false
     secretName: mlflow-oauth-secret
 
-# ------------------------------------------------------------------
-#  MLflow OAuth Secret Job Configuration
-# ------------------------------------------------------------------
-mlflowOAuthSecret:
-  image: quay.io/ladas/mlflow-oauth-secret
-  tag: latest
-  # Keycloak client ID for MLflow
-  clientId: mlflow
-  # Kubernetes secret name to store OAuth credentials
-  secretName: mlflow-oauth-secret
-  # Use OpenShift service account CA for SSL verification
-  useServiceAccountCA: true
