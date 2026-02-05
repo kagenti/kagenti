@@ -6,7 +6,7 @@ FROM python:3.12-slim
 # Set work directory
 WORKDIR /app
 
-# Install dependencies directly (no requirements.txt)
+# Install dependencies from requirements.txt
 COPY auth/agent-oauth-secret/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
