@@ -16,15 +16,79 @@ This guide covers local Kagenti development using Kind (Kubernetes in Docker).
 
 ## Prerequisites
 
-| Requirement | Minimum | Notes |
-|-------------|---------|-------|
-| Docker | 12GB RAM, 4 cores | Required for Kind |
-| Kind | Latest | `brew install kind` or [kind.sigs.k8s.io](https://kind.sigs.k8s.io/) |
-| kubectl | 1.28+ | `brew install kubectl` |
-| Helm | 3.12+ | `brew install helm` |
-| Python | 3.11+ | For E2E tests |
-| uv | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| jq | Latest | `brew install jq` |
+| Requirement | Minimum | Purpose |
+|-------------|---------|---------|
+| Docker | 12GB RAM, 4 cores | Container runtime for Kind |
+| Kind | Latest | Local Kubernetes cluster |
+| kubectl | 1.28+ | Kubernetes CLI |
+| Helm | 3.12+ | Package manager |
+| Python | 3.11+ | E2E tests |
+| uv | Latest | Python package manager |
+| jq | Latest | JSON processing |
+
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+# Install Homebrew if needed: https://brew.sh
+brew install kind kubectl helm jq python@3.11
+
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Docker Desktop: https://docker.com/products/docker-desktop
+```
+</details>
+
+<details>
+<summary><b>Linux (Ubuntu/Debian)</b></summary>
+
+```bash
+# kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin/
+
+# Kind
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+sudo install kind /usr/local/bin/
+
+# Helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Other tools
+sudo apt-get update && sudo apt-get install -y jq python3.11 python3.11-venv
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Docker: https://docs.docker.com/engine/install/ubuntu/
+```
+</details>
+
+<details>
+<summary><b>Linux (Fedora/RHEL)</b></summary>
+
+```bash
+# kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin/
+
+# Kind
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+sudo install kind /usr/local/bin/
+
+# Helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Other tools
+sudo dnf install -y jq python3.11
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Docker/Podman: https://docs.docker.com/engine/install/fedora/
+```
+</details>
 
 ## Quick Start
 
@@ -42,41 +106,7 @@ Login with Keycloak admin credentials shown by `show-services.sh`.
 
 ## Credentials Setup
 
-### Option 1: Secrets File (Recommended)
-
-```bash
-# Copy the example file
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-
-# Edit with your values
-vi deployments/envs/.secret_values.yaml
-```
-
-Required values:
-
-```yaml
-charts:
-  kagenti:
-    values:
-      secrets:
-        # Required for agent LLM features
-        openaiApiKey: "sk-..."
-
-        # Required for private repos and Shipwright builds
-        githubUser: "your-username"
-        githubToken: "ghp_..."
-```
-
-### Option 2: Environment Variables
-
-```bash
-export OPENAI_API_KEY="sk-..."
-export GITHUB_USER="your-username"
-export GITHUB_TOKEN_VALUE="ghp_..."
-
-# Force regeneration from env vars
-rm -f deployments/envs/.secret_values.yaml
-```
+See [Common Setup](./README.md#common-setup-all-environments) for credentials configuration.
 
 ## Full Deployment Workflow
 
@@ -349,10 +379,3 @@ kubectl rollout status deployment/weather-service -n team1
 | `--include-<phase>` | Selected phase(s) | Run specific phase(s) only |
 | `--clean-kagenti` | Uninstall before install | Fresh Kagenti installation |
 
-## Future Documentation (TODO)
-
-> **NOTE:** The following documentation is planned:
-
-- **CRD Reference** - Full schema documentation for AgentCard, Build CRDs with required vs optional fields and `kubectl explain` examples
-- **Agent Instrumentation** - OTEL endpoint `http://otel-collector.kagenti-system.svc.cluster.local:8335`, environment variables, A2A SDK telemetry decorators
-- **Istio Ambient Security** - L4-only policies with ztunnel, when waypoint proxies are needed for L7, AuthorizationPolicy examples

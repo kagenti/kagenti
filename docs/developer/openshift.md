@@ -19,14 +19,61 @@ This guide covers Kagenti development on standard OpenShift (RHOCP) clusters.
 
 ## Prerequisites
 
-| Requirement | Minimum | Notes |
-|-------------|---------|-------|
-| oc CLI | 4.19+ | [OpenShift CLI](https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html) |
-| kubectl | 1.28+ | Usually bundled with oc |
-| Helm | 3.12+ | `brew install helm` |
-| Python | 3.11+ | For E2E tests |
-| uv | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| jq | Latest | `brew install jq` |
+| Requirement | Minimum | Purpose |
+|-------------|---------|---------|
+| oc CLI | 4.19+ | OpenShift CLI |
+| kubectl | 1.28+ | Kubernetes CLI (bundled with oc) |
+| Helm | 3.12+ | Package manager |
+| Python | 3.11+ | E2E tests |
+| uv | Latest | Python package manager |
+| jq | Latest | JSON processing |
+
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+brew install openshift-cli helm jq python@3.11
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
+
+<details>
+<summary><b>Linux (Ubuntu/Debian)</b></summary>
+
+```bash
+# OpenShift CLI - download from https://console.redhat.com/openshift/downloads
+# Or use mirror: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/
+
+# Helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Other tools
+sudo apt-get update && sudo apt-get install -y jq python3.11 python3.11-venv
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
+
+<details>
+<summary><b>Linux (Fedora/RHEL)</b></summary>
+
+```bash
+# OpenShift CLI
+sudo dnf install -y openshift-clients
+
+# Helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Other tools
+sudo dnf install -y jq python3.11
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
 
 ### Required Access
 
@@ -192,8 +239,8 @@ oc get crds | grep kagenti
 To deploy the example weather agent for testing:
 
 ```bash
-# Apply the weather agent example
-oc apply -f kagenti/examples/weather-agent/ -n team1
+# Apply the weather agent component
+oc apply -f kagenti/examples/components/weather_agent.yaml -n team1
 
 # Wait for deployment
 oc rollout status deployment/weather-service -n team1
@@ -417,10 +464,3 @@ See [Ansible README](../../deployments/ansible/README.md) for advanced options.
 | **AWS Required** | No | No | Yes |
 | **Min OCP Version** | N/A | 4.19+ | 4.19+ |
 
-## Future Documentation (TODO)
-
-> **NOTE:** The following documentation is planned:
-
-- **CRD Reference** - Full schema documentation for AgentCard, Build CRDs with required vs optional fields and `kubectl explain` examples
-- **Agent Instrumentation** - OTEL endpoint `http://otel-collector.kagenti-system.svc.cluster.local:8335`, environment variables, A2A SDK telemetry decorators
-- **Istio Ambient Security** - L4-only policies with ztunnel, when waypoint proxies are needed for L7, AuthorizationPolicy examples

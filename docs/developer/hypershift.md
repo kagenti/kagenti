@@ -18,14 +18,66 @@ This guide covers Kagenti development using HyperShift to create OpenShift clust
 
 ## Prerequisites
 
-| Requirement | Minimum | Notes |
-|-------------|---------|-------|
-| AWS CLI | 2.x | `brew install awscli` |
-| oc CLI | 4.19+ | [OpenShift CLI](https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html) |
-| Bash | 3.2+ | Default on macOS |
-| jq | Latest | `brew install jq` |
-| Python | 3.11+ | For E2E tests |
-| uv | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Requirement | Minimum | Purpose |
+|-------------|---------|---------|
+| AWS CLI | 2.x | AWS resource management |
+| oc CLI | 4.19+ | OpenShift CLI |
+| Bash | 3.2+ | Script execution |
+| jq | Latest | JSON processing |
+| Python | 3.11+ | E2E tests |
+| uv | Latest | Python package manager |
+
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+brew install awscli jq python@3.11
+
+# OpenShift CLI
+brew install openshift-cli
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
+
+<details>
+<summary><b>Linux (Ubuntu/Debian)</b></summary>
+
+```bash
+# AWS CLI
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip && sudo ./aws/install
+
+# OpenShift CLI - download from https://console.redhat.com/openshift/downloads
+# Or use mirror: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/
+
+# Other tools
+sudo apt-get update && sudo apt-get install -y jq python3.11 python3.11-venv
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
+
+<details>
+<summary><b>Linux (Fedora/RHEL)</b></summary>
+
+```bash
+# AWS CLI
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip && sudo ./aws/install
+
+# OpenShift CLI
+sudo dnf install -y openshift-clients
+
+# Other tools
+sudo dnf install -y jq python3.11
+
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+</details>
 
 ### Required Access
 
@@ -73,12 +125,12 @@ source .env.kagenti-hypershift-custom
 
 ## Naming Conventions
 
-| Component | Local Default | CI Default |
-|-----------|--------------|------------|
-| MANAGED_BY_TAG | `kagenti-hypershift-custom` | `kagenti-hypershift-ci` |
-| .env file | `.env.kagenti-hypershift-custom` | (from secrets) |
-| Cluster suffix | `$USER` (e.g., `ladas`) | varies |
-| Full cluster name | `kagenti-hypershift-custom-ladas` | `kagenti-hypershift-ci-<suffix>` |
+| Component | Default | Example |
+|-----------|---------|---------|
+| MANAGED_BY_TAG | `kagenti-hypershift-custom` | Prefix for all resources |
+| .env file | `.env.kagenti-hypershift-custom` | Contains scoped credentials |
+| Cluster suffix | `$USER` | Your username (e.g., `ladas`) |
+| Full cluster name | `<MANAGED_BY_TAG>-<suffix>` | `kagenti-hypershift-custom-ladas` |
 
 Customize the cluster suffix by passing it as an argument.
 
@@ -338,10 +390,3 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 | `AWS_ACCESS_KEY_ID` | `AWS_ACCESS_KEY_ID` | (used for cluster ops) |
 | `AWS_SECRET_ACCESS_KEY` | `AWS_SECRET_ACCESS_KEY` | (used for cluster ops) |
 
-## Future Documentation (TODO)
-
-> **NOTE:** The following documentation is planned:
-
-- **CRD Reference** - Full schema documentation for AgentCard, Build CRDs with required vs optional fields and `kubectl explain` examples
-- **Agent Instrumentation** - OTEL endpoint `http://otel-collector.kagenti-system.svc.cluster.local:8335`, environment variables, A2A SDK telemetry decorators
-- **Istio Ambient Security** - L4-only policies with ztunnel, when waypoint proxies are needed for L7, AuthorizationPolicy examples
