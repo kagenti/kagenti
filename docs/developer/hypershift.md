@@ -45,7 +45,7 @@ export AWS_REGION="us-east-1"  # optional, defaults to us-east-1
 ### Step 2: Login to Management Cluster
 
 ```bash
-export KUBECONFIG=~/.kube/hypershift_kagenti_ci
+export KUBECONFIG=~/.kube/hypershift_mgmt
 oc login https://api.management-cluster.example.com:6443 ...
 ```
 
@@ -211,7 +211,7 @@ oc get nodes
 
 | Cluster | Purpose | Kubeconfig |
 |---------|---------|------------|
-| **Management** | Create/destroy hosted clusters | `~/.kube/hypershift_kagenti_ci` |
+| **Management** | Create/destroy hosted clusters | `~/.kube/hypershift_mgmt` |
 | **Hosted** | Run Kagenti platform | `~/clusters/hcp/<cluster-name>/auth/kubeconfig` |
 
 The scripts automatically switch between kubeconfigs as needed.
