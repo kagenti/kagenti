@@ -210,26 +210,6 @@ data:
   TARGET_SCOPES: "openid auth-target-aud"
 ---
 # ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for SPIFFE Helper in Namespace: {{ . }}
-# ——————————————————————————————————————————————————————————————————————————————
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: spiffe-helper-config
-  namespace: {{ . }}
-data:
-  helper.conf: |
-    agent_address = "/spiffe-workload-api/spire-agent.sock"
-    cmd = ""
-    cmd_args = ""
-    cert_dir = "/opt"
-    renew_signal = ""
-    svid_file_name = "svid.pem"
-    svid_key_file_name = "svid_key.pem"
-    svid_bundle_file_name = "svid_bundle.pem"
-    jwt_svids = [{jwt_audience="kagenti", jwt_svid_file_name="jwt_svid.token"}]
----
-# ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
