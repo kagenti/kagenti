@@ -6,15 +6,12 @@ This guide covers Kagenti development using HyperShift to create OpenShift clust
 
 - [Prerequisites](#prerequisites)
 - [One-Time Setup](#one-time-setup)
-- [Naming Conventions](#naming-conventions)
 - [Quick Start](#quick-start)
-- [Main Testing Flow](#main-testing-flow)
-- [Custom Cluster Suffixes](#custom-cluster-suffixes)
-- [Running Individual Phases](#running-individual-phases)
-- [Kubeconfig Management](#kubeconfig-management)
-- [Accessing Services](#accessing-services)
-- [Debugging](#debugging)
+- [Management Cluster Operations](#management-cluster-operations)
+- [Hosted Cluster Operations](#hosted-cluster-operations)
 - [Script Reference](#script-reference)
+
+---
 
 ## Prerequisites
 
@@ -82,7 +79,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 - **AWS**: Admin access for one-time credential setup, scoped credentials for daily use
 - **Management Cluster**: cluster-admin access to the HyperShift management cluster
 
+---
+
 ## One-Time Setup
+
+These steps run on the **management cluster** and only need to be done once.
 
 ### Step 1: Set AWS Admin Credentials
 
@@ -114,14 +115,20 @@ oc login https://api.management-cluster.example.com:6443 ...
 ./.github/scripts/hypershift/local-setup.sh
 ```
 
-### Step 5: Verify Setup
+### Step 5: Setup Autoscaling (Optional)
+
+```bash
+./.github/scripts/hypershift/setup-autoscaling.sh
+```
+
+### Step 6: Verify Setup
 
 ```bash
 source .env.kagenti-hypershift-custom
 ./.github/scripts/hypershift/preflight-check.sh
 ```
 
-## Naming Conventions
+### Naming Conventions
 
 | Component | Default | Example |
 |-----------|---------|---------|
@@ -132,109 +139,128 @@ source .env.kagenti-hypershift-custom
 
 Customize the cluster suffix by passing it as an argument.
 
+---
+
 ## Quick Start
 
+After one-time setup, this is the typical development flow:
+
 ```bash
-# Source credentials
+# 1. Source credentials
 source .env.kagenti-hypershift-custom
 
-# Deploy cluster with Kagenti and run tests
+# 2. Create cluster, deploy Kagenti, run tests (keep cluster for debugging)
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
 
-# Show service URLs and credentials
+# 3. Show service URLs and credentials
 ./.github/scripts/local-setup/show-services.sh
-```
 
-## Main Testing Flow
-
-### Step 1: Deploy and Test (Keep Cluster)
-
-```bash
-# Source credentials
-source .env.kagenti-hypershift-custom
-
-# Create cluster → deploy Kagenti → run tests → keep cluster for debugging
-./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
-
-# Show services and credentials
-./.github/scripts/local-setup/show-services.sh
-```
-
-### Step 2: Destroy When Done
-
-```bash
+# 4. When done, destroy the cluster
 ./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
 ```
 
-### Full CI Run (Create → Test → Destroy)
+### Custom Cluster Suffix
 
 ```bash
-./.github/scripts/local-setup/hypershift-full-test.sh
-```
-
-This takes approximately 50 minutes.
-
-## Custom Cluster Suffixes
-
-Use custom suffixes for testing specific PRs or features:
-
-```bash
-# Custom suffix: creates kagenti-hypershift-custom-pr529
+# Create cluster with custom suffix (e.g., for PR testing)
 ./.github/scripts/local-setup/hypershift-full-test.sh pr529 --skip-cluster-destroy
 
-# Show services for custom cluster
+# Show services for that cluster
 ./.github/scripts/local-setup/show-services.sh pr529
 
-# Destroy custom cluster
+# Destroy when done
 ./.github/scripts/local-setup/hypershift-full-test.sh pr529 --include-cluster-destroy
 ```
 
-### More Examples
+### Common Workflows
 
 ```bash
-# Feature testing
-./.github/scripts/local-setup/hypershift-full-test.sh feature1 --skip-cluster-destroy
-# Creates: kagenti-hypershift-custom-feature1
+# Full run: create → deploy → test → destroy (~50 min)
+./.github/scripts/local-setup/hypershift-full-test.sh
 
-# Iterate on existing cluster
+# Iterate on existing cluster (skip create/destroy)
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
 
-# Fresh Kagenti on existing cluster
+# Fresh Kagenti install on existing cluster
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --clean-kagenti --skip-cluster-destroy
 ```
 
-## Running Individual Phases
+---
 
-Use `--include-<phase>` to run only specific phases:
+## Management Cluster Operations
+
+Operations that run on the **management cluster** (where HyperShift operator runs).
+
+**Kubeconfig:** `~/.kube/hypershift_mgmt`
+
+### Check AWS Quotas
+
+Before creating clusters, verify you have sufficient AWS quota:
 
 ```bash
-# Create cluster only
-./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-create
-
-# Install Kagenti only (on existing cluster)
-./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install
-
-# Deploy agents only
-./.github/scripts/local-setup/hypershift-full-test.sh --include-agents
-
-# Run tests only
-./.github/scripts/local-setup/hypershift-full-test.sh --include-test
-
-# Uninstall Kagenti only
-./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-uninstall
-
-# Destroy cluster only
-./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
-
-# Combine phases: create + install only
-./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-create --include-kagenti-install
+source .env.kagenti-hypershift-custom
+./.github/scripts/hypershift/check-quotas.sh
 ```
 
-## Kubeconfig Management
+### Create Hosted Cluster
 
-### Kubeconfig Locations
+```bash
+source .env.kagenti-hypershift-custom
 
-HyperShift hosted cluster kubeconfigs are stored at:
+# Default cluster (uses $USER as suffix)
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-create
+
+# Custom suffix
+./.github/scripts/local-setup/hypershift-full-test.sh pr529 --include-cluster-create
+```
+
+Cluster creation takes ~10-15 minutes.
+
+### Destroy Hosted Cluster
+
+```bash
+source .env.kagenti-hypershift-custom
+
+# Default cluster
+./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
+
+# Custom suffix
+./.github/scripts/local-setup/hypershift-full-test.sh pr529 --include-cluster-destroy
+```
+
+### Debug AWS Resources
+
+Find orphaned AWS resources for a cluster (read-only):
+
+```bash
+source .env.kagenti-hypershift-custom
+
+# Default cluster
+./.github/scripts/hypershift/debug-aws-hypershift.sh
+
+# Custom suffix
+./.github/scripts/hypershift/debug-aws-hypershift.sh pr529
+```
+
+### Setup Autoscaling
+
+Configure management cluster and nodepool autoscaling:
+
+```bash
+./.github/scripts/hypershift/setup-autoscaling.sh
+```
+
+---
+
+## Hosted Cluster Operations
+
+Operations that run on the **hosted cluster** (where Kagenti platform runs).
+
+**Kubeconfig:** `~/clusters/hcp/<cluster-name>/auth/kubeconfig`
+
+### Kubeconfig Management
+
+Hosted cluster kubeconfigs are stored at:
 
 ```
 ~/clusters/hcp/<MANAGED_BY_TAG>-<cluster-suffix>/auth/kubeconfig
@@ -244,10 +270,8 @@ Examples:
 - `~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kubeconfig`
 - `~/clusters/hcp/kagenti-hypershift-custom-pr529/auth/kubeconfig`
 
-### Using the Kubeconfig
-
 ```bash
-# Set for your cluster
+# Set kubeconfig for your cluster
 export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$USER/auth/kubeconfig
 
 # Or for custom suffix
@@ -257,7 +281,7 @@ export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-pr529/auth/kubeconfig
 oc get nodes
 ```
 
-### Management vs Hosted Cluster
+### Cluster Comparison
 
 | Cluster | Purpose | Kubeconfig |
 |---------|---------|------------|
@@ -266,21 +290,41 @@ oc get nodes
 
 The scripts automatically switch between kubeconfigs as needed.
 
-## Accessing Services
-
-### Show All Services
+### Install Kagenti Platform
 
 ```bash
-# Default cluster
+./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install
+```
+
+### Deploy Test Agents
+
+```bash
+./.github/scripts/local-setup/hypershift-full-test.sh --include-agents
+```
+
+### Run E2E Tests
+
+```bash
+./.github/scripts/local-setup/hypershift-full-test.sh --include-test
+```
+
+### Uninstall Kagenti
+
+```bash
+./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-uninstall
+```
+
+### Access Services
+
+```bash
+# Show all services, URLs, and credentials
 ./.github/scripts/local-setup/show-services.sh
 
-# Custom suffix
+# For custom suffix
 ./.github/scripts/local-setup/show-services.sh pr529
 ```
 
-### Service Routes
-
-After deployment, services are available via OpenShift routes:
+Service routes:
 
 | Service | How to Find URL |
 |---------|-----------------|
@@ -296,55 +340,23 @@ After deployment, services are available via OpenShift routes:
 cat ~/clusters/hcp/<cluster-name>/auth/kubeadmin-password
 ```
 
-## Debugging
-
-### Set Kubeconfig for Hosted Cluster
+### Debug Pods and Logs
 
 ```bash
-export KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$USER/auth/kubeconfig
-```
-
-### View Pod Status
-
-```bash
+# View pod status
 oc get pods -A
 oc get pods -n kagenti-system
 oc get pods -n team1
-```
 
-### Check Logs
-
-```bash
-# Agent logs
+# Check logs
 oc logs -n team1 deployment/weather-service -f
-
-# Operator logs
 oc logs -n kagenti-system deployment/kagenti-operator -f
-```
 
-### Debug AWS Resources
-
-Find orphaned AWS resources for a cluster (read-only):
-
-```bash
-source .env.kagenti-hypershift-custom
-./.github/scripts/hypershift/debug-aws-hypershift.sh
-
-# For custom suffix
-./.github/scripts/hypershift/debug-aws-hypershift.sh pr529
-```
-
-### Check AWS Quotas
-
-```bash
-./.github/scripts/hypershift/check-quotas.sh
-```
-
-### Recent Events
-
-```bash
+# Recent events
 oc get events -A --sort-by='.lastTimestamp' | tail -30
 ```
+
+---
 
 ## Script Reference
 
@@ -352,10 +364,10 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 
 | Script | Purpose |
 |--------|---------|
-| `hypershift-full-test.sh [suffix]` | Unified HyperShift test runner with phase control |
+| `hypershift-full-test.sh [suffix]` | Unified test runner with phase control |
 | `show-services.sh [suffix]` | Display all services, URLs, and credentials |
 
-### HyperShift Scripts (`.github/scripts/hypershift/`)
+### Management Cluster Scripts (`.github/scripts/hypershift/`)
 
 | Script | Purpose |
 |--------|---------|
@@ -364,8 +376,9 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 | `setup-hypershift-ci-credentials.sh` | One-time AWS/OCP credential setup |
 | `local-setup.sh` | Install hcp CLI and ansible collections |
 | `preflight-check.sh` | Verify prerequisites |
-| `debug-aws-hypershift.sh [suffix]` | Find orphaned AWS resources (read-only) |
 | `check-quotas.sh` | Check AWS service quotas |
+| `setup-autoscaling.sh` | Configure autoscaling |
+| `debug-aws-hypershift.sh [suffix]` | Find orphaned AWS resources (read-only) |
 
 ### Phase Options
 
@@ -379,7 +392,7 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 | `--clean-kagenti` | Uninstall before install | Fresh Kagenti installation |
 | `[suffix]` | Custom cluster name | Use suffix instead of $USER |
 
-## Credentials Parity with CI
+### Credentials Parity with CI
 
 | GitHub Secret | .env Variable | Cluster Secret |
 |---------------|---------------|----------------|
@@ -387,4 +400,3 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 | `GITHUB_TOKEN` | `GITHUB_TOKEN_VALUE` | `github-token-secret` |
 | `AWS_ACCESS_KEY_ID` | `AWS_ACCESS_KEY_ID` | (used for cluster ops) |
 | `AWS_SECRET_ACCESS_KEY` | `AWS_SECRET_ACCESS_KEY` | (used for cluster ops) |
-
