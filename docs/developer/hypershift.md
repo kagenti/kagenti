@@ -45,9 +45,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 <summary><b>Linux (Ubuntu/Debian)</b></summary>
 
 ```bash
-# AWS CLI
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip && sudo ./aws/install
+# AWS CLI (via snap)
+sudo snap install aws-cli --classic
 
 # OpenShift CLI - download from https://console.redhat.com/openshift/downloads
 # Or use mirror: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/
@@ -65,8 +64,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ```bash
 # AWS CLI
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip && sudo ./aws/install
+sudo dnf install -y awscli2
 
 # OpenShift CLI
 sudo dnf install -y openshift-clients
