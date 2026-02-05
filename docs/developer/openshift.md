@@ -395,16 +395,16 @@ oc rollout status deployment/weather-service -n team1
 
 See [Ansible README](../../deployments/ansible/README.md) for advanced options.
 
-### Phase Options
+### Phase Options (for hypershift-full-test.sh)
 
-| Option | Runs | Use Case |
-|--------|------|----------|
-| `--skip-cluster-create --skip-cluster-destroy` | 2-4 | **OpenShift standard flow** |
-| `--include-kagenti-install` | 2 | Install Kagenti only |
-| `--include-agents` | 3 | Deploy agents only |
-| `--include-test` | 4 | Run tests only |
-| `--include-kagenti-uninstall` | 5 | Uninstall Kagenti |
-| `--clean-kagenti` | - | Uninstall before installing |
+| Option | Effect | Use Case |
+|--------|--------|----------|
+| `--skip-cluster-create --skip-cluster-destroy` | Install, deploy, test | **OpenShift standard flow** |
+| `--include-kagenti-install` | Install only | Install Kagenti platform |
+| `--include-agents` | Deploy only | Deploy example agents |
+| `--include-test` | Test only | Run E2E tests |
+| `--include-kagenti-uninstall` | Uninstall only | Remove Kagenti platform |
+| `--clean-kagenti` | Uninstall before install | Fresh Kagenti installation |
 
 ## Environment Comparison
 

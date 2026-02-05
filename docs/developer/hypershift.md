@@ -319,15 +319,15 @@ oc get events -A --sort-by='.lastTimestamp' | tail -30
 
 ### Phase Options
 
-| Option | Runs | Use Case |
-|--------|------|----------|
-| `--skip-cluster-destroy` | 1-4 | **Main flow**: run tests, keep cluster |
-| `--include-cluster-destroy` | 6 | **Cleanup**: destroy cluster when done |
-| (no options) | 1-4,6 | Full CI run (create + test + destroy) |
-| `--skip-cluster-create --skip-cluster-destroy` | 2-4 | Iterate on existing cluster |
-| `--include-<phase>` | selected | Run specific phase(s) only |
-| `--clean-kagenti` | - | Uninstall Kagenti before installing |
-| `[suffix]` | - | Custom cluster suffix |
+| Option | Effect | Use Case |
+|--------|--------|----------|
+| `--skip-cluster-destroy` | Create, install, deploy, test | **Main flow**: keep cluster for debugging |
+| `--include-cluster-destroy` | Destroy only | **Cleanup**: destroy cluster when done |
+| (no options) | All phases | Full run (create → test → destroy) |
+| `--skip-cluster-create --skip-cluster-destroy` | Install, deploy, test | Iterate on existing cluster |
+| `--include-<phase>` | Selected phase(s) | Run specific phase(s) only |
+| `--clean-kagenti` | Uninstall before install | Fresh Kagenti installation |
+| `[suffix]` | Custom cluster name | Use suffix instead of $USER |
 
 ## Credentials Parity with CI
 
