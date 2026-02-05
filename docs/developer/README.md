@@ -93,8 +93,7 @@ docs/developer/
 - [Installation Guide](../install.md) - Comprehensive installation options
 - [Developer Guide](../dev-guide.md) - Git workflow, UI development
 - [Components](../components.md) - Architecture and component details
-- [Skills Reference](../skills/README.md) - Claude Code skills index
-- [AI Ops Quickstart](../ai-ops/README.md) - Claude Code workflows
+- [Local Setup Scripts](../../.github/scripts/local-setup/README.md) - Script reference and quick commands
 
 ## Future Documentation (TODO)
 
