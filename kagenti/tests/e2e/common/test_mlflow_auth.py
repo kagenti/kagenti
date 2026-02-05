@@ -23,12 +23,45 @@ Environment Variables:
 
 import os
 import logging
+import subprocess
 from typing import Dict, Optional
 
 import pytest
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def get_mlflow_url() -> str | None:
+    """Get MLflow URL from environment or auto-detect from cluster."""
+    url = os.getenv("MLFLOW_URL")
+    if url:
+        return url
+
+    # Try to get from OpenShift route (try both oc and kubectl)
+    for cmd in ["oc", "kubectl"]:
+        try:
+            result = subprocess.run(
+                [
+                    cmd,
+                    "get",
+                    "route",
+                    "mlflow",
+                    "-n",
+                    "kagenti-system",
+                    "-o",
+                    "jsonpath={.spec.host}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout:
+                return f"https://{result.stdout}"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    return None
 
 
 # ============================================================================
@@ -49,18 +82,20 @@ def mlflow_url():
 
 @pytest.fixture(scope="module")
 def require_mlflow_url():
-    """Skip tests if MLFLOW_URL is not explicitly set.
+    """Get MLflow URL, auto-detecting from cluster if not set.
 
-    This fixture ensures MLflow auth tests only run when MLFLOW_URL
-    is explicitly configured (e.g., in OpenShift CI or local testing
-    with port-forward). Without this, tests would try localhost:5000
-    which may not be accessible in all CI environments.
+    This fixture ensures MLflow auth tests get a valid URL either from:
+    1. MLFLOW_URL environment variable
+    2. Auto-detected from OpenShift route in kagenti-system namespace
+
+    Fails the test if no URL can be determined - tests should fail,
+    not skip, when MLflow is expected to be available.
     """
-    mlflow_url = os.getenv("MLFLOW_URL")
+    mlflow_url = get_mlflow_url()
     if not mlflow_url:
-        pytest.skip(
-            "MLFLOW_URL not set - MLflow auth tests require explicit endpoint. "
-            "Set MLFLOW_URL or use port-forward: kubectl port-forward svc/mlflow 5000:5000 -n kagenti-system"
+        pytest.fail(
+            "MLflow URL not available. "
+            "Set MLFLOW_URL env var or ensure mlflow route exists in kagenti-system."
         )
     return mlflow_url
 
