@@ -69,7 +69,7 @@ def read_keycloak_credentials(
         logger.info("Successfully read credentials from secret")
         return username, password
     except ApiException as e:
-        error_msg = f"Could not read Keycloak admin secret in namespace {namespace}: {e}"
+        error_msg = f"Could not read Keycloak admin credentials in namespace {namespace}: {e}"
         logger.error(error_msg)
         raise
     except Exception as e:
