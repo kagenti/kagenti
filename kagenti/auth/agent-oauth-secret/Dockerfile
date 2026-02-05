@@ -7,10 +7,8 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install dependencies directly (no requirements.txt)
-RUN pip install --no-cache-dir \
-    kubernetes>=31.0.0 \
-    python-keycloak>=3.0.0 \
-    typer>=0.9.0
+COPY auth/agent-oauth-secret/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy common utilities from unified context
 COPY common/ ./common/
