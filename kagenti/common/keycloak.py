@@ -50,7 +50,7 @@ def read_keycloak_credentials(
     """
     try:
         logger.info(
-            f"Reading Keycloak admin credentials from secret {secret_name} in namespace {namespace}"
+            f"Reading Keycloak admin credentials in namespace {namespace}"
         )
         secret = v1_api.read_namespaced_secret(secret_name, namespace)
 
@@ -69,7 +69,7 @@ def read_keycloak_credentials(
         logger.info("Successfully read credentials from secret")
         return username, password
     except ApiException as e:
-        error_msg = f"Could not read Keycloak admin secret {secret_name} in namespace {namespace}: {e}"
+        error_msg = f"Could not read Keycloak admin secret in namespace {namespace}: {e}"
         logger.error(error_msg)
         raise
     except Exception as e:
