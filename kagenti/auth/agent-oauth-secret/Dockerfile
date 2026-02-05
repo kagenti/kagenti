@@ -9,16 +9,14 @@ WORKDIR /app
 # Install dependencies directly (no requirements.txt)
 RUN pip install --no-cache-dir \
     kubernetes>=31.0.0 \
-    python-keycloak>=3.0.0
+    python-keycloak>=3.0.0 \
+    typer>=0.9.0
 
 # Copy common utilities from unified context
 COPY common/ ./common/
 
-# Copy auth shared utilities
-COPY auth/shared_utils.py ./kagenti/auth/
-
 # Copy the script
-COPY auth/ui-oauth-secret/auth_secret.py .
+COPY auth/agent-oauth-secret/agent_oauth_secret.py .
 
 # Create non-root user for runtime security
 RUN useradd -u 1001 -m appuser && \
@@ -27,5 +25,5 @@ RUN useradd -u 1001 -m appuser && \
 # Switch to non-root user
 USER 1001
 
-# Register client
-CMD ["python", "auth_secret.py"]
+# Run the agent OAuth setup
+CMD ["python", "agent_oauth_secret.py"]
