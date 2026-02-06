@@ -262,14 +262,14 @@ class PhoenixClient:
 
 
 @pytest.fixture(scope="module")
-def phoenix_client():
+def phoenix_client(is_openshift):
     """Create Phoenix client for tests."""
     url = get_phoenix_url()
     if not url:
         pytest.skip("Phoenix URL not available")
 
-    # Disable SSL verification for self-signed certs on OpenShift
-    verify_ssl = os.getenv("PHOENIX_VERIFY_SSL", "true").lower() != "false"
+    # On OpenShift, routes use self-signed certs - disable SSL verification
+    verify_ssl = not is_openshift
     return PhoenixClient(url, verify_ssl=verify_ssl)
 
 
