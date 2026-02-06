@@ -287,12 +287,14 @@ def http_client(is_openshift, openshift_ingress_ca):
     """
     Create an httpx AsyncClient configured for the environment.
 
-    On OpenShift: Uses the ingress CA certificate for SSL verification
+    On OpenShift: Uses ssl.SSLContext with the ingress CA certificate
     On Kind: Standard SSL verification (HTTP, no TLS)
     """
     if is_openshift:
-        # openshift_ingress_ca fixture guarantees a valid CA path on OpenShift
-        return httpx.AsyncClient(verify=openshift_ingress_ca, follow_redirects=False)
+        import ssl
+
+        ssl_ctx = ssl.create_default_context(cafile=openshift_ingress_ca)
+        return httpx.AsyncClient(verify=ssl_ctx, follow_redirects=False)
     else:
         return httpx.AsyncClient(follow_redirects=False)
 

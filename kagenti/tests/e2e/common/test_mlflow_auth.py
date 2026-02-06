@@ -240,8 +240,13 @@ class TestMLflowAuth:
 
     @pytest.fixture(autouse=True)
     def _setup_ssl(self, is_openshift, openshift_ingress_ca):
-        """Set SSL verification: CA path on OpenShift, True on Kind."""
-        self.ssl_verify = openshift_ingress_ca if is_openshift else True
+        """Set SSL verification: SSLContext with CA on OpenShift, True on Kind."""
+        import ssl
+
+        if is_openshift:
+            self.ssl_verify = ssl.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            self.ssl_verify = True
 
     @pytest.mark.asyncio
     async def test_mlflow_version_endpoint(self, require_mlflow_url, is_openshift):
@@ -418,8 +423,13 @@ class TestMLflowBackend:
 
     @pytest.fixture(autouse=True)
     def _setup_ssl(self, is_openshift, openshift_ingress_ca):
-        """Set SSL verification: CA path on OpenShift, True on Kind."""
-        self.ssl_verify = openshift_ingress_ca if is_openshift else True
+        """Set SSL verification: SSLContext with CA on OpenShift, True on Kind."""
+        import ssl
+
+        if is_openshift:
+            self.ssl_verify = ssl.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            self.ssl_verify = True
 
     @pytest.mark.asyncio
     async def test_mlflow_pod_running(self, k8s_client):

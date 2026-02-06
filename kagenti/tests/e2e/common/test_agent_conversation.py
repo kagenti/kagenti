@@ -68,32 +68,33 @@ def _is_openshift_from_config():
     return False
 
 
-def _get_ssl_verify():
+def _get_ssl_context():
     """
-    Get the SSL verification setting for httpx client.
+    Get the SSL context for httpx client.
 
-    On OpenShift: Uses the ingress CA certificate fetched from kube-root-ca.crt.
-    On Kind: True (standard SSL verification, services use HTTP).
+    On OpenShift: Returns ssl.SSLContext with the cluster CA certificate.
+    On Kind: Returns True (default SSL verification, services use HTTP).
 
     Never returns False - raises if CA cert cannot be fetched on OpenShift.
     """
+    import ssl
+
     if not _is_openshift_from_config():
         return True
 
     # Check environment variable first (allows override)
     ca_path = os.getenv("OPENSHIFT_INGRESS_CA")
-    if ca_path and pathlib.Path(ca_path).exists():
-        return ca_path
+    if not ca_path or not pathlib.Path(ca_path).exists():
+        # Fetch from cluster
+        ca_path = _fetch_openshift_ingress_ca()
 
-    # Fetch from cluster
-    ca_file = _fetch_openshift_ingress_ca()
-    if ca_file:
-        return ca_file
+    if not ca_path:
+        raise RuntimeError(
+            "Could not fetch OpenShift ingress CA certificate. "
+            "Set OPENSHIFT_INGRESS_CA env var to the CA bundle path."
+        )
 
-    raise RuntimeError(
-        "Could not fetch OpenShift ingress CA certificate. "
-        "Set OPENSHIFT_INGRESS_CA env var to the CA bundle path."
-    )
+    return ssl.create_default_context(cafile=ca_path)
 
 
 # ============================================================================
@@ -120,7 +121,7 @@ class TestWeatherAgentConversation:
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
 
         # Get SSL verification setting (uses OpenShift CA cert if available)
-        ssl_verify = _get_ssl_verify()
+        ssl_verify = _get_ssl_context()
         # Ollama on Kind CI with small models (qwen2.5:0.5b) can be slow
         async with httpx.AsyncClient(timeout=120.0, verify=ssl_verify) as httpx_client:
             # Pre-flight: verify agent is reachable
@@ -303,7 +304,7 @@ class TestWeatherAgentConversation:
         allowing observability tests to filter traces by this specific session.
         """
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
-        ssl_verify = _get_ssl_verify()
+        ssl_verify = _get_ssl_context()
 
         # Use the shared test session ID for trace correlation
         context_id = test_session_id
