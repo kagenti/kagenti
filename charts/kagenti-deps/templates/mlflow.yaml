@@ -199,47 +199,82 @@ spec:
           from mlflow_oidc_auth.app import app
           print("App created with /v1/traces endpoint")
 
-          # Create Default experiment if it does not exist
-          # MLflow requires experiment_id=0 (Default) for trace ingestion
+          # Initialize database in a background thread after alembic migrations complete
+          # The app import triggers alembic migrations lazily, so we must wait for tables
           import os
-          import psycopg
-          db_uri = os.environ.get("MLFLOW_BACKEND_STORE_URI")
-          if db_uri:
-              try:
-                  with psycopg.connect(db_uri) as conn:
-                      with conn.cursor() as cur:
-                          # Check if Default experiment exists
-                          cur.execute("SELECT experiment_id FROM experiments WHERE experiment_id = 0")
-                          if cur.fetchone() is None:
-                              import time
-                              ts = int(time.time() * 1000)
-                              cur.execute(
-                                  "INSERT INTO experiments (experiment_id, name, artifact_location, lifecycle_stage, creation_time, last_update_time) "
-                                  "VALUES (0, %s, %s, %s, %s, %s)",
-                                  ("Default", "/mlflow/artifacts/0", "active", ts, ts)
-                              )
-                              conn.commit()
-                              print("Created Default experiment (id=0)")
-                          else:
-                              print("Default experiment already exists")
+          import threading
+          import time as time_module
 
-                          # Create service account user for OTEL collector
-                          # mlflow-oidc-auth requires users to exist in its database
-                          # The OTEL collector authenticates as service-account-mlflow via OAuth2
-                          service_account = "service-account-mlflow"
-                          cur.execute("SELECT id FROM users WHERE username = %s", (service_account,))
-                          if cur.fetchone() is None:
+          def init_database():
+              """Initialize Default experiment and service account user after migrations."""
+              import psycopg
+              db_uri = os.environ.get("MLFLOW_BACKEND_STORE_URI")
+              if not db_uri:
+                  return
+
+              # Wait for alembic migrations to create tables (retry with backoff)
+              max_retries = 30
+              for attempt in range(max_retries):
+                  try:
+                      with psycopg.connect(db_uri) as conn:
+                          with conn.cursor() as cur:
+                              # Check if experiments table exists (created by alembic)
                               cur.execute(
-                                  "INSERT INTO users (username, display_name, is_admin, is_service_account) "
-                                  "VALUES (%s, %s, %s, %s)",
-                                  (service_account, "MLflow Service Account", False, True)
+                                  "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                                  "WHERE table_name = 'experiments')"
                               )
-                              conn.commit()
-                              print(f"Created service account user: {service_account}")
-                          else:
-                              print(f"Service account user already exists: {service_account}")
-              except Exception as e:
-                  print(f"Warning: Could not initialize database: {e}")
+                              if not cur.fetchone()[0]:
+                                  raise Exception("experiments table not ready")
+
+                              # Check if users table exists (created by mlflow-oidc-auth alembic)
+                              cur.execute(
+                                  "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                                  "WHERE table_name = 'users')"
+                              )
+                              if not cur.fetchone()[0]:
+                                  raise Exception("users table not ready")
+
+                              # Create Default experiment if it does not exist
+                              cur.execute("SELECT experiment_id FROM experiments WHERE experiment_id = 0")
+                              if cur.fetchone() is None:
+                                  ts = int(time_module.time() * 1000)
+                                  cur.execute(
+                                      "INSERT INTO experiments (experiment_id, name, artifact_location, lifecycle_stage, creation_time, last_update_time) "
+                                      "VALUES (0, %s, %s, %s, %s, %s)",
+                                      ("Default", "/mlflow/artifacts/0", "active", ts, ts)
+                                  )
+                                  conn.commit()
+                                  print("Created Default experiment (id=0)")
+                              else:
+                                  print("Default experiment already exists")
+
+                              # Create service account user for OTEL collector
+                              service_account = "service-account-mlflow"
+                              cur.execute("SELECT id FROM users WHERE username = %s", (service_account,))
+                              if cur.fetchone() is None:
+                                  cur.execute(
+                                      "INSERT INTO users (username, display_name, is_admin, is_service_account) "
+                                      "VALUES (%s, %s, %s, %s)",
+                                      (service_account, "MLflow Service Account", False, True)
+                                  )
+                                  conn.commit()
+                                  print(f"Created service account user: {service_account}")
+                              else:
+                                  print(f"Service account user already exists: {service_account}")
+                              return  # Success
+                  except Exception as e:
+                      if attempt < max_retries - 1:
+                          sleep_time = min(2 ** attempt, 30)  # Exponential backoff, max 30s
+                          print(f"Waiting for database tables (attempt {attempt + 1}/{max_retries}): {e}")
+                          time_module.sleep(sleep_time)
+                      else:
+                          print(f"Warning: Could not initialize database after {max_retries} attempts: {e}")
+
+          # Start database initialization in background thread
+          # This allows uvicorn to start serving while we wait for migrations
+          init_thread = threading.Thread(target=init_database, daemon=True)
+          init_thread.start()
+          print("Started database initialization thread")
 
           import uvicorn
           uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
