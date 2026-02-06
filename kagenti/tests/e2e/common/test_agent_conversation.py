@@ -118,6 +118,23 @@ class TestWeatherAgentConversation:
         # Get SSL verification setting (uses OpenShift CA cert if available)
         ssl_verify = _get_ssl_verify()
         async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as httpx_client:
+            # Pre-flight: verify agent is reachable
+            try:
+                card_resp = await httpx_client.get(
+                    f"{agent_url}/.well-known/agent-card.json", timeout=10.0
+                )
+                print(f"\n  Agent card: HTTP {card_resp.status_code}")
+                if card_resp.status_code == 200:
+                    card = card_resp.json()
+                    print(f"  Agent name: {card.get('name', '?')}")
+                else:
+                    print(f"  Agent card response: {card_resp.text[:200]}")
+            except Exception as e:
+                pytest.fail(
+                    f"Agent not reachable at {agent_url}: {e}\n"
+                    "Check: pod running, port-forward active, service exists"
+                )
+
             # Initialize A2A client
             client = A2AClient(httpx_client=httpx_client, url=agent_url)
 
@@ -140,6 +157,7 @@ class TestWeatherAgentConversation:
             full_response = ""
             final_event_received = False
             tool_invocation_detected = False
+            events_received = []
 
             try:
                 stream_response_iterator = client.send_message_streaming(
@@ -149,6 +167,7 @@ class TestWeatherAgentConversation:
                 async for chunk in stream_response_iterator:
                     if isinstance(chunk.root, SendStreamingMessageSuccessResponse):
                         event = chunk.root.result
+                        events_received.append(type(event).__name__)
 
                         # Handle Task events
                         if isinstance(event, Task):
@@ -167,6 +186,8 @@ class TestWeatherAgentConversation:
 
                         # Handle TaskStatusUpdateEvent
                         elif isinstance(event, TaskStatusUpdateEvent):
+                            state = getattr(event.status, "state", "?")
+                            events_received[-1] += f"({state})"
                             if event.final:
                                 final_event_received = True
                                 if event.status.message and event.status.message.parts:
@@ -215,7 +236,14 @@ class TestWeatherAgentConversation:
                 pytest.fail(f"Unexpected error during A2A conversation: {e}")
 
         # Validate we got a response
-        assert full_response, "Agent did not return any response"
+        assert full_response, (
+            f"Agent did not return any response\n"
+            f"  Agent URL: {agent_url}\n"
+            f"  Events received: {events_received}\n"
+            f"  Final event: {final_event_received}\n"
+            f"  Tool invoked: {tool_invocation_detected}\n"
+            f"  Query: {user_message}"
+        )
         assert len(full_response) > 10, f"Agent response too short: {full_response}"
 
         # Validate tool was invoked (critical for MCP integration test)
