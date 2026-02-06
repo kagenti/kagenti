@@ -20,8 +20,12 @@ mkdir -p "$REPO_ROOT/test-results"
 # Support filtering tests via PYTEST_FILTER or PYTEST_ARGS
 # PYTEST_FILTER: pytest -k filter expression (e.g., "test_mlflow" or "TestGenAI")
 # PYTEST_ARGS: additional pytest arguments (e.g., "-x" for stop on first failure)
-# Use uv run to ensure we use the project's virtual environment
-PYTEST_CMD="uv run pytest"
+# Use uv if available, fall back to plain pytest (CI installs deps via pip)
+if command -v uv &>/dev/null; then
+    PYTEST_CMD="uv run pytest"
+else
+    PYTEST_CMD="pytest"
+fi
 PYTEST_TARGETS="${PYTEST_TARGETS:-tests/e2e/common tests/e2e/kagenti_operator}"
 PYTEST_OPTS="-v --timeout=300 --tb=short --junit-xml=../test-results/e2e-results.xml"
 
