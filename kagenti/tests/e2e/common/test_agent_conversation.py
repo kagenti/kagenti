@@ -117,7 +117,8 @@ class TestWeatherAgentConversation:
 
         # Get SSL verification setting (uses OpenShift CA cert if available)
         ssl_verify = _get_ssl_verify()
-        async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as httpx_client:
+        # Ollama on Kind CI with small models (qwen2.5:0.5b) can be slow
+        async with httpx.AsyncClient(timeout=120.0, verify=ssl_verify) as httpx_client:
             # Pre-flight: verify agent is reachable
             try:
                 card_resp = await httpx_client.get(
@@ -311,7 +312,8 @@ class TestWeatherAgentConversation:
             "Which city is warmer?",
         ]
 
-        async with httpx.AsyncClient(timeout=60.0, verify=ssl_verify) as httpx_client:
+        # Ollama on Kind CI with small models (qwen2.5:0.5b) can be slow
+        async with httpx.AsyncClient(timeout=120.0, verify=ssl_verify) as httpx_client:
             client = A2AClient(httpx_client=httpx_client, url=agent_url)
 
             for turn, user_message in enumerate(messages, 1):
