@@ -37,6 +37,16 @@ CYAN=$'\033[0;36m'
 MAGENTA=$'\033[0;35m'
 NC=$'\033[0m' # No Color
 
+# Helper function to create clickable terminal links (OSC 8 hyperlinks)
+# Usage: link "https://example.com" "Display Text"
+# Falls back to plain text if terminal doesn't support OSC 8
+link() {
+    local url="$1"
+    local text="${2:-$url}"
+    # OSC 8 hyperlink: \e]8;;URL\e\\TEXT\e]8;;\e\\
+    printf '\e]8;;%s\e\\%s\e]8;;\e\\' "$url" "$text"
+}
+
 # Detect environment
 detect_environment() {
     # Check if MANAGED_BY_TAG is set (HyperShift mode - set kubeconfig first)
@@ -157,11 +167,11 @@ echo "--------------------------------------------------------------------------
 KEYCLOAK_STATUS=$($CLI get pods -n keycloak -l app=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $KEYCLOAK_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Admin URL:${NC}    http://keycloak.localtest.me:8080/admin"
+    echo -e "${BLUE}Admin URL:${NC}    $(link "http://keycloak.localtest.me:8080/admin")"
 else
     KEYCLOAK_ROUTE=$($CLI get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$KEYCLOAK_ROUTE" ]; then
-        echo -e "${BLUE}Admin URL:${NC}    https://$KEYCLOAK_ROUTE/admin"
+        echo -e "${BLUE}Admin URL:${NC}    $(link "https://$KEYCLOAK_ROUTE/admin")"
     fi
 fi
 echo -e "${BLUE}Realm:${NC}        kagenti"
@@ -173,42 +183,33 @@ echo "--------------------------------------------------------------------------
 UI_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $UI_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}URL:${NC}          http://kagenti-ui.localtest.me:8080"
+    echo -e "${BLUE}URL:${NC}          $(link "http://kagenti-ui.localtest.me:8080")"
 else
     UI_ROUTE=$($CLI get route -n kagenti-system kagenti-ui -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$UI_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$UI_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "https://$UI_ROUTE")"
     fi
 fi
 echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
 echo ""
 
-# Check if MLflow auth is enabled (mlflow-oauth-secret exists)
-if $CLI get secret -n kagenti-system mlflow-oauth-secret -o name &>/dev/null; then
-    MLFLOW_AUTH_ENABLED="true"
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}MLflow (LLM Trace Backend)${NC}"
+echo "---------------------------------------------------------------------------"
+MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}URL:${NC}          $(link "http://mlflow.localtest.me:8080")"
 else
-    MLFLOW_AUTH_ENABLED="false"
-fi
-
-if [ "$MLFLOW_AUTH_ENABLED" = "true" ]; then
-    echo "---------------------------------------------------------------------------"
-    echo -e "${MAGENTA}MLflow (LLM Traces & Experiments)${NC}"
-    echo "---------------------------------------------------------------------------"
-    MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-    echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
-    if [ "$ENV_TYPE" = "kind" ]; then
-        echo -e "${BLUE}URL:${NC}          http://mlflow.localtest.me:8080"
+    MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$MLFLOW_ROUTE" ]; then
+        echo -e "${BLUE}URL:${NC}          $(link "https://$MLFLOW_ROUTE")"
     else
-        MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-        if [ -n "$MLFLOW_ROUTE" ]; then
-            echo -e "${BLUE}URL:${NC}          https://$MLFLOW_ROUTE"
-        else
-            echo -e "${BLUE}URL:${NC}          (no route found - mlflow may not be enabled)"
-        fi
+        echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
-    echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
-    echo ""
 fi
+echo -e "${BLUE}Auth:${NC}         Keycloak SSO (same credentials as above)"
+echo ""
 
 # =============================================================================
 #                     OPENSHIFT CLUSTER ACCESS
@@ -244,7 +245,7 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
     echo "---------------------------------------------------------------------------"
     CONSOLE_ROUTE=$($CLI get route -n openshift-console console -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$CONSOLE_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$CONSOLE_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "https://$CONSOLE_ROUTE")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
@@ -258,7 +259,7 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
     echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
     KIALI_ROUTE=$($CLI get route -n istio-system kiali -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$KIALI_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$KIALI_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "https://$KIALI_ROUTE")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
@@ -278,44 +279,22 @@ echo "##########################################################################
 echo ""
 
 echo "---------------------------------------------------------------------------"
-echo -e "${MAGENTA}Phoenix (LLM Traces)${NC}"
+echo -e "${MAGENTA}Phoenix (LLM Trace Visualization)${NC}"
 echo "---------------------------------------------------------------------------"
 PHOENIX_STATUS=$($CLI get pods -n kagenti-system -l app=phoenix -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $PHOENIX_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}URL:${NC}          http://phoenix.localtest.me:8080"
+    echo -e "${BLUE}URL:${NC}          $(link "http://phoenix.localtest.me:8080")"
 else
     PHOENIX_ROUTE=$($CLI get route -n kagenti-system phoenix -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$PHOENIX_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$PHOENIX_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "https://$PHOENIX_ROUTE")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
 fi
 echo -e "${BLUE}Auth:${NC}         None required"
 echo ""
-
-# Only show MLflow in observability section if auth is NOT enabled
-# (If auth is enabled, it's shown in Keycloak section above)
-if [ "$MLFLOW_AUTH_ENABLED" != "true" ]; then
-    echo "---------------------------------------------------------------------------"
-    echo -e "${MAGENTA}MLflow (LLM Traces & Experiments)${NC}"
-    echo "---------------------------------------------------------------------------"
-    MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
-    echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
-    if [ "$ENV_TYPE" = "kind" ]; then
-        echo -e "${BLUE}URL:${NC}          http://mlflow.localtest.me:8080"
-    else
-        MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-        if [ -n "$MLFLOW_ROUTE" ]; then
-            echo -e "${BLUE}URL:${NC}          https://$MLFLOW_ROUTE"
-        else
-            echo -e "${BLUE}URL:${NC}          (no route found - mlflow may not be enabled)"
-        fi
-    fi
-    echo -e "${BLUE}Auth:${NC}         None required"
-    echo ""
-fi
 
 # Kind environment - show Kiali here since no OpenShift OAuth
 if [ "$ENV_TYPE" = "kind" ]; then
@@ -324,7 +303,7 @@ if [ "$ENV_TYPE" = "kind" ]; then
     echo "---------------------------------------------------------------------------"
     KIALI_STATUS=$($CLI get pods -n istio-system -l app=kiali -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
     echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
-    echo -e "${BLUE}URL:${NC}          http://kiali.localtest.me:8080"
+    echo -e "${BLUE}URL:${NC}          $(link "http://kiali.localtest.me:8080")"
     echo -e "${BLUE}Auth:${NC}         None required (Kind mode)"
     echo ""
 fi
@@ -352,7 +331,7 @@ if [ "$ENV_TYPE" = "kind" ]; then
 else
     AGENT_ROUTE=$($CLI get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$AGENT_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$AGENT_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "https://$AGENT_ROUTE")"
     fi
 fi
 echo -e "${BLUE}Logs:${NC}         $CLI logs -n team1 -l app.kubernetes.io/name=weather-service -f"
@@ -370,7 +349,7 @@ if [ "$ENV_TYPE" = "kind" ]; then
 else
     TOOL_ROUTE=$($CLI get route -n team1 weather-tool -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$TOOL_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          https://$TOOL_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "https://$TOOL_ROUTE")"
     fi
 fi
 echo -e "${BLUE}Logs:${NC}         $CLI logs -n team1 -l app.kubernetes.io/name=weather-tool -f"
