@@ -166,50 +166,55 @@ if [ "$VERBOSE" = "false" ]; then
 
     # Kagenti UI
     if [ -n "$UI_URL" ]; then
-        echo -e "${MAGENTA}Kagenti UI${NC}          $(link "$UI_URL")"
-        echo -e "  $(link "$UI_URL/agents/team1/weather-service" "Chat with Weather Agent")"
+        echo -e "${MAGENTA}Kagenti UI${NC}"
+        echo -e "  $(link "$UI_URL")"
+        echo -e "  $(link "$UI_URL/agents/team1/weather-service" "$UI_URL/agents/team1/weather-service")  ${DIM}Chat with Weather Agent${NC}"
     fi
 
     # Keycloak
     if [ -n "$KEYCLOAK_URL" ]; then
-        echo -e "${MAGENTA}Keycloak${NC}            $(link "$KEYCLOAK_URL/admin" "Admin Console")"
+        echo -e "${MAGENTA}Keycloak${NC}"
+        echo -e "  $(link "$KEYCLOAK_URL/admin" "$KEYCLOAK_URL/admin")  ${DIM}Admin Console${NC}"
     fi
 
     # MLflow
     if [ -n "$MLFLOW_URL" ]; then
-        echo -e "${MAGENTA}MLflow${NC}              $(link "$MLFLOW_URL")"
-        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/overview" "Experiment Overview")"
-        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/traces" "LLM Traces")"
-        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/chat-sessions" "Chat Sessions")"
+        echo -e "${MAGENTA}MLflow${NC}"
+        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/overview" "$MLFLOW_URL/#/experiments/0/overview")  ${DIM}Experiment Overview${NC}"
+        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/traces" "$MLFLOW_URL/#/experiments/0/traces")  ${DIM}LLM Traces${NC}"
+        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/chat-sessions" "$MLFLOW_URL/#/experiments/0/chat-sessions")  ${DIM}Chat Sessions${NC}"
     fi
 
     # Phoenix
     if [ -n "$PHOENIX_URL" ]; then
-        echo -e "${MAGENTA}Phoenix${NC}             $(link "$PHOENIX_URL")"
-        echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/spans" "Trace Spans")"
-        echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
+        echo -e "${MAGENTA}Phoenix${NC}"
+        echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/spans" "$PHOENIX_URL/projects/UHJvamVjdDox/spans")  ${DIM}Trace Spans${NC}"
+        echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/sessions" "$PHOENIX_URL/projects/UHJvamVjdDox/sessions")  ${DIM}Chat Sessions${NC}"
     fi
 
     # Kiali
     if [ -n "$KIALI_URL" ]; then
-        echo -e "${MAGENTA}Kiali${NC}               $(link "$KIALI_URL")"
         KIALI_GRAPH="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
         KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
-        echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph")"
+        KIALI_TRAFFIC_URL="$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}"
+        echo -e "${MAGENTA}Kiali${NC}"
+        echo -e "  $(link "$KIALI_URL" "$KIALI_URL")  ${DIM}Dashboard${NC}"
+        echo -e "  $(link "$KIALI_TRAFFIC_URL" "$KIALI_TRAFFIC_URL")  ${DIM}Traffic Graph${NC}"
     fi
 
     # OpenShift Console
     if [ -n "${CONSOLE_URL:-}" ]; then
-        echo -e "${MAGENTA}OpenShift Console${NC}   $(link "$CONSOLE_URL")"
+        echo -e "${MAGENTA}OpenShift Console${NC}"
+        echo -e "  $(link "$CONSOLE_URL" "$CONSOLE_URL")"
     fi
-
-    echo ""
 
     # Weather Agent
     if [ "$ENV_TYPE" = "kind" ]; then
-        echo -e "${MAGENTA}Weather Agent${NC}       http://weather-service.team1.svc.cluster.local:8000"
+        echo -e "${MAGENTA}Weather Agent${NC}"
+        echo "  http://weather-service.team1.svc.cluster.local:8000"
     elif [ -n "${AGENT_URL:-}" ]; then
-        echo -e "${MAGENTA}Weather Agent${NC}       $(link "$AGENT_URL")"
+        echo -e "${MAGENTA}Weather Agent${NC}"
+        echo -e "  $(link "$AGENT_URL" "$AGENT_URL")"
     fi
 
     echo ""
