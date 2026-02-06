@@ -43,7 +43,6 @@ class Settings(BaseSettings):
     crd_group: str = "agent.kagenti.dev"
     crd_version: str = "v1alpha1"
     agents_plural: str = "agents"
-    agentbuilds_plural: str = "agentbuilds"
 
     # ToolHive CRD settings
     toolhive_crd_group: str = "toolhive.stacklok.dev"
@@ -51,7 +50,6 @@ class Settings(BaseSettings):
     toolhive_mcp_plural: str = "mcpservers"
 
     # Shipwright build settings
-    use_shipwright_builds: bool = True  # Use Shipwright instead of AgentBuild/Tekton
     shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
     shipwright_default_timeout: str = "15m"
 

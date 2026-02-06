@@ -31,7 +31,6 @@ for ns in "${TEAM_NAMESPACES[@]}"; do
     echo "Cleaning up CRs in $ns..."
     # Delete Agent CRs (kagenti-operator)
     kubectl delete agents.agent.kagenti.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
-    kubectl delete agentbuilds.agent.kagenti.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
     kubectl delete agentcards.agent.kagenti.dev --all -n "$ns" --ignore-not-found 2>/dev/null || true
     # Delete MCP Gateway CRs
     kubectl delete mcpservers.mcp.kagenti.com --all -n "$ns" --ignore-not-found 2>/dev/null || true
@@ -195,7 +194,7 @@ for ns in "${TEAM_NAMESPACES[@]}"; do
   if kubectl get ns "$ns" &>/dev/null; then
     echo "Checking for stuck CRs in $ns..."
     # Remove finalizers from Agent CRs
-    for resource in agents.agent.kagenti.dev agentbuilds.agent.kagenti.dev agentcards.agent.kagenti.dev; do
+    for resource in agents.agent.kagenti.dev agentcards.agent.kagenti.dev; do
       for name in $(kubectl get $resource -n "$ns" -o name 2>/dev/null); do
         echo "Removing finalizers from $name..."
         kubectl patch $name -n "$ns" --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true

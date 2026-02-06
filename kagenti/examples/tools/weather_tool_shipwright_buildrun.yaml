@@ -29,33 +29,32 @@ spec:
   # serviceAccount:
   #   name: build-sa
 
----
-# Alternative: BuildRun with explicit name (useful for CI/CD)
-# Use this style when you need predictable naming
-apiVersion: shipwright.io/v1beta1
-kind: BuildRun
-metadata:
-  name: weather-tool-run-manual
-  namespace: team1
-  labels:
-    kagenti.io/type: tool
-    kagenti.io/build-name: weather-tool
-spec:
-  build:
-    name: weather-tool
-
----
-# BuildRun with output override (for different tags)
-apiVersion: shipwright.io/v1beta1
-kind: BuildRun
-metadata:
-  generateName: weather-tool-run-v2-
-  namespace: team1
-  labels:
-    kagenti.io/type: tool
-    kagenti.io/build-name: weather-tool
-spec:
-  build:
-    name: weather-tool
-  output:
-    image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.2
+# --- Alternative examples (commented out to avoid multi-document issues with kubectl create) ---
+#
+# # BuildRun with explicit name (useful for CI/CD predictable naming)
+# apiVersion: shipwright.io/v1beta1
+# kind: BuildRun
+# metadata:
+#   name: weather-tool-run-manual
+#   namespace: team1
+#   labels:
+#     kagenti.io/type: tool
+#     kagenti.io/build-name: weather-tool
+# spec:
+#   build:
+#     name: weather-tool
+#
+# # BuildRun with output override (for different tags)
+# apiVersion: shipwright.io/v1beta1
+# kind: BuildRun
+# metadata:
+#   generateName: weather-tool-run-v2-
+#   namespace: team1
+#   labels:
+#     kagenti.io/type: tool
+#     kagenti.io/build-name: weather-tool
+# spec:
+#   build:
+#     name: weather-tool
+#   output:
+#     image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.2

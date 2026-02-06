@@ -23,7 +23,6 @@ from app.core.constants import (
     CRD_GROUP,
     CRD_VERSION,
     AGENTS_PLURAL,
-    AGENTBUILDS_PLURAL,
     KAGENTI_TYPE_LABEL,
     KAGENTI_PROTOCOL_LABEL,
     KAGENTI_FRAMEWORK_LABEL,
@@ -42,9 +41,6 @@ from app.core.constants import (
     DEFAULT_RESOURCE_LIMITS,
     DEFAULT_RESOURCE_REQUESTS,
     DEFAULT_ENV_VARS,
-    OPERATOR_NS,
-    GIT_USER_SECRET_NAME,
-    PYTHON_VERSION,
     # Shipwright constants
     SHIPWRIGHT_CRD_GROUP,
     SHIPWRIGHT_CRD_VERSION,
@@ -183,7 +179,6 @@ class CreateAgentRequest(BaseModel):
     createHttpRoute: bool = False
 
     # Shipwright build configuration
-    useShipwright: bool = True  # Use Shipwright instead of AgentBuild/Tekton
     shipwrightConfig: Optional[ShipwrightBuildConfig] = None
 
     @field_validator("workloadType")
@@ -205,19 +200,6 @@ class CreateAgentResponse(BaseModel):
     name: str
     namespace: str
     message: str
-
-
-class BuildStatusResponse(BaseModel):
-    """Response containing build status information."""
-
-    name: str
-    namespace: str
-    phase: str
-    conditions: List[BuildStatusCondition]
-    image: Optional[str] = None
-    imageTag: Optional[str] = None
-    startTime: Optional[str] = None
-    completionTime: Optional[str] = None
 
 
 class AgentShipwrightBuildInfoResponse(BaseModel):
@@ -739,7 +721,7 @@ async def delete_agent(
     - Service
     - Shipwright Build CR (if exists)
     - Shipwright BuildRun CRs (if exist)
-    - Legacy: Agent CR, AgentBuild CR (if exist, for backward compatibility)
+    - Legacy: Agent CR (if exists, for backward compatibility)
     """
     messages = []
 
@@ -800,23 +782,6 @@ async def delete_agent(
             pass
         else:
             logger.warning(f"Failed to delete Agent CR '{name}': {e.reason}")
-
-    # Legacy cleanup: Delete the AgentBuild CR if it exists (Tekton-based builds)
-    try:
-        kube.delete_custom_resource(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            namespace=namespace,
-            plural=AGENTBUILDS_PLURAL,
-            name=name,
-        )
-        messages.append(f"AgentBuild '{name}' deleted (legacy)")
-    except ApiException as e:
-        if e.status == 404:
-            # AgentBuild doesn't exist, that's fine
-            pass
-        else:
-            logger.warning(f"Failed to delete AgentBuild '{name}': {e.reason}")
 
     # Delete Shipwright BuildRuns associated with the build
     try:
@@ -1393,92 +1358,6 @@ def _build_service_from_agent_crd(agent: dict) -> dict:
     }
 
 
-@router.get(
-    "/{namespace}/{name}/build",
-    response_model=BuildStatusResponse,
-    deprecated=True,
-    summary="Get AgentBuild status (deprecated)",
-)
-async def get_agent_build_status(
-    namespace: str,
-    name: str,
-    kube: KubernetesService = Depends(get_kubernetes_service),
-) -> BuildStatusResponse:
-    """Get the build status for an agent.
-
-    **DEPRECATED**: This endpoint is for legacy AgentBuild/Tekton builds.
-    New builds should use Shipwright. Use the `/shipwright-build-info` endpoint instead.
-
-    Returns the AgentBuild resource status including conditions,
-    phase, and image information.
-    """
-    logger.warning(
-        f"Deprecated endpoint called: get_agent_build_status for '{name}' in '{namespace}'. "
-        "AgentBuild is deprecated, use Shipwright builds instead."
-    )
-    try:
-        build = kube.get_custom_resource(
-            group=CRD_GROUP,
-            version=CRD_VERSION,
-            namespace=namespace,
-            plural=AGENTBUILDS_PLURAL,
-            name=name,
-        )
-
-        metadata = build.get("metadata", {})
-        status = build.get("status", {})
-        spec = build.get("spec", {})
-
-        # Extract conditions
-        conditions = []
-        for cond in status.get("conditions", []):
-            conditions.append(
-                BuildStatusCondition(
-                    type=cond.get("type", ""),
-                    status=cond.get("status", ""),
-                    reason=cond.get("reason"),
-                    message=cond.get("message"),
-                    lastTransitionTime=cond.get("lastTransitionTime"),
-                )
-            )
-
-        # Determine phase from conditions or status
-        phase = "Unknown"
-        for cond in conditions:
-            if cond.type == "Ready":
-                if cond.status == "True":
-                    phase = "Completed"
-                elif cond.reason:
-                    phase = cond.reason
-                break
-            if cond.type == "Building" and cond.status == "True":
-                phase = "Building"
-
-        # Get image info from spec.buildOutput
-        build_output = spec.get("buildOutput", {})
-        image = build_output.get("image")
-        image_tag = build_output.get("imageTag")
-
-        return BuildStatusResponse(
-            name=metadata.get("name", name),
-            namespace=metadata.get("namespace", namespace),
-            phase=phase,
-            conditions=conditions,
-            image=image,
-            imageTag=image_tag,
-            startTime=status.get("startTime"),
-            completionTime=status.get("completionTime"),
-        )
-
-    except ApiException as e:
-        if e.status == 404:
-            raise HTTPException(
-                status_code=404,
-                detail=f"AgentBuild '{name}' not found in namespace '{namespace}'",
-            )
-        raise HTTPException(status_code=e.status, detail=str(e.reason))
-
-
 @router.get("/build-strategies", response_model=ClusterBuildStrategiesResponse)
 async def list_build_strategies(
     kube: KubernetesService = Depends(get_kubernetes_service),
@@ -1814,74 +1693,6 @@ async def get_shipwright_build_info(
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
-def _strip_protocol(url: str) -> str:
-    """Remove protocol prefix from URL."""
-    if url.startswith("https://"):
-        return url[8:]
-    if url.startswith("http://"):
-        return url[7:]
-    return url
-
-
-def _build_agent_build_manifest(request: CreateAgentRequest) -> dict:
-    """
-    Build an AgentBuild CRD manifest for building from source.
-
-    Uses the Tekton pipeline to build the agent from git.
-
-    .. deprecated::
-        This function is deprecated. Use `_build_agent_shipwright_build_manifest` instead.
-        AgentBuild/Tekton pipeline will be removed in a future version.
-    """
-    cleaned_url = _strip_protocol(request.gitUrl) if request.gitUrl else ""
-    registry_url = request.registryUrl or "registry.cr-system.svc.cluster.local:5000"
-    start_command = request.startCommand or "python main.py"
-
-    manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
-        "kind": "AgentBuild",
-        "metadata": {
-            "name": request.name,
-            "namespace": request.namespace,
-            "labels": {
-                APP_KUBERNETES_IO_CREATED_BY: KAGENTI_UI_CREATOR_LABEL,
-                APP_KUBERNETES_IO_NAME: KAGENTI_OPERATOR_LABEL_NAME,
-                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
-                KAGENTI_PROTOCOL_LABEL: request.protocol,
-                KAGENTI_FRAMEWORK_LABEL: request.framework,
-            },
-        },
-        "spec": {
-            "model": "dev",
-            "source": {
-                "sourceRepository": cleaned_url,
-                "sourceRevision": request.gitBranch,
-                "sourceSubfolder": request.gitPath,
-                "sourceCredentials": {"name": GIT_USER_SECRET_NAME},
-            },
-            "pipeline": {
-                "namespace": OPERATOR_NS,
-                "parameters": [
-                    {"name": "SOURCE_REPO_SECRET", "value": GIT_USER_SECRET_NAME},
-                    {"name": "START_COMMAND", "value": start_command},
-                    {"name": "PYTHON_VERSION", "value": PYTHON_VERSION},
-                ],
-            },
-            "buildOutput": {
-                "image": request.name,
-                "imageTag": request.imageTag,
-                "imageRegistry": registry_url,
-            },
-        },
-    }
-
-    # Add registry credentials if using external registry
-    if request.registrySecret:
-        manifest["spec"]["buildOutput"]["imageRepoCredentials"] = {"name": request.registrySecret}
-
-    return manifest
-
-
 def _build_agent_shipwright_build_manifest(request: CreateAgentRequest) -> dict:
     """
     Build a Shipwright Build CRD manifest for building an agent from source.
@@ -1949,147 +1760,6 @@ def _build_agent_shipwright_buildrun_manifest(
         resource_type=ResourceType.AGENT,
         labels=labels,
     )
-
-
-def _build_agent_manifest(
-    request: CreateAgentRequest, build_ref_name: Optional[str] = None
-) -> dict:
-    """
-    Build an Agent CRD manifest.
-
-    If build_ref_name is provided, creates an Agent with imageSource.buildRef
-    referencing the AgentBuild. Otherwise, creates an Agent with direct image URL.
-    """
-    # Build environment variables with support for valueFrom
-    env_vars = list(DEFAULT_ENV_VARS)
-    if request.envVars:
-        for ev in request.envVars:
-            if ev.value is not None:
-                # Direct value
-                env_vars.append({"name": ev.name, "value": ev.value})
-            elif ev.valueFrom is not None:
-                # Reference to Secret or ConfigMap
-                env_entry = {"name": ev.name, "valueFrom": {}}
-
-                if ev.valueFrom.secretKeyRef:
-                    env_entry["valueFrom"]["secretKeyRef"] = {
-                        "name": ev.valueFrom.secretKeyRef.name,
-                        "key": ev.valueFrom.secretKeyRef.key,
-                    }
-                elif ev.valueFrom.configMapKeyRef:
-                    env_entry["valueFrom"]["configMapKeyRef"] = {
-                        "name": ev.valueFrom.configMapKeyRef.name,
-                        "key": ev.valueFrom.configMapKeyRef.key,
-                    }
-
-                env_vars.append(env_entry)
-
-    # Build service ports
-    if request.servicePorts:
-        service_ports = [
-            {
-                "name": sp.name,
-                "port": sp.port,
-                "targetPort": sp.targetPort,
-                "protocol": sp.protocol,
-            }
-            for sp in request.servicePorts
-        ]
-    else:
-        service_ports = [
-            {
-                "name": "http",
-                "port": DEFAULT_IN_CLUSTER_PORT,
-                "targetPort": DEFAULT_IN_CLUSTER_PORT,
-                "protocol": "TCP",
-            }
-        ]
-
-    # Set description based on deployment method
-    if build_ref_name:
-        description = f"Agent '{request.name}' built from source"
-    else:
-        description = (
-            f"Agent '{request.name}' deployed from existing image '{request.containerImage}'"
-        )
-
-    manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
-        "kind": "Agent",
-        "metadata": {
-            "name": request.name,
-            "namespace": request.namespace,
-            "labels": {
-                APP_KUBERNETES_IO_CREATED_BY: KAGENTI_UI_CREATOR_LABEL,
-                APP_KUBERNETES_IO_NAME: KAGENTI_OPERATOR_LABEL_NAME,
-                KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
-                KAGENTI_PROTOCOL_LABEL: request.protocol,
-                KAGENTI_FRAMEWORK_LABEL: request.framework,
-            },
-        },
-        "spec": {
-            "description": description,
-            "replicas": 1,
-            "servicePorts": service_ports,
-            "podTemplateSpec": {
-                "spec": {
-                    "containers": [
-                        {
-                            "name": "agent",
-                            "imagePullPolicy": DEFAULT_IMAGE_POLICY,
-                            "resources": {
-                                "limits": DEFAULT_RESOURCE_LIMITS,
-                                "requests": DEFAULT_RESOURCE_REQUESTS,
-                            },
-                            "env": env_vars,
-                            "ports": [
-                                {
-                                    "name": "http",
-                                    "containerPort": DEFAULT_IN_CLUSTER_PORT,
-                                    "protocol": "TCP",
-                                },
-                            ],
-                            "volumeMounts": [
-                                {"name": "cache", "mountPath": "/app/.cache"},
-                                {"name": "marvin", "mountPath": "/.marvin"},
-                                {"name": "shared-data", "mountPath": "/shared"},
-                            ],
-                        }
-                    ],
-                    "volumes": [
-                        {"name": "cache", "emptyDir": {}},
-                        {"name": "marvin", "emptyDir": {}},
-                        {"name": "shared-data", "emptyDir": {}},
-                    ],
-                },
-            },
-        },
-    }
-
-    # Set imageSource based on deployment method
-    if build_ref_name:
-        # Reference the AgentBuild - operator will fill in the image after build completes
-        manifest["spec"]["imageSource"] = {
-            "buildRef": {
-                "name": build_ref_name,
-            }
-        }
-    else:
-        # Direct image deployment
-        image_url = request.containerImage or ""
-        manifest["spec"]["imageSource"] = {
-            "image": image_url,
-        }
-        # Set image on container for direct deployment
-        manifest["spec"]["podTemplateSpec"]["spec"]["containers"][0]["image"] = image_url
-
-    # Add image pull secrets if specified
-    if request.imagePullSecret:
-        manifest["spec"]["podTemplateSpec"]["spec"]["imagePullSecrets"] = [
-            {"name": request.imagePullSecret}
-        ]
-
-    return manifest
 
 
 # -----------------------------------------------------------------------------
@@ -2549,7 +2219,7 @@ async def create_agent(
     logger.info(
         f"Creating agent '{request.name}' in namespace '{request.namespace}', "
         f"workloadType={request.workloadType}, "
-        f"createHttpRoute={request.createHttpRoute}, useShipwright={request.useShipwright}"
+        f"createHttpRoute={request.createHttpRoute}"
     )
     try:
         if request.deploymentMethod == "image":
@@ -2623,7 +2293,7 @@ async def create_agent(
                 )
                 message += " HTTPRoute/Route created for external access."
 
-        elif request.useShipwright and settings.use_shipwright_builds:
+        else:
             # Build from source using Shipwright Build + BuildRun
             if not request.gitUrl:
                 raise HTTPException(
@@ -2674,63 +2344,6 @@ async def create_agent(
             # It will be created when the Agent is finalized after build completion.
             if request.createHttpRoute:
                 message += " HTTPRoute will be created after the build completes."
-
-        else:
-            # Build from source using AgentBuild CRD + Tekton pipeline (legacy)
-            # DEPRECATED: This flow is deprecated. Use Shipwright builds instead.
-            logger.warning(
-                f"DEPRECATED: Creating AgentBuild for '{request.name}' in '{request.namespace}'. "
-                "AgentBuild/Tekton pipeline is deprecated. Use useShipwright=True for new builds."
-            )
-
-            if not request.gitUrl or not request.gitPath:
-                raise HTTPException(
-                    status_code=400,
-                    detail="gitUrl and gitPath are required for source deployment",
-                )
-
-            # Step 1: Create AgentBuild CR (triggers Tekton pipeline)
-            agentbuild_manifest = _build_agent_build_manifest(request)
-            kube.create_custom_resource(
-                group=CRD_GROUP,
-                version=CRD_VERSION,
-                namespace=request.namespace,
-                plural=AGENTBUILDS_PLURAL,
-                body=agentbuild_manifest,
-            )
-            logger.info(f"Created AgentBuild '{request.name}' in namespace '{request.namespace}'")
-
-            # Step 2: Create Agent CR with buildRef pointing to the AgentBuild
-            # The operator will watch the AgentBuild and deploy once it completes
-            agent_manifest = _build_agent_manifest(request, build_ref_name=request.name)
-            kube.create_custom_resource(
-                group=CRD_GROUP,
-                version=CRD_VERSION,
-                namespace=request.namespace,
-                plural=AGENTS_PLURAL,
-                body=agent_manifest,
-            )
-            logger.info(
-                f"Created Agent '{request.name}' with buildRef in namespace '{request.namespace}'"
-            )
-
-            message = f"Agent '{request.name}' build started. The agent will be deployed automatically once the build completes."
-
-            # Create HTTPRoute/Route if requested
-            if request.createHttpRoute:
-                service_port = (
-                    request.servicePorts[0].port
-                    if request.servicePorts
-                    else DEFAULT_IN_CLUSTER_PORT
-                )
-                create_route_for_agent_or_tool(
-                    kube=kube,
-                    name=request.name,
-                    namespace=request.namespace,
-                    service_name=request.name,
-                    service_port=service_port,
-                )
-                message += f" HTTPRoute/Route created for external access."
 
         return CreateAgentResponse(
             success=True,

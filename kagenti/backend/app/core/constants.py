@@ -11,7 +11,6 @@ from app.core.config import settings
 CRD_GROUP = settings.crd_group
 CRD_VERSION = settings.crd_version
 AGENTS_PLURAL = settings.agents_plural
-AGENTBUILDS_PLURAL = settings.agentbuilds_plural
 
 # ToolHive CRD Definitions
 TOOLHIVE_CRD_GROUP = settings.toolhive_crd_group

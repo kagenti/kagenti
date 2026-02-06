@@ -7,7 +7,7 @@ appVersion: "0.1.2"
 
 dependencies:
 - name: kagenti-operator-chart
-  version: 0.2.0-alpha.19
+  version: 0.2.0-alpha.19  # TODO: Bump after kagenti-operator PR #159 merges (removes AgentBuild CRD)
   repository: oci://ghcr.io/kagenti/kagenti-operator
   condition: components.agentOperator.enabled
 - name: kagenti-webhook-chart
