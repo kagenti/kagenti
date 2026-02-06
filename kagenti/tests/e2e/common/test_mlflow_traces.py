@@ -39,11 +39,89 @@ import logging
 import os
 import subprocess
 import time
-from typing import Any, Callable
+from typing import Any, Callable, List, Optional
 
 import pytest
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# kubectl Resilience Helpers
+# =============================================================================
+
+
+def run_kubectl_with_retry(
+    args: List[str],
+    retries: int = 3,
+    initial_delay: float = 2.0,
+    timeout: int = 30,
+    check: bool = False,
+) -> subprocess.CompletedProcess:
+    """
+    Run kubectl command with exponential backoff retry logic.
+
+    Designed for HyperShift clusters that experience intermittent TLS handshake
+    timeouts during control plane load. Retries on timeout/connection errors.
+
+    Args:
+        args: kubectl command arguments (e.g., ["kubectl", "exec", ...])
+        retries: Number of retry attempts (default: 3)
+        initial_delay: Initial delay between retries in seconds (default: 2.0)
+        timeout: Timeout per attempt in seconds (default: 30)
+        check: If True, raise CalledProcessError on failure (default: False)
+
+    Returns:
+        CompletedProcess result from successful attempt
+
+    Raises:
+        subprocess.TimeoutExpired: If all retries timeout
+        subprocess.CalledProcessError: If check=True and command fails
+    """
+    delay = initial_delay
+    last_exception = None
+
+    for attempt in range(retries):
+        try:
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=check,
+            )
+
+            # Success - check for common kubectl errors in stderr
+            if "TLS handshake timeout" in result.stderr:
+                raise subprocess.CalledProcessError(
+                    returncode=1,
+                    cmd=args,
+                    stderr=result.stderr,
+                )
+
+            return result
+
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            last_exception = e
+
+            if attempt < retries - 1:
+                logger.warning(
+                    f"kubectl attempt {attempt + 1}/{retries} failed: {type(e).__name__}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+            else:
+                logger.error(
+                    f"kubectl failed after {retries} attempts: {type(e).__name__}"
+                )
+
+    # All retries exhausted
+    if last_exception:
+        raise last_exception
+
+    # Should never reach here
+    raise RuntimeError(f"kubectl retry logic failed unexpectedly for {args}")
 
 
 # =============================================================================
@@ -239,25 +317,30 @@ result = json.loads(resp.read())
 print(json.dumps(result))
 """
 
-        result = subprocess.run(
-            [
-                "kubectl",
-                "exec",
-                "-n",
-                "kagenti-system",
-                "deploy/mlflow",
-                "--",
-                "python",
-                "-c",
-                python_script,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        try:
+            result = run_kubectl_with_retry(
+                [
+                    "kubectl",
+                    "exec",
+                    "-n",
+                    "kagenti-system",
+                    "deploy/mlflow",
+                    "--",
+                    "python",
+                    "-c",
+                    python_script,
+                ],
+                retries=3,
+                timeout=30,
+            )
 
-        if result.returncode != 0:
-            logger.error(f"Failed to refresh token via kubectl exec: {result.stderr}")
+            if result.returncode != 0:
+                logger.error(
+                    f"Failed to refresh token via kubectl exec: {result.stderr}"
+                )
+                return False
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            logger.error(f"Failed to refresh token after retries: {e}")
             return False
 
         # Parse JSON output (skip any kubectl warnings)
@@ -635,25 +718,28 @@ result = json.loads(resp.read())
 print(json.dumps(result))
 """
 
-        result = subprocess.run(
-            [
-                "kubectl",
-                "exec",
-                "-n",
-                "kagenti-system",
-                "deploy/mlflow",
-                "--",
-                "python",
-                "-c",
-                python_script,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        try:
+            result = run_kubectl_with_retry(
+                [
+                    "kubectl",
+                    "exec",
+                    "-n",
+                    "kagenti-system",
+                    "deploy/mlflow",
+                    "--",
+                    "python",
+                    "-c",
+                    python_script,
+                ],
+                retries=3,
+                timeout=30,
+            )
 
-        if result.returncode != 0:
-            logger.warning(f"Failed to get token via kubectl exec: {result.stderr}")
+            if result.returncode != 0:
+                logger.warning(f"Failed to get token via kubectl exec: {result.stderr}")
+                return None
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            logger.warning(f"Failed to get token after retries: {e}")
             return None
 
         try:
@@ -1016,7 +1102,7 @@ class TestWeatherAgentTracesInMLflow:
         logger.info("Checking if MLflow received traces from OTEL collector...")
 
         # Query database directly (bypasses HTTP auth)
-        result = subprocess.run(
+        result = run_kubectl_with_retry(
             [
                 "kubectl",
                 "exec",
@@ -1037,8 +1123,8 @@ class TestWeatherAgentTracesInMLflow:
                 WHERE timestamp_ms > EXTRACT(EPOCH FROM NOW() - INTERVAL '2 hours') * 1000;
                 """,
             ],
-            capture_output=True,
-            text=True,
+            retries=3,
+            timeout=30,
             check=True,
         )
 
