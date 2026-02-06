@@ -105,4 +105,3 @@ jobs:
           yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
-
