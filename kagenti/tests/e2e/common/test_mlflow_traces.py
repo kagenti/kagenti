@@ -195,6 +195,9 @@ TOKEN_REFRESH_MARGIN = 10  # Refresh token 10 seconds before expiry
 def _refresh_mlflow_token() -> bool:
     """Refresh the MLflow tracking token if it's about to expire.
 
+    Uses kubectl exec to get token from internal Keycloak (same as initial token).
+    This ensures the token has the correct issuer that MLflow expects.
+
     Returns True if token was refreshed or still valid, False on error.
     """
     global _token_issued_at, _token_expires_in
@@ -213,33 +216,67 @@ def _refresh_mlflow_token() -> bool:
     logger.info(f"Token expired or expiring (elapsed: {elapsed:.0f}s), refreshing...")
 
     try:
-        import requests
+        import json
 
-        response = requests.post(
-            _token_credentials["token_url"],
-            data={
-                "grant_type": "client_credentials",
-                "client_id": _token_credentials["client_id"],
-                "client_secret": _token_credentials["client_secret"],
-            },
-            timeout=10,
-            verify=_token_credentials.get("ssl_verify", False),
+        client_id = _token_credentials["client_id"]
+        client_secret = _token_credentials["client_secret"]
+        token_url = _token_credentials["token_url"]
+
+        # Get token from inside cluster using kubectl exec
+        # This gives us a token with the correct internal issuer
+        python_script = f"""
+import urllib.request
+import json
+
+data = 'grant_type=client_credentials&client_id={client_id}&client_secret={client_secret}'
+req = urllib.request.Request(
+    '{token_url}',
+    data=data.encode('utf-8'),
+    headers={{'Content-Type': 'application/x-www-form-urlencoded'}}
+)
+resp = urllib.request.urlopen(req)
+result = json.loads(resp.read())
+print(json.dumps(result))
+"""
+
+        result = subprocess.run(
+            [
+                "kubectl",
+                "exec",
+                "-n",
+                "kagenti-system",
+                "deploy/mlflow",
+                "--",
+                "python",
+                "-c",
+                python_script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
 
-        if response.status_code == 200:
-            token_data = response.json()
-            new_token = token_data.get("access_token")
-            _token_expires_in = token_data.get("expires_in", 60)
-            _token_issued_at = time.time()
-
-            # Update the environment variable for MLflow client
-            os.environ["MLFLOW_TRACKING_TOKEN"] = new_token
-
-            logger.info(f"Token refreshed (expires in {_token_expires_in}s)")
-            return True
-        else:
-            logger.error(f"Failed to refresh token: {response.status_code}")
+        if result.returncode != 0:
+            logger.error(f"Failed to refresh token via kubectl exec: {result.stderr}")
             return False
+
+        # Parse JSON output (skip any kubectl warnings)
+        json_output = result.stdout.strip()
+        # Find the JSON object (starts with {)
+        json_start = json_output.find("{")
+        if json_start >= 0:
+            json_output = json_output[json_start:]
+
+        token_data = json.loads(json_output)
+        new_token = token_data.get("access_token")
+        _token_expires_in = token_data.get("expires_in", 60)
+        _token_issued_at = time.time()
+
+        # Update the environment variable for MLflow client
+        os.environ["MLFLOW_TRACKING_TOKEN"] = new_token
+
+        logger.info(f"Token refreshed (expires in {_token_expires_in}s)")
+        return True
 
     except Exception as e:
         logger.error(f"Error refreshing token: {e}")
@@ -553,6 +590,7 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
     global _token_credentials, _token_issued_at, _token_expires_in
 
     import base64
+    import json
 
     import requests
     import urllib3
@@ -571,64 +609,80 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
 
         client_id = base64.b64decode(secret.data["OIDC_CLIENT_ID"]).decode()
         client_secret = base64.b64decode(secret.data["OIDC_CLIENT_SECRET"]).decode()
+        # Use internal Keycloak URL (always) for correct issuer
+        # Tests run from outside cluster, so we use kubectl exec to access internal Keycloak
+        # This ensures token issuer matches what MLflow expects
         token_url = base64.b64decode(secret.data["OIDC_TOKEN_URL"]).decode()
 
-        # If token_url is an internal cluster URL, use external Keycloak route instead
-        # This happens when tests run from outside the cluster (e.g., developer laptop)
-        if "keycloak-service.keycloak" in token_url or ".svc" in token_url:
-            logger.info(f"Internal token URL detected: {token_url}")
-            try:
-                # Get external Keycloak route from OpenShift
-                from kubernetes.client import CustomObjectsApi
-
-                custom_api = CustomObjectsApi()
-                route = custom_api.get_namespaced_custom_object(
-                    group="route.openshift.io",
-                    version="v1",
-                    namespace="keycloak",
-                    plural="routes",
-                    name="keycloak",
-                )
-                keycloak_host = route["spec"]["host"]
-                # Extract the path from internal URL (e.g., /realms/master/protocol/...)
-                from urllib.parse import urlparse
-
-                parsed = urlparse(token_url)
-                token_url = f"https://{keycloak_host}{parsed.path}"
-                logger.info(f"Using external Keycloak route: {token_url}")
-            except Exception as e:
-                logger.warning(f"Could not get Keycloak route, using internal URL: {e}")
-
-        logger.info(f"Getting MLflow token from: {token_url}")
-
-        # Store credentials for automatic token refresh
-        _token_credentials = {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "token_url": token_url,
-            "ssl_verify": ssl_verify,
-        }
-
-        # Get token using client credentials flow
-        response = requests.post(
-            token_url,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": client_id,
-                "client_secret": client_secret,
-            },
-            timeout=10,
-            verify=ssl_verify,
+        logger.info(
+            f"Getting token from internal Keycloak via kubectl exec: {token_url}"
         )
 
-        if response.status_code == 200:
-            token_data = response.json()
+        # Get token from inside cluster using kubectl exec
+        # This gives us a token with the correct internal issuer
+        python_script = f"""
+import urllib.request
+import json
+
+data = 'grant_type=client_credentials&client_id={client_id}&client_secret={client_secret}'
+req = urllib.request.Request(
+    '{token_url}',
+    data=data.encode('utf-8'),
+    headers={{'Content-Type': 'application/x-www-form-urlencoded'}}
+)
+resp = urllib.request.urlopen(req)
+result = json.loads(resp.read())
+print(json.dumps(result))
+"""
+
+        result = subprocess.run(
+            [
+                "kubectl",
+                "exec",
+                "-n",
+                "kagenti-system",
+                "deploy/mlflow",
+                "--",
+                "python",
+                "-c",
+                python_script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"Failed to get token via kubectl exec: {result.stderr}")
+            return None
+
+        try:
+            # Parse JSON output (skip any kubectl warnings)
+            json_output = result.stdout.strip()
+            # Find the JSON object (starts with {)
+            json_start = json_output.find("{")
+            if json_start >= 0:
+                json_output = json_output[json_start:]
+
+            token_data = json.loads(json_output)
             _token_expires_in = token_data.get("expires_in", 60)
             _token_issued_at = time.time()
-            logger.info(f"Got MLflow client token (expires in {_token_expires_in}s)")
+
+            # Store credentials for automatic token refresh
+            _token_credentials = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "token_url": token_url,
+                "ssl_verify": False,  # Not used for kubectl exec
+            }
+
+            logger.info(
+                f"✅ Got MLflow token from internal Keycloak (expires in {_token_expires_in}s)"
+            )
             return token_data.get("access_token")
-        else:
-            logger.warning(f"Failed to get MLflow token: {response.status_code}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse token response: {e}")
+            logger.warning(f"Output was: {result.stdout}")
             return None
 
     except ApiException as e:
@@ -940,6 +994,63 @@ class TestWeatherAgentTracesInMLflow:
 
     OpenShift only: Kind CI doesn't have full OTEL instrumentation.
     """
+
+    def test_mlflow_otel_metrics_received(self, k8s_client):
+        """
+        Verify OTEL collector successfully sends traces to MLflow database.
+
+        This is a pipeline health check that bypasses HTTP/auth to verify
+        traces are being received and persisted. Does NOT validate trace
+        content - that's done by subsequent MLflow SDK tests.
+
+        This test queries the database directly (no auth required) to verify:
+        - OTEL collector is running
+        - OTEL → MLflow pipeline is working
+        - Traces are being persisted to database
+
+        This test will FAIL if:
+        - No traces exist in database
+        - Database is not accessible
+        - Agent tests didn't run first (no traces generated)
+        """
+        logger.info("Checking if MLflow received traces from OTEL collector...")
+
+        # Query database directly (bypasses HTTP auth)
+        result = subprocess.run(
+            [
+                "kubectl",
+                "exec",
+                "-n",
+                "kagenti-system",
+                "postgres-otel-0",
+                "--",
+                "psql",
+                "-U",
+                "testuser",
+                "-d",
+                "mlflow",
+                "-t",
+                "-c",
+                """
+                SELECT COUNT(*)
+                FROM trace_info
+                WHERE timestamp_ms > EXTRACT(EPOCH FROM NOW() - INTERVAL '2 hours') * 1000;
+                """,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        count = int(result.stdout.strip())
+
+        assert count > 0, (
+            f"No traces found in MLflow database from last 2 hours. "
+            f"OTEL → MLflow pipeline may be broken or agent tests didn't run first. "
+            f"Check: (1) OTEL collector pods, (2) MLflow OTLP endpoint, (3) OAuth2 auth"
+        )
+
+        logger.info(f"✅ Pipeline healthy: MLflow received {count} traces from OTEL")
 
     def test_mlflow_has_traces(
         self, mlflow_url: str, mlflow_configured: bool, traces_available: list

@@ -52,8 +52,10 @@ KEYCLOAK_PORT_FORWARD_PID=$!
 
 if [ "$IS_CI" = true ]; then
     echo "KEYCLOAK_PORT_FORWARD_PID=$KEYCLOAK_PORT_FORWARD_PID" >> $GITHUB_ENV
+    echo "KEYCLOAK_URL=http://localhost:8081" >> $GITHUB_ENV
 else
     echo $KEYCLOAK_PORT_FORWARD_PID > /tmp/port-forward-keycloak.pid
+    export KEYCLOAK_URL="http://localhost:8081"
 fi
 
 # Wait for Keycloak port-forward to be ready
@@ -94,6 +96,38 @@ if kubectl get svc -n kagenti-system kagenti-backend >/dev/null 2>&1; then
     done
 else
     log_info "kagenti-backend not deployed, skipping port-forward"
+fi
+
+# ============================================================================
+# Port-forward MLflow to localhost:5000
+# Required for MLflow trace validation E2E tests
+# ============================================================================
+
+log_info "Port-forwarding MLflow service -> localhost:5000"
+
+# Check if MLflow is deployed
+if kubectl get svc -n kagenti-system mlflow >/dev/null 2>&1; then
+    kubectl port-forward -n kagenti-system svc/mlflow 5000:5000 > /tmp/port-forward-mlflow.log 2>&1 &
+    MLFLOW_PORT_FORWARD_PID=$!
+
+    if [ "$IS_CI" = true ]; then
+        echo "MLFLOW_PORT_FORWARD_PID=$MLFLOW_PORT_FORWARD_PID" >> $GITHUB_ENV
+        echo "MLFLOW_URL=http://localhost:5000" >> $GITHUB_ENV
+    else
+        echo $MLFLOW_PORT_FORWARD_PID > /tmp/port-forward-mlflow.pid
+        export MLFLOW_URL="http://localhost:5000"
+    fi
+
+    # Wait for MLflow port-forward to be ready
+    for _ in {1..10}; do
+        if curl -s http://localhost:5000/health >/dev/null 2>&1 || curl -s http://localhost:5000/version >/dev/null 2>&1; then
+            log_success "MLflow port-forward is ready (localhost:5000)"
+            break
+        fi
+        sleep 1
+    done
+else
+    log_info "MLflow not deployed, skipping port-forward"
 fi
 
 log_success "All port-forwards started"
