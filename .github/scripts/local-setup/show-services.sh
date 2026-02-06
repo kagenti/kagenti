@@ -2,57 +2,52 @@
 # Show Services Script - Display all Kagenti services, URLs, and credentials
 #
 # Usage:
-#   ./.github/scripts/local-setup/show-services.sh [cluster-suffix]
+#   ./.github/scripts/local-setup/show-services.sh [--verbose] [cluster-suffix]
+#
+# Default: compact view with clickable links
+# --verbose: full detailed view with pod status, logs commands, infrastructure
 #
 # Examples:
 #   # HyperShift - source .env file first to set MANAGED_BY_TAG
 #   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh
-#   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh pr529
+#   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh --verbose
+#   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh mlflow
 #
 #   # Kind - no env file needed
 #   ./.github/scripts/local-setup/show-services.sh
-#
-# For HyperShift:
-#   - Source .env file first to set MANAGED_BY_TAG
-#   - Pass cluster suffix as argument (defaults to $USER)
-#   - Script will load the hosted cluster kubeconfig automatically
-#
-# Environment detection:
-#   - HyperShift: Uses MANAGED_BY_TAG and CLUSTER_SUFFIX, loads hosted cluster kubeconfig
-#   - Kind: Uses kubectl with localtest.me URLs
 
 set -euo pipefail
 
-# Accept cluster suffix as argument
-if [ $# -ge 1 ]; then
-    CLUSTER_SUFFIX="$1"
-fi
+# Parse flags
+VERBOSE=false
+for arg in "$@"; do
+    case "$arg" in
+        --verbose|-v) VERBOSE=true ;;
+        *) CLUSTER_SUFFIX="$arg" ;;
+    esac
+done
 
-# Colors for output (use $'...' for proper escape interpretation)
+# Colors
 RED=$'\033[0;31m'
 GREEN=$'\033[0;32m'
 YELLOW=$'\033[1;33m'
 BLUE=$'\033[0;34m'
 CYAN=$'\033[0;36m'
 MAGENTA=$'\033[0;35m'
-NC=$'\033[0m' # No Color
+DIM=$'\033[2m'
+NC=$'\033[0m'
 
-# Helper function to create clickable terminal links (OSC 8 hyperlinks)
-# Usage: link "https://example.com" "Display Text"
-# Falls back to plain text if terminal doesn't support OSC 8
+# Clickable terminal links (OSC 8)
 link() {
     local url="$1"
     local text="${2:-$url}"
-    # OSC 8 hyperlink: \e]8;;URL\e\\TEXT\e]8;;\e\\
     printf '\e]8;;%s\e\\%s\e]8;;\e\\' "$url" "$text"
 }
 
 # Detect environment
 detect_environment() {
-    # Check if MANAGED_BY_TAG is set (HyperShift mode - set kubeconfig first)
     if [ -n "${MANAGED_BY_TAG:-}" ]; then
         echo "hypershift"
-    # Check if we're on OpenShift (regular OCP)
     elif command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
         echo "openshift"
     elif command -v kubectl &>/dev/null && kubectl get namespace default &>/dev/null 2>&1; then
@@ -62,40 +57,170 @@ detect_environment() {
     fi
 }
 
-# Set KUBECONFIG for HyperShift hosted cluster
 setup_hypershift_kubeconfig() {
     local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
     local cluster_suffix="${CLUSTER_SUFFIX:-$USER}"
     local cluster_name="${managed_by_tag}-${cluster_suffix}"
     local kubeconfig_path="$HOME/clusters/hcp/${cluster_name}/auth/kubeconfig"
-
     if [ -f "$kubeconfig_path" ]; then
         export KUBECONFIG="$kubeconfig_path"
         return 0
     else
         echo -e "${RED}Error: Kubeconfig not found at ${kubeconfig_path}${NC}" >&2
-        echo "  The cluster may not exist or was not created locally." >&2
-        echo "  Create it with: ./.github/scripts/local-setup/hypershift-full-test.sh ${cluster_suffix} --skip-cluster-destroy" >&2
         return 1
     fi
 }
 
-# Get cluster name for HyperShift
 get_cluster_name() {
     local managed_by_tag="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
     local cluster_suffix="${CLUSTER_SUFFIX:-$USER}"
     echo "${managed_by_tag}-${cluster_suffix}"
 }
 
-# CLI command (oc for OpenShift, kubectl for Kind)
+# Setup
 CLI="kubectl"
 ENV_TYPE=$(detect_environment)
-
 case "$ENV_TYPE" in
-    hypershift|openshift)
-        CLI="oc"
+    hypershift|openshift) CLI="oc" ;;
+esac
+
+# Environment setup
+case "$ENV_TYPE" in
+    hypershift)
+        CLUSTER_NAME=$(get_cluster_name)
+        if ! setup_hypershift_kubeconfig; then exit 1; fi
+        ;;
+    kind) CLUSTER_NAME="kind-local" ;;
+    openshift) CLUSTER_NAME="openshift" ;;
+    *)
+        echo -e "${RED}Error: Unable to detect environment${NC}"
+        exit 1
         ;;
 esac
+
+# Check platform
+if ! $CLI get namespace kagenti-system &> /dev/null; then
+    echo -e "${RED}Error: Platform not deployed (kagenti-system namespace not found)${NC}"
+    exit 1
+fi
+
+# =============================================================================
+# Fetch all route hostnames up front
+# =============================================================================
+if [ "$ENV_TYPE" = "kind" ]; then
+    KEYCLOAK_URL="http://keycloak.localtest.me:8080"
+    UI_URL="http://kagenti-ui.localtest.me:8080"
+    MLFLOW_URL="http://mlflow.localtest.me:8080"
+    PHOENIX_URL="http://phoenix.localtest.me:8080"
+    KIALI_URL="http://kiali.localtest.me:8080"
+    AGENT_URL=""
+    CONSOLE_URL=""
+else
+    _route() { $CLI get route -n "$1" "$2" -o jsonpath='{.spec.host}' 2>/dev/null || echo ""; }
+    KEYCLOAK_HOST=$(_route keycloak keycloak)
+    UI_HOST=$(_route kagenti-system kagenti-ui)
+    MLFLOW_HOST=$(_route kagenti-system mlflow)
+    PHOENIX_HOST=$(_route kagenti-system phoenix)
+    KIALI_HOST=$(_route istio-system kiali)
+    AGENT_HOST=$(_route team1 weather-service)
+    CONSOLE_HOST=$(_route openshift-console console)
+
+    KEYCLOAK_URL="${KEYCLOAK_HOST:+https://$KEYCLOAK_HOST}"
+    UI_URL="${UI_HOST:+https://$UI_HOST}"
+    MLFLOW_URL="${MLFLOW_HOST:+https://$MLFLOW_HOST}"
+    PHOENIX_URL="${PHOENIX_HOST:+https://$PHOENIX_HOST}"
+    KIALI_URL="${KIALI_HOST:+https://$KIALI_HOST}"
+    AGENT_URL="${AGENT_HOST:+https://$AGENT_HOST}"
+    CONSOLE_URL="${CONSOLE_HOST:+https://$CONSOLE_HOST}"
+fi
+
+# =============================================================================
+# Fetch credentials
+# =============================================================================
+KC_USER=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+KC_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+
+KUBEADMIN_PASS=""
+if [ "$ENV_TYPE" = "hypershift" ]; then
+    KUBEADMIN_PASS_FILE="$(dirname "$KUBECONFIG")/kubeadmin-password"
+    [ -f "$KUBEADMIN_PASS_FILE" ] && KUBEADMIN_PASS=$(cat "$KUBEADMIN_PASS_FILE")
+elif [ "$ENV_TYPE" = "openshift" ]; then
+    KUBEADMIN_PASS=$($CLI get secret -n kube-system kubeadmin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+fi
+
+# =============================================================================
+# COMPACT VIEW (default)
+# =============================================================================
+if [ "$VERBOSE" = "false" ]; then
+
+    echo ""
+    echo -e "${CYAN}Kagenti Services${NC} - ${CLUSTER_NAME}"
+    echo ""
+
+    # Credentials
+    echo -e "${GREEN}Keycloak:${NC}  ${KC_USER} / ${KC_PASS}"
+    if [ -n "$KUBEADMIN_PASS" ]; then
+        echo -e "${GREEN}kubeadmin:${NC} kubeadmin / ${KUBEADMIN_PASS}"
+    fi
+    echo ""
+
+    # Kagenti UI
+    if [ -n "$UI_URL" ]; then
+        echo -e "${MAGENTA}Kagenti UI${NC}          $(link "$UI_URL")"
+        echo -e "  $(link "$UI_URL/agents/team1/weather-service" "Chat with Weather Agent")"
+    fi
+
+    # Keycloak
+    if [ -n "$KEYCLOAK_URL" ]; then
+        echo -e "${MAGENTA}Keycloak${NC}            $(link "$KEYCLOAK_URL/admin" "Admin Console")"
+    fi
+
+    # MLflow
+    if [ -n "$MLFLOW_URL" ]; then
+        echo -e "${MAGENTA}MLflow${NC}              $(link "$MLFLOW_URL")"
+        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/overview" "Experiment Overview")"
+        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/traces" "LLM Traces")"
+        echo -e "  $(link "$MLFLOW_URL/#/experiments/0/chat-sessions" "Chat Sessions")"
+    fi
+
+    # Phoenix
+    if [ -n "$PHOENIX_URL" ]; then
+        echo -e "${MAGENTA}Phoenix${NC}             $(link "$PHOENIX_URL")"
+        echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/spans" "Trace Spans")"
+        echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
+    fi
+
+    # Kiali
+    if [ -n "$KIALI_URL" ]; then
+        echo -e "${MAGENTA}Kiali${NC}               $(link "$KIALI_URL")"
+        KIALI_GRAPH="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
+        KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
+        echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph")"
+    fi
+
+    # OpenShift Console
+    if [ -n "${CONSOLE_URL:-}" ]; then
+        echo -e "${MAGENTA}OpenShift Console${NC}   $(link "$CONSOLE_URL")"
+    fi
+
+    echo ""
+
+    # Weather Agent
+    if [ "$ENV_TYPE" = "kind" ]; then
+        echo -e "${MAGENTA}Weather Agent${NC}       http://weather-service.team1.svc.cluster.local:8000"
+    elif [ -n "${AGENT_URL:-}" ]; then
+        echo -e "${MAGENTA}Weather Agent${NC}       $(link "$AGENT_URL")"
+    fi
+
+    echo ""
+    echo -e "${DIM}Run with --verbose for full details (status, logs, infrastructure)${NC}"
+    echo ""
+    exit 0
+fi
+
+# =============================================================================
+# VERBOSE VIEW (--verbose)
+# =============================================================================
 
 echo ""
 echo "========================================================================="
@@ -103,14 +228,9 @@ echo "             Kagenti Platform Services & Credentials                    "
 echo "========================================================================="
 echo ""
 
-# Check environment and display info
+# Environment info
 case "$ENV_TYPE" in
     hypershift)
-        CLUSTER_NAME=$(get_cluster_name)
-        # Set KUBECONFIG for the hosted cluster
-        if ! setup_hypershift_kubeconfig; then
-            exit 1
-        fi
         echo -e "${CYAN}Environment:${NC}  HyperShift"
         echo -e "${CYAN}Cluster:${NC}      $CLUSTER_NAME"
         echo -e "${CYAN}Kubeconfig:${NC}   $KUBECONFIG"
@@ -125,25 +245,10 @@ case "$ENV_TYPE" in
         echo -e "${CYAN}Environment:${NC}  Kind (local Docker)"
         echo ""
         ;;
-    *)
-        echo -e "${RED}Error: Unable to detect environment${NC}"
-        echo "  - For Kind: ensure kubectl is configured"
-        echo "  - For HyperShift: set MANAGED_BY_TAG and CLUSTER_SUFFIX, or load .env file"
-        echo "  - For OpenShift: ensure oc is logged in"
-        exit 1
-        ;;
 esac
 
-# Check if platform is running
-if ! $CLI get namespace kagenti-system &> /dev/null; then
-    echo -e "${RED}Error: Platform not deployed (kagenti-system namespace not found)${NC}"
-    echo "  Run: ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy"
-    exit 1
-fi
-
 # =============================================================================
-#                     KEYCLOAK AUTHENTICATION
-#        Services using Keycloak for authentication (use creds below)
+# KEYCLOAK AUTHENTICATION
 # =============================================================================
 
 echo "##########################################################################"
@@ -152,13 +257,9 @@ echo -e "${CYAN}        (Services using Keycloak - use credentials below)       
 echo "##########################################################################"
 echo ""
 
-# Get Keycloak credentials first (shared by services below)
-KEYCLOAK_ADMIN_USER=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
-KEYCLOAK_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
-
 echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share)${NC}"
-echo "  Username: ${KEYCLOAK_ADMIN_USER}"
-echo "  Password: ${KEYCLOAK_ADMIN_PASS}"
+echo "  Username: ${KC_USER}"
+echo "  Password: ${KC_PASS}"
 echo ""
 
 echo "---------------------------------------------------------------------------"
@@ -166,13 +267,8 @@ echo -e "${MAGENTA}Keycloak (Identity Provider)${NC}"
 echo "---------------------------------------------------------------------------"
 KEYCLOAK_STATUS=$($CLI get pods -n keycloak -l app=keycloak -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $KEYCLOAK_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Admin URL:${NC}    $(link "http://keycloak.localtest.me:8080/admin")"
-else
-    KEYCLOAK_ROUTE=$($CLI get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$KEYCLOAK_ROUTE" ]; then
-        echo -e "${BLUE}Admin URL:${NC}    $(link "https://$KEYCLOAK_ROUTE/admin")"
-    fi
+if [ -n "$KEYCLOAK_URL" ]; then
+    echo -e "${BLUE}Admin URL:${NC}    $(link "$KEYCLOAK_URL/admin")"
 fi
 echo -e "${BLUE}Realm:${NC}        kagenti"
 echo ""
@@ -182,24 +278,12 @@ echo -e "${MAGENTA}Kagenti UI (Web Dashboard)${NC}"
 echo "---------------------------------------------------------------------------"
 UI_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $UI_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}URL:${NC}          $(link "http://kagenti-ui.localtest.me:8080")"
-else
-    UI_ROUTE=$($CLI get route -n kagenti-system kagenti-ui -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$UI_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          $(link "https://$UI_ROUTE")"
-    fi
+if [ -n "$UI_URL" ]; then
+    echo -e "${BLUE}URL:${NC}          $(link "$UI_URL")"
+    echo -e "${BLUE}Quick links:${NC}"
+    echo -e "  $(link "$UI_URL/agents/team1/weather-service" "Chat with Weather Agent")"
 fi
 echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}Quick links:${NC}"
-    echo -e "  $(link "http://kagenti-ui.localtest.me:8080/agents/team1/weather-service" "Chat with Weather Agent")"
-else
-    if [ -n "${UI_ROUTE:-}" ]; then
-        echo -e "${BLUE}Quick links:${NC}"
-        echo -e "  $(link "https://$UI_ROUTE/agents/team1/weather-service" "Chat with Weather Agent")"
-    fi
-fi
 echo ""
 
 echo "---------------------------------------------------------------------------"
@@ -207,37 +291,20 @@ echo -e "${MAGENTA}MLflow (LLM Trace Backend)${NC}"
 echo "---------------------------------------------------------------------------"
 MLFLOW_STATUS=$($CLI get pods -n kagenti-system -l app=mlflow -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $MLFLOW_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}URL:${NC}          $(link "http://mlflow.localtest.me:8080")"
+if [ -n "$MLFLOW_URL" ]; then
+    echo -e "${BLUE}URL:${NC}          $(link "$MLFLOW_URL")"
+    echo -e "${BLUE}Quick links:${NC}"
+    echo -e "  $(link "$MLFLOW_URL/#/experiments/0/overview" "Experiment Overview")"
+    echo -e "  $(link "$MLFLOW_URL/#/experiments/0/traces" "LLM Traces")"
+    echo -e "  $(link "$MLFLOW_URL/#/experiments/0/chat-sessions" "Chat Sessions")"
 else
-    MLFLOW_ROUTE=$($CLI get route -n kagenti-system mlflow -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$MLFLOW_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          $(link "https://$MLFLOW_ROUTE")"
-    else
-        echo -e "${BLUE}URL:${NC}          (no route found)"
-    fi
+    echo -e "${BLUE}URL:${NC}          (no route found)"
 fi
 echo -e "${BLUE}Auth:${NC}         Keycloak SSO (same credentials as above)"
-if [ "$ENV_TYPE" = "kind" ]; then
-    MLFLOW_BASE="http://mlflow.localtest.me:8080"
-    echo -e "${BLUE}Quick links:${NC}"
-    echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/overview" "Experiment Overview")"
-    echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/traces" "LLM Traces")"
-    echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/chat-sessions" "Chat Sessions")"
-else
-    if [ -n "${MLFLOW_ROUTE:-}" ]; then
-        MLFLOW_BASE="https://$MLFLOW_ROUTE"
-        echo -e "${BLUE}Quick links:${NC}"
-        echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/overview" "Experiment Overview")"
-        echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/traces" "LLM Traces")"
-        echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/chat-sessions" "Chat Sessions")"
-    fi
-fi
 echo ""
 
 # =============================================================================
-#                     OPENSHIFT CLUSTER ACCESS
-#        Services using OpenShift OAuth (use kubeadmin credentials)
+# OPENSHIFT CLUSTER ACCESS
 # =============================================================================
 
 if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
@@ -247,29 +314,16 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
     echo "##########################################################################"
     echo ""
 
-    # Get kubeadmin credentials (for HyperShift, from kubeconfig directory)
-    if [ "$ENV_TYPE" = "hypershift" ]; then
-        KUBEADMIN_PASS_FILE="$(dirname "$KUBECONFIG")/kubeadmin-password"
-        if [ -f "$KUBEADMIN_PASS_FILE" ]; then
-            KUBEADMIN_PASS=$(cat "$KUBEADMIN_PASS_FILE")
-        else
-            KUBEADMIN_PASS="N/A (check $KUBEADMIN_PASS_FILE)"
-        fi
-    else
-        KUBEADMIN_PASS=$($CLI get secret -n kube-system kubeadmin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
-    fi
-
     echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share)${NC}"
     echo "  Username: kubeadmin"
-    echo "  Password: ${KUBEADMIN_PASS}"
+    echo "  Password: ${KUBEADMIN_PASS:-N/A}"
     echo ""
 
     echo "---------------------------------------------------------------------------"
     echo -e "${MAGENTA}OpenShift Console${NC}"
     echo "---------------------------------------------------------------------------"
-    CONSOLE_ROUTE=$($CLI get route -n openshift-console console -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$CONSOLE_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          $(link "https://$CONSOLE_ROUTE")"
+    if [ -n "${CONSOLE_URL:-}" ]; then
+        echo -e "${BLUE}URL:${NC}          $(link "$CONSOLE_URL")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
@@ -281,14 +335,12 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
     echo "---------------------------------------------------------------------------"
     KIALI_STATUS=$($CLI get pods -n istio-system -l app=kiali -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
     echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
-    KIALI_ROUTE=$($CLI get route -n istio-system kiali -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$KIALI_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          $(link "https://$KIALI_ROUTE")"
-        KIALI_GRAPH_PARAMS="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
-        # Build namespace list from well-known namespaces
+    if [ -n "$KIALI_URL" ]; then
+        echo -e "${BLUE}URL:${NC}          $(link "$KIALI_URL")"
+        KIALI_GRAPH="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
         KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
         echo -e "${BLUE}Quick links:${NC}"
-        echo -e "  $(link "https://$KIALI_ROUTE/console/graph/namespaces?${KIALI_GRAPH_PARAMS}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
+        echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
@@ -297,8 +349,7 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
 fi
 
 # =============================================================================
-#                         OBSERVABILITY
-#                    (No authentication required)
+# OBSERVABILITY
 # =============================================================================
 
 echo "##########################################################################"
@@ -312,47 +363,35 @@ echo -e "${MAGENTA}Phoenix (LLM Trace Visualization)${NC}"
 echo "---------------------------------------------------------------------------"
 PHOENIX_STATUS=$($CLI get pods -n kagenti-system -l app=phoenix -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $PHOENIX_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
-    PHOENIX_BASE="http://phoenix.localtest.me:8080"
-    echo -e "${BLUE}URL:${NC}          $(link "$PHOENIX_BASE")"
+if [ -n "$PHOENIX_URL" ]; then
+    echo -e "${BLUE}URL:${NC}          $(link "$PHOENIX_URL")"
     echo -e "${BLUE}Quick links:${NC}"
-    echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/spans" "Trace Spans")"
-    echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
+    echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/spans" "Trace Spans")"
+    echo -e "  $(link "$PHOENIX_URL/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
 else
-    PHOENIX_ROUTE=$($CLI get route -n kagenti-system phoenix -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$PHOENIX_ROUTE" ]; then
-        PHOENIX_BASE="https://$PHOENIX_ROUTE"
-        echo -e "${BLUE}URL:${NC}          $(link "$PHOENIX_BASE")"
-        echo -e "${BLUE}Quick links:${NC}"
-        echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/spans" "Trace Spans")"
-        echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
-    else
-        echo -e "${BLUE}URL:${NC}          (no route found)"
-    fi
+    echo -e "${BLUE}URL:${NC}          (no route found)"
 fi
 echo -e "${BLUE}Auth:${NC}         None required"
 echo ""
 
-# Kind environment - show Kiali here since no OpenShift OAuth
+# Kind: show Kiali here (no OpenShift OAuth)
 if [ "$ENV_TYPE" = "kind" ]; then
     echo "---------------------------------------------------------------------------"
     echo -e "${MAGENTA}Kiali (Service Mesh Observability)${NC}"
     echo "---------------------------------------------------------------------------"
     KIALI_STATUS=$($CLI get pods -n istio-system -l app=kiali -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
     echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
-    KIALI_KIND_BASE="http://kiali.localtest.me:8080"
-    echo -e "${BLUE}URL:${NC}          $(link "$KIALI_KIND_BASE")"
-    KIALI_KIND_PARAMS="traffic=http%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&animation=true"
-    KIALI_KIND_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cgateway-system%2Cdefault"
+    echo -e "${BLUE}URL:${NC}          $(link "$KIALI_URL")"
+    KIALI_GRAPH="traffic=http%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&animation=true"
+    KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cgateway-system%2Cdefault"
     echo -e "${BLUE}Quick links:${NC}"
-    echo -e "  $(link "$KIALI_KIND_BASE/console/graph/namespaces?${KIALI_KIND_PARAMS}&namespaces=${KIALI_KIND_NS}" "Traffic Graph (all namespaces)")"
+    echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
     echo -e "${BLUE}Auth:${NC}         None required (Kind mode)"
     echo ""
 fi
 
 # =============================================================================
-#                       EXAMPLE WORKLOADS
-#                  (Weather Agent & Tool in team1)
+# EXAMPLE WORKLOADS
 # =============================================================================
 
 echo "##########################################################################"
@@ -370,11 +409,8 @@ AGENT_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-service 
 echo -e "${BLUE}Status:${NC}       $AGENT_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
     echo -e "${BLUE}URL:${NC}          http://weather-service.team1.svc.cluster.local:8000"
-else
-    AGENT_ROUTE=$($CLI get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-    if [ -n "$AGENT_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          $(link "https://$AGENT_ROUTE")"
-    fi
+elif [ -n "${AGENT_URL:-}" ]; then
+    echo -e "${BLUE}URL:${NC}          $(link "$AGENT_URL")"
 fi
 echo -e "${BLUE}Logs:${NC}         $CLI logs -n team1 -l app.kubernetes.io/name=weather-service -f"
 echo ""
@@ -398,8 +434,7 @@ echo -e "${BLUE}Logs:${NC}         $CLI logs -n team1 -l app.kubernetes.io/name=
 echo ""
 
 # =============================================================================
-#                        INFRASTRUCTURE
-#                    (Operator and Database)
+# INFRASTRUCTURE
 # =============================================================================
 
 echo "##########################################################################"
