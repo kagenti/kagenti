@@ -68,6 +68,10 @@ charts:
       ui:
         auth:
           enabled: true
+      # Disable MLflow auth job since MLflow component is disabled in kagenti-deps
+      mlflow:
+        auth:
+          enabled: false
 
   ####################################################################
   # istio  - required for the ingress gateway
