@@ -40,7 +40,7 @@ spec:
   strategy:
     # Use buildah-insecure for internal registry (no TLS verification)
     # Use buildah for external registries with TLS
-    name: buildah-insecure
+    name: buildah-insecure-push
     kind: ClusterBuildStrategy
 
   paramValues:

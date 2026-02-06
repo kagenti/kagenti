@@ -155,38 +155,12 @@ export const agentService = {
     }>;
     // HTTPRoute/Route creation
     createHttpRoute?: boolean;
-    // Shipwright build configuration
-    useShipwright?: boolean;
     shipwrightConfig?: ShipwrightBuildConfig;
   }): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
     return apiFetch('/agents', {
       method: 'POST',
       body: JSON.stringify(data),
     });
-  },
-
-  async getBuildStatus(
-    namespace: string,
-    name: string
-  ): Promise<{
-    name: string;
-    namespace: string;
-    phase: string;
-    conditions: Array<{
-      type: string;
-      status: string;
-      reason?: string;
-      message?: string;
-      lastTransitionTime?: string;
-    }>;
-    image?: string;
-    imageTag?: string;
-    startTime?: string;
-    completionTime?: string;
-  }> {
-    return apiFetch(
-      `/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/build`
-    );
   },
 
   async parseEnvFile(content: string): Promise<{

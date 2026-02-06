@@ -81,17 +81,6 @@ interface StatusCondition {
   last_transition_time?: string; // snake_case from K8s API
 }
 
-interface BuildStatus {
-  name: string;
-  namespace: string;
-  phase: string;
-  conditions: StatusCondition[];
-  image?: string;
-  imageTag?: string;
-  startTime?: string;
-  completionTime?: string;
-}
-
 interface AgentCardSkill {
   id: string;
   name: string;
@@ -174,25 +163,8 @@ export const AgentDetailPage: React.FC = () => {
     }
   }, [isError, isLoading, shipwrightBuildInfo, namespace, name, navigate]);
 
-  // Check if agent was built from source (has buildRef for AgentBuild)
-  const buildRefName = agent?.spec?.imageSource?.buildRef?.name;
-
   // Check if agent was built with Shipwright (has annotation)
   const shipwrightBuildName = agent?.metadata?.annotations?.['kagenti.io/shipwright-build'];
-
-  // Fetch AgentBuild status if agent has a buildRef
-  const { data: buildStatus, isLoading: isBuildStatusLoading } = useQuery<BuildStatus>({
-    queryKey: ['agentBuild', namespace, buildRefName],
-    queryFn: () => agentService.getBuildStatus(namespace!, buildRefName!),
-    enabled: !!namespace && !!buildRefName,
-    refetchInterval: (data) => {
-      // Poll every 5 seconds if build is still in progress
-      if (data?.state?.data?.phase && !['Completed', 'Failed'].includes(data.state.data.phase)) {
-        return 5000;
-      }
-      return false;
-    },
-  });
 
   // Fetch Shipwright build info if agent has shipwright annotation
   const { data: shipwrightBuildStatus, isLoading: isShipwrightBuildStatusLoading } = useQuery<ShipwrightBuildInfo>({
@@ -823,113 +795,6 @@ export const AgentDetailPage: React.FC = () => {
                 </Card>
               </GridItem>
 
-              {/* Build Status - shown when agent was built from source */}
-              {buildRefName && (
-                <GridItem md={12}>
-                  <Card>
-                    <CardTitle>Build Status</CardTitle>
-                    <CardBody>
-                      {isBuildStatusLoading ? (
-                        <Spinner size="md" aria-label="Loading build status" />
-                      ) : buildStatus ? (
-                        <>
-                          <DescriptionList isCompact isHorizontal>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Build Name</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                {buildStatus.name}
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Phase</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                <Label
-                                  color={
-                                    buildStatus.phase === 'Completed'
-                                      ? 'green'
-                                      : buildStatus.phase === 'Failed'
-                                        ? 'red'
-                                        : 'blue'
-                                  }
-                                >
-                                  {buildStatus.phase}
-                                </Label>
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            {buildStatus.image && (
-                              <DescriptionListGroup>
-                                <DescriptionListTerm>Image</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                  <code>
-                                    {buildStatus.image}
-                                    {buildStatus.imageTag && `:${buildStatus.imageTag}`}
-                                  </code>
-                                </DescriptionListDescription>
-                              </DescriptionListGroup>
-                            )}
-                            {buildStatus.startTime && (
-                              <DescriptionListGroup>
-                                <DescriptionListTerm>Started</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                  {new Date(buildStatus.startTime).toLocaleString()}
-                                </DescriptionListDescription>
-                              </DescriptionListGroup>
-                            )}
-                            {buildStatus.completionTime && (
-                              <DescriptionListGroup>
-                                <DescriptionListTerm>Completed</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                  {new Date(buildStatus.completionTime).toLocaleString()}
-                                </DescriptionListDescription>
-                              </DescriptionListGroup>
-                            )}
-                          </DescriptionList>
-                          {buildStatus.conditions.length > 0 && (
-                            <Table
-                              aria-label="Build conditions"
-                              variant="compact"
-                              style={{ marginTop: '16px' }}
-                            >
-                              <Thead>
-                                <Tr>
-                                  <Th>Type</Th>
-                                  <Th>Status</Th>
-                                  <Th>Reason</Th>
-                                  <Th>Message</Th>
-                                </Tr>
-                              </Thead>
-                              <Tbody>
-                                {buildStatus.conditions.map((cond, idx) => (
-                                  <Tr key={`${cond.type}-${idx}`}>
-                                    <Td dataLabel="Type">{cond.type}</Td>
-                                    <Td dataLabel="Status">
-                                      <Label
-                                        color={cond.status === 'True' ? 'green' : 'red'}
-                                        isCompact
-                                      >
-                                        {cond.status}
-                                      </Label>
-                                    </Td>
-                                    <Td dataLabel="Reason">{cond.reason || '-'}</Td>
-                                    <Td dataLabel="Message">{cond.message || '-'}</Td>
-                                  </Tr>
-                                ))}
-                              </Tbody>
-                            </Table>
-                          )}
-                        </>
-                      ) : (
-                        <Alert
-                          variant="info"
-                          title="Build information not available"
-                          isInline
-                        />
-                      )}
-                    </CardBody>
-                  </Card>
-                </GridItem>
-              )}
-
               {/* Shipwright Build Status - shown when agent was built with Shipwright */}
               {shipwrightBuildName && (
                 <GridItem md={12}>
@@ -1166,7 +1031,7 @@ export const AgentDetailPage: React.FC = () => {
               <ExclamationTriangleIcon />
             </Icon>
             The agent <strong>{name}</strong> will be permanently deleted.
-            This will also delete the associated AgentBuild if one exists.
+            This will also delete the associated build resources if they exist.
           </Text>
           <Text component="small" style={{ marginTop: '16px', display: 'block' }}>
             Type <strong>{name}</strong> to confirm deletion:

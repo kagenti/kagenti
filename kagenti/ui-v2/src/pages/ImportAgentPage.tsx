@@ -439,7 +439,6 @@ export const ImportAgentPage: React.FC = () => {
         servicePorts,
         createHttpRoute,
         // Shipwright build configuration (always enabled)
-        useShipwright: true,
         shipwrightConfig,
       });
     } else {
