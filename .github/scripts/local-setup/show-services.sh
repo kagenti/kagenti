@@ -191,6 +191,15 @@ else
     fi
 fi
 echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
+if [ "$ENV_TYPE" = "kind" ]; then
+    echo -e "${BLUE}Quick links:${NC}"
+    echo -e "  $(link "http://kagenti-ui.localtest.me:8080/agents/team1/weather-service" "Chat with Weather Agent")"
+else
+    if [ -n "${UI_ROUTE:-}" ]; then
+        echo -e "${BLUE}Quick links:${NC}"
+        echo -e "  $(link "https://$UI_ROUTE/agents/team1/weather-service" "Chat with Weather Agent")"
+    fi
+fi
 echo ""
 
 echo "---------------------------------------------------------------------------"
@@ -209,6 +218,21 @@ else
     fi
 fi
 echo -e "${BLUE}Auth:${NC}         Keycloak SSO (same credentials as above)"
+if [ "$ENV_TYPE" = "kind" ]; then
+    MLFLOW_BASE="http://mlflow.localtest.me:8080"
+    echo -e "${BLUE}Quick links:${NC}"
+    echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/overview" "Experiment Overview")"
+    echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/traces" "LLM Traces")"
+    echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/chat-sessions" "Chat Sessions")"
+else
+    if [ -n "${MLFLOW_ROUTE:-}" ]; then
+        MLFLOW_BASE="https://$MLFLOW_ROUTE"
+        echo -e "${BLUE}Quick links:${NC}"
+        echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/overview" "Experiment Overview")"
+        echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/traces" "LLM Traces")"
+        echo -e "  $(link "$MLFLOW_BASE/#/experiments/0/chat-sessions" "Chat Sessions")"
+    fi
+fi
 echo ""
 
 # =============================================================================
@@ -260,6 +284,11 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
     KIALI_ROUTE=$($CLI get route -n istio-system kiali -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$KIALI_ROUTE" ]; then
         echo -e "${BLUE}URL:${NC}          $(link "https://$KIALI_ROUTE")"
+        KIALI_GRAPH_PARAMS="traffic=ambient%2CambientTotal%2Cgrpc%2CgrpcRequest%2Chttp%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&badgeSecurity=true&animation=true&waypoints=true"
+        # Build namespace list from well-known namespaces
+        KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cistio-cni%2Cistio-ztunnel%2Ccert-manager%2Cgateway-system%2Cmcp-system%2Cdefault"
+        echo -e "${BLUE}Quick links:${NC}"
+        echo -e "  $(link "https://$KIALI_ROUTE/console/graph/namespaces?${KIALI_GRAPH_PARAMS}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
@@ -284,11 +313,19 @@ echo "--------------------------------------------------------------------------
 PHOENIX_STATUS=$($CLI get pods -n kagenti-system -l app=phoenix -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $PHOENIX_STATUS"
 if [ "$ENV_TYPE" = "kind" ]; then
-    echo -e "${BLUE}URL:${NC}          $(link "http://phoenix.localtest.me:8080")"
+    PHOENIX_BASE="http://phoenix.localtest.me:8080"
+    echo -e "${BLUE}URL:${NC}          $(link "$PHOENIX_BASE")"
+    echo -e "${BLUE}Quick links:${NC}"
+    echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/spans" "Trace Spans")"
+    echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
 else
     PHOENIX_ROUTE=$($CLI get route -n kagenti-system phoenix -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$PHOENIX_ROUTE" ]; then
-        echo -e "${BLUE}URL:${NC}          $(link "https://$PHOENIX_ROUTE")"
+        PHOENIX_BASE="https://$PHOENIX_ROUTE"
+        echo -e "${BLUE}URL:${NC}          $(link "$PHOENIX_BASE")"
+        echo -e "${BLUE}Quick links:${NC}"
+        echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/spans" "Trace Spans")"
+        echo -e "  $(link "$PHOENIX_BASE/projects/UHJvamVjdDox/sessions" "Chat Sessions")"
     else
         echo -e "${BLUE}URL:${NC}          (no route found)"
     fi
@@ -303,7 +340,12 @@ if [ "$ENV_TYPE" = "kind" ]; then
     echo "---------------------------------------------------------------------------"
     KIALI_STATUS=$($CLI get pods -n istio-system -l app=kiali -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
     echo -e "${BLUE}Status:${NC}       $KIALI_STATUS"
-    echo -e "${BLUE}URL:${NC}          $(link "http://kiali.localtest.me:8080")"
+    KIALI_KIND_BASE="http://kiali.localtest.me:8080"
+    echo -e "${BLUE}URL:${NC}          $(link "$KIALI_KIND_BASE")"
+    KIALI_KIND_PARAMS="traffic=http%2ChttpRequest%2Ctcp%2CtcpSent&graphType=versionedApp&duration=10800&refresh=60000&layout=dagre&animation=true"
+    KIALI_KIND_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cgateway-system%2Cdefault"
+    echo -e "${BLUE}Quick links:${NC}"
+    echo -e "  $(link "$KIALI_KIND_BASE/console/graph/namespaces?${KIALI_KIND_PARAMS}&namespaces=${KIALI_KIND_NS}" "Traffic Graph (all namespaces)")"
     echo -e "${BLUE}Auth:${NC}         None required (Kind mode)"
     echo ""
 fi
