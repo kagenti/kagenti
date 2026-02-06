@@ -45,6 +45,9 @@ test = [
 
     # JSON Web Token handling
     "PyJWT>=2.8.0",
+
+    # MLflow for observability tests
+    "mlflow>=3.9.0",
 ]
 
 [tool.setuptools]
