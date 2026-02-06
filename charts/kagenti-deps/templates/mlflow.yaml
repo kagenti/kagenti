@@ -219,9 +219,11 @@ spec:
                       with psycopg.connect(db_uri) as conn:
                           with conn.cursor() as cur:
                               # Check if experiments table exists (created by alembic)
+                              # NOTE: Use parameterized queries to avoid shell quoting issues
+                              # (this code runs inside python -c single-quoted string)
                               cur.execute(
                                   "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                                  "WHERE table_name = 'experiments')"
+                                  "WHERE table_name = %s)", ("experiments",)
                               )
                               if not cur.fetchone()[0]:
                                   raise Exception("experiments table not ready")
@@ -229,7 +231,7 @@ spec:
                               # Check if users table exists (created by mlflow-oidc-auth alembic)
                               cur.execute(
                                   "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                                  "WHERE table_name = 'users')"
+                                  "WHERE table_name = %s)", ("users",)
                               )
                               if not cur.fetchone()[0]:
                                   raise Exception("users table not ready")
