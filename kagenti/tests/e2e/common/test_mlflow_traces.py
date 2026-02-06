@@ -874,13 +874,16 @@ class TestMLflowConnectivity:
         """Verify MLflow is accessible."""
         import httpx
 
-        # Use CA file if available, otherwise disable verification
-        ssl_verify = openshift_ingress_ca if openshift_ingress_ca else False
+        # Use CA cert for SSL verification on OpenShift
+        import ssl as ssl_module
+
+        if openshift_ingress_ca:
+            ssl_ctx = ssl_module.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            ssl_ctx = True
 
         try:
-            response = httpx.get(
-                f"{mlflow_url}/version", verify=ssl_verify, timeout=30.0
-            )
+            response = httpx.get(f"{mlflow_url}/version", verify=ssl_ctx, timeout=30.0)
             # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
             assert response.status_code in (200, 302, 307), (
                 f"MLflow returned unexpected status {response.status_code}. "
