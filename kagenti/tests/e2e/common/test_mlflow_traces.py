@@ -1914,63 +1914,6 @@ class TestTraceCategorization:
 
         print(f"\nSUCCESS: Categorized {total_checked} traces")
 
-    def test_identify_chatty_trace_patterns(
-        self, mlflow_url: str, mlflow_configured: bool
-    ):
-        """
-        Identify patterns in chatty (non-GenAI) traces for filtering.
-
-        Analyzes non-GenAI traces to find common patterns that could be
-        filtered out to reduce noise in observability dashboards.
-        """
-        all_traces, genai_traces, non_genai_traces = self._get_categorized_traces()
-
-        if not non_genai_traces:
-            pytest.skip("No non-GenAI traces to analyze")
-
-        print(f"\n{'=' * 60}")
-        print("Chatty Trace Pattern Analysis")
-        print(f"{'=' * 60}")
-
-        # Analyze root span names in non-GenAI traces
-        root_span_patterns = {}
-
-        for trace in non_genai_traces[:10]:
-            spans = get_trace_span_details(trace)
-            if not spans:
-                continue
-
-            # Find root spans (no parent)
-            for span in spans:
-                parent_id = span.get("parent_id")
-                is_root = not parent_id or parent_id == "None" or parent_id == ""
-                if is_root:
-                    name = span.get("name", "unknown")
-                    # Normalize pattern (remove specific IDs)
-                    pattern = name.split(".")[0] if "." in name else name
-                    if pattern not in root_span_patterns:
-                        root_span_patterns[pattern] = 0
-                    root_span_patterns[pattern] += 1
-
-        print(f"Non-GenAI traces analyzed: {len(non_genai_traces)}")
-        print(f"\nRoot span patterns (candidates for filtering):")
-
-        if root_span_patterns:
-            for pattern, count in sorted(
-                root_span_patterns.items(), key=lambda x: -x[1]
-            ):
-                print(f"  - {pattern}: {count} occurrences")
-        else:
-            print("  (No distinct patterns found)")
-
-        # Recommendations
-        print("\nFiltering recommendations:")
-        print("  - Consider filtering traces with only 'a2a.*' root spans")
-        print("  - Keep traces with 'langchain', 'openai', 'llm' spans")
-        print("  - Use MLflow's trace filtering UI to exclude chatty patterns")
-
-        print("\nSUCCESS: Identified chatty trace patterns")
-
     def test_trace_value_assessment(
         self, mlflow_url: str, mlflow_configured: bool, traces_available: list
     ):

@@ -27,24 +27,52 @@ import httpx
 class TestUIAgentDiscovery:
     """Test agent discovery through the UI backend API."""
 
+    @pytest.fixture(autouse=True)
+    def _setup_ssl(self, is_openshift, openshift_ingress_ca):
+        """Set SSL context for OpenShift routes."""
+        import ssl
+
+        if is_openshift:
+            self._verify = ssl.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            self._verify = True
+
     @pytest.fixture
     def backend_url(self, is_openshift):
         """
         Get the backend API URL based on environment.
 
-        For Kind: Expects port-forward to backend on localhost:8000
-        For OpenShift: Uses route URL from environment variable
+        For Kind: Expects port-forward to backend on localhost:8002
+        For OpenShift: Discovers kagenti-ui route (UI proxies /api to backend)
         """
         url = os.environ.get("KAGENTI_BACKEND_URL")
         if url:
             return url.rstrip("/")
 
-        # Default URLs based on environment
         if is_openshift:
-            # On OpenShift, the backend is accessed through the UI route
-            # User should set KAGENTI_BACKEND_URL for their cluster
-            pytest.skip(
-                "KAGENTI_BACKEND_URL not set. Set it to your OpenShift backend route."
+            # On OpenShift, the kagenti-ui route proxies /api/* to the backend
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "route",
+                    "kagenti-ui",
+                    "-n",
+                    "kagenti-system",
+                    "-o",
+                    "jsonpath={.spec.host}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout:
+                return f"https://{result.stdout}"
+            pytest.fail(
+                "Could not discover kagenti-ui route for backend API access. "
+                "Set KAGENTI_BACKEND_URL env var as a workaround."
             )
         else:
             # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
@@ -78,7 +106,7 @@ class TestUIAgentDiscovery:
         url = f"{backend_url}/api/v1/agents?namespace=team1"
 
         try:
-            response = httpx.get(url, timeout=30.0)
+            response = httpx.get(url, timeout=30.0, verify=self._verify)
         except httpx.ConnectError as e:
             pytest.skip(
                 f"Backend not accessible at {backend_url}. "
@@ -123,7 +151,7 @@ class TestUIAgentDiscovery:
         url = f"{backend_url}/api/v1/agents?namespace=team1"
 
         try:
-            response = httpx.get(url, timeout=30.0)
+            response = httpx.get(url, timeout=30.0, verify=self._verify)
         except httpx.ConnectError as e:
             pytest.skip(f"Backend not accessible: {e}")
 
@@ -205,6 +233,16 @@ class TestUIAgentDiscovery:
 class TestToolDiscovery:
     """Test tool discovery through the UI backend API."""
 
+    @pytest.fixture(autouse=True)
+    def _setup_ssl(self, is_openshift, openshift_ingress_ca):
+        """Set SSL context for OpenShift routes."""
+        import ssl
+
+        if is_openshift:
+            self._verify = ssl.create_default_context(cafile=openshift_ingress_ca)
+        else:
+            self._verify = True
+
     @pytest.fixture
     def backend_url(self, is_openshift):
         """Get the backend API URL based on environment."""
@@ -213,7 +251,26 @@ class TestToolDiscovery:
             return url.rstrip("/")
 
         if is_openshift:
-            pytest.skip("KAGENTI_BACKEND_URL not set for OpenShift")
+            import subprocess
+
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "route",
+                    "kagenti-ui",
+                    "-n",
+                    "kagenti-system",
+                    "-o",
+                    "jsonpath={.spec.host}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout:
+                return f"https://{result.stdout}"
+            pytest.fail("Could not discover kagenti-ui route for backend API access.")
 
         # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
         return "http://localhost:8002"
@@ -241,7 +298,7 @@ class TestToolDiscovery:
         url = f"{backend_url}/api/v1/tools?namespace=team1"
 
         try:
-            response = httpx.get(url, timeout=30.0)
+            response = httpx.get(url, timeout=30.0, verify=self._verify)
         except httpx.ConnectError as e:
             pytest.skip(f"Backend not accessible: {e}")
 
