@@ -255,6 +255,7 @@ class TestWeatherAgentConversation:
         print(f"  Query: {user_message}")
         print(f"  Response: {full_response[:200]}...")
 
+    @pytest.mark.openshift_only
     @pytest.mark.asyncio
     async def test_agent_multiturn_conversation(self, test_session_id):
         """
