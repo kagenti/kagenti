@@ -117,7 +117,7 @@ keycloak:
   adminPasswordKey: password
   url: http://keycloak-service.keycloak:8080
   publicUrl: http://keycloak.localtest.me:8080
-  realm: master
+  realm: demo
 
 # ------------------------------------------------------------------
 #  Kagenti Operator Configuration
