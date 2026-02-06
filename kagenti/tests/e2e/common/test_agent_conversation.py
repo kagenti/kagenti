@@ -72,8 +72,10 @@ def _get_ssl_verify():
     """
     Get the SSL verification setting for httpx client.
 
-    On OpenShift: Uses the ingress CA certificate if available, otherwise False
-    On Kind: True (standard SSL verification)
+    On OpenShift: Uses the ingress CA certificate fetched from kube-root-ca.crt.
+    On Kind: True (standard SSL verification, services use HTTP).
+
+    Never returns False - raises if CA cert cannot be fetched on OpenShift.
     """
     if not _is_openshift_from_config():
         return True
@@ -83,13 +85,15 @@ def _get_ssl_verify():
     if ca_path and pathlib.Path(ca_path).exists():
         return ca_path
 
-    # Try to fetch from cluster
+    # Fetch from cluster
     ca_file = _fetch_openshift_ingress_ca()
     if ca_file:
         return ca_file
 
-    # Fallback: disable SSL verification
-    return False
+    raise RuntimeError(
+        "Could not fetch OpenShift ingress CA certificate. "
+        "Set OPENSHIFT_INGRESS_CA env var to the CA bundle path."
+    )
 
 
 # ============================================================================

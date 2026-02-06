@@ -679,10 +679,8 @@ def mlflow_client_token(k8s_client, is_openshift, openshift_ingress_ca):
     import urllib3
     from kubernetes.client.rest import ApiException
 
-    # Use CA file if available, otherwise disable warnings for self-signed certs
-    ssl_verify = openshift_ingress_ca if openshift_ingress_ca else False
-    if is_openshift and not openshift_ingress_ca:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    # Use CA file for SSL verification (openshift_ingress_ca fixture fails if unavailable)
+    ssl_verify = openshift_ingress_ca if is_openshift else True
 
     try:
         # Get MLflow OAuth secret

@@ -172,46 +172,69 @@ def _fetch_openshift_ingress_ca():
     """
     Fetch OpenShift ingress CA certificate from the cluster.
 
-    Tries to get the kube-root-ca.crt configmap from openshift-config namespace,
-    which contains the full certificate chain needed for SSL verification.
+    Tries multiple sources in priority order:
+    1. kube-root-ca.crt from kagenti-system (always accessible on hosted clusters)
+    2. kube-root-ca.crt from openshift-config (management cluster)
+
     Returns the path to a temporary CA bundle file, or None if not available.
     """
-    try:
-        # Get the kube-root-ca.crt configmap which contains the full CA chain
-        # This includes both the root-ca and ingress certificates
-        result = subprocess.run(
-            [
-                "kubectl",
-                "get",
-                "configmap",
-                "kube-root-ca.crt",
-                "-n",
-                "openshift-config",
-                "-o",
-                "jsonpath={.data.ca\\.crt}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+    # Sources to try in priority order
+    sources = [
+        # kagenti-system is always accessible (even on HyperShift hosted clusters)
+        ("configmap", "kube-root-ca.crt", "kagenti-system", "{.data.ca\\.crt}", False),
+        # openshift-config may not be accessible on hosted clusters
+        (
+            "configmap",
+            "kube-root-ca.crt",
+            "openshift-config",
+            "{.data.ca\\.crt}",
+            False,
+        ),
+    ]
 
-        if result.returncode != 0 or not result.stdout:
-            return None
+    for resource_type, name, namespace, jsonpath, needs_base64 in sources:
+        try:
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    resource_type,
+                    name,
+                    "-n",
+                    namespace,
+                    "-o",
+                    f"jsonpath={jsonpath}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
-        ca_cert = result.stdout
+            if result.returncode != 0 or not result.stdout:
+                continue
 
-        # Write to a temporary file (will be cleaned up when process exits)
-        ca_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".crt", delete=False, prefix="openshift-ingress-ca-"
-        )
-        ca_file.write(ca_cert)
-        ca_file.close()
+            ca_cert = result.stdout
+            if needs_base64:
+                import base64
 
-        return ca_file.name
+                ca_cert = base64.b64decode(ca_cert).decode("utf-8")
 
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        # kubectl not available or other error
-        return None
+            if not ca_cert.startswith("-----BEGIN CERTIFICATE-----"):
+                continue
+
+            # Write to a temporary file (will be cleaned up when process exits)
+            ca_file = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".crt", delete=False, prefix="openshift-ingress-ca-"
+            )
+            ca_file.write(ca_cert)
+            ca_file.close()
+
+            return ca_file.name
+
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            continue
+
+    return None
 
 
 # Module-level cache for the CA file path
@@ -223,9 +246,12 @@ def openshift_ingress_ca(is_openshift):
     """
     Get the OpenShift ingress CA certificate file path.
 
-    Fetches the router-ca secret from the cluster and writes it to a temp file.
-    Returns the path to the CA bundle file, or None if not on OpenShift or
-    if fetching fails.
+    Fetches the cluster root CA from kube-root-ca.crt configmap and writes
+    it to a temp file. Returns the path to the CA bundle file, or None if
+    not on OpenShift.
+
+    On OpenShift, this fixture MUST succeed - tests should never fall back
+    to verify=False. If the CA cannot be fetched, tests will fail.
 
     The CA file is cached for the session to avoid repeated kubectl calls.
     """
@@ -245,6 +271,14 @@ def openshift_ingress_ca(is_openshift):
 
     # Fetch from cluster
     _openshift_ca_file_cache = _fetch_openshift_ingress_ca()
+
+    if _openshift_ca_file_cache is None:
+        pytest.fail(
+            "Could not fetch OpenShift ingress CA certificate. "
+            "Tried kube-root-ca.crt from kagenti-system and openshift-config. "
+            "Set OPENSHIFT_INGRESS_CA env var to the CA bundle path as a workaround."
+        )
+
     return _openshift_ca_file_cache
 
 
@@ -253,19 +287,12 @@ def http_client(is_openshift, openshift_ingress_ca):
     """
     Create an httpx AsyncClient configured for the environment.
 
-    On OpenShift: Uses the ingress CA certificate if available, otherwise
-                  disables SSL verification (self-signed certs)
-    On Kind: Standard SSL verification
+    On OpenShift: Uses the ingress CA certificate for SSL verification
+    On Kind: Standard SSL verification (HTTP, no TLS)
     """
     if is_openshift:
-        if openshift_ingress_ca:
-            # Use the proper CA certificate
-            return httpx.AsyncClient(
-                verify=openshift_ingress_ca, follow_redirects=False
-            )
-        else:
-            # Fallback: disable SSL verification
-            return httpx.AsyncClient(verify=False, follow_redirects=False)
+        # openshift_ingress_ca fixture guarantees a valid CA path on OpenShift
+        return httpx.AsyncClient(verify=openshift_ingress_ca, follow_redirects=False)
     else:
         return httpx.AsyncClient(follow_redirects=False)
 

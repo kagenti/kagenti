@@ -24,7 +24,7 @@ Environment Variables:
 import os
 import logging
 import subprocess
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import pytest
 import httpx
@@ -119,7 +119,7 @@ async def query_mlflow_api(
     endpoint: str,
     token: Optional[str] = None,
     timeout: int = 10,
-    verify_ssl: bool = True,
+    verify_ssl: Union[bool, str] = True,
     params: Optional[Dict[str, Any]] = None,
 ) -> httpx.Response:
     """
@@ -130,7 +130,7 @@ async def query_mlflow_api(
         endpoint: API endpoint path (e.g., /api/2.0/mlflow/experiments/list)
         token: Optional OAuth2 access token
         timeout: Request timeout in seconds
-        verify_ssl: Whether to verify SSL certificates (False for OpenShift self-signed)
+        verify_ssl: True, or path to CA bundle for OpenShift
         params: Optional query parameters
 
     Returns:
@@ -158,6 +158,7 @@ def get_keycloak_token(
     password: str,
     realm: str = "master",
     client_id: str = "admin-cli",
+    verify_ssl: Union[bool, str] = True,
 ) -> Dict[str, str]:
     """
     Get access token from Keycloak using password grant.
@@ -168,6 +169,7 @@ def get_keycloak_token(
         password: User password
         realm: Keycloak realm (default: master)
         client_id: OAuth client ID (default: admin-cli)
+        verify_ssl: True, or path to CA bundle for OpenShift
 
     Returns:
         Token response dict with access_token, refresh_token, etc.
@@ -183,7 +185,7 @@ def get_keycloak_token(
         "password": password,
     }
 
-    response = requests.post(token_url, data=data, timeout=10, verify=False)
+    response = requests.post(token_url, data=data, timeout=10, verify=verify_ssl)
     response.raise_for_status()
     return response.json()
 
@@ -193,6 +195,7 @@ def get_mlflow_service_token(
     client_id: str,
     client_secret: str,
     realm: str = "master",
+    verify_ssl: Union[bool, str] = True,
 ) -> Dict[str, str]:
     """
     Get access token from Keycloak using client credentials grant.
@@ -206,6 +209,7 @@ def get_mlflow_service_token(
         client_id: OAuth client ID (e.g., "mlflow")
         client_secret: OAuth client secret
         realm: Keycloak realm (default: master)
+        verify_ssl: True, or path to CA bundle for OpenShift
 
     Returns:
         Token response dict with access_token, token_type, etc.
@@ -220,7 +224,7 @@ def get_mlflow_service_token(
         "client_secret": client_secret,
     }
 
-    response = requests.post(token_url, data=data, timeout=10, verify=False)
+    response = requests.post(token_url, data=data, timeout=10, verify=verify_ssl)
     response.raise_for_status()
     return response.json()
 
@@ -233,6 +237,11 @@ def get_mlflow_service_token(
 @pytest.mark.requires_features(["mlflow", "keycloak"])
 class TestMLflowAuth:
     """Test MLflow Keycloak OAuth2 authentication."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_ssl(self, is_openshift, openshift_ingress_ca):
+        """Set SSL verification: CA path on OpenShift, True on Kind."""
+        self.ssl_verify = openshift_ingress_ca if is_openshift else True
 
     @pytest.mark.asyncio
     async def test_mlflow_version_endpoint(self, require_mlflow_url, is_openshift):
@@ -254,7 +263,7 @@ class TestMLflowAuth:
             endpoint="/version",
             token=None,
             timeout=10,
-            verify_ssl=not is_openshift,
+            verify_ssl=self.ssl_verify,
         )
 
         logger.info(f"Response status: {response.status_code}")
@@ -292,7 +301,7 @@ class TestMLflowAuth:
             endpoint="/api/2.0/mlflow/experiments/search",
             token=None,
             timeout=10,
-            verify_ssl=not is_openshift,
+            verify_ssl=self.ssl_verify,
         )
 
         # Log the response for debugging
@@ -334,7 +343,7 @@ class TestMLflowAuth:
             endpoint="/api/2.0/mlflow/experiments/search",
             token=None,
             timeout=10,
-            verify_ssl=not is_openshift,
+            verify_ssl=self.ssl_verify,
         )
 
         if response.status_code == 200:
@@ -407,6 +416,11 @@ class TestMLflowAuth:
 class TestMLflowBackend:
     """Test MLflow backend deployment health."""
 
+    @pytest.fixture(autouse=True)
+    def _setup_ssl(self, is_openshift, openshift_ingress_ca):
+        """Set SSL verification: CA path on OpenShift, True on Kind."""
+        self.ssl_verify = openshift_ingress_ca if is_openshift else True
+
     @pytest.mark.asyncio
     async def test_mlflow_pod_running(self, k8s_client):
         """Test MLflow pod is running in kagenti-system namespace."""
@@ -449,7 +463,7 @@ class TestMLflowBackend:
                 endpoint="/version",
                 token=None,
                 timeout=10,
-                verify_ssl=not is_openshift,
+                verify_ssl=self.ssl_verify,
             )
 
             # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
