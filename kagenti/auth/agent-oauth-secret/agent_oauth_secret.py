@@ -45,7 +45,7 @@ def get_optional_env(key: str, default: Optional[str] = None) -> Optional[str]:
 
 def read_keycloak_credentials(
     v1_api: client.CoreV1Api,
-    secret_name: str,
+    credential_ref: str,
     namespace: str,
     username_key: str,
     password_key: str,
@@ -56,10 +56,10 @@ def read_keycloak_credentials(
     """
     try:
         typer.echo(
-            f"Reading Keycloak admin credentials from secret {secret_name} in namespace {namespace}"
+            f"Reading Keycloak admin credentials from secret {credential_ref} in namespace {namespace}"
         )
         username, password = _read_keycloak_credentials(
-            v1_api, secret_name, namespace, username_key, password_key
+            v1_api, credential_ref, namespace, username_key, password_key
         )
         typer.echo("Successfully read credentials from secret")
         return username, password
