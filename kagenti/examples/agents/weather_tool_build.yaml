@@ -13,8 +13,9 @@ spec:
   mode: dev
 
   source:
-    sourceRepository: "github.com/kagenti/agent-examples.git"
-    sourceRevision: "main"
+    # TODO: Change back to kagenti/agent-examples after Dockerfile fix merged
+    sourceRepository: "github.com/Ladas/agent-examples.git"
+    sourceRevision: "ebe6e19"
     sourceSubfolder: "mcp/weather_tool"
     sourceCredentials:
       name: github-token-secret
