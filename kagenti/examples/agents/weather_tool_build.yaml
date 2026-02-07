@@ -13,9 +13,11 @@ spec:
   mode: dev
 
   source:
-    # TODO: Change back to kagenti/agent-examples after Dockerfile fix merged
+    # Using fork with Docker Hub base image (GHCR auth fails on some clusters)
+    # TODO: Revert to kagenti/agent-examples after Dockerfile fix merged
+    # TODO: Revert to kagenti/agent-examples after Dockerfile fix merged
     sourceRepository: "github.com/Ladas/agent-examples.git"
-    sourceRevision: "ebe6e19"
+    sourceRevision: "genai-autoinstrumentation"
     sourceSubfolder: "mcp/weather_tool"
     sourceCredentials:
       name: github-token-secret
