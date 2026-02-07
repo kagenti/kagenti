@@ -258,12 +258,16 @@ class TestWeatherAgentConversation:
             "Which city is warmer?",
         ]
 
-        # Connect using ClientFactory
+        # Connect using ClientFactory (override card URL for external access)
         httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
         config = ClientConfig(httpx_client=httpx_client)
-        # ClientConfig.httpx_client handles SSL for both card resolution and requests
         try:
-            client = await ClientFactory.connect(agent_url, client_config=config)
+            from a2a.client.card_resolver import A2ACardResolver
+
+            resolver = A2ACardResolver(httpx_client, agent_url)
+            card = await resolver.get_agent_card()
+            card.url = agent_url
+            client = await ClientFactory.connect(card, client_config=config)
         except Exception as e:
             pytest.fail(f"Agent not reachable at {agent_url}: {e}")
 
