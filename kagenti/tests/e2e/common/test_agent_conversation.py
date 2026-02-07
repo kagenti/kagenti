@@ -116,11 +116,23 @@ class TestWeatherAgentConversation:
         ssl_verify = _get_ssl_context()
 
         # Connect using ClientFactory (replaces deprecated A2AClient)
+        # TODO: Should the agent card return the public route URL instead of
+        #   the internal bind address (0.0.0.0:8000)? The A2A spec says the
+        #   card URL should be the agent's reachable endpoint. Options:
+        #   1. Agent reads its own route hostname and sets card.url
+        #   2. A proxy/gateway rewrites the card URL on the fly
+        #   3. Clients override as we do here (current workaround)
         httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
         config = ClientConfig(httpx_client=httpx_client)
-        # ClientConfig.httpx_client handles SSL for both card resolution and requests
         try:
-            client = await ClientFactory.connect(agent_url, client_config=config)
+            from a2a.client.card_resolver import A2ACardResolver
+
+            resolver = A2ACardResolver(httpx_client, agent_url)
+            card = await resolver.get_agent_card()
+            # Override: card.url is the pod's internal address (0.0.0.0:8000)
+            # but we connect via the external route
+            card.url = agent_url
+            client = await ClientFactory.connect(card, client_config=config)
         except Exception as e:
             pytest.fail(
                 f"Agent not reachable at {agent_url}: {e}\n"
