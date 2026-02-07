@@ -350,12 +350,12 @@ jobs:
           SKIP_DESTROY: 'false'
 
   # ==========================================================================
-  # Post Results Comment
+  # Post Results - Reports E2E result immediately, doesn't wait for cleanup
   # ==========================================================================
   post-results:
     name: Post Results
     runs-on: ubuntu-latest
-    needs: [authorize, e2e-tests, cleanup]
+    needs: [authorize, e2e-tests]
     if: always() && needs.authorize.outputs.authorized == 'true'
     permissions:
       pull-requests: write
