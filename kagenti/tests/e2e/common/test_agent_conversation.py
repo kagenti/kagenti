@@ -18,7 +18,7 @@ import pytest
 import httpx
 import yaml
 from uuid import uuid4
-from a2a.client import ClientFactory
+from a2a.client import ClientConfig, ClientFactory
 from a2a.types import (
     Message as A2AMessage,
     TextPart,
@@ -116,15 +116,10 @@ class TestWeatherAgentConversation:
         ssl_verify = _get_ssl_context()
 
         # Connect using ClientFactory (replaces deprecated A2AClient)
-        factory = ClientFactory()
-        resolver_kwargs = {}
-        if ssl_verify is not True:
-            resolver_kwargs["ssl"] = ssl_verify
-
+        httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
+        config = ClientConfig(httpx_client=httpx_client)
         try:
-            client = await factory.connect(
-                agent_url, resolver_http_kwargs=resolver_kwargs
-            )
+            client = await ClientFactory.connect(agent_url, client_config=config)
         except Exception as e:
             pytest.fail(
                 f"Agent not reachable at {agent_url}: {e}\n"
@@ -251,15 +246,10 @@ class TestWeatherAgentConversation:
         ]
 
         # Connect using ClientFactory
-        factory = ClientFactory()
-        resolver_kwargs = {}
-        if ssl_verify is not True:
-            resolver_kwargs["ssl"] = ssl_verify
-
+        httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
+        config = ClientConfig(httpx_client=httpx_client)
         try:
-            client = await factory.connect(
-                agent_url, resolver_http_kwargs=resolver_kwargs
-            )
+            client = await ClientFactory.connect(agent_url, client_config=config)
         except Exception as e:
             pytest.fail(f"Agent not reachable at {agent_url}: {e}")
 
