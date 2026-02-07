@@ -29,7 +29,7 @@ Environment Variables:
     KIALI_IGNORE_NAMESPACES: Comma-separated list of namespaces to ignore
     KIALI_SKIP_VALIDATION_CODES: Comma-separated validation codes to ignore
     KIALI_FAIL_ON_WARNINGS: Set to "false" to only fail on errors (default: true)
-    KIALI_TRAFFIC_DURATION: Duration for traffic analysis (default: 10m)
+    KIALI_TRAFFIC_DURATION: Duration for traffic analysis (default: 2h)
     KIALI_ERROR_RATE_THRESHOLD: Max allowed error rate 0.0-1.0 (default: 0.01)
 """
 
@@ -521,31 +521,60 @@ def format_traffic_report(
     edges: list[TrafficEdge],
     summary: TrafficSummary,
     title: str = "Traffic Health Report",
+    error_threshold: float = 0.01,
 ) -> str:
-    """Format a nice traffic health report for CI output."""
+    """Format a comprehensive traffic health report for CI output."""
     lines = []
     lines.append("")
-    lines.append("=" * 70)
+    lines.append("=" * 90)
     lines.append(f" {title}")
-    lines.append("=" * 70)
+    lines.append("=" * 90)
 
-    if summary.edges_with_errors:
+    if not edges:
         lines.append("")
-        lines.append(f"EDGES WITH ERRORS ({len(summary.edges_with_errors)})")
-        lines.append("-" * 70)
-        for e in summary.edges_with_errors:
-            lines.append(f"  {e}")
+        lines.append("  No traffic edges observed.")
+        lines.append("=" * 90)
+        return "\n".join(lines)
 
-    if summary.edges_without_mtls:
-        lines.append("")
-        lines.append(f"EDGES WITHOUT mTLS ({len(summary.edges_without_mtls)})")
-        lines.append("-" * 70)
-        for e in summary.edges_without_mtls:
-            lines.append(f"  {e}")
+    # Group edges by source namespace
+    by_namespace = {}
+    for edge in edges:
+        ns = edge.source_namespace
+        if ns not in by_namespace:
+            by_namespace[ns] = []
+        by_namespace[ns].append(edge)
 
+    # Table header
     lines.append("")
-    lines.append("TRAFFIC SUMMARY")
-    lines.append("-" * 70)
+    lines.append(
+        f"  {'STATUS':<8} {'SOURCE':<40} {'DEST':<40} {'PROTO':<6} {'REQS':<8} {'ERR%':<8} {'mTLS':<6}"
+    )
+    lines.append("  " + "-" * 116)
+
+    for ns in sorted(by_namespace.keys()):
+        for edge in sorted(by_namespace[ns], key=lambda e: e.dest_workload):
+            # Determine status
+            has_error = edge.error_rate > error_threshold
+            has_mtls = edge.is_mtls
+            if has_error or (not has_mtls and edge.requests > 0):
+                status = "FAIL"
+            else:
+                status = "PASS"
+
+            source = f"{edge.source_namespace}/{edge.source_workload}"
+            dest = f"{edge.dest_namespace}/{edge.dest_workload}"
+            err_pct = f"{edge.error_rate:.1%}"
+            mtls = "yes" if edge.is_mtls else "NO"
+
+            lines.append(
+                f"  {status:<8} {source:<40} {dest:<40} "
+                f"{edge.protocol:<6} {edge.requests:<8} {err_pct:<8} {mtls:<6}"
+            )
+
+    # Summary section
+    lines.append("")
+    lines.append("  SUMMARY")
+    lines.append("  " + "-" * 116)
     lines.append(f"  Namespaces analyzed: {summary.namespaces_analyzed}")
     lines.append(f"  Total edges:         {summary.total_edges}")
     lines.append(f"  Total requests:      {summary.total_requests}")
@@ -553,11 +582,15 @@ def format_traffic_report(
     lines.append(f"  Edges without mTLS:  {len(summary.edges_without_mtls)}")
     lines.append(f"  Max error rate:      {summary.max_error_rate:.2%}")
 
-    if not summary.edges_with_errors and not summary.edges_without_mtls:
+    failed_count = len(summary.edges_with_errors) + len(summary.edges_without_mtls)
+    if failed_count == 0:
         lines.append("")
         lines.append("  All traffic is healthy with mTLS enabled!")
+    else:
+        lines.append("")
+        lines.append(f"  {failed_count} edge(s) have issues - see FAIL entries above")
 
-    lines.append("=" * 70)
+    lines.append("=" * 90)
     lines.append("")
 
     return "\n".join(lines)
@@ -620,7 +653,7 @@ def fail_on_warnings():
 @pytest.fixture(scope="module")
 def traffic_duration():
     """Get duration for traffic analysis."""
-    return os.getenv("KIALI_TRAFFIC_DURATION", "10m")
+    return os.getenv("KIALI_TRAFFIC_DURATION", "2h")
 
 
 @pytest.fixture(scope="module")
@@ -736,7 +769,9 @@ class TestKialiValidations:
         )
 
         # Always print the report for visibility
-        report = format_traffic_report(edges, summary)
+        report = format_traffic_report(
+            edges, summary, error_threshold=error_rate_threshold
+        )
         print(report)
 
         # Check for edges with errors above threshold
@@ -785,10 +820,9 @@ class TestKialiValidations:
             ignore_namespaces=ignore_namespaces,
         )
 
-        # Print traffic summary (already printed in test_no_traffic_errors,
-        # but useful if running this test alone)
-        if summary.total_edges > 0:
-            print(f"\nAnalyzed {summary.total_edges} traffic edges")
+        # Print comprehensive traffic table
+        report = format_traffic_report(edges, summary, title="mTLS Compliance Report")
+        print(report)
 
         if summary.edges_without_mtls:
             non_mtls_details = "\n".join(f"  - {e}" for e in summary.edges_without_mtls)
@@ -946,7 +980,11 @@ def main():
     else:
         print(format_validation_report(issues, validation_summary))
         if traffic_summary:
-            print(format_traffic_report(traffic_edges, traffic_summary))
+            print(
+                format_traffic_report(
+                    traffic_edges, traffic_summary, error_threshold=args.error_threshold
+                )
+            )
 
     # Determine exit code
     exit_code = 0
