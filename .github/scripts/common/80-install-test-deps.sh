@@ -8,10 +8,15 @@ log_step "80" "Installing test dependencies"
 
 cd "$REPO_ROOT"
 
-# Upgrade pip to support editable installs with pyproject.toml
-python3 -m pip install --upgrade pip setuptools wheel
+# Use uv for reproducible installs (respects uv.lock)
+# This ensures CI uses the exact same package versions as local development
+if ! command -v uv &>/dev/null; then
+    log_info "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
 
-# Install package in editable mode with test dependencies
-python3 -m pip install -e .[test]
+log_info "Installing dependencies with uv sync (locked versions)..."
+uv sync --extra test
 
-log_success "Test dependencies installed"
+log_success "Test dependencies installed (via uv)"
