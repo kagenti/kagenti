@@ -118,14 +118,9 @@ class TestWeatherAgentConversation:
         # Connect using ClientFactory (replaces deprecated A2AClient)
         httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
         config = ClientConfig(httpx_client=httpx_client)
-        # Pass SSL context to both the card resolver and the client
-        resolver_kwargs = {"verify": ssl_verify}
+        # ClientConfig.httpx_client handles SSL for both card resolution and requests
         try:
-            client = await ClientFactory.connect(
-                agent_url,
-                client_config=config,
-                resolver_http_kwargs=resolver_kwargs,
-            )
+            client = await ClientFactory.connect(agent_url, client_config=config)
         except Exception as e:
             pytest.fail(
                 f"Agent not reachable at {agent_url}: {e}\n"
@@ -254,14 +249,9 @@ class TestWeatherAgentConversation:
         # Connect using ClientFactory
         httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
         config = ClientConfig(httpx_client=httpx_client)
-        # Pass SSL context to both the card resolver and the client
-        resolver_kwargs = {"verify": ssl_verify}
+        # ClientConfig.httpx_client handles SSL for both card resolution and requests
         try:
-            client = await ClientFactory.connect(
-                agent_url,
-                client_config=config,
-                resolver_http_kwargs=resolver_kwargs,
-            )
+            client = await ClientFactory.connect(agent_url, client_config=config)
         except Exception as e:
             pytest.fail(f"Agent not reachable at {agent_url}: {e}")
 
