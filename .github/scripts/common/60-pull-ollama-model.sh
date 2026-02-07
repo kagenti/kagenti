@@ -21,8 +21,8 @@ fi
 if pgrep -x "ollama" > /dev/null; then
     log_info "Ollama process already running, checking if responsive..."
 else
-    log_info "Starting Ollama in background"
-    ollama serve > "$OLLAMA_LOG" 2>&1 &
+    log_info "Starting Ollama in background (listening on all interfaces)"
+    OLLAMA_HOST=0.0.0.0 ollama serve > "$OLLAMA_LOG" 2>&1 &
     STARTED_OLLAMA=true
 fi
 
