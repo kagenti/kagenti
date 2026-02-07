@@ -47,9 +47,9 @@ else
 fi
 
 # Detect if running on OpenShift vs vanilla Kubernetes (Kind, etc.)
-# Uses config.openshift.io API group which is always present on OpenShift
-# and never on Kind/vanilla K8s.
-if kubectl api-resources --api-group=config.openshift.io 2>/dev/null | grep -q "clusterversions"; then
+# Uses 'kubectl get clusterversion' which is fast and only exists on OpenShift.
+# Avoids 'kubectl api-resources' which is slow and can fail intermittently.
+if kubectl get clusterversion &>/dev/null; then
     export IS_OPENSHIFT=true
     echo "Detected cluster type: OpenShift"
 else
