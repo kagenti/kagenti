@@ -19,6 +19,21 @@ if [ -z "$POD_NAME" ]; then
     exit 1
 fi
 
+# Wait for the agent app to be ready inside the pod (not just pod Running)
+# The pod may be Running but the Python app (uvicorn) needs time to start
+log_info "Waiting for weather-service app to be ready in pod $POD_NAME..."
+for i in {1..30}; do
+    if kubectl exec -n team1 "$POD_NAME" -- curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
+        log_success "Weather-service app is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        log_error "Weather-service app not ready after 30s"
+        kubectl logs -n team1 "$POD_NAME" --tail=20
+    fi
+    sleep 1
+done
+
 log_info "Port-forwarding weather-service pod: $POD_NAME -> localhost:8000"
 
 # Start port-forward in background
@@ -31,9 +46,9 @@ else
     echo $AGENT_PORT_FORWARD_PID > /tmp/port-forward-agent.pid
 fi
 
-# Wait for agent port-forward to be ready
+# Wait for port-forward to be ready
 for _ in {1..10}; do
-    if curl -s http://localhost:8000/health >/dev/null 2>&1 || curl -s http://localhost:8000/ >/dev/null 2>&1; then
+    if curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
         log_success "Agent port-forward is ready (localhost:8000)"
         break
     fi
