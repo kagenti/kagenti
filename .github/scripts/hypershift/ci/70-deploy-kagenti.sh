@@ -24,17 +24,19 @@ export ANSIBLE_PYTHON_INTERPRETER
 # Use MAIN_REPO_ROOT so secrets are shared across worktrees
 SECRETS_FILE="$MAIN_REPO_ROOT/deployments/envs/.secret_values.yaml"
 if [ ! -f "$SECRETS_FILE" ]; then
-    echo "Creating minimal secrets file for CI..."
-    cat > "$SECRETS_FILE" << 'EOF'
+    # Use real OPENAI_API_KEY from env if available (passed from GitHub secrets)
+    OPENAI_KEY="${OPENAI_API_KEY:-ci-test-openai-key}"
+    echo "Creating secrets file for CI..."
+    cat > "$SECRETS_FILE" <<EOF
 # Auto-generated secrets for CI
 global: {}
 charts:
   kagenti:
     values:
       secrets:
-        # Placeholder - not needed for basic E2E tests
         githubUser: "ci-user"
         githubToken: "ci-token-placeholder"
+        openaiApiKey: "${OPENAI_KEY}"
 EOF
 fi
 

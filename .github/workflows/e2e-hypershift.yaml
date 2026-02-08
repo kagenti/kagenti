@@ -150,6 +150,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/70-deploy-kagenti.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Set up Python
         if: success()
