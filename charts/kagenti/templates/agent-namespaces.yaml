@@ -367,6 +367,29 @@ subjects:
   - kind: ServiceAccount
     name: pipeline
     namespace: {{ . }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  SCC RoleBinding for Default SA in Namespace: {{ . }}
+#  Grants privileged SCC to the default service account so that webhook-injected
+#  sidecars can run with their required UIDs (0, 1000, 1337), capabilities
+#  (NET_ADMIN, NET_RAW), and seccomp profiles. The proxy-init init container
+#  runs as root with NET_ADMIN/NET_RAW which requires privileged SCC.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: default-privileged-scc
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: {{ . }}
 {{- end }}
 {{- end }}
 {{- end }}
