@@ -190,7 +190,9 @@
       "Bash(aws ec2 delete-vpc:*)",
       "Bash(chmod 777:*)",
       "Bash(sudo:*)",
-      "Bash(gh pr merge:*)"
+      "Bash(gh pr merge:*)",
+      "Bash(git revert:*)",
+      "Bash(git commit --amend:*)"
     ]
   }
 }

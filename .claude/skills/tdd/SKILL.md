@@ -72,35 +72,38 @@ The complete TDD loop includes test, git, and CI monitoring:
 9. CI passes? → Done. CI fails? → Back to step 1.
 ```
 
-## Incremental Progress Rule
+## Commit Policy
 
-**Each commit should reduce the number of failing tests.** This is the key metric for TDD:
+**Never revert. Never amend. Commits are permanent history.**
+
+Only commit when:
+- All tests pass, OR
+- At least 1 additional test passes compared to the previous commit (forward progress)
 
 ```
-Commit 1: 8 pass, 5 fail
-Commit 2: 10 pass, 3 fail  ← good, 2 fewer failures
-Commit 3: 11 pass, 2 fail  ← good, 1 fewer failure
-Commit 4: 9 pass, 4 fail   ← BAD — more failures than before
+Commit 1: 8 pass, 5 fail  ← baseline, acceptable
+Commit 2: 10 pass, 3 fail ← good, +2 passing
+Commit 3: 11 pass, 2 fail ← good, +1 passing
+(no commit): 9 pass, 4 fail ← DON'T COMMIT — regression, keep iterating
 ```
 
 ### Rules
 
-1. **At least 1 fewer test failure per commit** — verify before committing
-2. **Don't fix too many things at once** — small focused commits are more stable
-3. **If failures increase** — stop, analyze the diff, understand what change caused new failures before proceeding
-4. **For complex tasks** — it's fine to take many commits, each removing 1-2 failures
-5. **Track progress** — compare pass/fail counts between iterations
+1. **Don't commit until tests improve** — at least 1 fewer failure than last commit
+2. **Never revert** — keep the history, fix forward instead
+3. **Never amend** — each commit is a checkpoint, session retrospective uses the history
+4. **Don't fix too many things at once** — small focused commits are more stable
+5. **If stuck for too long** — the session retrospective will catch it and improve the skill
 
 ### Before Each Commit
 
-Check test results against the previous run:
+Run tests and compare with last commit's results:
 
 ```bash
-# Current results (save these)
 uv run pytest kagenti/tests/e2e/ -v --tb=no -q 2>&1 | tail -5
 ```
 
-If more tests fail than the previous run, investigate the regression before committing.
+If pass count didn't increase, keep iterating — don't commit yet.
 
 ## Related Skills
 
