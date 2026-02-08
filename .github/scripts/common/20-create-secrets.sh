@@ -24,8 +24,10 @@ mkdir -p "$MAIN_REPO_ROOT/deployments/envs"
 
 if [ "$IS_CI" = true ]; then
     log_info "Creating CI test secrets"
+    # Use real OPENAI_API_KEY from GitHub secrets if available
+    OPENAI_KEY="${OPENAI_API_KEY:-ci-test-openai-key}"
     cat > "$SECRET_FILE" <<EOF
-# CI secret values (fake values for testing)
+# CI secret values
 global:
   jwt_key: "ci-test-jwt-key"
   db_password: "ci-test-db-password"
@@ -37,7 +39,7 @@ kagenti:
 secrets:
   githubUser: "ci-test-user"
   githubToken: "ci-test-token"
-  openaiApiKey: "ci-test-openai-key"
+  openaiApiKey: "${OPENAI_KEY}"
   slackBotToken: "ci-test-slack-token"
   adminSlackBotToken: "ci-test-admin-slack-token"
 EOF

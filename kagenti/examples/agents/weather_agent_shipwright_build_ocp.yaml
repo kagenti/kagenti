@@ -23,8 +23,10 @@ spec:
   source:
     type: Git
     git:
-      url: https://github.com/kagenti/agent-examples
-      revision: main
+      # TODO: Change back to kagenti/agent-examples after PR merged
+      # PR: https://github.com/kagenti/agent-examples/pull/XXX
+      url: https://github.com/ladas/agent-examples
+      revision: genai-autoinstrumentation
       cloneSecret: github-shipwright-secret
     contextDir: a2a/weather_service
   strategy:

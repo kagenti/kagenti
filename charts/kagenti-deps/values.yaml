@@ -25,6 +25,8 @@ components:
     enabled: false
   otel:
     enabled: true
+  mlflow:
+    enabled: false
   containerRegistry:
     enabled: false
   spire:
@@ -56,6 +58,14 @@ keycloak:
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
+  # Secret containing Keycloak admin credentials (created by RHBK operator)
+  adminSecretName: keycloak-initial-admin
+  adminUsernameKey: username
+  adminPasswordKey: password
+  # Internal Keycloak URL for OAuth secret jobs
+  url: http://keycloak-service.keycloak:8080
+  publicUrl: http://keycloak.localtest.me:8080
+  realm: demo
   httpRoute:
     annotations: {}
     parentRefs:
@@ -155,3 +165,25 @@ metricsServer:
 mcpInspector:
   image: ghcr.io/modelcontextprotocol/inspector
   tag: 0.17.2
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: phoenix-oauth-secret
+
+# ------------------------------------------------------------------
+#  MLflow Configuration
+# ------------------------------------------------------------------
+mlflow:
+  namespace: kagenti-system
+  auth:
+    # Enable Keycloak OAuth2 authentication for MLflow
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    secretName: mlflow-oauth-secret
+

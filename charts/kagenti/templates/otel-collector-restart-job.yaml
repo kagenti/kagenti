@@ -1,0 +1,98 @@
+{{- if and .Values.mlflow.auth.enabled .Values.keycloak.enabled }}
+# Post-install hook to restart otel-collector after mlflow-oauth-secret-job
+# creates the real OAuth credentials. This ensures otel-collector picks up
+# the new secret instead of the placeholder values from kagenti-deps.
+#
+# Hook weights:
+#   5  - RBAC resources for OAuth job
+#   10 - mlflow-oauth-secret-job (creates secret)
+#   15 - RBAC resources for restart job
+#   20 - otel-collector-restart-job (restarts deployment)
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector-restarter
+  namespace: {{ .Values.mlflow.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "15"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: otel-collector-restarter
+  namespace: {{ .Values.mlflow.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "15"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["otel-collector", "mlflow"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otel-collector-restarter-binding
+  namespace: {{ .Values.mlflow.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "15"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector-restarter
+    namespace: {{ .Values.mlflow.namespace }}
+roleRef:
+  kind: Role
+  name: otel-collector-restarter
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: otel-collector-restart-job
+  namespace: {{ .Values.mlflow.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "20"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    metadata:
+      labels:
+        {{- include "kagenti.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: otel-collector-restarter
+      restartPolicy: Never
+      containers:
+      - name: restarter
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Restarting mlflow to pick up new OAuth credentials..."
+          kubectl rollout restart deployment/mlflow -n {{ .Values.mlflow.namespace }}
+          kubectl rollout status deployment/mlflow -n {{ .Values.mlflow.namespace }} --timeout=120s
+          echo "mlflow restarted successfully"
+
+          echo "Restarting otel-collector to pick up new OAuth credentials..."
+          kubectl rollout restart deployment/otel-collector -n {{ .Values.mlflow.namespace }}
+          kubectl rollout status deployment/otel-collector -n {{ .Values.mlflow.namespace }} --timeout=120s
+          echo "otel-collector restarted successfully"
+  backoffLimit: 3
+{{- end }}

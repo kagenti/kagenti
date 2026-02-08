@@ -38,6 +38,7 @@ data:
 
     psql -v ON_ERROR_STOP=1  <<-EOSQL
         ALTER DATABASE postgres OWNER TO testuser;
+        CREATE DATABASE mlflow OWNER testuser;
     EOSQL
 ---
 apiVersion: apps/v1

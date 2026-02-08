@@ -116,16 +116,59 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ./.github/scripts/hypershift/local-setup.sh                        # Installs hcp CLI + ansible
 ```
 
-#### Naming Conventions
+#### Naming & Credential Scoping
+
+HyperShift uses a two-level naming system controlled by environment variables:
+
+**1. `MANAGED_BY_TAG`** - Controls credential scoping and cluster prefix
+   - Default: `kagenti-hypershift-custom` (for local development)
+   - CI uses: `kagenti-hypershift-ci` (from GitHub secrets)
+   - Drives the `.env` filename and AWS IAM resource naming
+   - Typically set once per project/team, not per cluster
+
+**2. `CLUSTER_SUFFIX`** - Controls the specific cluster instance
+   - Default: first 5 characters of `$USER` (e.g., `ladas`)
+   - Pass as first argument to the script to override
+   - Full cluster name = `${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}`
+
+**How they work together:**
+
+```
+MANAGED_BY_TAG=kagenti-hypershift-custom   # Set by setup or environment
+CLUSTER_SUFFIX=mlflow                       # Passed as argument
+
+→ Cluster name:  kagenti-hypershift-custom-mlflow
+→ Credentials:   .env.kagenti-hypershift-custom (scoped IAM + kubeconfig)
+→ Kubeconfig:    ~/clusters/hcp/kagenti-hypershift-custom-mlflow/auth/kubeconfig
+```
 
 | Component | Local Default | CI Default |
 |-----------|--------------|------------|
-| MANAGED_BY_TAG | `kagenti-hypershift-custom` | `kagenti-hypershift-ci` |
-| .env file | `.env.kagenti-hypershift-custom` | (from secrets) |
-| Cluster suffix | `$USER` (e.g., `ladas`) | varies |
-| Full cluster name | `kagenti-hypershift-custom-ladas` | `kagenti-hypershift-ci-<suffix>` |
+| `MANAGED_BY_TAG` | `kagenti-hypershift-custom` | `kagenti-hypershift-ci` |
+| `.env` file | `.env.kagenti-hypershift-custom` | (from GitHub secrets) |
+| `CLUSTER_SUFFIX` | First 5 chars of `$USER` | PR number or workflow ID |
+| Full cluster name | `kagenti-hypershift-custom-$USER` | `kagenti-hypershift-ci-<suffix>` |
 
-Customize the cluster suffix by passing it as an argument (e.g., `pr529` → `kagenti-hypershift-custom-pr529`).
+**Setting a custom suffix:**
+
+```bash
+# Default (uses your username truncated to 5 chars)
+./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
+# Creates: kagenti-hypershift-custom-ladas
+
+# Custom suffix (pass as first positional argument)
+./.github/scripts/local-setup/hypershift-full-test.sh mlflow --skip-cluster-destroy
+# Creates: kagenti-hypershift-custom-mlflow
+
+./.github/scripts/local-setup/hypershift-full-test.sh pr529 --skip-cluster-destroy
+# Creates: kagenti-hypershift-custom-pr529
+```
+
+**Multiple clusters:** You can run multiple clusters simultaneously by using different suffixes.
+Each cluster has its own kubeconfig at `~/clusters/hcp/${MANAGED_BY_TAG}-${suffix}/auth/kubeconfig`.
+
+**AWS IAM limits:** Cluster names must be ≤32 characters (AWS IAM role name limit).
+With the default `MANAGED_BY_TAG` (26 chars), suffixes can be up to 5 characters.
 
 #### Main Testing Flow (Worktree Recommended)
 
@@ -347,7 +390,7 @@ kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 Requires AWS admin credentials + management cluster admin access:
 
 ```bash
-# Set up AWS admin credentials
+# Set up AWS admin credentials (admin, used only for setup)
 export AWS_ACCESS_KEY_ID="<your-admin-access-key>"
 export AWS_SECRET_ACCESS_KEY="<your-admin-secret-key>"
 export AWS_REGION="us-east-1"  # optional, defaults to us-east-1
@@ -357,16 +400,61 @@ export KUBECONFIG=~/.kube/hypershift_kagenti_ci
 oc login ...
 
 # Optional: customize the managed-by tag (drives naming of users, clusters, resources)
-export MANAGED_BY_TAG="kagenti-hypershift-custom"  # default
+# This determines what .env file is created and the cluster name prefix
+export MANAGED_BY_TAG="kagenti-hypershift-custom"  # default for local dev
 
 # Create scoped AWS IAM user + OCP service account for cluster management
 ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
+#
+# This script creates:
+#   - AWS IAM user with scoped permissions for cluster create/destroy
+#   - OCP ServiceAccount with cluster-admin for HyperShift operations
+#   - Output: .env.${MANAGED_BY_TAG} (e.g., .env.kagenti-hypershift-custom)
+#
+# The .env file contains:
+#   - AWS_ACCESS_KEY_ID/SECRET for the scoped IAM user
+#   - KUBECONFIG path for the management cluster
+#   - MANAGED_BY_TAG value for consistent naming
 
-# Optional: configure autoscaling
+# Optional: check AWS quotas before creating clusters (needs AWS creds only)
+source .env.kagenti-hypershift-custom  # For AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+./.github/scripts/hypershift/check-quotas.sh
+```
+
+#### Optional: Configure Autoscaling
+
+The management cluster and hosted clusters can autoscale based on demand.
+**Requires**: Both AWS credentials and management cluster kubeconfig.
+
+```bash
+# Source credentials (provides AWS creds + KUBECONFIG for management cluster)
+source .env.kagenti-hypershift-custom
+
+# Show current utilization and scaling options
 ./.github/scripts/hypershift/setup-autoscaling.sh
 
-# Optional: check AWS quotas
-./.github/scripts/hypershift/check-quotas.sh
+# Configure management cluster autoscaling (max 3 workers per zone)
+./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 3
+
+# Configure hosted cluster NodePool autoscaling
+./.github/scripts/hypershift/setup-autoscaling.sh --nodepool-min 2 --nodepool-max 6
+
+# Apply the generated commands (default is dry-run, shows commands)
+./.github/scripts/hypershift/setup-autoscaling.sh --mgmt-max 3 --apply
+```
+
+**Different teams/projects:** Use different `MANAGED_BY_TAG` values to create isolated credential sets:
+
+```bash
+# Team A setup
+export MANAGED_BY_TAG="kagenti-hypershift-team-a"
+./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
+# Output: .env.kagenti-hypershift-team-a
+
+# Team B setup
+export MANAGED_BY_TAG="kagenti-hypershift-team-b"
+./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh
+# Output: .env.kagenti-hypershift-team-b
 ```
 
 #### Debug Commands (with scoped credentials)

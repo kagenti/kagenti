@@ -138,4 +138,8 @@ stringData:
   password: thisisonly4testingNOT4prod
   username: testuser
 type: Opaque
+# NOTE: keycloak-initial-admin secret is managed by RHBK operator, not Helm.
+# The operator creates this secret when reconciling the Keycloak CR.
+# Do NOT pre-create this secret - it causes "409 Conflict: secret already exists" errors.
+# See https://github.com/keycloak/keycloak/issues/35862
 {{- end }}

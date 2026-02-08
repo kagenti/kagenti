@@ -10,8 +10,15 @@ REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../../.." && pwd)}"
 
 cd "$REPO_ROOT"
 
-# Install test dependencies first (90-run-e2e-tests.sh assumes pytest is available)
-pip install -e ".[test]"
+# Install uv for reproducible installs (respects uv.lock)
+if ! command -v uv &>/dev/null; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Install test dependencies with locked versions
+uv sync --extra test
 
 # Use hypershift-full-test.sh with whitelist mode (--include-test)
 # hypershift-full-test.sh handles AGENT_URL detection from route and calls 90-run-e2e-tests.sh

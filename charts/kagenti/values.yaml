@@ -13,7 +13,6 @@ components:
     enabled: true
   platformWebhook:
     enabled: true
-
   ui:
     enabled: true
   istio:
@@ -153,6 +152,60 @@ mcpGateway:
   # Other values tried:  'mcp.localtest.me', and 'mcp.sslip.io' were tested but failed to route traffic correctly.
   # Expected behavior: The MCP Gateway should work with any valid hostname or IP address configured for local development.
   hostname: 'mcp.127-0-0-1.sslip.io'
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  namespace: kagenti-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://phoenix.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    enabled: true
+
+# ------------------------------------------------------------------
+#  Phoenix OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+phoenixOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
+  tag: latest
+  # Keycloak client ID for Phoenix
+  clientId: phoenix
+  # Kubernetes secret name to store OAuth credentials
+  secretName: phoenix-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the phoenix-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  MLflow Configuration
+# ------------------------------------------------------------------
+mlflow:
+  namespace: kagenti-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://mlflow.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for MLflow
+    enabled: true
+    # Kubernetes secret name containing OAuth credentials
+    secretName: mlflow-oauth-secret
+
+# ------------------------------------------------------------------
+#  MLflow OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+# TODO: Change back to ghcr.io/kagenti/kagenti/mlflow-oauth-secret once
+# the image is published via Build-Publish workflow (on version tag)
+mlflowOAuthSecret:
+  image: quay.io/ladas/mlflow-oauth-secret
+  tag: latest
+  # Keycloak client ID for MLflow
+  clientId: mlflow
+  # Kubernetes secret name to store OAuth credentials
+  secretName: mlflow-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the mlflow-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
 
 # ------------------------------------------------------------------
 #  Spiffe/Spire configs

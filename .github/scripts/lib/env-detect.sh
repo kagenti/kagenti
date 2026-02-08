@@ -47,9 +47,9 @@ else
 fi
 
 # Detect if running on OpenShift vs vanilla Kubernetes (Kind, etc.)
-# NOTE: "oc whoami" works on ANY Kubernetes cluster - it just checks authentication!
-# We must check for OpenShift-specific APIs to properly detect OpenShift.
-if kubectl api-resources --api-group=build.openshift.io 2>/dev/null | grep -q "buildconfigs"; then
+# Uses 'kubectl get clusterversion' which is fast and only exists on OpenShift.
+# Avoids 'kubectl api-resources' which is slow and can fail intermittently.
+if kubectl get clusterversion &>/dev/null; then
     export IS_OPENSHIFT=true
     echo "Detected cluster type: OpenShift"
 else

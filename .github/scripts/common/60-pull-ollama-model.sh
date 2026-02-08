@@ -21,8 +21,8 @@ fi
 if pgrep -x "ollama" > /dev/null; then
     log_info "Ollama process already running, checking if responsive..."
 else
-    log_info "Starting Ollama in background"
-    ollama serve > "$OLLAMA_LOG" 2>&1 &
+    log_info "Starting Ollama in background (listening on all interfaces)"
+    OLLAMA_HOST=0.0.0.0 ollama serve > "$OLLAMA_LOG" 2>&1 &
     STARTED_OLLAMA=true
 fi
 
@@ -68,15 +68,15 @@ for i in $(seq 1 $MAX_WAIT); do
 done
 
 # Pull model if not present with retry logic
-if ! ollama list | grep -q qwen2.5:0.5b; then
+if ! ollama list | grep -q qwen2.5:3b; then
     MAX_RETRIES=3
     RETRY_COUNT=0
     BACKOFF_SECONDS=10
 
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        log_info "Pulling qwen2.5:0.5b model (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
+        log_info "Pulling qwen2.5:3b model (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)"
 
-        if run_with_timeout 300 'ollama pull qwen2.5:0.5b'; then
+        if run_with_timeout 300 'ollama pull qwen2.5:3b'; then
             log_success "Model pull successful"
             break
         fi

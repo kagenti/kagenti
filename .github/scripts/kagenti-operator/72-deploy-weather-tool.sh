@@ -62,6 +62,12 @@ spec:
               value: "0.0.0.0"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+            - name: OTEL_SERVICE_NAME
+              value: "weather-tool"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=team1,mlflow.experimentName=team1"
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "team1"
             - name: KEYCLOAK_URL
               value: "http://keycloak.keycloak.svc.cluster.local:8080"
             - name: UV_NO_CACHE

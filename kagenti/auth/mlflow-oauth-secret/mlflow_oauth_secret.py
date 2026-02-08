@@ -1,0 +1,630 @@
+"""MLflow OAuth Secret Generator for Keycloak Integration.
+
+This script registers a Keycloak confidential client for MLflow and creates
+a Kubernetes secret with the OAuth2 configuration environment variables.
+
+MLflow uses the mlflow-oidc-auth plugin for OAuth authentication, which expects:
+- OIDC_PROVIDER_DISPLAY_NAME
+- OIDC_CLIENT_ID
+- OIDC_CLIENT_SECRET
+- OIDC_DISCOVERY_URL
+- OIDC_REDIRECT_URI
+
+Unlike the UI (which uses a public client for browser-based SPA), MLflow
+runs server-side and uses a confidential client with a client secret.
+
+See: https://pypi.org/project/mlflow-oidc-auth/
+"""
+
+import json
+import logging
+import os
+import sys
+from typing import Optional, Dict, Any, Tuple
+
+from keycloak import KeycloakAdmin, KeycloakPostError
+from kubernetes import client, config, dynamic
+from kubernetes.client import api_client
+import base64
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# Constants
+DEFAULT_KEYCLOAK_NAMESPACE = "keycloak"
+DEFAULT_MLFLOW_NAMESPACE = "kagenti-system"
+DEFAULT_KEYCLOAK_ROUTE_NAME = "keycloak"
+DEFAULT_MLFLOW_ROUTE_NAME = "mlflow"
+DEFAULT_KEYCLOAK_REALM = "master"
+DEFAULT_ADMIN_SECRET_NAME = "keycloak-initial-admin"
+DEFAULT_ADMIN_USERNAME_KEY = "username"
+DEFAULT_ADMIN_PASSWORD_KEY = "password"
+
+
+class ConfigurationError(Exception):
+    """Raised when required configuration is missing or invalid."""
+
+    pass
+
+
+class KubernetesResourceError(Exception):
+    """Raised when Kubernetes resource operations fail."""
+
+    pass
+
+
+class KeycloakOperationError(Exception):
+    """Raised when Keycloak operations fail."""
+
+    pass
+
+
+def get_required_env(key: str) -> str:
+    """Get a required environment variable or raise ConfigurationError."""
+    value = os.environ.get(key)
+    if value is None or value == "":
+        raise ConfigurationError(f'Required environment variable: "{key}" is not set')
+    return value
+
+
+def get_optional_env(key: str, default: Optional[str] = None) -> Optional[str]:
+    """Get an optional environment variable with optional default."""
+    return os.environ.get(key, default)
+
+
+def is_running_in_cluster() -> bool:
+    """Check if running inside a Kubernetes cluster."""
+    return bool(os.getenv("KUBERNETES_SERVICE_HOST"))
+
+
+def get_openshift_route_url(
+    dyn_client: dynamic.DynamicClient, namespace: str, route_name: str
+) -> str:
+    """Get the URL for an OpenShift route."""
+    try:
+        route_api = dyn_client.resources.get(
+            api_version="route.openshift.io/v1", kind="Route"
+        )
+        route = route_api.get(name=route_name, namespace=namespace)
+        host = route.spec.host
+
+        if not host:
+            raise KubernetesResourceError(
+                f"Route {route_name} in namespace {namespace} has no host defined"
+            )
+
+        return f"https://{host}"
+    except Exception as e:
+        # Sanitize error message to avoid logging sensitive data
+        error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {type(e).__name__}"
+        logger.error(error_msg)
+        raise KubernetesResourceError(error_msg) from e
+
+
+def read_keycloak_credentials(
+    v1_client: client.CoreV1Api,
+    k8s_resource: str,
+    namespace: str,
+    user_key: str,
+    pw_key: str,
+) -> Tuple[str, str]:
+    """Read Keycloak admin credentials from a Kubernetes secret.
+
+    Args:
+        v1_client: Kubernetes CoreV1Api client
+        k8s_resource: Name of the Kubernetes Secret resource
+        namespace: Namespace where the resource exists
+        user_key: Key in data for username
+        pw_key: Key in data for password
+
+    Returns:
+        Tuple of (username, password)
+    """
+    try:
+        logger.info("Reading Keycloak admin credentials from K8s resource")
+        k8s_data = v1_client.read_namespaced_secret(k8s_resource, namespace)
+
+        if user_key not in k8s_data.data:
+            raise KubernetesResourceError(
+                "Keycloak admin resource missing required username key"
+            )
+        if pw_key not in k8s_data.data:
+            raise KubernetesResourceError(
+                "Keycloak admin resource missing required credential key"
+            )
+
+        # Decode credentials from K8s data
+        decoded_user = base64.b64decode(k8s_data.data[user_key]).decode("utf-8").strip()
+        decoded_cred = base64.b64decode(k8s_data.data[pw_key]).decode("utf-8").strip()
+
+        logger.info("Successfully read credentials from K8s resource")
+        return decoded_user, decoded_cred
+    except client.exceptions.ApiException as e:
+        # Sanitize error message to avoid logging sensitive data
+        logger.error("Could not read Keycloak admin resource: status=%s", e.status)
+        raise KubernetesResourceError(
+            f"Could not read Keycloak admin resource: status={e.status}"
+        ) from e
+
+
+def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
+    """Configure SSL verification based on certificate file availability."""
+    if ssl_cert_file:
+        if os.path.exists(ssl_cert_file):
+            logger.info(f"Using SSL certificate file: {ssl_cert_file}")
+            return ssl_cert_file
+        else:
+            logger.warning(
+                f"Provided SSL_CERT_FILE '{ssl_cert_file}' does not exist; "
+                "falling back to system CA bundle"
+            )
+
+    logger.info("No SSL_CERT_FILE provided - using system CA bundle for verification")
+    return None
+
+
+def update_admin_user_profile(keycloak_admin: KeycloakAdmin) -> None:
+    """Update the Keycloak admin user's profile with required OIDC userinfo fields.
+
+    mlflow-oidc-auth requires users to have a display name in the OIDC userinfo
+    response. Keycloak constructs this from firstName, lastName, and email fields.
+    Without these, users get "No display name provided in OIDC userinfo" error.
+
+    Args:
+        keycloak_admin: Keycloak admin client
+    """
+    try:
+        # Get all users to find the current admin
+        users = keycloak_admin.get_users({"max": 100})
+
+        for user in users:
+            user_id = user.get("id")
+            username = user.get("username", "")
+
+            # Check if profile is incomplete (missing firstName, lastName, or email)
+            first_name = user.get("firstName", "")
+            last_name = user.get("lastName", "")
+            email = user.get("email", "")
+
+            if not first_name or not last_name or not email:
+                # Set default profile values if missing
+                update_payload = {}
+
+                if not first_name:
+                    update_payload["firstName"] = username.capitalize() or "Admin"
+                if not last_name:
+                    update_payload["lastName"] = "User"
+                if not email:
+                    update_payload["email"] = f"{username}@example.com"
+
+                if update_payload:
+                    keycloak_admin.update_user(user_id, update_payload)
+                    logger.info(
+                        f"Updated profile for user '{username}': {list(update_payload.keys())}"
+                    )
+
+    except Exception as e:
+        # Don't fail the job if profile update fails - it's a nice-to-have
+        logger.warning(f"Could not update admin user profiles: {type(e).__name__}")
+
+
+def setup_mlflow_group(
+    keycloak_admin: KeycloakAdmin, group_name: str = "mlflow"
+) -> None:
+    """Create MLflow authorization group and add all existing users to it.
+
+    mlflow-oidc-auth uses group-based authorization. Users must be in the
+    configured group (default: "mlflow") to access MLflow. Without this,
+    users get "User is not allowed to login" error.
+
+    Args:
+        keycloak_admin: Keycloak admin client
+        group_name: Name of the group to create (default: "mlflow")
+    """
+    try:
+        # Create the mlflow group if it doesn't exist
+        try:
+            keycloak_admin.create_group({"name": group_name})
+            logger.info(f"Created Keycloak group '{group_name}'")
+        except KeycloakPostError as e:
+            if "already exists" in str(e).lower():
+                logger.info(f"Keycloak group '{group_name}' already exists")
+            else:
+                raise
+
+        # Get the group ID
+        groups = keycloak_admin.get_groups(query={"search": group_name})
+        group_id = None
+        for group in groups:
+            if group.get("name") == group_name:
+                group_id = group.get("id")
+                break
+
+        if not group_id:
+            logger.warning(f"Could not find group '{group_name}' after creation")
+            return
+
+        # Add all existing users to the group
+        users = keycloak_admin.get_users({"max": 100})
+        for user in users:
+            user_id = user.get("id")
+            username = user.get("username", "")
+
+            # Check if user is already in the group
+            user_groups = keycloak_admin.get_user_groups(user_id)
+            already_member = any(g.get("name") == group_name for g in user_groups)
+
+            if not already_member:
+                keycloak_admin.group_user_add(user_id, group_id)
+                logger.info(f"Added user '{username}' to group '{group_name}'")
+
+    except Exception as e:
+        # Don't fail the job if group setup fails - it's a nice-to-have
+        logger.warning(f"Could not setup MLflow group: {type(e).__name__}: {e}")
+
+
+def register_confidential_client(
+    keycloak_admin: KeycloakAdmin,
+    client_id: str,
+    root_url: str,
+    redirect_uri: str,
+) -> Tuple[str, str]:
+    """Register a confidential OAuth2 client in Keycloak.
+
+    Unlike public clients (SPAs), MLflow needs a confidential client
+    since it runs on the server and can securely store credentials.
+
+    Args:
+        keycloak_admin: Keycloak admin client
+        client_id: Desired client ID
+        root_url: MLflow root URL
+        redirect_uri: OAuth2 redirect URI
+
+    Returns:
+        Tuple of (internal_client_id, oidc_value)
+    """
+    client_payload = {
+        "clientId": client_id,
+        "name": f"{client_id} - MLflow Tracking Server",
+        "description": "MLflow Tracking Server - Confidential client for OIDC auth",
+        "rootUrl": root_url,
+        "adminUrl": root_url,
+        "baseUrl": "",
+        "enabled": True,
+        "publicClient": False,  # Confidential client - has client secret
+        "clientAuthenticatorType": "client-secret",
+        "redirectUris": [redirect_uri, f"{root_url}/*"],
+        "webOrigins": [root_url],
+        "standardFlowEnabled": True,  # Authorization code flow
+        "implicitFlowEnabled": False,
+        "directAccessGrantsEnabled": False,
+        "serviceAccountsEnabled": True,  # Enable client credentials flow for OTEL collector
+        "frontchannelLogout": True,
+        "protocol": "openid-connect",
+        "fullScopeAllowed": True,
+    }
+
+    try:
+        internal_client_id = keycloak_admin.create_client(client_payload)
+        logger.info(f'Created Keycloak client "{client_id}": {internal_client_id}')
+    except KeycloakPostError as e:
+        # Log without sensitive details from exception
+        logger.debug(
+            f'Keycloak client creation error for "{client_id}": {type(e).__name__}'
+        )
+
+        try:
+            error_json = json.loads(e.error_message)
+            if error_json.get("errorMessage") == f"Client {client_id} already exists":
+                internal_client_id = keycloak_admin.get_client_id(client_id)
+                logger.info(
+                    f'Using existing Keycloak client "{client_id}": {internal_client_id}'
+                )
+            else:
+                raise
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # Sanitize error message to avoid logging sensitive data
+            error_msg = f'Failed to create or retrieve Keycloak client "{client_id}"'
+            logger.error(error_msg)
+            raise KeycloakOperationError(error_msg) from e
+
+    # Get or regenerate OIDC client credential for confidential client
+    oidc_creds = keycloak_admin.get_client_secrets(internal_client_id)
+    oidc_value = oidc_creds.get("value", "") if oidc_creds else ""
+
+    if not oidc_value:
+        # Regenerate if empty
+        logger.info("Regenerating OIDC credential for client '%s'", client_id)
+        new_creds = keycloak_admin.generate_client_secrets(internal_client_id)
+        oidc_value = new_creds.get("value", "")
+
+    if not oidc_value:
+        raise KeycloakOperationError(
+            f"Could not obtain OIDC credential for confidential client {client_id}"
+        )
+
+    # Add audience mapper to include client_id in token audience
+    # This is required for mlflow-oidc-auth to validate bearer tokens
+    try:
+        audience_mapper = {
+            "name": f"{client_id}-audience-mapper",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-audience-mapper",
+            "consentRequired": False,
+            "config": {
+                "included.client.audience": client_id,
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+            },
+        }
+        keycloak_admin.add_mapper_to_client(internal_client_id, audience_mapper)
+        logger.info("Added audience mapper for client '%s'", client_id)
+    except KeycloakPostError as e:
+        # Mapper may already exist
+        if "already exists" not in str(e).lower():
+            logger.warning("Could not add audience mapper: %s", type(e).__name__)
+
+    # Add groups mapper to include user groups in token
+    # This is required for mlflow-oidc-auth group-based authorization
+    try:
+        groups_mapper = {
+            "name": f"{client_id}-groups-mapper",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-group-membership-mapper",
+            "consentRequired": False,
+            "config": {
+                "full.path": "false",
+                "introspection.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "claim.name": "groups",
+            },
+        }
+        keycloak_admin.add_mapper_to_client(internal_client_id, groups_mapper)
+        logger.info("Added groups mapper for client '%s'", client_id)
+    except KeycloakPostError as e:
+        # Mapper may already exist
+        if "already exists" not in str(e).lower():
+            logger.warning("Could not add groups mapper: %s", type(e).__name__)
+
+    logger.info("Successfully obtained OIDC credential for client '%s'", client_id)
+    return internal_client_id, oidc_value
+
+
+def create_or_update_k8s_resource(
+    v1_client: client.CoreV1Api,
+    namespace: str,
+    resource_name: str,
+    data: Dict[str, str],
+) -> None:
+    """Create or update a Kubernetes Secret resource.
+
+    Args:
+        v1_client: Kubernetes CoreV1Api client
+        namespace: Target namespace
+        resource_name: Name of the K8s Secret resource
+        data: Data dictionary for the resource
+    """
+    try:
+        resource_body = client.V1Secret(
+            api_version="v1",
+            kind="Secret",
+            metadata=client.V1ObjectMeta(name=resource_name),
+            type="Opaque",
+            string_data=data,
+        )
+        v1_client.create_namespaced_secret(namespace=namespace, body=resource_body)
+        logger.info("Created new K8s resource '%s'", resource_name)
+    except client.exceptions.ApiException as e:
+        if e.status == 409:
+            try:
+                v1_client.patch_namespaced_secret(
+                    name=resource_name, namespace=namespace, body={"stringData": data}
+                )
+                logger.info("Updated existing K8s resource '%s'", resource_name)
+            except Exception as patch_error:
+                # Sanitize error message to avoid logging sensitive data
+                error_msg = (
+                    f"Failed to update K8s resource: {type(patch_error).__name__}"
+                )
+                logger.error(error_msg)
+                raise KubernetesResourceError(error_msg) from patch_error
+        else:
+            # Sanitize error message to avoid logging sensitive data
+            error_msg = f"Failed to create K8s resource: status={e.status}"
+            logger.error(error_msg)
+            raise KubernetesResourceError(error_msg) from e
+
+
+def main() -> None:
+    """Main execution function."""
+    try:
+        # Load required configuration
+        keycloak_realm = get_required_env("KEYCLOAK_REALM")
+        namespace = get_required_env("NAMESPACE")
+        client_id = get_required_env("CLIENT_ID")
+        output_resource = get_required_env("SECRET_NAME")
+
+        # Load optional configuration
+        openshift_enabled = (
+            get_optional_env("OPENSHIFT_ENABLED", "false").lower() == "true"
+        )
+        keycloak_namespace = get_optional_env(
+            "KEYCLOAK_NAMESPACE", DEFAULT_KEYCLOAK_NAMESPACE
+        )
+        mlflow_namespace = get_optional_env(
+            "MLFLOW_NAMESPACE", DEFAULT_MLFLOW_NAMESPACE
+        )
+
+        admin_resource = get_optional_env(
+            "KEYCLOAK_ADMIN_SECRET_NAME", DEFAULT_ADMIN_SECRET_NAME
+        )
+        admin_user_key = get_optional_env(
+            "KEYCLOAK_ADMIN_USERNAME_KEY", DEFAULT_ADMIN_USERNAME_KEY
+        )
+        admin_pw_key = get_optional_env(
+            "KEYCLOAK_ADMIN_PASSWORD_KEY", DEFAULT_ADMIN_PASSWORD_KEY
+        )
+
+        keycloak_admin_user = get_optional_env("KEYCLOAK_ADMIN_USERNAME")
+        keycloak_admin_pw = get_optional_env("KEYCLOAK_ADMIN_PASSWORD")
+        ssl_cert_file = get_optional_env("SSL_CERT_FILE")
+
+        # For vanilla k8s
+        mlflow_url = get_optional_env("MLFLOW_URL")
+        keycloak_url = get_optional_env("KEYCLOAK_URL")
+        keycloak_public_url = get_optional_env("KEYCLOAK_PUBLIC_URL")
+
+        # Connect to Kubernetes API
+        if is_running_in_cluster():
+            config.load_incluster_config()
+        else:
+            config.load_kube_config()
+
+        v1_client = client.CoreV1Api()
+        dyn_client = dynamic.DynamicClient(api_client.ApiClient())
+
+        # Load Keycloak admin credentials
+        if not keycloak_admin_user or not keycloak_admin_pw:
+            keycloak_admin_user, keycloak_admin_pw = read_keycloak_credentials(
+                v1_client,
+                admin_resource,
+                keycloak_namespace,
+                admin_user_key,
+                admin_pw_key,
+            )
+
+        if not keycloak_admin_user or not keycloak_admin_pw:
+            raise ConfigurationError(
+                "Keycloak admin credentials must be provided via env vars or resource"
+            )
+
+        # Determine URLs based on environment
+        if openshift_enabled:
+            logger.info("OpenShift mode enabled, fetching routes...")
+
+            keycloak_public_url = get_openshift_route_url(
+                dyn_client, keycloak_namespace, DEFAULT_KEYCLOAK_ROUTE_NAME
+            )
+            logger.info(f"Keycloak public URL (route): {keycloak_public_url}")
+
+            mlflow_url = get_openshift_route_url(
+                dyn_client, mlflow_namespace, DEFAULT_MLFLOW_ROUTE_NAME
+            )
+            logger.info(f"MLflow URL: {mlflow_url}")
+
+            if keycloak_url:
+                logger.info(
+                    f"Using separate URLs - Internal: {keycloak_url}, "
+                    f"External: {keycloak_public_url}"
+                )
+            else:
+                keycloak_url = keycloak_public_url
+                logger.info("KEYCLOAK_URL not set, using route URL for both endpoints")
+        else:
+            if not keycloak_url:
+                raise ConfigurationError(
+                    "KEYCLOAK_URL environment variable required for vanilla k8s mode"
+                )
+            if not mlflow_url:
+                raise ConfigurationError(
+                    "MLFLOW_URL environment variable required for vanilla k8s mode"
+                )
+            logger.info(
+                f"Using provided URLs - Keycloak: {keycloak_url}, MLflow: {mlflow_url}"
+            )
+
+            if not keycloak_public_url:
+                keycloak_public_url = keycloak_url
+
+        # Configure SSL verification
+        verify_ssl = configure_ssl_verification(ssl_cert_file)
+
+        # Initialize Keycloak admin client
+        keycloak_admin = KeycloakAdmin(
+            server_url=keycloak_url,
+            username=keycloak_admin_user,
+            password=keycloak_admin_pw,
+            realm_name=keycloak_realm,
+            user_realm_name=DEFAULT_KEYCLOAK_REALM,
+            verify=(verify_ssl if verify_ssl is not None else True),
+        )
+
+        # Update admin user profile with required OIDC fields (firstName, lastName, email)
+        # This is required for mlflow-oidc-auth which needs a display name in userinfo
+        update_admin_user_profile(keycloak_admin)
+
+        # Create mlflow group and add all users to it for authorization
+        # This is required for mlflow-oidc-auth which uses group-based authorization
+        setup_mlflow_group(keycloak_admin)
+
+        # MLflow OIDC redirect URI format for mlflow-oidc-auth plugin
+        # See: https://pypi.org/project/mlflow-oidc-auth/
+        redirect_uri = f"{mlflow_url}/callback"
+
+        # Register confidential client
+        internal_client_id, oidc_client_value = register_confidential_client(
+            keycloak_admin=keycloak_admin,
+            client_id=client_id,
+            root_url=mlflow_url,
+            redirect_uri=redirect_uri,
+        )
+
+        # Construct OIDC discovery URL (well-known endpoint)
+        oidc_discovery_url = (
+            f"{keycloak_public_url}/realms/{keycloak_realm}/"
+            ".well-known/openid-configuration"
+        )
+
+        # Construct OIDC token URL for OAuth2 client credentials flow
+        # Used by OTEL collector to authenticate to MLflow
+        oidc_token_url = (
+            f"{keycloak_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
+        )
+
+        logger.info("MLflow OAuth Configuration:")
+        logger.info(f"  CLIENT_ID: {client_id}")
+        logger.info(f"  OIDC_DISCOVERY_URL: {oidc_discovery_url}")
+        logger.info(f"  REDIRECT_URI: {redirect_uri}")
+
+        # Prepare resource data with mlflow-oidc-auth expected environment variable names
+        # See: https://pypi.org/project/mlflow-oidc-auth/
+        resource_data = {
+            # Enable OIDC authentication via mlflow-oidc-auth app
+            "MLFLOW_AUTH_ENABLED": "true",
+            # OIDC provider configuration
+            "OIDC_PROVIDER_DISPLAY_NAME": "Keycloak SSO",
+            "OIDC_CLIENT_ID": client_id,
+            "OIDC_CLIENT_SECRET": oidc_client_value,
+            "OIDC_DISCOVERY_URL": oidc_discovery_url,
+            "OIDC_TOKEN_URL": oidc_token_url,
+            "OIDC_REDIRECT_URI": redirect_uri,
+            # Additional settings
+            "OIDC_SCOPE": "openid email profile",
+            # Group claim for authorization (optional)
+            "OIDC_GROUPS_CLAIM": "groups",
+        }
+
+        # Create or update Kubernetes resource
+        create_or_update_k8s_resource(
+            v1_client, namespace, output_resource, resource_data
+        )
+
+        logger.info("MLflow OAuth resource creation completed successfully")
+
+    except (ConfigurationError, KubernetesResourceError, KeycloakOperationError) as e:
+        # Log error type without potentially sensitive details
+        logger.error(f"Error: {type(e).__name__}: {e}")
+        sys.exit(1)
+    except Exception as e:
+        # Log error type without potentially sensitive details
+        logger.error(f"Unexpected error: {type(e).__name__}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

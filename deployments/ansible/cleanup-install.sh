@@ -82,6 +82,7 @@ for release_info in "${HELM_RELEASES[@]}"; do
 done
 
 echo ""
+
 echo "Deleting PVCs to ensure clean state on reinstall..."
 # PVCs are not deleted by helm uninstall, so we need to delete them manually
 # to prevent corrupt data from being reused on reinstall

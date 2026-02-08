@@ -53,7 +53,7 @@ spec:
         - name: LLM_API_KEY
           value: "dummy"
         - name: LLM_MODEL
-          value: "qwen2.5:0.5b"
+          value: "qwen2.5:3b"
         - name: GITHUB_SECRET_NAME
           value: "github-token-secret"
         ports:
