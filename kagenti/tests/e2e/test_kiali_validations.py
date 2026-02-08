@@ -106,10 +106,15 @@ class TrafficEdge:
     requests: int = 0
     error_rate: float = 0.0
     is_mtls: bool = False
+    mtls_percentage: float = 0.0
     response_time_p99: float = 0.0
 
     def __str__(self):
-        mtls_status = "mTLS" if self.is_mtls else "NO-mTLS"
+        mtls_status = (
+            f"mTLS({self.mtls_percentage:.0%})"
+            if self.is_mtls
+            else f"NO-mTLS({self.mtls_percentage:.0%})"
+        )
         return (
             f"{self.source_namespace}/{self.source_workload} -> "
             f"{self.dest_namespace}/{self.dest_workload} "
@@ -246,8 +251,22 @@ class KialiClient:
         """Get detailed Istio config for a namespace."""
         return self._request(f"/istio/config?namespaces={namespace}")
 
+    def get_mesh_tls(self) -> dict:
+        """Get mesh-wide mTLS status."""
+        return self._request("/mesh/tls")
+
+    def get_namespace_health(self, namespace: str, rate_interval: str = "2h") -> dict:
+        """Get health status for a namespace."""
+        return self._request(
+            f"/namespaces/{namespace}/health?rateInterval={rate_interval}"
+        )
+
+    def get_namespace_tls(self, namespace: str) -> dict:
+        """Get TLS policy status for a namespace."""
+        return self._request(f"/namespaces/{namespace}/tls")
+
     def get_workloads(self, namespaces: list[str]) -> dict:
-        """Get workloads with validations."""
+        """Get workloads with validations. Used by workload health checks."""
         ns_param = ",".join(namespaces)
         return self._request(f"/workloads?namespaces={ns_param}")
 
@@ -436,7 +455,9 @@ class KialiClient:
                 error_rate = errors_5xx / requests if requests > 0 else 0.0
 
             # Check mTLS status
-            is_mtls = edge_data.get("isMTLS", False)
+            # isMTLS is a float 0.0-1.0 representing percentage of mTLS traffic
+            mtls_pct = float(edge_data.get("isMTLS", 0))
+            is_mtls = mtls_pct >= 1.0  # Require 100% mTLS for compliance
 
             # Get response time if available
             response_time = float(edge_data.get("responseTime", 0))
@@ -450,6 +471,7 @@ class KialiClient:
                 requests=requests,
                 error_rate=error_rate,
                 is_mtls=is_mtls,
+                mtls_percentage=mtls_pct,
                 response_time_p99=response_time,
             )
             edges.append(edge)
@@ -564,7 +586,7 @@ def format_traffic_report(
             source = f"{edge.source_namespace}/{edge.source_workload}"
             dest = f"{edge.dest_namespace}/{edge.dest_workload}"
             err_pct = f"{edge.error_rate:.1%}"
-            mtls = "yes" if edge.is_mtls else "NO"
+            mtls = "yes" if edge.is_mtls else f"NO({edge.mtls_percentage:.0%})"
 
             lines.append(
                 f"  {status:<8} {source:<40} {dest:<40} "
@@ -582,7 +604,17 @@ def format_traffic_report(
     lines.append(f"  Edges without mTLS:  {len(summary.edges_without_mtls)}")
     lines.append(f"  Max error rate:      {summary.max_error_rate:.2%}")
 
-    failed_count = len(summary.edges_with_errors) + len(summary.edges_without_mtls)
+    # Deduplicate edges that have both errors and no mTLS
+    failed_edges = set()
+    for e in summary.edges_with_errors:
+        failed_edges.add(
+            (e.source_namespace, e.source_workload, e.dest_namespace, e.dest_workload)
+        )
+    for e in summary.edges_without_mtls:
+        failed_edges.add(
+            (e.source_namespace, e.source_workload, e.dest_namespace, e.dest_workload)
+        )
+    failed_count = len(failed_edges)
     if failed_count == 0:
         lines.append("")
         lines.append("  All traffic is healthy with mTLS enabled!")
@@ -689,6 +721,121 @@ class TestKialiValidations:
         assert status.get("status", {}).get("Kiali state") == "running"
         print(f"\nKiali version: {status.get('status', {}).get('Kiali version')}")
         print(f"Kiali URL: {kiali_client.base_url}")
+
+    def test_mesh_tls_strict(self, kiali_client):
+        """
+        Verify the mesh-wide mTLS policy is STRICT.
+
+        A PERMISSIVE or DISABLED policy would allow plaintext traffic
+        between services, undermining zero-trust security.
+        """
+        try:
+            tls_status = kiali_client.get_mesh_tls()
+        except Exception as e:
+            pytest.skip(f"Cannot query mesh TLS status: {e}")
+
+        status = tls_status.get("status", "unknown")
+        print(f"\nMesh-wide TLS status: {status}")
+
+        if status.upper() not in ("ENABLED", "STRICT", "MTLS_ENABLED"):
+            pytest.fail(
+                f"Mesh-wide mTLS is not STRICT. Current status: {status}\n"
+                "All service mesh traffic should require mutual TLS.\n"
+                "Check PeerAuthentication resources for PERMISSIVE overrides."
+            )
+
+    def test_workload_health(
+        self,
+        kiali_client,
+        target_namespaces,
+        ignore_namespaces,
+    ):
+        """
+        Verify all workloads across Kagenti namespaces are healthy.
+
+        Checks for unhealthy deployments, crashlooping pods, and
+        degraded services that the traffic graph cannot detect.
+        """
+        unhealthy = []
+        checked_namespaces = []
+
+        for ns in target_namespaces:
+            if ns in (ignore_namespaces or []):
+                continue
+
+            try:
+                health = kiali_client.get_namespace_health(ns)
+            except Exception:
+                continue
+
+            checked_namespaces.append(ns)
+
+            # Check workload health
+            for workload_name, workload_health in health.get("workloadStatuses", []):
+                if isinstance(workload_health, dict):
+                    name = workload_health.get("name", workload_name)
+                else:
+                    name = str(workload_name)
+                    workload_health = {}
+
+                # Check if workload is not available
+                available = workload_health.get("availableReplicas", 0)
+                desired = workload_health.get("desiredReplicas", 0)
+
+                if desired > 0 and available < desired:
+                    unhealthy.append(
+                        f"  {ns}/{name}: {available}/{desired} replicas available"
+                    )
+
+        print(f"\nChecked workload health in {len(checked_namespaces)} namespaces")
+
+        if unhealthy:
+            details = "\n".join(unhealthy)
+            pytest.fail(f"Found {len(unhealthy)} unhealthy workload(s):\n{details}")
+        else:
+            print("All workloads healthy")
+
+    def test_namespace_tls_policies(
+        self,
+        kiali_client,
+        target_namespaces,
+        ignore_namespaces,
+    ):
+        """
+        Verify all Kagenti namespaces have strict mTLS policies.
+
+        Catches PeerAuthentication overrides that weaken security
+        in individual namespaces.
+        """
+        permissive_namespaces = []
+        checked = []
+
+        for ns in target_namespaces:
+            if ns in (ignore_namespaces or []):
+                continue
+
+            try:
+                tls = kiali_client.get_namespace_tls(ns)
+            except Exception:
+                continue
+
+            checked.append(ns)
+            status = tls.get("status", "unknown")
+
+            if status.upper() in ("DISABLED", "PERMISSIVE", "NOT_ENABLED"):
+                permissive_namespaces.append(f"  {ns}: {status}")
+
+        print(f"\nChecked TLS policy in {len(checked)} namespaces")
+
+        if permissive_namespaces:
+            details = "\n".join(permissive_namespaces)
+            pytest.fail(
+                f"Found {len(permissive_namespaces)} namespace(s) without strict mTLS:\n"
+                f"{details}\n\n"
+                "All Kagenti namespaces should enforce mutual TLS."
+            )
+        else:
+            print("All namespaces have strict mTLS policy")
 
     def test_no_istio_configuration_issues(
         self,
@@ -890,8 +1037,8 @@ def main():
     )
     parser.add_argument(
         "--duration",
-        default="10m",
-        help="Duration for traffic analysis (default: 10m)",
+        default="2h",
+        help="Duration for traffic analysis (default: 2h)",
     )
     parser.add_argument(
         "--error-threshold",
