@@ -206,6 +206,7 @@ metadata:
   namespace: {{ . }}
 data:
   TOKEN_URL: "http://keycloak-service.keycloak.svc:8080/realms/demo/protocol/openid-connect/token"
+  ISSUER: "http://keycloak.localtest.me:8080/realms/demo"
   TARGET_AUDIENCE: "auth-target"
   TARGET_SCOPES: "openid auth-target-aud"
 ---
@@ -316,6 +317,28 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: pipeline
+    namespace: {{ . }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  SCC RoleBinding for Default SA in Namespace: {{ . }}
+#  Grants anyuid SCC to the default service account so that webhook-injected
+#  sidecars (proxy-init, envoy-proxy, client-registration) can run with their
+#  required UIDs and capabilities (NET_ADMIN, NET_RAW).
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: default-anyuid-scc
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: default
     namespace: {{ . }}
 {{- end }}
 {{- end }}
