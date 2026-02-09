@@ -251,19 +251,17 @@ All auth errors return JSON with consistent structure:
 }
 ```
 
-### Error Scenarios
+### Error Scenarios (Current Backend Implementation)
 
-| Scenario | HTTP Status | Detail Message |
-|----------|-------------|----------------|
-| No Authorization header | 401 | `Not authenticated` |
-| Invalid/expired token | 401 | `Invalid or expired token` |
-| Token missing required role | 403 | `Insufficient permissions. Required role: kagenti-operator` |
-| Keycloak unreachable | 503 | `Authentication service unavailable` |
+These are the actual error responses from `kagenti/backend/app/core/auth.py`:
 
-### Response Headers
+| Scenario | HTTP Status | Detail Message | Headers |
+|----------|-------------|----------------|---------|
+| No Authorization header | 401 | `Authentication required` | `WWW-Authenticate: Bearer` |
+| Token missing key ID | 401 | `Token missing key ID` | |
+| Token signing key not found | 401 | `Token signing key not found` | |
+| JWT validation error (expired, malformed, etc.) | 401 | `Invalid token: <error details>` | |
+| Token key error | 401 | `Token key error` | |
+| Token missing required role | 403 | `Required role(s): kagenti-operator` | |
 
-On 401 errors, include:
-
-```
-WWW-Authenticate: Bearer realm="kagenti"
-```
+**Note:** Keycloak connectivity errors during JWKS fetch will raise an unhandled exception. Consider adding explicit 503 handling in the implementation if graceful degradation is desired.
