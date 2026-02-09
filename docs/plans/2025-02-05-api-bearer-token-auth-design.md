@@ -150,12 +150,20 @@ The job ensures these roles exist in the realm:
 
 ### Helm Values Addition
 
+Following the existing pattern of top-level OAuth secret configuration (like `uiOAuthSecret` and `agentOAuthSecret`):
+
 ```yaml
-ui:
-  apiClient:
-    enabled: true
-    clientId: kagenti-api
-    defaultRole: kagenti-operator
+# ------------------------------------------------------------------
+#  API OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+apiOAuthSecret:
+  enabled: true
+  image: ghcr.io/kagenti/kagenti/api-oauth-secret
+  tag: latest
+  clientId: kagenti-api
+  defaultRole: kagenti-operator
+  # When true, mount the in-cluster serviceaccount CA
+  useServiceAccountCA: true
 ```
 
 ## Token Usage for External Clients
@@ -228,7 +236,7 @@ kubectl get secret kagenti-api-oauth-secret -n kagenti-system \
 
 | File | Changes |
 |------|---------|
-| `charts/kagenti/values.yaml` | Add `ui.apiClient` config section |
+| `charts/kagenti/values.yaml` | Add top-level `apiOAuthSecret` config section |
 | `charts/kagenti/templates/keycloak-realm-roles.yaml` | Ensure realm roles are created (or add to existing job) |
 
 ## Error Responses
