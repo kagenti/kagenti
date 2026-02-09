@@ -1,0 +1,1 @@
+This is the Tool Catalog page. It shows all MCP tools available in the platform, organized by namespace. Tools follow the Model Context Protocol for standardized tool integration. You can import new tools from source or container images. Each tool can be accessed directly via its HTTP route or through the MCP Gateway, which provides a unified interface for all registered tools.

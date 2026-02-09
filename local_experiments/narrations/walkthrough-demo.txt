@@ -1,0 +1,47 @@
+[intro]
+Welcome to the Kay-jentee platform, a cloud-native middleware for deploying and orchestrating AI agents with built-in security and observability.
+
+[login]
+We log in through Keycloak, which provides OAuth2 authentication and role-based access control for all platform services and agent endpoints.
+
+[agent_catalog]
+In the Agent Catalog, agents are organized by namespace. We select team1 to see the deployed weather agent alongside its status and protocol information.
+
+[agent_detail]
+The weather service agent uses the A-to-A protocol, Google's standard for agent-to-agent communication. The detail page shows the agent card, deployment status, and available skills.
+
+[agent_chat]
+We open the Chat tab and send a query about the weather in San Francisco. The agent processes our request through its LLM backend and tool integrations, then returns a structured response.
+
+[agent_events]
+The response shows the agent's output. Each interaction generates OpenTelemetry traces that we can examine in our observability tools to understand exactly how the agent processed the request.
+
+[mlflow]
+Now we navigate to MLflow, our experiment tracking platform. MLflow is integrated through the O-I-D-C authentication plugin, securing access through the same Keycloak identity provider.
+
+[mlflow_experiments]
+After authentication, we see the experiments list. MLflow categorizes experiments as Gen-A-I apps and agents. Let's open the Default experiment to explore our weather agent traces.
+
+[mlflow_traces]
+In the Traces view, every agent interaction is logged with its request, response, token count, and execution time.
+
+[mlflow_detail]
+Clicking on the most recent trace reveals the full span tree, showing the LLM call, tool invocations, and response generation.
+
+[phoenix]
+Now let's check Phoenix, our OpenTelemetry trace viewer. Phoenix provides real-time streaming of traces as they arrive.
+
+[phoenix_traces]
+Phoenix shows detailed spans for each LLM interaction, including token counts and latency breakdowns. We drill into a trace to see the full call chain.
+
+[kiali]
+Finally, we open Kiali for service mesh visualization, logging in with cluster credentials.
+
+[kiali_graph]
+In the Traffic Graph, we select all namespaces and switch to the last five minutes to see recent traffic patterns flowing between services.
+
+[kiali_security]
+We enable the security overlay to confirm mutual TLS is active. The animation shows live traffic flowing through the Istio Ambient mesh.
+
+[end]
+This completes our Kay-jentee platform walkthrough, from agent interaction through observability and service mesh security.

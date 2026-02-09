@@ -1,0 +1,1 @@
+This is the Kagenti home page. From here you can navigate to the Agent Catalog to manage deployed AI agents, the Tool Catalog for MCP tools, and the observability dashboards. The sidebar provides quick access to all platform features including agent import, MCP gateway configuration, and admin settings.
