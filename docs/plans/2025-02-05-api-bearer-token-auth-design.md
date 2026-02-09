@@ -68,7 +68,13 @@ Defined in Keycloak, embedded in JWT `realm_access.roles`:
 | `POST /api/v1/chat/{namespace}/{name}/stream` | | ✓ | ✓ |
 | `GET /api/v1/config/dashboards` | ✓ | ✓ | ✓ |
 | `GET /api/v1/auth/config` | public | public | public |
+| `GET /api/v1/auth/status` | public | public | public |
 | `GET /api/v1/auth/userinfo` | ✓ | ✓ | ✓ |
+| `GET /api/v1/auth/me` | optional | optional | optional |
+
+**Notes:**
+- **public**: No authentication required
+- **optional**: Works with or without authentication (returns guest info if unauthenticated)
 
 ## Backend Implementation
 
