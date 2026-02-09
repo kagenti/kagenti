@@ -45,16 +45,28 @@ Defined in Keycloak, embedded in JWT `realm_access.roles`:
 | Endpoint Pattern | `kagenti-viewer` | `kagenti-operator` | `kagenti-admin` |
 |-----------------|------------------|--------------------|-----------------|
 | `GET /api/v1/agents` | ✓ | ✓ | ✓ |
-| `GET /api/v1/agents/{name}` | ✓ | ✓ | ✓ |
+| `GET /api/v1/agents/{namespace}/{name}` | ✓ | ✓ | ✓ |
+| `GET /api/v1/agents/{namespace}/{name}/route-status` | ✓ | ✓ | ✓ |
+| `GET /api/v1/agents/{namespace}/{name}/shipwright-build` | ✓ | ✓ | ✓ |
+| `GET /api/v1/agents/build-strategies` | ✓ | ✓ | ✓ |
 | `POST /api/v1/agents` | | ✓ | ✓ |
-| `DELETE /api/v1/agents/{name}` | | ✓ | ✓ |
+| `POST /api/v1/agents/{namespace}/{name}/shipwright-buildrun` | | ✓ | ✓ |
+| `POST /api/v1/agents/{namespace}/{name}/finalize-shipwright-build` | | ✓ | ✓ |
+| `DELETE /api/v1/agents/{namespace}/{name}` | | ✓ | ✓ |
 | `GET /api/v1/tools` | ✓ | ✓ | ✓ |
-| `GET /api/v1/tools/{name}` | ✓ | ✓ | ✓ |
+| `GET /api/v1/tools/{namespace}/{name}` | ✓ | ✓ | ✓ |
+| `GET /api/v1/tools/{namespace}/{name}/route-status` | ✓ | ✓ | ✓ |
 | `POST /api/v1/tools` | | ✓ | ✓ |
-| `DELETE /api/v1/tools/{name}` | | ✓ | ✓ |
+| `POST /api/v1/tools/{namespace}/{name}/shipwright-buildrun` | | ✓ | ✓ |
+| `POST /api/v1/tools/{namespace}/{name}/finalize-shipwright-build` | | ✓ | ✓ |
+| `POST /api/v1/tools/{namespace}/{name}/connect` | | ✓ | ✓ |
+| `POST /api/v1/tools/{namespace}/{name}/invoke` | | ✓ | ✓ |
+| `DELETE /api/v1/tools/{namespace}/{name}` | | ✓ | ✓ |
 | `GET /api/v1/namespaces` | ✓ | ✓ | ✓ |
-| `POST /api/v1/chat/*` | | ✓ | ✓ |
-| `GET /api/v1/config/*` | ✓ | ✓ | ✓ |
+| `GET /api/v1/chat/{namespace}/{name}/agent-card` | ✓ | ✓ | ✓ |
+| `POST /api/v1/chat/{namespace}/{name}/send` | | ✓ | ✓ |
+| `POST /api/v1/chat/{namespace}/{name}/stream` | | ✓ | ✓ |
+| `GET /api/v1/config/dashboards` | ✓ | ✓ | ✓ |
 | `GET /api/v1/auth/config` | public | public | public |
 | `GET /api/v1/auth/userinfo` | ✓ | ✓ | ✓ |
 
