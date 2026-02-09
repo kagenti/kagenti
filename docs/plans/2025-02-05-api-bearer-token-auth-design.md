@@ -10,7 +10,7 @@ Protect the Kagenti backend API with JWT bearer token authentication using Keycl
 ### Goals
 
 - Secure all `/api/v1/*` endpoints with JWT bearer token validation
-- Support Role-Based Access Control (RBAC) with three roles: `viewer`, `operator`, `admin`
+- Support Role-Based Access Control (RBAC) with three roles: `kagenti-viewer`, `kagenti-operator`, `kagenti-admin`
 - Enable external clients to authenticate via Client Credentials Grant
 - Automatically provision a default service account in Keycloak
 - Maintain dev-friendly experience with mock auth when `ENABLE_AUTH=false`
@@ -38,12 +38,12 @@ Defined in Keycloak, embedded in JWT `realm_access.roles`:
 | `kagenti-operator` | Full CRUD on agents and tools |
 | `kagenti-admin` | All permissions including admin operations |
 
-**Role Hierarchy:** `admin` inherits `operator` inherits `viewer`
+**Role Hierarchy:** `kagenti-admin` inherits `kagenti-operator` inherits `kagenti-viewer`
 
 ### Endpoint Permissions Matrix
 
-| Endpoint Pattern | viewer | operator | admin |
-|-----------------|--------|----------|-------|
+| Endpoint Pattern | `kagenti-viewer` | `kagenti-operator` | `kagenti-admin` |
+|-----------------|------------------|--------------------|-----------------|
 | `GET /api/v1/agents` | ✓ | ✓ | ✓ |
 | `GET /api/v1/agents/{name}` | ✓ | ✓ | ✓ |
 | `POST /api/v1/agents` | | ✓ | ✓ |
