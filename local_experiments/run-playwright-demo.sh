@@ -72,7 +72,7 @@ USE_KIND=false
 TEST_PREFIX=""
 RUN_ALL=false
 SHOW_HELP=false
-SYNC_NARRATION=false
+NO_NARRATION=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -100,8 +100,8 @@ while [[ $# -gt 0 ]]; do
             RUN_ALL=true
             shift
             ;;
-        --sync)
-            SYNC_NARRATION=true
+        --no-narration)
+            NO_NARRATION=true
             shift
             ;;
         *)
@@ -703,57 +703,57 @@ CONFIG_PATH="$TEMP_CONFIG"
 log_info "Config: $CONFIG_PATH"
 
 # ============================================================================
-# --sync: Generate TTS, measure durations, write section-pauses.json
+# Narration pipeline (automatic when OPENAI_API_KEY is set + narration file exists)
+#
+# 3-step pipeline:
+#   Step 1: Fast run → measure video slot timing + generate TTS → validate
+#   Step 2: If narration < slot for any section → STOP, tell LLM to expand narration
+#   Step 3: Regenerate video with slots = narration_duration + 1s → composite voiceover
+#
+# Without OPENAI_API_KEY: just record video (step 1 only, no narration)
 # ============================================================================
-if [ "$SYNC_NARRATION" = true ] && [ -n "${OPENAI_API_KEY:-}" ]; then
-    NARRATION_TEST_NAME="${TEST_PREFIX:-walkthrough-demo}"
-    NARRATION_FILE="$SCRIPT_DIR/narrations/${NARRATION_TEST_NAME}.txt"
-    SOURCE_TEST="$SCRIPT_DIR/e2e/${NARRATION_TEST_NAME}.spec.ts"
-    NARRATION_DIR="$SCRIPT_DIR/e2e-narration"
-    SYNCED_TEST="$NARRATION_DIR/${NARRATION_TEST_NAME}.spec.ts"
+NARRATION_TEST_NAME="${TEST_PREFIX:-walkthrough-demo}"
+NARRATION_FILE="$SCRIPT_DIR/narrations/${NARRATION_TEST_NAME}.txt"
+SOURCE_TEST="$SCRIPT_DIR/e2e/${NARRATION_TEST_NAME}.spec.ts"
+NARRATION_DIR="$SCRIPT_DIR/e2e-narration"
+HAS_NARRATION=false
+
+if [ "$NO_NARRATION" = false ] && [ -n "${OPENAI_API_KEY:-}" ] && [ -f "$NARRATION_FILE" ] && [ -f "$SOURCE_TEST" ]; then
+    HAS_NARRATION=true
 
     mkdir -p "$NARRATION_DIR"
-    if [ ! -f "$NARRATION_DIR/package.json" ]; then
-        echo '{ "type": "commonjs" }' > "$NARRATION_DIR/package.json"
-    fi
+    [ ! -f "$NARRATION_DIR/package.json" ] && echo '{ "type": "commonjs" }' > "$NARRATION_DIR/package.json"
 
-    if [ ! -f "$NARRATION_FILE" ]; then
-        log_warn "Narration file not found: $NARRATION_FILE"
-    elif [ ! -f "$SOURCE_TEST" ]; then
-        log_warn "Source test not found: $SOURCE_TEST"
-    else
-        # ── PASS 1: Fast run to measure timing ──────────────────────────
-        log_info "PASS 1/2: Fast run to measure section timing..."
-        echo ""
-        set +e
-        "$PLAYWRIGHT_BIN" test --config="$CONFIG_PATH" "$NARRATION_TEST_NAME"
-        PASS1_EXIT=$?
-        set -e
+    # ── Step 1: Fast run to measure video slot timing ────────────────
+    log_info "Step 1/3: Fast run to measure video slot timing..."
+    echo ""
+    set +e
+    "$PLAYWRIGHT_BIN" test --config="$CONFIG_PATH" "$NARRATION_TEST_NAME"
+    PASS1_EXIT=$?
+    set -e
+    [ $PASS1_EXIT -ne 0 ] && log_warn "Step 1 exited with code $PASS1_EXIT (continuing)"
+    echo ""
 
-        if [ $PASS1_EXIT -ne 0 ]; then
-            log_warn "Pass 1 exited with code $PASS1_EXIT (continuing with sync)"
-        fi
-        echo ""
+    # ── Generate TTS and measure narration durations ─────────────────
+    log_info "Measuring narration durations (TTS generation)..."
+    SYNCED_TEST="$NARRATION_DIR/${NARRATION_TEST_NAME}.spec.ts"
+    PYTHONWARNINGS=ignore::DeprecationWarning uv run --with openai python3 "$SCRIPT_DIR/sync-narration.py" \
+        --narration "$NARRATION_FILE" \
+        --test "$SOURCE_TEST" \
+        --output "$SYNCED_TEST" \
+        --timestamps "$SCRIPT_DIR/walkthrough-timestamps.json" \
+        --pauses-json "$SCRIPT_DIR/section-pauses.json" || {
+        log_warn "Narration sync failed"
+        HAS_NARRATION=false
+    }
 
-        # ── Generate narration-synced test ──────────────────────────────
-        log_info "Generating narration-synced test..."
-        PYTHONWARNINGS=ignore::DeprecationWarning uv run --with openai python3 "$SCRIPT_DIR/sync-narration.py" \
-            --narration "$NARRATION_FILE" \
-            --test "$SOURCE_TEST" \
-            --output "$SYNCED_TEST" \
-            --timestamps "$SCRIPT_DIR/walkthrough-timestamps.json" \
-            --pauses-json "$SCRIPT_DIR/section-pauses.json" || {
-            log_warn "Narration sync failed, using original test"
-        }
+    if [ "$HAS_NARRATION" = true ] && [ -f "$SYNCED_TEST" ]; then
+        # ── Step 3: Regenerate video with narration-synced timing ────
+        IS_LOCAL_TEST=true
+        ACTIVE_TEST_DIR="$NARRATION_DIR"
+        TEST_PREFIX="${NARRATION_TEST_NAME}"
 
-        if [ -f "$SYNCED_TEST" ]; then
-            # ── PASS 2: Narration-synced run ────────────────────────────
-            IS_LOCAL_TEST=true
-            ACTIVE_TEST_DIR="$NARRATION_DIR"
-            TEST_PREFIX="${NARRATION_TEST_NAME}"
-
-            # Regenerate config for narration test dir
-            cat > "$TEMP_CONFIG" << CONFIGEOF
+        cat > "$TEMP_CONFIG" << CONFIGEOF
 const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
@@ -776,17 +776,11 @@ module.exports = defineConfig({
 });
 CONFIGEOF
 
-            # Clean previous test results so only pass 2 videos are collected
-            rm -rf "$PLAYWRIGHT_OUTPUT_DIR"
-
-            echo ""
-            log_info "PASS 2/2: Running narration-synced test..."
-            log_success "Test: $NARRATION_DIR/${NARRATION_TEST_NAME}.spec.ts"
-            echo ""
-        fi
+        rm -rf "$PLAYWRIGHT_OUTPUT_DIR"
+        echo ""
+        log_info "Step 3/3: Recording narration-synced video..."
+        echo ""
     fi
-elif [ "$SYNC_NARRATION" = true ]; then
-    log_warn "--sync requires OPENAI_API_KEY to generate TTS and measure durations"
 fi
 
 if [ "$RUN_ALL" = true ]; then
@@ -870,7 +864,7 @@ fi
 # ============================================================================
 # Run validation (always after --sync, optional otherwise)
 # ============================================================================
-if [ "$SYNC_NARRATION" = true ] || [ -f "$SCRIPT_DIR/walkthrough-timestamps.json" ]; then
+if [ -f "$SCRIPT_DIR/walkthrough-timestamps.json" ] && [ -f "$SCRIPT_DIR/narrations/${SCENARIO_NAME}.txt" ]; then
     echo ""
     log_info "Running alignment validation..."
     python3 "$SCRIPT_DIR/validate-alignment.py" \
