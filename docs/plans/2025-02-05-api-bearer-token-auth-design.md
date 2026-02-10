@@ -168,11 +168,18 @@ apiOAuthSecret:
 
 ## Token Usage for External Clients
 
+### Default Service Account (`kagenti-api`)
+
+The auto-provisioned `kagenti-api` client is a shared credential intended for **testing and development only**.
+
+> **Warning:** Using a shared credential in production is an anti-pattern. It prevents audit traceability (you cannot identify which client made a request), complicates credential rotation, and violates least-privilege principles. For production deployments, each external client (service, script, automation) should have its own Keycloak service account client with appropriate roles. See documentation for creating additional service account clients in Keycloak.
+
 ### Getting a Token
 
 External clients obtain tokens by POSTing to the Keycloak token endpoint:
 
 ```bash
+# Using the default test credential (development/testing only)
 curl -X POST "http://keycloak.localtest.me:8080/realms/demo/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
