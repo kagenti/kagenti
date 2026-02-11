@@ -94,8 +94,10 @@ uiOAuthSecret:
 # ------------------------------------------------------------------
 #  Agent OAuth Secret Creator Configuration
 # ------------------------------------------------------------------
+# TODO: Change back to ghcr.io/kagenti/kagenti/agent-oauth-secret once
+# the image is published via Build-Publish workflow (on version tag)
 agentOAuthSecret:
-  image: ghcr.io/kagenti/kagenti/agent-oauth-secret
+  image: quay.io/ladas/agent-oauth-secret
   tag: latest
   # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.

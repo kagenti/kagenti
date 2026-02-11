@@ -14,10 +14,9 @@ echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.st
 ```
 {{- end }}
 
-The initial credentials for Keycloak can be shown with the command:
+Show all service URLs and credentials:
 ```
-{{- $command := `kubectl get secret keycloak-initial-admin -n keycloak -o go-template='Username: {{.data.username | base64decode}}  password: {{.data.password | base64decode}}{{"\n"}}'` -}}
-{{ $command | indent 2 }}
+  .github/scripts/local-setup/show-services.sh
 ```
 
 
