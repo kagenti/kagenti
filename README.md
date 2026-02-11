@@ -127,8 +127,11 @@ Use `deployments/ansible/run-install.sh --help` for options. For more detailed i
 ### Access the UI
 
 ```bash
+# Show service URLs and credentials
+.github/scripts/local-setup/show-services.sh
+
 open http://kagenti-ui.localtest.me:8080
-# Login: admin / admin
+# Login with credentials from show-services.sh output
 ```
 
 From the UI you can:

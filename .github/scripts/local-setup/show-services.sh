@@ -48,10 +48,10 @@ link() {
 detect_environment() {
     if [ -n "${MANAGED_BY_TAG:-}" ]; then
         echo "hypershift"
+    elif kubectl config current-context 2>/dev/null | grep -q "^kind-"; then
+        echo "kind"
     elif command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
         echo "openshift"
-    elif command -v kubectl &>/dev/null && kubectl get namespace default &>/dev/null 2>&1; then
-        echo "kind"
     else
         echo "unknown"
     fi
@@ -143,8 +143,13 @@ KC_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='
 
 # App user (demo realm) - for Kagenti UI and MLflow login
 # Created by agent-oauth-secret-job, credentials stored in kagenti-test-user secret
-APP_USER=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
-APP_PASS=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A (secret not found)")
+# Falls back to keycloak-initial-admin credentials if test user secret doesn't exist
+APP_USER=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null)
+APP_PASS=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null)
+if [ -z "$APP_USER" ] || [ -z "$APP_PASS" ]; then
+    APP_USER="$KC_ADMIN_USER"
+    APP_PASS="$KC_ADMIN_PASS"
+fi
 
 KUBEADMIN_PASS=""
 if [ "$ENV_TYPE" = "hypershift" ]; then
