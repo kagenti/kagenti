@@ -144,9 +144,12 @@ KC_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='
 # App user (demo realm) - for Kagenti UI and MLflow login
 # Created by agent-oauth-secret-job, credentials stored in kagenti-test-user secret
 # Falls back to keycloak-initial-admin credentials if test user secret doesn't exist
-APP_USER=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null)
-APP_PASS=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null)
-if [ -z "$APP_USER" ] || [ -z "$APP_PASS" ]; then
+_test_user_data=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}:{.data.password}' 2>/dev/null || true)
+if [ -n "$_test_user_data" ]; then
+    APP_USER=$(echo "$_test_user_data" | cut -d: -f1 | base64 -d 2>/dev/null || true)
+    APP_PASS=$(echo "$_test_user_data" | cut -d: -f2 | base64 -d 2>/dev/null || true)
+fi
+if [ -z "${APP_USER:-}" ] || [ -z "${APP_PASS:-}" ]; then
     APP_USER="$KC_ADMIN_USER"
     APP_PASS="$KC_ADMIN_PASS"
 fi
