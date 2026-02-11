@@ -1,0 +1,69 @@
+# This file has been modified with the assistance of Bob
+# Copyright 2025 IBM Corp.
+# Licensed under the Apache License, Version 2.0
+
+# Tests
+tests/
+**/tests/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Examples
+examples/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+.gitleaks.toml
+.pre-commit-config.yaml
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.so
+*.dylib
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Ansible and deployment
+deployments/
+ansible-reqs.txt
+
+# Charts (Helm)
+charts/
+
+# CI/CD
+.github/
+
+# Misc
+*.log
+.ruff_cache/
+banner.png
+kagenti.code-workspace
+LICENSE
+CONTRIBUTING.md
+CLAUDE.md
+CLAUDE-ORG.md
