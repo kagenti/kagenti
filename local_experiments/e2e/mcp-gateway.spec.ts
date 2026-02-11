@@ -194,7 +194,7 @@ test.describe('MCP Gateway Page Demo', () => {
       }
     }
 
-    await page.waitForURL('**/mcp-gateway**', { timeout: 10000 }).catch(() => {
+    await page.waitForURL('**/mcp-gateway**', { timeout: 10000 }).catch(async () => {
       await page.waitForURL('**/gateway**', { timeout: 5000 }).catch(() => {});
     });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
