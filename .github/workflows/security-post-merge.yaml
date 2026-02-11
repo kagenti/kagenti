@@ -1,17 +1,18 @@
 # Post-Merge Security Scan - Full repository vulnerability scan after merge to main
 #
-# This workflow runs the blocking Trivy filesystem scan that was made
-# informational on PRs (to avoid blocking unrelated changes with
-# pre-existing vulnerabilities).
+# This workflow runs the full Trivy filesystem scan on the merged codebase.
+# Instead of failing the build, it creates GitHub issues for each new
+# vulnerability found (one issue per CVE, deduplicated by title search).
 #
 # PR workflow (security-scans.yaml) handles:
-# - Dependency Review: catches NEW vulnerable/GPL dependencies
+# - Dependency Review: catches NEW vulnerable/GPL dependencies (blocking)
 # - Trivy fs scan: informational only (shows issues, doesn't block)
 # - Trivy config scan: blocks on IaC misconfigurations (PR-specific)
 #
 # This workflow handles:
-# - Full blocking Trivy fs scan on the merged codebase
-# - Creates GitHub issues if new vulnerabilities are found
+# - Full Trivy fs scan on the merged codebase (never fails)
+# - Creates one GitHub issue per CVE (deduplicated by title)
+# - Uploads SARIF results to GitHub Security tab
 #
 name: Post-Merge Security Scan
 
@@ -36,21 +37,131 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write  # For uploading SARIF results
+      issues: write             # For creating GitHub issues
+      security-events: write    # For uploading SARIF results
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      - name: Full dependency vulnerability scan
+      # Step 1: Run Trivy with JSON output for parsing vulnerabilities
+      - name: Scan dependencies (JSON)
         uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
         with:
           scan-type: 'fs'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'json'
+          output: 'trivy-results.json'
+
+      # Step 2: Show results in logs (human-readable table)
+      - name: Show scan results
+        uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
           ignore-unfixed: true
           format: 'table'
 
-      - name: Upload SARIF results
+      # Step 3: Create GitHub issues for each new vulnerability
+      - name: Create issues for new vulnerabilities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Processing Trivy results ==="
+
+          if [ ! -f trivy-results.json ]; then
+            echo "No Trivy results file found"
+            exit 0
+          fi
+
+          # Extract unique vulnerabilities from JSON
+          VULNS=$(jq -c '
+            [.Results[]? |
+              .Target as $target |
+              (.Vulnerabilities // [])[] |
+              {
+                id: .VulnerabilityID,
+                pkg: .PkgName,
+                installed: .InstalledVersion,
+                fixed: (.FixedVersion // "no fix available"),
+                severity: .Severity,
+                title: (.Title // "No description"),
+                target: $target
+              }
+            ] | unique_by(.id)' trivy-results.json)
+
+          COUNT=$(echo "$VULNS" | jq 'length')
+          echo "Found $COUNT unique vulnerability/ies"
+
+          if [ "$COUNT" = "0" ] || [ "$COUNT" = "null" ]; then
+            echo "No vulnerabilities found. All clear!"
+            exit 0
+          fi
+
+          CREATED=0
+          SKIPPED=0
+
+          for row in $(echo "$VULNS" | jq -r '.[] | @base64'); do
+            _jq() { echo "$row" | base64 --decode | jq -r "$1"; }
+
+            CVE=$(_jq '.id')
+            PKG=$(_jq '.pkg')
+            INSTALLED=$(_jq '.installed')
+            FIXED=$(_jq '.fixed')
+            SEVERITY=$(_jq '.severity')
+            TITLE=$(_jq '.title')
+            TARGET=$(_jq '.target')
+
+            ISSUE_TITLE="[Trivy] ${CVE}: ${PKG}@${INSTALLED} (${SEVERITY})"
+
+            # Check if an open issue with this CVE already exists
+            EXISTING=$(gh issue list --state open --search "in:title [Trivy] ${CVE}" --json number --jq 'length' 2>/dev/null || echo "0")
+
+            if [ "$EXISTING" != "0" ]; then
+              echo "SKIP: ${ISSUE_TITLE} (issue already exists)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            echo "CREATE: ${ISSUE_TITLE}"
+
+            gh issue create \
+              --title "${ISSUE_TITLE}" \
+              --label "security" \
+              --body "$(cat <<ISSUE_BODY
+          ## Trivy Vulnerability Report
+
+          | Field | Value |
+          |-------|-------|
+          | **CVE** | ${CVE} |
+          | **Package** | ${PKG} |
+          | **Installed** | ${INSTALLED} |
+          | **Fixed Version** | ${FIXED} |
+          | **Severity** | ${SEVERITY} |
+          | **File** | ${TARGET} |
+
+          **Description:** ${TITLE}
+
+          **Reference:** https://avd.aquasec.com/nvd/$(echo "${CVE}" | tr '[:upper:]' '[:lower:]')
+
+          ---
+          *Auto-created by post-merge Trivy scan. Close this issue after upgrading the package.*
+          ISSUE_BODY
+            )" 2>/dev/null && CREATED=$((CREATED + 1)) || echo "  WARNING: Failed to create issue for ${CVE}"
+
+          done
+
+          echo ""
+          echo "=== Summary ==="
+          echo "Vulnerabilities found: ${COUNT}"
+          echo "Issues created: ${CREATED}"
+          echo "Issues skipped (already exist): ${SKIPPED}"
+
+      # Step 4: Upload SARIF to GitHub Security tab
+      - name: Generate SARIF results
         if: always()
         uses: aquasecurity/trivy-action@22438a435773de8c97dc0958cc0b823c45b064ac  # v0.33.1
         with:
