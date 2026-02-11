@@ -95,6 +95,8 @@ jobs:
           fail-on-severity: moderate
           # Block strong copyleft licenses that could affect project licensing
           deny-licenses: GPL-3.0, AGPL-3.0
+          # Ansible is GPL-3.0 but is a build/deployment tool, not shipped in container images
+          allow-dependencies-licenses: "pkg:pypi/ansible, pkg:pypi/ansible-core"
           # Note: Packages without detected license will warn but not fail (default behavior)
           # Scan results are shown in the "Show scan results" step below
           comment-summary-in-pr: never
