@@ -1,0 +1,23 @@
+[intro]
+In this demo, we explore the Keycloak admin console, showing how Kay-jentee manages identity, authentication, and authorization for all platform services through a centralized identity provider.
+
+[login]
+We authenticate through Keycloak using OAuth2. This same identity provider manages access for the UI, backend API, agents, MLflow, Phoenix, and all other integrated services.
+
+[admin_navigate]
+We navigate to the Administration page in the Kay-jentee UI. This page provides session information, authentication configuration details, and a direct link to the Keycloak admin console.
+
+[keycloak_console]
+From the Admin page, we click through to the Keycloak admin console. This is the full management interface for the identity provider, where administrators can manage realms, users, clients, and authentication policies.
+
+[keycloak_realm]
+The realm selector shows the available Keycloak realms. Kay-jentee uses a dedicated realm to isolate its identity management from other applications on the cluster. The realm contains all the users, clients, and authentication flows specific to the platform.
+
+[keycloak_users]
+In the Users section, we can see all registered platform users. Keycloak manages user identities, including their roles, group memberships, and session information. The admin can create new users, reset passwords, and manage role assignments directly from this interface. These roles map to Kubernetes RBAC policies that control which namespaces and agents each user can access.
+
+[keycloak_clients]
+The Clients section shows all OAuth2 and OIDC clients registered with Keycloak. Each integrated service, including the Kay-jentee UI, backend API, MLflow, and the agents themselves, has its own client configuration. This ensures that every service-to-service interaction is authenticated and authorized through a consistent identity framework.
+
+[end]
+This completes our exploration of the Keycloak admin console. The centralized identity management through Keycloak is a key enabler of Kay-jentee's zero-trust security model, providing consistent authentication and authorization across all platform services.

@@ -1,0 +1,23 @@
+[intro]
+In this demo, we take a deep dive into the Kay-jentee agent detail page, exploring the deployment overview, resource specifications, event logs, and A-to-A agent card.
+
+[login]
+We authenticate through Keycloak using OAuth2. The same identity secures all platform services, including agent endpoints and observability dashboards.
+
+[agent_catalog]
+In the Agent Catalog, we select the team1 namespace and locate the weather-service agent. The catalog displays each agent's status, protocol type, and framework information at a glance.
+
+[agent_overview]
+The Overview tab shows the agent's deployment status, including readiness state, replica count, and service endpoint information. This gives operators a quick health check of the running agent workload. The overview also displays the agent's protocol, framework, and namespace metadata.
+
+[agent_specs]
+The Specs tab provides the full YAML specification of the agent's custom resource. This is the Kubernetes-native definition that describes the agent's configuration, including its container image, service port, protocol settings, and any tool bindings. The copy button makes it easy to extract the spec for documentation or replication in other environments.
+
+[agent_events]
+The Events tab surfaces Kubernetes events and log entries related to this agent deployment. Here we can see pod scheduling events, container start and stop events, health check results, and any errors or warnings. This is the first place to look when troubleshooting agent deployment issues.
+
+[agent_card]
+The Agent Card section displays the A-to-A protocol metadata exposed at the agent's well-known endpoint. This includes the agent's name, description, supported skills, and communication capabilities. The agent card is the standard discovery mechanism in Google's Agent-to-Agent protocol, allowing other agents to discover what this agent can do.
+
+[end]
+This completes our deep dive into the agent detail page. The combination of overview, specs, events, and agent card provides full visibility into both the operational state and the protocol capabilities of deployed agents.

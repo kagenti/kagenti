@@ -1,0 +1,23 @@
+[intro]
+In this demo, we explore Kay-jentee's multi-namespace management capabilities, showing how teams can organize and isolate their agents and tools across separate Kubernetes namespaces.
+
+[login]
+We authenticate through Keycloak using OAuth2. The user's role and group memberships determine which namespaces they can access and manage.
+
+[agents_team1]
+In the Agent Catalog, we select the team1 namespace. This namespace contains the agents deployed by team1, including the weather service agent. Each team has its own isolated namespace with independent agent deployments, resource quotas, and access controls.
+
+[agents_team2]
+Switching to the team2 namespace shows a different set of agents, or possibly an empty catalog if team2 has not yet deployed any agents. This demonstrates the namespace isolation that Kay-jentee provides, where each team operates independently within their own namespace boundary.
+
+[agents_switch_back]
+Switching back to team1 confirms that namespace selection is seamless. The catalog immediately reflects the agents for the selected namespace, making it easy for operators to manage multiple teams from a single interface.
+
+[tools_team1]
+We navigate to the Tool Catalog and select team1. The same namespace isolation applies to MCP tools. Team1's tools are deployed and managed independently, ensuring that tool configurations and secrets remain isolated between teams.
+
+[tools_team2]
+Switching to team2 in the Tool Catalog shows the tools available in that namespace. This parallel namespace structure for both agents and tools ensures complete isolation between teams while providing a unified management experience through the Kay-jentee UI.
+
+[end]
+This completes our exploration of multi-namespace management. The namespace-based isolation in Kay-jentee ensures that teams can work independently while platform administrators maintain visibility and control across all namespaces from a single dashboard.

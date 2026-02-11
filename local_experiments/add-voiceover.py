@@ -154,24 +154,27 @@ def main() -> int:
     if not sections:
         sections = [("full", narration_raw)]
 
-    # Load timestamps from walkthrough test (if available)
-    timestamps_file = script_dir / "walkthrough-timestamps.json"
-    timestamps = {}
-    if timestamps_file.exists():
-        import json
+    # Load timestamps from test-specific file, then fallback to legacy name
+    import json
 
-        ts_data = json.loads(timestamps_file.read_text())
-        # Timestamps are relative to test start (Date.now()), but video starts
-        # a few seconds before test code runs (browser launch).
-        # Use the first timestamp as video offset baseline.
-        raw_timestamps = {entry["step"]: entry["time"] for entry in ts_data}
-        # Don't adjust — the video recording starts close to when the page
-        # first navigates, which is near the 'intro' timestamp.
-        # Just use raw values; the first step at ~1-3s is fine.
-        timestamps = raw_timestamps
-        info(f"Loaded {len(timestamps)} step timestamps")
-        for step, t in timestamps.items():
-            info(f"  {step}: {t:.1f}s")
+    timestamps = {}
+    ts_candidates = [
+        video_path.parent / f"{test_name}-timestamps.json",  # collocated in demo dir
+        script_dir / f"{test_name}-timestamps.json",  # in local_experiments/
+        script_dir / "walkthrough-timestamps.json",  # legacy fallback
+    ]
+    for timestamps_file in ts_candidates:
+        if timestamps_file.exists():
+            ts_data = json.loads(timestamps_file.read_text())
+            timestamps = {entry["step"]: entry["time"] for entry in ts_data}
+            info(
+                f"Loaded {len(timestamps)} step timestamps from {timestamps_file.name}"
+            )
+            for step, t in timestamps.items():
+                info(f"  {step}: {t:.1f}s")
+            break
+    if not timestamps:
+        warn("No timestamps file found — audio will play sequentially")
 
     # Voice configuration
     tts_model = os.environ.get("TTS_MODEL", "tts-1-hd")
@@ -185,9 +188,28 @@ def main() -> int:
 
     client = OpenAI(api_key=api_key)
 
-    # Generate TTS for each section
+    # Generate TTS for each section — save to audio_segments/ subdir
+    segments_dir = video_path.parent / "audio_segments"
+    segments_dir.mkdir(exist_ok=True)
+
+    import hashlib
+
     segment_files = []
     for section_name, section_text in sections:
+        seg_path = segments_dir / f"{section_name}.mp3"
+        hash_path = segments_dir / f"{section_name}.hash"
+        text_hash = hashlib.md5(section_text.encode()).hexdigest()
+        # Reuse existing segment if narration text hasn't changed
+        if (
+            seg_path.exists()
+            and hash_path.exists()
+            and hash_path.read_text().strip() == text_hash
+        ):
+            info(f"  [{section_name}] reusing cached segment (text unchanged)")
+            segment_files.append((section_name, seg_path))
+            continue
+        elif seg_path.exists():
+            info(f"  [{section_name}] text changed, regenerating")
         try:
             response = client.audio.speech.create(
                 model=tts_model,
@@ -195,8 +217,8 @@ def main() -> int:
                 speed=tts_speed,
                 input=section_text,
             )
-            seg_path = video_path.parent / f".tmp_segment_{section_name}.mp3"
             seg_path.write_bytes(response.content)
+            hash_path.write_text(text_hash)
             segment_files.append((section_name, seg_path))
             info(f"  [{section_name}] generated ({len(section_text)} chars)")
         except Exception as e:
@@ -257,7 +279,7 @@ def main() -> int:
                         warn(
                             f"  [{section_name}] narration {seg_dur:.1f}s > gap {available:.1f}s — truncating with fade"
                         )
-                        truncated = seg_path.with_stem(seg_path.stem + "_trunc")
+                        truncated = segments_dir / f"{section_name}_trunc.mp3"
                         fade_start = max(0, available - 0.5)
                         subprocess.run(
                             [
@@ -323,11 +345,8 @@ def main() -> int:
 
         info(f"Narration audio: {audio_path}")
     finally:
-        for _, seg_path in segment_files:
-            try:
-                seg_path.unlink()
-            except OSError:
-                pass
+        # Audio segments are kept in audio_segments/ for inspection and reuse
+        pass
 
     # Get video duration to pad audio with silence
     video_duration = None

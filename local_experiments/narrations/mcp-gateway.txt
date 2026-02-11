@@ -1,0 +1,20 @@
+[intro]
+In this demo, we explore the M-C-P Gateway page in Kay-jentee, which provides centralized management and monitoring of the platform's Model Context Protocol gateway.
+
+[login]
+We authenticate through Keycloak using OAuth2. The M-C-P Gateway page is available to users with platform administration or gateway management permissions.
+
+[gateway_navigate]
+We navigate to the M-C-P Gateway page from the sidebar under the Gateway and Routing section. The M-C-P Gateway is the central entry point for all tool discovery and invocation traffic in the platform.
+
+[gateway_status]
+The gateway status card shows the current operational state of the M-C-P Gateway. This includes whether the gateway pod is running, its readiness state, and the configured endpoints. A healthy gateway is essential for agents to discover and invoke M-C-P tools across namespace boundaries.
+
+[gateway_metrics]
+The gateway metrics card displays traffic and performance data. This includes request counts, connection statistics, and latency measurements for tool invocations routed through the gateway. These metrics help operators identify performance bottlenecks and capacity issues.
+
+[gateway_inspector]
+The M-C-P Inspector link provides access to an interactive tool for testing M-C-P endpoints directly. The inspector allows operators to browse available tools, view their schemas, and send test invocations without going through an agent. This is invaluable for debugging tool connectivity and verifying tool responses.
+
+[end]
+This completes our tour of the M-C-P Gateway page. The gateway provides a centralized control plane for tool discovery and routing, with built-in observability and an interactive inspector for troubleshooting.

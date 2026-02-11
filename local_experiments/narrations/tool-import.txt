@@ -1,0 +1,23 @@
+[intro]
+In this demo, we explore the Import Tool form in Kay-jentee, showing how to configure and deploy M-C-P tools that agents can discover and invoke at runtime.
+
+[login]
+We authenticate through Keycloak using OAuth2. Tool deployments follow the same namespace-based access control as agents, ensuring consistent security boundaries.
+
+[tool_import_navigate]
+From the Tool Catalog, we click the Import Tool button to open the tool import form. Tools in Kay-jentee are standalone M-C-P servers that expose capabilities for agents to consume.
+
+[tool_import_name]
+We set the tool name and target namespace. The tool name becomes its Kubernetes service identifier and the key used for agent-to-tool binding. Deploying to the same namespace as the agents simplifies network policy configuration within the Istio service mesh.
+
+[tool_import_source]
+The source configuration defines the tool's code repository. The git URL points to the repository containing the M-C-P server implementation, and the path specifies the subdirectory with the tool code. Kay-jentee automatically detects the tool's M-C-P manifest to configure endpoint routing.
+
+[tool_import_storage]
+The persistent storage section configures volume mounts for stateful tools. Selecting StatefulSet as the workload type enables persistent volume claims, useful for tools that maintain local databases, caches, or file stores. Volume size and mount path can be configured to match the tool's requirements.
+
+[tool_import_ports]
+Port configuration defines how the tool listens for M-C-P requests. The service port is exposed within the cluster, and Kay-jentee configures the Istio sidecar to handle m-TLS termination automatically. Multiple ports can be configured for tools that expose both M-C-P and auxiliary endpoints.
+
+[end]
+This completes our walkthrough of the Import Tool form. Kay-jentee streamlines tool deployment with sensible defaults while exposing the configuration options needed for production workloads, including persistent storage and custom port mappings.

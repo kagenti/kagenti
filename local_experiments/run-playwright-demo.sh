@@ -186,14 +186,39 @@ fi
 # ============================================================================
 LOCAL_E2E_DIR="$SCRIPT_DIR/e2e"
 
+DEMO_MAP="$SCRIPT_DIR/demo-map.json"
+
 get_test_description() {
+    if [ -f "$DEMO_MAP" ]; then
+        local desc
+        desc=$(python3 -c "import json; d=json.load(open('$DEMO_MAP')); print(d.get('$1',{}).get('description',''))" 2>/dev/null)
+        if [ -n "$desc" ]; then
+            echo "$desc"
+            return
+        fi
+    fi
+    # Fallback for tests not in demo-map.json
     case "$1" in
         home)              echo "Home page, navigation, sidebar" ;;
         agent-catalog)     echo "Agent listing, import, API integration" ;;
         tool-catalog)      echo "Tool listing, import, API integration" ;;
-        walkthrough-demo)  echo "Full walkthrough: login, chat, MLflow, Kiali" ;;
         *)                 echo "" ;;
     esac
+}
+
+# Get the output directory for a test from demo-map.json
+get_demo_dir() {
+    local test_name="$1"
+    if [ -f "$DEMO_MAP" ]; then
+        local dir
+        dir=$(python3 -c "import json; d=json.load(open('$DEMO_MAP')); print(d.get('$test_name',{}).get('dir',''))" 2>/dev/null)
+        if [ -n "$dir" ]; then
+            echo "$SCRIPT_DIR/demos/$dir"
+            return
+        fi
+    fi
+    # Fallback: flat directory
+    echo "$SCRIPT_DIR/demos/$test_name"
 }
 
 discover_tests() {
@@ -741,8 +766,8 @@ if [ "$NO_NARRATION" = false ] && [ -n "${OPENAI_API_KEY:-}" ] && [ -f "$NARRATI
         --narration "$NARRATION_FILE" \
         --test "$SOURCE_TEST" \
         --output "$SYNCED_TEST" \
-        --timestamps "$SCRIPT_DIR/walkthrough-timestamps.json" \
-        --pauses-json "$SCRIPT_DIR/section-pauses.json" || {
+        --timestamps "$SCRIPT_DIR/${NARRATION_TEST_NAME}-timestamps.json" \
+        --pauses-json "$SCRIPT_DIR/${NARRATION_TEST_NAME}-section-pauses.json" || {
         log_warn "Narration sync failed"
         HAS_NARRATION=false
     }
@@ -810,16 +835,21 @@ if [ $PLAYWRIGHT_EXIT -ne 0 ]; then
 fi
 
 # ============================================================================
-# Collect and rename video files — organized per scenario in demos/<testname>/
+# Collect and rename video files — organized per scenario in demos/<category>/
+# Uses demo-map.json for nested directory structure.
+# Creates timestamped files + _latest copies (overwritten each run).
+# Collocates test spec, narration, and timestamps alongside videos.
 # ============================================================================
 TIMESTAMP=$(date '+%Y-%m-%d_%H-%M')
 SCENARIO_NAME="${TEST_PREFIX:-all}"
-DEMO_DIR="$SCRIPT_DIR/demos/${SCENARIO_NAME}"
+DEMO_DIR=$(get_demo_dir "$SCENARIO_NAME")
 mkdir -p "$DEMO_DIR"
 
 VIDEO_COUNT=0
 
-log_info "Collecting recorded videos to demos/${SCENARIO_NAME}/..."
+# Relative path for display
+DEMO_DIR_REL="${DEMO_DIR#$SCRIPT_DIR/}"
+log_info "Collecting recorded videos to ${DEMO_DIR_REL}/..."
 
 # Playwright stores videos in test-results/<test-hash>/video.webm
 if [ -d "$SCRIPT_DIR/test-results" ]; then
@@ -827,11 +857,17 @@ if [ -d "$SCRIPT_DIR/test-results" ]; then
         parent_dir=$(basename "$(dirname "$video_file")")
         test_name=$(echo "$parent_dir" | sed 's/-chromium$//' | sed 's/-[0-9]*$//')
 
-        dest_name="${test_name}_${TIMESTAMP}.webm"
+        # Timestamped copy
+        dest_name="${SCENARIO_NAME}_${TIMESTAMP}.webm"
         dest_path="$DEMO_DIR/$dest_name"
-
         cp "$video_file" "$dest_path"
-        log_success "Video: demos/${SCENARIO_NAME}/$dest_name"
+
+        # _latest copy (always overwritten)
+        latest_path="$DEMO_DIR/${SCENARIO_NAME}_latest.webm"
+        cp "$video_file" "$latest_path"
+
+        log_success "Video: ${DEMO_DIR_REL}/$dest_name"
+        log_success "Latest: ${DEMO_DIR_REL}/${SCENARIO_NAME}_latest.webm"
         VIDEO_COUNT=$((VIDEO_COUNT + 1))
 
         # Attempt voiceover if OPENAI_API_KEY is set
@@ -840,13 +876,39 @@ if [ -d "$SCRIPT_DIR/test-results" ]; then
                 "$SCRIPT_DIR/add-voiceover.py" "$dest_path" || {
                 log_warn "Voiceover generation failed for $dest_name (continuing without)"
             }
+            # Create _latest copies for narration and voiceover too
+            voiceover_ts="${dest_path%.webm}_voiceover.mp4"
+            narration_ts="${dest_path%.webm}_narration.mp3"
+            [ -f "$voiceover_ts" ] && cp "$voiceover_ts" "$DEMO_DIR/${SCENARIO_NAME}_latest_voiceover.mp4"
+            [ -f "$narration_ts" ] && cp "$narration_ts" "$DEMO_DIR/${SCENARIO_NAME}_latest_narration.mp3"
         fi
     done < <(find "$SCRIPT_DIR/test-results" -name "video.webm" -print0 2>/dev/null)
 fi
 
+# ============================================================================
+# Collocate artifacts alongside videos
+# ============================================================================
+# Copy test spec
+SOURCE_SPEC="$SCRIPT_DIR/e2e/${SCENARIO_NAME}.spec.ts"
+[ -f "$SOURCE_SPEC" ] && cp "$SOURCE_SPEC" "$DEMO_DIR/${SCENARIO_NAME}.spec.ts"
+
+# Copy narration file
+NARR_SRC="$SCRIPT_DIR/narrations/${SCENARIO_NAME}.txt"
+[ -f "$NARR_SRC" ] && cp "$NARR_SRC" "$DEMO_DIR/${SCENARIO_NAME}.txt"
+
+# Copy timestamps
+TS_FILE="$SCRIPT_DIR/${SCENARIO_NAME}-timestamps.json"
+[ ! -f "$TS_FILE" ] && TS_FILE="$SCRIPT_DIR/walkthrough-timestamps.json"
+[ -f "$TS_FILE" ] && cp "$TS_FILE" "$DEMO_DIR/${SCENARIO_NAME}-timestamps.json"
+
+# Copy section pauses if they exist
+PAUSES_FILE="$SCRIPT_DIR/${SCENARIO_NAME}-section-pauses.json"
+[ ! -f "$PAUSES_FILE" ] && PAUSES_FILE="$SCRIPT_DIR/section-pauses.json"
+[ -f "$PAUSES_FILE" ] && cp "$PAUSES_FILE" "$DEMO_DIR/${SCENARIO_NAME}-section-pauses.json"
+
 echo ""
 if [ $VIDEO_COUNT -gt 0 ]; then
-    log_success "Recorded $VIDEO_COUNT video(s) in demos/${SCENARIO_NAME}/"
+    log_success "Recorded $VIDEO_COUNT video(s) in ${DEMO_DIR_REL}/"
 else
     log_warn "No videos were recorded. Check test output above for errors."
 fi
@@ -864,12 +926,12 @@ fi
 # ============================================================================
 # Run validation (always after --sync, optional otherwise)
 # ============================================================================
-if [ -f "$SCRIPT_DIR/walkthrough-timestamps.json" ] && [ -f "$SCRIPT_DIR/narrations/${SCENARIO_NAME}.txt" ]; then
+if [ -f "$DEMO_DIR/${SCENARIO_NAME}-timestamps.json" ] && [ -f "$DEMO_DIR/${SCENARIO_NAME}.txt" ]; then
     echo ""
     log_info "Running alignment validation..."
     python3 "$SCRIPT_DIR/validate-alignment.py" \
-        --timestamps "$SCRIPT_DIR/walkthrough-timestamps.json" \
-        --narration "$SCRIPT_DIR/narrations/${SCENARIO_NAME}.txt" 2>/dev/null || {
+        --timestamps "$DEMO_DIR/${SCENARIO_NAME}-timestamps.json" \
+        --narration "$DEMO_DIR/${SCENARIO_NAME}.txt" 2>/dev/null || {
         log_warn "Alignment validation failed — check output above"
     }
 fi
@@ -877,6 +939,11 @@ fi
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}┃${NC} Done! Demo files in: $DEMO_DIR/"
+echo -e "${GREEN}┃${NC}"
+echo -e "${GREEN}┃${NC} Contents:"
+ls -1 "$DEMO_DIR/" 2>/dev/null | while read -r f; do
+    echo -e "${GREEN}┃${NC}   $f"
+done
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 

@@ -1,0 +1,17 @@
+[intro]
+In this demo, we explore the Kay-jentee Administration page, which shows session information, authentication configuration, and links to the Keycloak identity management console.
+
+[login]
+We authenticate through Keycloak using OAuth2. The admin page displays details about this authenticated session and the platform's auth configuration.
+
+[admin_session]
+The session info card displays the currently authenticated user's identity, including the username, assigned roles, and token details. This helps administrators verify that role-based access control is properly configured and that the user has the expected permissions for platform operations.
+
+[admin_auth]
+The authentication configuration card shows the OAuth2 and O-I-D-C settings for the platform. This includes the Keycloak realm, client ID, issuer URL, and token endpoints. These settings define how the Kay-jentee UI and backend authenticate users and validate tokens across all platform services.
+
+[admin_keycloak]
+The Keycloak console card provides a direct link to the Keycloak administration console. From there, administrators can manage users, roles, client configurations, and identity federation. The Keycloak console is the central place for managing access control policies that govern who can deploy agents, invoke tools, and view observability data.
+
+[end]
+This completes the administration page demo. The admin page provides quick access to session diagnostics, auth configuration, and the Keycloak identity management console for comprehensive platform administration.

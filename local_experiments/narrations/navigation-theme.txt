@@ -1,0 +1,23 @@
+[intro]
+In this demo, we explore the Kay-jentee navigation structure and theme switching capabilities, showing how the platform organizes its features and supports visual customization.
+
+[login]
+We authenticate through Keycloak to access the full navigation and user interface features of the platform.
+
+[nav_sidebar]
+The sidebar navigation provides access to all platform sections. We walk through each item, from the Home dashboard to Agents, Tools, Gateway services, Observability, and Administration. Each section is clearly labeled and accessible with a single click.
+
+[nav_groups]
+The sidebar organizes related pages into expandable groups. Agentic Workloads contains Agents and Tools. Gateway and Routing covers the M-C-P Gateway, A-I Gateway, and Gateway Policies. Operations provides access to Observability and Administration. Opening and closing these groups keeps the navigation clean while providing full access to all platform areas.
+
+[nav_theme_dark]
+The platform supports a dark theme for users who prefer reduced brightness. We switch to dark mode using the theme selector in the toolbar. The dark theme applies consistently across all components, including the sidebar, content area, cards, and tables.
+
+[nav_theme_light]
+Switching back to the light theme restores the default appearance. The theme preference can also follow the operating system setting using the system default option, ensuring the platform matches the user's preferred desktop environment.
+
+[nav_user]
+The user dropdown menu in the top toolbar shows the authenticated user's identity and provides access to user settings and the logout function. Platform roles are displayed alongside the user profile, confirming the user's access level.
+
+[end]
+This completes the navigation and theme demo. The Kay-jentee UI provides an organized, customizable interface that adapts to user preferences while keeping all platform capabilities easily accessible.

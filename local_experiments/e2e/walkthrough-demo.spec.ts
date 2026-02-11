@@ -806,7 +806,7 @@ test.describe('Kagenti Platform Walkthrough', () => {
     const fs = require('fs');
     const path = require('path');
     const scriptDir = process.env.PLAYWRIGHT_OUTPUT_DIR || path.join(__dirname, '..');
-    const tsFile = path.join(scriptDir, '..', 'walkthrough-timestamps.json');
+    const tsFile = path.join(scriptDir, '..', 'walkthrough-demo-timestamps.json');
     fs.writeFileSync(tsFile, JSON.stringify(stepTimestamps, null, 2));
     console.log(`[demo] Timestamps written to ${tsFile}`);
 

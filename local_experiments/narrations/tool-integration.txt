@@ -1,0 +1,29 @@
+[intro]
+In this demo, we explore the full tool integration workflow in Kay-jentee, from browsing the tool catalog to invoking tools directly and observing how agents leverage tools during conversations.
+
+[login]
+We authenticate through Keycloak using OAuth2. The same identity controls access to both tools and agents, enabling consistent authorization across the platform.
+
+[tool_catalog]
+We navigate to the Tool Catalog, which displays all deployed M-C-P tools across accessible namespaces. Each tool card shows the tool's status, namespace, and the number of exposed endpoints.
+
+[tool_detail]
+We open the weather-tool to inspect its deployment details. The detail page shows the tool's operational status, container image, service endpoint, and configuration metadata. This is the control plane view of the running M-C-P server.
+
+[tool_mcp]
+The M-C-P Tools tab lists the individual tool functions exposed by this M-C-P server. Each tool function has a name, description, and input schema. This is the machine-readable catalog that agents use for tool discovery. The list reflects what the tool reports through its M-C-P manifest.
+
+[tool_invoke]
+We invoke the tool directly from the UI to verify it's working correctly. The invocation panel lets us provide input parameters and see the raw response. This is useful for testing tool functionality independently of any agent, confirming the tool responds correctly before wiring it into an agent workflow.
+
+[agent_navigate]
+We switch to the Agent Catalog and open the weather-service agent. This agent is configured to use the weather tool we just inspected, binding the tool through the M-C-P Gateway for automatic discovery.
+
+[agent_chat]
+We send a weather query through the agent's chat interface. The agent receives the query, determines it needs weather data, discovers the weather tool through the M-C-P Gateway, invokes the tool, and incorporates the response into its answer.
+
+[agent_response]
+The agent's response includes weather data obtained from the tool. In the observability dashboard, we can see the complete trace showing both the agent's language model call and the tool invocation. The trace captures timing, input and output payloads, and the tool resolution path through the M-C-P Gateway.
+
+[end]
+This completes our exploration of tool integration. Kay-jentee's M-C-P Gateway enables seamless tool discovery and invocation, with full observability into the agent-to-tool interaction chain. Tools are first-class resources managed alongside agents, with independent deployment, testing, and monitoring capabilities.

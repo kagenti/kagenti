@@ -1,0 +1,29 @@
+[intro]
+In this demo, we explore Kiali for service mesh visualization, showing how Kay-jentee uses Istio Ambient mode to provide zero-trust networking between all platform components.
+
+[login]
+We authenticate through Keycloak using OAuth2. The same identity provider secures access to all platform services and observability dashboards.
+
+[kiali_navigate]
+Now we navigate to Kiali, the service mesh visualization dashboard. Kiali provides a real-time view of traffic patterns, security posture, and service topology across the entire Kay-jentee platform.
+
+[kiali_login]
+Kiali on OpenShift uses OAuth for authentication. We log in with cluster administrator credentials, which grants full visibility into the service mesh across all namespaces.
+
+[kiali_graph]
+The Traffic Graph is the heart of Kiali. It visualizes how requests flow between services, showing the relationships between the Kay-jentee UI, backend API, agents, and tool services. Each node represents a workload and each edge represents observed traffic.
+
+[kiali_namespaces]
+We select all namespaces to see the complete traffic topology. This includes the kagenti-system namespace for platform components, keycloak for identity management, and the team namespaces where agents are deployed. The unified view shows how all components interact.
+
+[kiali_timerange]
+Adjusting the time range to the last five minutes focuses the view on recent traffic patterns. This captures the agent interactions from our demo session, showing how requests flow through the mesh in real time.
+
+[kiali_security]
+We enable the security overlay to confirm that mutual TLS is active across all connections. The lock icons on each edge indicate that Istio's automatic mTLS is encrypting and authenticating all inter-service communication, without requiring any changes to the agent code. This is the foundation of Kay-jentee's zero-trust networking model.
+
+[kiali_animation]
+Enabling animation shows live traffic flowing through the mesh. The moving dots represent actual requests traversing the service graph. This provides an intuitive visual confirmation that traffic is flowing correctly and helps identify any connectivity issues at a glance.
+
+[end]
+This completes our deep dive into Kiali service mesh visualization. The combination of traffic topology, security overlay, and animation provides operators with comprehensive visibility into the network-level behavior of all Kay-jentee platform components.

@@ -1,0 +1,32 @@
+[intro]
+In this demo, we explore the full Import Agent form in Kay-jentee, walking through every configuration option available when onboarding a new agent to the platform.
+
+[login]
+We authenticate through Keycloak using OAuth2. The authenticated identity determines which namespaces the user can deploy agents to and which resources they can access.
+
+[import_navigate]
+From the Agent Catalog, we click the Import Agent button to open the import form. This is the primary entry point for deploying new agents to the platform, whether from source code or pre-built container images.
+
+[import_examples]
+The examples dropdown provides pre-configured templates for common agent types. Selecting an example pre-fills the form fields with recommended settings, including the git repository URL, path, and framework configuration. This accelerates onboarding by providing known-good starting points.
+
+[import_name]
+We set the agent name and target namespace. The name becomes the Kubernetes resource name and must be unique within the namespace. The namespace selector shows only namespaces the authenticated user has permission to deploy to, enforcing multi-tenant isolation.
+
+[import_source]
+The source configuration section defines where the agent code lives. The git URL points to the repository, the path specifies the subdirectory containing the agent code, and the branch field determines which git reference to build from. These fields support both public and private repositories.
+
+[import_framework]
+The framework selector identifies the agent runtime. Kay-jentee supports LangGraph, CrewAI, AG2, and custom frameworks. The selected framework determines how the platform configures the agent's runtime environment, health checks, and protocol handlers.
+
+[import_protocol]
+The protocol selector determines how other services communicate with this agent. A-to-A, Google's Agent-to-Agent protocol, enables agent discovery and inter-agent communication through well-known endpoints. M-C-P, Anthropic's Model Context Protocol, exposes the agent as a tool provider for tool integration.
+
+[import_deploy_method]
+The deployment method toggle switches between building from source code and deploying a pre-built container image. Build from source triggers Shipwright to compile and containerize the agent code. Pre-built image deployment skips the build phase entirely, useful for production-ready images from a CI pipeline. The registry selector determines where built images are stored.
+
+[import_workload]
+The workload type selector controls the Kubernetes workload kind. Deployment is the default for stateless agents. StatefulSet is available for agents that require persistent storage, such as those maintaining conversation history or local model caches. Selecting StatefulSet reveals additional volume configuration options.
+
+[end]
+This completes our walkthrough of the Import Agent form. Kay-jentee provides comprehensive configuration options that cover the full spectrum of agent deployment scenarios, from simple stateless services to complex stateful workloads with persistent storage.

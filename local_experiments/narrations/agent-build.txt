@@ -1,0 +1,26 @@
+[intro]
+In this demo, we walk through the agent build lifecycle in Kay-jentee, from submitting an import request to watching the container build progress in real time.
+
+[login]
+We authenticate through Keycloak using OAuth2. Build operations require appropriate namespace permissions, ensuring only authorized users can trigger container builds.
+
+[build_import]
+We navigate to the Import Agent form and fill in the required fields. The agent name, namespace, source path, and build strategy are the minimum configuration needed to trigger a build. The build strategy determines which container build tool, such as Buildah, will compile the agent code into a container image.
+
+[build_submit]
+We submit the import form to initiate the build process. Kay-jentee creates the agent custom resource and triggers a Shipwright Build Run. The platform validates the configuration before starting the build, catching errors like missing fields or invalid repository URLs.
+
+[build_progress]
+The build progress page shows the current phase of the container build. Phases include Pending while resources are being allocated, Running while the container image is being built, and Succeeded or Failed as the terminal states. The phase indicator updates in real time as the build progresses.
+
+[build_metadata]
+The build metadata section displays details about the build configuration, including the source repository, target image, build strategy, and creation timestamp. This information is useful for auditing and troubleshooting build issues.
+
+[build_events]
+The events panel surfaces Kubernetes events related to the build. Here we can see pod scheduling, container image layer caching, push progress, and any errors encountered during the build. These events provide the same level of detail as running kubectl describe on the build pod.
+
+[build_status]
+We monitor the build status until it reaches a terminal state. A successful build means the container image has been pushed to the registry and the agent deployment will begin automatically. Build times vary based on the agent's dependencies and the build strategy selected.
+
+[end]
+This completes our walkthrough of the agent build lifecycle. Kay-jentee integrates Shipwright for container builds, providing a Kubernetes-native build pipeline that handles source-to-image compilation with full visibility into the build process.
