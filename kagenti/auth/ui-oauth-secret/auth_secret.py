@@ -1,12 +1,19 @@
-import json
 import logging
-import os
 import sys
-from typing import Optional, Dict, Any, Tuple, Union
-from keycloak import KeycloakAdmin, KeycloakPostError
-from kubernetes import client, config, dynamic
+from typing import Optional, Dict, Any
+from keycloak import KeycloakAdmin
+from kagenti.auth.shared_utils import register_client
+from kubernetes import client, dynamic
 from kubernetes.client import api_client
-import base64
+
+# Import common utilities
+from common import (
+    get_required_env,
+    get_optional_env,
+    load_kubernetes_config,
+    read_keycloak_credentials,
+    configure_ssl_verification,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -46,24 +53,6 @@ class KeycloakOperationError(Exception):
     pass
 
 
-def get_required_env(key: str) -> str:
-    """Get a required environment variable or raise ConfigurationError."""
-    value = os.environ.get(key)
-    if value is None or value == "":
-        raise ConfigurationError(f'Required environment variable: "{key}" is not set')
-    return value
-
-
-def get_optional_env(key: str, default: Optional[str] = None) -> Optional[str]:
-    """Get an optional environment variable with optional default."""
-    return os.environ.get(key, default)
-
-
-def is_running_in_cluster() -> bool:
-    """Check if running inside a Kubernetes cluster."""
-    return bool(os.getenv("KUBERNETES_SERVICE_HOST"))
-
-
 def get_openshift_route_url(
     dyn_client: dynamic.DynamicClient, namespace: str, route_name: str
 ) -> str:
@@ -98,129 +87,6 @@ def get_openshift_route_url(
         error_msg = f"Could not fetch OpenShift route {route_name} in namespace {namespace}: {e}"
         logger.error(error_msg)
         raise KubernetesResourceError(error_msg) from e
-
-
-def read_keycloak_credentials(
-    v1_client: client.CoreV1Api,
-    secret_name: str,
-    namespace: str,
-    username_key: str,
-    password_key: str,
-) -> Tuple[str, str]:
-    """Read Keycloak admin credentials from a Kubernetes secret.
-
-    Args:
-        v1_client: Kubernetes CoreV1Api client
-        secret_name: Name of the secret
-        namespace: Namespace where secret exists
-        username_key: Key in secret data for username
-        password_key: Key in secret data for password
-
-    Returns:
-        Tuple of (username, password)
-
-    Raises:
-        KubernetesResourceError: If secret cannot be read or keys are missing
-    """
-    try:
-        logger.info(
-            f"Reading Keycloak admin credentials from secret {secret_name} in namespace {namespace}"
-        )
-        secret = v1_client.read_namespaced_secret(secret_name, namespace)
-
-        if username_key not in secret.data:
-            raise KubernetesResourceError(
-                f"Secret {secret_name} in namespace {namespace} missing key '{username_key}'"
-            )
-        if password_key not in secret.data:
-            raise KubernetesResourceError(
-                f"Secret {secret_name} in namespace {namespace} missing key '{password_key}'"
-            )
-
-        username = base64.b64decode(secret.data[username_key]).decode("utf-8").strip()
-        password = base64.b64decode(secret.data[password_key]).decode("utf-8").strip()
-
-        logger.info("Successfully read credentials from secret")
-        return username, password
-    except client.exceptions.ApiException as e:
-        error_msg = f"Could not read Keycloak admin secret {secret_name} in namespace {namespace}: {e}"
-        logger.error(error_msg)
-        raise KubernetesResourceError(error_msg) from e
-    except Exception as e:
-        error_msg = f"Unexpected error reading secret: {e}"
-        logger.error(error_msg)
-        raise KubernetesResourceError(error_msg) from e
-
-
-def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
-    """Configure SSL verification based on certificate file availability.
-
-    Behaviour:
-    - If an explicit SSL_CERT_FILE path is provided and exists, return that path.
-    - Otherwise return None, which indicates to callers that the default
-      system CA bundle (requests/certifi) should be used.
-
-    Returning None avoids incorrectly defaulting to the Kubernetes
-    serviceaccount CA (which is for the API server) when verifying
-    external TLS endpoints such as OpenShift routes.
-
-    Args:
-        ssl_cert_file: Path to SSL certificate file
-
-    Returns:
-        Path to cert file if available and exists, otherwise None
-    """
-    if ssl_cert_file:
-        if os.path.exists(ssl_cert_file):
-            logger.info(f"Using SSL certificate file: {ssl_cert_file}")
-            return ssl_cert_file
-        else:
-            logger.warning(
-                f"Provided SSL_CERT_FILE '{ssl_cert_file}' does not exist; falling back to system CA bundle"
-            )
-
-    # No explicit certificate provided or file missing: use system CA bundle
-    logger.info("No SSL_CERT_FILE provided - using system CA bundle for verification")
-    return None
-
-
-def register_client(
-    keycloak_admin: KeycloakAdmin, client_id: str, client_payload: Dict[str, Any]
-) -> str:
-    """Register a client in Keycloak or retrieve existing client ID.
-
-    Args:
-        keycloak_admin: Keycloak admin client
-        client_id: Desired client ID
-        client_payload: Client configuration payload
-
-    Returns:
-        Internal client ID
-
-    Raises:
-        KeycloakOperationError: If client cannot be created or retrieved
-    """
-    try:
-        internal_client_id = keycloak_admin.create_client(client_payload)
-        logger.info(f'Created Keycloak client "{client_id}": {internal_client_id}')
-        return internal_client_id
-    except KeycloakPostError as e:
-        logger.debug(f'Keycloak client creation error for "{client_id}": {e}')
-
-        try:
-            error_json = json.loads(e.error_message)
-            if error_json.get("errorMessage") == f"Client {client_id} already exists":
-                internal_client_id = keycloak_admin.get_client_id(client_id)
-                logger.info(
-                    f'Using existing Keycloak client "{client_id}": {internal_client_id}'
-                )
-                return internal_client_id
-        except (json.JSONDecodeError, KeyError, TypeError):
-            pass  # Error message format doesn't match expected pattern
-
-        error_msg = f'Failed to create or retrieve Keycloak client "{client_id}": {e}'
-        logger.error(error_msg)
-        raise KeycloakOperationError(error_msg) from e
 
 
 def create_or_update_secret(
@@ -303,10 +169,7 @@ def main() -> None:
         keycloak_public_url = get_optional_env("KEYCLOAK_PUBLIC_URL")
 
         # Connect to Kubernetes API
-        if is_running_in_cluster():
-            config.load_incluster_config()
-        else:
-            config.load_kube_config()
+        load_kubernetes_config()
 
         v1_client = client.CoreV1Api()
         dyn_client = dynamic.DynamicClient(api_client.ApiClient())

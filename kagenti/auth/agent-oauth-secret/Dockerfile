@@ -1,17 +1,27 @@
+# This file has been modified with the assistance of Bob
+
 # Use minimal Python base image
-FROM python:3.12.3-slim
+FROM python:3.12-slim
 
 # Set work directory
 WORKDIR /app
 
-# Copy and install dependencies first
-COPY requirements.txt .
+# Install dependencies from requirements.txt
+COPY auth/agent-oauth-secret/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Then copy your script
-COPY agent_oauth_secret.py .
+# Copy common utilities from unified context
+COPY common/ ./common/
 
-# Add a non-root user and switch to it
-RUN useradd -m -u 1001 appuser
-USER appuser
+# Copy the script
+COPY auth/agent-oauth-secret/agent_oauth_secret.py .
+
+# Create non-root user for runtime security
+RUN useradd -u 1001 -m appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER 1001
+
+# Run the agent OAuth setup
 CMD ["python", "agent_oauth_secret.py"]

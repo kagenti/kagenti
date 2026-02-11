@@ -1,15 +1,23 @@
+# This file has been modified with the assistance of Bob
+
 # Use minimal Python base image
 FROM python:3.12-slim
 
 # Set work directory
 WORKDIR /app
 
-# Install dependencies first (better layer caching)
-COPY requirements.txt .
+# Install dependencies from requirements.txt
+COPY auth/ui-oauth-secret/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your script
-COPY auth_secret.py .
+# Copy common utilities from unified context
+COPY common/ ./common/
+
+# Copy auth shared utilities
+COPY auth/shared_utils.py ./kagenti/auth/
+
+# Copy the script
+COPY auth/ui-oauth-secret/auth_secret.py .
 
 # Create non-root user for runtime security
 RUN useradd -u 1001 -m appuser && \

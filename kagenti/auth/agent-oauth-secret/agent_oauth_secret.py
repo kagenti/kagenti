@@ -1,4 +1,4 @@
-# Assisted by watsonx Code Assistant
+# This file was modified with the assistance of Bob.
 # Copyright 2025 IBM Corp.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,13 +15,19 @@
 
 import os
 import time
-import base64
 import typer
 from typing import Optional, Tuple
 from kubernetes import client, config as kube_config
 from kubernetes.client.rest import ApiException
 
 from keycloak import KeycloakAdmin, KeycloakPostError
+
+# Import common utilities
+from common import (
+    get_optional_env as _get_optional_env,
+    read_keycloak_credentials as _read_keycloak_credentials,
+    configure_ssl_verification as _configure_ssl_verification,
+)
 
 
 # Constants
@@ -34,76 +40,38 @@ DEFAULT_SPIFFE_PREFIX = "spiffe://localtest.me/sa"
 
 def get_optional_env(key: str, default: Optional[str] = None) -> Optional[str]:
     """Get an optional environment variable with optional default."""
-    return os.environ.get(key, default)
+    return _get_optional_env(key, default)
 
 
 def read_keycloak_credentials(
     v1_api: client.CoreV1Api,
-    secret_name: str,
+    credential_ref: str,
     namespace: str,
     username_key: str,
     password_key: str,
 ) -> Tuple[str, str]:
     """Read Keycloak admin credentials from a Kubernetes secret.
 
-    Args:
-        v1_api: Kubernetes CoreV1Api client
-        secret_name: Name of the secret
-        namespace: Namespace where secret exists
-        username_key: Key in secret data for username
-        password_key: Key in secret data for password
-
-    Returns:
-        Tuple of (username, password)
-
-    Raises:
-        ApiException: If secret cannot be read or keys are missing
+    Wrapper around common.read_keycloak_credentials that uses typer for output.
     """
     try:
         typer.echo(
-            f"Reading Keycloak admin credentials from secret {secret_name} in namespace {namespace}"
+            f"Reading Keycloak admin credentials from secret {credential_ref} in namespace {namespace}"
         )
-        secret = v1_api.read_namespaced_secret(secret_name, namespace)
-
-        if username_key not in secret.data:
-            raise ValueError(
-                f"Secret {secret_name} in namespace {namespace} missing key '{username_key}'"
-            )
-        if password_key not in secret.data:
-            raise ValueError(
-                f"Secret {secret_name} in namespace {namespace} missing key '{password_key}'"
-            )
-
-        username = base64.b64decode(secret.data[username_key]).decode("utf-8").strip()
-        password = base64.b64decode(secret.data[password_key]).decode("utf-8").strip()
-
+        username, password = _read_keycloak_credentials(
+            v1_api, credential_ref, namespace, username_key, password_key
+        )
         typer.echo("Successfully read credentials from secret")
         return username, password
-    except ApiException as e:
-        typer.secho(
-            f"Could not read Keycloak admin secret {secret_name} in namespace {namespace}: {e}",
-            fg="red",
-            err=True,
-        )
-        raise
     except Exception as e:
-        typer.secho(f"Unexpected error reading secret: {e}", fg="red", err=True)
+        typer.secho(f"Error reading credentials: {e}", fg="red", err=True)
         raise
 
 
 def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
     """Configure SSL verification based on certificate file availability.
 
-    Behavior:
-    - If an explicit SSL_CERT_FILE path is provided and exists, return that path.
-    - Otherwise return None, which indicates to callers that the default
-      system CA bundle (requests/certifi) should be used.
-
-    Args:
-        ssl_cert_file: Path to SSL certificate file
-
-    Returns:
-        Path to cert file if available and exists, otherwise None
+    Wrapper around common.configure_ssl_verification that uses typer for output.
     """
     if ssl_cert_file:
         if os.path.exists(ssl_cert_file):
@@ -111,11 +79,11 @@ def configure_ssl_verification(ssl_cert_file: Optional[str]) -> Optional[str]:
             return ssl_cert_file
         else:
             typer.secho(
-                f"Provided SSL_CERT_FILE '{ssl_cert_file}' does not exist. Falling back to system CA bundle. Verify the path or remove SSL_CERT_FILE to use system defaults.",
+                f"Provided SSL_CERT_FILE '{ssl_cert_file}' does not exist. Falling back to system CA bundle.",
                 fg="yellow",
             )
+            return None
 
-    # No explicit certificate provided or file missing: use system CA bundle
     typer.echo("No SSL_CERT_FILE provided - using system CA bundle for verification")
     return None
 
