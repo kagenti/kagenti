@@ -167,6 +167,9 @@ test.describe('Agent Detail Page Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Agent Catalog
     // ================================================================
@@ -178,7 +181,7 @@ test.describe('Agent Detail Page Demo', () => {
       await demoClick(page.getByRole('link', { name: /Agents/i }).first(), 'Agents link');
     });
 
-    await page.waitForURL('**/agents', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/agents/, { timeout: 10000 });
     await page.waitForTimeout(PAUSE);
 
     // Select team1 namespace
@@ -204,13 +207,11 @@ test.describe('Agent Detail Page Demo', () => {
 
     const weatherAgent = page.locator('a').filter({ hasText: 'weather-service' })
       .or(page.getByText('weather-service'));
-    if (await weatherAgent.first().isVisible({ timeout: 20000 }).catch(() => false)) {
-      await demoClick(weatherAgent.first(), 'weather-service agent');
-      await page.waitForURL('**/agents/**/**', { timeout: 10000 }).catch(() => {});
-      console.log(`[demo] Agent detail URL: ${page.url()}`);
-    } else {
-      console.log('[demo] weather-service not found in catalog');
-    }
+    // ASSERT: weather-service agent must be visible in catalog
+    await expect(weatherAgent.first()).toBeVisible({ timeout: 20000 });
+    await demoClick(weatherAgent.first(), 'weather-service agent');
+    await expect(page).toHaveURL(/\/agents\/.*\//, { timeout: 10000 });
+    console.log(`[demo] Agent detail URL: ${page.url()}`);
     await page.waitForTimeout(PAUSE);
 
     // ================================================================
@@ -236,6 +237,8 @@ test.describe('Agent Detail Page Demo', () => {
     const detailCards = page.locator('.pf-v5-c-card, [class*="card"], .pf-v5-c-description-list');
     const detailCount = await detailCards.count();
     console.log(`[demo] Found ${detailCount} detail sections on overview`);
+    // ASSERT: Agent detail page should have content sections
+    expect(detailCount, 'Agent detail page should have at least 1 content section').toBeGreaterThan(0);
 
     for (let i = 0; i < Math.min(detailCount, 6); i++) {
       const card = detailCards.nth(i);

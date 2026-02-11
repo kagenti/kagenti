@@ -168,6 +168,9 @@ test.describe('Tool Integration Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Tool Catalog
     // ================================================================
@@ -178,7 +181,7 @@ test.describe('Tool Integration Demo', () => {
     await demoClick(toolsLink.first(), 'Tools sidebar link').catch(async () => {
       await demoClick(page.getByRole('link', { name: /Tools/i }).first(), 'Tools link');
     });
-    await page.waitForURL('**/tools', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/tools/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(LONG_PAUSE);
 
@@ -191,14 +194,12 @@ test.describe('Tool Integration Demo', () => {
     const weatherTool = page.locator('a').filter({ hasText: /weather/i })
       .or(page.getByText('weather-tool', { exact: false }))
       .or(page.getByText('weather', { exact: false }));
-    if (await weatherTool.first().isVisible({ timeout: 10000 }).catch(() => false)) {
-      await demoClick(weatherTool.first(), 'Weather tool');
-      await page.waitForURL('**/tools/**/**', { timeout: 10000 }).catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-      console.log(`[demo] Tool detail URL: ${page.url()}`);
-    } else {
-      console.log('[demo] Weather tool not found in catalog');
-    }
+    // ASSERT: Weather tool must be visible in catalog
+    await expect(weatherTool.first()).toBeVisible({ timeout: 10000 });
+    await demoClick(weatherTool.first(), 'Weather tool');
+    await expect(page).toHaveURL(/\/tools\/.*\//, { timeout: 10000 });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    console.log(`[demo] Tool detail URL: ${page.url()}`);
 
     await page.waitForTimeout(LONG_PAUSE);
 
@@ -294,19 +295,17 @@ test.describe('Tool Integration Demo', () => {
     await demoClick(agentsLink.first(), 'Agents sidebar link').catch(async () => {
       await demoClick(page.getByRole('link', { name: /Agents/i }).first(), 'Agents link');
     });
-    await page.waitForURL('**/agents', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/agents/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(PAUSE);
 
     const weatherAgent = page.locator('a').filter({ hasText: 'weather-service' })
       .or(page.getByText('weather-service'));
-    if (await weatherAgent.first().isVisible({ timeout: 10000 }).catch(() => false)) {
-      await demoClick(weatherAgent.first(), 'weather-service agent');
-      await page.waitForURL('**/agents/**/**', { timeout: 10000 }).catch(() => {});
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    } else {
-      console.log('[demo] weather-service agent not found');
-    }
+    // ASSERT: weather-service agent must be visible
+    await expect(weatherAgent.first()).toBeVisible({ timeout: 10000 });
+    await demoClick(weatherAgent.first(), 'weather-service agent');
+    await expect(page).toHaveURL(/\/agents\/.*\//, { timeout: 10000 });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
 
     await page.waitForTimeout(LONG_PAUSE);
 
@@ -321,29 +320,29 @@ test.describe('Tool Integration Demo', () => {
       .or(page.locator('.pf-v5-c-tabs__link:has-text("Chat")'))
       .or(page.locator('li button').filter({ hasText: /Chat/i }));
 
-    if (await chatTab.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-      await demoClick(chatTab.first(), 'Chat tab');
-      await page.waitForTimeout(LONG_PAUSE);
+    // ASSERT: Chat tab must be visible
+    await expect(chatTab.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(chatTab.first(), 'Chat tab');
+    await page.waitForTimeout(LONG_PAUSE);
 
-      const chatInput = page.locator('textarea, input[type="text"]').filter({ has: page.locator('[placeholder*="message" i], [placeholder*="chat" i], [placeholder*="ask" i]') })
-        .or(page.locator('textarea').last())
-        .or(page.locator('input[placeholder*="message" i]'));
+    const chatInput = page.locator('textarea, input[type="text"]').filter({ has: page.locator('[placeholder*="message" i], [placeholder*="chat" i], [placeholder*="ask" i]') })
+      .or(page.locator('textarea').last())
+      .or(page.locator('input[placeholder*="message" i]'));
 
-      if (await chatInput.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-        await demoClick(chatInput.first(), 'Chat input');
-        await chatInput.first().fill('What is the weather in San Francisco?');
-        await page.waitForTimeout(PAUSE);
+    if (await chatInput.first().isVisible({ timeout: 5000 }).catch(() => false)) {
+      await demoClick(chatInput.first(), 'Chat input');
+      await chatInput.first().fill('What is the weather in San Francisco?');
+      await page.waitForTimeout(PAUSE);
 
-        const sendBtn = page.getByRole('button', { name: /send/i })
-          .or(page.locator('button[type="submit"]'))
-          .or(page.locator('button:has(svg)').last());
-        if (await sendBtn.first().isVisible({ timeout: 3000 }).catch(() => false)) {
-          await demoClick(sendBtn.first(), 'Send button');
-        } else {
-          await page.keyboard.press('Enter');
-        }
-        console.log('[demo] Sent chat query to agent');
+      const sendBtn = page.getByRole('button', { name: /send/i })
+        .or(page.locator('button[type="submit"]'))
+        .or(page.locator('button:has(svg)').last());
+      if (await sendBtn.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+        await demoClick(sendBtn.first(), 'Send button');
+      } else {
+        await page.keyboard.press('Enter');
       }
+      console.log('[demo] Sent chat query to agent');
     }
 
     await page.waitForTimeout(PAUSE);

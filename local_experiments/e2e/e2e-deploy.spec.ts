@@ -168,6 +168,9 @@ test.describe('End-to-End Deployment Lifecycle Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Import Agent and fill form
     // ================================================================
@@ -178,18 +181,18 @@ test.describe('End-to-End Deployment Lifecycle Demo', () => {
     await demoClick(agentsLink.first(), 'Agents sidebar link').catch(async () => {
       await demoClick(page.getByRole('link', { name: /Agents/i }).first(), 'Agents link');
     });
-    await page.waitForURL('**/agents', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/agents/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(PAUSE);
 
     const importBtn = page.getByRole('button', { name: /Import/i })
       .or(page.getByRole('link', { name: /Import/i }))
       .or(page.locator('a[href*="import"]'));
-    if (await importBtn.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-      await demoClick(importBtn.first(), 'Import Agent button');
-    }
+    // ASSERT: Import button must be visible
+    await expect(importBtn.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(importBtn.first(), 'Import Agent button');
 
-    await page.waitForURL('**/import**', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/import/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(PAUSE);
 
@@ -416,34 +419,32 @@ test.describe('End-to-End Deployment Lifecycle Demo', () => {
       .or(page.locator('.pf-v5-c-tabs__link:has-text("Chat")'))
       .or(page.locator('li button').filter({ hasText: /Chat/i }));
 
-    if (await chatTab.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-      await demoClick(chatTab.first(), 'Chat tab');
-      await page.waitForTimeout(LONG_PAUSE);
+    // ASSERT: Chat tab must be visible on the agent detail page
+    await expect(chatTab.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(chatTab.first(), 'Chat tab');
+    await page.waitForTimeout(LONG_PAUSE);
 
-      // Find chat input and send a query
-      const chatInput = page.locator('textarea, input[type="text"]').filter({ has: page.locator('[placeholder*="message" i], [placeholder*="chat" i], [placeholder*="ask" i]') })
-        .or(page.locator('textarea').last())
-        .or(page.locator('input[placeholder*="message" i]'));
+    // Find chat input and send a query
+    const chatInput = page.locator('textarea, input[type="text"]').filter({ has: page.locator('[placeholder*="message" i], [placeholder*="chat" i], [placeholder*="ask" i]') })
+      .or(page.locator('textarea').last())
+      .or(page.locator('input[placeholder*="message" i]'));
 
-      if (await chatInput.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-        await demoClick(chatInput.first(), 'Chat input');
-        await chatInput.first().fill('What is the weather in New York?');
-        await page.waitForTimeout(PAUSE);
+    if (await chatInput.first().isVisible({ timeout: 5000 }).catch(() => false)) {
+      await demoClick(chatInput.first(), 'Chat input');
+      await chatInput.first().fill('What is the weather in New York?');
+      await page.waitForTimeout(PAUSE);
 
-        // Send the message
-        const sendBtn = page.getByRole('button', { name: /send/i })
-          .or(page.locator('button[type="submit"]'))
-          .or(page.locator('button:has(svg)').last());
-        if (await sendBtn.first().isVisible({ timeout: 3000 }).catch(() => false)) {
-          await demoClick(sendBtn.first(), 'Send button');
-        } else {
-          await page.keyboard.press('Enter');
-        }
-        console.log('[demo] Sent chat query');
-        await page.waitForTimeout(LONG_PAUSE);
+      // Send the message
+      const sendBtn = page.getByRole('button', { name: /send/i })
+        .or(page.locator('button[type="submit"]'))
+        .or(page.locator('button:has(svg)').last());
+      if (await sendBtn.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+        await demoClick(sendBtn.first(), 'Send button');
+      } else {
+        await page.keyboard.press('Enter');
       }
-    } else {
-      console.log('[demo] Chat tab not found');
+      console.log('[demo] Sent chat query');
+      await page.waitForTimeout(LONG_PAUSE);
     }
 
     await page.waitForTimeout(PAUSE);

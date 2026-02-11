@@ -107,6 +107,8 @@ test.describe('Kagenti Home Page Overview', () => {
     await page.goto(UI_URL, { waitUntil: 'networkidle', timeout: 30000 });
     await injectCursor();
     markStep('intro');
+    // ASSERT: Page loaded
+    await expect(page).toHaveURL(/./);
     await page.waitForTimeout(PAUSE);
 
     // ================================================================
@@ -133,7 +135,7 @@ test.describe('Kagenti Home Page Overview', () => {
       await page.waitForTimeout(500);
       await demoClick(page.locator('#kc-login'), 'Keycloak Sign In');
 
-      // Handle VERIFY_PROFILE
+      // Handle VERIFY_PROFILE (optional — not all logins trigger this)
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       if (page.url().includes('VERIFY_PROFILE') || page.url().includes('required-action')) {
         const emailField = page.locator('#email');
@@ -164,6 +166,9 @@ test.describe('Kagenti Home Page Overview', () => {
       console.log('[demo] No login button — auth disabled');
     }
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     await page.waitForTimeout(LONG_PAUSE);
 
     // ================================================================
@@ -175,21 +180,20 @@ test.describe('Kagenti Home Page Overview', () => {
     // Wait for stats cards to load (they fetch data via React Query)
     await page.waitForTimeout(PAUSE);
 
-    // Hover over each stat card to highlight them
+    // ASSERT: Cards are visible on the home page
     const statCards = page.locator('.pf-v5-c-card').or(page.locator('[class*="card"]'));
     const cardCount = await statCards.count();
     console.log(`[demo] Found ${cardCount} cards on home page`);
+    expect(cardCount, 'Home page should have at least 1 card').toBeGreaterThan(0);
 
-    // Move cursor over the stats area (top of page)
-    if (cardCount > 0) {
-      for (let i = 0; i < Math.min(cardCount, 4); i++) {
-        const card = statCards.nth(i);
-        if (await card.isVisible({ timeout: 2000 }).catch(() => false)) {
-          const box = await card.boundingBox();
-          if (box) {
-            await humanMove(box.x + box.width / 2, box.y + box.height / 2);
-            await page.waitForTimeout(800);
-          }
+    // Hover over each stat card to highlight them
+    for (let i = 0; i < Math.min(cardCount, 4); i++) {
+      const card = statCards.nth(i);
+      if (await card.isVisible({ timeout: 2000 }).catch(() => false)) {
+        const box = await card.boundingBox();
+        if (box) {
+          await humanMove(box.x + box.width / 2, box.y + box.height / 2);
+          await page.waitForTimeout(800);
         }
       }
     }
@@ -205,9 +209,11 @@ test.describe('Kagenti Home Page Overview', () => {
     await page.mouse.wheel(0, 300);
     await page.waitForTimeout(PAUSE);
 
-    // Hover over action cards (Agent Catalog, Tool Catalog, Observability, Admin)
+    // ASSERT: Navigation links to main sections exist
     const actionLinks = page.locator('a[href*="/agents"], a[href*="/tools"], a[href*="/observability"], a[href*="/admin"]');
     const actionCount = await actionLinks.count();
+    expect(actionCount, 'Home page should have action links to agents/tools/observability').toBeGreaterThan(0);
+
     for (let i = 0; i < Math.min(actionCount, 4); i++) {
       const link = actionLinks.nth(i);
       if (await link.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -232,32 +238,29 @@ test.describe('Kagenti Home Page Overview', () => {
       .or(page.locator('button:has-text("Light")')
       .or(page.locator('button:has-text("Dark")')));
 
-    if (await themeButton.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+    // ASSERT: Theme selector exists
+    await expect(themeButton.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(themeButton.first(), 'Theme selector');
+    await page.waitForTimeout(500);
+
+    // Click Dark theme option
+    const darkOption = page.getByText('Dark', { exact: true })
+      .or(page.locator('[role="menuitem"]:has-text("Dark")'));
+    if (await darkOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+      await demoClick(darkOption.first(), 'Dark theme');
+      await page.waitForTimeout(LONG_PAUSE);
+    }
+
+    // Switch back to Light
+    if (await themeButton.first().isVisible({ timeout: 2000 }).catch(() => false)) {
       await demoClick(themeButton.first(), 'Theme selector');
       await page.waitForTimeout(500);
-
-      // Click Dark theme option
-      const darkOption = page.getByText('Dark', { exact: true })
-        .or(page.locator('[role="menuitem"]:has-text("Dark")'));
-      if (await darkOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
-        await demoClick(darkOption.first(), 'Dark theme');
-        await page.waitForTimeout(LONG_PAUSE);
+      const lightOption = page.getByText('Light', { exact: true })
+        .or(page.locator('[role="menuitem"]:has-text("Light")'));
+      if (await lightOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+        await demoClick(lightOption.first(), 'Light theme');
+        await page.waitForTimeout(PAUSE);
       }
-
-      // Switch back to Light
-      if (await themeButton.first().isVisible({ timeout: 2000 }).catch(() => false)) {
-        await demoClick(themeButton.first(), 'Theme selector');
-        await page.waitForTimeout(500);
-        const lightOption = page.getByText('Light', { exact: true })
-          .or(page.locator('[role="menuitem"]:has-text("Light")'));
-        if (await lightOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
-          await demoClick(lightOption.first(), 'Light theme');
-          await page.waitForTimeout(PAUSE);
-        }
-      }
-    } else {
-      console.log('[demo] Theme selector not found in toolbar');
-      await page.waitForTimeout(PAUSE);
     }
 
     // ================================================================
@@ -270,10 +273,13 @@ test.describe('Kagenti Home Page Overview', () => {
     await page.mouse.wheel(0, -500);
     await page.waitForTimeout(500);
 
-    // Hover through sidebar navigation items
+    // ASSERT: Sidebar navigation exists
     const navItems = page.locator('nav a, [role="navigation"] a');
     const navCount = await navItems.count();
     console.log(`[demo] Found ${navCount} navigation items`);
+    expect(navCount, 'Sidebar should have navigation items').toBeGreaterThan(0);
+
+    // Hover through sidebar navigation items
     for (let i = 0; i < navCount; i++) {
       const item = navItems.nth(i);
       if (await item.isVisible({ timeout: 1000 }).catch(() => false)) {
@@ -294,20 +300,18 @@ test.describe('Kagenti Home Page Overview', () => {
 
     // Find user dropdown in the toolbar
     const userDropdown = page.locator('[aria-label*="user" i]')
-      .or(page.locator('button:has-text("admin")'))
+      .or(page.locator('button:has-text("admin")')
+      .or(page.locator('button:has-text("temp-admin")')))
       .or(page.locator('.pf-v5-c-masthead button').last());
 
-    if (await userDropdown.first().isVisible({ timeout: 3000 }).catch(() => false)) {
-      await demoClick(userDropdown.first(), 'User menu');
-      await page.waitForTimeout(LONG_PAUSE);
+    // ASSERT: User dropdown exists
+    await expect(userDropdown.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(userDropdown.first(), 'User menu');
+    await page.waitForTimeout(LONG_PAUSE);
 
-      // Close the menu
-      await page.keyboard.press('Escape');
-      await page.waitForTimeout(PAUSE);
-    } else {
-      console.log('[demo] User dropdown not found');
-      await page.waitForTimeout(PAUSE);
-    }
+    // Close the menu
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(PAUSE);
 
     // ================================================================
     // FINAL: End

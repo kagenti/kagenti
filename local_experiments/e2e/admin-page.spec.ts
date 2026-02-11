@@ -165,6 +165,9 @@ test.describe('Admin Page Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Admin page (via sidebar — SPA routing)
     // ================================================================
@@ -185,7 +188,7 @@ test.describe('Admin Page Demo', () => {
       await demoClick(page.getByRole('link', { name: /Admin/i }).first(), 'Admin link');
     });
 
-    await page.waitForURL('**/admin', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/admin/, { timeout: 10000 });
     console.log(`[demo] Admin URL: ${page.url()}`);
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(LONG_PAUSE);
@@ -195,6 +198,11 @@ test.describe('Admin Page Demo', () => {
     // ================================================================
     markStep('admin_session');
     console.log('[demo] Step 4: Show session info card');
+
+    // ASSERT: Admin page should have cards
+    const adminCards = page.locator('.pf-v5-c-card, [class*="card"]');
+    const adminCardCount = await adminCards.count();
+    expect(adminCardCount, 'Admin page should have at least 1 card').toBeGreaterThan(0);
 
     // Find session info card (may contain user, roles, token info)
     const sessionCard = page.locator('.pf-v5-c-card, [class*="card"]').filter({ hasText: /Session|User|Token|Identity/i });

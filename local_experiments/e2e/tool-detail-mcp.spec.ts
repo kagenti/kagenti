@@ -167,6 +167,9 @@ test.describe('Tool Detail and MCP Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Tool Catalog (via sidebar — SPA routing)
     // ================================================================
@@ -178,7 +181,7 @@ test.describe('Tool Detail and MCP Demo', () => {
       await demoClick(page.getByRole('link', { name: /Tools/i }).first(), 'Tools link');
     });
 
-    await page.waitForURL('**/tools', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/tools/, { timeout: 10000 });
     console.log(`[demo] Tool catalog URL: ${page.url()}`);
     await page.waitForTimeout(PAUSE);
 
@@ -207,20 +210,18 @@ test.describe('Tool Detail and MCP Demo', () => {
       .or(page.getByText('weather-tool'));
     if (await weatherTool.first().isVisible({ timeout: 20000 }).catch(() => false)) {
       await demoClick(weatherTool.first(), 'weather-tool');
-      await page.waitForURL('**/tools/**/**', { timeout: 10000 }).catch(() => {});
-      console.log(`[demo] Tool detail URL: ${page.url()}`);
     } else {
       // Try any tool that's visible
       const anyTool = page.locator('a[href*="/tools/"]').first();
-      if (await anyTool.isVisible({ timeout: 5000 }).catch(() => false)) {
-        const toolName = await anyTool.textContent();
-        console.log(`[demo] weather-tool not found, opening: ${toolName?.trim()}`);
-        await demoClick(anyTool, `Tool: ${toolName?.trim()}`);
-        await page.waitForURL('**/tools/**/**', { timeout: 10000 }).catch(() => {});
-      } else {
-        console.log('[demo] No tools found in catalog');
-      }
+      // ASSERT: At least one tool must be visible in catalog
+      await expect(anyTool).toBeVisible({ timeout: 5000 });
+      const toolName = await anyTool.textContent();
+      console.log(`[demo] weather-tool not found, opening: ${toolName?.trim()}`);
+      await demoClick(anyTool, `Tool: ${toolName?.trim()}`);
     }
+    // ASSERT: Navigated to tool detail page
+    await expect(page).toHaveURL(/\/tools\/.*\//, { timeout: 10000 });
+    console.log(`[demo] Tool detail URL: ${page.url()}`);
     await page.waitForTimeout(PAUSE);
 
     // ================================================================

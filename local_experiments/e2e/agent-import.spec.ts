@@ -171,6 +171,9 @@ test.describe('Import Agent Form Walkthrough Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Import Agent page
     // ================================================================
@@ -181,20 +184,18 @@ test.describe('Import Agent Form Walkthrough Demo', () => {
     await demoClick(agentsLink.first(), 'Agents sidebar link').catch(async () => {
       await demoClick(page.getByRole('link', { name: /Agents/i }).first(), 'Agents link');
     });
-    await page.waitForURL('**/agents', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/agents/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(PAUSE);
 
     const importBtn = page.getByRole('button', { name: /Import/i })
       .or(page.getByRole('link', { name: /Import/i }))
       .or(page.locator('a[href*="import"]'));
-    if (await importBtn.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-      await demoClick(importBtn.first(), 'Import Agent button');
-    }
+    // ASSERT: Import button must be visible
+    await expect(importBtn.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(importBtn.first(), 'Import Agent button');
 
-    await page.waitForURL('**/import**', { timeout: 10000 }).catch(() => {
-      console.log('[demo] Import URL not matched, trying direct navigation');
-    });
+    await expect(page).toHaveURL(/\/import/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     console.log(`[demo] Import page URL: ${page.url()}`);
     await page.waitForTimeout(LONG_PAUSE);

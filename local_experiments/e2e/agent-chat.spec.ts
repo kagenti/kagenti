@@ -163,6 +163,9 @@ test.describe('Agent Chat Conversation Demo', () => {
     }
     await page.waitForTimeout(PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Agent Catalog
     // ================================================================
@@ -174,7 +177,7 @@ test.describe('Agent Chat Conversation Demo', () => {
       await demoClick(page.getByRole('link', { name: /Agents/i }).first(), 'Agents link');
     });
 
-    await page.waitForURL('**/agents', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/agents/, { timeout: 10000 });
     await page.waitForTimeout(PAUSE);
 
     // Select team1 namespace
@@ -200,10 +203,10 @@ test.describe('Agent Chat Conversation Demo', () => {
 
     const weatherAgent = page.locator('a').filter({ hasText: 'weather-service' })
       .or(page.getByText('weather-service'));
-    if (await weatherAgent.first().isVisible({ timeout: 20000 }).catch(() => false)) {
-      await demoClick(weatherAgent.first(), 'weather-service agent');
-      await page.waitForURL('**/agents/**/**', { timeout: 10000 }).catch(() => {});
-    }
+    // ASSERT: weather-service agent must be visible
+    await expect(weatherAgent.first()).toBeVisible({ timeout: 20000 });
+    await demoClick(weatherAgent.first(), 'weather-service agent');
+    await expect(page).toHaveURL(/\/agents\/.*\//, { timeout: 10000 });
     await page.waitForTimeout(PAUSE);
 
     // Show the agent overview briefly
@@ -216,36 +219,14 @@ test.describe('Agent Chat Conversation Demo', () => {
     markStep('chat_open');
     console.log('[demo] Step 5: Open Chat tab');
 
-    const chatTabSelectors = [
-      page.getByRole('tab', { name: /Chat/i }),
-      page.locator('button:has-text("Chat")'),
-      page.locator('.pf-v5-c-tabs__link:has-text("Chat")'),
-      page.locator('li button').filter({ hasText: /Chat/i }),
-    ];
-
-    let chatTabFound = false;
-    for (const selector of chatTabSelectors) {
-      if (await selector.first().isVisible({ timeout: 2000 }).catch(() => false)) {
-        await demoClick(selector.first(), 'Chat tab');
-        chatTabFound = true;
-        await page.waitForTimeout(PAUSE);
-        break;
-      }
-    }
-
-    if (!chatTabFound) {
-      const allTabs = page.locator('[role="tab"]');
-      const tabCount = await allTabs.count();
-      for (let i = 0; i < tabCount; i++) {
-        const tabText = await allTabs.nth(i).textContent() || '';
-        if (tabText.toLowerCase().includes('chat')) {
-          await allTabs.nth(i).click();
-          chatTabFound = true;
-          await page.waitForTimeout(PAUSE);
-          break;
-        }
-      }
-    }
+    // ASSERT: Chat tab must be visible (this is the critical section)
+    const chatTab = page.getByRole('tab', { name: /Chat/i })
+      .or(page.locator('button:has-text("Chat")'))
+      .or(page.locator('.pf-v5-c-tabs__link:has-text("Chat")'))
+      .or(page.locator('li button').filter({ hasText: /Chat/i }));
+    await expect(chatTab.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(chatTab.first(), 'Chat tab');
+    await page.waitForTimeout(PAUSE);
 
     // Show the agent card / skills if visible
     await page.waitForTimeout(PAUSE);
@@ -263,6 +244,7 @@ test.describe('Agent Chat Conversation Demo', () => {
       page.locator('[placeholder*="type" i]'),
     ];
 
+    // ASSERT: Chat input must be available
     let chatInput = null;
     for (const selector of chatInputSelectors) {
       if (await selector.first().isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -270,6 +252,7 @@ test.describe('Agent Chat Conversation Demo', () => {
         break;
       }
     }
+    expect(chatInput, 'Chat input field should be visible for sending messages').not.toBeNull();
 
     if (chatInput) {
       // Type message character by character for visual effect

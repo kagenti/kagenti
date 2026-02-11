@@ -166,6 +166,9 @@ test.describe('Navigation and Theme Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Walk through all sidebar items
     // ================================================================
@@ -176,6 +179,8 @@ test.describe('Navigation and Theme Demo', () => {
     const navItems = page.locator('nav a, [role="navigation"] a');
     const navCount = await navItems.count();
     console.log(`[demo] Found ${navCount} navigation items`);
+    // ASSERT: Sidebar should have navigation items
+    expect(navCount, 'Sidebar should have navigation items').toBeGreaterThan(0);
 
     for (let i = 0; i < navCount; i++) {
       const item = navItems.nth(i);
@@ -249,19 +254,17 @@ test.describe('Navigation and Theme Demo', () => {
       .or(page.locator('button:has-text("Light")'))
       .or(page.locator('button:has-text("Dark")'));
 
-    if (await themeButton.first().isVisible({ timeout: 3000 }).catch(() => false)) {
-      await demoClick(themeButton.first(), 'Theme selector');
-      await page.waitForTimeout(500);
+    // ASSERT: Theme selector must be visible
+    await expect(themeButton.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(themeButton.first(), 'Theme selector');
+    await page.waitForTimeout(500);
 
-      // Click Dark theme option
-      const darkOption = page.getByText('Dark', { exact: true })
-        .or(page.locator('[role="menuitem"]:has-text("Dark")'))
-        .or(page.locator('[role="option"]:has-text("Dark")'));
-      if (await darkOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
-        await demoClick(darkOption.first(), 'Dark theme');
-      }
-    } else {
-      console.log('[demo] Theme selector not found');
+    // Click Dark theme option
+    const darkOption = page.getByText('Dark', { exact: true })
+      .or(page.locator('[role="menuitem"]:has-text("Dark")'))
+      .or(page.locator('[role="option"]:has-text("Dark")'));
+    if (await darkOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+      await demoClick(darkOption.first(), 'Dark theme');
     }
 
     // Pause to show dark theme

@@ -168,6 +168,9 @@ test.describe('Keycloak Admin Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Admin page (via sidebar — SPA routing)
     // ================================================================
@@ -189,7 +192,7 @@ test.describe('Keycloak Admin Demo', () => {
       await demoClick(page.getByRole('link', { name: /Admin/i }).first(), 'Admin link');
     });
 
-    await page.waitForURL('**/admin', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/admin/, { timeout: 10000 });
     console.log(`[demo] Admin URL: ${page.url()}`);
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(LONG_PAUSE);

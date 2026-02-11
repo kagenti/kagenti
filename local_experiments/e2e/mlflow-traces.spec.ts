@@ -171,6 +171,9 @@ test.describe('MLflow Trace Analysis Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to MLflow
     // ================================================================
@@ -278,19 +281,17 @@ test.describe('MLflow Trace Analysis Demo', () => {
 
       // Click on "Default" experiment (experiment ID 0)
       const defaultExp = page.locator('a[href*="#/experiments/"]').first();
-      if (await defaultExp.isVisible({ timeout: 8000 }).catch(() => false)) {
-        await demoClick(defaultExp, 'Default experiment');
-        await page.waitForTimeout(LONG_PAUSE);
+      // ASSERT: At least one experiment must be visible in MLflow
+      await expect(defaultExp).toBeVisible({ timeout: 8000 });
+      await demoClick(defaultExp, 'Default experiment');
+      await page.waitForTimeout(LONG_PAUSE);
 
-        // Dismiss the "GenAI apps & agents" experiment type popup if present
-        const confirmBtn = page.getByText('Confirm', { exact: true });
-        if (await confirmBtn.first().isVisible({ timeout: 2000 }).catch(() => false)) {
-          await confirmBtn.first().click({ force: true });
-          console.log('[demo] Dismissed MLflow experiment type popup');
-          await page.waitForTimeout(500);
-        }
-      } else {
-        console.log('[demo] No experiments found in list');
+      // Dismiss the "GenAI apps & agents" experiment type popup if present
+      const confirmBtn = page.getByText('Confirm', { exact: true });
+      if (await confirmBtn.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+        await confirmBtn.first().click({ force: true });
+        console.log('[demo] Dismissed MLflow experiment type popup');
+        await page.waitForTimeout(500);
       }
 
       await page.waitForTimeout(PAUSE);

@@ -166,6 +166,9 @@ test.describe('MCP Gateway Page Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to MCP Gateway
     // ================================================================
@@ -194,9 +197,7 @@ test.describe('MCP Gateway Page Demo', () => {
       }
     }
 
-    await page.waitForURL('**/mcp-gateway**', { timeout: 10000 }).catch(async () => {
-      await page.waitForURL('**/gateway**', { timeout: 5000 }).catch(() => {});
-    });
+    await expect(page).toHaveURL(/\/(?:mcp-)?gateway/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     console.log(`[demo] MCP Gateway URL: ${page.url()}`);
     await page.waitForTimeout(LONG_PAUSE);

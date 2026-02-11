@@ -166,6 +166,9 @@ test.describe('MCP Inspector Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to MCP Gateway page (via sidebar — SPA routing)
     // ================================================================

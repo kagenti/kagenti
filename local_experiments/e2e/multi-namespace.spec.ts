@@ -190,6 +190,9 @@ test.describe('Multi-Namespace Management Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Agent Catalog and select team1
     // ================================================================
@@ -201,7 +204,7 @@ test.describe('Multi-Namespace Management Demo', () => {
       await demoClick(page.getByRole('link', { name: /Agents/i }).first(), 'Agents link');
     });
 
-    await page.waitForURL('**/agents', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/agents/, { timeout: 10000 });
     await page.waitForTimeout(PAUSE);
 
     // Select team1 namespace
@@ -290,7 +293,7 @@ test.describe('Multi-Namespace Management Demo', () => {
       await demoClick(page.getByRole('link', { name: /Tools/i }).first(), 'Tools link');
     });
 
-    await page.waitForURL('**/tools', { timeout: 10000 }).catch(() => {});
+    await expect(page).toHaveURL(/\/tools/, { timeout: 10000 });
     await page.waitForTimeout(PAUSE);
 
     // Select team1 namespace in Tool Catalog

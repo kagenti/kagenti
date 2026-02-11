@@ -170,6 +170,9 @@ test.describe('Phoenix Real-Time Tracing Demo', () => {
 
     await page.waitForTimeout(LONG_PAUSE);
 
+    // ASSERT: We're on the Kagenti UI (not stuck on Keycloak)
+    expect(page.url()).not.toContain('/realms/');
+
     // ================================================================
     // STEP 3: Navigate to Phoenix
     // ================================================================
@@ -186,6 +189,9 @@ test.describe('Phoenix Real-Time Tracing Demo', () => {
       // ================================================================
       markStep('phoenix_landing');
       console.log('[demo] Step 4: Show Phoenix landing page');
+
+      // ASSERT: Phoenix page loaded (not stuck on login)
+      expect(page.url()).not.toContain('/realms/');
 
       // Hover over the main content area to show the landing page
       const mainContent = page.locator('main, [class*="content"], [class*="dashboard"]').first();
