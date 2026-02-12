@@ -1,0 +1,35 @@
+# Agent OTEL ConfigMap - provides agent metadata to the AuthBridge ext_proc
+# for root span attribute population.
+#
+# This ConfigMap would be added to charts/kagenti/templates/agent-namespaces.yaml
+# alongside the existing authbridge-config and envoy-config ConfigMaps.
+#
+# The ext_proc reads these values at startup to set agent-specific attributes
+# on the root span it creates for each A2A request.
+#
+# For multi-agent namespaces, this ConfigMap can be overridden per-agent
+# using agent-specific labels, or the ext_proc can read from annotations
+# on the target pod.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-otel-config
+  namespace: team1
+  labels:
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: kagenti
+data:
+  # Agent identity - used in root span attributes
+  AGENT_NAME: "weather-assistant"
+  AGENT_VERSION: "1.0.0"
+  AGENT_PROVIDER: "langchain"
+
+  # OTEL service name - matches the agent's service.name resource attribute
+  OTEL_SERVICE_NAME: "weather-service"
+
+  # OTEL exporter endpoint
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+
+  # Enable/disable OTEL tracing in ext_proc (allows toggling without redeployment)
+  OTEL_TRACING_ENABLED: "true"
