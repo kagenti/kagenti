@@ -338,14 +338,38 @@ if [ "$RUN_DESTROY" = "true" ]; then
     CLUSTER_NAME="$CLUSTER_NAME" ./.github/scripts/kind/destroy-cluster.sh
 else
     log_phase "PHASE 6: Skipping Cluster Destruction"
-    echo ""
-    echo "Cluster kept for debugging. To destroy later:"
-    echo "  ./.github/scripts/kind/destroy-cluster.sh"
-    echo ""
 fi
 
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}┃${NC} Full test completed successfully!"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# Resolve script path for display (handles worktree execution)
+SCRIPT_REL="./.github/scripts/local-setup/kind-full-test.sh"
+if [ "$(git rev-parse --show-toplevel 2>/dev/null)" != "$REPO_ROOT" ]; then
+    # Running from a worktree
+    WORKTREE_REL=".worktrees/$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")"
+    SCRIPT_REL="${WORKTREE_REL}/.github/scripts/local-setup/kind-full-test.sh"
+fi
+
+echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────────────────┐${NC}"
+echo -e "${CYAN}│${NC} Next Steps                                                                ${CYAN}│${NC}"
+echo -e "${CYAN}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
+echo ""
+echo -e "${YELLOW}Show services & credentials:${NC}"
+echo "  ${SCRIPT_REL%/*}/show-services.sh"
+echo ""
+echo -e "${YELLOW}Re-run tests only:${NC}"
+echo "  ${SCRIPT_REL} --skip-cluster-create --skip-cluster-destroy --include-test"
+echo ""
+echo -e "${YELLOW}Reinstall Kagenti (keep cluster):${NC}"
+echo "  ${SCRIPT_REL} --skip-cluster-create --clean-kagenti --skip-cluster-destroy"
+echo ""
+echo -e "${YELLOW}Destroy cluster:${NC}"
+echo "  ${SCRIPT_REL} --include-cluster-destroy"
+echo ""
+echo -e "${YELLOW}Full cycle (create → deploy → test → destroy):${NC}"
+echo "  ${SCRIPT_REL}"
 echo ""
