@@ -27,9 +27,18 @@ of the two-phase test execution:
 Uses the MLflow Python client for full access to trace span details,
 which is required to identify weather agent traces by service.name.
 
+Supports multiple agent observability variants via AGENT_OBSERVABILITY_VARIANT env var:
+  - "baseline": Full observability.py in agent (PR 114 approach, ~551 lines)
+  - "minimal": Minimal agent boilerplate + OTEL Collector enrichment (~50 lines)
+  - "authbridge": AuthBridge ext_proc creates root span, zero agent code
+  - "none": No agent instrumentation (negative test / infrastructure-only traces)
+
 Usage:
     # Run with other observability tests (after main E2E tests)
     pytest kagenti/tests/e2e/ -v -m "observability"
+
+    # Run for a specific variant
+    AGENT_OBSERVABILITY_VARIANT=authbridge pytest -v -m "observability"
 
     # Standalone debugging
     python kagenti/tests/e2e/common/test_mlflow_traces.py
@@ -39,11 +48,159 @@ import logging
 import os
 import subprocess
 import time
+from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
 import pytest
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Agent Observability Variant Configuration
+# =============================================================================
+
+
+@dataclass
+class VariantProfile:
+    """Defines what trace attributes an agent observability variant produces.
+
+    Each variant (baseline, minimal, authbridge, none) declares which
+    attributes it sets on the root span and nested spans. Tests use this
+    profile to assert the right things and skip irrelevant checks.
+    """
+
+    name: str
+    description: str
+
+    # Root span attributes this variant produces
+    root_span_mlflow_attrs: list = field(default_factory=list)
+    root_span_openinference_attrs: list = field(default_factory=list)
+    root_span_genai_attrs: list = field(default_factory=list)
+
+    # What span naming convention the root span uses
+    root_span_name_pattern: str = "invoke_agent"
+
+    # Whether this variant produces these trace features
+    has_genai_spans: bool = True
+    has_token_usage: bool = True
+    has_tool_spans: bool = True
+    has_session_tracking: bool = True
+
+    # Whether MLflow E2E tests are expected to pass
+    expects_mlflow_pass: bool = True
+
+
+# Variant profiles for each approach
+VARIANT_PROFILES = {
+    "baseline": VariantProfile(
+        name="baseline",
+        description="Full observability.py in agent (PR 114 approach)",
+        root_span_mlflow_attrs=[
+            "mlflow.spanInputs",
+            "mlflow.spanOutputs",
+            "mlflow.user",
+            "mlflow.traceName",
+            "mlflow.version",
+            "mlflow.runName",
+        ],
+        root_span_openinference_attrs=[
+            "input.value",
+            "output.value",
+            "openinference.span.kind",
+        ],
+        root_span_genai_attrs=[
+            "gen_ai.conversation.id",
+            "gen_ai.agent.name",
+        ],
+        root_span_name_pattern="invoke_agent",
+        has_genai_spans=True,
+        has_token_usage=True,
+        has_tool_spans=True,
+        has_session_tracking=True,
+        expects_mlflow_pass=True,
+    ),
+    "minimal": VariantProfile(
+        name="minimal",
+        description="Minimal agent boilerplate + OTEL Collector enrichment",
+        root_span_mlflow_attrs=[
+            # Collector adds these via transform processor
+            "mlflow.spanInputs",
+            "mlflow.spanOutputs",
+            "mlflow.traceName",
+        ],
+        root_span_openinference_attrs=[
+            "input.value",
+            "output.value",
+            "openinference.span.kind",
+        ],
+        root_span_genai_attrs=[
+            "gen_ai.conversation.id",
+            "gen_ai.agent.name",
+        ],
+        root_span_name_pattern="invoke_agent",
+        has_genai_spans=True,
+        has_token_usage=True,
+        has_tool_spans=True,
+        has_session_tracking=True,
+        expects_mlflow_pass=True,
+    ),
+    "authbridge": VariantProfile(
+        name="authbridge",
+        description="AuthBridge ext_proc creates root span, zero agent code",
+        root_span_mlflow_attrs=[
+            "mlflow.spanInputs",
+            "mlflow.spanOutputs",
+            "mlflow.user",
+            "mlflow.traceName",
+            "mlflow.version",
+            "mlflow.runName",
+        ],
+        root_span_openinference_attrs=[
+            "input.value",
+            "output.value",
+            "openinference.span.kind",
+        ],
+        root_span_genai_attrs=[
+            "gen_ai.conversation.id",
+            "gen_ai.agent.name",
+        ],
+        root_span_name_pattern="invoke_agent",
+        has_genai_spans=True,
+        has_token_usage=True,
+        has_tool_spans=True,
+        has_session_tracking=True,
+        expects_mlflow_pass=True,
+    ),
+    "none": VariantProfile(
+        name="none",
+        description="No agent instrumentation (negative test)",
+        root_span_mlflow_attrs=[],
+        root_span_openinference_attrs=[],
+        root_span_genai_attrs=[],
+        root_span_name_pattern="",
+        has_genai_spans=False,
+        has_token_usage=False,
+        has_tool_spans=False,
+        has_session_tracking=False,
+        expects_mlflow_pass=False,
+    ),
+}
+
+
+def get_variant_profile() -> VariantProfile:
+    """Get the current agent observability variant profile.
+
+    Reads from AGENT_OBSERVABILITY_VARIANT env var (default: "baseline").
+    """
+    variant_name = os.getenv("AGENT_OBSERVABILITY_VARIANT", "baseline")
+    if variant_name not in VARIANT_PROFILES:
+        logger.warning(
+            f"Unknown variant '{variant_name}', using 'baseline'. "
+            f"Valid variants: {list(VARIANT_PROFILES.keys())}"
+        )
+        variant_name = "baseline"
+    return VARIANT_PROFILES[variant_name]
 
 
 # =============================================================================
@@ -646,6 +803,23 @@ def get_trace_span_details(trace: Any) -> list[dict[str, Any]]:
 
 
 @pytest.fixture(scope="module")
+def agent_variant():
+    """Get the current agent observability variant profile.
+
+    Controls which assertions are run based on how the agent is instrumented.
+    Set via AGENT_OBSERVABILITY_VARIANT env var:
+      - "baseline": Full observability.py (default)
+      - "minimal": Minimal agent + collector enrichment
+      - "authbridge": AuthBridge ext_proc root span
+      - "none": No instrumentation (negative test)
+    """
+    profile = get_variant_profile()
+    print(f"\n[Variant] Testing agent observability variant: {profile.name}")
+    print(f"[Variant] {profile.description}")
+    return profile
+
+
+@pytest.fixture(scope="module")
 def mlflow_url():
     """Get MLflow URL for tests."""
     url = get_mlflow_url()
@@ -1228,16 +1402,21 @@ class TestGenAITracesInMLflow:
             )
         return cls._cached_traces, cls._cached_genai_traces
 
-    def test_genai_traces_exist(self, mlflow_url: str, mlflow_configured: bool):
+    def test_genai_traces_exist(
+        self, mlflow_url: str, mlflow_configured: bool, agent_variant: VariantProfile
+    ):
         """Verify GenAI/LLM traces are captured in MLflow.
 
         This test looks for spans from LangChain/LangGraph instrumentation,
         which include LLM calls, chain executions, and tool invocations.
         """
+        if not agent_variant.has_genai_spans:
+            pytest.skip(f"Variant '{agent_variant.name}' does not produce GenAI spans")
+
         all_traces, genai_traces = self._get_cached_traces()
 
         print(f"\n{'=' * 60}")
-        print("GenAI Traces in MLflow")
+        print(f"GenAI Traces in MLflow (variant: {agent_variant.name})")
         print(f"{'=' * 60}")
         print(f"Total traces: {len(all_traces)}")
         print(f"GenAI traces: {len(genai_traces)}")
@@ -1672,7 +1851,11 @@ class TestSessionTracking:
         print(f"\nSUCCESS: {len(all_traces)} traces available for analysis")
 
     def test_traces_have_genai_conversation_id(
-        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+        self,
+        mlflow_url: str,
+        mlflow_configured: bool,
+        traces_available: list,
+        agent_variant: VariantProfile,
     ):
         """
         Assert traces have gen_ai.conversation.id for session tracking.
@@ -1684,6 +1867,11 @@ class TestSessionTracking:
         GenAI spans may be in separate traces from A2A framework spans. This test
         specifically checks GenAI traces, not all traces.
         """
+        if not agent_variant.has_session_tracking:
+            pytest.skip(
+                f"Variant '{agent_variant.name}' does not produce session tracking attributes"
+            )
+
         all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not all_traces:
             pytest.fail(
@@ -2027,19 +2215,26 @@ class TestRootSpanAttributes:
         return root_spans[0] if root_spans else None
 
     def test_root_span_has_mlflow_attributes(
-        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+        self,
+        mlflow_url: str,
+        mlflow_configured: bool,
+        traces_available: list,
+        agent_variant: VariantProfile,
     ):
         """
         Verify root span has MLflow-specific attributes.
 
-        Required MLflow attributes:
-        - mlflow.spanInputs: Captured input to the agent
-        - mlflow.spanOutputs: Captured output from the agent
-        - mlflow.user: User identifier (default: 'kagenti')
-        - mlflow.traceName: Name of the trace/agent
-        - mlflow.version: Agent version
-        - mlflow.runName: Run identifier
+        Attributes checked depend on the agent observability variant:
+        - baseline: All mlflow.* attributes set by agent middleware
+        - minimal: Subset set by OTEL Collector transform
+        - authbridge: All mlflow.* attributes set by ext_proc
+        - none: Skip (no instrumentation)
         """
+        if not agent_variant.root_span_mlflow_attrs:
+            pytest.skip(
+                f"Variant '{agent_variant.name}' does not produce MLflow root span attributes"
+            )
+
         all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not genai_traces:
             pytest.fail(
@@ -2047,18 +2242,11 @@ class TestRootSpanAttributes:
             )
 
         print(f"\n{'=' * 60}")
-        print("Root Span MLflow Attributes")
+        print(f"Root Span MLflow Attributes (variant: {agent_variant.name})")
         print(f"{'=' * 60}")
 
-        # Required attributes for MLflow display
-        mlflow_attrs = [
-            "mlflow.spanInputs",
-            "mlflow.spanOutputs",
-            "mlflow.user",
-            "mlflow.traceName",
-            "mlflow.version",
-            "mlflow.runName",
-        ]
+        # Use variant-specific expected attributes
+        mlflow_attrs = agent_variant.root_span_mlflow_attrs
 
         traces_checked = 0
         traces_with_all_attrs = 0
@@ -2114,16 +2302,22 @@ class TestRootSpanAttributes:
         )
 
     def test_root_span_has_openinference_attributes(
-        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+        self,
+        mlflow_url: str,
+        mlflow_configured: bool,
+        traces_available: list,
+        agent_variant: VariantProfile,
     ):
         """
         Verify root span has OpenInference attributes for Phoenix.
 
-        Required OpenInference attributes:
-        - input.value: User input text
-        - output.value: Agent response text
-        - openinference.span.kind: Span type (should be 'AGENT')
+        Attributes checked depend on the agent observability variant.
         """
+        if not agent_variant.root_span_openinference_attrs:
+            pytest.skip(
+                f"Variant '{agent_variant.name}' does not produce OpenInference root span attributes"
+            )
+
         all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not genai_traces:
             pytest.fail(
@@ -2131,15 +2325,11 @@ class TestRootSpanAttributes:
             )
 
         print(f"\n{'=' * 60}")
-        print("Root Span OpenInference Attributes (Phoenix)")
+        print(f"Root Span OpenInference Attributes (variant: {agent_variant.name})")
         print(f"{'=' * 60}")
 
-        # Required attributes for Phoenix display
-        openinference_attrs = [
-            "input.value",
-            "output.value",
-            "openinference.span.kind",
-        ]
+        # Use variant-specific expected attributes
+        openinference_attrs = agent_variant.root_span_openinference_attrs
 
         traces_checked = 0
         traces_with_all_attrs = 0
@@ -2202,15 +2392,22 @@ class TestRootSpanAttributes:
         )
 
     def test_root_span_has_genai_attributes(
-        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+        self,
+        mlflow_url: str,
+        mlflow_configured: bool,
+        traces_available: list,
+        agent_variant: VariantProfile,
     ):
         """
         Verify root span has GenAI semantic convention attributes.
 
-        Required GenAI attributes:
-        - gen_ai.conversation.id: Session/conversation identifier
-        - gen_ai.agent.name: Agent name
+        Attributes checked depend on the agent observability variant.
         """
+        if not agent_variant.root_span_genai_attrs:
+            pytest.skip(
+                f"Variant '{agent_variant.name}' does not produce GenAI root span attributes"
+            )
+
         all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not genai_traces:
             pytest.fail(
@@ -2218,14 +2415,11 @@ class TestRootSpanAttributes:
             )
 
         print(f"\n{'=' * 60}")
-        print("Root Span GenAI Attributes")
+        print(f"Root Span GenAI Attributes (variant: {agent_variant.name})")
         print(f"{'=' * 60}")
 
-        # Required GenAI semantic convention attributes
-        genai_attrs = [
-            "gen_ai.conversation.id",
-            "gen_ai.agent.name",
-        ]
+        # Use variant-specific expected attributes
+        genai_attrs = agent_variant.root_span_genai_attrs
 
         traces_checked = 0
         traces_with_all_attrs = 0
@@ -2361,7 +2555,11 @@ class TestTokenUsageVerification:
         return llm_spans
 
     def test_llm_spans_have_token_counts(
-        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+        self,
+        mlflow_url: str,
+        mlflow_configured: bool,
+        traces_available: list,
+        agent_variant: VariantProfile,
     ):
         """
         Verify LLM spans have token usage attributes.
@@ -2370,6 +2568,11 @@ class TestTokenUsageVerification:
         - GenAI format: gen_ai.usage.input_tokens, gen_ai.usage.output_tokens
         - OpenInference format: llm.token_count.prompt, llm.token_count.completion
         """
+        if not agent_variant.has_token_usage:
+            pytest.skip(
+                f"Variant '{agent_variant.name}' does not produce token usage spans"
+            )
+
         all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not genai_traces:
             pytest.skip(
@@ -3033,7 +3236,11 @@ class TestToolCallSpanAttributes:
         return tool_spans
 
     def test_tool_spans_exist(
-        self, mlflow_url: str, mlflow_configured: bool, traces_available: list
+        self,
+        mlflow_url: str,
+        mlflow_configured: bool,
+        traces_available: list,
+        agent_variant: VariantProfile,
     ):
         """
         Verify tool call spans are captured in traces.
@@ -3041,6 +3248,9 @@ class TestToolCallSpanAttributes:
         Weather agent tests invoke the weather-tool via MCP, which should
         produce tool spans in the trace.
         """
+        if not agent_variant.has_tool_spans:
+            pytest.skip(f"Variant '{agent_variant.name}' does not produce tool spans")
+
         all_traces, genai_traces = self._get_cached_traces(traces_available)
         if not genai_traces:
             pytest.skip("No GenAI traces available - may not have tool instrumentation")
