@@ -22,6 +22,8 @@ This guide focuses on **Client Credentials Grant** for programmatic API access.
 export CLIENT_ID=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.CLIENT_ID}' | base64 -d)
 export CLIENT_SECRET=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.CLIENT_SECRET}' | base64 -d)
 export TOKEN_ENDPOINT=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.TOKEN_ENDPOINT}' | base64 -d)
+export KEYCLOAK_URL=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.KEYCLOAK_URL}' | base64 -d)
+export KEYCLOAK_REALM=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.KEYCLOAK_REALM}' | base64 -d)
 
 # 2. Obtain an access token
 TOKEN=$(curl -s -X POST "$TOKEN_ENDPOINT" \
@@ -54,13 +56,13 @@ Kagenti uses Role-Based Access Control (RBAC) with three roles:
 |-----------------|--------|---------------|
 | `/api/v1/agents` | GET | `kagenti-viewer` |
 | `/api/v1/agents` | POST | `kagenti-operator` |
-| `/api/v1/agents/{id}` | DELETE | `kagenti-operator` |
+| `/api/v1/agents/{namespace}/{name}` | DELETE | `kagenti-operator` |
 | `/api/v1/tools` | GET | `kagenti-viewer` |
 | `/api/v1/tools` | POST | `kagenti-operator` |
 | `/api/v1/chat/*` | GET | `kagenti-viewer` |
 | `/api/v1/chat/*` | POST | `kagenti-operator` |
 | `/api/v1/namespaces` | GET | `kagenti-viewer` |
-| `/api/v1/config` | GET | `kagenti-viewer` |
+| `/api/v1/config/dashboards` | GET | `kagenti-viewer` |
 | `/api/v1/auth/userinfo` | GET | `kagenti-viewer` |
 
 **Public endpoints** (no authentication required):
@@ -93,6 +95,8 @@ The secret contains:
 - `CLIENT_ID` - OAuth2 client ID
 - `CLIENT_SECRET` - OAuth2 client secret
 - `TOKEN_ENDPOINT` - Keycloak token endpoint URL
+- `KEYCLOAK_URL` - Keycloak server URL
+- `KEYCLOAK_REALM` - Keycloak realm name
 
 ### Token Request
 
@@ -117,10 +121,12 @@ curl -X POST "$TOKEN_ENDPOINT" \
 
 ### Token Lifetime
 
-Tokens expire after a configurable period (default: 5 minutes). Your client should:
+Tokens expire after a configurable period. The lifetime is controlled by the
+Keycloak realm and client settings (see **Realm Settings > Tokens** in the
+Keycloak Admin Console). Your client should:
 
-1. Cache tokens until near expiration
-2. Request a new token before the current one expires
+1. Check the `expires_in` field in the token response
+2. Cache tokens and request a new one before expiration
 3. Handle 401 responses by refreshing the token
 
 ## Using Tokens
@@ -212,7 +218,7 @@ For production, create dedicated service accounts per client instead of sharing 
 
 ```bash
 # Create the client
-curl -X POST "$KEYCLOAK_URL/admin/realms/$REALM/clients" \
+curl -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -225,17 +231,17 @@ curl -X POST "$KEYCLOAK_URL/admin/realms/$REALM/clients" \
   }'
 
 # Get the internal client ID
-CLIENT_UUID=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=my-ci-pipeline" \
+CLIENT_UUID=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=my-ci-pipeline" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.[0].id')
 
 # Assign the kagenti-operator role
-ROLE=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/roles/kagenti-operator" \
+ROLE=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/kagenti-operator" \
   -H "Authorization: Bearer $ADMIN_TOKEN")
 
-SERVICE_ACCOUNT_ID=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_UUID/service-account-user" \
+SERVICE_ACCOUNT_ID=$(curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID/service-account-user" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.id')
 
-curl -X POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$SERVICE_ACCOUNT_ID/role-mappings/realm" \
+curl -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$SERVICE_ACCOUNT_ID/role-mappings/realm" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d "[$ROLE]"
@@ -277,33 +283,35 @@ The default `kagenti-api` client is a **shared credential** intended for testing
 
 ```bash
 # Check Keycloak is accessible
-curl -s "$KEYCLOAK_URL/realms/$REALM/.well-known/openid-configuration"
+curl -s "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/.well-known/openid-configuration"
 
 # Verify client exists
-curl -s "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=$CLIENT_ID" \
+curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=$CLIENT_ID" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ### API Returns 401
 
 ```bash
-# Decode and inspect the token
-echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+# Decode and inspect the token (handles base64url padding)
+echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq .
 
-# Check token expiration
-echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.exp | . - now | if . < 0 then "EXPIRED" else "Valid for \(.) seconds" end'
+# Or use Python for reliable base64url decoding
+python3 -c "import jwt; print(jwt.decode('$TOKEN', options={'verify_signature': False}))"
+
+# Or paste the token into https://jwt.io for visual inspection
 ```
 
 ### API Returns 403
 
 ```bash
 # Check roles in token
-echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.realm_access.roles'
+echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq '.realm_access.roles'
 
 # Verify role assignment in Keycloak
-curl -s "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_UUID/service-account-user" \
+curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID/service-account-user" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq '.id' | \
-  xargs -I {} curl -s "$KEYCLOAK_URL/admin/realms/$REALM/users/{}/role-mappings/realm" \
+  xargs -I {} curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/{}/role-mappings/realm" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
