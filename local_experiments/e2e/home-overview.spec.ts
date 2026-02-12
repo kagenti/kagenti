@@ -209,15 +209,16 @@ test.describe('Kagenti Home Page Overview', () => {
     await page.mouse.wheel(0, 300);
     await page.waitForTimeout(PAUSE);
 
-    // ASSERT: Navigation links to main sections exist
-    const actionLinks = page.locator('a[href*="/agents"], a[href*="/tools"], a[href*="/observability"], a[href*="/admin"]');
-    const actionCount = await actionLinks.count();
-    expect(actionCount, 'Home page should have action links to agents/tools/observability').toBeGreaterThan(0);
+    // ASSERT: Quick action cards are visible (View Agents, View Tools, etc.)
+    // These are PatternFly Button variant="link" with onClick, not <a> tags
+    const actionButtons = page.getByRole('button', { name: /View Agents|View Tools|View Dashboards|Open Admin/i });
+    const actionCount = await actionButtons.count();
+    expect(actionCount, 'Home page should have quick action buttons (View Agents/Tools/Dashboards/Admin)').toBeGreaterThan(0);
 
     for (let i = 0; i < Math.min(actionCount, 4); i++) {
-      const link = actionLinks.nth(i);
-      if (await link.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const box = await link.boundingBox();
+      const btn = actionButtons.nth(i);
+      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        const box = await btn.boundingBox();
         if (box) {
           await humanMove(box.x + box.width / 2, box.y + box.height / 2);
           await page.waitForTimeout(600);
