@@ -176,14 +176,13 @@ def main():
             f"No timestamps file found at {ts_file}, using narration duration as pause"
         )
 
-    # Calculate extra wait needed per section:
-    # extra_wait = max(0, narration_duration + buffer - ui_duration)
+    # Calculate minimum section duration = max(ui_time, narration + buffer)
+    # We inject a waitUntilElapsed() BEFORE each markStep (except the first)
+    # that ensures the previous section had at least the target duration.
     BUFFER_S = BUFFER_MS / 1000
-    extra_waits = {}
+    section_targets = {}  # target duration per section in ms
     print()
-    print(
-        f"  {'Section':<20} {'Narration':<10} {'UI time':<10} {'Extra wait':<12} Text"
-    )
+    print(f"  {'Section':<20} {'Narration':<10} {'UI time':<10} {'Target':<12} Text")
     print(f"  {'─' * 20} {'─' * 10} {'─' * 10} {'─' * 12} {'─' * 40}")
 
     for section_name, section_text in sections:
@@ -191,37 +190,54 @@ def main():
             pauses.get(section_name, 3000) / 1000 - BUFFER_S
         )  # raw narration (without buffer)
         ui_dur = ui_durations.get(section_name, 3.0)
-        needed = narr_dur + BUFFER_S  # total time we need for narration
-        extra = max(0, needed - ui_dur)
-        extra_waits[section_name] = int(extra * 1000)
+        target = max(ui_dur, narr_dur + BUFFER_S)
+        section_targets[section_name] = int(target * 1000)
 
-        status = "✓" if extra < 1 else f"+{extra:.1f}s"
+        status = "✓" if target <= ui_dur + 0.5 else f"+{target - ui_dur:.1f}s"
         preview = section_text[:35] + ("..." if len(section_text) > 35 else "")
         print(
-            f"  {section_name:<20} {narr_dur:>6.1f}s    {ui_dur:>6.1f}s    {extra:>6.1f}s {status:<5} {preview}"
+            f"  {section_name:<20} {narr_dur:>6.1f}s    {ui_dur:>6.1f}s    {target:>6.1f}s {status:<5} {preview}"
         )
-        total_narration  # already computed above
 
-    total_extra = sum(extra_waits.values()) / 1000
-    total_video = sum(ui_durations.values()) + total_extra
+    total_target = sum(section_targets.values()) / 1000
     print()
     info(f"Total narration: {total_narration:.1f}s")
     info(f"Total UI time (Pass 1): {sum(ui_durations.values()):.1f}s")
-    info(f"Extra wait added: {total_extra:.1f}s")
-    info(f"Estimated video (Pass 2): {total_video:.1f}s")
+    info(f"Estimated video (Pass 2): {total_target:.1f}s")
     print()
 
     # Read the source test file
     source = Path(args.test).read_text()
 
-    # Insert extra wait after each markStep() — only if narration needs more time
+    # Inject a timing gate BEFORE each markStep() (except the first).
+    # This ensures the PREVIOUS section lasted at least its target duration.
+    # Pattern: before markStep('next'), add:
+    #   { const _elapsed = (Date.now() - demoStartTime);
+    #     const _target = <cumulative_ms>;
+    #     if (_elapsed < _target) await page.waitForTimeout(_target - _elapsed); }
+    #
+    # This is deterministic — the section always takes exactly max(ui, narration+buffer).
+
+    # Build cumulative targets
+    cumulative = {}
+    running_ms = 0
+    for i, (name, _) in enumerate(sections):
+        cumulative[name] = running_ms
+        running_ms += section_targets.get(name, 3000)
+
+    # Replace each markStep('name') with timing gate + markStep.
+    # The gate waits until cumulative elapsed time reaches the target.
+    # Uses inline ternary to avoid block scope issues with Playwright.
     def replace_markstep(match):
         full_match = match.group(0)
         section = match.group(1)
-        extra_ms = extra_waits.get(section, 0)
-        if extra_ms > 0:
-            dur = extra_ms / 1000
-            return f"{full_match}\n    await page.waitForTimeout({extra_ms}); // narration sync: +{dur:.1f}s for [{section}]"
+        target_ms = cumulative.get(section, 0)
+        if target_ms > 0:
+            return (
+                f"await page.waitForTimeout(Math.max(0, {target_ms} - (Date.now() - demoStartTime))); "
+                f"// sync gate: wait until {target_ms / 1000:.1f}s elapsed\n"
+                f"    {full_match}"
+            )
         return full_match
 
     modified = re.sub(
@@ -231,7 +247,7 @@ def main():
     )
 
     # Update pauses dict for the JSON output
-    pauses = extra_waits
+    pauses = section_targets
 
     # Write the narration variant
     output_path = Path(args.output)
