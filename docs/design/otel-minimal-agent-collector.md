@@ -1,276 +1,221 @@
 # Approach B: Minimal Agent Boilerplate + OTEL Collector Enrichment
 
 **Issue:** #667
-**Goal:** Minimize agent observability code to ~15 lines, let OTEL Collector handle enrichment.
+**Goal:** Reduce agent observability code from ~551 lines (PR 114 baseline) to ~50 lines by having the OTEL Collector handle attribute enrichment.
 
 ## Overview
 
-Since the OTEL Collector **cannot create new spans** (only modify existing ones), the agent must create at least one root span. However, we can reduce the agent's responsibility to the absolute minimum:
+The OTEL Collector **cannot create new spans** -- it can only modify existing ones. Therefore the agent must still create a root span. But we can minimize the agent's responsibility to the absolute essentials:
 
-1. Agent creates a named root span (`invoke_agent {name}`) - ~5 lines
-2. Agent sets `input.value` from request body (only agent has this context) - ~3 lines
-3. Agent sets `output.value` from response (only agent knows the final answer) - ~3 lines
-4. OTEL Collector handles ALL MLflow/OpenInference/GenAI enrichment via transform processor
+1. Agent creates a named root span (`invoke_agent {agent_name}`) with standard OTEL SDK
+2. Agent sets attributes that only it can provide: `input.value`, `output.value`, `gen_ai.conversation.id`, `gen_ai.agent.name`, `gen_ai.operation.name`
+3. Agent enables LangChain and OpenAI auto-instrumentation (one line each)
+4. OTEL Collector `transform/agent_enrichment` processor derives **all** MLflow, OpenInference, and additional GenAI attributes from the above
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│ Agent Pod                                    │
-│                                              │
-│  ┌─────────────────────────────────────────┐ │
-│  │ Agent Code                              │ │
-│  │                                         │ │
-│  │ # Minimal boilerplate (~15 lines):      │ │
-│  │ - TracerProvider + OTLP exporter        │ │
-│  │ - Root span middleware                  │ │
-│  │ - input/output capture                  │ │
-│  │                                         │ │
-│  │ # Auto-instrumentation (existing):      │ │
-│  │ - LangChainInstrumentor()               │ │
-│  │ - OpenAIInstrumentor() (optional)       │ │
-│  └────────────────┬────────────────────────┘ │
-│                   │                           │
-└───────────────────┼───────────────────────────┘
-                    │ OTLP spans
-                    ▼
-         ┌──────────────────────┐
-         │ OTEL Collector       │
-         │                      │
-         │ transform/enrich:    │
-         │ - Add mlflow.* attrs │
-         │ - Add OI attrs       │
-         │ - Set spanType       │
-         │ - Map session IDs    │
-         │                      │
-         │ ┌──────┐ ┌────────┐  │
-         │ │Phoenix│ │ MLflow │  │
-         │ └──────┘ └────────┘  │
-         └──────────────────────┘
++---------------------------------------------+
+| Agent Pod                                    |
+|                                              |
+|  +-------------------------------------------+
+|  | Agent Code                                |
+|  |                                           |
+|  | # Minimal boilerplate (~50 lines):        |
+|  | - TracerProvider + OTLP exporter           |
+|  | - Root span middleware (input/output)      |
+|  | - gen_ai.agent.name, gen_ai.operation.name |
+|  | - gen_ai.conversation.id                   |
+|  |                                           |
+|  | # Auto-instrumentation (existing):        |
+|  | - LangChainInstrumentor()                 |
+|  | - OpenAIInstrumentor() (optional)         |
+|  +--------------------+----------------------+
+|                       |
++-----------------------|-----------------------+
+                        | OTLP spans
+                        v
+             +----------------------+
+             | OTEL Collector       |
+             |                      |
+             | transform/           |
+             |  agent_enrichment:   |
+             | - mlflow.spanInputs  |
+             | - mlflow.spanOutputs |
+             | - mlflow.traceName   |
+             | - mlflow.spanType    |
+             | - mlflow.source      |
+             | - mlflow.version     |
+             | - mlflow.runName     |
+             | - mlflow.user        |
+             | - mlflow.trace.*     |
+             | - openinference.*    |
+             | - llm.model_name     |
+             | - llm.token_count.*  |
+             |                      |
+             | +------+ +--------+ |
+             | |Phoenix| | MLflow | |
+             | +------+ +--------+ |
+             +----------------------+
 ```
 
-## What the Agent Needs (Complete Code)
+## How the Minimal Agent Module Works
 
-```python
-"""
-Minimal OTEL observability setup for any Kagenti agent.
-This is ALL the observability code an agent needs.
-The OTEL Collector handles MLflow/Phoenix attribute enrichment.
-"""
-import json
-import os
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.resources import Resource, SERVICE_NAME
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.propagate import set_global_textmap
-from opentelemetry.propagators.composite import CompositePropagator
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from opentelemetry.baggage.propagation import W3CBaggagePropagator
+The reference implementation is in `kagenti/examples/agents/observability_minimal.py`. It provides three functions:
 
-# Setup (call once at startup)
-def setup_tracing(service_name: str = None):
-    service_name = service_name or os.getenv("OTEL_SERVICE_NAME", "agent")
-    provider = TracerProvider(resource=Resource({SERVICE_NAME: service_name}))
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    trace.set_tracer_provider(provider)
-    set_global_textmap(CompositePropagator([
-        TraceContextTextMapPropagator(),
-        W3CBaggagePropagator(),
-    ]))
+### `setup_tracing(service_name, service_version)`
 
-# Auto-instrument frameworks (call once at startup)
-def setup_auto_instrumentation():
-    try:
-        from openinference.instrumentation.langchain import LangChainInstrumentor
-        LangChainInstrumentor().instrument()
-    except ImportError:
-        pass
-    try:
-        from opentelemetry.instrumentation.openai import OpenAIInstrumentor
-        OpenAIInstrumentor().instrument()
-    except ImportError:
-        pass
+Standard OTEL boilerplate: creates a `TracerProvider` with a `Resource` (setting `service.name` and `service.version`), attaches a `BatchSpanProcessor` with an `OTLPSpanExporter`, and sets the global tracer provider. The OTLP endpoint is configured via the standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
 
-# Middleware for root span (add to Starlette/FastAPI app)
-def create_tracing_middleware():
-    tracer = trace.get_tracer("agent")
-    async def middleware(request, call_next):
-        # Only trace A2A API calls
-        if request.url.path in ["/health", "/ready", "/.well-known/agent-card.json"]:
-            return await call_next(request)
+### `setup_auto_instrumentation()`
 
-        # Parse A2A input
-        body = await request.body()
-        user_input = ""
-        context_id = ""
-        try:
-            data = json.loads(body)
-            parts = data.get("params", {}).get("message", {}).get("parts", [])
-            if parts:
-                user_input = parts[0].get("text", "")
-            context_id = data.get("params", {}).get("contextId", "")
-        except Exception:
-            pass
+Enables LangChain and OpenAI auto-instrumentation via their respective instrumentors. These generate child spans for LLM calls, tool invocations, and chain steps automatically -- no agent code needed.
 
-        # Create root span with standard naming
-        agent_name = os.getenv("AGENT_NAME", "agent")
-        with tracer.start_as_current_span(f"invoke_agent {agent_name}") as span:
-            # Set minimal attributes that only the agent can provide
-            if user_input:
-                span.set_attribute("input.value", user_input[:1000])
-            if context_id:
-                span.set_attribute("gen_ai.conversation.id", context_id)
+### `create_tracing_middleware(agent_name)`
 
-            response = await call_next(request)
+Returns a Starlette/FastAPI HTTP middleware that:
 
-            # Note: output capture requires response body access
-            # which is complex with streaming - handled by collector fallback
-            return response
-    return middleware
-```
+1. Skips health and metadata endpoints (`/health`, `/ready`, `/.well-known/agent-card.json`)
+2. Parses the A2A JSON-RPC request body to extract user input text and `contextId`
+3. Creates a root span named `invoke_agent {agent_name}`
+4. Sets five attributes on the span:
+   - `gen_ai.agent.name` -- the agent's name (hardcoded per agent)
+   - `gen_ai.operation.name` -- always `"invoke_agent"`
+   - `input.value` -- user's input text (truncated to 4096 chars)
+   - `gen_ai.conversation.id` -- the A2A contextId for session tracking
+   - `output.value` -- agent's response text (non-streaming only, truncated to 4096 chars)
+5. All LangChain/OpenAI auto-instrumented spans become children of this root span
 
-That's approximately **50 lines** vs the 551 lines in PR 114's observability.py. The agent sets only what it uniquely knows (input text, conversation ID), and the OTEL Collector adds everything else.
+That is it. No `mlflow.*` attributes, no `openinference.span.kind`, no `mlflow.user` -- the collector handles those.
 
-## OTEL Collector Transform Configuration
+## What the OTEL Collector Transform Does
 
-The collector enriches spans with MLflow, OpenInference, and GenAI attributes:
+The `transform/agent_enrichment` processor (defined in the collector ConfigMap and also shown standalone in `kagenti/examples/agents/otel-collector-agent-enrichment.yaml`) uses OTTL to enrich spans:
+
+### Root span detection
+
+Root spans are detected by span name pattern: `IsMatch(name, "^invoke_agent.*")`. This matches spans created by the middleware with the naming convention `invoke_agent {agent_name}`.
+
+### MLflow attributes derived
+
+| Derived attribute | Source | Condition |
+|---|---|---|
+| `mlflow.spanInputs` | `input.value` | `input.value != nil` |
+| `mlflow.spanOutputs` | `output.value` | `output.value != nil` |
+| `mlflow.traceName` | `gen_ai.agent.name` | `gen_ai.agent.name != nil` |
+| `mlflow.source` | `resource.attributes["service.name"]` | resource attr exists |
+| `mlflow.version` | `resource.attributes["service.version"]` | resource attr exists |
+| `mlflow.spanType` | `"AGENT"` (literal) | span name matches `^invoke_agent.*` |
+| `mlflow.runName` | `gen_ai.agent.name` + `"-invoke"` | `gen_ai.agent.name != nil` |
+| `mlflow.user` | `"kagenti"` (literal) | not already set, root span |
+| `mlflow.trace.session` | `gen_ai.conversation.id` | `gen_ai.conversation.id != nil` |
+
+### OpenInference attributes derived
+
+| Derived attribute | Source | Condition |
+|---|---|---|
+| `openinference.span.kind` | `"AGENT"` (literal) | span name matches `^invoke_agent.*` |
+
+### GenAI to OpenInference conversion (for Phoenix)
+
+| Derived attribute | Source | Condition |
+|---|---|---|
+| `llm.model_name` | `gen_ai.request.model` | attr exists (LLM child spans) |
+| `llm.token_count.prompt` | `gen_ai.usage.input_tokens` | attr exists (LLM child spans) |
+| `llm.token_count.completion` | `gen_ai.usage.output_tokens` | attr exists (LLM child spans) |
+
+### Pipeline placement
+
+The processor is placed in both pipelines, before `batch`:
 
 ```yaml
-processors:
-  # Enrich root spans with MLflow attributes
-  transform/agent_enrichment:
-    trace_statements:
-      - context: span
-        statements:
-          # MLflow attributes (from resource and span attributes)
-          - set(attributes["mlflow.spanType"], "AGENT")
-            where IsRootSpan() and attributes["mlflow.spanType"] == nil
-          - set(attributes["mlflow.traceName"], resource.attributes["service.name"])
-            where IsRootSpan() and attributes["mlflow.traceName"] == nil
-          - set(attributes["mlflow.source"], resource.attributes["service.name"])
-            where IsRootSpan() and attributes["mlflow.source"] == nil
-          - set(attributes["mlflow.version"], resource.attributes["service.version"])
-            where IsRootSpan() and attributes["mlflow.version"] == nil
-          - set(attributes["mlflow.runName"], Concat([resource.attributes["service.name"], "-invoke"], ""))
-            where IsRootSpan() and attributes["mlflow.runName"] == nil
-          - set(attributes["mlflow.user"], "kagenti")
-            where IsRootSpan() and attributes["mlflow.user"] == nil
-
-          # Copy input.value to mlflow.spanInputs (agent sets input.value)
-          - set(attributes["mlflow.spanInputs"], attributes["input.value"])
-            where IsRootSpan() and attributes["input.value"] != nil and attributes["mlflow.spanInputs"] == nil
-
-          # Copy gen_ai.conversation.id to mlflow.trace.session
-          - set(attributes["mlflow.trace.session"], attributes["gen_ai.conversation.id"])
-            where attributes["gen_ai.conversation.id"] != nil
-
-          # OpenInference enrichment
-          - set(attributes["openinference.span.kind"], "AGENT")
-            where IsRootSpan() and attributes["openinference.span.kind"] == nil
-          - set(attributes["gen_ai.prompt"], attributes["input.value"])
-            where IsRootSpan() and attributes["input.value"] != nil and attributes["gen_ai.prompt"] == nil
-
-          # GenAI agent attributes from resource
-          - set(attributes["gen_ai.agent.name"], resource.attributes["service.name"])
-            where IsRootSpan() and attributes["gen_ai.agent.name"] == nil
-          - set(attributes["gen_ai.operation.name"], "invoke_agent")
-            where IsRootSpan() and attributes["gen_ai.operation.name"] == nil
-          - set(attributes["gen_ai.provider.name"], "langchain")
-            where IsRootSpan() and attributes["gen_ai.provider.name"] == nil
-
-  # Existing GenAI to OpenInference transform for LLM spans
-  transform/genai_to_openinference:
-    trace_statements:
-      - context: span
-        statements:
-          - set(attributes["llm.model_name"], attributes["gen_ai.request.model"])
-            where attributes["gen_ai.request.model"] != nil
-          # ... (existing transforms)
+traces/phoenix:
+  processors: [memory_limiter, filter/phoenix, transform/agent_enrichment, transform/genai_to_openinference, batch]
+traces/mlflow:
+  processors: [memory_limiter, filter/mlflow, transform/agent_enrichment, batch]
 ```
 
-### Pipeline Configuration
+## Attribute Responsibility Matrix
 
-```yaml
-service:
-  pipelines:
-    traces/mlflow:
-      receivers: [otlp]
-      processors: [memory_limiter, filter/mlflow, transform/agent_enrichment, batch]
-      exporters: [debug, otlphttp/mlflow]
-    traces/phoenix:
-      receivers: [otlp]
-      processors: [memory_limiter, filter/phoenix, transform/agent_enrichment, transform/genai_to_openinference, batch]
-      exporters: [otlp/phoenix]
-```
+| Attribute | Agent sets? | Collector derives? | Notes |
+|---|---|---|---|
+| `input.value` | Yes | No | Only agent has request body access |
+| `output.value` | Yes | No | Only agent has response body access |
+| `gen_ai.agent.name` | Yes | No | Hardcoded per agent |
+| `gen_ai.operation.name` | Yes | No | Always `"invoke_agent"` |
+| `gen_ai.conversation.id` | Yes | No | From A2A contextId |
+| `service.name` (resource) | Yes | No | Set in TracerProvider resource |
+| `service.version` (resource) | Yes | No | Set in TracerProvider resource |
+| `mlflow.spanInputs` | No | Yes | Copied from `input.value` |
+| `mlflow.spanOutputs` | No | Yes | Copied from `output.value` |
+| `mlflow.traceName` | No | Yes | From `gen_ai.agent.name` |
+| `mlflow.source` | No | Yes | From resource `service.name` |
+| `mlflow.version` | No | Yes | From resource `service.version` |
+| `mlflow.spanType` | No | Yes | Literal `"AGENT"` on root spans |
+| `mlflow.runName` | No | Yes | `{agent_name}-invoke` |
+| `mlflow.user` | No | Yes | Default `"kagenti"` |
+| `mlflow.trace.session` | No | Yes | From `gen_ai.conversation.id` |
+| `openinference.span.kind` | No | Yes | Literal `"AGENT"` on root spans |
+| `llm.model_name` | No | Yes | From `gen_ai.request.model` (auto-instr) |
+| `llm.token_count.*` | No | Yes | From `gen_ai.usage.*` (auto-instr) |
+| `gen_ai.request.model` | No (auto) | No | LangChain/OpenAI auto-instrumentation |
+| `gen_ai.usage.*` | No (auto) | No | LangChain/OpenAI auto-instrumentation |
+
+## Comparison: Baseline (PR 114) vs Minimal (This Approach)
+
+| Aspect | PR 114 (Baseline) | Approach B (Minimal) |
+|---|---|---|
+| **Agent observability code** | ~551 lines | ~50 lines |
+| **MLflow-specific knowledge in agent** | Yes (all `mlflow.*` attrs) | No (collector handles) |
+| **OpenInference knowledge in agent** | Yes (`openinference.span.kind`) | No (collector handles) |
+| **Output capture** | Yes (full middleware) | Yes (simple middleware) |
+| **Session tracking** | Yes | Yes |
+| **Token usage tracking** | Yes (auto-instrumentation) | Yes (auto-instrumentation) |
+| **Tool call spans** | Yes (auto-instrumentation) | Yes (auto-instrumentation) |
+| **Centralized attribute config** | No (each agent hardcodes) | Yes (collector config) |
+| **Adding new backend attrs** | Redeploy all agents | Update collector config only |
+| **Agent metadata source** | Hardcoded in agent | Resource attrs + env vars |
+| **Root span detection** | N/A (agent sets all attrs) | `IsMatch(name, "^invoke_agent.*")` |
 
 ## Limitations
 
-### What the Collector Cannot Do
-1. **Cannot set `mlflow.spanOutputs`** - this requires access to the HTTP response body, which only the agent middleware has. Options:
-   - Agent middleware captures output (adds ~10 more lines)
-   - Accept that output column is empty in MLflow (informational only)
-   - Post-processing in MLflow backend
+### What the collector cannot do
 
-2. **Cannot copy attributes between spans** - e.g., copying token counts from LLM child spans to root span. Each span is processed independently.
+1. **Cannot create spans** -- the agent MUST create the root span. Auto-instrumentation creates LLM/tool child spans.
 
-3. **Cannot create spans** - agent MUST create the root span.
+2. **Cannot copy attributes between spans** -- each span is processed independently. For example, copying token counts from LLM child spans to the root span is not possible in the transform processor.
 
-### What the Agent Must Still Do
-1. Create a named root span (`invoke_agent {name}`)
-2. Parse A2A request body for user input
-3. Set `input.value` and `gen_ai.conversation.id` on root span
-4. Optionally capture output for `output.value` / `mlflow.spanOutputs`
+3. **Cannot access HTTP request/response bodies** -- the agent middleware must parse A2A JSON-RPC and set `input.value` and `output.value`.
 
-## Trade-offs
+### What the agent must still do
 
-**Pros:**
-- Agent code reduced from ~551 lines to ~50 lines
-- No MLflow-specific knowledge in agent code
-- Centralized attribute mapping in OTEL Collector
-- Easy to update attribute mappings without agent changes
-- `IsRootSpan()` function (OTEL Collector v0.104.0+) enables reliable root span detection
+1. Create a named root span (`invoke_agent {agent_name}`)
+2. Parse A2A request body for user input text
+3. Set `input.value`, `output.value`, `gen_ai.agent.name`, `gen_ai.operation.name`, and `gen_ai.conversation.id`
+4. Initialize TracerProvider with resource attributes (`service.name`, `service.version`)
+5. Enable auto-instrumentation for LangChain/OpenAI
 
-**Cons:**
-- Agent still needs ~50 lines of boilerplate (not zero)
-- Output capture (`mlflow.spanOutputs`) still requires agent-side code or is missing
-- A2A JSON-RPC parsing duplicated (in agent middleware + potentially collector)
-- Each agent needs the middleware added to their web framework
+### Streaming responses
 
-## Comparison with Current Approach (PR 114)
+For streaming (SSE) responses, capturing `output.value` on the root span is not straightforward because the response body is not available as a single value. Options:
+- Accept missing output for streaming responses (root span still has `input.value`)
+- Implement buffered output capture in the agent middleware (adds complexity)
+- Post-process in the observability backend
 
-| Aspect | PR 114 (Current) | This Approach |
-|--------|------------------|---------------|
-| Agent code lines | ~551 | ~50 |
-| MLflow knowledge in agent | Yes (all attrs) | No (collector handles) |
-| Output capture | Yes (middleware) | Partial (needs agent help) |
-| Session tracking | Yes | Yes |
-| Token usage | Yes (auto-instr) | Yes (auto-instr) |
-| Tool spans | Yes (auto-instr) | Yes (auto-instr) |
-| Centralized config | No | Yes (collector) |
-| Agent metadata source | Hardcoded | Resource attrs + env vars |
+## Files
 
-## E2E Test Impact
-
-| Test | Expected Result | Notes |
-|------|----------------|-------|
-| TestWeatherAgentTracesInMLflow | PASS | Root span has service.name from resource |
-| TestGenAITracesInMLflow | PASS | Auto-instrumentation unchanged |
-| TestMLflowTraceMetadata | PASS | Collector sets all metadata |
-| TestSessionTracking | PASS | Agent sets gen_ai.conversation.id |
-| TestRootSpanAttributes (MLflow) | PARTIAL | spanOutputs may be missing |
-| TestRootSpanAttributes (OpenInference) | PARTIAL | output.value may be missing |
-| TestRootSpanAttributes (GenAI) | PASS | conversation.id + agent.name set |
-| TestTokenUsageVerification | PASS | Auto-instrumentation handles this |
-| TestToolCallSpanAttributes | PASS | Auto-instrumentation handles this |
-| TestErrorSpanValidation | PASS | OTEL SDK handles error status |
+| File | Purpose |
+|---|---|
+| `kagenti/examples/agents/observability_minimal.py` | Reference implementation (~50 lines) for agent developers |
+| `kagenti/examples/agents/otel-collector-agent-enrichment.yaml` | Standalone collector transform config (for reference/testing) |
+| `charts/kagenti-deps/templates/otel-collector.yaml` | Deployed collector config with `transform/agent_enrichment` |
+| `docs/design/otel-minimal-agent-collector.md` | This design document |
 
 ## Implementation Steps
 
-1. Create minimal agent tracing module (~50 lines)
-2. Update weather agent to use minimal module (remove observability.py)
-3. Update OTEL Collector config with `transform/agent_enrichment`
-4. Verify `IsRootSpan()` works with collector v0.122.1
-5. Run MLflow E2E tests
-6. Address output capture gap if tests require it
+1. Create minimal agent tracing module (`observability_minimal.py`)
+2. Create standalone collector enrichment config (`otel-collector-agent-enrichment.yaml`)
+3. Update OTEL Collector Helm template with `transform/agent_enrichment` processor
+4. Update both Phoenix and MLflow pipelines to include the new processor
+5. Deploy and verify with E2E tests
+6. Migrate existing agents from PR 114's `observability.py` to `observability_minimal.py`
