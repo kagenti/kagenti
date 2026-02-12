@@ -562,7 +562,9 @@ else
 fi
 
 # Set up paths for Playwright
-export PLAYWRIGHT_OUTPUT_DIR="$SCRIPT_DIR/test-results"
+# Per-test output dir enables parallel runs without stomping on each other
+export PLAYWRIGHT_OUTPUT_DIR="$SCRIPT_DIR/test-results/${TEST_PREFIX:-all}"
+mkdir -p "$PLAYWRIGHT_OUTPUT_DIR"
 
 log_info "Repo path: $REPO_PATH"
 log_info "Test dir: $E2E_DIR"
@@ -851,8 +853,8 @@ VIDEO_COUNT=0
 DEMO_DIR_REL="${DEMO_DIR#$SCRIPT_DIR/}"
 log_info "Collecting recorded videos to ${DEMO_DIR_REL}/..."
 
-# Playwright stores videos in test-results/<test-hash>/video.webm
-if [ -d "$SCRIPT_DIR/test-results" ]; then
+# Playwright stores videos in test-results/<test>/<test-hash>/video.webm
+if [ -d "$PLAYWRIGHT_OUTPUT_DIR" ]; then
     while IFS= read -r -d '' video_file; do
         parent_dir=$(basename "$(dirname "$video_file")")
         test_name=$(echo "$parent_dir" | sed 's/-chromium$//' | sed 's/-[0-9]*$//')
@@ -882,7 +884,7 @@ if [ -d "$SCRIPT_DIR/test-results" ]; then
             [ -f "$voiceover_ts" ] && cp "$voiceover_ts" "$DEMO_DIR/${SCENARIO_NAME}_latest_voiceover.mp4"
             [ -f "$narration_ts" ] && cp "$narration_ts" "$DEMO_DIR/${SCENARIO_NAME}_latest_narration.mp3"
         fi
-    done < <(find "$SCRIPT_DIR/test-results" -name "video.webm" -print0 2>/dev/null)
+    done < <(find "$PLAYWRIGHT_OUTPUT_DIR" -name "video.webm" -print0 2>/dev/null)
 fi
 
 # ============================================================================
@@ -915,7 +917,7 @@ fi
 
 # Voiceover status
 if [ -n "${OPENAI_API_KEY:-}" ]; then
-    voiceover_count=$(find "$DEMO_DIR" -name "*_voiceover.mp4" -newer "$SCRIPT_DIR/test-results" 2>/dev/null | wc -l | tr -d ' ')
+    voiceover_count=$(find "$DEMO_DIR" -name "*_voiceover.mp4" -newer "$PLAYWRIGHT_OUTPUT_DIR" 2>/dev/null | wc -l | tr -d ' ')
     if [ "$voiceover_count" -gt 0 ]; then
         log_success "Generated $voiceover_count voiceover video(s)"
     fi
