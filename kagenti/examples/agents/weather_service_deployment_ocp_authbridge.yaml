@@ -34,34 +34,10 @@ spec:
         kagenti.io/inject: enabled
         app.kubernetes.io/name: weather-service
     spec:
-      # Init container: set up iptables to redirect traffic through Envoy
-      initContainers:
-      - name: proxy-init
-        image: ghcr.io/kagenti/kagenti-extensions/proxy-init:latest
-        imagePullPolicy: IfNotPresent
-        env:
-        - name: PROXY_PORT
-          value: "15123"
-        - name: INBOUND_PROXY_PORT
-          value: "15124"
-        - name: PROXY_UID
-          value: "1337"
-        - name: OUTBOUND_PORTS_EXCLUDE
-          value: "8080"
-        resources:
-          limits:
-            cpu: 10m
-            memory: 10Mi
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        securityContext:
-          runAsUser: 0
-          runAsNonRoot: false
-          capabilities:
-            add:
-            - NET_ADMIN
-            - NET_RAW
+      # NOTE: No proxy-init container - on OpenShift, iptables-based traffic
+      # redirection requires privileged SCC. Instead, we route traffic through
+      # Envoy by pointing the Service/Route at the envoy inbound port (15124).
+      # For production, the webhook handles SCC grants automatically.
       containers:
       # Main agent container
       - name: agent
@@ -168,9 +144,6 @@ spec:
           limits:
             cpu: 200m
             memory: 256Mi
-        securityContext:
-          runAsUser: 1337
-          runAsGroup: 1337
         volumeMounts:
         - name: envoy-config
           mountPath: /etc/envoy
@@ -231,10 +204,6 @@ spec:
           limits:
             cpu: 100m
             memory: 128Mi
-        securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          runAsNonRoot: true
         volumeMounts:
         - name: shared-data
           mountPath: /shared
