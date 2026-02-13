@@ -1,0 +1,250 @@
+# Deployment manifest for weather-service agent with AuthBridge sidecar (OpenShift)
+# This variant includes the AuthBridge envoy+ext_proc sidecar for Approach A testing.
+# Traffic flows: Client -> Envoy(15124) -> ext_proc(9090) -> Agent(8000)
+# The proxy-init container sets up iptables to redirect traffic through Envoy.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-service
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+    kagenti.io/inject: enabled
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: weather-service
+    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "Weather service agent with AuthBridge sidecar for E2E testing"
+    kagenti.io/shipwright-build: weather-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: weather-service
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: LangGraph
+        kagenti.io/inject: enabled
+        app.kubernetes.io/name: weather-service
+    spec:
+      # Init container: set up iptables to redirect traffic through Envoy
+      initContainers:
+      - name: proxy-init
+        image: ghcr.io/kagenti/kagenti-extensions/proxy-init:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PROXY_PORT
+          value: "15123"
+        - name: INBOUND_PROXY_PORT
+          value: "15124"
+        - name: PROXY_UID
+          value: "1337"
+        - name: OUTBOUND_PORTS_EXCLUDE
+          value: "8080"
+        resources:
+          limits:
+            cpu: 10m
+            memory: 10Mi
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+      containers:
+      # Main agent container
+      - name: agent
+        image: image-registry.openshift-image-registry.svc:5000/team1/weather-service:v0.0.1
+        imagePullPolicy: Always
+        env:
+        - name: PORT
+          value: "8000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_SERVICE_NAME
+          value: "weather-service"
+        - name: KEYCLOAK_URL
+          value: "http://keycloak.keycloak.svc.cluster.local:8080"
+        - name: UV_CACHE_DIR
+          value: "/app/.cache/uv"
+        - name: MCP_URL
+          value: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
+        - name: LLM_API_BASE
+          value: "https://api.openai.com/v1"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: LLM_MODEL
+          value: "gpt-4o-mini"
+        - name: GITHUB_SECRET_NAME
+          value: "github-token-secret"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: cache
+          mountPath: /app/.cache
+        - name: marvin
+          mountPath: /.marvin
+      # AuthBridge sidecar: Envoy + ext_proc (JWT validation + token exchange)
+      # The envoy-with-processor image bundles Envoy and the Go ext_proc binary
+      - name: envoy-proxy
+        image: ghcr.io/kagenti/kagenti-extensions/envoy-with-processor:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: envoy-outbound
+          containerPort: 15123
+          protocol: TCP
+        - name: envoy-inbound
+          containerPort: 15124
+          protocol: TCP
+        - name: envoy-admin
+          containerPort: 9901
+          protocol: TCP
+        - name: ext-proc
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: TOKEN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TOKEN_URL
+              optional: true
+        - name: ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: ISSUER
+              optional: false
+        - name: TARGET_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TARGET_AUDIENCE
+              optional: true
+        - name: TARGET_SCOPES
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TARGET_SCOPES
+              optional: true
+        - name: CLIENT_ID_FILE
+          value: "/shared/client-id.txt"
+        - name: CLIENT_SECRET_FILE
+          value: "/shared/client-secret.txt"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        securityContext:
+          runAsUser: 1337
+          runAsGroup: 1337
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+          readOnly: true
+        - name: shared-data
+          mountPath: /shared
+          readOnly: true
+      # Client registration sidecar: registers with Keycloak, writes credentials to /shared/
+      - name: kagenti-client-registration
+        image: ghcr.io/kagenti/kagenti-extensions/client-registration:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "SPIRE disabled - using static client ID"
+          echo "team1/weather-service" > /shared/client-id.txt
+          echo "Client ID: team1/weather-service"
+          echo "Starting client registration..."
+          python client_registration.py
+          echo "Client registration complete!"
+          tail -f /dev/null
+        env:
+        - name: SPIRE_ENABLED
+          value: "false"
+        - name: KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_URL
+              optional: true
+        - name: KEYCLOAK_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_REALM
+              optional: true
+        - name: KEYCLOAK_ADMIN_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_ADMIN_USERNAME
+              optional: true
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_ADMIN_PASSWORD
+              optional: true
+        - name: CLIENT_NAME
+          value: "team1/weather-service"
+        - name: SECRET_FILE_PATH
+          value: "/shared/client-secret.txt"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      volumes:
+      - name: cache
+        emptyDir: {}
+      - name: marvin
+        emptyDir: {}
+      - name: envoy-config
+        configMap:
+          name: envoy-config
+      - name: shared-data
+        emptyDir: {}
