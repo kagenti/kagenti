@@ -65,7 +65,8 @@ The Kagenti installer includes automatic version detection:
 These limitations will be addressed in successive PRs.
 
 - Only [quay.io](https://quay.io) registry has been tested in build from source
-- Ollama models not tested - OpenAI key required for now
+
+Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](../local-models.md) for OpenShift-specific setup instructions including deploying Ollama as a pod.
 
 ## Requirements
 
@@ -365,8 +366,7 @@ Open the printed address in your browser and accept the certificate. It is norma
 
 ## Running the demo
 
-At this time, only the OpenAI API-backed agents have been tested (`a2a-content-extractor` and `a2a-currency-converter`).
-You may use the pre-built images available at [https://github.com/orgs/kagenti/packages?repo_name=agent-examples](https://github.com/orgs/kagenti/packages?repo_name=agent-examples) or build from source.
+You may use the pre-built images available at [https://github.com/orgs/kagenti/packages?repo_name=agent-examples](https://github.com/orgs/kagenti/packages?repo_name=agent-examples) or build from source. Agents support both Ollama and OpenAI backends — select the appropriate environment variable set when importing an agent. See the [Local Models Guide](../local-models.md) for details.
 
 Building from source has been tested only with `quay.io`, and requires setting up a robot account on [quay.io](https://quay.io), creating empty repos in your organization for the repos to build (e.g.`a2a-contact-extractor` and `a2a-currency-converter`) and granting the robot account write access to those repos.
 
@@ -384,10 +384,7 @@ You should now be able to use the UI to:
 
 # Running the Demo
 
-> **Note**
-> At this time, only the OpenAI API-backed agents have been tested: `a2a-content-extractor` and `a2a-currency-converter`.
-
-There are two ways to get the agent images for the demo: using pre-built images (recommended for a quick start) or building them from source.
+There are two ways to get the agent images for the demo: using pre-built images (recommended for a quick start) or building them from source. Both Ollama and OpenAI backends are supported — see the [Local Models Guide](../local-models.md) for details.
 
 ---
 

@@ -116,7 +116,8 @@ Note: The wrapper provides convenience features (path resolution for env/secret 
 
 > **Note**: OpenShift support is work in progress. Current limitations:
 > - Only [quay.io](https://quay.io) registry tested for build-from-source
-> - Ollama models not tested — OpenAI key required
+>
+> Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](local-models.md) for setup details.
 
 ### Pre-Installation Steps
 
