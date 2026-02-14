@@ -626,6 +626,8 @@ func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
 		case *v3.ProcessingRequest_RequestHeaders:
 			headers := r.RequestHeaders.Headers
 			direction := getHeaderValue(headers.Headers, "x-authbridge-direction")
+			path := getHeaderValue(headers.Headers, ":path")
+			log.Printf("[ext_proc] RequestHeaders: direction=%q path=%q", direction, path)
 			if direction == "inbound" {
 				resp = p.handleInbound(stream, headers)
 			} else {
@@ -633,9 +635,11 @@ func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
 			}
 
 		case *v3.ProcessingRequest_RequestBody:
+			log.Printf("[ext_proc] RequestBody: %d bytes", len(r.RequestBody.Body))
 			resp = p.handleRequestBody(stream, r.RequestBody.Body)
 
 		case *v3.ProcessingRequest_ResponseHeaders:
+			log.Printf("[ext_proc] ResponseHeaders received")
 			resp = &v3.ProcessingResponse{
 				Response: &v3.ProcessingResponse_ResponseHeaders{
 					ResponseHeaders: &v3.HeadersResponse{},
@@ -643,10 +647,11 @@ func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
 			}
 
 		case *v3.ProcessingRequest_ResponseBody:
+			log.Printf("[ext_proc] ResponseBody: %d bytes", len(r.ResponseBody.Body))
 			resp = p.handleResponseBody(stream, r.ResponseBody.Body)
 
 		default:
-			log.Printf("Unknown request type: %T", r)
+			log.Printf("[ext_proc] Unknown request type: %T", r)
 		}
 
 		if err := stream.Send(resp); err != nil {
