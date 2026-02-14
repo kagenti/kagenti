@@ -83,10 +83,10 @@ static_resources:
                         request_header_mode: SEND
                         response_header_mode: SEND
                         # OTEL tracing requires body access for:
-                        # - Request: parse A2A JSON-RPC to extract user input, context_id
-                        # - Response: parse A2A response to extract agent output
+                        # - Request: BUFFERED to parse A2A JSON-RPC for user input, context_id
+                        # - Response: STREAMED to accumulate SSE chunks for agent output
                         request_body_mode: BUFFERED
-                        response_body_mode: BUFFERED
+                        response_body_mode: STREAMED
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
