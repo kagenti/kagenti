@@ -363,6 +363,100 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
+// extractA2AOutput extracts agent output text from A2A response body.
+// Handles both plain JSON-RPC responses and SSE-formatted streaming responses.
+//
+// SSE format: each event is "data: {json}\n\n"
+// A2A JSON-RPC format: {"result":{"artifacts":[{"parts":[{"text":"..."}]}]}}
+// A2A streaming event: {"result":{"type":"artifact-update","artifact":{"parts":[{"text":"..."}]}}}
+func extractA2AOutput(body []byte) string {
+	// Try plain JSON-RPC response first
+	var resp a2aResponse
+	if err := json.Unmarshal(body, &resp); err == nil {
+		if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
+			return resp.Result.Artifacts[0].Parts[0].Text
+		}
+	}
+
+	// SSE format: split by lines and find JSON data events
+	bodyStr := string(body)
+	lines := strings.Split(bodyStr, "\n")
+
+	// Collect all text parts from SSE events (last one is typically the final answer)
+	var lastOutput string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		jsonStr := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if jsonStr == "" {
+			continue
+		}
+
+		// Try to parse as JSON and extract text from various A2A event formats
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
+			continue
+		}
+
+		// Check for result.artifacts[0].parts[0].text (final response)
+		if result, ok := event["result"].(map[string]interface{}); ok {
+			if artifacts, ok := result["artifacts"].([]interface{}); ok && len(artifacts) > 0 {
+				if artifact, ok := artifacts[0].(map[string]interface{}); ok {
+					if parts, ok := artifact["parts"].([]interface{}); ok && len(parts) > 0 {
+						if part, ok := parts[0].(map[string]interface{}); ok {
+							if text, ok := part["text"].(string); ok && text != "" {
+								lastOutput = text
+							}
+						}
+					}
+				}
+			}
+			// Check for result.artifact.parts[0].text (streaming artifact-update)
+			if artifact, ok := result["artifact"].(map[string]interface{}); ok {
+				if parts, ok := artifact["parts"].([]interface{}); ok && len(parts) > 0 {
+					if part, ok := parts[0].(map[string]interface{}); ok {
+						if text, ok := part["text"].(string); ok && text != "" {
+							lastOutput = text
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// If no SSE data found, try finding last JSON object in raw body
+	if lastOutput == "" {
+		lastBrace := strings.LastIndex(bodyStr, "}")
+		if lastBrace >= 0 {
+			depth := 0
+			startIdx := -1
+			for i := lastBrace; i >= 0; i-- {
+				if bodyStr[i] == '}' {
+					depth++
+				} else if bodyStr[i] == '{' {
+					depth--
+					if depth == 0 {
+						startIdx = i
+						break
+					}
+				}
+			}
+			if startIdx >= 0 {
+				var resp a2aResponse
+				if err := json.Unmarshal([]byte(bodyStr[startIdx:lastBrace+1]), &resp); err == nil {
+					if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
+						lastOutput = resp.Result.Artifacts[0].Parts[0].Text
+					}
+				}
+			}
+		}
+	}
+
+	return lastOutput
+}
+
 // ============================================================================
 // OTEL-enhanced processor
 // ============================================================================
@@ -590,59 +684,17 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		// Try to extract output from accumulated response body
 		fullBody := state.responseBody
 		if len(fullBody) > 0 {
-			// A2A JSON-RPC response: try to parse the full response
-			var resp a2aResponse
-			if err := json.Unmarshal(fullBody, &resp); err == nil {
-				if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
-					output := truncate(resp.Result.Artifacts[0].Parts[0].Text, 4096)
-					if output != "" {
-						state.span.SetAttributes(
-							attribute.String("gen_ai.completion", output),
-							attribute.String("output.value", output),
-							attribute.String("mlflow.spanOutputs", output),
-						)
-						log.Printf("[OTEL] Set output on root span (%d chars)", len(output))
-					}
-				}
+			output := extractA2AOutput(fullBody)
+			if output != "" {
+				t := truncate(output, 4096)
+				state.span.SetAttributes(
+					attribute.String("gen_ai.completion", t),
+					attribute.String("output.value", t),
+					attribute.String("mlflow.spanOutputs", t),
+				)
+				log.Printf("[OTEL] Set output on root span (%d chars)", len(output))
 			} else {
-				// SSE streaming: body may contain multiple SSE events.
-				// Try to find the last JSON-RPC response in the stream.
-				bodyStr := string(fullBody)
-				// Look for the last complete JSON object in the stream
-				lastBrace := strings.LastIndex(bodyStr, "}")
-				if lastBrace >= 0 {
-					// Find the matching opening brace
-					depth := 0
-					startIdx := -1
-					for i := lastBrace; i >= 0; i-- {
-						if bodyStr[i] == '}' {
-							depth++
-						} else if bodyStr[i] == '{' {
-							depth--
-							if depth == 0 {
-								startIdx = i
-								break
-							}
-						}
-					}
-					if startIdx >= 0 {
-						jsonStr := bodyStr[startIdx : lastBrace+1]
-						var resp a2aResponse
-						if err := json.Unmarshal([]byte(jsonStr), &resp); err == nil {
-							if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
-								output := truncate(resp.Result.Artifacts[0].Parts[0].Text, 4096)
-								if output != "" {
-									state.span.SetAttributes(
-										attribute.String("gen_ai.completion", output),
-										attribute.String("output.value", output),
-										attribute.String("mlflow.spanOutputs", output),
-									)
-									log.Printf("[OTEL] Set output from SSE stream (%d chars)", len(output))
-								}
-							}
-						}
-					}
-				}
+				log.Printf("[OTEL] Could not extract output from %d bytes", len(fullBody))
 			}
 		}
 		state.span.SetStatus(otelcodes.Ok, "")
