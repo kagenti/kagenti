@@ -368,8 +368,9 @@ func truncate(s string, n int) string {
 // ============================================================================
 
 type streamSpanState struct {
-	span trace.Span
-	ctx  context.Context
+	span         trace.Span
+	ctx          context.Context
+	responseBody []byte // accumulated response chunks for STREAMED mode
 }
 
 type processor struct {
@@ -559,31 +560,94 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 	}
 }
 
-// handleResponseBody captures output and ends the root span.
-func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer, body []byte) *v3.ProcessingResponse {
+// handleResponseBody accumulates response chunks and processes the full body
+// when end_of_stream is true. In STREAMED mode, Envoy sends each SSE chunk
+// as a separate ResponseBody message. We accumulate them until the stream ends.
+func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer, body []byte, endOfStream bool) *v3.ProcessingResponse {
 	p.mu.Lock()
 	state := p.streamSpans[stream]
+
+	if state != nil {
+		// Accumulate response body chunks
+		state.responseBody = append(state.responseBody, body...)
+	}
+
+	if !endOfStream {
+		// More chunks coming, don't end span yet
+		p.mu.Unlock()
+		return &v3.ProcessingResponse{
+			Response: &v3.ProcessingResponse_ResponseBody{
+				ResponseBody: &v3.BodyResponse{},
+			},
+		}
+	}
+
+	// End of stream — process accumulated body and end span
 	delete(p.streamSpans, stream)
 	p.mu.Unlock()
 
 	if state != nil && state.span != nil {
-		// Parse response for output
-		var resp a2aResponse
-		if err := json.Unmarshal(body, &resp); err == nil {
-			if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
-				output := truncate(resp.Result.Artifacts[0].Parts[0].Text, 4096)
-				if output != "" {
-					state.span.SetAttributes(
-						attribute.String("gen_ai.completion", output),
-						attribute.String("output.value", output),
-						attribute.String("mlflow.spanOutputs", output),
-					)
-					log.Printf("[OTEL] Set output on root span (%d chars)", len(output))
+		// Try to extract output from accumulated response body
+		fullBody := state.responseBody
+		if len(fullBody) > 0 {
+			// A2A JSON-RPC response: try to parse the full response
+			var resp a2aResponse
+			if err := json.Unmarshal(fullBody, &resp); err == nil {
+				if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
+					output := truncate(resp.Result.Artifacts[0].Parts[0].Text, 4096)
+					if output != "" {
+						state.span.SetAttributes(
+							attribute.String("gen_ai.completion", output),
+							attribute.String("output.value", output),
+							attribute.String("mlflow.spanOutputs", output),
+						)
+						log.Printf("[OTEL] Set output on root span (%d chars)", len(output))
+					}
+				}
+			} else {
+				// SSE streaming: body may contain multiple SSE events.
+				// Try to find the last JSON-RPC response in the stream.
+				bodyStr := string(fullBody)
+				// Look for the last complete JSON object in the stream
+				lastBrace := strings.LastIndex(bodyStr, "}")
+				if lastBrace >= 0 {
+					// Find the matching opening brace
+					depth := 0
+					startIdx := -1
+					for i := lastBrace; i >= 0; i-- {
+						if bodyStr[i] == '}' {
+							depth++
+						} else if bodyStr[i] == '{' {
+							depth--
+							if depth == 0 {
+								startIdx = i
+								break
+							}
+						}
+					}
+					if startIdx >= 0 {
+						jsonStr := bodyStr[startIdx : lastBrace+1]
+						var resp a2aResponse
+						if err := json.Unmarshal([]byte(jsonStr), &resp); err == nil {
+							if len(resp.Result.Artifacts) > 0 && len(resp.Result.Artifacts[0].Parts) > 0 {
+								output := truncate(resp.Result.Artifacts[0].Parts[0].Text, 4096)
+								if output != "" {
+									state.span.SetAttributes(
+										attribute.String("gen_ai.completion", output),
+										attribute.String("output.value", output),
+										attribute.String("mlflow.spanOutputs", output),
+									)
+									log.Printf("[OTEL] Set output from SSE stream (%d chars)", len(output))
+								}
+							}
+						}
+					}
 				}
 			}
 		}
 		state.span.SetStatus(otelcodes.Ok, "")
 		state.span.End()
+		log.Printf("[OTEL] Root span ended (accumulated %d bytes)", len(fullBody))
 	}
 
 	return &v3.ProcessingResponse{
@@ -653,8 +717,9 @@ func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
 			}
 
 		case *v3.ProcessingRequest_ResponseBody:
-			log.Printf("[ext_proc] ResponseBody: %d bytes", len(r.ResponseBody.Body))
-			resp = p.handleResponseBody(stream, r.ResponseBody.Body)
+			eos := r.ResponseBody.EndOfStream
+			log.Printf("[ext_proc] ResponseBody: %d bytes (end_of_stream=%v)", len(r.ResponseBody.Body), eos)
+			resp = p.handleResponseBody(stream, r.ResponseBody.Body, eos)
 
 		default:
 			log.Printf("[ext_proc] Unknown request type: %T", r)

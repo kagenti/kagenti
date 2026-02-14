@@ -2214,17 +2214,18 @@ class TestRootSpanAttributes:
     def _get_root_span(self, trace: Any) -> dict | None:
         """Get the root span from a trace.
 
-        The root span is either:
-        - A span with no parent_id
-        - A span named 'gen_ai.agent.invoke' (our middleware root)
+        Looks for the agent root span by GenAI semantic convention name
+        pattern 'invoke_agent {name}', then falls back to tree root.
+        See: https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/
         """
         spans = get_trace_span_details(trace)
         if not spans:
             return None
 
-        # First, look for our middleware root span by name
+        # Look for GenAI agent root span: 'invoke_agent {name}'
         for span in spans:
-            if span.get("name") == "gen_ai.agent.invoke":
+            name = span.get("name", "")
+            if name.startswith("invoke_agent"):
                 return span
 
         # Build tree structure to find root
