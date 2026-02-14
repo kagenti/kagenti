@@ -107,6 +107,25 @@ agentOAuthSecret:
   clientName: kagenti-keycloak-client
 
 # ------------------------------------------------------------------
+#  API OAuth Secret Creator Configuration
+#  Creates a confidential client for programmatic API access via
+#  Client Credentials Grant. The credentials are stored in a K8s secret.
+#  WARNING: This is a shared credential for testing/dev only.
+# ------------------------------------------------------------------
+apiOAuthSecret:
+  enabled: false
+  image: ghcr.io/kagenti/kagenti/api-oauth-secret
+  tag: latest
+  # Client ID for the API service account
+  clientId: kagenti-api
+  # Name of the K8s secret to store credentials
+  secretName: kagenti-api-oauth-secret
+  # Realm role to assign to the service account
+  serviceAccountRole: kagenti-operator
+  # When true, use the in-cluster serviceaccount CA for SSL verification
+  useServiceAccountCA: false
+
+# ------------------------------------------------------------------
 #  Keycloak Configuration
 # ------------------------------------------------------------------
 keycloak:
