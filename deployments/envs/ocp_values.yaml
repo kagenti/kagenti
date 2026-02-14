@@ -91,6 +91,11 @@ charts:
         # for a OCP with self-signed certs for routes it should be true.
         # for a OCP with CA-signed certs for routes it should be false.
         useServiceAccountCA: true
+      phoenix:
+        auth:
+          enabled: true
+      phoenixOAuthSecret:
+        useServiceAccountCA: true
       keycloak:
         url: http://keycloak-service.keycloak:8080
       # List of agent namespaces for Ansible installer to create internal-registry-secret

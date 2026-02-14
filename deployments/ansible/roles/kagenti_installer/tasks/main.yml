@@ -1718,3 +1718,36 @@
     - enable_openshift | default(false)
     - (charts['kagenti'] | default({})).get('enabled', false) | bool
 
+# Restart Phoenix after phoenix-oauth-secret-job completes.
+# For fresh installs: Phoenix has an init container that waits for the OAuth secret.
+# For upgrades: If Phoenix was previously running without auth, this restart picks up
+# the new OAuth credentials. The restart is safe and ensures auth is always applied.
+- name: Restart Phoenix to pick up OAuth secret on OpenShift
+  block:
+    - name: Wait for Phoenix OAuth secret job to complete
+      command: >-
+        kubectl wait --for=condition=complete job/phoenix-oauth-secret-job
+        -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
+        --timeout=120s
+      register: phoenix_oauth_job_wait
+      failed_when: false
+      changed_when: false
+
+    - name: Restart Phoenix StatefulSet to pick up OAuth credentials
+      command: >-
+        kubectl rollout restart statefulset/phoenix
+        -n {{ (charts['kagenti-deps'] | default({})).get('namespace', 'kagenti-system') }}
+      when: phoenix_oauth_job_wait.rc == 0
+
+    - name: Wait for Phoenix rollout to complete
+      command: >-
+        kubectl rollout status statefulset/phoenix
+        -n {{ (charts['kagenti-deps'] | default({})).get('namespace', 'kagenti-system') }}
+        --timeout=120s
+      when: phoenix_oauth_job_wait.rc == 0
+  when:
+    - enable_openshift | default(false)
+    - (charts['kagenti'] | default({})).get('enabled', false) | bool
+    - (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('otel', {}).get('enabled', true) | bool
+    - (charts['kagenti'] | default({})).get('values', {}).get('phoenix', {}).get('auth', {}).get('enabled', true) | bool
+

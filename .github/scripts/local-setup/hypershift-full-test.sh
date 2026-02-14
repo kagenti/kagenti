@@ -981,11 +981,24 @@ if [ "$RUN_TEST" = "true" ]; then
         fi
     fi
 
+    # Get Phoenix URL from route (if not already set)
+    if [ -z "${PHOENIX_URL:-}" ]; then
+        PHOENIX_HOST=$(oc get route -n kagenti-system phoenix -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$PHOENIX_HOST" ]; then
+            export PHOENIX_URL="https://$PHOENIX_HOST"
+            log_step "Found Phoenix route: $PHOENIX_URL"
+        else
+            log_step "Phoenix route not found - Phoenix tests will use in-cluster URL or skip"
+            # Don't set PHOENIX_URL - let tests skip or use default
+        fi
+    fi
+
     # Set config file based on environment
     export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
 
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
+    log_step "PHOENIX_URL: ${PHOENIX_URL:-not set}"
     log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
     # Export pytest filter options if specified
