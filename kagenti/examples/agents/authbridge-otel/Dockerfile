@@ -4,14 +4,12 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Copy go module files first for caching
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source
+# Copy all source files
+COPY go.mod ./
 COPY *.go ./
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /go-processor .
+# Download dependencies and build
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /go-processor .
 
 FROM alpine:latest
 
