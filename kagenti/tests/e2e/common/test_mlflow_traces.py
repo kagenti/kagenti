@@ -1004,19 +1004,38 @@ def mlflow_configured(mlflow_url, mlflow_client_token, is_openshift):
 
 
 @pytest.fixture(scope="module")
-def traces_available(mlflow_configured):
-    """Wait for traces to be available in MLflow before running trace tests.
+def traces_available(mlflow_configured, test_session_id):
+    """Wait for traces from the current test session to appear in MLflow.
 
-    This fixture ensures that:
-    1. OTEL collector has time to batch and forward traces
-    2. MLflow has ingested the traces
-    3. Tests don't fail due to timing issues
+    Filters traces by test_session_id (passed as contextId in agent conversation
+    tests) to avoid false positives from old traces on repeated test runs.
 
-    Uses exponential backoff to avoid overwhelming MLflow API.
-    Module-scoped so it only runs once for all test classes.
+    Falls back to all traces if no session-filtered traces are found (e.g.,
+    if conversation tests didn't use contextId).
     """
-    logger.info("Waiting for traces to appear in MLflow...")
+    logger.info(f"Waiting for traces with session ID {test_session_id} in MLflow...")
 
+    # First try to find traces correlated to this test session
+    try:
+        traces = wait_for_traces(
+            check_fn=lambda: get_traces_by_session_id(test_session_id),
+            min_count=1,
+            timeout_seconds=60,
+            poll_interval=3.0,
+            backoff_factor=1.5,
+            description=f"session-filtered traces (session={test_session_id[:8]}...)",
+        )
+        logger.info(
+            f"Found {len(traces)} traces for current session, proceeding with tests"
+        )
+        return traces
+    except TimeoutError:
+        logger.warning(
+            f"No session-filtered traces found for {test_session_id}. "
+            "Falling back to all traces (may include old traces)."
+        )
+
+    # Fall back to all traces
     try:
         traces = wait_for_traces(
             check_fn=get_all_traces,
@@ -1024,9 +1043,9 @@ def traces_available(mlflow_configured):
             timeout_seconds=30,
             poll_interval=2.0,
             backoff_factor=1.5,
-            description="traces in MLflow",
+            description="traces in MLflow (unfiltered fallback)",
         )
-        logger.info(f"Found {len(traces)} traces, proceeding with tests")
+        logger.info(f"Found {len(traces)} total traces (fallback), proceeding")
         return traces
     except TimeoutError as e:
         pytest.fail(
