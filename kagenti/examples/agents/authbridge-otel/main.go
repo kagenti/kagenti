@@ -628,10 +628,16 @@ func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
 			direction := getHeaderValue(headers.Headers, "x-authbridge-direction")
 			path := getHeaderValue(headers.Headers, ":path")
 			log.Printf("[ext_proc] RequestHeaders: direction=%q path=%q", direction, path)
-			if direction == "inbound" {
-				resp = p.handleInbound(stream, headers)
-			} else {
+			// In our config, there's only one listener (inbound on 15124).
+			// The x-authbridge-direction header is added by virtual_host config
+			// AFTER ext_proc runs, so it's always empty here.
+			// Treat all traffic as inbound (create root span + inject traceparent).
+			// When outbound listener is added, use direction header to distinguish.
+			if direction == "outbound" {
 				resp = p.handleOutbound(headers)
+			} else {
+				// Default: inbound (includes direction="" and direction="inbound")
+				resp = p.handleInbound(stream, headers)
 			}
 
 		case *v3.ProcessingRequest_RequestBody:
