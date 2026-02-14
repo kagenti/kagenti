@@ -378,34 +378,73 @@ type processor struct {
 	streamSpans map[v3.ExternalProcessor_ProcessServer]*streamSpanState
 }
 
-func (p *processor) handleInbound(headers *core.HeaderMap) *v3.ProcessingResponse {
-	if jwksCache == nil || inboundIssuer == "" {
-		// Inbound validation not configured, pass through
-		return &v3.ProcessingResponse{
-			Response: &v3.ProcessingResponse_RequestHeaders{
-				RequestHeaders: &v3.HeadersResponse{
-					Response: &v3.CommonResponse{
-						HeaderMutation: &v3.HeaderMutation{
-							RemoveHeaders: []string{"x-authbridge-direction"},
-						},
-					},
-				},
-			},
+// handleInbound processes inbound request HEADERS.
+// Creates the OTEL root span HERE (before body) so the traceparent header
+// is injected into the request BEFORE Envoy forwards headers to the agent.
+// Body processing later enriches the span with input/output text.
+func (p *processor) handleInbound(stream v3.ExternalProcessor_ProcessServer, headers *core.HeaderMap) *v3.ProcessingResponse {
+	// JWT validation (if configured)
+	if jwksCache != nil && inboundIssuer != "" {
+		authHeader := getHeaderValue(headers.Headers, "authorization")
+		if authHeader == "" {
+			return denyRequest("missing Authorization header")
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		tokenString = strings.TrimPrefix(tokenString, "bearer ")
+		if tokenString == authHeader {
+			return denyRequest("invalid Authorization header format")
+		}
+		if err := validateInboundJWT(tokenString, inboundJWKSURL, inboundIssuer); err != nil {
+			log.Printf("[Inbound] JWT validation failed: %v", err)
+			return denyRequest(fmt.Sprintf("token validation failed: %v", err))
 		}
 	}
 
-	authHeader := getHeaderValue(headers.Headers, "authorization")
-	if authHeader == "" {
-		return denyRequest("missing Authorization header")
-	}
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-	tokenString = strings.TrimPrefix(tokenString, "bearer ")
-	if tokenString == authHeader {
-		return denyRequest("invalid Authorization header format")
-	}
-	if err := validateInboundJWT(tokenString, inboundJWKSURL, inboundIssuer); err != nil {
-		log.Printf("[Inbound] JWT validation failed: %v", err)
-		return denyRequest(fmt.Sprintf("token validation failed: %v", err))
+	// Build header mutations
+	removeHeaders := []string{"x-authbridge-direction"}
+	var setHeaders []*core.HeaderValueOption
+
+	// Create OTEL root span NOW (during header processing) so traceparent
+	// is injected BEFORE Envoy forwards headers to the agent.
+	// Input/output will be set later during body processing.
+	if otelEnabled && otelTracer != nil {
+		spanName := fmt.Sprintf("invoke_agent %s", agentName)
+		ctx, span := otelTracer.Start(context.Background(), spanName,
+			trace.WithSpanKind(trace.SpanKindInternal),
+		)
+
+		// Set static attributes now (input/output added during body processing)
+		span.SetAttributes(
+			attribute.String("gen_ai.operation.name", "invoke_agent"),
+			attribute.String("gen_ai.provider.name", agentProvider),
+			attribute.String("gen_ai.agent.name", agentName),
+			attribute.String("gen_ai.agent.version", agentVersion),
+			attribute.String("mlflow.spanType", "AGENT"),
+			attribute.String("mlflow.traceName", agentName),
+			attribute.String("mlflow.runName", agentName+"-invoke"),
+			attribute.String("mlflow.source", serviceName),
+			attribute.String("mlflow.version", agentVersion),
+			attribute.String("mlflow.user", "kagenti"),
+			attribute.String("openinference.span.kind", "AGENT"),
+		)
+
+		// Store span for body processing
+		p.mu.Lock()
+		p.streamSpans[stream] = &streamSpanState{span: span, ctx: ctx}
+		p.mu.Unlock()
+
+		// Inject traceparent header — THIS is the critical part.
+		// The agent's OTEL SDK will read this header and create child spans
+		// under our root span's trace context.
+		carrier := propagation.MapCarrier{}
+		textPropagator.Inject(ctx, carrier)
+		for key, value := range carrier {
+			setHeaders = append(setHeaders, &core.HeaderValueOption{
+				Header: &core.HeaderValue{Key: key, RawValue: []byte(value)},
+			})
+		}
+
+		log.Printf("[OTEL] Created root span at HEADER phase: %s (traceparent injected)", spanName)
 	}
 
 	return &v3.ProcessingResponse{
@@ -413,7 +452,8 @@ func (p *processor) handleInbound(headers *core.HeaderMap) *v3.ProcessingRespons
 			RequestHeaders: &v3.HeadersResponse{
 				Response: &v3.CommonResponse{
 					HeaderMutation: &v3.HeaderMutation{
-						RemoveHeaders: []string{"x-authbridge-direction"},
+						RemoveHeaders: removeHeaders,
+						SetHeaders:    setHeaders,
 					},
 				},
 			},
@@ -456,9 +496,15 @@ func (p *processor) handleOutbound(headers *core.HeaderMap) *v3.ProcessingRespon
 	}
 }
 
-// handleRequestBody creates the OTEL root span from A2A request body.
+// handleRequestBody enriches the existing root span with A2A request body data.
+// The span was already created during header processing (handleInbound).
 func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer, body []byte) *v3.ProcessingResponse {
-	if !otelEnabled || otelTracer == nil {
+	// Get the span created during header processing
+	p.mu.Lock()
+	state := p.streamSpans[stream]
+	p.mu.Unlock()
+
+	if state == nil || state.span == nil || !otelEnabled {
 		return &v3.ProcessingResponse{
 			Response: &v3.ProcessingResponse_RequestBody{
 				RequestBody: &v3.BodyResponse{},
@@ -466,10 +512,10 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 		}
 	}
 
-	// Parse A2A JSON-RPC
+	// Parse A2A JSON-RPC body to extract input and conversation ID
 	var req a2aRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		log.Printf("[OTEL] Failed to parse A2A request: %v", err)
+		log.Printf("[OTEL] Failed to parse A2A request body: %v", err)
 		return &v3.ProcessingResponse{
 			Response: &v3.ProcessingResponse_RequestBody{
 				RequestBody: &v3.BodyResponse{},
@@ -486,72 +532,29 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 		conversationID = req.Params.Message.ContextID
 	}
 
-	// Create root span
-	spanName := fmt.Sprintf("invoke_agent %s", agentName)
-	ctx, span := otelTracer.Start(context.Background(), spanName,
-		trace.WithSpanKind(trace.SpanKindInternal),
-	)
-
-	// GenAI semantic conventions
-	span.SetAttributes(
-		attribute.String("gen_ai.operation.name", "invoke_agent"),
-		attribute.String("gen_ai.provider.name", agentProvider),
-		attribute.String("gen_ai.agent.name", agentName),
-		attribute.String("gen_ai.agent.version", agentVersion),
-	)
+	// Enrich the existing span with input and conversation data
 	if userInput != "" {
 		t := truncate(userInput, 4096)
-		span.SetAttributes(
+		state.span.SetAttributes(
 			attribute.String("gen_ai.prompt", t),
 			attribute.String("input.value", t),
 			attribute.String("mlflow.spanInputs", t),
 		)
 	}
 	if conversationID != "" {
-		span.SetAttributes(
+		state.span.SetAttributes(
 			attribute.String("gen_ai.conversation.id", conversationID),
 			attribute.String("mlflow.trace.session", conversationID),
 			attribute.String("session.id", conversationID),
 		)
 	}
 
-	// MLflow attributes
-	span.SetAttributes(
-		attribute.String("mlflow.spanType", "AGENT"),
-		attribute.String("mlflow.traceName", agentName),
-		attribute.String("mlflow.runName", agentName+"-invoke"),
-		attribute.String("mlflow.source", serviceName),
-		attribute.String("mlflow.version", agentVersion),
-		attribute.String("mlflow.user", "kagenti"),
-		attribute.String("openinference.span.kind", "AGENT"),
-	)
-
-	log.Printf("[OTEL] Created root span: %s (input=%d chars, conversation=%s)",
-		spanName, len(userInput), conversationID)
-
-	// Store span for response capture
-	p.mu.Lock()
-	p.streamSpans[stream] = &streamSpanState{span: span, ctx: ctx}
-	p.mu.Unlock()
-
-	// Inject traceparent header
-	carrier := propagation.MapCarrier{}
-	textPropagator.Inject(ctx, carrier)
-
-	var setHeaders []*core.HeaderValueOption
-	for key, value := range carrier {
-		setHeaders = append(setHeaders, &core.HeaderValueOption{
-			Header: &core.HeaderValue{Key: key, RawValue: []byte(value)},
-		})
-	}
+	log.Printf("[OTEL] Enriched root span with body: input=%d chars, conversation=%s",
+		len(userInput), conversationID)
 
 	return &v3.ProcessingResponse{
 		Response: &v3.ProcessingResponse_RequestBody{
-			RequestBody: &v3.BodyResponse{
-				Response: &v3.CommonResponse{
-					HeaderMutation: &v3.HeaderMutation{SetHeaders: setHeaders},
-				},
-			},
+			RequestBody: &v3.BodyResponse{},
 		},
 	}
 }
@@ -624,7 +627,7 @@ func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
 			headers := r.RequestHeaders.Headers
 			direction := getHeaderValue(headers.Headers, "x-authbridge-direction")
 			if direction == "inbound" {
-				resp = p.handleInbound(headers)
+				resp = p.handleInbound(stream, headers)
 			} else {
 				resp = p.handleOutbound(headers)
 			}
