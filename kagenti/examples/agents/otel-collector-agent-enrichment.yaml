@@ -1,0 +1,82 @@
+# =============================================================================
+# OTEL Collector Transform Processor: Agent Span Enrichment
+# =============================================================================
+#
+# This configuration shows the OTEL Collector transform processor that enriches
+# agent spans with MLflow, OpenInference, and GenAI attributes. It complements
+# the minimal agent boilerplate in observability_minimal.py.
+#
+# The agent sets ONLY:
+#   - input.value         (parsed from A2A JSON-RPC request body)
+#   - output.value        (from response body, non-streaming only)
+#   - gen_ai.agent.name   (hardcoded per agent)
+#   - gen_ai.operation.name = "invoke_agent"
+#   - gen_ai.conversation.id (from A2A contextId)
+#
+# This processor derives ALL other attributes from those + resource attributes.
+#
+# Root span detection: IsMatch(name, "^invoke_agent.*") matches spans created
+# by the agent middleware with naming convention "invoke_agent {agent_name}".
+#
+# Collector version: otel/opentelemetry-collector-contrib:0.122.1
+# OTTL reference: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/ottl
+# =============================================================================
+
+processors:
+  # =========================================================================
+  # Transform processor for enriching agent root spans
+  # Adds MLflow, OpenInference, and GenAI attributes that agents don't set
+  # =========================================================================
+  transform/agent_enrichment:
+    trace_statements:
+      - context: span
+        statements:
+          # =================================================================
+          # MLflow attributes (derived from existing span + resource attrs)
+          # =================================================================
+
+          # Copy input.value to mlflow.spanInputs for MLflow trace display
+          - set(attributes["mlflow.spanInputs"], attributes["input.value"]) where attributes["input.value"] != nil
+
+          # Copy output.value to mlflow.spanOutputs for MLflow trace display
+          - set(attributes["mlflow.spanOutputs"], attributes["output.value"]) where attributes["output.value"] != nil
+
+          # Set trace name from agent name for MLflow trace list
+          - set(attributes["mlflow.traceName"], attributes["gen_ai.agent.name"]) where attributes["gen_ai.agent.name"] != nil
+
+          # Set source from resource service.name
+          - set(attributes["mlflow.source"], resource.attributes["service.name"]) where resource.attributes["service.name"] != nil
+
+          # Set version from resource service.version
+          - set(attributes["mlflow.version"], resource.attributes["service.version"]) where resource.attributes["service.version"] != nil
+
+          # Mark agent root spans as AGENT type for MLflow span tree
+          - set(attributes["mlflow.spanType"], "AGENT") where IsMatch(name, "^invoke_agent.*")
+
+          # Set run name for MLflow experiment tracking
+          - set(attributes["mlflow.runName"], Concat([attributes["gen_ai.agent.name"], "-invoke"], "")) where attributes["gen_ai.agent.name"] != nil
+
+          # Default user when not provided by agent
+          - set(attributes["mlflow.user"], "kagenti") where attributes["mlflow.user"] == nil and IsMatch(name, "^invoke_agent.*")
+
+          # Session tracking: map gen_ai.conversation.id to mlflow.trace.session
+          - set(attributes["mlflow.trace.session"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
+
+          # =================================================================
+          # OpenInference attributes (for Phoenix UI)
+          # =================================================================
+
+          # Set span kind to AGENT for root spans (Phoenix span tree)
+          - set(attributes["openinference.span.kind"], "AGENT") where IsMatch(name, "^invoke_agent.*")
+
+          # =================================================================
+          # GenAI to OpenInference conversion (for Phoenix compatibility)
+          # Same transforms as existing genai_to_openinference processor
+          # =================================================================
+
+          # Convert GenAI model name to OpenInference format
+          - set(attributes["llm.model_name"], attributes["gen_ai.request.model"]) where attributes["gen_ai.request.model"] != nil
+
+          # Convert GenAI token counts to OpenInference format
+          - set(attributes["llm.token_count.prompt"], attributes["gen_ai.usage.input_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil
+          - set(attributes["llm.token_count.completion"], attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.output_tokens"] != nil
