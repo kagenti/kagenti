@@ -21,6 +21,7 @@
  *   PHOENIX_URL      - Phoenix UI URL (optional, alternative to MLflow)
  */
 import { test, expect } from '@playwright/test';
+import { demoLogin, KC_USER, KC_PASS } from './demo-auth';
 
 // Demo pacing — pause so the viewer can see what's happening
 const PAUSE = 2000;
@@ -37,8 +38,6 @@ const markStep = (step: string) => {
 
 
 const UI_URL = process.env.KAGENTI_UI_URL || '';
-const KC_USER = process.env.KEYCLOAK_USER || 'admin';
-const KC_PASS = process.env.KEYCLOAK_PASS || 'admin';
 const MLFLOW_URL = process.env.MLFLOW_URL || '';
 const KIALI_URL = process.env.KIALI_URL || '';
 const PHOENIX_URL = process.env.PHOENIX_URL || '';
@@ -132,59 +131,7 @@ test.describe('Kagenti Platform Walkthrough', () => {
     // STEP 2: Login via Keycloak (if Sign In button is visible)
     // ================================================================
     markStep('login');
-    console.log('[demo] Step 2: Login via Keycloak');
-    const loginButton = page.getByRole('button', { name: /sign in|login|log in/i })
-      .or(page.getByRole('link', { name: /sign in|login|log in/i }));
-
-    if (await loginButton.first().isVisible({ timeout: 5000 }).catch(() => false)) {
-      await demoClick(loginButton.first(), 'Sign In button');
-
-      // Wait for Keycloak login page
-      await page.waitForURL(
-        (url) => url.toString().includes('/realms/'),
-        { timeout: 15000 }
-      );
-      await page.waitForSelector('#username', { timeout: 10000 });
-      await page.waitForTimeout(PAUSE);
-
-      // Fill credentials with visible typing
-      await page.fill('#username', KC_USER);
-      await page.waitForTimeout(500);
-      await page.fill('#password', KC_PASS);
-      await page.waitForTimeout(500);
-      await demoClick(page.locator('#kc-login'), 'Keycloak Sign In');
-
-      // Handle VERIFY_PROFILE if it appears
-      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-      if (page.url().includes('VERIFY_PROFILE') || page.url().includes('required-action')) {
-        const emailField = page.locator('#email');
-        if (await emailField.isVisible({ timeout: 2000 }).catch(() => false)) {
-          if (!(await emailField.inputValue())) await emailField.fill('admin@kagenti.local');
-        }
-        const firstNameField = page.locator('#firstName');
-        if (await firstNameField.isVisible({ timeout: 1000 }).catch(() => false)) {
-          if (!(await firstNameField.inputValue())) await firstNameField.fill('Admin');
-        }
-        const lastNameField = page.locator('#lastName');
-        if (await lastNameField.isVisible({ timeout: 1000 }).catch(() => false)) {
-          if (!(await lastNameField.inputValue())) await lastNameField.fill('User');
-        }
-        const submitBtn = page.locator('input[type="submit"], button[type="submit"]');
-        if (await submitBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await submitBtn.click();
-        }
-      }
-
-      // Wait for redirect back to UI
-      await page.waitForURL(
-        (url) => url.toString().startsWith(UI_URL) && !url.toString().includes('/realms/'),
-        { timeout: 30000 }
-      );
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-      console.log('[demo] Login successful');
-    } else {
-      console.log('[demo] No login button — auth disabled');
-    }
+    await demoLogin(page, demoClick);
 
     // Show the home page
     await page.waitForTimeout(LONG_PAUSE);
