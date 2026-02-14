@@ -184,7 +184,7 @@ fi
 # ============================================================================
 # Discover available tests
 # ============================================================================
-LOCAL_E2E_DIR="$SCRIPT_DIR/e2e"
+LOCAL_E2E_DIR="$REPO_PATH/kagenti/ui-v2/e2e/demos"
 
 DEMO_MAP="$SCRIPT_DIR/demo-map.json"
 
@@ -741,7 +741,7 @@ log_info "Config: $CONFIG_PATH"
 # ============================================================================
 NARRATION_TEST_NAME="${TEST_PREFIX:-walkthrough-demo}"
 NARRATION_FILE="$SCRIPT_DIR/narrations/${NARRATION_TEST_NAME}.txt"
-SOURCE_TEST="$SCRIPT_DIR/e2e/${NARRATION_TEST_NAME}.spec.ts"
+SOURCE_TEST="$LOCAL_E2E_DIR/${NARRATION_TEST_NAME}.spec.ts"
 NARRATION_DIR="$SCRIPT_DIR/e2e-narration"
 HAS_NARRATION=false
 
@@ -891,7 +891,7 @@ fi
 # Collocate artifacts alongside videos
 # ============================================================================
 # Copy test spec
-SOURCE_SPEC="$SCRIPT_DIR/e2e/${SCENARIO_NAME}.spec.ts"
+SOURCE_SPEC="$LOCAL_E2E_DIR/${SCENARIO_NAME}.spec.ts"
 [ -f "$SOURCE_SPEC" ] && cp "$SOURCE_SPEC" "$DEMO_DIR/${SCENARIO_NAME}.spec.ts"
 
 # Copy narration file
