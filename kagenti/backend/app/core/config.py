@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
     shipwright_default_timeout: str = "15m"
 
+    # Build reconciliation settings
+    build_reconciliation_interval: int = 30  # seconds between reconciliation scans
+    enable_build_reconciliation: bool = True  # enable/disable the reconciliation loop
+
     # Migration settings (Phase 4: Agent CRD to Deployment migration)
     # When True, list_agents will also include legacy Agent CRDs that haven't been migrated
     # Default is False since agents now use standard Kubernetes workloads (Deployments, StatefulSets, Jobs)

@@ -8,6 +8,7 @@ This module provides the REST API backend for the Kagenti UI,
 exposing endpoints for managing agents, tools, and platform configuration.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -47,7 +48,28 @@ async def lifespan(app: FastAPI):
     logger.info(f"Debug mode: {settings.debug}")
     logger.info(f"Domain: {settings.domain_name}")
     logger.info(f"ENABLE_AUTH environment variable set to: {settings.enable_auth}")
+
+    # Start build reconciliation loop
+    reconciliation_task = None
+    if settings.enable_build_reconciliation:
+        from app.services.reconciliation import run_reconciliation_loop
+
+        reconciliation_task = asyncio.create_task(run_reconciliation_loop())
+        logger.info(
+            "Build reconciliation started (interval: %ds)",
+            settings.build_reconciliation_interval,
+        )
+
     yield
+
+    # Stop reconciliation
+    if reconciliation_task:
+        reconciliation_task.cancel()
+        try:
+            await reconciliation_task
+        except asyncio.CancelledError:
+            pass
+
     logger.info("Shutting down Kagenti Backend API")
 
 
