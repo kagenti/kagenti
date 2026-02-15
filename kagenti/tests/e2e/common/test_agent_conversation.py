@@ -102,7 +102,7 @@ class TestWeatherAgentConversation:
     """Test weather-service agent with MCP weather-tool (works with both operators)."""
 
     @pytest.mark.asyncio
-    async def test_agent_simple_query(self):
+    async def test_agent_simple_query(self, test_session_id):
         """
         Test agent can process a simple query using A2A protocol.
 
@@ -111,6 +111,9 @@ class TestWeatherAgentConversation:
         - Agent API is accessible via A2A
         - LLM integration works (Ollama on Kind, OpenAI on OpenShift)
         - Agent can generate responses to weather queries
+
+        Uses test_session_id as contextId so observability tests can
+        correlate traces to this specific test run.
         """
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
         ssl_verify = _get_ssl_context()
@@ -139,12 +142,14 @@ class TestWeatherAgentConversation:
                 "Check: pod running, port-forward active, service exists"
             )
 
-        # Send message
+        # Send message with contextId for trace correlation
+        # Observability tests use this to filter traces from current test run
         user_message = "What is the weather like in San Francisco?"
         message = A2AMessage(
             role="user",
             parts=[TextPart(text=user_message)],
             messageId=uuid4().hex,
+            contextId=test_session_id,
         )
 
         full_response = ""

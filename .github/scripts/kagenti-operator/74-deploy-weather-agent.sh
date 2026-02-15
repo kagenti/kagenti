@@ -107,9 +107,16 @@ log_success "BuildRun completed successfully"
 
 log_info "Creating Deployment and Service..."
 
-# Apply Deployment manifest (use OCP-specific file with correct registry on OpenShift)
+# Apply Deployment manifest
+# Use AUTHBRIDGE_INJECT=true to deploy with AuthBridge sidecar (Approach A testing)
+AUTHBRIDGE_INJECT="${AUTHBRIDGE_INJECT:-false}"
 if [ "$IS_OPENSHIFT" = "true" ]; then
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
+    if [ "$AUTHBRIDGE_INJECT" = "true" ]; then
+        log_info "Deploying with AuthBridge sidecar (Approach A)"
+        kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp_authbridge.yaml"
+    else
+        kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
+    fi
 else
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment.yaml"
 fi

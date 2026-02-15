@@ -24,9 +24,9 @@ spec:
     type: Git
     git:
       # TODO: Change back to kagenti/agent-examples after PR merged
-      # PR: https://github.com/kagenti/agent-examples/pull/XXX
+      # PR: https://github.com/kagenti/agent-examples/pull/122
       url: https://github.com/ladas/agent-examples
-      revision: genai-autoinstrumentation
+      revision: feat/otel-authbridge-minimal-agent-667
       cloneSecret: github-shipwright-secret
     contextDir: a2a/weather_service
   strategy:
