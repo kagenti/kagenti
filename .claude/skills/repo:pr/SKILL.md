@@ -11,7 +11,7 @@ description: Kagenti PR format - title, summary, issue linking
 <emoji> <Short descriptive title>
 ```
 
-Same emoji prefixes as commits (see `repo:commit`).
+Same emoji prefixes as commits (see `git:commit`).
 
 ## PR Body
 
@@ -57,6 +57,6 @@ EOF
 
 ## Related Skills
 
-- `repo:commit` - Commit format
+- `git:commit` - Commit format
 - `git:rebase` - Rebase before PR
 - `tdd:ci` - TDD workflow that creates PRs

@@ -560,4 +560,4 @@ CI runs UI tests automatically via `91-run-ui-tests.sh` after pytest E2E tests.
 - `test:write` - Write new tests
 - `git:commit` - Commit format
 - `git:rebase` - Rebase onto upstream main
-- `repo:commit` - Repository commit conventions
+- `git:commit` - Commit format and conventions

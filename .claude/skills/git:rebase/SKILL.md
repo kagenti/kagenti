@@ -80,7 +80,6 @@ git rebase --signoff HEAD~$(git rev-list --count upstream/main..HEAD)
 
 ## Related Skills
 
-- `git:commit` - Commit format conventions
+- `git:commit` - Commit format and conventions
 - `git:worktree` - Parallel development with worktrees
 - `tdd:ci` - TDD workflow that needs rebase before push
-- `repo:commit` - Repository-specific commit format
