@@ -810,7 +810,7 @@ cat > "$ENV_FILE" <<ENVFILE
 # HyperShift Management Cluster Kubeconfig
 # =============================================================================
 # Local usage: file path (standard ~/.kube/ location)
-export KUBECONFIG="${MGMT_KUBECONFIG_PATH}"
+export KUBECONFIG="\${HOME}/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig"
 
 # GitHub Actions: base64-encoded (for secrets)
 HYPERSHIFT_MGMT_KUBECONFIG_BASE64="${HYPERSHIFT_MGMT_KUBECONFIG}"
