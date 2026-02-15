@@ -185,3 +185,6 @@ node_modules/
 # Git worktrees for parallel development
 .worktrees/
 test-results/
+
+# Orchestration target repos (cloned, not committed)
+.repos/
