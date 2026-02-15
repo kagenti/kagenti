@@ -566,9 +566,25 @@ if [ "$NEEDS_MGMT_CREDS" = "true" ]; then
         log_error "  This should point to the HyperShift management cluster"
         PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
     elif [ ! -f "$MGMT_KUBECONFIG" ]; then
-        log_error "Management cluster kubeconfig not found: $MGMT_KUBECONFIG"
-        log_error "  Run setup-hypershift-ci-credentials.sh to create it"
-        PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+        # Try to recreate kubeconfig from base64 in .env file
+        if [ -n "${HYPERSHIFT_MGMT_KUBECONFIG_BASE64:-}" ]; then
+            log_step "Kubeconfig file missing, recreating from base64..."
+            mkdir -p "$(dirname "$MGMT_KUBECONFIG")"
+            if echo "$HYPERSHIFT_MGMT_KUBECONFIG_BASE64" | base64 -d > "$MGMT_KUBECONFIG" 2>/dev/null && \
+               grep -q "clusters:" "$MGMT_KUBECONFIG" 2>/dev/null; then
+                chmod 600 "$MGMT_KUBECONFIG"
+                log_step "Management cluster kubeconfig: $MGMT_KUBECONFIG (recreated from base64)"
+            else
+                rm -f "$MGMT_KUBECONFIG"
+                log_error "Failed to decode HYPERSHIFT_MGMT_KUBECONFIG_BASE64 (invalid base64 or content)"
+                log_error "  Run setup-hypershift-ci-credentials.sh to regenerate"
+                PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+            fi
+        else
+            log_error "Management cluster kubeconfig not found: $MGMT_KUBECONFIG"
+            log_error "  Run setup-hypershift-ci-credentials.sh to create it"
+            PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+        fi
     else
         log_step "Management cluster kubeconfig: $MGMT_KUBECONFIG"
     fi

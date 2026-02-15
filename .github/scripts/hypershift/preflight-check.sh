@@ -7,14 +7,30 @@
 # - AWS authentication and IAM permissions
 # - OpenShift authentication and cluster-admin permissions
 # - HyperShift CRD installation
+# - OIDC S3 configuration (secret, configmap, operator args)
 # - Pull secret accessibility
 # - Base domain discovery
 #
 # USAGE:
-#   ./.github/scripts/hypershift/preflight-check.sh
+#   ./.github/scripts/hypershift/preflight-check.sh              # Check only
+#   ./.github/scripts/hypershift/preflight-check.sh --auto-fix   # Check and fix issues
+#
+# OPTIONS:
+#   --auto-fix   Automatically fix detected issues (create OIDC secret/configmap,
+#                patch operator). Requires AWS credentials in environment.
 #
 
 set -euo pipefail
+
+# Parse arguments
+AUTO_FIX=false
+for arg in "$@"; do
+    case $arg in
+        --auto-fix)
+            AUTO_FIX=true
+            ;;
+    esac
+done
 
 # Colors
 RED='\033[0;31m'
@@ -32,7 +48,11 @@ log_error() { echo -e "${RED}✗${NC} $1"; ERRORS=$((ERRORS + 1)); }
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
+if [ "$AUTO_FIX" = true ]; then
+echo "║       HyperShift CI Pre-flight Check (auto-fix enabled)        ║"
+else
 echo "║           HyperShift CI Pre-flight Check                       ║"
+fi
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -235,6 +255,14 @@ echo ""
 # ============================================================================
 # 6b. HYPERSHIFT OPERATOR OIDC CONFIGURATION
 # ============================================================================
+#
+# HyperShift OIDC requires THREE components:
+#   1. Secret: hypershift-operator-oidc-provider-s3-credentials (in hypershift ns)
+#   2. ConfigMap: oidc-storage-provider-s3-config (in kube-public ns, for hcp CLI)
+#   3. Operator deployment: --oidc-storage-provider-s3-* args, volume, volumeMount
+#
+# If AWS credentials are exported, this check will auto-fix all three.
+# ============================================================================
 
 log_info "Checking HyperShift operator OIDC configuration..."
 
@@ -244,46 +272,166 @@ OPERATOR_ARGS=$(oc get deployment operator -n hypershift -o jsonpath='{.spec.tem
 if [ -z "$OPERATOR_ARGS" ]; then
     log_warn "Cannot read HyperShift operator deployment (may need cluster-admin)"
 else
-    # Check for OIDC configuration
+    # ── Detect bucket/region from all available sources ──────────────
+    OIDC_BUCKET=""
+    OIDC_REGION=""
+
+    # Source 1: Operator deployment args (most authoritative)
     if echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
-        # Extract bucket name
         OIDC_BUCKET=$(echo "$OPERATOR_ARGS" | grep -o 'oidc-storage-provider-s3-bucket-name=[^"]*' | cut -d= -f2 | tr -d '",]' || echo "")
-        log_success "HyperShift operator has OIDC S3 configured (bucket: $OIDC_BUCKET)"
+        OIDC_REGION=$(echo "$OPERATOR_ARGS" | grep -o 'oidc-storage-provider-s3-region=[^"]*' | cut -d= -f2 | tr -d '",]' || echo "")
+    fi
+
+    # Source 2: Kubernetes secret
+    if [ -z "$OIDC_BUCKET" ]; then
+        OIDC_BUCKET=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+            -o jsonpath='{.data.bucket}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        OIDC_REGION=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+            -o jsonpath='{.data.region}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    fi
+
+    # Source 3: AWS OIDC providers (bucket name embedded in provider URL)
+    if [ -z "$OIDC_BUCKET" ] && command -v aws &>/dev/null && aws sts get-caller-identity &>/dev/null; then
+        log_info "Detecting OIDC bucket from AWS OIDC providers..."
+        OIDC_URLS=$(aws iam list-open-id-connect-providers \
+            --query 'OpenIDConnectProviderList[*].Arn' --output text 2>/dev/null | tr '\t' '\n' || echo "")
+        for arn in $OIDC_URLS; do
+            PROVIDER_URL=$(aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$arn" \
+                --query 'Url' --output text 2>/dev/null || echo "")
+            if echo "$PROVIDER_URL" | grep -qE '\.s3(\.[a-z0-9-]+)?\.amazonaws\.com'; then
+                OIDC_BUCKET=$(echo "$PROVIDER_URL" | sed -E 's|https?://||; s|\.s3(\.[a-z0-9-]+)?\.amazonaws\.com.*||')
+                OIDC_REGION=$(echo "$PROVIDER_URL" | sed -nE 's|.*\.s3\.([a-z0-9-]+)\.amazonaws\.com.*|\1|p')
+                [ -n "$OIDC_BUCKET" ] && break
+            fi
+        done
+    fi
+
+    OIDC_REGION="${OIDC_REGION:-${AWS_REGION:-us-east-1}}"
+
+    if [ -z "$OIDC_BUCKET" ]; then
+        log_error "Cannot determine OIDC S3 bucket from operator, secret, or AWS"
+        echo "  Export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and re-run."
     else
-        log_error "HyperShift operator MISSING OIDC S3 configuration!"
-        echo ""
-        echo "  The operator was likely upgraded and lost OIDC configuration."
-        echo "  AWS hosted clusters CANNOT be created without OIDC."
-        echo ""
-        echo "  A cluster-admin must run the following to fix this:"
-        echo ""
-        echo "  ────────────────────────────────────────────────────────────"
-        cat << 'OIDC_FIX'
-  # First, verify the OIDC secret exists:
-  oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift
+        OIDC_NEEDS_FIX=false
 
-  # Get the bucket name and region from the secret:
-  BUCKET=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
-      -o jsonpath='{.data.bucket}' | base64 -d)
-  REGION=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
-      -o jsonpath='{.data.region}' | base64 -d)
-  echo "Bucket: $BUCKET, Region: $REGION"
+        # ── Check 1: Operator deployment args ──────────────────────────
+        if echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
+            log_success "HyperShift operator has OIDC S3 configured (bucket: $OIDC_BUCKET)"
+        else
+            OIDC_NEEDS_FIX=true
+            log_warn "HyperShift operator MISSING OIDC S3 args"
+        fi
 
-  # Patch the operator to add OIDC args, volume, and volumeMount:
-  oc patch deployment operator -n hypershift --type='json' -p="[
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$BUCKET\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$REGION\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"oidc-storage-provider-s3-creds\", \"secret\": {\"defaultMode\": 420, \"secretName\": \"hypershift-operator-oidc-provider-s3-credentials\"}}},
-    {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/volumeMounts/-\", \"value\": {\"mountPath\": \"/etc/oidc-storage-provider-s3-creds\", \"name\": \"oidc-storage-provider-s3-creds\"}}
-  ]"
+        # ── Check 2: OIDC secret ──────────────────────────────────────
+        OIDC_SECRET_EXISTS=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift -o name 2>/dev/null || echo "")
+        if [ -n "$OIDC_SECRET_EXISTS" ]; then
+            log_success "OIDC secret exists in hypershift namespace"
+        else
+            OIDC_NEEDS_FIX=true
+            log_warn "OIDC secret missing in hypershift namespace"
+        fi
 
-  # Verify the operator restarts and has the new args:
-  oc rollout status deployment/operator -n hypershift
-  oc get deployment operator -n hypershift -o jsonpath='{.spec.template.spec.containers[0].args}' | tr ',' '\n' | grep oidc
-OIDC_FIX
-        echo "  ────────────────────────────────────────────────────────────"
-        echo ""
+        # ── Check 3: kube-public ConfigMap (required by hcp CLI) ──────
+        OIDC_CM_EXISTS=$(oc get configmap oidc-storage-provider-s3-config -n kube-public -o name 2>/dev/null || echo "")
+        if [ -n "$OIDC_CM_EXISTS" ]; then
+            log_success "OIDC ConfigMap exists in kube-public namespace"
+        else
+            OIDC_NEEDS_FIX=true
+            log_warn "OIDC ConfigMap missing in kube-public namespace (required by hcp CLI)"
+        fi
+
+        # ── Fix or report OIDC issues ────────────────────────────────
+        if [ "$OIDC_NEEDS_FIX" = true ]; then
+            if [ "$AUTO_FIX" = true ]; then
+                # Auto-fix mode: create/patch resources directly
+                if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+                    log_info "Auto-fixing OIDC configuration (bucket: $OIDC_BUCKET, region: $OIDC_REGION)..."
+
+                    # Fix 1: Create secret if missing
+                    if [ -z "$OIDC_SECRET_EXISTS" ]; then
+                        OIDC_CREDS_FILE=$(mktemp)
+                        cat > "$OIDC_CREDS_FILE" <<CREDEOF
+[default]
+aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+CREDEOF
+                        oc create secret generic hypershift-operator-oidc-provider-s3-credentials \
+                            -n hypershift \
+                            --from-literal=bucket="$OIDC_BUCKET" \
+                            --from-literal=region="$OIDC_REGION" \
+                            --from-file=credentials="$OIDC_CREDS_FILE"
+                        rm -f "$OIDC_CREDS_FILE"
+                        log_success "Created OIDC secret"
+                    fi
+
+                    # Fix 2: Create ConfigMap if missing
+                    if [ -z "$OIDC_CM_EXISTS" ]; then
+                        oc create configmap oidc-storage-provider-s3-config \
+                            -n kube-public \
+                            --from-literal=name="$OIDC_BUCKET" \
+                            --from-literal=region="$OIDC_REGION"
+                        log_success "Created OIDC ConfigMap in kube-public"
+                    fi
+
+                    # Fix 3: Patch operator if args missing (only add components not already present)
+                    if ! echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
+                        OIDC_PATCH_OPS="["
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$OIDC_BUCKET\"},"
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$OIDC_REGION\"},"
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"}"
+
+                        # Check if volume/mount already exist (MCE may add them during upgrade)
+                        OPERATOR_JSON=$(oc get deployment operator -n hypershift -o json 2>/dev/null)
+                        HAS_VOLUME=$(echo "$OPERATOR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if any(v.get('name')=='oidc-storage-provider-s3-creds' for v in d['spec']['template']['spec'].get('volumes',[])) else 'no')" 2>/dev/null || echo "no")
+                        HAS_MOUNT=$(echo "$OPERATOR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if any(vm.get('name')=='oidc-storage-provider-s3-creds' for vm in d['spec']['template']['spec']['containers'][0].get('volumeMounts',[])) else 'no')" 2>/dev/null || echo "no")
+
+                        if [ "$HAS_VOLUME" != "yes" ]; then
+                            OIDC_PATCH_OPS="${OIDC_PATCH_OPS},{\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"oidc-storage-provider-s3-creds\", \"secret\": {\"defaultMode\": 420, \"secretName\": \"hypershift-operator-oidc-provider-s3-credentials\"}}}"
+                        fi
+                        if [ "$HAS_MOUNT" != "yes" ]; then
+                            OIDC_PATCH_OPS="${OIDC_PATCH_OPS},{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/volumeMounts/-\", \"value\": {\"mountPath\": \"/etc/oidc-storage-provider-s3-creds\", \"name\": \"oidc-storage-provider-s3-creds\"}}"
+                        fi
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}]"
+
+                        oc patch deployment operator -n hypershift --type='json' -p="$OIDC_PATCH_OPS"
+                        log_info "Waiting for operator rollout..."
+                        if oc rollout status deployment/operator -n hypershift --timeout=120s; then
+                            log_success "Operator OIDC configuration restored"
+                        else
+                            log_warn "Operator rollout still in progress (patch was applied, will finish shortly)"
+                            log_info "  Verify: oc rollout status deployment/operator -n hypershift"
+                        fi
+                    fi
+                else
+                    log_error "OIDC auto-fix requires AWS credentials"
+                    echo "  Export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and re-run."
+                fi
+            else
+                # Check-only mode: report issues and suggest --auto-fix
+                log_error "OIDC configuration incomplete"
+                echo ""
+                echo "  Detected bucket: $OIDC_BUCKET (region: $OIDC_REGION)"
+                [ -z "$OIDC_SECRET_EXISTS" ] && echo "  ✗ Missing: OIDC secret in hypershift namespace"
+                [ -z "$OIDC_CM_EXISTS" ]      && echo "  ✗ Missing: OIDC ConfigMap in kube-public namespace"
+                ! echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name" && \
+                                                 echo "  ✗ Missing: OIDC args in operator deployment"
+                echo ""
+                echo "  To auto-fix, re-run with:"
+                echo "    $0 --auto-fix"
+                echo ""
+                echo "  Or fix manually:"
+                if [ -z "$OIDC_SECRET_EXISTS" ]; then
+                    echo "    oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n hypershift \\"
+                    echo "      --from-literal=bucket=$OIDC_BUCKET --from-literal=region=$OIDC_REGION \\"
+                    echo "      --from-file=credentials=<aws-credentials-file>"
+                fi
+                if [ -z "$OIDC_CM_EXISTS" ]; then
+                    echo "    oc create configmap oidc-storage-provider-s3-config -n kube-public \\"
+                    echo "      --from-literal=name=$OIDC_BUCKET --from-literal=region=$OIDC_REGION"
+                fi
+                echo ""
+            fi
+        fi
     fi
 fi
 

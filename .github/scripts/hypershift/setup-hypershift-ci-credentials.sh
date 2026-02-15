@@ -225,7 +225,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log_info "Running pre-flight checks..."
-if ! "$SCRIPT_DIR/preflight-check.sh"; then
+if ! "$SCRIPT_DIR/preflight-check.sh" --auto-fix; then
     log_error "Pre-flight checks failed. Please fix the issues above."
 fi
 log_success "All pre-flight checks passed"
@@ -810,7 +810,7 @@ cat > "$ENV_FILE" <<ENVFILE
 # HyperShift Management Cluster Kubeconfig
 # =============================================================================
 # Local usage: file path (standard ~/.kube/ location)
-export KUBECONFIG="${MGMT_KUBECONFIG_PATH}"
+export KUBECONFIG="\${HOME}/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig"
 
 # GitHub Actions: base64-encoded (for secrets)
 HYPERSHIFT_MGMT_KUBECONFIG_BASE64="${HYPERSHIFT_MGMT_KUBECONFIG}"
