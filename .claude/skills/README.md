@@ -48,6 +48,7 @@ Only skill nodes are colored. Decision points, actions, and labels have no color
 | 🩷 Pink | GitHub |
 | 🔵 Indigo | HyperShift |
 | 🟡 Yellow-Green | Playwright / Demo |
+| 🟠 Dark Orange | Session Analytics |
 
 ### TDD Workflow (3 Entry Points)
 
@@ -272,6 +273,25 @@ flowchart TD
     classDef k8s fill:#00BCD4,stroke:#333,color:white
 ```
 
+### Session Analytics Workflow
+
+```mermaid
+flowchart TD
+    START([Session Analytics]) --> SESSION{"/session"}
+    SESSION -->|Post stats| POST["session:post"]:::session
+    SESSION -->|Update summary| SUMMARY["session:summary"]:::session
+    SESSION -->|Extract data| EXTRACT["session:extract"]:::session
+    SESSION -->|Dashboard| DASHBOARD["session:dashboard"]:::session
+
+    POST -->|calls| SUMMARY
+    EXTRACT -->|generates| DASHBOARD
+
+    POST -.->|uses| STATS["--phase stats"]
+    POST -.->|uses| MERMAID["--phase mermaid"]
+
+    classDef session fill:#FF6F00,stroke:#333,color:white
+```
+
 ### HyperShift Cluster Lifecycle (with mgmt creds)
 
 ```mermaid
@@ -365,6 +385,11 @@ flowchart LR
 │   ├── repo:commit
 │   ├── repo:pr
 │   └── repo:issue
+├── session/                       Session analytics
+│   ├── session:post
+│   ├── session:summary
+│   ├── session:extract
+│   └── session:dashboard
 └── testing/                        Debugging techniques
     └── testing:kubectl-debugging
 ```

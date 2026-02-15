@@ -168,6 +168,8 @@
       "Bash(npm:*)",
       "Bash(python:*)",
       "Bash(python3:*)",
+      "Bash(python3 .claude/scripts/session-analytics.py *)",
+      "Bash(python3 */session-analytics.py *)",
       "Bash(pip install:*)",
       "Bash(uv sync:*)",
       "Bash(uv lock:*)",

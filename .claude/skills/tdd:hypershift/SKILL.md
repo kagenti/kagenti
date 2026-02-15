@@ -267,6 +267,16 @@ Once the issue is fixed with real-time debugging, return to `tdd:ci` for final C
 For Playwright UI tests (login, navigation, agent chat), invoke `test:ui`.
 Set `KAGENTI_UI_URL` to the OpenShift route and run against the live cluster.
 
+## Session Reporting
+
+After the TDD workflow completes (CI green and PR approved/merged), invoke `session:post` to capture session metadata:
+
+1. The skill auto-detects the current session ID and PR number
+2. Posts a session report comment with token usage, skills used, and workflow diagram
+3. Updates the pinned summary comment
+
+This is optional but recommended for tracking development effort.
+
 ## Related Skills
 
 - **`test:ui`** - **Write and run Playwright UI tests**
@@ -279,3 +289,4 @@ Set `KAGENTI_UI_URL` to the OpenShift route and run against the live cluster.
 - `test:run-hypershift` - Run tests on HyperShift
 - `test:review` - Review test quality
 - `git:commit` - Commit format
+- `session:post` - Post session analytics to PR

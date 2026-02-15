@@ -213,6 +213,16 @@ ps aux | grep port-forward
 For Playwright UI tests (login, navigation, agent chat), invoke `test:ui`.
 Tests run against the Vite dev server which proxies `/api` to `localhost:8000` (backend port-forward).
 
+## Session Reporting
+
+After the TDD workflow completes (CI green and PR approved/merged), invoke `session:post` to capture session metadata:
+
+1. The skill auto-detects the current session ID and PR number
+2. Posts a session report comment with token usage, skills used, and workflow diagram
+3. Updates the pinned summary comment
+
+This is optional but recommended for tracking development effort.
+
 ## Related Skills
 
 - **`test:ui`** - **Write and run Playwright UI tests**
@@ -223,3 +233,4 @@ Tests run against the Vite dev server which proxies `/api` to `localhost:8000` (
 - `test:run-kind` - Run tests on Kind
 - `test:review` - Review test quality
 - `git:commit` - Commit format
+- `session:post` - Post session analytics to PR

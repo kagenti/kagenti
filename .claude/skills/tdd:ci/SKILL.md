@@ -547,6 +547,16 @@ Typical task structure for an issue fix:
 For Playwright UI tests (login, navigation, agent chat), invoke `test:ui`.
 CI runs UI tests automatically via `91-run-ui-tests.sh` after pytest E2E tests.
 
+## Session Reporting
+
+After the TDD workflow completes (CI green and PR approved/merged), invoke `session:post` to capture session metadata:
+
+1. The skill auto-detects the current session ID and PR number
+2. Posts a session report comment with token usage, skills used, and workflow diagram
+3. Updates the pinned summary comment
+
+This is optional but recommended for tracking development effort.
+
 ## Related Skills
 
 - `test:ui` - **Write and run Playwright UI tests** (CI/Kind/HyperShift)
@@ -561,3 +571,4 @@ CI runs UI tests automatically via `91-run-ui-tests.sh` after pytest E2E tests.
 - `git:commit` - Commit format
 - `git:rebase` - Rebase onto upstream main
 - `repo:commit` - Repository commit conventions
+- `session:post` - Post session analytics to PR
