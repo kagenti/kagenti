@@ -142,6 +142,16 @@ For each existing skill, assess:
 | Cross-links | Related Skills use colon notation and link to real skills |
 | Auto-approve | Sandbox commands match settings.json patterns |
 | Mermaid diagram | Workflow/router skills have embedded diagram matching textual flow |
+| Dev docs consistency | Claims in `docs/developer/claude-code-skills.md` match actual skill behavior |
+
+### Phase 3b: Developer Docs Consistency
+
+If `docs/developer/claude-code-skills.md` exists, verify:
+
+1. **Skills listed in dev docs match actual skills** — no stale references
+2. **Workflow diagrams in dev docs match skill diagrams** — same nodes, same flow
+3. **Best practices in dev docs are enforced by skills** — worktree gate, checklist items
+4. **Sub-skill table is accurate** — inputs, outputs, invocations match reality
 
 ### Phase 4: Connection Analysis
 

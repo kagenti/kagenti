@@ -1,9 +1,29 @@
 ---
 name: skills:write
-description: Create new skills with proper structure, task tracking, and naming conventions
+description: Create or edit skills with proper structure, task tracking, and naming conventions
 ---
 
-# Write Skill
+# Write / Edit Skill
+
+Create new skills or edit existing ones. Both follow the same checklist and conventions.
+
+## Worktree Gate
+
+**All skill work MUST happen in a worktree.** Before proceeding, verify you are in a worktree:
+
+```bash
+git worktree list
+```
+
+If not in a worktree, create one first:
+
+```bash
+git fetch upstream main
+```
+
+```bash
+git worktree add .worktrees/skills-<topic> -b docs/skills-<topic> upstream/main
+```
 
 ## Table of Contents
 
@@ -13,6 +33,15 @@ description: Create new skills with proper structure, task tracking, and naming 
 - [Task Tracking Standard](#task-tracking-standard)
 - [Checklist](#checklist)
 - [Template](#template)
+
+## New vs Edit
+
+| Action | Steps |
+|--------|-------|
+| **New skill** | Create directory + SKILL.md from template, fill in content, validate |
+| **Edit skill** | Read existing file first, apply changes, re-validate, ensure diagram still matches text |
+
+For edits: always read the skill FIRST, then edit. Never overwrite without reading.
 
 ## Skill Structure
 
