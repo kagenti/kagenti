@@ -6,6 +6,7 @@ description: GitHub repository analysis - weekly reports, issue triage, PR healt
 ```mermaid
 flowchart TD
     START([Repo Health]) --> GH{"/github"}
+    GH -->|My status| MYSTATUS["github:my-status"]:::github
     GH -->|Weekly summary| WEEK["github:last-week"]:::github
     GH -->|Triage issues| ISSUES["github:issues"]:::github
     GH -->|PR health| PRS["github:prs"]:::github
@@ -30,6 +31,9 @@ Repository health analysis, issue triage, and PR management.
 ```
 What do you need?
     │
+    ├─ What needs my attention today?
+    │   → github:my-status
+    │
     ├─ Weekly summary (what happened last week?)
     │   → github:last-week
     │
@@ -47,6 +51,7 @@ What do you need?
 
 | Skill | Purpose |
 |-------|---------|
+| `github:my-status` | Personal dashboard: your open PRs, pending reviews, assigned issues |
 | `github:last-week` | Weekly report: merged PRs, new issues, CI health, priority analysis |
 | `github:issues` | Issue triage: stale, blocking, no attention, should-close |
 | `github:prs` | PR health: passing CI without review, stale, conflicts |
