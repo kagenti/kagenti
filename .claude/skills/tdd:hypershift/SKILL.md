@@ -53,7 +53,10 @@ flowchart TD
 
     CREATECLUSTER --> SETENV
 
-    SETENV --> ITER{"Iteration level?"}
+    SETENV --> CVEGATE["CVE Gate: cve:scan"]:::cve
+    CVEGATE -->|Clean| ITER{"Iteration level?"}
+    CVEGATE -->|CVE found| CVE_HOLD["cve:brainstorm"]:::cve
+    CVE_HOLD -->|Resolved| ITER
     ITER -->|Level 0| L0["Quick patch (seconds)"]:::test
     ITER -->|Level 1| L1["Test only"]:::test
     ITER -->|Level 2| L2["Rebuild images"]:::test
@@ -85,9 +88,24 @@ flowchart TD
     classDef hypershift fill:#3F51B5,stroke:#333,color:white
     classDef ci fill:#2196F3,stroke:#333,color:white
     classDef test fill:#9C27B0,stroke:#333,color:white
+    classDef cve fill:#D32F2F,stroke:#333,color:white
 ```
 
 > Follow this diagram as the workflow.
+
+## CVE Gate (Pre-Deploy)
+
+**MANDATORY before deploying to cluster.** Container images may contain vulnerable dependencies.
+
+Invoke `cve:scan` on the working tree before any deployment iteration:
+
+1. If `cve:scan` returns clean → proceed to iteration selection
+2. If `cve:scan` finds HIGH/CRITICAL CVEs → `cve:brainstorm` activates a CVE hold
+   - Silent fixes (dependency bumps) are allowed
+   - Deployment proceeds only after hold is resolved
+   - See `cve:brainstorm` for resolution steps
+
+This gate runs once per session, not on every iteration.
 
 ## Key Pattern
 
@@ -279,3 +297,5 @@ Set `KAGENTI_UI_URL` to the OpenShift route and run against the live cluster.
 - `test:run-hypershift` - Run tests on HyperShift
 - `test:review` - Review test quality
 - `git:commit` - Commit format
+- `cve:scan` - CVE scanning gate (pre-deploy)
+- `cve:brainstorm` - CVE disclosure planning (if CVEs found)

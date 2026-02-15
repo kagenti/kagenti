@@ -323,10 +323,11 @@ All three flows eventually enter this loop:
 3. test:review — verify test quality (no silent skips, assertive)
 4. test:run-kind or test:run-hypershift — execute tests
 5. Track progress — compare test results with previous run
-6. git:commit — commit with proper format (repo:commit)
-7. git:rebase — rebase onto upstream/main
-8. Push → ci:monitoring — wait for CI results
-9. CI passes? → Handle reviews (Flow 2 Step 4). CI fails? → Back to step 1.
+6. cve:scan — scan for CVEs before pushing (BLOCKS if found)
+7. git:commit — commit with proper format (git:commit)
+8. git:rebase — rebase onto upstream/main
+9. Push → ci:monitoring — wait for CI results
+10. CI passes? → Handle reviews (Flow 2 Step 4). CI fails? → Back to step 1.
 ```
 
 ## Commit Policy
@@ -375,5 +376,6 @@ Commit 3: 11 pass, 2 fail ← good, +1 passing
 - `git:commit` - Commit with proper format
 - `git:rebase` - Rebase before pushing
 - `git:worktree` - Create isolated worktrees
-- `repo:commit` - Repository commit conventions
 - `repo:pr` - PR creation conventions
+- `cve:scan` - CVE scanning gate
+- `cve:brainstorm` - CVE disclosure planning

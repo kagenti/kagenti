@@ -327,6 +327,17 @@ curl -sk -X POST "https://$KEYCLOAK_HOST/realms/master/protocol/openid-connect/t
 [How to confirm fix works]
 ```
 
+### CVE Check Before Publishing Findings
+
+**Before posting RCA findings to any public destination** (issue comment, PR comment, etc.):
+
+If the root cause involves a dependency bug, unexpected behavior, or version issue:
+
+1. Invoke `cve:scan` to check if this is a known CVE
+2. If a CVE is found → invoke `cve:brainstorm` **BEFORE** documenting findings publicly
+3. Rewrite RCA documentation to use neutral language (no CVE IDs, no vulnerability descriptions)
+4. Report the CVE through proper channels (see `cve:brainstorm`)
+
 ## Quick Reference
 
 | Task | Command |
@@ -349,3 +360,5 @@ curl -sk -X POST "https://$KEYCLOAK_HOST/realms/master/protocol/openid-connect/t
 - `auth:mlflow-oidc-auth` - MLflow OIDC auth debugging
 - `openshift:debug` - Debug OpenShift-specific operators, SCCs, builds
 - `openshift:routes` - Debug route/ingress issues
+- `cve:scan` - CVE scanning (check if root cause is a known CVE)
+- `cve:brainstorm` - Disclosure planning (if CVE found during RCA)

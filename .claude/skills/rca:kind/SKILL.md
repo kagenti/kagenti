@@ -125,6 +125,16 @@ After fixing, re-run the specific failing test:
 uv run pytest kagenti/tests/e2e/ -v -k "test_name"
 ```
 
+### CVE Check Before Publishing Findings
+
+**Before posting RCA findings to any public destination:**
+
+If the root cause involves a dependency bug or version issue:
+
+1. Invoke `cve:scan` to check if this is a known CVE
+2. If a CVE is found → invoke `cve:brainstorm` BEFORE documenting publicly
+3. Use neutral language in all public documentation
+
 ## Kind-Specific Issues
 
 | Issue | Cause | Fix |
@@ -148,3 +158,5 @@ If the issue can't be reproduced locally, escalate:
 - `kind:cluster` - Create/destroy Kind clusters
 - `k8s:pods` - Debug pod issues
 - `kagenti:ui-debug` - Debug UI issues (502, API, proxy)
+- `cve:scan` - CVE scanning (check if root cause is a known CVE)
+- `cve:brainstorm` - Disclosure planning (if CVE found during RCA)

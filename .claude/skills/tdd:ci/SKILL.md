@@ -15,6 +15,7 @@ description: CI-driven TDD workflow - commit, local checks, push, wait for CI, i
 - [Phase 1: Brainstorm](#phase-1-brainstorm-new-features)
 - [Phase 2: Commit](#phase-2-commit)
 - [Phase 3: Local Checks](#phase-3-local-checks)
+- [Phase 3.5: CVE Gate](#phase-35-cve-gate)
 - [Phase 4: Push to PR](#phase-4-push-to-pr)
 - [Phase 5: Wait for CI](#phase-5-wait-for-ci)
 - [Phase 6: Analyze Failures](#phase-6-analyze-failures)
@@ -62,7 +63,10 @@ flowchart TD
     P1 --> P2["Phase 2: Commit"]:::git
     P2 --> P3["Phase 3: Local Checks"]:::test
     P3 -->|Checks fail| P2
-    P3 -->|Checks pass| P4["Phase 4: Push to PR"]:::git
+    P3 -->|Checks pass| P3B["Phase 3.5: CVE Gate"]:::cve
+    P3B -->|Clean| P4["Phase 4: Push to PR"]:::git
+    P3B -->|CVE found| CVE_HOLD["cve:brainstorm (BLOCKS push)"]:::cve
+    CVE_HOLD -->|Resolved| P4
     P4 --> P5["Phase 5: Wait for CI"]:::ci
     P5 --> RESULT{"CI Result?"}
 
@@ -87,6 +91,7 @@ flowchart TD
     classDef hypershift fill:#3F51B5,stroke:#333,color:white
     classDef ci fill:#2196F3,stroke:#333,color:white
     classDef test fill:#9C27B0,stroke:#333,color:white
+    classDef cve fill:#D32F2F,stroke:#333,color:white
 ```
 
 > Follow this diagram as the workflow.
@@ -300,6 +305,19 @@ uv run pytest kagenti/tests/ -v --ignore=kagenti/tests/e2e
 ```
 
 **Fix any failures before pushing.**
+
+## Phase 3.5: CVE Gate
+
+**MANDATORY before pushing.** Scan dependencies for known CVEs before any public output.
+
+Invoke `cve:scan` on the working tree:
+
+1. If `cve:scan` returns clean → proceed to Phase 4
+2. If `cve:scan` finds HIGH/CRITICAL CVEs → `cve:brainstorm` activates a CVE hold
+   - **Do NOT proceed to Phase 4** until the hold is resolved
+   - The hold blocks `gh pr create`, `gh pr comment`, `gh issue create/comment`
+   - Silent fixes (dependency bumps with neutral commit messages) are allowed
+   - See `cve:brainstorm` for resolution steps
 
 ## Phase 4: Push to PR
 
@@ -560,4 +578,5 @@ CI runs UI tests automatically via `91-run-ui-tests.sh` after pytest E2E tests.
 - `test:write` - Write new tests
 - `git:commit` - Commit format
 - `git:rebase` - Rebase onto upstream main
-- `repo:commit` - Repository commit conventions
+- `cve:scan` - CVE scanning gate (Phase 3.5)
+- `cve:brainstorm` - CVE disclosure planning (if CVEs found)
