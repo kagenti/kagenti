@@ -11,7 +11,7 @@ COPY *.go ./
 # Download dependencies and build
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /go-processor .
 
-FROM alpine:latest
+FROM alpine:3.21
 
 RUN apk --no-cache add ca-certificates
 
