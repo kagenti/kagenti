@@ -308,26 +308,26 @@ discover_keycloak_creds() {
         kc_flag="--kubeconfig=$KUBECONFIG"
     fi
 
-    # Try kagenti-test-user secret first (app user in demo realm, created by agent-oauth-secret-job)
-    # Then fall back to keycloak-initial-admin (master admin, needs demo realm provisioning)
+    # Try keycloak-initial-admin first (master admin, always has full access including kagenti-viewer role)
+    # Fall back to kagenti-test-user (app user, may lack client roles on some clusters)
     local user pass
-    user=$($cli $kc_flag get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-    pass=$($cli $kc_flag get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    user=$($cli $kc_flag get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    pass=$($cli $kc_flag get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
     if [ -n "$user" ] && [ -n "$pass" ]; then
         export KEYCLOAK_USER="$user"
         export KEYCLOAK_PASS="$pass"
-        export KEYCLOAK_CRED_SOURCE="kagenti-test-user"
-        log_info "Discovered app credentials from kagenti-test-user (user: $user)"
+        log_info "Discovered admin credentials from keycloak-initial-admin (user: $user)"
     else
-        # Fall back to keycloak-initial-admin (master realm admin)
-        user=$($cli $kc_flag get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-        pass=$($cli $kc_flag get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        # Fall back to kagenti-test-user (app user in demo realm)
+        user=$($cli $kc_flag get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        pass=$($cli $kc_flag get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
         if [ -n "$user" ] && [ -n "$pass" ]; then
             export KEYCLOAK_USER="$user"
             export KEYCLOAK_PASS="$pass"
-            log_info "Discovered admin credentials from keycloak-initial-admin (user: $user)"
+            export KEYCLOAK_CRED_SOURCE="kagenti-test-user"
+            log_info "Discovered app credentials from kagenti-test-user (user: $user)"
         else
             export KEYCLOAK_USER="${KEYCLOAK_USER:-admin}"
             export KEYCLOAK_PASS="${KEYCLOAK_PASS:-admin}"
