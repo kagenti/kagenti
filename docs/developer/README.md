@@ -10,6 +10,7 @@ This directory contains comprehensive development guides for working with Kagent
 | **HyperShift** | Create OpenShift clusters on AWS, CI testing, cloud-native features | [hypershift.md](./hypershift.md) |
 | **OpenShift** | Standard RHOCP clusters, persistent environments | Under construction - see [Installation Guide](../install.md) |
 | **Claude Code** | AI-assisted development with TDD, RCA, and debugging skills | [claude-code.md](./claude-code.md) |
+| **Daily Commands** | Quick reference for daily/weekly Claude Code skills | [claude-code-daily-commands.md](./claude-code-daily-commands.md) |
 
 ## Quick Decision Tree
 
@@ -83,10 +84,11 @@ rm -f deployments/envs/.secret_values.yaml
 
 ```
 docs/developer/
-├── README.md           # This file - overview and environment selection
-├── kind.md             # Kind (local Kubernetes) development guide
-├── hypershift.md       # HyperShift (hosted OpenShift on AWS) development guide
-└── claude-code.md      # Claude Code skills for TDD, RCA, and debugging
+├── README.md                       # This file - overview and environment selection
+├── kind.md                         # Kind (local Kubernetes) development guide
+├── hypershift.md                   # HyperShift (hosted OpenShift on AWS) development guide
+├── claude-code.md                  # Claude Code skills for TDD, RCA, and debugging
+└── claude-code-daily-commands.md   # Daily/weekly skill quick reference
 ```
 
 ## Related Documentation
