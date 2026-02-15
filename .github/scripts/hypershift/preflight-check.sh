@@ -351,15 +351,28 @@ CREDEOF
                     log_success "Created OIDC ConfigMap in kube-public"
                 fi
 
-                # Fix 3: Patch operator if args missing
+                # Fix 3: Patch operator if args missing (only add components not already present)
                 if ! echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
-                    oc patch deployment operator -n hypershift --type='json' -p="[
-                      {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$OIDC_BUCKET\"},
-                      {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$OIDC_REGION\"},
-                      {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"},
-                      {\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"oidc-storage-provider-s3-creds\", \"secret\": {\"defaultMode\": 420, \"secretName\": \"hypershift-operator-oidc-provider-s3-credentials\"}}},
-                      {\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/volumeMounts/-\", \"value\": {\"mountPath\": \"/etc/oidc-storage-provider-s3-creds\", \"name\": \"oidc-storage-provider-s3-creds\"}}
-                    ]"
+                    # Build patch dynamically - only add what's missing
+                    OIDC_PATCH_OPS="["
+                    OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$OIDC_BUCKET\"},"
+                    OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$OIDC_REGION\"},"
+                    OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"}"
+
+                    # Check if volume already exists (MCE may add it during upgrade)
+                    OPERATOR_JSON=$(oc get deployment operator -n hypershift -o json 2>/dev/null)
+                    HAS_VOLUME=$(echo "$OPERATOR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if any(v.get('name')=='oidc-storage-provider-s3-creds' for v in d['spec']['template']['spec'].get('volumes',[])) else 'no')" 2>/dev/null || echo "no")
+                    HAS_MOUNT=$(echo "$OPERATOR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if any(vm.get('name')=='oidc-storage-provider-s3-creds' for vm in d['spec']['template']['spec']['containers'][0].get('volumeMounts',[])) else 'no')" 2>/dev/null || echo "no")
+
+                    if [ "$HAS_VOLUME" != "yes" ]; then
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS},{\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"oidc-storage-provider-s3-creds\", \"secret\": {\"defaultMode\": 420, \"secretName\": \"hypershift-operator-oidc-provider-s3-credentials\"}}}"
+                    fi
+                    if [ "$HAS_MOUNT" != "yes" ]; then
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS},{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/volumeMounts/-\", \"value\": {\"mountPath\": \"/etc/oidc-storage-provider-s3-creds\", \"name\": \"oidc-storage-provider-s3-creds\"}}"
+                    fi
+                    OIDC_PATCH_OPS="${OIDC_PATCH_OPS}]"
+
+                    oc patch deployment operator -n hypershift --type='json' -p="$OIDC_PATCH_OPS"
                     log_info "Waiting for operator rollout..."
                     if oc rollout status deployment/operator -n hypershift --timeout=120s; then
                         log_success "Operator OIDC configuration restored"
