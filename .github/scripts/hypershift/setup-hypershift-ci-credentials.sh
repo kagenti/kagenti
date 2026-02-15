@@ -225,7 +225,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log_info "Running pre-flight checks..."
-if ! "$SCRIPT_DIR/preflight-check.sh"; then
+if ! "$SCRIPT_DIR/preflight-check.sh" --auto-fix; then
     log_error "Pre-flight checks failed. Please fix the issues above."
 fi
 log_success "All pre-flight checks passed"
