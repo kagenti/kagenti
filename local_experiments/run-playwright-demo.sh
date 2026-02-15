@@ -711,7 +711,7 @@ if [ "$E2E_PKG_EXISTED" = false ]; then
     echo '{ "type": "commonjs" }' > "$E2E_PKG_JSON"
 fi
 
-# Also add CJS override for local_experiments/e2e if running local tests
+# Also add CJS override for demos dir if running local tests
 LOCAL_E2E_PKG="$LOCAL_E2E_DIR/package.json"
 if [ ! -f "$LOCAL_E2E_PKG" ]; then
     echo '{ "type": "commonjs" }' > "$LOCAL_E2E_PKG"
