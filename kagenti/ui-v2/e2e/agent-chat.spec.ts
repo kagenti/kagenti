@@ -14,7 +14,7 @@
  *   KEYCLOAK_USER: Keycloak username (default: admin)
  *   KEYCLOAK_PASSWORD: Keycloak password (default: admin)
  */
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
