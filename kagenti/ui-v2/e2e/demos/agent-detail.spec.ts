@@ -152,8 +152,8 @@ test.describe('Agent Detail Page Demo', () => {
     // ================================================================
     console.log('[demo] Step 4: Open weather-service agent');
 
-    const weatherAgent = page.locator('a').filter({ hasText: 'weather-service' })
-      .or(page.getByText('weather-service'));
+    const weatherAgent = page.getByRole('button', { name: 'weather-service' })
+      .or(page.getByText('weather-service', { exact: true }));
     // ASSERT: weather-service agent must be visible in catalog
     await expect(weatherAgent.first()).toBeVisible({ timeout: 20000 });
     await demoClick(weatherAgent.first(), 'weather-service agent');

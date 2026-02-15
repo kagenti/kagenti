@@ -138,9 +138,8 @@ test.describe('Tool Integration Demo', () => {
     markStep('tool_detail');
     console.log('[demo] Step 4: Show weather-tool details');
 
-    const weatherTool = page.locator('a').filter({ hasText: /weather/i })
-      .or(page.getByText('weather-tool', { exact: false }))
-      .or(page.getByText('weather', { exact: false }));
+    const weatherTool = page.getByRole('button', { name: /weather-tool/i })
+      .or(page.getByText('weather-tool', { exact: true }));
     // ASSERT: Weather tool must be visible in catalog
     await expect(weatherTool.first()).toBeVisible({ timeout: 10000 });
     await demoClick(weatherTool.first(), 'Weather tool');
@@ -246,8 +245,8 @@ test.describe('Tool Integration Demo', () => {
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(PAUSE);
 
-    const weatherAgent = page.locator('a').filter({ hasText: 'weather-service' })
-      .or(page.getByText('weather-service'));
+    const weatherAgent = page.getByRole('button', { name: 'weather-service' })
+      .or(page.getByText('weather-service', { exact: true }));
     // ASSERT: weather-service agent must be visible
     await expect(weatherAgent.first()).toBeVisible({ timeout: 10000 });
     await demoClick(weatherAgent.first(), 'weather-service agent');

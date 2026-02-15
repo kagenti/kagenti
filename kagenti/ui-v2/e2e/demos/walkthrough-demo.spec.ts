@@ -233,8 +233,8 @@ test.describe('Kagenti Platform Walkthrough', () => {
     console.log('[demo] Step 4: Open weather-service agent');
 
     // Wait for the weather-service to appear (may take a moment after namespace selection)
-    const weatherAgent = page.locator('a').filter({ hasText: 'weather-service' })
-      .or(page.getByText('weather-service'));
+    const weatherAgent = page.getByRole('button', { name: 'weather-service' })
+      .or(page.getByText('weather-service', { exact: true }));
     if (await weatherAgent.first().isVisible({ timeout: 20000 }).catch(() => false)) {
       await weatherAgent.first().click();
       // Wait for SPA navigation to agent detail page

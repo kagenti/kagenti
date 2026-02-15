@@ -153,8 +153,8 @@ test.describe('Tool Detail and MCP Demo', () => {
     // ================================================================
     console.log('[demo] Step 4: Open weather-tool');
 
-    const weatherTool = page.locator('a').filter({ hasText: 'weather-tool' })
-      .or(page.getByText('weather-tool'));
+    const weatherTool = page.getByRole('button', { name: /weather-tool/i })
+      .or(page.getByText('weather-tool', { exact: true }));
     if (await weatherTool.first().isVisible({ timeout: 20000 }).catch(() => false)) {
       await demoClick(weatherTool.first(), 'weather-tool');
     } else {

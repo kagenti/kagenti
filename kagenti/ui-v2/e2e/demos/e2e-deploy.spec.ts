@@ -342,8 +342,8 @@ test.describe('End-to-End Deployment Lifecycle Demo', () => {
     markStep('e2e_detail');
     console.log('[demo] Step 7: Navigate to agent detail');
 
-    const agentLink = page.locator('a').filter({ hasText: 'e2e-demo' })
-      .or(page.getByText('e2e-demo'));
+    const agentLink = page.getByRole('button', { name: 'e2e-demo' })
+      .or(page.getByText('e2e-demo', { exact: true }));
     if (await agentLink.first().isVisible({ timeout: 10000 }).catch(() => false)) {
       await demoClick(agentLink.first(), 'e2e-demo agent');
       await page.waitForURL('**/agents/**/**', { timeout: 10000 }).catch(() => {});
