@@ -59,7 +59,7 @@ git rebase --signoff HEAD~$(git rev-list --count upstream/main..HEAD)
 
 ## Commit Format
 
-See `repo:commit` for the full repository-specific format. Quick reference:
+Quick reference:
 
 | Emoji | Type |
 |-------|------|
