@@ -38,5 +38,5 @@ Fixes #123
 ## Related Skills
 
 - `repo:pr` - PR conventions (links issues)
-- `repo:commit` - Commit conventions
+- `git:commit` - Commit conventions
 - `ci:status` - Check CI status on issues
