@@ -42,6 +42,8 @@ charts:
           enabled: true
         kiali:
           enabled: true
+        spire:
+          enabled: true
 
   ####################################################################
   # kagenti
