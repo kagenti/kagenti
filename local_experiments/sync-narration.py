@@ -158,6 +158,7 @@ def main():
         Path(args.test).parent.parent / "walkthrough-timestamps.json"
     )
     ui_durations = {}  # How long each section takes in the UI (without extra waits)
+    ts_map = {}  # step -> absolute time (seconds)
     section_order = [name for name, _ in sections]
     if Path(ts_file).exists():
         ts_data = json.loads(Path(ts_file).read_text())
@@ -203,7 +204,7 @@ def main():
     print()
     info(f"Total narration: {total_narration:.1f}s")
     info(f"Total UI time (Pass 1): {sum(ui_durations.values()):.1f}s")
-    info(f"Estimated video (Pass 2): {total_target:.1f}s")
+    info(f"Estimated video (Pass 2): {total_target:.1f}s (+ page load)")
     print()
 
     # Read the source test file
@@ -218,9 +219,18 @@ def main():
     #
     # This is deterministic — the section always takes exactly max(ui, narration+buffer).
 
-    # Build cumulative targets
+    # Build cumulative targets.
+    # Important: the first markStep('intro') fires AFTER page load (~4-5s).
+    # We must start cumulative from the actual intro timestamp, not 0,
+    # otherwise the intro video slot is too short for the narration.
     cumulative = {}
-    running_ms = 0
+    first_section_offset_ms = 0
+    if section_order and ts_map and section_order[0] in ts_map:
+        first_section_offset_ms = int(ts_map[section_order[0]] * 1000)
+        info(
+            f"First section '{section_order[0]}' starts at {first_section_offset_ms}ms (from Pass 1)"
+        )
+    running_ms = first_section_offset_ms
     for i, (name, _) in enumerate(sections):
         cumulative[name] = running_ms
         running_ms += section_targets.get(name, 3000)

@@ -751,6 +751,11 @@ if [ "$NO_NARRATION" = false ] && [ -n "${OPENAI_API_KEY:-}" ] && [ -f "$NARRATI
     mkdir -p "$NARRATION_DIR"
     [ ! -f "$NARRATION_DIR/package.json" ] && echo '{ "type": "commonjs" }' > "$NARRATION_DIR/package.json"
 
+    # Copy shared demo-auth.ts so narration-synced tests can import it
+    if [ -f "$LOCAL_E2E_DIR/demo-auth.ts" ]; then
+        cp "$LOCAL_E2E_DIR/demo-auth.ts" "$NARRATION_DIR/demo-auth.ts"
+    fi
+
     # ── Step 1: Fast run to measure video slot timing ────────────────
     log_info "Step 1/3: Fast run to measure video slot timing..."
     echo ""
@@ -851,6 +856,25 @@ VIDEO_COUNT=0
 
 # Relative path for display
 DEMO_DIR_REL="${DEMO_DIR#$SCRIPT_DIR/}"
+
+# Copy latest timestamps to demo dir BEFORE voiceover (Pass 2 writes to test-results/)
+# Prefer the per-test output dir (Pass 2 synced timestamps), then fall back to SCRIPT_DIR
+LATEST_TS=""
+for ts_candidate in \
+    "$PLAYWRIGHT_OUTPUT_DIR/../${SCENARIO_NAME}-timestamps.json" \
+    "$SCRIPT_DIR/test-results/${SCENARIO_NAME}-timestamps.json" \
+    "$SCRIPT_DIR/${SCENARIO_NAME}-timestamps.json"; do
+    if [ -f "$ts_candidate" ]; then
+        LATEST_TS="$ts_candidate"
+        break
+    fi
+done
+if [ -n "$LATEST_TS" ]; then
+    cp "$LATEST_TS" "$DEMO_DIR/${SCENARIO_NAME}-timestamps.json"
+    # Also update the SCRIPT_DIR copy so sync-narration.py picks up latest for next run
+    cp "$LATEST_TS" "$SCRIPT_DIR/${SCENARIO_NAME}-timestamps.json"
+fi
+
 log_info "Collecting recorded videos to ${DEMO_DIR_REL}/..."
 
 # Playwright stores videos in test-results/<test>/<test-hash>/video.webm

@@ -279,6 +279,7 @@ def main() -> int:
                         warn(
                             f"  [{section_name}] narration {seg_dur:.1f}s > gap {available:.1f}s — truncating with fade"
                         )
+                        # Use a separate truncated file to avoid corrupting the cached original
                         truncated = segments_dir / f"{section_name}_trunc.mp3"
                         fade_start = max(0, available - 0.5)
                         subprocess.run(
@@ -299,8 +300,9 @@ def main() -> int:
                             text=True,
                         )
                         if truncated.exists():
-                            seg_path.unlink()
-                            truncated.rename(seg_path)
+                            # Update segment_files to use the truncated version
+                            # but keep the original cached file intact
+                            segment_files[i] = (section_name, truncated)
                             segment_durations[section_name] = available
                     else:
                         info(
