@@ -74,12 +74,12 @@ Kagenti uses Role-Based Access Control (RBAC) with three roles:
 ### Using the Default Service Account
 
 Kagenti can provision a default `kagenti-api` service account for testing and development.
-
-**Enable in Helm values:**
+This feature is disabled by default; set `enabled: true` to activate it:
 
 ```yaml
+# charts/kagenti/values.yaml (override)
 apiOAuthSecret:
-  enabled: true
+  enabled: true  # default: false
   clientId: kagenti-api
   secretName: kagenti-api-oauth-secret
   serviceAccountRole: kagenti-operator
