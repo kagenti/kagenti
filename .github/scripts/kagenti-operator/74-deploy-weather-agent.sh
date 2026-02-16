@@ -107,16 +107,42 @@ log_success "BuildRun completed successfully"
 
 log_info "Creating Deployment and Service..."
 
-# Apply Deployment manifest
-# Use AUTHBRIDGE_INJECT=true to deploy with AuthBridge sidecar (Approach A testing)
-AUTHBRIDGE_INJECT="${AUTHBRIDGE_INJECT:-false}"
+# On OpenShift, build the OTEL ext_proc image before deploying
 if [ "$IS_OPENSHIFT" = "true" ]; then
-    if [ "$AUTHBRIDGE_INJECT" = "true" ]; then
-        log_info "Deploying with AuthBridge sidecar (Approach A)"
-        kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp_authbridge.yaml"
+    log_info "Building authbridge-otel-processor image..."
+
+    # Create ImageStream if it doesn't exist
+    oc get is authbridge-otel-processor -n team1 &>/dev/null 2>&1 || \
+        oc create imagestream authbridge-otel-processor -n team1
+
+    # Create or update BuildConfig
+    if oc get bc authbridge-otel-processor -n team1 &>/dev/null 2>&1; then
+        log_info "BuildConfig already exists, starting new build..."
     else
-        kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
+        oc new-build --name=authbridge-otel-processor \
+            --context-dir=kagenti/examples/agents/authbridge-otel \
+            --binary=false \
+            --strategy=docker \
+            --to=authbridge-otel-processor:latest \
+            -n team1 || true
+        # Patch to use the correct source
+        oc patch bc authbridge-otel-processor -n team1 --type=json \
+            -p '[{"op":"replace","path":"/spec/source","value":{"type":"Git","git":{"uri":"'"$REPO_URL"'","ref":"'"$BRANCH"'"},"contextDir":"kagenti/examples/agents/authbridge-otel"}}]' 2>/dev/null || true
     fi
+
+    # Start build from local directory (faster, no git clone needed)
+    oc start-build authbridge-otel-processor -n team1 \
+        --from-dir="$REPO_ROOT/kagenti/examples/agents/authbridge-otel" \
+        --follow --wait || {
+        log_error "Failed to build authbridge-otel-processor"
+        exit 1
+    }
+    log_success "authbridge-otel-processor image built"
+fi
+
+# Apply Deployment manifest
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
 else
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment.yaml"
 fi
@@ -151,9 +177,14 @@ log_success "Weather-service deployed via Deployment + Service (operator-indepen
 # The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
 # Patch the Service to use the correct targetPort until the operator is fixed
 # TODO: Remove this workaround once kagenti-operator is fixed to use port from Agent spec
-log_info "Patching Service to use correct targetPort (8000)..."
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    TARGET_PORT=15124
+else
+    TARGET_PORT=8000
+fi
+log_info "Patching Service to use correct targetPort ($TARGET_PORT)..."
 kubectl patch svc weather-service -n team1 --type=json \
-    -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
+    -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": '"$TARGET_PORT"'}]' || {
     log_error "Failed to patch Service targetPort"
     kubectl get svc weather-service -n team1 -o yaml
     exit 1
@@ -175,7 +206,7 @@ metadata:
 spec:
   path: /
   port:
-    targetPort: 8000
+    targetPort: 15124
   to:
     kind: Service
     name: weather-service

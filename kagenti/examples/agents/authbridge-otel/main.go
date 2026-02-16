@@ -1,4 +1,4 @@
-// OTEL-enhanced ext_proc for AuthBridge (Approach A).
+// OTEL-enhanced ext_proc for AuthBridge.
 //
 // This combines the original AuthBridge ext_proc (JWT validation + token exchange)
 // with OpenTelemetry root span creation for GenAI observability.

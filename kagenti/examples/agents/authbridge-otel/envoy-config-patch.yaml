@@ -1,4 +1,4 @@
-# Envoy config patch for AuthBridge OTEL tracing (Approach A)
+# Envoy config patch for AuthBridge OTEL tracing
 #
 # This shows the changes needed to the envoy-config ConfigMap in
 # charts/kagenti/templates/agent-namespaces.yaml to enable body buffering

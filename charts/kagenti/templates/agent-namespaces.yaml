@@ -294,10 +294,6 @@ data:
             protocol: TCP
             address: 0.0.0.0
             port_value: 15124
-        listener_filters:
-        - name: envoy.filters.listener.original_dst
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst
         filter_chains:
         - filters:
           - name: envoy.filters.network.http_connection_manager
@@ -310,16 +306,11 @@ data:
                 virtual_hosts:
                 - name: local_app
                   domains: ["*"]
-                  request_headers_to_add:
-                  - header:
-                      key: "x-authbridge-direction"
-                      value: "inbound"
-                    append: false
                   routes:
                   - match:
                       prefix: "/"
                     route:
-                      cluster: original_destination
+                      cluster: local_app
               http_filters:
               - name: envoy.filters.http.ext_proc
                 typed_config:
@@ -330,9 +321,9 @@ data:
                     timeout: 30s
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
-                    request_body_mode: NONE
-                    response_body_mode: NONE
+                    response_header_mode: SEND
+                    request_body_mode: BUFFERED
+                    response_body_mode: STREAMED
               - name: envoy.filters.http.router
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -344,6 +335,20 @@ data:
         lb_policy: CLUSTER_PROVIDED
         original_dst_lb_config:
           use_http_header: false
+
+      - name: local_app
+        connect_timeout: 5s
+        type: STATIC
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: local_app
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: 127.0.0.1
+                    port_value: 8000
 
       - name: ext_proc_cluster
         connect_timeout: 5s
