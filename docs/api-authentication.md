@@ -17,6 +17,11 @@ This guide focuses on **Client Credentials Grant** for programmatic API access.
 
 ## Quick Start
 
+> **Prerequisite:** The `kagenti-api-oauth-secret` must exist before running these commands.
+> Enable it in your Helm values with `apiOAuthSecret.enabled: true` (see
+> [Using the Default Service Account](#using-the-default-service-account)), or
+> create your own Keycloak client and Kubernetes secret manually.
+
 ```bash
 # 1. Get credentials from the Kubernetes secret
 export CLIENT_ID=$(kubectl get secret kagenti-api-oauth-secret -n kagenti-system -o jsonpath='{.data.CLIENT_ID}' | base64 -d)
@@ -59,6 +64,7 @@ Kagenti uses Role-Based Access Control (RBAC) with three roles:
 | `/api/v1/agents/{namespace}/{name}` | DELETE | `kagenti-operator` |
 | `/api/v1/tools` | GET | `kagenti-viewer` |
 | `/api/v1/tools` | POST | `kagenti-operator` |
+| `/api/v1/tools/{namespace}/{name}` | DELETE | `kagenti-operator` |
 | `/api/v1/chat/*` | GET | `kagenti-viewer` |
 | `/api/v1/chat/*` | POST | `kagenti-operator` |
 | `/api/v1/namespaces` | GET | `kagenti-viewer` |
@@ -141,7 +147,13 @@ curl -H "Authorization: Bearer $TOKEN" \
 ### Python Example
 
 ```python
+import os
 import requests
+
+# Read credentials from environment variables (set via Quick Start above)
+TOKEN_ENDPOINT = os.environ["TOKEN_ENDPOINT"]
+CLIENT_ID = os.environ["CLIENT_ID"]
+CLIENT_SECRET = os.environ["CLIENT_SECRET"]
 
 def get_token(token_endpoint, client_id, client_secret):
     response = requests.post(
@@ -293,11 +305,11 @@ curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients?clientId=$CLIENT_ID"
 ### API Returns 401
 
 ```bash
-# Decode and inspect the token (handles base64url padding)
-echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq .
+# Decode and inspect the token (adds base64url padding before decoding)
+echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}' | base64 -d 2>/dev/null | jq .
 
-# Or use Python for reliable base64url decoding
-python3 -c "import jwt; print(jwt.decode('$TOKEN', options={'verify_signature': False}))"
+# Or use Python (stdlib only, no extra dependencies)
+python3 -c "import base64,json,sys; p=sys.argv[1].split('.')[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p+'==')),indent=2))" "$TOKEN"
 
 # Or paste the token into https://jwt.io for visual inspection
 ```
@@ -306,7 +318,7 @@ python3 -c "import jwt; print(jwt.decode('$TOKEN', options={'verify_signature': 
 
 ```bash
 # Check roles in token
-echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq '.realm_access.roles'
+echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}' | base64 -d 2>/dev/null | jq '.realm_access.roles'
 
 # Verify role assignment in Keycloak
 curl -s "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID/service-account-user" \
