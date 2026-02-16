@@ -325,6 +325,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
 
       - name: Destroy HyperShift cluster
+        continue-on-error: true  # Cleanup must not fail the job
         run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -336,10 +337,12 @@ jobs:
 
       - name: Release CI slot
         if: always()
+        continue-on-error: true  # Slot release must not fail the job
         run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ needs.e2e-tests.outputs.slot_id }}"
 
       - name: Summary
         if: always()
+        continue-on-error: true  # Summary must not fail the job
         run: bash .github/scripts/hypershift/ci/99-summary.sh
         env:
           CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
