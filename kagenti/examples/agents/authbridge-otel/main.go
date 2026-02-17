@@ -462,14 +462,14 @@ func extractA2AOutput(body []byte) string {
 // ============================================================================
 
 type streamSpanState struct {
-	span           trace.Span
-	ctx            context.Context
-	responseBody   []byte // accumulated response chunks for STREAMED mode
-	childSpanIndex int    // counter for nested child spans (LLM/tool events)
-	taskID         string // A2A task ID for fire-and-forget result fetching
-	hasOutput      bool   // whether output has been set on the root span
-	completed      bool   // whether the main stream completed normally (end_of_stream)
-	resubCancel    context.CancelFunc // cancel function for the resubscribe goroutine
+	span              trace.Span
+	ctx               context.Context
+	responseBody      []byte // accumulated response chunks for STREAMED mode
+	childSpanIndex    int    // counter for nested child spans (LLM/tool events)
+	taskID            string // A2A task ID for fire-and-forget result fetching
+	hasOutput         bool   // whether output has been set on the root span
+	completed         bool   // whether the main stream completed normally (end_of_stream)
+	resubCancel       context.CancelFunc // cancel function for the resubscribe goroutine
 }
 
 type processor struct {
@@ -921,6 +921,8 @@ func extractGenAIAttrsFromJSON(text string, eventType string) (spanName string, 
 				// Extract token usage
 				if tu, ok := rm["token_usage"].(map[string]interface{}); ok {
 					if v, ok := tu["input_tokens"].(float64); ok {
+						attrs = append(attrs, attribute.Int("gen_ai.usage.input_tokens", int(v)))
+					} else if v, ok := tu["prompt_tokens"].(float64); ok {
 						attrs = append(attrs, attribute.Int("gen_ai.usage.input_tokens", int(v)))
 					}
 					// Try both completion_tokens (OpenAI) and output_tokens
