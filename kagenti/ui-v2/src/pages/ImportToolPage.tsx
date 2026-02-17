@@ -32,11 +32,12 @@ import {
   Checkbox,
   Radio,
 } from '@patternfly/react-core';
-import { TrashIcon, PlusCircleIcon } from '@patternfly/react-icons';
+import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
 import { useMutation } from '@tanstack/react-query';
 
 import { toolService, ShipwrightBuildConfig } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
+import { EnvImportModal, EnvVar } from '@/components/EnvImportModal';
 import { BuildStrategySelector } from '@/components/BuildStrategySelector';
 
 const PROTOCOLS = [
@@ -68,11 +69,7 @@ const DEFAULT_REPO_URL = 'https://github.com/kagenti/agent-examples';
 const DEFAULT_BRANCH = 'main';
 
 type DeploymentMethod = 'source' | 'image';
-
-interface EnvVar {
-  name: string;
-  value: string;
-}
+type EnvVarType = 'value' | 'secret' | 'configMap';
 
 interface ServicePort {
   name: string;
@@ -85,7 +82,7 @@ export const ImportToolPage: React.FC = () => {
   const navigate = useNavigate();
 
   // Deployment method
-  const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>('image');
+  const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>('source');
 
   // Form state
   const [namespace, setNamespace] = useState('team1');
@@ -133,6 +130,7 @@ export const ImportToolPage: React.FC = () => {
   // Environment variables
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [showEnvVars, setShowEnvVars] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Workload type
   const [workloadType, setWorkloadType] = useState<'deployment' | 'statefulset'>('deployment');
@@ -229,6 +227,20 @@ export const ImportToolPage: React.FC = () => {
     return pattern.test(name);
   };
 
+  // Construct default .env URL from git repo info
+  const getDefaultEnvUrl = (): string | undefined => {
+    if (!gitUrl || !gitPath) return undefined;
+
+    const githubMatch = gitUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)(\.git)?/);
+    if (!githubMatch) return undefined;
+
+    const [, org, repo] = githubMatch;
+    const branch = gitBranch || 'main';
+    const path = gitPath.replace(/^\/+|\/+$/g, '');
+
+    return `https://raw.githubusercontent.com/${org}/${repo}/refs/heads/${branch}/${path}/.env.openai`;
+  };
+
   // Environment variable handlers
   const addEnvVar = () => {
     setEnvVars([...envVars, { name: '', value: '' }]);
@@ -240,8 +252,62 @@ export const ImportToolPage: React.FC = () => {
 
   const updateEnvVar = (index: number, field: 'name' | 'value', value: string) => {
     const updated = [...envVars];
-    updated[index][field] = value;
+    if (field === 'name') {
+      updated[index] = { ...updated[index], name: value };
+    } else {
+      updated[index] = { ...updated[index], value: value };
+    }
     setEnvVars(updated);
+  };
+
+  const handleImportEnvVars = (importedVars: EnvVar[]) => {
+    const existingNames = new Set(envVars.map(v => v.name));
+    const newVars = importedVars.filter(v => !existingNames.has(v.name));
+    setEnvVars([...envVars, ...newVars]);
+    setShowEnvVars(true);
+  };
+
+  const getEnvVarType = (envVar: EnvVar): EnvVarType => {
+    if (envVar.valueFrom?.secretKeyRef) return 'secret';
+    if (envVar.valueFrom?.configMapKeyRef) return 'configMap';
+    return 'value';
+  };
+
+  const handleEnvVarTypeChange = (index: number, type: EnvVarType) => {
+    const updated = [...envVars];
+    const currentName = updated[index].name;
+
+    if (type === 'value') {
+      updated[index] = { name: currentName, value: '' };
+    } else if (type === 'secret') {
+      updated[index] = {
+        name: currentName,
+        valueFrom: { secretKeyRef: { name: '', key: '' } }
+      };
+    } else if (type === 'configMap') {
+      updated[index] = {
+        name: currentName,
+        valueFrom: { configMapKeyRef: { name: '', key: '' } }
+      };
+    }
+
+    setEnvVars(updated);
+  };
+
+  const updateEnvVarSecret = (index: number, field: 'name' | 'key', value: string) => {
+    const updated = [...envVars];
+    if (updated[index].valueFrom?.secretKeyRef) {
+      updated[index].valueFrom!.secretKeyRef![field] = value;
+      setEnvVars(updated);
+    }
+  };
+
+  const updateEnvVarConfigMap = (index: number, field: 'name' | 'key', value: string) => {
+    const updated = [...envVars];
+    if (updated[index].valueFrom?.configMapKeyRef) {
+      updated[index].valueFrom!.configMapKeyRef![field] = value;
+      setEnvVars(updated);
+    }
   };
 
   // Service port handlers
@@ -358,7 +424,7 @@ export const ImportToolPage: React.FC = () => {
         registrySecret: registrySecret || undefined,
         imageTag,
         shipwrightConfig,
-        envVars: envVars.filter((ev) => ev.name && ev.value),
+        envVars: envVars.filter((ev) => ev.name && (ev.value !== undefined || ev.valueFrom)),
         servicePorts: showPodConfig ? servicePorts : undefined,
         createHttpRoute,
       });
@@ -377,7 +443,7 @@ export const ImportToolPage: React.FC = () => {
         persistentStorage: workloadType === 'statefulset'
           ? { enabled: true, size: persistentStorageSize }
           : undefined,
-        envVars: envVars.filter((ev) => ev.name && ev.value),
+        envVars: envVars.filter((ev) => ev.name && (ev.value !== undefined || ev.valueFrom)),
         imagePullSecret: imagePullSecret || undefined,
         servicePorts: showPodConfig ? servicePorts : undefined,
         createHttpRoute,
@@ -458,19 +524,19 @@ export const ImportToolPage: React.FC = () => {
               <FormGroup role="radiogroup" fieldId="deploymentMethod">
                 <Radio
                   name="deploymentMethod"
-                  label="Deploy from Image"
-                  description="Deploy from an existing container image"
-                  isChecked={deploymentMethod === 'image'}
-                  onChange={() => setDeploymentMethod('image')}
-                  id="deploymentMethod-image"
-                />
-                <Radio
-                  name="deploymentMethod"
                   label="Build from Source"
                   description="Build container image from source code using Shipwright"
                   isChecked={deploymentMethod === 'source'}
                   onChange={() => setDeploymentMethod('source')}
                   id="deploymentMethod-source"
+                />
+                <Radio
+                  name="deploymentMethod"
+                  label="Deploy from Image"
+                  description="Deploy from an existing container image"
+                  isChecked={deploymentMethod === 'image'}
+                  onChange={() => setDeploymentMethod('image')}
+                  id="deploymentMethod-image"
                   style={{ marginTop: '8px' }}
                 />
               </FormGroup>
@@ -950,10 +1016,29 @@ export const ImportToolPage: React.FC = () => {
               >
                 <Card isFlat style={{ marginTop: '8px' }}>
                   <CardBody>
-                    {envVars.map((env, index) => (
-                      <div key={index} style={{ marginBottom: '8px' }}>
-                        <Split hasGutter>
-                          <SplitItem isFilled>
+                    <div style={{ marginBottom: '16px' }}>
+                      <Button
+                        variant="secondary"
+                        icon={<UploadIcon />}
+                        onClick={() => setShowImportModal(true)}
+                        style={{ marginRight: '8px' }}
+                      >
+                        Import from File/URL
+                      </Button>
+                      <Button
+                        variant="link"
+                        icon={<PlusCircleIcon />}
+                        onClick={addEnvVar}
+                      >
+                        Add Variable
+                      </Button>
+                    </div>
+
+                    {envVars.map((env, index) => {
+                      const envType = getEnvVarType(env);
+                      return (
+                        <Grid hasGutter key={index} style={{ marginBottom: '12px' }}>
+                          <GridItem span={3}>
                             <TextInput
                               aria-label="Environment variable name"
                               value={env.name}
@@ -970,16 +1055,69 @@ export const ImportToolPage: React.FC = () => {
                                 </HelperText>
                               </FormHelperText>
                             )}
-                          </SplitItem>
-                          <SplitItem isFilled>
-                            <TextInput
-                              aria-label="Environment variable value"
-                              value={env.value}
-                              onChange={(_e, value) => updateEnvVar(index, 'value', value)}
-                              placeholder="value"
-                            />
-                          </SplitItem>
-                          <SplitItem>
+                          </GridItem>
+                          <GridItem span={2}>
+                            <FormSelect
+                              value={envType}
+                              onChange={(_e, value) => handleEnvVarTypeChange(index, value as EnvVarType)}
+                              aria-label="Variable type"
+                            >
+                              <FormSelectOption value="value" label="Direct Value" />
+                              <FormSelectOption value="secret" label="Secret" />
+                              <FormSelectOption value="configMap" label="ConfigMap" />
+                            </FormSelect>
+                          </GridItem>
+                          <GridItem span={6}>
+                            {envType === 'value' && (
+                              <TextInput
+                                aria-label="Environment variable value"
+                                value={env.value || ''}
+                                onChange={(_e, value) => updateEnvVar(index, 'value', value)}
+                                placeholder="value"
+                              />
+                            )}
+                            {envType === 'secret' && (
+                              <Split hasGutter>
+                                <SplitItem isFilled>
+                                  <TextInput
+                                    aria-label="Secret name"
+                                    value={env.valueFrom?.secretKeyRef?.name || ''}
+                                    onChange={(_e, value) => updateEnvVarSecret(index, 'name', value)}
+                                    placeholder="secret-name"
+                                  />
+                                </SplitItem>
+                                <SplitItem isFilled>
+                                  <TextInput
+                                    aria-label="Secret key"
+                                    value={env.valueFrom?.secretKeyRef?.key || ''}
+                                    onChange={(_e, value) => updateEnvVarSecret(index, 'key', value)}
+                                    placeholder="key"
+                                  />
+                                </SplitItem>
+                              </Split>
+                            )}
+                            {envType === 'configMap' && (
+                              <Split hasGutter>
+                                <SplitItem isFilled>
+                                  <TextInput
+                                    aria-label="ConfigMap name"
+                                    value={env.valueFrom?.configMapKeyRef?.name || ''}
+                                    onChange={(_e, value) => updateEnvVarConfigMap(index, 'name', value)}
+                                    placeholder="configmap-name"
+                                  />
+                                </SplitItem>
+                                <SplitItem isFilled>
+                                  <TextInput
+                                    aria-label="ConfigMap key"
+                                    value={env.valueFrom?.configMapKeyRef?.key || ''}
+                                    onChange={(_e, value) => updateEnvVarConfigMap(index, 'key', value)}
+                                    placeholder="key"
+                                  />
+                                </SplitItem>
+                              </Split>
+                            )}
+                          </GridItem>
+                          <GridItem span={1}>
                             <Button
                               variant="plain"
                               onClick={() => removeEnvVar(index)}
@@ -988,17 +1126,16 @@ export const ImportToolPage: React.FC = () => {
                             >
                               <TrashIcon />
                             </Button>
-                          </SplitItem>
-                        </Split>
-                      </div>
-                    ))}
-                    <Button
-                      variant="link"
-                      icon={<PlusCircleIcon />}
-                      onClick={addEnvVar}
-                    >
-                      Add Environment Variable
-                    </Button>
+                          </GridItem>
+                        </Grid>
+                      );
+                    })}
+
+                    {envVars.length === 0 && (
+                      <Text component="p" style={{ fontStyle: 'italic', color: 'var(--pf-v5-global--Color--200)' }}>
+                        No environment variables configured. Click "Import from File/URL" or "Add Variable" to get started.
+                      </Text>
+                    )}
                   </CardBody>
                 </Card>
               </ExpandableSection>
@@ -1052,6 +1189,14 @@ export const ImportToolPage: React.FC = () => {
           .
         </Alert>
       </PageSection>
+
+      {/* Import Modal */}
+      <EnvImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImportEnvVars}
+        defaultUrl={getDefaultEnvUrl()}
+      />
     </>
   );
 };
