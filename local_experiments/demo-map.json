@@ -1,0 +1,90 @@
+{
+  "walkthrough-demo": {
+    "dir": "01-demos/full-platform-walkthrough",
+    "description": "Full walkthrough: login, chat, MLflow, Kiali"
+  },
+  "home-overview": {
+    "dir": "02-ui-pages/home-overview",
+    "description": "Home page: stats, actions, theme, navigation"
+  },
+  "agent-import": {
+    "dir": "02-ui-pages/agent-import",
+    "description": "Agent import form and deployment"
+  },
+  "agent-build": {
+    "dir": "02-ui-pages/agent-build",
+    "description": "Shipwright build progress monitoring"
+  },
+  "agent-detail": {
+    "dir": "02-ui-pages/agent-detail",
+    "description": "Agent detail: overview, specs, events, card"
+  },
+  "tool-import": {
+    "dir": "02-ui-pages/tool-import",
+    "description": "Tool import and MCP server setup"
+  },
+  "tool-detail-mcp": {
+    "dir": "02-ui-pages/tool-detail-mcp",
+    "description": "Tool detail: MCP tools, invoke, specs"
+  },
+  "mcp-gateway": {
+    "dir": "02-ui-pages/mcp-gateway",
+    "description": "MCP Gateway status and inspector"
+  },
+  "observability": {
+    "dir": "02-ui-pages/observability",
+    "description": "Observability dashboard links"
+  },
+  "admin-page": {
+    "dir": "02-ui-pages/admin-page",
+    "description": "Admin: session, auth config, Keycloak"
+  },
+  "navigation-theme": {
+    "dir": "02-ui-pages/navigation-theme",
+    "description": "Navigation sidebar and theme switching"
+  },
+  "agent-chat": {
+    "dir": "03-workflows/agent-chat",
+    "description": "Agent chat: query, streaming, events, follow-up"
+  },
+  "e2e-deploy": {
+    "dir": "03-workflows/e2e-deploy",
+    "description": "End-to-end: import, build, deploy, chat, traces"
+  },
+  "tool-integration": {
+    "dir": "03-workflows/tool-integration",
+    "description": "Tool deploy, discover, invoke, agent use"
+  },
+  "multi-namespace": {
+    "dir": "03-workflows/multi-namespace",
+    "description": "Multi-namespace agent management and isolation"
+  },
+  "mlflow-traces": {
+    "dir": "04-observability/mlflow-traces",
+    "description": "MLflow trace analysis deep dive"
+  },
+  "phoenix-realtime": {
+    "dir": "04-observability/phoenix-realtime",
+    "description": "Phoenix real-time tracing"
+  },
+  "kiali-mesh": {
+    "dir": "04-observability/kiali-mesh",
+    "description": "Kiali service mesh visualization"
+  },
+  "mcp-inspector": {
+    "dir": "04-observability/mcp-inspector",
+    "description": "MCP Inspector tool testing"
+  },
+  "keycloak-admin": {
+    "dir": "05-advanced/keycloak-admin",
+    "description": "Keycloak identity management"
+  },
+  "agent-delete": {
+    "dir": "05-advanced/agent-delete",
+    "description": "Agent delete workflow with confirmation"
+  },
+  "env-vars": {
+    "dir": "05-advanced/env-vars",
+    "description": "Environment variable management"
+  }
+}

@@ -1,0 +1,23 @@
+[intro]
+In this demo, we explore the Kay-jentee tool detail page and the M-C-P tool invocation interface, showing how platform tools expose their capabilities through the Model Context Protocol.
+
+[login]
+We authenticate through Keycloak. The same OAuth2 identity is used when invoking M-C-P tools, ensuring all tool calls are authenticated and auditable.
+
+[tool_catalog]
+In the Tool Catalog, we navigate to the team1 namespace and locate the weather-tool. The catalog lists all deployed M-C-P tool servers with their status and endpoint information.
+
+[tool_overview]
+The Overview tab shows the tool's deployment status, including readiness, replica count, and the M-C-P server endpoint. This provides a quick operational view of the tool server workload running in the cluster.
+
+[tool_mcp_list]
+The M-C-P Tools tab lists all tools exposed by this M-C-P server, along with their input schemas. Each tool shows its name, description, and the JSON schema for its parameters. This is the standard M-C-P tools-list response, letting agents and users discover exactly what operations are available.
+
+[tool_invoke]
+We invoke a tool directly from the UI by providing input parameters. The platform sends a standard M-C-P tool-call request to the tool server and displays the response. This interactive invocation is useful for testing tool behavior and validating parameter schemas before integrating the tool with an agent.
+
+[tool_specs]
+The Specs tab shows the full YAML specification of the tool's custom resource definition. This includes the container image, service configuration, and M-C-P protocol settings. The spec defines how the tool server is deployed and how agents connect to it through the platform's service mesh.
+
+[end]
+This completes the tool detail and M-C-P invocation demo. The tool detail page provides comprehensive visibility into M-C-P tool capabilities, from schema discovery to interactive testing and resource specifications.

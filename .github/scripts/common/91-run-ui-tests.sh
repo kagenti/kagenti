@@ -50,9 +50,9 @@ if [ -z "${KEYCLOAK_PASSWORD:-}" ]; then
     log_info "Keycloak password: ${KC_PASS:0:4}..."
 fi
 
-# Run Playwright tests (only our agent-chat tests for now, existing tests need auth updates)
+# Run all Playwright E2E tests (all specs handle Keycloak login)
 log_info "Running Playwright E2E tests..."
-CI=true npx playwright test agent-chat --reporter=list,html 2>&1 || {
+CI=true npx playwright test --reporter=list,html 2>&1 || {
     log_error "Playwright UI tests failed"
 
     if [ -d playwright-report ]; then

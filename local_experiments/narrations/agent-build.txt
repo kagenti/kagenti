@@ -1,0 +1,26 @@
+[intro]
+Building an agent in Kay-jentee.
+
+[login]
+We authenticate through Keycloak. Build operations require namespace permissions.
+
+[build_import]
+We fill in the Import Agent form with the agent name, namespace, source path, and build strategy. The strategy determines which build tool compiles the code.
+
+[build_submit]
+Submitting the form triggers a Shipwright Build Run that compiles the agent into a container image.
+
+[build_progress]
+The build page shows the current phase — Pending, Running, Succeeded, or Failed — updating in real time.
+
+[build_metadata]
+Build metadata shows the source repository, target image, and build strategy.
+
+[build_events]
+The events panel surfaces Kubernetes events — pod scheduling, layer caching, and push progress.
+
+[build_status]
+We monitor until the build succeeds. A successful build pushes the image and starts deployment.
+
+[end]
+That covers the agent build lifecycle. Kay-jentee uses Shipwright for Kubernetes-native source-to-image builds.

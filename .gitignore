@@ -176,6 +176,7 @@ cython_debug/
 ############## Node and React
 
 node_modules/
+**/node_modules/
 .bin/
 
 # HyperShift CI credentials (covered by .env.* above)
@@ -185,3 +186,23 @@ node_modules/
 # Git worktrees for parallel development
 .worktrees/
 test-results/
+
+# Local testing scripts (not committed)
+local-testing/
+
+############## Playwright Demo Recording
+
+# Generated/ephemeral files (per-run outputs)
+local_experiments/demos/
+local_experiments/test-results/
+local_experiments/.auth/
+local_experiments/e2e-narration/
+*-timestamps.json
+*-section-pauses.json
+local_experiments/*.webm
+local_experiments/*.mp3
+local_experiments/*.mp4
+
+# Playwright temp config
+kagenti/ui-v2/.playwright-video.config.cjs
+kagenti/ui-v2/e2e/package.json
