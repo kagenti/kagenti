@@ -827,13 +827,13 @@ func resubscribeAndCapture(cancelCtx context.Context, taskID string, span trace.
 							var spanName string
 							var attrs []attribute.KeyValue
 							if eventType == "llm" {
-								spanName = fmt.Sprintf("gen_ai.chat %d", childIndex)
+								spanName = "chat"
 								attrs = []attribute.KeyValue{
 									attribute.String("gen_ai.operation.name", "chat"),
 									attribute.String("gen_ai.system", agentProvider),
 								}
 							} else {
-								spanName = fmt.Sprintf("tool.execute %d", childIndex)
+								spanName = "execute_tool"
 								attrs = []attribute.KeyValue{
 									attribute.String("gen_ai.operation.name", "tool"),
 								}
@@ -982,19 +982,29 @@ func extractGenAIAttrsFromJSON(text string, eventType string) (spanName string, 
 				}
 
 				// Extract model name
+				var modelName string
 				if model, ok := rm["model_name"].(string); ok && model != "" {
+					modelName = model
 					attrs = append(attrs, attribute.String("gen_ai.response.model", model))
+					attrs = append(attrs, attribute.String("gen_ai.request.model", model))
 				}
 
 				// Extract finish reason
 				if reason, ok := rm["finish_reason"].(string); ok && reason != "" {
 					attrs = append(attrs, attribute.String("gen_ai.response.finish_reasons", reason))
 				}
+
+				// Set span name per GenAI spec: "chat {gen_ai.request.model}"
+				if modelName != "" {
+					spanName = fmt.Sprintf("chat %s", modelName)
+				}
 			}
 
 			// Check if this is a tool-calling LLM step
 			if len(msg.ToolCalls) > 0 {
-				spanName = "gen_ai.chat"
+				if spanName == "" {
+					spanName = "chat"
+				}
 				// Add tool call names as context
 				var toolNames []string
 				for _, tc := range msg.ToolCalls {
@@ -1010,7 +1020,7 @@ func extractGenAIAttrsFromJSON(text string, eventType string) (spanName string, 
 					attrs = append(attrs, attribute.String("gen_ai.tool.calls", strings.Join(toolNames, ",")))
 				}
 			} else if msg.Content != "" {
-				spanName = "gen_ai.chat"
+				spanName = "chat"
 			}
 			break
 		}
@@ -1022,7 +1032,7 @@ func extractGenAIAttrsFromJSON(text string, eventType string) (spanName string, 
 				continue
 			}
 			if msg.Name != "" {
-				spanName = fmt.Sprintf("gen_ai.tool.%s", msg.Name)
+				spanName = fmt.Sprintf("execute_tool %s", msg.Name)
 				attrs = append(attrs, attribute.String("gen_ai.tool.name", msg.Name))
 			}
 			if msg.ToolCallID != "" {
@@ -1052,9 +1062,9 @@ func (p *processor) createChildSpan(state *streamSpanState, eventType string, te
 	// Fallback span names
 	if spanName == "" {
 		if eventType == "llm" {
-			spanName = "gen_ai.chat"
+			spanName = "chat"
 		} else {
-			spanName = fmt.Sprintf("tool.execute %d", idx)
+			spanName = "execute_tool"
 		}
 	}
 

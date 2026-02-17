@@ -226,6 +226,13 @@ data:
               - set(attributes["llm.system"], attributes["gen_ai.system"]) where attributes["gen_ai.system"] != nil
               # Convert GenAI invocation parameters (temperature)
               - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"], "")], "")) where attributes["gen_ai.request.temperature"] != nil
+              # OpenInference span kind from span name patterns
+              - set(attributes["openinference.span.kind"], "AGENT") where IsMatch(name, "^invoke_agent.*")
+              - set(attributes["openinference.span.kind"], "LLM") where IsMatch(name, "^chat.*")
+              - set(attributes["openinference.span.kind"], "TOOL") where IsMatch(name, "^execute_tool.*")
+              # OpenInference input/output from GenAI prompt/completion
+              - set(attributes["input.value"], attributes["gen_ai.prompt"]) where attributes["gen_ai.prompt"] != nil
+              - set(attributes["output.value"], attributes["gen_ai.completion"]) where attributes["gen_ai.completion"] != nil
       {{- if $.Values.components.mlflow.enabled }}
       # Filter for MLflow: only keep agent spans, filter out A2A framework spans
       # A2A framework spans have names starting with "a2a."
@@ -254,12 +261,12 @@ data:
               - set(attributes["mlflow.runName"], Concat([attributes["gen_ai.agent.name"], "-invoke"], "")) where attributes["gen_ai.agent.name"] != nil
               - set(attributes["mlflow.user"], "kagenti") where IsMatch(name, "^invoke_agent.*")
               - set(attributes["mlflow.source"], resource.attributes["service.name"]) where resource.attributes["service.name"] != nil
-              # LLM spans (gen_ai.chat) → MLflow LLM type + token usage
-              - set(attributes["mlflow.spanType"], "LLM") where IsMatch(name, "^gen_ai\\.chat.*")
+              # LLM spans (chat {model}) → MLflow LLM type + token usage
+              - set(attributes["mlflow.spanType"], "LLM") where IsMatch(name, "^chat.*")
               - set(attributes["mlflow.span.chat_usage.input_tokens"], attributes["gen_ai.usage.input_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil
               - set(attributes["mlflow.span.chat_usage.output_tokens"], attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.output_tokens"] != nil
-              # Tool spans → MLflow TOOL type
-              - set(attributes["mlflow.spanType"], "TOOL") where IsMatch(name, "^gen_ai\\.tool\\..*")
+              # Tool spans (execute_tool {name}) → MLflow TOOL type
+              - set(attributes["mlflow.spanType"], "TOOL") where IsMatch(name, "^execute_tool.*")
       {{- end }}
 
     extensions:
