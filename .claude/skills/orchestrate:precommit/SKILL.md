@@ -221,4 +221,4 @@ Update `/tmp/kagenti/orchestrate/<target>/phase-status.md`:
 - `orchestrate` — Parent router
 - `orchestrate:scan` — Provides tech stack detection
 - `orchestrate:plan` — Defines precommit phase tasks
-- `orchestrate:ci` — Next phase: CI workflows
+- `orchestrate:tests` — Next phase: test infrastructure

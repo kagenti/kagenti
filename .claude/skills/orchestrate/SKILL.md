@@ -15,14 +15,14 @@ flowchart TD
     HAS_PLAN -->|Yes| NEXT_PHASE{Next phase?}
 
     NEXT_PHASE -->|Phase 2| PRECOMMIT["orchestrate:precommit<br/>PR #1"]:::orch
-    NEXT_PHASE -->|Phase 3| CI["orchestrate:ci<br/>PR #2"]:::orch
-    NEXT_PHASE -->|Phase 4| TESTS["orchestrate:tests<br/>PR #3"]:::orch
+    NEXT_PHASE -->|Phase 3| TESTS["orchestrate:tests<br/>PR #2"]:::orch
+    NEXT_PHASE -->|Phase 4| CI["orchestrate:ci<br/>PR #3"]:::orch
     NEXT_PHASE -->|Phase 5| SECURITY["orchestrate:security<br/>PR #4"]:::orch
     NEXT_PHASE -->|Phase 6| REPLICATE["orchestrate:replicate<br/>PR #5"]:::orch
 
-    PRECOMMIT --> CI
-    CI --> TESTS
-    TESTS --> SECURITY
+    PRECOMMIT --> TESTS
+    TESTS --> CI
+    CI --> SECURITY
     SECURITY --> REPLICATE
     REPLICATE -->|optional| ONBOARD_LINK["onboard:link"]:::onb
     ONBOARD_LINK --> ONBOARD_STD["onboard:standards"]:::onb
@@ -87,8 +87,8 @@ The `phase-status.md` file uses this format:
 | scan | complete | -- | 2025-01-15 |
 | plan | complete | -- | 2025-01-15 |
 | precommit | complete | #42 | 2025-01-16 |
-| ci | in-progress | #43 | 2025-01-17 |
-| tests | pending | -- | -- |
+| tests | in-progress | #43 | 2025-01-17 |
+| ci | pending | -- | -- |
 | security | pending | -- | -- |
 | replicate | pending | -- | -- |
 ```
@@ -102,12 +102,12 @@ Each phase skill is responsible for updating `phase-status.md` when it starts an
 | 0 | orchestrate:scan | -- | Assess target repo structure, tech stack, and gaps |
 | 1 | orchestrate:plan | -- | Brainstorm enhancements and produce a phased plan |
 | 2 | orchestrate:precommit | PR #1 | Pre-commit hooks, linting, and code formatting |
-| 3 | orchestrate:ci | PR #2 | CI workflows (GitHub Actions or equivalent) |
-| 4 | orchestrate:tests | PR #3 | Test infrastructure and initial test coverage |
+| 3 | orchestrate:tests | PR #2 | Test infrastructure and initial test coverage |
+| 4 | orchestrate:ci | PR #3 | CI workflows (GitHub Actions or equivalent) |
 | 5 | orchestrate:security | PR #4 | Security hardening (CODEOWNERS, scanning, policies) |
 | 6 | orchestrate:replicate | PR #5 | Bootstrap Claude Code skills into the target repo |
 
-Phases are sequential. Each PR builds on the previous one. The scan and plan phases do not produce PRs -- they produce artifacts that guide all subsequent phases.
+Phases are sequential. Each PR builds on the previous one. Tests come before CI (so CI can run them) and before security (so code refactoring for security fixes has test coverage as a safety net). The scan and plan phases do not produce PRs -- they produce artifacts that guide all subsequent phases.
 
 ## Self-Replication
 

@@ -24,13 +24,14 @@ flowchart TD
 
 # Orchestrate: Tests
 
-Add test infrastructure and initial test coverage. This is Phase 4 and
-produces PR #3.
+Add test infrastructure and initial test coverage. This is Phase 3 and
+produces PR #2. Tests come before CI and security — good test coverage is
+a safety net for the code refactoring that security/quality fixes require.
 
 ## When to Use
 
 - After `orchestrate:plan` identifies tests as a needed phase
-- Ideally after CI phase so tests run automatically
+- After precommit phase (linting is the foundation)
 
 ## Prerequisites
 
@@ -151,8 +152,8 @@ Set tests to `complete` in phase-status.md.
 ## Related Skills
 
 - `orchestrate` — Parent router
-- `orchestrate:ci` — Previous phase (CI runs these tests)
+- `orchestrate:precommit` — Previous phase (linting foundation)
 - `orchestrate:plan` — Defines test phase tasks
-- `orchestrate:security` — Next phase
+- `orchestrate:ci` — Next phase (automates running these tests)
 - `test:write` — Detailed test writing guide
 - `tdd:ci` — CI-driven TDD workflow

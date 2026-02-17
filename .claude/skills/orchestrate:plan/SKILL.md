@@ -61,10 +61,11 @@ Not all repos need all phases. Use AskUserQuestion to decide:
 
 ### 4. Determine phase order
 
-Default order: precommit → ci → tests → security → replicate
+Default order: precommit → tests → ci → security → replicate
 
-Adjust if the developer has different priorities. Pre-commit should always be
-first (it validates subsequent PRs). Replicate should always be last.
+Tests come before CI (so CI can run them) and before security (so code
+refactoring for security fixes has test coverage as a safety net). Pre-commit
+is always first (it validates subsequent PRs). Replicate is always last.
 
 ### 5. Size PRs
 
@@ -93,17 +94,17 @@ Save to `/tmp/kagenti/orchestrate/<target>/plan.md`:
 - [ ] Create .claude/settings.json
 - [ ] Add repo:commit skill
 
-## Phase 3: CI (PR #2, ~NNN lines)
-- [ ] Add lint workflow
-- [ ] Add test workflow
-- [ ] Add build workflow
-- [ ] Add ci:status and rca:ci skills
-
-## Phase 4: Tests (PR #3, ~NNN lines)
+## Phase 3: Tests (PR #2, ~NNN lines)
 - [ ] Set up test framework
 - [ ] Add test configuration
 - [ ] Write initial tests for critical paths
 - [ ] Add test:write and tdd:ci skills
+
+## Phase 4: CI (PR #3, ~NNN lines)
+- [ ] Add lint workflow
+- [ ] Add test workflow
+- [ ] Add build workflow
+- [ ] Add ci:status and rca:ci skills
 
 ## Phase 5: Security (PR #4, ~NNN lines)
 - [ ] Create CODEOWNERS

@@ -31,7 +31,7 @@ PR #4.
 ## When to Use
 
 - After `orchestrate:plan` identifies security as a needed phase
-- After precommit, CI, and tests phases
+- After precommit, tests, and CI phases (test coverage provides safety net for code changes)
 
 ## Prerequisites
 
@@ -168,6 +168,6 @@ Set security to `complete` in phase-status.md.
 ## Related Skills
 
 - `orchestrate` — Parent router
-- `orchestrate:tests` — Previous phase
+- `orchestrate:ci` — Previous phase
 - `orchestrate:plan` — Defines security phase tasks
 - `orchestrate:replicate` — Next phase: bootstrap skills

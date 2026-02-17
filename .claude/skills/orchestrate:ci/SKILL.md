@@ -24,13 +24,14 @@ flowchart TD
 
 # Orchestrate: CI
 
-Add GitHub Actions CI workflows to a target repository. This is Phase 3 and
-produces PR #2 — automated checks on every push and PR.
+Add GitHub Actions CI workflows to a target repository. This is Phase 4 and
+produces PR #3 — automated checks on every push and PR. Comes after tests
+so CI can run the test suite established in the previous phase.
 
 ## When to Use
 
 - After `orchestrate:plan` identifies CI as a needed phase
-- Ideally after precommit phase (so linting is in place)
+- After precommit and tests phases (so CI can run the test suite)
 
 ## Prerequisites
 
@@ -150,8 +151,8 @@ Set ci to `complete` in `/tmp/kagenti/orchestrate/<target>/phase-status.md`.
 ## Related Skills
 
 - `orchestrate` — Parent router
-- `orchestrate:precommit` — Previous phase (linting foundation)
+- `orchestrate:tests` — Previous phase (test suite to run in CI)
 - `orchestrate:plan` — Defines CI phase tasks
-- `orchestrate:tests` — Next phase: test infrastructure
+- `orchestrate:security` — Next phase: security hardening
 - `ci:status` — Monitor CI pipelines
 - `rca:ci` — Debug CI failures
