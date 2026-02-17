@@ -1,0 +1,20 @@
+# Example Terraform variables for OpenShift management cluster
+# Copy this file to terraform.tfvars and customize
+
+cluster_name = "mgmt-421"
+base_domain  = "example.com"  # Change to your domain
+aws_region   = "us-east-1"
+ocp_version  = "4.21"
+
+# Network configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+# Cluster sizing
+master_replicas       = 3  # Must be 3 for HA
+worker_replicas       = 3  # Can be adjusted based on workload
+master_instance_type  = "m6i.xlarge"   # 4 vCPU, 16 GB RAM
+worker_instance_type  = "m6i.2xlarge"  # 8 vCPU, 32 GB RAM (for HyperShift)
+
+# Tagging
+managed_by_tag = "kagenti-hypershift-mgmt"

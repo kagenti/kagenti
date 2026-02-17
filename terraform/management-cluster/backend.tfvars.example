@@ -1,0 +1,11 @@
+# Example S3 backend configuration for Terraform state
+# Copy this file to backend.tfvars and customize
+#
+# Usage:
+#   terraform init -backend-config=backend.tfvars
+
+bucket         = "my-terraform-state-bucket"
+key            = "kagenti/management-cluster-421/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "terraform-state-locks"  # Optional: for state locking
+encrypt        = true
