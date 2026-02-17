@@ -1,193 +1,152 @@
-# Approach A: AuthBridge ext_proc Root Span (Zero Agent Changes)
+# Zero-Agent OTEL: AuthBridge ext_proc Observability
 
 **Issue:** #667
-**Goal:** Infrastructure-created root spans for OTEL GenAI observability with zero agent code changes.
+**PR kagenti:** #668
+**PR agent-examples:** #122
 
 ## Overview
 
-Extend the existing AuthBridge ext_proc gRPC server (Go) to create OTEL root spans for agent requests. The AuthBridge already intercepts all agent traffic via Envoy sidecar with iptables redirection. By adding OTEL span creation to the ext_proc processing pipeline, we can create properly attributed root spans without any agent code changes.
+Full GenAI observability with **zero OTEL code in the agent**. The AuthBridge
+`otel-ext-proc` sidecar intercepts A2A SSE streams through Envoy, creates root
+spans and nested child spans by parsing LangGraph events from the stream. The
+OTEL Collector transforms `gen_ai.*` attributes to MLflow and Phoenix formats.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ Agent Pod                                                │
-│                                                          │
-│  ┌─────────┐    ┌──────────────┐    ┌─────────────────┐ │
-│  │ Envoy   │───▶│ ext_proc     │───▶│ Agent Code      │ │
-│  │ Sidecar │    │ (Go gRPC)    │    │ (no changes)    │ │
-│  │         │◀───│              │◀───│                 │ │
-│  │ port    │    │ + OTEL SDK   │    │ + auto-instr    │ │
-│  │ 15123/  │    │ + A2A parser │    │   (LangChain,   │ │
-│  │ 15124   │    │ + root span  │    │    OpenAI)      │ │
-│  └─────────┘    └──────┬───────┘    └────────┬────────┘ │
-│                        │                      │          │
-└────────────────────────┼──────────────────────┼──────────┘
-                         │                      │
-                         ▼                      ▼
-              ┌──────────────────────────────────────┐
-              │ OTEL Collector                       │
-              │ (kagenti-system)                     │
-              │                                      │
-              │ Root span (from ext_proc)             │
-              │   └── LangChain spans (from agent)   │
-              │       └── LLM spans (auto-instr)     │
-              │       └── Tool spans (auto-instr)    │
-              │                                      │
-              │ Pipeline: traces/phoenix             │
-              │ Pipeline: traces/mlflow              │
-              └──────────────────────────────────────┘
+Client → Route → Envoy(15124) → ext_proc(9090) → Agent(8000)
+                                     |
+                                     v
+                              OTEL Collector
+                              /           \
+                        Phoenix          MLflow
+                  (OpenInference)    (mlflow.*)
 ```
 
-## What Changes
+### Pod Structure (4 containers)
 
-### 1. ext_proc Go code (`AuthProxy/go-processor/main.go`)
+| Container | Image | Port | Purpose |
+|-----------|-------|------|---------|
+| `agent` | weather-service:v0.0.1 | 8000 | A2A agent (zero OTEL deps) |
+| `envoy-proxy` | envoyproxy/envoy:v1.33 | 15124 | Inbound proxy with ext_proc filter |
+| `otel-ext-proc` | authbridge-otel-processor:latest | 9090 | GenAI span creation from SSE |
+| `kagenti-client-registration` | client-registration:latest | — | Keycloak client sidecar |
 
-**Current state:** Handles only request/response headers for JWT validation and token exchange. No OTEL.
+## How It Works
 
-**Changes needed:**
-- Add OpenTelemetry Go SDK dependency
-- Change Envoy processing_mode to include body buffering:
-  - `request_body_mode: BUFFERED` (for A2A JSON-RPC input parsing)
-  - `response_body_mode: BUFFERED` (for response output capture)
-- On inbound A2A requests:
-  1. Parse JSON-RPC body to extract `params.message.parts[0].text` (user input)
-  2. Extract `params.contextId` (conversation ID)
-  3. Create root span: `invoke_agent {agent_name}`
-  4. Set all required attributes (MLflow, OpenInference, GenAI)
-  5. Inject `traceparent` header into request forwarded to agent
-- On response:
-  1. Parse response body for `result.artifacts[0].parts[0].text` (output)
-  2. Set `mlflow.spanOutputs`, `output.value`, `gen_ai.completion` on root span
-  3. End the root span
+### 1. Request Phase (Headers + Body)
 
-### 2. Envoy config (`envoy-config` ConfigMap)
+The ext_proc intercepts the inbound request:
+- Creates root span `invoke_agent {agent_name}` with `gen_ai.*` attributes
+- Injects `traceparent` W3C header into the request
+- Parses A2A JSON-RPC body for user input → `gen_ai.prompt`
+- Skips non-API paths (agent-card, health)
 
-**Current state:** `request_body_mode: NONE`, `response_body_mode: NONE`
+### 2. Response Phase (SSE Stream)
 
-**Changes needed:**
-```yaml
-processing_mode:
-  request_header_mode: SEND
-  response_header_mode: SEND
-  request_body_mode: BUFFERED    # NEW: buffer full request body
-  response_body_mode: BUFFERED   # NEW: buffer full response body
+The agent emits LangGraph events as valid JSON in SSE `status-update` messages.
+The ext_proc parses each chunk in real-time:
+
+| SSE Event | Span Created | Key Attributes |
+|-----------|-------------|----------------|
+| `🚶‍♂️assistant:` with tool_calls | `chat {model}` | `gen_ai.usage.input_tokens`, `gen_ai.response.model`, `gen_ai.tool.calls` |
+| `🚶‍♂️tools:` | `execute_tool {name}` | `gen_ai.tool.name`, `gen_ai.tool.call.id` |
+| `🚶‍♂️assistant:` with content | `chat {model}` | `gen_ai.usage.input_tokens`, `gen_ai.response.finish_reasons` |
+| `artifact-update` | (root span) | `gen_ai.completion` set on root |
+| `status-update` final=true | — | Root span ended |
+
+### 3. Client Disconnect Handling
+
+When the SSE client disconnects mid-stream:
+1. ext_proc starts a background `tasks/resubscribe` connection immediately on task ID capture
+2. If resubscribe returns no events (EventQueue closed), falls back to `tasks/get`
+3. The agent saves the completed task to the InMemoryTaskStore (always, not just on failure)
+4. `tasks/get` retrieves the artifact and sets `gen_ai.completion` on the root span
+
+### 4. OTEL Collector Transforms
+
+The ext_proc sets **only `gen_ai.*` attributes** (standard OTel GenAI semantic conventions).
+The OTEL Collector derives backend-specific attributes:
+
+**Phoenix pipeline** (`transform/genai_to_openinference`):
+
+| GenAI Attribute | OpenInference Attribute |
+|-----------------|------------------------|
+| `gen_ai.request.model` | `llm.model_name` |
+| `gen_ai.usage.input_tokens` | `llm.token_count.prompt` |
+| `gen_ai.usage.output_tokens` | `llm.token_count.completion` |
+| `gen_ai.system` | `llm.provider` |
+| `gen_ai.prompt` | `input.value` |
+| `gen_ai.completion` | `output.value` |
+| Span name `invoke_agent*` | `openinference.span.kind = AGENT` |
+| Span name `chat*` | `openinference.span.kind = LLM` |
+| Span name `execute_tool*` | `openinference.span.kind = TOOL` |
+
+**MLflow pipeline** (`transform/genai_to_mlflow`):
+
+| GenAI Attribute | MLflow Attribute |
+|-----------------|-----------------|
+| `gen_ai.prompt` | `mlflow.spanInputs` |
+| `gen_ai.completion` | `mlflow.spanOutputs` |
+| `gen_ai.agent.name` | `mlflow.traceName` |
+| `gen_ai.conversation.id` | `mlflow.trace.session` |
+| `gen_ai.agent.version` | `mlflow.version` |
+| `gen_ai.usage.input_tokens` | `mlflow.span.chat_usage.input_tokens` |
+| `gen_ai.usage.output_tokens` | `mlflow.span.chat_usage.output_tokens` |
+| Span name `invoke_agent*` | `mlflow.spanType = AGENT` |
+| Span name `chat*` | `mlflow.spanType = LLM` |
+| Span name `execute_tool*` | `mlflow.spanType = TOOL` |
+
+## Trace Tree (MLflow/Phoenix)
+
+```
+invoke_agent weather-assistant          ← root span
+├── gen_ai.prompt = "What is the weather?"
+├── gen_ai.completion = "The weather in..."
+├── gen_ai.conversation.id = <context_id>
+│
+├── chat gpt-4o-mini-2024-07-18        ← LLM decides to call tool
+│   ├── gen_ai.usage.input_tokens = 73
+│   ├── gen_ai.usage.output_tokens = 14
+│   ├── gen_ai.response.model = gpt-4o-mini-2024-07-18
+│   └── gen_ai.response.finish_reasons = tool_calls
+│
+├── execute_tool get_weather            ← tool execution
+│   ├── gen_ai.tool.name = get_weather
+│   └── gen_ai.tool.call.id = call_xxx
+│
+└── chat gpt-4o-mini-2024-07-18        ← LLM generates answer
+    ├── gen_ai.usage.input_tokens = 154
+    ├── gen_ai.usage.output_tokens = 62
+    └── gen_ai.response.finish_reasons = stop
 ```
 
-### 3. Agent deployment
+## Span Naming (per OTel GenAI Spec)
 
-**No changes to agent code.** Agent needs only:
-- Standard OTEL SDK setup (TracerProvider + OTLP exporter) - this is typically set via environment variables
-- Auto-instrumentation libraries already in use (LangChain, OpenAI)
-- `OTEL_EXPORTER_OTLP_ENDPOINT` env var (already set in deployment)
+Per https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/:
 
-The agent's auto-instrumented spans will automatically become children of the root span because:
-1. ext_proc injects `traceparent` header with the root span's trace context
-2. Agent's OTEL SDK extracts trace context from incoming headers (W3C propagation)
-3. All spans created by auto-instrumentation inherit this context
+| Operation | Span Name | `gen_ai.operation.name` |
+|-----------|-----------|------------------------|
+| Agent invocation | `invoke_agent {gen_ai.agent.name}` | `invoke_agent` |
+| LLM chat | `chat {gen_ai.request.model}` | `chat` |
+| Tool execution | `execute_tool {gen_ai.tool.name}` | `execute_tool` |
 
-## Root Span Attributes
+## Agent Requirements
 
-The ext_proc sets these attributes on the root span:
+The agent has **zero OTEL dependencies**. It only needs to:
 
-### GenAI Semantic Conventions (Required)
-| Attribute | Value | Source |
-|-----------|-------|--------|
-| `gen_ai.operation.name` | `invoke_agent` | Static |
-| `gen_ai.provider.name` | From deployment config | ConfigMap |
-| `gen_ai.agent.name` | From deployment config | ConfigMap |
-| `gen_ai.agent.version` | From deployment config | ConfigMap |
-| `gen_ai.conversation.id` | `params.contextId` | A2A JSON-RPC body |
-| `gen_ai.prompt` | `params.message.parts[0].text` | A2A JSON-RPC body |
-| `gen_ai.completion` | `result.artifacts[0].parts[0].text` | A2A response body |
+1. Serialize LangGraph events as valid JSON (via `model_dump()` + `json.dumps()`)
+2. Save completed tasks to the InMemoryTaskStore for disconnect recovery
 
-### MLflow Attributes
-| Attribute | Value | Source |
-|-----------|-------|--------|
-| `mlflow.spanInputs` | User input text | A2A JSON-RPC body |
-| `mlflow.spanOutputs` | Agent response text | A2A response body |
-| `mlflow.spanType` | `AGENT` | Static |
-| `mlflow.traceName` | Agent name | ConfigMap |
-| `mlflow.version` | Agent version | ConfigMap |
-| `mlflow.runName` | `{agent_name}-invoke` | Derived |
-| `mlflow.source` | Service name | ConfigMap |
-| `mlflow.user` | From JWT claims | Auth header |
-| `mlflow.trace.session` | Context ID | A2A JSON-RPC body |
+The `asyncio.shield()` in `execute()` prevents SSE disconnect from cancelling
+the LangGraph execution. The agent completes even if nobody is listening.
 
-### OpenInference Attributes
-| Attribute | Value | Source |
-|-----------|-------|--------|
-| `openinference.span.kind` | `AGENT` | Static |
-| `input.value` | User input text | A2A JSON-RPC body |
-| `output.value` | Agent response text | A2A response body |
+## Key Files
 
-## Agent Configuration
-
-Agent metadata (name, version, provider) is provided via a new ConfigMap:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agent-otel-config
-  namespace: team1
-data:
-  AGENT_NAME: "weather-assistant"
-  AGENT_VERSION: "1.0.0"
-  AGENT_PROVIDER: "langchain"
-  OTEL_SERVICE_NAME: "weather-service"
-```
-
-This ConfigMap is mounted into the ext_proc container, keeping agent metadata out of agent code.
-
-## Streaming Response Handling
-
-A2A supports streaming via SSE. For streaming responses:
-- ext_proc uses `response_body_mode: BUFFERED` which may not work well with SSE
-- Alternative: Use `STREAMED` mode and accumulate the final response
-- Or: Set `mlflow.spanOutputs` from the last SSE event containing the final answer
-- This is the same challenge PR 114 faces with `StreamingResponse`
-
-## Trade-offs
-
-**Pros:**
-- Zero agent code changes - agents only need standard OTEL SDK + auto-instrumentation
-- Centralized observability logic - update once, all agents benefit
-- AuthBridge already deployed via webhook injection
-- Can extract user identity from JWT (already validated by ext_proc)
-- Consistent attribute naming across all agents
-
-**Cons:**
-- Body buffering adds latency (full request/response must be received before processing)
-- Streaming response capture is complex
-- ext_proc becomes a critical path for observability
-- Agent metadata must be provided via ConfigMap (not self-described)
-- Local tool calls within the agent (not via MCP) won't have tool spans from infrastructure
-
-## E2E Test Impact
-
-Expected test results with this approach:
-
-| Test | Expected Result |
-|------|----------------|
-| TestWeatherAgentTracesInMLflow | PASS - root span has service.name |
-| TestGenAITracesInMLflow | PASS - LangChain auto-instrumentation creates nested spans |
-| TestMLflowTraceMetadata | PASS - root span has all metadata |
-| TestSessionTracking | PASS - conversation.id from A2A body |
-| TestRootSpanAttributes (MLflow) | PASS - all attributes set by ext_proc |
-| TestRootSpanAttributes (OpenInference) | PASS - input/output.value set |
-| TestRootSpanAttributes (GenAI) | PASS - conversation.id, agent.name set |
-| TestTokenUsageVerification | PASS - LLM auto-instrumentation handles this |
-| TestToolCallSpanAttributes | DEPENDS - MCP tool calls auto-instrumented, local tools not captured |
-| TestErrorSpanValidation | PASS - ext_proc sets error status on failures |
-
-## Implementation Steps
-
-1. Add OTEL Go SDK to ext_proc `go.mod`
-2. Create A2A JSON-RPC body parser
-3. Implement root span creation in `handleInbound()`
-4. Implement response capture in response body handler
-5. Update Envoy config for body buffering
-6. Add `agent-otel-config` ConfigMap to agent-namespaces template
-7. Test with existing weather agent (remove observability.py)
-8. Run MLflow E2E tests
+| File | Purpose |
+|------|---------|
+| `kagenti/examples/agents/authbridge-otel/main.go` | ext_proc implementation |
+| `kagenti/examples/agents/authbridge-otel/Dockerfile` | Builds ext_proc |
+| `kagenti/examples/agents/weather_service_deployment_ocp.yaml` | 4-container pod |
+| `charts/kagenti-deps/templates/otel-collector.yaml` | Collector transforms |
+| `charts/kagenti/templates/agent-namespaces.yaml` | Envoy config |
