@@ -69,16 +69,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # This action automatically creates useful tags based on the Git event.
-      # In this case, it will use the Git tag as the Docker image tag.
+      # Compute image tags and OCI labels in shell to avoid sporadic
+      # "Bad credentials" errors from docker/metadata-action's GitHub API calls.
       - name: Extract Docker metadata for ${{ matrix.image_config.name }}
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5
-        with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}
-          tags: |
-            # extract tag from git ref, e.g., v1.0.0 -> 1.0.0
-            type=ref,event=tag
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}"
+          TAG="${{ github.ref_name }}"
+          echo "tags=${IMAGE}:${TAG}" >> "$GITHUB_OUTPUT"
+          {
+            echo "labels<<LABELS_EOF"
+            echo "org.opencontainers.image.title=${{ matrix.image_config.name }}"
+            echo "org.opencontainers.image.source=https://github.com/${{ github.repository }}"
+            echo "org.opencontainers.image.version=${TAG}"
+            echo "org.opencontainers.image.revision=${{ github.sha }}"
+            echo "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "LABELS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push ${{ matrix.image_config.name }}
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
