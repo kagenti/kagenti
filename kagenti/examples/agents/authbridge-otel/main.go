@@ -869,7 +869,26 @@ func (p *processor) cleanupSpan(stream v3.ExternalProcessor_ProcessServer) {
 	delete(p.streamSpans, stream)
 	p.mu.Unlock()
 	if state != nil && state.span != nil {
-		state.span.SetStatus(otelcodes.Error, "stream ended unexpectedly")
+		// Try to extract output from whatever body we accumulated before disconnect
+		if len(state.responseBody) > 0 {
+			output := extractA2AOutput(state.responseBody)
+			if output != "" {
+				t := truncate(output, 4096)
+				state.span.SetAttributes(
+					attribute.String("gen_ai.completion", t),
+					attribute.String("output.value", t),
+					attribute.String("mlflow.spanOutputs", t),
+				)
+				state.span.SetStatus(otelcodes.Ok, "")
+				log.Printf("[OTEL] Stream disconnected early, salvaged output (%d chars, %d child spans)", len(output), state.childSpanIndex)
+			} else {
+				state.span.SetStatus(otelcodes.Ok, "client disconnected")
+				log.Printf("[OTEL] Stream disconnected early, partial data (%d bytes, %d child spans)", len(state.responseBody), state.childSpanIndex)
+			}
+		} else {
+			state.span.SetStatus(otelcodes.Ok, "client disconnected")
+			log.Printf("[OTEL] Stream disconnected early, no data accumulated")
+		}
 		state.span.End()
 	}
 }
