@@ -468,7 +468,8 @@ type streamSpanState struct {
 	childSpanIndex int    // counter for nested child spans (LLM/tool events)
 	taskID         string // A2A task ID for fire-and-forget result fetching
 	hasOutput      bool   // whether output has been set on the root span
-	jsonrpcID      string // JSON-RPC request ID for tasks/get correlation
+	completed      bool   // whether the main stream completed normally (end_of_stream)
+	resubCancel    context.CancelFunc // cancel function for the resubscribe goroutine
 }
 
 type processor struct {
@@ -761,15 +762,26 @@ func extractTaskID(jsonStr string) string {
 }
 
 // resubscribeAndCapture opens a new SSE streaming connection to the agent's
-// tasks/resubscribe endpoint and consumes events until a terminal state.
-// Creates child spans for LLM/tool events and captures artifact output.
-// This is used when the original client disconnects mid-stream.
-func resubscribeAndCapture(taskID string, span trace.Span, spanCtx context.Context, startIndex int) (string, int) {
+// tasks/resubscribe endpoint and consumes events until a terminal state or
+// the provided context is cancelled (which happens when the main stream
+// completes normally and the resubscribe is no longer needed).
+func resubscribeAndCapture(cancelCtx context.Context, taskID string, span trace.Span, spanCtx context.Context, startIndex int) (string, int) {
 	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":"ext-proc-resub","method":"tasks/resubscribe","params":{"id":"%s"}}`, taskID)
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Post("http://127.0.0.1:8000/", "application/json", strings.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(cancelCtx, "POST", "http://127.0.0.1:8000/", strings.NewReader(reqBody))
 	if err != nil {
+		log.Printf("[OTEL] resubscribe request creation failed: %v", err)
+		return "", startIndex
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		if cancelCtx.Err() != nil {
+			log.Printf("[OTEL] resubscribe cancelled (main stream completed normally)")
+			return "", startIndex
+		}
 		log.Printf("[OTEL] resubscribe failed: %v", err)
 		return "", startIndex
 	}
@@ -935,10 +947,41 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		if otelEnabled && len(body) > 0 {
 			for _, jsonStr := range parseSSEEvents(body) {
 				// Extract task ID from the first SSE event (task submission)
+				// and immediately start a background resubscribe connection
+				// as a safety net in case the client disconnects.
 				if state.taskID == "" {
 					if tid := extractTaskID(jsonStr); tid != "" {
 						state.taskID = tid
 						log.Printf("[OTEL] Captured task ID: %s", tid)
+
+						// Start background resubscribe immediately while stream is active.
+						// If the main stream completes normally, we cancel this goroutine.
+						// If the client disconnects, this goroutine captures remaining events.
+						resubCtx, resubCancel := context.WithCancel(context.Background())
+						state.resubCancel = resubCancel
+						go func(ctx context.Context, taskID string, span trace.Span, spanCtx context.Context) {
+							output, childCount := resubscribeAndCapture(ctx, taskID, span, spanCtx, 0)
+							if ctx.Err() != nil {
+								// Cancelled because main stream completed — do nothing
+								return
+							}
+							// Main stream disconnected — this goroutine is the fallback
+							if output != "" {
+								t := truncate(output, 4096)
+								span.SetAttributes(
+									attribute.String("gen_ai.completion", t),
+									attribute.String("output.value", t),
+									attribute.String("mlflow.spanOutputs", t),
+								)
+								span.SetStatus(otelcodes.Ok, "")
+								log.Printf("[OTEL] resubscribe recovered output (%d chars, %d child spans)", len(output), childCount)
+							} else {
+								span.SetStatus(otelcodes.Ok, "client disconnected")
+								log.Printf("[OTEL] resubscribe: no output (taskID=%s, %d child spans)", taskID, childCount)
+							}
+							span.End()
+							log.Printf("[OTEL] resubscribe: root span ended")
+						}(resubCtx, tid, state.span, state.ctx)
 					}
 				}
 
@@ -973,19 +1016,23 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		}
 	}
 
-	// End of stream — end root span
+	// End of stream — main stream completed normally
 	delete(p.streamSpans, stream)
 	p.mu.Unlock()
 
 	if state != nil && state.span != nil {
+		state.completed = true
+
+		// Cancel the background resubscribe goroutine — not needed
+		if state.resubCancel != nil {
+			state.resubCancel()
+			log.Printf("[OTEL] Cancelled background resubscribe (main stream completed)")
+		}
+
 		fullBody := state.responseBody
 
 		// If output wasn't set from artifact events, try extracting from full body
-		if !state.span.IsRecording() {
-			// span already ended somehow
-		} else {
-			// Check if output was already set by artifact event processing above
-			// If not, try the fallback extraction
+		if state.span.IsRecording() {
 			output := extractA2AOutput(fullBody)
 			if output != "" {
 				t := truncate(output, 4096)
@@ -1019,61 +1066,24 @@ func (p *processor) cleanupSpan(stream v3.ExternalProcessor_ProcessServer) {
 		return
 	}
 
-	// If output was already captured from an artifact event, just end the span
+	// If the resubscribe goroutine is running, let it handle span completion.
+	// It was started when we first captured the task ID, and it's already
+	// connected to the agent's task stream. It will capture remaining events
+	// + output, then end the span.
+	if state.taskID != "" && state.resubCancel != nil {
+		log.Printf("[OTEL] Client disconnected — resubscribe goroutine will complete the trace (taskID=%s, %d child spans so far)", state.taskID, state.childSpanIndex)
+		// Do NOT end the span here — the resubscribe goroutine owns it now
+		return
+	}
+
+	// No resubscribe running — end span with whatever we have
 	if state.hasOutput {
 		state.span.SetStatus(otelcodes.Ok, "")
-		state.span.End()
-		log.Printf("[OTEL] Stream disconnected but output already captured (%d child spans)", state.childSpanIndex)
-		return
+	} else {
+		state.span.SetStatus(otelcodes.Ok, "client disconnected")
 	}
-
-	// Try to extract output from accumulated body first
-	if len(state.responseBody) > 0 {
-		output := extractA2AOutput(state.responseBody)
-		if output != "" {
-			t := truncate(output, 4096)
-			state.span.SetAttributes(
-				attribute.String("gen_ai.completion", t),
-				attribute.String("output.value", t),
-				attribute.String("mlflow.spanOutputs", t),
-			)
-			state.span.SetStatus(otelcodes.Ok, "")
-			state.span.End()
-			log.Printf("[OTEL] Stream disconnected, salvaged output from body (%d chars, %d child spans)", len(output), state.childSpanIndex)
-			return
-		}
-	}
-
-	// Fire-and-forget: resubscribe to the agent's task stream to capture
-	// remaining events. The agent runs to completion regardless of client
-	// disconnect — we just tap into the stream until it finishes.
-	if state.taskID != "" {
-		log.Printf("[OTEL] Client disconnected, resubscribing to task stream (taskID=%s)", state.taskID)
-		go func(span trace.Span, ctx context.Context, taskID string, childCount int) {
-			output, finalChildCount := resubscribeAndCapture(taskID, span, ctx, childCount)
-
-			if output != "" {
-				t := truncate(output, 4096)
-				span.SetAttributes(
-					attribute.String("gen_ai.completion", t),
-					attribute.String("output.value", t),
-					attribute.String("mlflow.spanOutputs", t),
-				)
-				span.SetStatus(otelcodes.Ok, "")
-				log.Printf("[OTEL] resubscribe recovered output (%d chars, %d total child spans)", len(output), finalChildCount)
-			} else {
-				span.SetStatus(otelcodes.Ok, "client disconnected")
-				log.Printf("[OTEL] resubscribe: no output recovered (taskID=%s, %d child spans)", taskID, finalChildCount)
-			}
-			span.End()
-		}(state.span, state.ctx, state.taskID, state.childSpanIndex)
-		return
-	}
-
-	// No task ID, no body — just end gracefully
-	state.span.SetStatus(otelcodes.Ok, "client disconnected")
 	state.span.End()
-	log.Printf("[OTEL] Stream disconnected, no task ID to fetch result")
+	log.Printf("[OTEL] Stream disconnected, no resubscribe available (%d child spans)", state.childSpanIndex)
 }
 
 func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
