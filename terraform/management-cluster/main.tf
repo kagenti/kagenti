@@ -41,6 +41,7 @@ provider "aws" {
 # ============================================================================
 
 # VPC for management cluster
+# trivy:ignore:AVD-AWS-0178 VPC Flow Logs not required for basic OpenShift operation
 resource "aws_vpc" "mgmt_cluster" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
@@ -61,6 +62,7 @@ resource "aws_internet_gateway" "mgmt_cluster" {
 }
 
 # Public subnets (for load balancers and NAT gateways)
+# trivy:ignore:AVD-AWS-0164 Public IP assignment required for OpenShift IPI installation
 resource "aws_subnet" "public" {
   count = length(var.availability_zones)
 
