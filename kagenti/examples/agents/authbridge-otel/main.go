@@ -1019,7 +1019,7 @@ func extractGenAIAttrsFromJSON(text string, eventType string) (spanName string, 
 				if len(toolNames) > 0 {
 					attrs = append(attrs, attribute.String("gen_ai.tool.calls", strings.Join(toolNames, ",")))
 				}
-			} else if msg.Content != "" {
+			} else if msg.Content != "" && spanName == "" {
 				spanName = "chat"
 			}
 			break
