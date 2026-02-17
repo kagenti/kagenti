@@ -41,6 +41,11 @@ curl -H "Authorization: Bearer $TOKEN" \
   https://kagenti-api.example.com/api/v1/agents
 ```
 
+> **Note:** The default `kagenti-api` client is automatically assigned the
+> `kagenti-operator` realm role (configurable via `apiOAuthSecret.serviceAccountRole`).
+> Tokens obtained with this client's credentials already include this role, so no
+> additional user-role mapping is needed for programmatic access.
+
 ## Roles and Permissions
 
 Kagenti uses Role-Based Access Control (RBAC) with three roles:
@@ -88,8 +93,15 @@ apiOAuthSecret:
   enabled: true  # default: false
   clientId: kagenti-api
   secretName: kagenti-api-oauth-secret
-  serviceAccountRole: kagenti-operator
+  serviceAccountRole: kagenti-operator  # role assigned to the client's service account
 ```
+
+The provisioning job automatically assigns the `serviceAccountRole` (default:
+`kagenti-operator`) to the client's service account in Keycloak. Because Client
+Credentials Grant tokens are **not tied to an end-user**, the token's roles come
+entirely from the client's service account. This means tokens obtained with
+these credentials will already carry `kagenti-operator` permissions without any
+additional user-role mapping.
 
 **Retrieve credentials:**
 
