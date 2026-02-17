@@ -500,10 +500,14 @@ func (p *processor) handleInbound(stream v3.ExternalProcessor_ProcessServer, hea
 	removeHeaders := []string{"x-authbridge-direction"}
 	var setHeaders []*core.HeaderValueOption
 
+	// Skip OTEL span creation for non-API paths (agent card, health)
+	reqPath := getHeaderValue(headers.Headers, ":path")
+	isAPIRequest := reqPath == "/" || strings.HasPrefix(reqPath, "/?")
+
 	// Create OTEL root span NOW (during header processing) so traceparent
 	// is injected BEFORE Envoy forwards headers to the agent.
 	// Input/output will be set later during body processing.
-	if otelEnabled && otelTracer != nil {
+	if otelEnabled && otelTracer != nil && isAPIRequest {
 		spanName := fmt.Sprintf("invoke_agent %s", agentName)
 		ctx, span := otelTracer.Start(context.Background(), spanName,
 			trace.WithSpanKind(trace.SpanKindInternal),
