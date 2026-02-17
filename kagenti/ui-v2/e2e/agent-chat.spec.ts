@@ -122,12 +122,6 @@ test.describe('Agent Chat - Full User Flow', () => {
     await expect(
       page.locator('text=/weather|temperature|New York|forecast|degrees|°/i').first()
     ).toBeVisible({ timeout: 90000 });
-
-    // Step 11: Wait for the SSE stream to complete so the ext_proc can
-    // capture the full trace (root span output + all child spans).
-    // Without this, the browser disconnects mid-stream and the trace
-    // is missing output in MLflow.
-    await page.waitForTimeout(5000);
   });
 });
 

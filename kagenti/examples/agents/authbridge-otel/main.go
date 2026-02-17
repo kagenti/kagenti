@@ -466,6 +466,9 @@ type streamSpanState struct {
 	ctx            context.Context
 	responseBody   []byte // accumulated response chunks for STREAMED mode
 	childSpanIndex int    // counter for nested child spans (LLM/tool events)
+	taskID         string // A2A task ID for fire-and-forget result fetching
+	hasOutput      bool   // whether output has been set on the root span
+	jsonrpcID      string // JSON-RPC request ID for tasks/get correlation
 }
 
 type processor struct {
@@ -733,6 +736,74 @@ func classifySSEEvent(jsonStr string) (string, string) {
 	}
 }
 
+// extractTaskID extracts the A2A task ID from a JSON-RPC SSE event.
+// The first SSE event (kind=task) contains: result.id = task_id
+func extractTaskID(jsonStr string) string {
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
+		return ""
+	}
+	result, ok := event["result"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	kind, _ := result["kind"].(string)
+	if kind == "task" {
+		if id, ok := result["id"].(string); ok {
+			return id
+		}
+	}
+	// Also check taskId field in status-update events
+	if taskID, ok := result["taskId"].(string); ok {
+		return taskID
+	}
+	return ""
+}
+
+// fetchTaskResult queries the agent's A2A tasks/get endpoint to retrieve
+// the completed task result. Used when the client disconnects before the
+// full SSE stream is consumed.
+func fetchTaskResult(taskID string, timeout time.Duration) string {
+	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":"ext-proc-fetch","method":"tasks/get","params":{"id":"%s"}}`, taskID)
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Post("http://127.0.0.1:8000/", "application/json", strings.NewReader(reqBody))
+	if err != nil {
+		log.Printf("[OTEL] tasks/get failed: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[OTEL] tasks/get read failed: %v", err)
+		return ""
+	}
+
+	// Parse response: result.artifacts[0].parts[0].text
+	var result struct {
+		Result struct {
+			Status struct {
+				State string `json:"state"`
+			} `json:"status"`
+			Artifacts []struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"artifacts"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[OTEL] tasks/get parse failed: %v", err)
+		return ""
+	}
+
+	if len(result.Result.Artifacts) > 0 && len(result.Result.Artifacts[0].Parts) > 0 {
+		return result.Result.Artifacts[0].Parts[0].Text
+	}
+	return ""
+}
+
 // createChildSpan creates a nested child span under the root invoke_agent span
 // for an LLM or tool event detected in the SSE stream.
 func (p *processor) createChildSpan(state *streamSpanState, eventType string, text string) {
@@ -796,6 +867,14 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		// Parse SSE events from this chunk and create child spans
 		if otelEnabled && len(body) > 0 {
 			for _, jsonStr := range parseSSEEvents(body) {
+				// Extract task ID from the first SSE event (task submission)
+				if state.taskID == "" {
+					if tid := extractTaskID(jsonStr); tid != "" {
+						state.taskID = tid
+						log.Printf("[OTEL] Captured task ID: %s", tid)
+					}
+				}
+
 				eventType, text := classifySSEEvent(jsonStr)
 				switch eventType {
 				case "llm", "tool":
@@ -809,6 +888,7 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 							attribute.String("output.value", t),
 							attribute.String("mlflow.spanOutputs", t),
 						)
+						state.hasOutput = true
 						log.Printf("[OTEL] Set output on root span (%d chars)", len(text))
 					}
 				}
@@ -868,29 +948,75 @@ func (p *processor) cleanupSpan(stream v3.ExternalProcessor_ProcessServer) {
 	state := p.streamSpans[stream]
 	delete(p.streamSpans, stream)
 	p.mu.Unlock()
-	if state != nil && state.span != nil {
-		// Try to extract output from whatever body we accumulated before disconnect
-		if len(state.responseBody) > 0 {
-			output := extractA2AOutput(state.responseBody)
+	if state == nil || state.span == nil {
+		return
+	}
+
+	// If output was already captured from an artifact event, just end the span
+	if state.hasOutput {
+		state.span.SetStatus(otelcodes.Ok, "")
+		state.span.End()
+		log.Printf("[OTEL] Stream disconnected but output already captured (%d child spans)", state.childSpanIndex)
+		return
+	}
+
+	// Try to extract output from accumulated body first
+	if len(state.responseBody) > 0 {
+		output := extractA2AOutput(state.responseBody)
+		if output != "" {
+			t := truncate(output, 4096)
+			state.span.SetAttributes(
+				attribute.String("gen_ai.completion", t),
+				attribute.String("output.value", t),
+				attribute.String("mlflow.spanOutputs", t),
+			)
+			state.span.SetStatus(otelcodes.Ok, "")
+			state.span.End()
+			log.Printf("[OTEL] Stream disconnected, salvaged output from body (%d chars, %d child spans)", len(output), state.childSpanIndex)
+			return
+		}
+	}
+
+	// Fire-and-forget: query the agent directly for the task result.
+	// The agent runs to completion regardless of client disconnect.
+	if state.taskID != "" {
+		log.Printf("[OTEL] Client disconnected, fetching result via tasks/get (taskID=%s)", state.taskID)
+		go func(span trace.Span, ctx context.Context, taskID string, childCount int) {
+			// Wait briefly for the agent to finish processing
+			time.Sleep(3 * time.Second)
+
+			// Poll tasks/get up to 3 times with backoff
+			var output string
+			for attempt := 0; attempt < 3; attempt++ {
+				output = fetchTaskResult(taskID, 10*time.Second)
+				if output != "" {
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
+
 			if output != "" {
 				t := truncate(output, 4096)
-				state.span.SetAttributes(
+				span.SetAttributes(
 					attribute.String("gen_ai.completion", t),
 					attribute.String("output.value", t),
 					attribute.String("mlflow.spanOutputs", t),
 				)
-				state.span.SetStatus(otelcodes.Ok, "")
-				log.Printf("[OTEL] Stream disconnected early, salvaged output (%d chars, %d child spans)", len(output), state.childSpanIndex)
+				span.SetStatus(otelcodes.Ok, "")
+				log.Printf("[OTEL] tasks/get recovered output (%d chars, %d child spans)", len(output), childCount)
 			} else {
-				state.span.SetStatus(otelcodes.Ok, "client disconnected")
-				log.Printf("[OTEL] Stream disconnected early, partial data (%d bytes, %d child spans)", len(state.responseBody), state.childSpanIndex)
+				span.SetStatus(otelcodes.Ok, "client disconnected, output unavailable")
+				log.Printf("[OTEL] tasks/get could not recover output (taskID=%s)", taskID)
 			}
-		} else {
-			state.span.SetStatus(otelcodes.Ok, "client disconnected")
-			log.Printf("[OTEL] Stream disconnected early, no data accumulated")
-		}
-		state.span.End()
+			span.End()
+		}(state.span, state.ctx, state.taskID, state.childSpanIndex)
+		return
 	}
+
+	// No task ID, no body — just end gracefully
+	state.span.SetStatus(otelcodes.Ok, "client disconnected")
+	state.span.End()
+	log.Printf("[OTEL] Stream disconnected, no task ID to fetch result")
 }
 
 func (p *processor) Process(stream v3.ExternalProcessor_ProcessServer) error {
