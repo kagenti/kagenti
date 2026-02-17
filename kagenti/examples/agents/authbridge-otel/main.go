@@ -867,7 +867,41 @@ func resubscribeAndCapture(cancelCtx context.Context, taskID string, span trace.
 		}
 	}
 
+	// If resubscribe got no output (EventQueue closed before we connected),
+	// fall back to tasks/get — the shielded agent execution saves the
+	// completed task to the store even after SSE disconnect.
+	if output == "" && cancelCtx.Err() == nil {
+		log.Printf("[OTEL] resubscribe got no output, falling back to tasks/get")
+		time.Sleep(3 * time.Second) // wait for shielded execution to finish
+		output = fetchTaskResult(taskID)
+		if output != "" {
+			log.Printf("[OTEL] tasks/get recovered output (%d chars)", len(output))
+		}
+	}
+
 	return output, childIndex
+}
+
+// fetchTaskResult queries tasks/get for the completed task result.
+// Parses both plain JSON and SSE-formatted responses.
+func fetchTaskResult(taskID string) string {
+	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":"ext-proc-fetch","method":"tasks/get","params":{"id":"%s"}}`, taskID)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post("http://127.0.0.1:8000/", "application/json", strings.NewReader(reqBody))
+	if err != nil {
+		log.Printf("[OTEL] tasks/get failed: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+
+	// Parse SSE or plain JSON — look for artifact text
+	return extractA2AOutput(body)
 }
 
 // extractGenAIAttrsFromJSON parses the event text as JSON to extract

@@ -122,13 +122,6 @@ test.describe('Agent Chat - Full User Flow', () => {
     await expect(
       page.locator('text=/weather|temperature|New York|forecast|degrees|°/i').first()
     ).toBeVisible({ timeout: 90000 });
-
-    // Step 11: Keep connection alive for SSE stream completion.
-    // The A2A SDK cancels agent execution on client disconnect —
-    // asyncio.shield and tasks/resubscribe cannot recover the output
-    // because the EventQueue is closed before the agent finishes.
-    // This wait ensures the full trace is captured by the ext_proc.
-    await page.waitForTimeout(5000);
   });
 });
 
