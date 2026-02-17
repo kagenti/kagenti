@@ -147,7 +147,9 @@ VARIANT_PROFILES = {
     ),
     "authbridge": VariantProfile(
         name="authbridge",
-        description="AuthBridge ext_proc creates root span, zero agent code",
+        description="AuthBridge ext_proc creates root span, zero agent code. "
+        "ext_proc sets gen_ai.* only; OTEL Collector derives mlflow.* attrs. "
+        "OpenInference attrs are Phoenix-only (not in MLflow pipeline).",
         root_span_mlflow_attrs=[
             "mlflow.spanInputs",
             "mlflow.spanOutputs",
@@ -156,11 +158,8 @@ VARIANT_PROFILES = {
             "mlflow.version",
             "mlflow.runName",
         ],
-        root_span_openinference_attrs=[
-            "input.value",
-            "output.value",
-            "openinference.span.kind",
-        ],
+        # OpenInference attrs are set by Phoenix pipeline only, not MLflow
+        root_span_openinference_attrs=[],
         root_span_genai_attrs=[
             "gen_ai.conversation.id",
             "gen_ai.agent.name",
@@ -193,7 +192,7 @@ def get_variant_profile() -> VariantProfile:
 
     Reads from AGENT_OBSERVABILITY_VARIANT env var (default: "baseline").
     """
-    variant_name = os.getenv("AGENT_OBSERVABILITY_VARIANT", "baseline")
+    variant_name = os.getenv("AGENT_OBSERVABILITY_VARIANT", "authbridge")
     if variant_name not in VARIANT_PROFILES:
         logger.warning(
             f"Unknown variant '{variant_name}', using 'baseline'. "
