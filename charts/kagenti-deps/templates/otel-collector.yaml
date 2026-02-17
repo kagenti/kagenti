@@ -233,6 +233,8 @@ data:
               # OpenInference input/output from GenAI prompt/completion
               - set(attributes["input.value"], attributes["gen_ai.prompt"]) where attributes["gen_ai.prompt"] != nil
               - set(attributes["output.value"], attributes["gen_ai.completion"]) where attributes["gen_ai.completion"] != nil
+              # session.id (OTel semantic convention) for session tracking
+              - set(attributes["session.id"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
       {{- if $.Values.components.mlflow.enabled }}
       # Filter for MLflow: only keep agent spans, filter out A2A framework spans
       # A2A framework spans have names starting with "a2a."
@@ -257,6 +259,9 @@ data:
               - set(attributes["mlflow.spanType"], "AGENT") where IsMatch(name, "^invoke_agent.*")
               - set(attributes["mlflow.traceName"], attributes["gen_ai.agent.name"]) where attributes["gen_ai.agent.name"] != nil
               - set(attributes["mlflow.trace.session"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
+              # session.id is the OTel semantic convention that MLflow's OTLP handler
+              # extracts to populate trace_request_metadata (for sessions UI)
+              - set(attributes["session.id"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
               - set(attributes["mlflow.version"], attributes["gen_ai.agent.version"]) where attributes["gen_ai.agent.version"] != nil
               - set(attributes["mlflow.runName"], Concat([attributes["gen_ai.agent.name"], "-invoke"], "")) where attributes["gen_ai.agent.name"] != nil
               - set(attributes["mlflow.user"], "kagenti") where IsMatch(name, "^invoke_agent.*")
