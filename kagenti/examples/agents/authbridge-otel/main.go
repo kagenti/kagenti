@@ -462,9 +462,10 @@ func extractA2AOutput(body []byte) string {
 // ============================================================================
 
 type streamSpanState struct {
-	span         trace.Span
-	ctx          context.Context
-	responseBody []byte // accumulated response chunks for STREAMED mode
+	span           trace.Span
+	ctx            context.Context
+	responseBody   []byte // accumulated response chunks for STREAMED mode
+	childSpanIndex int    // counter for nested child spans (LLM/tool events)
 }
 
 type processor struct {
@@ -654,9 +655,132 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 	}
 }
 
-// handleResponseBody accumulates response chunks and processes the full body
-// when end_of_stream is true. In STREAMED mode, Envoy sends each SSE chunk
-// as a separate ResponseBody message. We accumulate them until the stream ends.
+// parseSSEEvents extracts SSE data events from a chunk of response body.
+// Each SSE event starts with "data: " and is followed by JSON.
+func parseSSEEvents(chunk []byte) []string {
+	var events []string
+	lines := strings.Split(string(chunk), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data:") {
+			jsonStr := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if jsonStr != "" {
+				events = append(events, jsonStr)
+			}
+		}
+	}
+	return events
+}
+
+// classifySSEEvent examines an A2A SSE event and returns its type and text content.
+// Returns: eventType ("llm", "tool", "artifact", "status", ""), text content
+func classifySSEEvent(jsonStr string) (string, string) {
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
+		return "", ""
+	}
+
+	result, ok := event["result"].(map[string]interface{})
+	if !ok {
+		return "", ""
+	}
+
+	kind, _ := result["kind"].(string)
+
+	switch kind {
+	case "artifact-update":
+		// Final answer artifact
+		if artifact, ok := result["artifact"].(map[string]interface{}); ok {
+			if parts, ok := artifact["parts"].([]interface{}); ok && len(parts) > 0 {
+				if part, ok := parts[0].(map[string]interface{}); ok {
+					if text, ok := part["text"].(string); ok {
+						return "artifact", text
+					}
+				}
+			}
+		}
+		return "artifact", ""
+
+	case "status-update":
+		// Check for agent step events in the status message
+		if status, ok := result["status"].(map[string]interface{}); ok {
+			if msg, ok := status["message"].(map[string]interface{}); ok {
+				if parts, ok := msg["parts"].([]interface{}); ok && len(parts) > 0 {
+					if part, ok := parts[0].(map[string]interface{}); ok {
+						if text, ok := part["text"].(string); ok {
+							// Detect LangGraph step events by key prefix
+							// Events look like: "🚶‍♂️tools: ..." or "🚶‍♂️assistant: ..."
+							if strings.Contains(text, "tools:") {
+								return "tool", text
+							}
+							if strings.Contains(text, "assistant:") {
+								return "llm", text
+							}
+						}
+					}
+				}
+			}
+		}
+		// Final status (completed/failed) - no child span needed
+		return "status", ""
+
+	default:
+		return "", ""
+	}
+}
+
+// createChildSpan creates a nested child span under the root invoke_agent span
+// for an LLM or tool event detected in the SSE stream.
+func (p *processor) createChildSpan(state *streamSpanState, eventType string, text string) {
+	if state == nil || state.span == nil || otelTracer == nil {
+		return
+	}
+
+	state.childSpanIndex++
+	idx := state.childSpanIndex
+
+	var spanName string
+	var attrs []attribute.KeyValue
+
+	switch eventType {
+	case "llm":
+		spanName = fmt.Sprintf("gen_ai.chat %d", idx)
+		attrs = []attribute.KeyValue{
+			attribute.String("gen_ai.operation.name", "chat"),
+			attribute.String("gen_ai.system", agentProvider),
+			attribute.String("openinference.span.kind", "LLM"),
+			attribute.String("mlflow.spanType", "LLM"),
+		}
+	case "tool":
+		spanName = fmt.Sprintf("tool.execute %d", idx)
+		attrs = []attribute.KeyValue{
+			attribute.String("openinference.span.kind", "TOOL"),
+			attribute.String("mlflow.spanType", "TOOL"),
+		}
+	default:
+		return
+	}
+
+	// Add truncated event text as attribute
+	if text != "" {
+		t := truncate(text, 2048)
+		attrs = append(attrs, attribute.String("event.text", t))
+	}
+	attrs = append(attrs, attribute.Int("event.index", idx))
+
+	// Create child span under the root span's context and immediately end it
+	_, childSpan := otelTracer.Start(state.ctx, spanName,
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(attrs...),
+	)
+	childSpan.SetStatus(otelcodes.Ok, "")
+	childSpan.End()
+	log.Printf("[OTEL] Created child span: %s (step %d)", spanName, idx)
+}
+
+// handleResponseBody processes response chunks as they stream through.
+// For each SSE chunk, it parses events and creates nested child spans for
+// LLM and tool events. On end_of_stream, it sets the output on the root span.
 func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer, body []byte, endOfStream bool) *v3.ProcessingResponse {
 	p.mu.Lock()
 	state := p.streamSpans[stream]
@@ -664,6 +788,28 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 	if state != nil {
 		// Accumulate response body chunks
 		state.responseBody = append(state.responseBody, body...)
+
+		// Parse SSE events from this chunk and create child spans
+		if otelEnabled && len(body) > 0 {
+			for _, jsonStr := range parseSSEEvents(body) {
+				eventType, text := classifySSEEvent(jsonStr)
+				switch eventType {
+				case "llm", "tool":
+					p.createChildSpan(state, eventType, text)
+				case "artifact":
+					// Set output on root span immediately
+					if text != "" {
+						t := truncate(text, 4096)
+						state.span.SetAttributes(
+							attribute.String("gen_ai.completion", t),
+							attribute.String("output.value", t),
+							attribute.String("mlflow.spanOutputs", t),
+						)
+						log.Printf("[OTEL] Set output on root span (%d chars)", len(text))
+					}
+				}
+			}
+		}
 	}
 
 	if !endOfStream {
@@ -676,14 +822,19 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		}
 	}
 
-	// End of stream — process accumulated body and end span
+	// End of stream — end root span
 	delete(p.streamSpans, stream)
 	p.mu.Unlock()
 
 	if state != nil && state.span != nil {
-		// Try to extract output from accumulated response body
 		fullBody := state.responseBody
-		if len(fullBody) > 0 {
+
+		// If output wasn't set from artifact events, try extracting from full body
+		if !state.span.IsRecording() {
+			// span already ended somehow
+		} else {
+			// Check if output was already set by artifact event processing above
+			// If not, try the fallback extraction
 			output := extractA2AOutput(fullBody)
 			if output != "" {
 				t := truncate(output, 4096)
@@ -692,14 +843,13 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 					attribute.String("output.value", t),
 					attribute.String("mlflow.spanOutputs", t),
 				)
-				log.Printf("[OTEL] Set output on root span (%d chars)", len(output))
-			} else {
-				log.Printf("[OTEL] Could not extract output from %d bytes", len(fullBody))
+				log.Printf("[OTEL] Set output on root span from full body (%d chars)", len(output))
 			}
 		}
+
 		state.span.SetStatus(otelcodes.Ok, "")
 		state.span.End()
-		log.Printf("[OTEL] Root span ended (accumulated %d bytes)", len(fullBody))
+		log.Printf("[OTEL] Root span ended (accumulated %d bytes, %d child spans)", len(fullBody), state.childSpanIndex)
 	}
 
 	return &v3.ProcessingResponse{
