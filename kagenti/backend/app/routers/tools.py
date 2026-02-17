@@ -365,19 +365,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
-def _build_tool_env_vars(request: "CreateToolRequest") -> List[dict]:
+def _build_tool_env_vars(
+    env_var_list: Optional[List[EnvVar]] = None,
+) -> List[dict]:
     """
     Build environment variables list with support for valueFrom references.
 
+    Always includes DEFAULT_ENV_VARS so that tools receive required
+    platform variables (PORT, HOST, OTEL_EXPORTER_OTLP_ENDPOINT, etc.).
+
     Args:
-        request: The tool creation request containing envVars.
+        env_var_list: Optional list of EnvVar models from the request.
 
     Returns:
         List of environment variable dictionaries.
     """
     env_vars = list(DEFAULT_ENV_VARS)
-    if request.envVars:
-        for ev in request.envVars:
+    if env_var_list:
+        for ev in env_var_list:
             if ev.value is not None:
                 # Direct value
                 env_vars.append({"name": ev.name, "value": ev.value})
@@ -1058,9 +1063,8 @@ def _build_tool_deployment_manifest(
         Deployment manifest dict
     """
     # Build environment variables
-    all_env_vars = list(DEFAULT_ENV_VARS)
-    if env_vars:
-        all_env_vars.extend(env_vars)
+    # Callers are expected to provide DEFAULT_ENV_VARS via _build_tool_env_vars()
+    all_env_vars = env_vars if env_vars else list(DEFAULT_ENV_VARS)
 
     # Build container ports from service_ports
     container_ports = _build_container_ports(service_ports)
@@ -1192,9 +1196,8 @@ def _build_tool_statefulset_manifest(
         StatefulSet manifest dict
     """
     # Build environment variables
-    all_env_vars = list(DEFAULT_ENV_VARS)
-    if env_vars:
-        all_env_vars.extend(env_vars)
+    # Callers are expected to provide DEFAULT_ENV_VARS via _build_tool_env_vars()
+    all_env_vars = env_vars if env_vars else list(DEFAULT_ENV_VARS)
 
     # Build container ports from service_ports
     container_ports = _build_container_ports(service_ports)
@@ -1462,8 +1465,8 @@ async def create_tool(
                     detail="containerImage is required for image deployment",
                 )
 
-            # Prepare env vars
-            env_vars = _build_tool_env_vars(request) if request.envVars else None
+            # Prepare env vars (always called so tools get DEFAULT_ENV_VARS)
+            env_vars = _build_tool_env_vars(request.envVars)
 
             # Prepare service ports
             service_ports = None
@@ -1832,12 +1835,13 @@ async def finalize_tool_shipwright_build(
             "workloadType", WORKLOAD_TYPE_DEPLOYMENT
         )
 
-        # Build env vars
-        env_vars = None
+        # Build env vars (always include DEFAULT_ENV_VARS)
         if request.envVars:
-            env_vars = _build_tool_env_vars(request)
+            env_vars = _build_tool_env_vars(request.envVars)
         elif tool_config_dict.get("envVars"):
-            env_vars = tool_config_dict["envVars"]
+            env_vars = list(DEFAULT_ENV_VARS) + tool_config_dict["envVars"]
+        else:
+            env_vars = _build_tool_env_vars()
 
         # Build service ports
         service_ports = None
