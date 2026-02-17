@@ -107,34 +107,9 @@ log_success "BuildRun completed successfully"
 
 log_info "Creating Deployment and Service..."
 
-# On OpenShift, build the OTEL ext_proc image before deploying
-if [ "$IS_OPENSHIFT" = "true" ]; then
-    log_info "Building authbridge-otel-processor image..."
-
-    # Create ImageStream if it doesn't exist
-    oc get is authbridge-otel-processor -n team1 &>/dev/null 2>&1 || \
-        oc create imagestream authbridge-otel-processor -n team1
-
-    # Create or update BuildConfig
-    if oc get bc authbridge-otel-processor -n team1 &>/dev/null 2>&1; then
-        log_info "BuildConfig already exists, starting new build..."
-    else
-        oc new-build --name=authbridge-otel-processor \
-            --binary \
-            --strategy=docker \
-            --to=authbridge-otel-processor:latest \
-            -n team1
-    fi
-
-    # Start build from local directory (faster, no git clone needed)
-    oc start-build authbridge-otel-processor -n team1 \
-        --from-dir="$REPO_ROOT/kagenti/examples/agents/authbridge-otel" \
-        --follow --wait || {
-        log_error "Failed to build authbridge-otel-processor"
-        exit 1
-    }
-    log_success "authbridge-otel-processor image built"
-fi
+# The OTEL ext_proc image is pre-built and pulled from a container registry.
+# No on-cluster build needed — the deployment YAML references the registry image directly.
+# To build locally for development: see kagenti-extensions repo AuthBridge/otel-ext-proc/
 
 # Apply Deployment manifest
 if [ "$IS_OPENSHIFT" = "true" ]; then

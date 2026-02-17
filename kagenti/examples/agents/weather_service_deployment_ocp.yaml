@@ -144,7 +144,7 @@ spec:
           readOnly: true
       # OTEL-enhanced ext_proc: creates root spans with GenAI/MLflow/OpenInference attributes
       - name: otel-ext-proc
-        image: image-registry.openshift-image-registry.svc:5000/team1/authbridge-otel-processor:latest
+        image: quay.io/lsmola/otel-ext-proc:latest
         imagePullPolicy: Always
         ports:
         - name: ext-proc
