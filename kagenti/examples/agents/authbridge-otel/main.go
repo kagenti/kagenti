@@ -760,76 +760,115 @@ func extractTaskID(jsonStr string) string {
 	return ""
 }
 
-// fetchTaskResult queries the agent's A2A tasks/get endpoint to retrieve
-// the completed task result. Used when the client disconnects before the
-// full SSE stream is consumed. Handles SSE-formatted responses.
-func fetchTaskResult(taskID string, timeout time.Duration) string {
-	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":"ext-proc-fetch","method":"tasks/get","params":{"id":"%s"}}`, taskID)
+// resubscribeAndCapture opens a new SSE streaming connection to the agent's
+// tasks/resubscribe endpoint and consumes events until a terminal state.
+// Creates child spans for LLM/tool events and captures artifact output.
+// This is used when the original client disconnects mid-stream.
+func resubscribeAndCapture(taskID string, span trace.Span, spanCtx context.Context, startIndex int) (string, int) {
+	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":"ext-proc-resub","method":"tasks/resubscribe","params":{"id":"%s"}}`, taskID)
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Post("http://127.0.0.1:8000/", "application/json", strings.NewReader(reqBody))
 	if err != nil {
-		log.Printf("[OTEL] tasks/get failed: %v", err)
-		return ""
+		log.Printf("[OTEL] resubscribe failed: %v", err)
+		return "", startIndex
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[OTEL] tasks/get read failed: %v", err)
-		return ""
-	}
+	// Read the SSE stream line by line
+	var output string
+	childIndex := startIndex
+	buf := make([]byte, 0, 4096)
+	readBuf := make([]byte, 1024)
 
-	// Response may be SSE-formatted (data: {...}\n\n) or plain JSON.
-	// Parse each SSE event and look for artifacts.
-	bodyStr := string(body)
-	var lastOutput string
+	for {
+		n, err := resp.Body.Read(readBuf)
+		if n > 0 {
+			buf = append(buf, readBuf[:n]...)
 
-	for _, line := range strings.Split(bodyStr, "\n") {
-		line = strings.TrimSpace(line)
-		jsonStr := line
-		if strings.HasPrefix(line, "data:") {
-			jsonStr = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		}
-		if jsonStr == "" || jsonStr[0] != '{' {
-			continue
-		}
+			// Process complete SSE events (terminated by \n\n)
+			for {
+				idx := strings.Index(string(buf), "\n\n")
+				if idx < 0 {
+					break
+				}
+				eventData := string(buf[:idx])
+				buf = buf[idx+2:]
 
-		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
-			continue
-		}
+				for _, line := range strings.Split(eventData, "\n") {
+					line = strings.TrimSpace(line)
+					if !strings.HasPrefix(line, "data:") {
+						continue
+					}
+					jsonStr := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+					if jsonStr == "" {
+						continue
+					}
 
-		result, ok := event["result"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		// Check for artifacts in the task result
-		if artifacts, ok := result["artifacts"].([]interface{}); ok && len(artifacts) > 0 {
-			if artifact, ok := artifacts[0].(map[string]interface{}); ok {
-				if parts, ok := artifact["parts"].([]interface{}); ok && len(parts) > 0 {
-					if part, ok := parts[0].(map[string]interface{}); ok {
-						if text, ok := part["text"].(string); ok && text != "" {
-							lastOutput = text
+					eventType, text := classifySSEEvent(jsonStr)
+					switch eventType {
+					case "llm", "tool":
+						// Create child span
+						if otelTracer != nil {
+							childIndex++
+							var spanName string
+							var attrs []attribute.KeyValue
+							if eventType == "llm" {
+								spanName = fmt.Sprintf("gen_ai.chat %d", childIndex)
+								attrs = []attribute.KeyValue{
+									attribute.String("gen_ai.operation.name", "chat"),
+									attribute.String("gen_ai.system", agentProvider),
+									attribute.String("openinference.span.kind", "LLM"),
+									attribute.String("mlflow.spanType", "LLM"),
+								}
+							} else {
+								spanName = fmt.Sprintf("tool.execute %d", childIndex)
+								attrs = []attribute.KeyValue{
+									attribute.String("openinference.span.kind", "TOOL"),
+									attribute.String("mlflow.spanType", "TOOL"),
+								}
+							}
+							if text != "" {
+								attrs = append(attrs, attribute.String("event.text", truncate(text, 2048)))
+							}
+							attrs = append(attrs, attribute.Int("event.index", childIndex))
+							_, childSpan := otelTracer.Start(spanCtx, spanName,
+								trace.WithSpanKind(trace.SpanKindInternal),
+								trace.WithAttributes(attrs...),
+							)
+							childSpan.SetStatus(otelcodes.Ok, "")
+							childSpan.End()
+							log.Printf("[OTEL] resubscribe: created child span %s (step %d)", spanName, childIndex)
+						}
+					case "artifact":
+						if text != "" {
+							output = text
+							log.Printf("[OTEL] resubscribe: captured output (%d chars)", len(text))
+						}
+					case "status":
+						// Check for terminal state
+						var event map[string]interface{}
+						if err := json.Unmarshal([]byte(jsonStr), &event); err == nil {
+							if result, ok := event["result"].(map[string]interface{}); ok {
+								if final, ok := result["final"].(bool); ok && final {
+									log.Printf("[OTEL] resubscribe: stream completed (final=true)")
+									return output, childIndex
+								}
+							}
 						}
 					}
 				}
 			}
 		}
-
-		// Check status — if still working, no output yet
-		if status, ok := result["status"].(map[string]interface{}); ok {
-			state, _ := status["state"].(string)
-			if state == "completed" {
-				log.Printf("[OTEL] tasks/get: task completed")
-			} else if state == "working" {
-				log.Printf("[OTEL] tasks/get: task still working")
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("[OTEL] resubscribe read error: %v", err)
 			}
+			break
 		}
 	}
 
-	return lastOutput
+	return output, childIndex
 }
 
 // createChildSpan creates a nested child span under the root invoke_agent span
@@ -1005,24 +1044,13 @@ func (p *processor) cleanupSpan(stream v3.ExternalProcessor_ProcessServer) {
 		}
 	}
 
-	// Fire-and-forget: query the agent directly for the task result.
-	// The agent runs to completion regardless of client disconnect.
+	// Fire-and-forget: resubscribe to the agent's task stream to capture
+	// remaining events. The agent runs to completion regardless of client
+	// disconnect — we just tap into the stream until it finishes.
 	if state.taskID != "" {
-		log.Printf("[OTEL] Client disconnected, fetching result via tasks/get (taskID=%s)", state.taskID)
+		log.Printf("[OTEL] Client disconnected, resubscribing to task stream (taskID=%s)", state.taskID)
 		go func(span trace.Span, ctx context.Context, taskID string, childCount int) {
-			// Wait for the agent to finish processing (LLM + tool calls typically take 5-10s)
-			time.Sleep(5 * time.Second)
-
-			// Poll tasks/get up to 4 times with backoff
-			var output string
-			for attempt := 0; attempt < 4; attempt++ {
-				output = fetchTaskResult(taskID, 10*time.Second)
-				if output != "" {
-					break
-				}
-				log.Printf("[OTEL] tasks/get attempt %d: no output yet, retrying...", attempt+1)
-				time.Sleep(3 * time.Second)
-			}
+			output, finalChildCount := resubscribeAndCapture(taskID, span, ctx, childCount)
 
 			if output != "" {
 				t := truncate(output, 4096)
@@ -1032,10 +1060,10 @@ func (p *processor) cleanupSpan(stream v3.ExternalProcessor_ProcessServer) {
 					attribute.String("mlflow.spanOutputs", t),
 				)
 				span.SetStatus(otelcodes.Ok, "")
-				log.Printf("[OTEL] tasks/get recovered output (%d chars, %d child spans)", len(output), childCount)
+				log.Printf("[OTEL] resubscribe recovered output (%d chars, %d total child spans)", len(output), finalChildCount)
 			} else {
-				span.SetStatus(otelcodes.Ok, "client disconnected, output unavailable")
-				log.Printf("[OTEL] tasks/get could not recover output (taskID=%s)", taskID)
+				span.SetStatus(otelcodes.Ok, "client disconnected")
+				log.Printf("[OTEL] resubscribe: no output recovered (taskID=%s, %d child spans)", taskID, finalChildCount)
 			}
 			span.End()
 		}(state.span, state.ctx, state.taskID, state.childSpanIndex)
