@@ -154,8 +154,6 @@ cp .env.<tag> credentials.txt README.md /tmp/<cluster-name>-package/
 cd /tmp
 tar -czf <cluster-name>-package.tar.gz <cluster-name>-package/
 
-# Move to distribution location
-mv <cluster-name>-package.tar.gz ~/Documents/
 ```
 
 Share the package securely with authorized team members (Slack DM, secure file share, etc).
