@@ -1293,6 +1293,10 @@ GENAI_SPAN_PATTERNS = [
     "chat_completion",
     "embedding",
     "vectorstore",
+    # GenAI spec span names (from ext_proc)
+    "invoke_agent",
+    "execute_tool",
+    "chat ",  # "chat {model}" pattern
 ]
 
 
