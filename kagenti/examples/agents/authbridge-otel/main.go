@@ -762,7 +762,7 @@ func extractTaskID(jsonStr string) string {
 
 // fetchTaskResult queries the agent's A2A tasks/get endpoint to retrieve
 // the completed task result. Used when the client disconnects before the
-// full SSE stream is consumed.
+// full SSE stream is consumed. Handles SSE-formatted responses.
 func fetchTaskResult(taskID string, timeout time.Duration) string {
 	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","id":"ext-proc-fetch","method":"tasks/get","params":{"id":"%s"}}`, taskID)
 
@@ -780,28 +780,56 @@ func fetchTaskResult(taskID string, timeout time.Duration) string {
 		return ""
 	}
 
-	// Parse response: result.artifacts[0].parts[0].text
-	var result struct {
-		Result struct {
-			Status struct {
-				State string `json:"state"`
-			} `json:"status"`
-			Artifacts []struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"artifacts"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		log.Printf("[OTEL] tasks/get parse failed: %v", err)
-		return ""
+	// Response may be SSE-formatted (data: {...}\n\n) or plain JSON.
+	// Parse each SSE event and look for artifacts.
+	bodyStr := string(body)
+	var lastOutput string
+
+	for _, line := range strings.Split(bodyStr, "\n") {
+		line = strings.TrimSpace(line)
+		jsonStr := line
+		if strings.HasPrefix(line, "data:") {
+			jsonStr = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		}
+		if jsonStr == "" || jsonStr[0] != '{' {
+			continue
+		}
+
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
+			continue
+		}
+
+		result, ok := event["result"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check for artifacts in the task result
+		if artifacts, ok := result["artifacts"].([]interface{}); ok && len(artifacts) > 0 {
+			if artifact, ok := artifacts[0].(map[string]interface{}); ok {
+				if parts, ok := artifact["parts"].([]interface{}); ok && len(parts) > 0 {
+					if part, ok := parts[0].(map[string]interface{}); ok {
+						if text, ok := part["text"].(string); ok && text != "" {
+							lastOutput = text
+						}
+					}
+				}
+			}
+		}
+
+		// Check status — if still working, no output yet
+		if status, ok := result["status"].(map[string]interface{}); ok {
+			state, _ := status["state"].(string)
+			if state == "completed" {
+				log.Printf("[OTEL] tasks/get: task completed")
+			} else if state == "working" {
+				log.Printf("[OTEL] tasks/get: task still working")
+			}
+		}
 	}
 
-	if len(result.Result.Artifacts) > 0 && len(result.Result.Artifacts[0].Parts) > 0 {
-		return result.Result.Artifacts[0].Parts[0].Text
-	}
-	return ""
+	return lastOutput
 }
 
 // createChildSpan creates a nested child span under the root invoke_agent span
@@ -982,17 +1010,18 @@ func (p *processor) cleanupSpan(stream v3.ExternalProcessor_ProcessServer) {
 	if state.taskID != "" {
 		log.Printf("[OTEL] Client disconnected, fetching result via tasks/get (taskID=%s)", state.taskID)
 		go func(span trace.Span, ctx context.Context, taskID string, childCount int) {
-			// Wait briefly for the agent to finish processing
-			time.Sleep(3 * time.Second)
+			// Wait for the agent to finish processing (LLM + tool calls typically take 5-10s)
+			time.Sleep(5 * time.Second)
 
-			// Poll tasks/get up to 3 times with backoff
+			// Poll tasks/get up to 4 times with backoff
 			var output string
-			for attempt := 0; attempt < 3; attempt++ {
+			for attempt := 0; attempt < 4; attempt++ {
 				output = fetchTaskResult(taskID, 10*time.Second)
 				if output != "" {
 					break
 				}
-				time.Sleep(2 * time.Second)
+				log.Printf("[OTEL] tasks/get attempt %d: no output yet, retrying...", attempt+1)
+				time.Sleep(3 * time.Second)
 			}
 
 			if output != "" {
