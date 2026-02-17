@@ -7,7 +7,7 @@
 // 1. Parses the A2A JSON-RPC body to extract user input and context_id
 // 2. Creates a root span "invoke_agent {name}" with MLflow/OpenInference/GenAI attributes
 // 3. Injects W3C traceparent header so agent auto-instrumented spans become children
-// 4. On response, captures output and sets mlflow.spanOutputs on the root span
+// 4. On response, captures output and sets gen_ai.completion on the root span
 //
 // Build: docker build -t authbridge-otel-processor .
 // Run: OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:8335 ./go-processor
@@ -517,19 +517,13 @@ func (p *processor) handleInbound(stream v3.ExternalProcessor_ProcessServer, hea
 			trace.WithSpanKind(trace.SpanKindInternal),
 		)
 
-		// Set static attributes now (input/output added during body processing)
+		// Set GenAI semantic convention attributes only.
+		// MLflow/OpenInference attributes are derived by the OTEL Collector.
 		span.SetAttributes(
 			attribute.String("gen_ai.operation.name", "invoke_agent"),
 			attribute.String("gen_ai.provider.name", agentProvider),
 			attribute.String("gen_ai.agent.name", agentName),
 			attribute.String("gen_ai.agent.version", agentVersion),
-			attribute.String("mlflow.spanType", "AGENT"),
-			attribute.String("mlflow.traceName", agentName),
-			attribute.String("mlflow.runName", agentName+"-invoke"),
-			attribute.String("mlflow.source", serviceName),
-			attribute.String("mlflow.version", agentVersion),
-			attribute.String("mlflow.user", "kagenti"),
-			attribute.String("openinference.span.kind", "AGENT"),
 		)
 
 		// Store span for body processing
@@ -636,20 +630,16 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 		conversationID = req.Params.Message.ContextID
 	}
 
-	// Enrich the existing span with input and conversation data
+	// Enrich the root span with GenAI attributes only.
+	// MLflow/OpenInference attributes are derived by the OTEL Collector.
 	if userInput != "" {
-		t := truncate(userInput, 4096)
 		state.span.SetAttributes(
-			attribute.String("gen_ai.prompt", t),
-			attribute.String("input.value", t),
-			attribute.String("mlflow.spanInputs", t),
+			attribute.String("gen_ai.prompt", truncate(userInput, 4096)),
 		)
 	}
 	if conversationID != "" {
 		state.span.SetAttributes(
 			attribute.String("gen_ai.conversation.id", conversationID),
-			attribute.String("mlflow.trace.session", conversationID),
-			attribute.String("session.id", conversationID),
 		)
 	}
 
@@ -830,14 +820,11 @@ func resubscribeAndCapture(cancelCtx context.Context, taskID string, span trace.
 								attrs = []attribute.KeyValue{
 									attribute.String("gen_ai.operation.name", "chat"),
 									attribute.String("gen_ai.system", agentProvider),
-									attribute.String("openinference.span.kind", "LLM"),
-									attribute.String("mlflow.spanType", "LLM"),
 								}
 							} else {
 								spanName = fmt.Sprintf("tool.execute %d", childIndex)
 								attrs = []attribute.KeyValue{
-									attribute.String("openinference.span.kind", "TOOL"),
-									attribute.String("mlflow.spanType", "TOOL"),
+									attribute.String("gen_ai.operation.name", "tool"),
 								}
 							}
 							if text != "" {
@@ -1085,8 +1072,6 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 								t := truncate(output, 4096)
 								span.SetAttributes(
 									attribute.String("gen_ai.completion", t),
-									attribute.String("output.value", t),
-									attribute.String("mlflow.spanOutputs", t),
 								)
 								span.SetStatus(otelcodes.Ok, "")
 								log.Printf("[OTEL] resubscribe recovered output (%d chars, %d child spans)", len(output), childCount)
@@ -1110,8 +1095,6 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 						t := truncate(text, 4096)
 						state.span.SetAttributes(
 							attribute.String("gen_ai.completion", t),
-							attribute.String("output.value", t),
-							attribute.String("mlflow.spanOutputs", t),
 						)
 						state.hasOutput = true
 						log.Printf("[OTEL] Set output on root span (%d chars)", len(text))
@@ -1153,8 +1136,6 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 				t := truncate(output, 4096)
 				state.span.SetAttributes(
 					attribute.String("gen_ai.completion", t),
-					attribute.String("output.value", t),
-					attribute.String("mlflow.spanOutputs", t),
 				)
 				log.Printf("[OTEL] Set output on root span from full body (%d chars)", len(output))
 			}
