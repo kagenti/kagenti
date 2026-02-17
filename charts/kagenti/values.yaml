@@ -58,7 +58,7 @@ ui:
   # Frontend (UI v2) configuration
   frontend:
     image: ghcr.io/kagenti/kagenti/ui-v2
-    tag: latest
+    tag: v0.5.0-alpha.7
     resources:
       limits:
         cpu: 100m
@@ -69,7 +69,7 @@ ui:
   # Backend configuration
   backend:
     image: ghcr.io/kagenti/kagenti/backend
-    tag: latest
+    tag: v0.5.0-alpha.7
     resources:
       limits:
         cpu: 250m
