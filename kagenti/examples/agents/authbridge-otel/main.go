@@ -640,6 +640,9 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 	if conversationID != "" {
 		state.span.SetAttributes(
 			attribute.String("gen_ai.conversation.id", conversationID),
+			// MLflow requires mlflow.trace.session set by the producer, not by
+			// collector transforms, for sessions to appear in the chat-sessions UI.
+			attribute.String("mlflow.trace.session", conversationID),
 		)
 	}
 
@@ -1113,6 +1116,7 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 					if cid != "" {
 						state.span.SetAttributes(
 							attribute.String("gen_ai.conversation.id", cid),
+							attribute.String("mlflow.trace.session", cid),
 						)
 						log.Printf("[OTEL] Set conversation ID: %s", cid)
 					}
