@@ -120,14 +120,10 @@ if [ "$IS_OPENSHIFT" = "true" ]; then
         log_info "BuildConfig already exists, starting new build..."
     else
         oc new-build --name=authbridge-otel-processor \
-            --context-dir=kagenti/examples/agents/authbridge-otel \
-            --binary=false \
+            --binary \
             --strategy=docker \
             --to=authbridge-otel-processor:latest \
-            -n team1 || true
-        # Patch to use the correct source
-        oc patch bc authbridge-otel-processor -n team1 --type=json \
-            -p '[{"op":"replace","path":"/spec/source","value":{"type":"Git","git":{"uri":"'"$REPO_URL"'","ref":"'"$BRANCH"'"},"contextDir":"kagenti/examples/agents/authbridge-otel"}}]' 2>/dev/null || true
+            -n team1
     fi
 
     # Start build from local directory (faster, no git clone needed)
