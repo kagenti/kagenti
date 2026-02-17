@@ -264,6 +264,11 @@ data:
               # Tool spans → MLflow TOOL type
               - set(attributes["mlflow.spanType"], "TOOL") where IsMatch(name, "^gen_ai\\.tool\\..*")
               - set(attributes["openinference.span.kind"], "TOOL") where IsMatch(name, "^gen_ai\\.tool\\..*")
+              # Additional MLflow metadata
+              - set(attributes["mlflow.version"], attributes["gen_ai.agent.version"]) where attributes["gen_ai.agent.version"] != nil
+              - set(attributes["mlflow.runName"], Concat([attributes["gen_ai.agent.name"], "-invoke"], "")) where attributes["gen_ai.agent.name"] != nil
+              - set(attributes["mlflow.user"], "kagenti") where IsMatch(name, "^invoke_agent.*")
+              - set(attributes["mlflow.source"], resource.attributes["service.name"]) where resource.attributes["service.name"] != nil
       {{- end }}
 
     extensions:
