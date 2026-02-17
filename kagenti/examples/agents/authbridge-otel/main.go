@@ -727,28 +727,39 @@ func classifySSEEvent(jsonStr string) (string, string) {
 	}
 }
 
-// extractTaskID extracts the A2A task ID from a JSON-RPC SSE event.
-// The first SSE event (kind=task) contains: result.id = task_id
-func extractTaskID(jsonStr string) string {
+// extractTaskIDAndContext extracts the A2A task ID and context ID from an SSE event.
+// The first SSE event (kind=task) has: result.id = taskID, result.contextId = contextID
+func extractTaskIDAndContext(jsonStr string) (string, string) {
 	var event map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &event); err != nil {
-		return ""
+		return "", ""
 	}
 	result, ok := event["result"].(map[string]interface{})
 	if !ok {
-		return ""
+		return "", ""
 	}
+
+	var taskID, contextID string
+
+	// Extract contextId (present in all events)
+	if cid, ok := result["contextId"].(string); ok {
+		contextID = cid
+	}
+
 	kind, _ := result["kind"].(string)
 	if kind == "task" {
 		if id, ok := result["id"].(string); ok {
-			return id
+			taskID = id
 		}
 	}
 	// Also check taskId field in status-update events
-	if taskID, ok := result["taskId"].(string); ok {
-		return taskID
+	if taskID == "" {
+		if tid, ok := result["taskId"].(string); ok {
+			taskID = tid
+		}
 	}
-	return ""
+
+	return taskID, contextID
 }
 
 // resubscribeAndCapture opens a new SSE streaming connection to the agent's
@@ -1084,11 +1095,18 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		// Parse SSE events from this chunk and create child spans
 		if otelEnabled && len(body) > 0 {
 			for _, jsonStr := range parseSSEEvents(body) {
-				// Extract task ID from the first SSE event (task submission)
-				// and immediately start a background resubscribe connection
-				// as a safety net in case the client disconnects.
+				// Extract task ID and context ID from SSE events.
+				// Context ID is set on the root span for session tracking.
+				// Task ID is used for resubscribe on client disconnect.
 				if state.taskID == "" {
-					if tid := extractTaskID(jsonStr); tid != "" {
+					tid, cid := extractTaskIDAndContext(jsonStr)
+					if cid != "" {
+						state.span.SetAttributes(
+							attribute.String("gen_ai.conversation.id", cid),
+						)
+						log.Printf("[OTEL] Set conversation ID: %s", cid)
+					}
+					if tid != "" {
 						state.taskID = tid
 						log.Printf("[OTEL] Captured task ID: %s", tid)
 
