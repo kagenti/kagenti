@@ -634,7 +634,7 @@ func (p *processor) handleRequestBody(stream v3.ExternalProcessor_ProcessServer,
 	// MLflow/OpenInference attributes are derived by the OTEL Collector.
 	if userInput != "" {
 		state.span.SetAttributes(
-			attribute.String("gen_ai.prompt", truncate(userInput, 4096)),
+			attribute.String("gen_ai.prompt", userInput),
 		)
 	}
 	if conversationID != "" {
@@ -828,7 +828,7 @@ func resubscribeAndCapture(cancelCtx context.Context, taskID string, span trace.
 								}
 							}
 							if text != "" {
-								attrs = append(attrs, attribute.String("event.text", truncate(text, 2048)))
+								attrs = append(attrs, attribute.String("event.text", text))
 							}
 							attrs = append(attrs, attribute.Int("event.index", childIndex))
 							_, childSpan := otelTracer.Start(spanCtx, spanName,
@@ -1069,7 +1069,7 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 							}
 							// Main stream disconnected — this goroutine is the fallback
 							if output != "" {
-								t := truncate(output, 4096)
+								t := output
 								span.SetAttributes(
 									attribute.String("gen_ai.completion", t),
 								)
@@ -1092,7 +1092,7 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 				case "artifact":
 					// Set output on root span immediately
 					if text != "" {
-						t := truncate(text, 4096)
+						t := text
 						state.span.SetAttributes(
 							attribute.String("gen_ai.completion", t),
 						)
@@ -1133,7 +1133,7 @@ func (p *processor) handleResponseBody(stream v3.ExternalProcessor_ProcessServer
 		if state.span.IsRecording() {
 			output := extractA2AOutput(fullBody)
 			if output != "" {
-				t := truncate(output, 4096)
+				t := output
 				state.span.SetAttributes(
 					attribute.String("gen_ai.completion", t),
 				)
