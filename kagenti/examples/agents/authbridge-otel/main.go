@@ -883,8 +883,127 @@ func resubscribeAndCapture(cancelCtx context.Context, taskID string, span trace.
 	return output, childIndex
 }
 
+// extractGenAIAttrsFromJSON parses the event text as JSON to extract
+// GenAI semantic convention attributes from LangChain message data.
+// The text format is: "🚶‍♂️assistant: {JSON}" or "🚶‍♂️tools: {JSON}"
+func extractGenAIAttrsFromJSON(text string, eventType string) (spanName string, attrs []attribute.KeyValue) {
+	// Find the JSON part after the step prefix (e.g., "🚶‍♂️assistant: ")
+	jsonStart := strings.Index(text, "{")
+	if jsonStart < 0 {
+		return "", nil
+	}
+	jsonStr := text[jsonStart:]
+
+	var eventData struct {
+		Messages []struct {
+			Type             string                 `json:"type"`
+			Content          string                 `json:"content"`
+			Name             string                 `json:"name"`
+			ToolCallID       string                 `json:"tool_call_id"`
+			ResponseMetadata map[string]interface{} `json:"response_metadata"`
+			ToolCalls        []struct {
+				ID       string `json:"id"`
+				Name     string `json:"name"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &eventData); err != nil {
+		log.Printf("[OTEL] Could not parse event JSON: %v", err)
+		return "", nil
+	}
+
+	if len(eventData.Messages) == 0 {
+		return "", nil
+	}
+
+	switch eventType {
+	case "llm":
+		// Find the last AI message (has response_metadata with token usage)
+		for i := len(eventData.Messages) - 1; i >= 0; i-- {
+			msg := eventData.Messages[i]
+			if msg.Type != "ai" {
+				continue
+			}
+
+			if rm := msg.ResponseMetadata; rm != nil {
+				// Extract token usage
+				if tu, ok := rm["token_usage"].(map[string]interface{}); ok {
+					if v, ok := tu["input_tokens"].(float64); ok {
+						attrs = append(attrs, attribute.Int("gen_ai.usage.input_tokens", int(v)))
+					}
+					// Try both completion_tokens (OpenAI) and output_tokens
+					if v, ok := tu["output_tokens"].(float64); ok {
+						attrs = append(attrs, attribute.Int("gen_ai.usage.output_tokens", int(v)))
+					} else if v, ok := tu["completion_tokens"].(float64); ok {
+						attrs = append(attrs, attribute.Int("gen_ai.usage.output_tokens", int(v)))
+					}
+					if v, ok := tu["total_tokens"].(float64); ok {
+						attrs = append(attrs, attribute.Int("gen_ai.usage.total_tokens", int(v)))
+					}
+				}
+
+				// Extract model name
+				if model, ok := rm["model_name"].(string); ok && model != "" {
+					attrs = append(attrs, attribute.String("gen_ai.response.model", model))
+				}
+
+				// Extract finish reason
+				if reason, ok := rm["finish_reason"].(string); ok && reason != "" {
+					attrs = append(attrs, attribute.String("gen_ai.response.finish_reasons", reason))
+				}
+			}
+
+			// Check if this is a tool-calling LLM step
+			if len(msg.ToolCalls) > 0 {
+				spanName = "gen_ai.chat"
+				// Add tool call names as context
+				var toolNames []string
+				for _, tc := range msg.ToolCalls {
+					name := tc.Name
+					if name == "" {
+						name = tc.Function.Name
+					}
+					if name != "" {
+						toolNames = append(toolNames, name)
+					}
+				}
+				if len(toolNames) > 0 {
+					attrs = append(attrs, attribute.String("gen_ai.tool.calls", strings.Join(toolNames, ",")))
+				}
+			} else if msg.Content != "" {
+				spanName = "gen_ai.chat"
+			}
+			break
+		}
+
+	case "tool":
+		// Find tool messages
+		for _, msg := range eventData.Messages {
+			if msg.Type != "tool" {
+				continue
+			}
+			if msg.Name != "" {
+				spanName = fmt.Sprintf("gen_ai.tool.%s", msg.Name)
+				attrs = append(attrs, attribute.String("gen_ai.tool.name", msg.Name))
+			}
+			if msg.ToolCallID != "" {
+				attrs = append(attrs, attribute.String("gen_ai.tool.call.id", msg.ToolCallID))
+			}
+			break
+		}
+	}
+
+	return spanName, attrs
+}
+
 // createChildSpan creates a nested child span under the root invoke_agent span
-// for an LLM or tool event detected in the SSE stream.
+// for an LLM or tool event detected in the SSE stream. Parses the event JSON
+// to extract GenAI semantic convention attributes.
 func (p *processor) createChildSpan(state *streamSpanState, eventType string, text string) {
 	if state == nil || state.span == nil || otelTracer == nil {
 		return
@@ -893,33 +1012,29 @@ func (p *processor) createChildSpan(state *streamSpanState, eventType string, te
 	state.childSpanIndex++
 	idx := state.childSpanIndex
 
-	var spanName string
-	var attrs []attribute.KeyValue
+	// Extract GenAI attributes from the JSON event data
+	spanName, genaiAttrs := extractGenAIAttrsFromJSON(text, eventType)
 
-	switch eventType {
-	case "llm":
-		spanName = fmt.Sprintf("gen_ai.chat %d", idx)
-		attrs = []attribute.KeyValue{
+	// Fallback span names
+	if spanName == "" {
+		if eventType == "llm" {
+			spanName = "gen_ai.chat"
+		} else {
+			spanName = fmt.Sprintf("tool.execute %d", idx)
+		}
+	}
+
+	// Build attributes: GenAI standard + operation metadata
+	var attrs []attribute.KeyValue
+	if eventType == "llm" {
+		attrs = append(attrs,
 			attribute.String("gen_ai.operation.name", "chat"),
 			attribute.String("gen_ai.system", agentProvider),
-			attribute.String("openinference.span.kind", "LLM"),
-			attribute.String("mlflow.spanType", "LLM"),
-		}
-	case "tool":
-		spanName = fmt.Sprintf("tool.execute %d", idx)
-		attrs = []attribute.KeyValue{
-			attribute.String("openinference.span.kind", "TOOL"),
-			attribute.String("mlflow.spanType", "TOOL"),
-		}
-	default:
-		return
+		)
+	} else {
+		attrs = append(attrs, attribute.String("gen_ai.operation.name", "tool"))
 	}
-
-	// Add truncated event text as attribute
-	if text != "" {
-		t := truncate(text, 2048)
-		attrs = append(attrs, attribute.String("event.text", t))
-	}
+	attrs = append(attrs, genaiAttrs...)
 	attrs = append(attrs, attribute.Int("event.index", idx))
 
 	// Create child span under the root span's context and immediately end it
@@ -929,7 +1044,7 @@ func (p *processor) createChildSpan(state *streamSpanState, eventType string, te
 	)
 	childSpan.SetStatus(otelcodes.Ok, "")
 	childSpan.End()
-	log.Printf("[OTEL] Created child span: %s (step %d)", spanName, idx)
+	log.Printf("[OTEL] Created child span: %s (step %d, %d attrs)", spanName, idx, len(attrs))
 }
 
 // handleResponseBody processes response chunks as they stream through.
