@@ -1,0 +1,39 @@
+# Shipwright Build for sandbox-agent (OpenShift)
+apiVersion: shipwright.io/v1beta1
+kind: Build
+metadata:
+  name: sandbox-agent
+  namespace: team1
+  labels:
+    app.kubernetes.io/created-by: e2e-test
+    app.kubernetes.io/name: sandbox-agent
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+  annotations:
+    kagenti.io/agent-config: |
+      {
+        "protocol": "a2a",
+        "framework": "LangGraph",
+        "createHttpRoute": false
+      }
+spec:
+  source:
+    type: Git
+    git:
+      url: https://github.com/ladas/agent-examples
+      revision: feat/otel-authbridge-minimal-agent-667
+      cloneSecret: github-shipwright-secret
+    contextDir: a2a/sandbox_agent
+  strategy:
+    name: buildah
+    kind: ClusterBuildStrategy
+  paramValues:
+    - name: dockerfile
+      value: Dockerfile
+  output:
+    image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-agent:v0.0.1
+  timeout: 15m
+  retention:
+    succeededLimit: 3
+    failedLimit: 3

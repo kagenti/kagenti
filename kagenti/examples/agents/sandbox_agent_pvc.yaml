@@ -1,0 +1,20 @@
+# Shared RWX PVC for sandbox-agent context workspaces
+# StorageClass must support ReadWriteMany:
+#   Kind: nfs
+#   OpenShift ODF: ocs-storagecluster-cephfs
+#   AWS EFS: efs-sc
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sandbox-agent-workspace
+  namespace: team1
+  labels:
+    kagenti.io/type: agent-workspace
+    kagenti.io/agent: sandbox-agent
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ocs-storagecluster-cephfs
+  resources:
+    requests:
+      storage: 5Gi
