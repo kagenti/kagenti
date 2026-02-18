@@ -7,6 +7,20 @@ description: Debug AWS resources for HyperShift clusters - identify stuck resour
 
 This skill helps debug AWS resources related to HyperShift clusters, identifying resources that may be blocking cluster deletion or orphaned infrastructure.
 
+## Context-Safe Execution (MANDATORY)
+
+**AWS CLI and kubectl output MUST go to files.**
+
+```bash
+export LOG_DIR=/tmp/kagenti/hypershift/${CLUSTER:-debug}
+mkdir -p $LOG_DIR
+
+# Pattern: redirect AWS/kubectl output
+aws ec2 describe-vpcs ... > $LOG_DIR/vpcs.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get hostedclusters -A > $LOG_DIR/clusters.log 2>&1 && echo "OK" || echo "FAIL"
+# Analyze in subagent: Task(subagent_type='Explore') with Grep
+```
+
 ## When to Use
 
 - Cluster deletion is stuck (finalizer not removed)

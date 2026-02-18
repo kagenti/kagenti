@@ -7,6 +7,63 @@ description: TDD workflow with HyperShift cluster - real-time debugging with ful
 
 Test-driven development workflow using hypershift-full-test.sh phases for Kagenti development.
 
+## Context-Safe Execution (MANDATORY)
+
+**Every command that produces more than ~5 lines of output MUST redirect to a file.**
+This prevents context window pollution that drives up session cost.
+
+```bash
+# Session-scoped log directory — use $WORKTREE to avoid collisions between parallel sessions
+export LOG_DIR=$LOG_DIR/$WORKTREE
+mkdir -p $LOG_DIR
+```
+
+### Pattern: Build/Test Commands
+
+```bash
+# WRONG — dumps hundreds of lines into context:
+.worktrees/$WORKTREE/.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER --include-test
+
+# RIGHT — captures output, returns only exit code:
+.worktrees/$WORKTREE/.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
+  --include-test > $LOG_DIR/test-run.log 2>&1; echo "EXIT:$?"
+# If EXIT:0 → "Tests passed"
+# If EXIT:1 → Use Task(subagent_type='Explore') to read $LOG_DIR/test-run.log and report failures
+```
+
+### Pattern: kubectl Commands
+
+```bash
+# WRONG:
+kubectl get pods -n kagenti-system
+kubectl logs -n team1 deployment/weather-service --tail=100
+
+# RIGHT:
+kubectl get pods -n kagenti-system > $LOG_DIR/pods.log 2>&1 && echo "OK: pods listed" || echo "FAIL (see $LOG_DIR/pods.log)"
+kubectl logs -n team1 deployment/weather-service --tail=100 > $LOG_DIR/weather-logs.log 2>&1 && echo "OK" || echo "FAIL"
+# Only read the log file in a subagent if you need to analyze failures
+```
+
+### Pattern: Build Commands
+
+```bash
+# WRONG:
+oc start-build weather-tool -n team1 --follow
+
+# RIGHT:
+oc start-build weather-tool -n team1 --follow > $LOG_DIR/build.log 2>&1; echo "EXIT:$?"
+# If non-zero, use Task(subagent_type='Explore') to read $LOG_DIR/build.log
+```
+
+### Log Analysis Rule
+
+**NEVER read large log files in the main context.** Always use subagents:
+1. Note the log file path and exit code
+2. Use `Task(subagent_type='Explore')` to read the log and extract relevant info
+3. The subagent returns a concise summary (errors, unexpected output, specific data)
+4. **Use subagents for success analysis too** — e.g., "verify $LOG_DIR/test-run.log contains trace export lines"
+5. Fix or proceed based on the summary
+
 ## Why TDD-HyperShift?
 
 **Full cluster access** enables real-time debugging that CI cannot provide:
@@ -125,7 +182,8 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl delet
 ```bash
 KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
   .worktrees/$WORKTREE/.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
-  --include-test --pytest-filter "test_agent or test_mlflow"
+  --include-test --pytest-filter "test_agent or test_mlflow" \
+  > $LOG_DIR/test-iter1.log 2>&1; echo "EXIT:$?"
 ```
 
 ### Iteration 2: Rebuild agent images (minutes)
@@ -133,7 +191,9 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
 Use OpenShift Builds or Shipwright to rebuild images from dependency repos directly on the cluster:
 
 ```bash
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig oc start-build weather-tool -n team1 --follow
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
+  oc start-build weather-tool -n team1 --follow \
+  > $LOG_DIR/build.log 2>&1; echo "EXIT:$?"
 ```
 
 Or trigger a Shipwright BuildRun for the weather-service:
@@ -155,7 +215,8 @@ Only when chart values or CRDs change:
 ```bash
 KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
   .worktrees/$WORKTREE/.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
-  --include-uninstall --include-install --include-agents --include-test
+  --include-uninstall --include-install --include-agents --include-test \
+  > $LOG_DIR/full-reinstall.log 2>&1; echo "EXIT:$?"
 ```
 
 ### Iteration 4: Fresh cluster (requires permission)
@@ -187,7 +248,8 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl creat
 Watch the build:
 
 ```bash
-KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig kubectl get buildrun -n team1 -w
+KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
+  kubectl get buildrun -n team1 -w > $LOG_DIR/buildrun.log 2>&1; echo "EXIT:$?"
 ```
 
 After build succeeds, restart the deployment:
@@ -230,9 +292,11 @@ KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig \
 export CLUSTER=mlflow MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
 export KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig
 
-kubectl get pods -n kagenti-system
-kubectl logs -n kagenti-system -l app=mlflow --tail=50
-kubectl get pods -n team1
+# Always redirect kubectl output to files
+kubectl get pods -n kagenti-system > $LOG_DIR/pods-system.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl logs -n kagenti-system -l app=mlflow --tail=50 > $LOG_DIR/mlflow.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get pods -n team1 > $LOG_DIR/pods-team1.log 2>&1 && echo "OK" || echo "FAIL"
+# Use Task(subagent_type='Explore') to read logs only when investigating failures
 ```
 
 ## Iteration Tracking

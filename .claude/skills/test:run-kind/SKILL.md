@@ -7,6 +7,19 @@ description: Run E2E tests on local Kind cluster
 
 > **Auto-approved**: All test execution on Kind is auto-approved.
 
+## Context-Safe Execution (MANDATORY)
+
+**Test output MUST go to files.** Test runs produce hundreds of lines.
+
+```bash
+export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+
+# Pattern: redirect test output
+command > $LOG_DIR/test-run.log 2>&1; echo "EXIT:$?"
+# On failure: Task(subagent_type='Explore') with Grep to find FAILED|ERROR
+```
+
 ## When to Use
 
 - Running E2E tests locally on Kind
@@ -16,13 +29,13 @@ description: Run E2E tests on local Kind cluster
 ## Run All Tests
 
 ```bash
-./.github/scripts/local-setup/kind-full-test.sh --include-test
+./.github/scripts/local-setup/kind-full-test.sh --include-test > $LOG_DIR/test-all.log 2>&1; echo "EXIT:$?"
 ```
 
 ## Run Specific Tests
 
 ```bash
-./.github/scripts/local-setup/kind-full-test.sh --include-test --pytest-filter "test_agent"
+./.github/scripts/local-setup/kind-full-test.sh --include-test --pytest-filter "test_agent" > $LOG_DIR/test-filtered.log 2>&1; echo "EXIT:$?"
 ```
 
 ## Run with pytest Directly

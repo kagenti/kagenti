@@ -116,6 +116,61 @@ source .env.kagenti-hypershift-custom
 - **A2A**: Agent-to-Agent (Google) - `/.well-known/agent-card.json`
 - **MCP**: Model Context Protocol (Anthropic) - Tool integration
 
+## Context Budget (MANDATORY)
+
+**Context window pollution is the #1 cost driver.** Build output, kubectl responses, and
+test results dumped into conversation history get re-read on every subsequent turn,
+causing exponential cost growth in long sessions. Follow these rules to minimize context usage.
+
+### Rule 1: Redirect command output to files
+
+Any command that produces more than ~5 lines MUST redirect to a session-scoped log file:
+
+```bash
+# Set a session-scoped log directory (use worktree/cluster name to avoid collisions)
+export LOG_DIR=/tmp/kagenti/tdd/$WORKTREE   # TDD sessions
+export LOG_DIR=/tmp/kagenti/rca/$WORKTREE   # RCA sessions
+export LOG_DIR=/tmp/kagenti/k8s/$CLUSTER    # K8s debugging
+mkdir -p $LOG_DIR
+
+# Pattern: redirect output, return only exit code
+command > $LOG_DIR/descriptive-name.log 2>&1; echo "EXIT:$?"
+# or
+command > $LOG_DIR/name.log 2>&1 && echo "OK" || echo "FAIL (see $LOG_DIR/name.log)"
+```
+
+### Rule 2: Analyze logs in subagents
+
+**NEVER read large log files in the main context.** Use subagents:
+
+```
+Task(subagent_type='Explore'):
+  "Use Grep with context (-C 3) on $LOG_DIR/test-run.log to find FAILED|ERROR.
+   Do NOT read the whole file. Return: first error, test name, and 2-3 lines of context."
+```
+
+Use subagents for BOTH failure analysis AND success verification (e.g., "verify traces appear in the log").
+
+### Rule 3: Small output is OK inline
+
+These are fine without redirection (produce <5 lines):
+- `git status`, `git branch`, `git log --oneline -5`
+- `kubectl get nodes` (cluster health check)
+- `gh pr checks <number>` (CI status table)
+- `curl -s url | jq '.field'` (single JSON field)
+- `echo "EXIT:$?"` (exit codes)
+
+### What this prevents
+
+| Pattern | Context cost | Fix |
+|---------|-------------|-----|
+| `kubectl get pods -A` | 50-200 lines per call | Redirect to file |
+| `kubectl logs ... --tail=100` | 100 lines per call | Redirect to file |
+| `gh run view --log-failed` | 1000+ lines | Redirect + subagent |
+| `pytest -v` | 200+ lines | Redirect + subagent |
+| `helm template` | 500+ lines | Redirect + subagent |
+| `oc start-build --follow` | 100+ lines | Redirect + subagent |
+
 ## Code Style
 
 - Python 3.11+, `uv` package manager

@@ -7,6 +7,23 @@ description: Kubernetes debugging and troubleshooting skills. Debug pods, check 
 
 Skills for debugging and troubleshooting Kubernetes deployments.
 
+## Context-Safe Execution (MANDATORY)
+
+**All kubectl/oc commands MUST redirect output to files.** Commands in this skill are shown
+in bare form for readability, but when executing them, always use this pattern:
+
+```bash
+# Set log directory (use cluster name or worktree to avoid session collisions)
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Pattern: redirect output, return status
+kubectl <command> > $LOG_DIR/<descriptive-name>.log 2>&1 && echo "OK" || echo "FAIL (see $LOG_DIR/<descriptive-name>.log)"
+
+# When investigating failures: use Task(subagent_type='Explore') to read log files
+# NEVER read large kubectl output directly into main conversation context
+```
+
 ## Available Sub-Skills
 
 | Skill | Description |

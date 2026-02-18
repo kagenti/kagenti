@@ -7,6 +7,22 @@ description: Iterative debugging workflow for fixing issues on a running cluster
 
 Iterative debugging workflow for fixing issues on a running HyperShift cluster.
 
+## Context-Safe Execution (MANDATORY)
+
+**All kubectl/oc commands MUST redirect output to files.** Live debugging generates
+the most context pollution because of iterative check-fix-recheck loops.
+
+```bash
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Every kubectl command → redirect to file
+kubectl <command> > $LOG_DIR/<name>.log 2>&1 && echo "OK" || echo "FAIL"
+
+# Analyze in subagent: Task(subagent_type='Explore') to read log files
+# Use subagents for BOTH failure analysis AND verifying expected behavior
+```
+
 ## Table of Contents
 
 - [Overview](#overview)

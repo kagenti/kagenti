@@ -5,6 +5,19 @@ description: Debug Helm chart issues - template rendering, value overrides, hook
 
 # Debug Helm Charts
 
+## Context-Safe Execution (MANDATORY)
+
+**Helm template output can be hundreds of lines.** Always redirect to files:
+
+```bash
+export LOG_DIR=/tmp/kagenti/helm/${WORKTREE:-$(basename $(git rev-parse --show-toplevel))}
+mkdir -p $LOG_DIR
+
+# Redirect helm template output
+helm template kagenti charts/kagenti -n kagenti-system > $LOG_DIR/rendered.yaml 2>&1 && echo "OK" || echo "FAIL"
+# Analyze in subagent: Task(subagent_type='Explore') with Grep to find specific templates/values
+```
+
 ## When to Use
 
 - Helm install/upgrade fails

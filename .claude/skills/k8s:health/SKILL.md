@@ -7,6 +7,26 @@ description: Check comprehensive platform health including deployments, pods, se
 
 This skill helps you perform comprehensive platform health checks and identify issues quickly.
 
+## Context-Safe Execution (MANDATORY)
+
+**All kubectl/oc commands MUST redirect output to files.** Commands below are shown in bare
+form for readability. When executing, always redirect:
+
+```bash
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Example: health check script
+.github/scripts/verify_deployment.sh > $LOG_DIR/health-check.log 2>&1 && echo "OK: healthy" || echo "FAIL (see $LOG_DIR/health-check.log)"
+
+# Example: kubectl commands
+kubectl get pods -A > $LOG_DIR/all-pods.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get deployments -A > $LOG_DIR/deployments.log 2>&1 && echo "OK" || echo "FAIL"
+
+# Analyze results in subagent — NEVER read large output in main context
+# Use Task(subagent_type='Explore') to read log files and return summaries
+```
+
 ## When to Use
 
 - After deployments or cluster restarts

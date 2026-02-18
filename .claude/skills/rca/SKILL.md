@@ -29,6 +29,25 @@ flowchart TD
 
 Root cause analysis workflows for systematic failure investigation.
 
+## Context-Safe Execution (MANDATORY)
+
+**RCA is the highest-risk activity for context pollution.** Investigation involves
+reading CI logs, kubectl output, and test results — all of which must stay out of
+the main conversation context.
+
+```bash
+# Session-scoped log directory
+export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+```
+
+**Rules:**
+1. **ALL diagnostic commands** redirect output to `$LOG_DIR/<name>.log`
+2. **ALL log analysis** happens in subagents: `Task(subagent_type='Explore')`
+3. The subagent reads the log, extracts findings, and returns a concise summary
+4. The main context only sees: exit codes, OK/FAIL status, and subagent summaries
+5. **NEVER** read CI logs, kubectl output, or test results directly in main context
+
 ## Auto-Select Sub-Skill
 
 When this skill is invoked, determine the right sub-skill based on context:

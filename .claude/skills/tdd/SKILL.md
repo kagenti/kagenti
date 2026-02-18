@@ -312,6 +312,25 @@ feature branch with an open PR, polluting that PR with unrelated commits.
 
 ---
 
+## Context-Safe Execution (MANDATORY for all TDD sub-skills)
+
+**Every command that produces more than ~5 lines of output MUST redirect to a file.**
+This prevents context window pollution from build/test/kubectl output accumulating in context
+and being re-read on every subsequent turn.
+
+```bash
+# Session-scoped log directory — ALWAYS set before running commands
+export LOG_DIR=/tmp/kagenti/tdd/$WORKTREE   # or $(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+```
+
+**Rules:**
+1. Redirect build/test/kubectl output: `command > $LOG_DIR/name.log 2>&1; echo "EXIT:$?"`
+2. On success: report "OK" — if behavior seems wrong despite exit 0, use a subagent to analyze the log
+3. On failure: use `Task(subagent_type='Explore')` to read the log file — NEVER in main context
+4. The subagent reads the log and returns a concise summary (error cause, unexpected output, etc.)
+5. **Also use subagents to verify expected behavior** — e.g., "check $LOG_DIR/test-run.log for trace export lines"
+
 ## TDD Code Loop
 
 All three flows eventually enter this loop:
@@ -321,7 +340,7 @@ All three flows eventually enter this loop:
 1. Write/fix code
 2. test:write — write or update tests
 3. test:review — verify test quality (no silent skips, assertive)
-4. test:run-kind or test:run-hypershift — execute tests
+4. test:run-kind or test:run-hypershift — execute tests (output to $LOG_DIR)
 5. Track progress — compare test results with previous run
 6. git:commit — commit with proper format
 7. git:rebase — rebase onto upstream/main

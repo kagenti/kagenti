@@ -27,6 +27,38 @@ description: CI-driven TDD workflow - commit, local checks, push, wait for CI, i
 
 Iterative development workflow using CI as the test environment. Commit changes, run local checks, push to PR, wait for CI results, and iterate on failures.
 
+## Context-Safe Execution (MANDATORY)
+
+**Every command that produces more than ~5 lines of output MUST redirect to a file.**
+
+```bash
+# Session-scoped log directory — use worktree name to avoid collisions
+export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+```
+
+### Key Patterns
+
+```bash
+# CI log download — ALWAYS to file, NEVER into context
+gh run view <run-id> --log-failed > $LOG_DIR/ci-failed.log 2>&1; echo "EXIT:$?"
+# Analyze failures in subagent: Task(subagent_type='Explore') to read $LOG_DIR/ci-failed.log
+
+# Local checks — redirect output
+make lint > $LOG_DIR/lint.log 2>&1 && echo "OK: lint passed" || echo "FAIL (see $LOG_DIR/lint.log)"
+pre-commit run --all-files > $LOG_DIR/precommit.log 2>&1 && echo "OK: pre-commit passed" || echo "FAIL (see $LOG_DIR/precommit.log)"
+uv run pytest kagenti/tests/ -v --ignore=kagenti/tests/e2e > $LOG_DIR/unit-tests.log 2>&1 && echo "OK: tests passed" || echo "FAIL (see $LOG_DIR/unit-tests.log)"
+```
+
+### Log Analysis Rule
+
+**NEVER read large log files in the main context.** Always use subagents:
+1. Note the log file path and exit code
+2. Use `Task(subagent_type='Explore')` to read the log and extract relevant info
+3. The subagent returns a concise summary (errors, unexpected output, specific data)
+4. **Use subagents for success analysis too** — e.g., "verify lint passed with no warnings"
+5. Fix or proceed based on the summary
+
 ## tdd:ci vs tdd:hypershift
 
 | Aspect | `tdd:ci` | `tdd:hypershift` |
@@ -286,20 +318,15 @@ git commit -s -m "fix: description of change"
 
 ## Phase 3: Local Checks
 
-Run local validation before pushing:
+Run local validation before pushing (redirect output to files):
 
 ```bash
-# Linting
-make lint
-
-# Pre-commit hooks
-pre-commit run --all-files
-
-# Unit tests (if applicable)
-uv run pytest kagenti/tests/ -v --ignore=kagenti/tests/e2e
+make lint > $LOG_DIR/lint.log 2>&1 && echo "OK: lint" || echo "FAIL: lint (see $LOG_DIR/lint.log)"
+pre-commit run --all-files > $LOG_DIR/precommit.log 2>&1 && echo "OK: pre-commit" || echo "FAIL: pre-commit (see $LOG_DIR/precommit.log)"
+uv run pytest kagenti/tests/ -v --ignore=kagenti/tests/e2e > $LOG_DIR/unit-tests.log 2>&1 && echo "OK: tests" || echo "FAIL: tests (see $LOG_DIR/unit-tests.log)"
 ```
 
-**Fix any failures before pushing.**
+**Fix any failures before pushing.** On failure, use `Task(subagent_type='Explore')` to read the log file.
 
 ## Phase 4: Push to PR
 
@@ -338,20 +365,20 @@ gh run view <run-id>
 
 ## Phase 6: Analyze Failures
 
-When CI fails:
+When CI fails, download logs to a file — **never dump CI logs into main context**:
 
 ```bash
-# View failed run
-gh run view <run-id> --log-failed
+# Download failed run logs to file
+gh run view <run-id> --log-failed > $LOG_DIR/ci-run-<run-id>.log 2>&1; echo "EXIT:$?"
 
-# Or view in browser
+# Or view in browser (minimal context — just prints URL)
 gh run view <run-id> --web
 ```
 
-**Identify root cause before fixing:**
-1. Read the full error message
+**Analyze in subagent** — use `Task(subagent_type='Explore')` to read `$LOG_DIR/ci-run-<run-id>.log` and:
+1. Find the first error
 2. Check if it's a flaky test or real failure
-3. Understand what the test expects
+3. Return a 1-3 line summary of root cause
 4. Use `superpowers:systematic-debugging` for complex failures
 
 ## Phase 7: Fix and Iterate
