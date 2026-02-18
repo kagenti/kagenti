@@ -7,6 +7,20 @@ description: Root cause analysis on local Kind cluster - fast local debugging wi
 
 Root cause analysis workflow for failures on local Kind clusters.
 
+## Context-Safe Execution (MANDATORY)
+
+**All diagnostic commands MUST redirect output to files.**
+
+```bash
+export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+```
+
+**Rules:**
+1. **ALL kubectl/oc commands** redirect to `$LOG_DIR/<name>.log`
+2. **ALL analysis** in subagents: `Task(subagent_type='Explore')` with `Grep` (not full file reads)
+3. Main context only sees: OK/FAIL status and subagent summaries
+
 ## When to Use
 
 - Kind E2E tests failed locally or in CI
@@ -59,70 +73,43 @@ flowchart TD
 Failure → Reproduce locally → Inspect cluster → Identify root cause → Fix → Verify
 ```
 
-Create working directory for analysis:
-
-```bash
-mkdir -p /tmp/kagenti/rca
-```
-
 ### Phase 1: Reproduce
 
 Deploy the cluster if not running:
 
 ```bash
-./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy > $LOG_DIR/kind-deploy.log 2>&1; echo "EXIT:$?"
 ```
 
 ### Phase 2: Inspect
 
-Check pod status:
+All kubectl output redirected to files:
 
 ```bash
-kubectl get pods -n kagenti-system
+kubectl get pods -n kagenti-system > $LOG_DIR/pods-system.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get pods -n kagenti-system --field-selector=status.phase!=Running > $LOG_DIR/failed-pods.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get events -n kagenti-system --sort-by='.lastTimestamp' > $LOG_DIR/events.log 2>&1 && echo "OK" || echo "FAIL"
 ```
 
-Check for crashes:
-
-```bash
-kubectl get pods -n kagenti-system --field-selector=status.phase!=Running
-```
-
-Check events:
-
-```bash
-kubectl get events -n kagenti-system --sort-by='.lastTimestamp'
-```
+Use `Task(subagent_type='Explore')` with `Grep` to analyze the logs for errors.
 
 ### Phase 3: Diagnose
 
-Check component logs:
-
 ```bash
-kubectl logs -n kagenti-system deployment/kagenti-ui --tail=50
+kubectl logs -n kagenti-system deployment/kagenti-ui --tail=50 > $LOG_DIR/ui.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl logs -n kagenti-system deployment/ollama --tail=50 > $LOG_DIR/ollama.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl get pods -n team1 > $LOG_DIR/pods-team1.log 2>&1 && echo "OK" || echo "FAIL"
+kubectl logs -n team1 deployment/weather-service --tail=50 > $LOG_DIR/agent.log 2>&1 && echo "OK" || echo "FAIL"
 ```
 
-Check Ollama (Kind-specific):
-
-```bash
-kubectl logs -n kagenti-system deployment/ollama --tail=50
-```
-
-Check agent namespace:
-
-```bash
-kubectl get pods -n team1
-```
-
-```bash
-kubectl logs -n team1 deployment/weather-service --tail=50
-```
+Use `Task(subagent_type='Explore')` with `Grep` to find errors in the log files.
 
 ### Phase 4: Fix and Verify
 
 After fixing, re-run the specific failing test:
 
 ```bash
-uv run pytest kagenti/tests/e2e/ -v -k "test_name"
+uv run pytest kagenti/tests/e2e/ -v -k "test_name" > $LOG_DIR/retest.log 2>&1; echo "EXIT:$?"
 ```
 
 ## Kind-Specific Issues

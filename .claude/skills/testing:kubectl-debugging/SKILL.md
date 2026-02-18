@@ -7,6 +7,19 @@ description: Common kubectl commands for debugging Kagenti components
 
 Common kubectl commands for debugging Kagenti components.
 
+## Context-Safe Execution (MANDATORY)
+
+**All kubectl/oc commands MUST redirect output to files.** Commands below are shown in bare
+form for readability. When executing, always redirect:
+
+```bash
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Pattern: kubectl <command> > $LOG_DIR/<name>.log 2>&1 && echo "OK" || echo "FAIL"
+# Analyze in subagent: Task(subagent_type='Explore') with Grep
+```
+
 ## Table of Contents
 
 - [Setting Up Environment](#setting-up-environment)

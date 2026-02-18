@@ -7,6 +7,23 @@ description: Check PR CI status - all checks, failures, test results, and artifa
 
 Check the current CI status for a PR and create task items for any failures.
 
+## Context-Safe Execution (MANDATORY)
+
+**CI log output MUST go to files.** `gh pr checks` is small and OK inline.
+`gh run view --log-failed` and artifact downloads MUST redirect:
+
+```bash
+export LOG_DIR=/tmp/kagenti/ci/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+
+# Small output OK inline:
+gh pr checks <PR-number>
+
+# Large output MUST redirect:
+gh run view <run-id> --log-failed > $LOG_DIR/ci-run-<run-id>.log 2>&1; echo "EXIT:$?"
+# Analyze in subagent: Task(subagent_type='Explore') with Grep on the log file
+```
+
 ## When to Use
 
 - After pushing changes to a PR

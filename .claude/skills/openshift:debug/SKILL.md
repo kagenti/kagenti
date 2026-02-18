@@ -7,6 +7,20 @@ description: Debug OpenShift-specific resources, operators, and platform issues
 
 Debug OpenShift-specific resources and platform issues.
 
+## Context-Safe Execution (MANDATORY)
+
+**All oc/kubectl commands MUST redirect output to files.**
+
+```bash
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Pattern: redirect oc/kubectl output
+oc get clusteroperators > $LOG_DIR/cluster-operators.log 2>&1 && echo "OK" || echo "FAIL"
+oc describe clusterversion version > $LOG_DIR/cluster-version.log 2>&1 && echo "OK" || echo "FAIL"
+# Analyze in subagent: Task(subagent_type='Explore') with Grep
+```
+
 ## When to Use
 
 - OpenShift operators not working

@@ -7,6 +7,19 @@ description: Deploy or redeploy the Kagenti Kind cluster using the Python instal
 
 This skill guides you through deploying or redeploying the Kagenti Kind cluster using the Python installer.
 
+## Context-Safe Execution (MANDATORY)
+
+**Deploy scripts produce hundreds of lines.** Always redirect to files:
+
+```bash
+export LOG_DIR=/tmp/kagenti/deploy/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+
+# Pattern: redirect deploy output
+./.github/scripts/local-setup/kind-full-test.sh ... > $LOG_DIR/deploy.log 2>&1; echo "EXIT:$?"
+# On failure: Task(subagent_type='Explore') with Grep to find errors
+```
+
 ## When to Use
 
 - Setting up new local development cluster

@@ -24,6 +24,23 @@ flowchart TD
 
 Systematic root cause analysis with full cluster access for deep investigation.
 
+## Context-Safe Execution (MANDATORY)
+
+**RCA with cluster access generates massive context pollution** from kubectl describe,
+logs, configmap dumps, and secret inspection. ALL output MUST go to files.
+
+```bash
+# Session-scoped log directory
+export LOG_DIR=/tmp/kagenti/rca/${WORKTREE:-$CLUSTER}
+mkdir -p $LOG_DIR
+```
+
+**Rules:**
+1. **ALL kubectl/oc commands** redirect to `$LOG_DIR/<name>.log`
+2. **ALL analysis** happens in subagents: `Task(subagent_type='Explore')`
+3. Main context only sees: OK/FAIL status and subagent summaries
+4. **Use subagents for verification too** — "check if traces appear in $LOG_DIR/otel.log"
+
 ## rca:hypershift vs rca:ci
 
 | Aspect | `rca:hypershift` | `rca:ci` |
@@ -45,19 +62,13 @@ Systematic root cause analysis with full cluster access for deep investigation.
 > **Auto-approved**: All read operations on hosted clusters are auto-approved.
 > Run each command separately for auto-approve to work.
 
-Create working directory for analysis:
-
-```bash
-mkdir -p /tmp/kagenti/rca
-```
-
 Set cluster context:
 ```bash
 export CLUSTER=<suffix> MANAGED_BY_TAG=${MANAGED_BY_TAG:-kagenti-hypershift-custom}
 export KUBECONFIG=~/clusters/hcp/$MANAGED_BY_TAG-$CLUSTER/auth/kubeconfig
 ```
 
-Verify connection:
+Verify connection (small output, OK inline):
 ```bash
 kubectl get nodes
 ```

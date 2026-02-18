@@ -7,6 +7,23 @@ description: Root cause analysis from CI logs - systematic investigation when on
 
 Systematic root cause analysis when you only have access to CI logs and artifacts.
 
+## Context-Safe Execution (MANDATORY)
+
+**CI logs are the single largest source of context pollution.** A single `gh run view --log-failed`
+can dump thousands of lines into context. ALL CI log analysis MUST happen in subagents.
+
+```bash
+# Session-scoped log directory
+export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+```
+
+**Rules:**
+1. **Download CI logs to files** — never let `gh run view --log-failed` output hit the context
+2. **ALL log analysis in subagents** — use `Task(subagent_type='Explore')` to read and analyze
+3. The subagent reads the file, finds errors, and returns a concise summary
+4. Main context only sees: file paths, exit codes, and subagent summaries
+
 ## rca:ci vs rca:hypershift
 
 | Aspect | `rca:ci` | `rca:hypershift` |
@@ -47,46 +64,35 @@ flowchart TD
 
 ## Phase 1: Gather CI Artifacts
 
-Create working directory for analysis:
-
 ```bash
-mkdir -p /tmp/kagenti/rca
-```
-
-```bash
-# Get failed run ID
+# Get failed run ID (small output, OK inline)
 gh run list --status failure --limit 5
 ```
 
 ```bash
-# Download logs to working directory
-gh run view <run-id> --log-failed > /tmp/kagenti/rca/failed-log.txt
+# Download logs to session-scoped directory
+gh run view <run-id> --log-failed > $LOG_DIR/ci-run-<run-id>.log 2>&1; echo "EXIT:$?"
 ```
 
 ```bash
-# View in browser for full context
+# View in browser (minimal context — just prints URL)
 gh run view <run-id> --web
 ```
 
 ```bash
-# Download all artifacts to working directory
-gh run download <run-id> -D /tmp/kagenti/rca/artifacts
+# Download all artifacts to session-scoped directory
+gh run download <run-id> -D $LOG_DIR/artifacts
 ```
+
+**Analyze logs in subagent** — use `Task(subagent_type='Explore')` to read `$LOG_DIR/ci-run-<run-id>.log`.
 
 ## Phase 2: Isolate the Failure
 
-### Find First Error
-
-```bash
-# Search for common error patterns in downloaded logs
-grep -r "error\|Error\|ERROR\|failed\|Failed\|FAILED" ./*.txt | head -20
-
-# Find assertion failures
-grep -r "AssertionError\|assert\|FAILED" ./*.txt
-
-# Find the first occurrence
-grep -rn "error" ./*.txt | sort -t: -k2 -n | head -10
-```
+**Do this in a subagent** — use `Task(subagent_type='Explore')` with instructions to:
+1. Use `Grep` with context (`-C 3`) on `$LOG_DIR/ci-run-<run-id>.log` — do NOT read the whole file
+2. Search patterns: `FAILED|ERROR|AssertionError|assert.*False` with `head_limit: 30`
+3. If grep finds matches, read only those specific line ranges for context
+4. Return: first error, test name, assertion message, and 2-3 lines of surrounding context
 
 ### Error Chain Analysis
 

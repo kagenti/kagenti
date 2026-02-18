@@ -7,6 +7,19 @@ description: Monitor running CI jobs, wait for completion, create tasks for resu
 
 Monitor running CI pipelines and report results. Creates task items for each CI check being monitored.
 
+## Context-Safe Execution (MANDATORY)
+
+**CI log downloads MUST go to files.** Status checks (`gh pr checks`) are small and OK inline.
+
+```bash
+export LOG_DIR=/tmp/kagenti/ci/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+
+# When downloading logs after completion:
+gh run view <run-id> --log-failed > $LOG_DIR/ci-run-<run-id>.log 2>&1; echo "EXIT:$?"
+# Analyze in subagent: Task(subagent_type='Explore') with Grep
+```
+
 ## When to Use
 
 - After pushing to a PR, to track CI completion

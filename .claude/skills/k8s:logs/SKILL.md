@@ -7,6 +7,26 @@ description: Query and analyze logs from Kagenti platform components, search for
 
 This skill helps you query and analyze logs from the Kagenti platform components.
 
+## Context-Safe Execution (MANDATORY)
+
+**All kubectl log commands MUST redirect output to files.** Log output is the single biggest
+source of context pollution. Commands below are shown in bare form for readability.
+When executing, always redirect:
+
+```bash
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Pattern for all log commands:
+kubectl logs -n <ns> <target> --tail=100 > $LOG_DIR/<component>.log 2>&1 && echo "OK" || echo "FAIL"
+
+# NEVER dump logs into main context — always analyze in subagent:
+# Task(subagent_type='Explore') to read $LOG_DIR/<component>.log and:
+#   - Find errors/warnings
+#   - Check for specific patterns
+#   - Return a concise summary
+```
+
 ## When to Use
 
 - User asks "show me logs for X"

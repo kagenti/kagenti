@@ -78,20 +78,39 @@ flowchart TD
 
 **Match CI exactly**: Kind tests must use the same packages as CI to avoid version mismatches. CI uses `pip install` (gets latest versions), local uses `uv` (locked versions). Always verify package versions match.
 
+## Context-Safe Execution (MANDATORY)
+
+**Every command that produces more than ~5 lines of output MUST redirect to a file.**
+
+```bash
+# Session-scoped log directory — use worktree name to avoid collisions
+export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
+mkdir -p $LOG_DIR
+```
+
+### Log Analysis Rule
+
+**NEVER read large log files in the main context.** Always use subagents:
+1. Note the log file path and exit code
+2. Use `Task(subagent_type='Explore')` to read the log and extract relevant info
+3. The subagent returns a concise summary (errors, unexpected output, specific data)
+4. **Use subagents for success analysis too** — e.g., "verify test output shows expected pass count"
+5. Fix or proceed based on the summary
+
 ## Quick Start
 
 ```bash
 # Create Kind cluster and deploy (first time)
-./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy > $LOG_DIR/kind-setup.log 2>&1; echo "EXIT:$?"
 
 # Run tests only (cluster already exists)
-./.github/scripts/local-setup/kind-full-test.sh --include-test
+./.github/scripts/local-setup/kind-full-test.sh --include-test > $LOG_DIR/kind-test.log 2>&1; echo "EXIT:$?"
 
 # Run specific tests
-./.github/scripts/local-setup/kind-full-test.sh --include-test --pytest-filter "test_agent"
+./.github/scripts/local-setup/kind-full-test.sh --include-test --pytest-filter "test_agent" > $LOG_DIR/kind-test.log 2>&1; echo "EXIT:$?"
 
 # Run from worktree
-.worktrees/my-feature/.github/scripts/local-setup/kind-full-test.sh --include-test
+.worktrees/my-feature/.github/scripts/local-setup/kind-full-test.sh --include-test > $LOG_DIR/kind-test.log 2>&1; echo "EXIT:$?"
 ```
 
 ## TDD Iterations
@@ -99,20 +118,21 @@ flowchart TD
 ### Iteration 1: Test only (fastest)
 
 ```bash
-./.github/scripts/local-setup/kind-full-test.sh --include-test
+./.github/scripts/local-setup/kind-full-test.sh --include-test > $LOG_DIR/iter1-test.log 2>&1; echo "EXIT:$?"
 ```
 
 ### Iteration 2: Reinstall + test
 
 ```bash
 ./.github/scripts/local-setup/kind-full-test.sh \
-  --include-uninstall --include-install --include-agents --include-test
+  --include-uninstall --include-install --include-agents --include-test \
+  > $LOG_DIR/iter2-reinstall.log 2>&1; echo "EXIT:$?"
 ```
 
 ### Iteration 3: Full cluster recreate
 
 ```bash
-./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
+./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy > $LOG_DIR/iter3-full.log 2>&1; echo "EXIT:$?"
 ```
 
 ## Reproducing CI Failures
@@ -120,8 +140,8 @@ flowchart TD
 ### Step 1: Check CI package versions
 
 ```bash
-# Get the CI run logs and find installed versions
-gh run view <run-id> --log 2>/dev/null | grep "Successfully installed" | tr ',' '\n' | sort
+# Get the CI run logs and find installed versions (redirect to file)
+gh run view <run-id> --log > $LOG_DIR/ci-log.txt 2>/dev/null; grep "Successfully installed" $LOG_DIR/ci-log.txt | tr ',' '\n' | sort
 ```
 
 ### Step 2: Compare with local
@@ -178,19 +198,20 @@ deactivate
 ## Debugging Agent Issues
 
 ```bash
-# Check agent pod
-kubectl get pods -n team1
+# Check agent pod (redirect to file)
+kubectl get pods -n team1 > $LOG_DIR/pods-team1.log 2>&1 && echo "OK" || echo "FAIL"
 
-# Agent logs
-kubectl logs -n team1 -l app.kubernetes.io/name=weather-service --tail=50
+# Agent logs (redirect to file)
+kubectl logs -n team1 -l app.kubernetes.io/name=weather-service --tail=50 > $LOG_DIR/agent.log 2>&1 && echo "OK" || echo "FAIL"
 
-# Check Ollama
-curl http://localhost:11434/api/tags  # list models
-curl http://localhost:11434/api/generate -d '{"model":"qwen2.5:3b","prompt":"hi"}'
+# Check Ollama (small output, OK inline)
+curl -s http://localhost:11434/api/tags | jq -r '.models[].name'
 
-# Check port-forward
-ps aux | grep port-forward
+# Check port-forward (small output, OK inline)
+ps aux | grep port-forward | grep -v grep
 ```
+
+Use `Task(subagent_type='Explore')` to analyze `$LOG_DIR/agent.log` if issues are found.
 
 ## Common Issues
 

@@ -7,6 +7,19 @@ description: Run E2E tests on HyperShift cluster
 
 > **Auto-approved**: All test execution on hosted HyperShift clusters is auto-approved.
 
+## Context-Safe Execution (MANDATORY)
+
+**Test output MUST go to files.** Test runs produce hundreds of lines.
+
+```bash
+export LOG_DIR=/tmp/kagenti/tdd/${WORKTREE:-$CLUSTER}
+mkdir -p $LOG_DIR
+
+# Pattern: redirect test output
+command > $LOG_DIR/test-run.log 2>&1; echo "EXIT:$?"
+# On failure: Task(subagent_type='Explore') with Grep to find FAILED|ERROR
+```
+
 ## When to Use
 
 - Running full E2E tests including MLflow, Phoenix, auth
@@ -17,7 +30,8 @@ description: Run E2E tests on HyperShift cluster
 
 ```bash
 KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
-  ./.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER --include-test
+  ./.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER --include-test \
+  > $LOG_DIR/test-all.log 2>&1; echo "EXIT:$?"
 ```
 
 ## Run Specific Tests
@@ -25,7 +39,8 @@ KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
 ```bash
 KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-$CLUSTER/auth/kubeconfig \
   ./.github/scripts/local-setup/hypershift-full-test.sh $CLUSTER \
-  --include-test --pytest-filter "test_agent or test_mlflow"
+  --include-test --pytest-filter "test_agent or test_mlflow" \
+  > $LOG_DIR/test-filtered.log 2>&1; echo "EXIT:$?"
 ```
 
 ## Run from Worktree

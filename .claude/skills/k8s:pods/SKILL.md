@@ -7,6 +7,22 @@ description: Debug and troubleshoot pod issues including crashes, failures, netw
 
 This skill provides systematic approaches to debugging pod issues in the Kagenti platform.
 
+## Context-Safe Execution (MANDATORY)
+
+**All kubectl/oc commands MUST redirect output to files.** Commands below are shown in bare
+form for readability. When executing, always redirect:
+
+```bash
+export LOG_DIR=/tmp/kagenti/k8s/${CLUSTER:-local}
+mkdir -p $LOG_DIR
+
+# Pattern for all kubectl commands:
+kubectl <command> > $LOG_DIR/<descriptive-name>.log 2>&1 && echo "OK" || echo "FAIL (see $LOG_DIR/<descriptive-name>.log)"
+
+# Analyze in subagent: Task(subagent_type='Explore') to read log files
+# Use subagents for BOTH failure analysis AND verifying expected behavior
+```
+
 ## When to Use
 
 - Pods are crashlooping or failing
