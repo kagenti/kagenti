@@ -48,6 +48,8 @@ spec:
           value: "0.0.0.0"
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_INSTRUMENT
+          value: "none"
         - name: OTEL_SERVICE_NAME
           value: "weather-service"
         - name: KEYCLOAK_URL

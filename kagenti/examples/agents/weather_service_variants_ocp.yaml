@@ -1,0 +1,591 @@
+# Deployment variants for comparing OTEL auto-instrumentation approaches.
+# Each variant uses the same agent image with different OTEL_INSTRUMENT value.
+# Deploy alongside weather_service_deployment_ocp.yaml (OTEL_INSTRUMENT=none).
+#
+# Variants:
+#   weather-service-oi  — OTEL_INSTRUMENT=openinference (LangChainInstrumentor)
+#   weather-service-oai — OTEL_INSTRUMENT=openai (OpenAIInstrumentor)
+
+---
+# ============================================================================
+# weather-service-oi: OpenInference LangChain auto-instrumentation
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-service-oi
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+    kagenti.io/inject: enabled
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: weather-service-oi
+    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "Weather service with OpenInference LangChain auto-instrumentation"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: weather-service-oi
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: LangGraph
+        kagenti.io/inject: enabled
+        app.kubernetes.io/name: weather-service-oi
+    spec:
+      containers:
+      - name: agent
+        image: image-registry.openshift-image-registry.svc:5000/team1/weather-service:v0.0.1
+        imagePullPolicy: Always
+        env:
+        - name: PORT
+          value: "8000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: OTEL_INSTRUMENT
+          value: "openinference"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_SERVICE_NAME
+          value: "weather-service-oi"
+        - name: KEYCLOAK_URL
+          value: "http://keycloak.keycloak.svc.cluster.local:8080"
+        - name: UV_CACHE_DIR
+          value: "/app/.cache/uv"
+        - name: MCP_URL
+          value: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
+        - name: LLM_API_BASE
+          value: "https://api.openai.com/v1"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: LLM_MODEL
+          value: "gpt-4o-mini"
+        - name: GITHUB_SECRET_NAME
+          value: "github-token-secret"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: cache
+          mountPath: /app/.cache
+        - name: marvin
+          mountPath: /.marvin
+      - name: envoy-proxy
+        image: docker.io/envoyproxy/envoy:v1.33-latest
+        imagePullPolicy: IfNotPresent
+        command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+        ports:
+        - name: envoy-inbound
+          containerPort: 15124
+          protocol: TCP
+        - name: envoy-admin
+          containerPort: 9901
+          protocol: TCP
+        env:
+        - name: TOKEN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TOKEN_URL
+              optional: true
+        - name: ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: ISSUER
+              optional: false
+        - name: TARGET_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TARGET_AUDIENCE
+              optional: true
+        - name: TARGET_SCOPES
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TARGET_SCOPES
+              optional: true
+        - name: CLIENT_ID_FILE
+          value: "/shared/client-id.txt"
+        - name: CLIENT_SECRET_FILE
+          value: "/shared/client-secret.txt"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+          readOnly: true
+        - name: shared-data
+          mountPath: /shared
+          readOnly: true
+      - name: otel-ext-proc
+        image: quay.io/ladas/otel-ext-proc:latest
+        imagePullPolicy: Always
+        ports:
+        - name: ext-proc
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_SERVICE_NAME
+          value: "weather-service-oi"
+        - name: AGENT_NAME
+          value: "weather-assistant-oi"
+        - name: AGENT_VERSION
+          value: "1.0.0"
+        - name: AGENT_PROVIDER
+          value: "langchain"
+        - name: OTEL_TRACING_ENABLED
+          value: "true"
+        - name: CLIENT_ID_FILE
+          value: "/shared/client-id.txt"
+        - name: CLIENT_SECRET_FILE
+          value: "/shared/client-secret.txt"
+        - name: TOKEN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TOKEN_URL
+              optional: true
+        - name: ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: ISSUER
+              optional: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+          readOnly: true
+      - name: kagenti-client-registration
+        image: ghcr.io/kagenti/kagenti-extensions/client-registration:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "SPIRE disabled - using static client ID"
+          echo "team1/weather-service-oi" > /shared/client-id.txt
+          echo "Client ID: team1/weather-service-oi"
+          echo "Starting client registration..."
+          python client_registration.py
+          echo "Client registration complete!"
+          tail -f /dev/null
+        env:
+        - name: SPIRE_ENABLED
+          value: "false"
+        - name: KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_URL
+              optional: true
+        - name: KEYCLOAK_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_REALM
+              optional: true
+        - name: KEYCLOAK_ADMIN_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_ADMIN_USERNAME
+              optional: true
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_ADMIN_PASSWORD
+              optional: true
+        - name: CLIENT_NAME
+          value: "team1/weather-service-oi"
+        - name: SECRET_FILE_PATH
+          value: "/shared/client-secret.txt"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      volumes:
+      - name: cache
+        emptyDir: {}
+      - name: marvin
+        emptyDir: {}
+      - name: envoy-config
+        configMap:
+          name: envoy-config
+      - name: shared-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-service-oi
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-service-oi
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 15124
+  selector:
+    app.kubernetes.io/name: weather-service-oi
+    kagenti.io/type: agent
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: weather-service-oi
+  namespace: team1
+spec:
+  path: /
+  port:
+    targetPort: 15124
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: weather-service-oi
+  wildcardPolicy: None
+
+---
+# ============================================================================
+# weather-service-oai: OpenAI auto-instrumentation
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weather-service-oai
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+    kagenti.io/inject: enabled
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: weather-service-oai
+    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "Weather service with OpenAI auto-instrumentation"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: weather-service-oai
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: LangGraph
+        kagenti.io/inject: enabled
+        app.kubernetes.io/name: weather-service-oai
+    spec:
+      containers:
+      - name: agent
+        image: image-registry.openshift-image-registry.svc:5000/team1/weather-service:v0.0.1
+        imagePullPolicy: Always
+        env:
+        - name: PORT
+          value: "8000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: OTEL_INSTRUMENT
+          value: "openai"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_SERVICE_NAME
+          value: "weather-service-oai"
+        - name: KEYCLOAK_URL
+          value: "http://keycloak.keycloak.svc.cluster.local:8080"
+        - name: UV_CACHE_DIR
+          value: "/app/.cache/uv"
+        - name: MCP_URL
+          value: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
+        - name: LLM_API_BASE
+          value: "https://api.openai.com/v1"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: LLM_MODEL
+          value: "gpt-4o-mini"
+        - name: GITHUB_SECRET_NAME
+          value: "github-token-secret"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: cache
+          mountPath: /app/.cache
+        - name: marvin
+          mountPath: /.marvin
+      - name: envoy-proxy
+        image: docker.io/envoyproxy/envoy:v1.33-latest
+        imagePullPolicy: IfNotPresent
+        command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+        ports:
+        - name: envoy-inbound
+          containerPort: 15124
+          protocol: TCP
+        - name: envoy-admin
+          containerPort: 9901
+          protocol: TCP
+        env:
+        - name: TOKEN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TOKEN_URL
+              optional: true
+        - name: ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: ISSUER
+              optional: false
+        - name: TARGET_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TARGET_AUDIENCE
+              optional: true
+        - name: TARGET_SCOPES
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TARGET_SCOPES
+              optional: true
+        - name: CLIENT_ID_FILE
+          value: "/shared/client-id.txt"
+        - name: CLIENT_SECRET_FILE
+          value: "/shared/client-secret.txt"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+          readOnly: true
+        - name: shared-data
+          mountPath: /shared
+          readOnly: true
+      - name: otel-ext-proc
+        image: quay.io/ladas/otel-ext-proc:latest
+        imagePullPolicy: Always
+        ports:
+        - name: ext-proc
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: OTEL_SERVICE_NAME
+          value: "weather-service-oai"
+        - name: AGENT_NAME
+          value: "weather-assistant-oai"
+        - name: AGENT_VERSION
+          value: "1.0.0"
+        - name: AGENT_PROVIDER
+          value: "langchain"
+        - name: OTEL_TRACING_ENABLED
+          value: "true"
+        - name: CLIENT_ID_FILE
+          value: "/shared/client-id.txt"
+        - name: CLIENT_SECRET_FILE
+          value: "/shared/client-secret.txt"
+        - name: TOKEN_URL
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: TOKEN_URL
+              optional: true
+        - name: ISSUER
+          valueFrom:
+            configMapKeyRef:
+              name: authbridge-config
+              key: ISSUER
+              optional: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+          readOnly: true
+      - name: kagenti-client-registration
+        image: ghcr.io/kagenti/kagenti-extensions/client-registration:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "SPIRE disabled - using static client ID"
+          echo "team1/weather-service-oai" > /shared/client-id.txt
+          echo "Client ID: team1/weather-service-oai"
+          echo "Starting client registration..."
+          python client_registration.py
+          echo "Client registration complete!"
+          tail -f /dev/null
+        env:
+        - name: SPIRE_ENABLED
+          value: "false"
+        - name: KEYCLOAK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_URL
+              optional: true
+        - name: KEYCLOAK_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_REALM
+              optional: true
+        - name: KEYCLOAK_ADMIN_USERNAME
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_ADMIN_USERNAME
+              optional: true
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: environments
+              key: KEYCLOAK_ADMIN_PASSWORD
+              optional: true
+        - name: CLIENT_NAME
+          value: "team1/weather-service-oai"
+        - name: SECRET_FILE_PATH
+          value: "/shared/client-secret.txt"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      volumes:
+      - name: cache
+        emptyDir: {}
+      - name: marvin
+        emptyDir: {}
+      - name: envoy-config
+        configMap:
+          name: envoy-config
+      - name: shared-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-service-oai
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-service-oai
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: 15124
+  selector:
+    app.kubernetes.io/name: weather-service-oai
+    kagenti.io/type: agent
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: weather-service-oai
+  namespace: team1
+spec:
+  path: /
+  port:
+    targetPort: 15124
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: weather-service-oai
+  wildcardPolicy: None
