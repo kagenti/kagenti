@@ -11,7 +11,7 @@ metadata:
     {{- include "kagenti.labels" . | nindent 4 }}
 data:
   DOMAIN_NAME: "{{ .Values.ui.domainName }}"
-  API_URL: "http://kagenti-api.{{ .Values.ui.domainName }}:8080"
+  API_URL: "http://{{ .Values.ui.api.hostname }}:8080"
   TRACES_DASHBOARD_URL: "http://phoenix.{{ .Values.ui.domainName }}:8080"
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
