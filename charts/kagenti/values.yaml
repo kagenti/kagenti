@@ -18,8 +18,9 @@ components:
   istio:
     enabled: true
 
-# Environment variables for secrets - they should be overriden by a .secrets.yaml file
-# or by using --set secrets.githubUser="" etc.
+# Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
+# githubUser/githubToken are optional: only needed to deploy agents/tools from
+# private GitHub repos or pull images from private registries.
 secrets:
   githubUser: ""
   githubToken: ""

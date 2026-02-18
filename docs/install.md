@@ -31,7 +31,7 @@ This guide covers installation on both local Kind clusters and OpenShift environ
 | Docker Desktop / Rancher Desktop / Podman | Container runtime (16GB RAM, 4 cores recommended) |
 | [Kind](https://kind.sigs.k8s.io) | Local Kubernetes cluster |
 | [Ollama](https://ollama.com/download) | Local LLM inference |
-| [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | Image registry access (scopes: `repo(all)`, `read/write packages`) |
+| [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | **(Optional)** Only needed to deploy agents/tools from private GitHub repos or pull from private registries. Scope: `read:packages` |
 
 ### OpenShift-Specific Requirements
 
@@ -66,8 +66,8 @@ charts:
   kagenti:
     values:
       secrets:
-        githubUser: <Your GitHub username>
-        githubToken: <Your GitHub token>
+        githubUser: <(Optional) Your GitHub username — only needed for private repos/registries>
+        githubToken: <(Optional) Your GitHub token — only needed for private repos/registries (scope: read:packages)>
         openaiApiKey: <(Optional) Your OpenAI API key>
         slackBotToken: <(Optional) Token for Slack Bot>
         adminSlackBotToken: <(Optional) Admin Token for Slack Bot>
