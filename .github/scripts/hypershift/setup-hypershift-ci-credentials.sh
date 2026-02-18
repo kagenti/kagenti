@@ -813,7 +813,7 @@ cat > "$ENV_FILE" <<ENVFILE
 export KUBECONFIG="${MGMT_KUBECONFIG_PATH}"
 
 # GitHub Actions: base64-encoded (for secrets)
-HYPERSHIFT_MGMT_KUBECONFIG_BASE64="${HYPERSHIFT_MGMT_KUBECONFIG}"
+export HYPERSHIFT_MGMT_KUBECONFIG_BASE64="${HYPERSHIFT_MGMT_KUBECONFIG}"
 
 # =============================================================================
 # AWS Credentials - CI User (full permissions for cluster lifecycle)
