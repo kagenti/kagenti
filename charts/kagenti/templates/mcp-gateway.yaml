@@ -39,6 +39,8 @@ spec:
   parentRefs:
     - name: http
       namespace: kagenti-system
+    - name: mcp-gateway
+      namespace: "{{ .Values.mcpGateway.namespaces.gatewaySystem }}"
   hostnames:
   - "{{ .Values.mcpGateway.hostname }}"
   rules:
