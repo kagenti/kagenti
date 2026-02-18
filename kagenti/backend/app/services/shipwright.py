@@ -162,7 +162,6 @@ def build_shipwright_build_manifest(
                 "git": {
                     "url": source_config.gitUrl,
                     "revision": source_config.gitRevision,
-                    "cloneSecret": source_config.gitSecretName,
                 },
                 "contextDir": source_config.contextDir,
             },
@@ -186,6 +185,10 @@ def build_shipwright_build_manifest(
             },
         },
     }
+
+    # Add clone secret for private git repos
+    if source_config.gitSecretName:
+        manifest["spec"]["source"]["git"]["cloneSecret"] = source_config.gitSecretName
 
     # Add build arguments if specified
     if build_config.buildArgs:

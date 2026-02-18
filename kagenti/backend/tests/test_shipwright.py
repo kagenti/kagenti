@@ -77,6 +77,33 @@ class TestBuildShipwrightBuildManifest:
         assert manifest["spec"]["source"]["git"]["cloneSecret"] == SHIPWRIGHT_GIT_SECRET_NAME
         assert manifest["spec"]["source"]["contextDir"] == "agents/test"
 
+    def test_build_manifest_without_clone_secret(self):
+        """Test that cloneSecret is omitted when gitSecretName is None."""
+        from app.models.shipwright import BuildSourceConfig, BuildOutputConfig
+        from app.services.shipwright import build_shipwright_build_manifest, ResourceType
+
+        source_config = BuildSourceConfig(
+            gitUrl="https://github.com/example/public-repo",
+            gitRevision="main",
+            contextDir=".",
+            gitSecretName=None,
+        )
+        output_config = BuildOutputConfig(
+            registry=DEFAULT_INTERNAL_REGISTRY,
+            imageName="test-agent",
+            imageTag="v0.0.1",
+        )
+
+        manifest = build_shipwright_build_manifest(
+            name="test-agent",
+            namespace="team1",
+            resource_type=ResourceType.AGENT,
+            source_config=source_config,
+            output_config=output_config,
+        )
+
+        assert "cloneSecret" not in manifest["spec"]["source"]["git"]
+
         # Check strategy - should be insecure for internal registry
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_INSECURE
         assert manifest["spec"]["strategy"]["kind"] == "ClusterBuildStrategy"
