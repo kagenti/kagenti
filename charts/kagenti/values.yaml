@@ -66,6 +66,9 @@ ui:
       requests:
         cpu: 25m
         memory: 64Mi
+  # Backend API external access
+  api:
+    hostname: kagenti-api.localtest.me
   # Backend configuration
   backend:
     image: ghcr.io/kagenti/kagenti/backend

@@ -11,6 +11,7 @@ metadata:
     {{- include "kagenti.labels" . | nindent 4 }}
 data:
   DOMAIN_NAME: "{{ .Values.ui.domainName }}"
+  API_URL: "http://kagenti-api.{{ .Values.ui.domainName }}:8080"
   TRACES_DASHBOARD_URL: "http://phoenix.{{ .Values.ui.domainName }}:8080"
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
@@ -399,6 +400,28 @@ spec:
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect
+---
+# OpenShift Route for Backend API (direct external access)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kagenti-api
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: kagenti-backend
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
 {{- else }}
 # HTTPRoute for Kubernetes Gateway API
 apiVersion: gateway.networking.k8s.io/v1
@@ -432,5 +455,29 @@ spec:
       backendRefs:
         - name: kagenti-ui
           port: 8080
-{{- end }}    
+---
+# HTTPRoute for Backend API (direct external access)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kagenti-api
+  namespace: "{{ .Values.ui.namespace }}"
+  labels:
+    app.kubernetes.io/name: kagenti-api
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: http
+      namespace: "{{ .Values.ui.namespace }}"
+  hostnames:
+    - "{{ .Values.ui.api.hostname }}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: kagenti-backend
+          port: 8000
+{{- end }}
 {{- end }}
