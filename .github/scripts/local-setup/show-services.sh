@@ -114,6 +114,7 @@ if [ "$ENV_TYPE" = "kind" ]; then
     MLFLOW_URL="http://mlflow.${DOMAIN_NAME}:8080"
     PHOENIX_URL="http://phoenix.${DOMAIN_NAME}:8080"
     KIALI_URL="http://kiali.${DOMAIN_NAME}:8080"
+    API_URL="http://kagenti-api.${DOMAIN_NAME}:8080"
     AGENT_URL=""
     CONSOLE_URL=""
 else
@@ -123,6 +124,7 @@ else
     MLFLOW_HOST=$(_route kagenti-system mlflow)
     PHOENIX_HOST=$(_route kagenti-system phoenix)
     KIALI_HOST=$(_route istio-system kiali)
+    API_HOST=$(_route kagenti-system kagenti-api)
     AGENT_HOST=$(_route team1 weather-service)
     CONSOLE_HOST=$(_route openshift-console console)
 
@@ -131,6 +133,7 @@ else
     MLFLOW_URL="${MLFLOW_HOST:+https://$MLFLOW_HOST}"
     PHOENIX_URL="${PHOENIX_HOST:+https://$PHOENIX_HOST}"
     KIALI_URL="${KIALI_HOST:+https://$KIALI_HOST}"
+    API_URL="${API_HOST:+https://$API_HOST}"
     AGENT_URL="${AGENT_HOST:+https://$AGENT_HOST}"
     CONSOLE_URL="${CONSOLE_HOST:+https://$CONSOLE_HOST}"
 fi
@@ -176,6 +179,12 @@ if [ "$VERBOSE" = "false" ]; then
         echo -e "${MAGENTA}Kagenti UI${NC}"
         echo -e "  $(link "$UI_URL")"
         echo -e "  $(link "$UI_URL/agents/team1/weather-service" "$UI_URL/agents/team1/weather-service")  ${DIM}Chat with Weather Agent${NC}"
+    fi
+
+    # Backend API
+    if [ -n "${API_URL:-}" ]; then
+        echo -e "${MAGENTA}Backend API${NC}"
+        echo -e "  $(link "$API_URL" "$API_URL")  ${DIM}Direct API access (requires JWT)${NC}"
     fi
 
     # Keycloak
@@ -300,6 +309,19 @@ if [ -n "$UI_URL" ]; then
     echo -e "  $(link "$UI_URL/agents/team1/weather-service" "Chat with Weather Agent")"
 fi
 echo -e "${BLUE}Auth:${NC}         Click 'Login' → use Keycloak credentials above"
+echo ""
+
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}Backend API (Direct API Access)${NC}"
+echo "---------------------------------------------------------------------------"
+BACKEND_STATUS=$($CLI get pods -n kagenti-system -l app.kubernetes.io/name=kagenti-backend -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $BACKEND_STATUS"
+if [ -n "${API_URL:-}" ]; then
+    echo -e "${BLUE}URL:${NC}          $(link "$API_URL")"
+else
+    echo -e "${BLUE}URL:${NC}          (no route found)"
+fi
+echo -e "${BLUE}Auth:${NC}         JWT bearer token required"
 echo ""
 
 echo "---------------------------------------------------------------------------"

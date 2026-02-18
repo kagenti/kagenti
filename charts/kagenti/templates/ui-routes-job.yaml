@@ -110,6 +110,7 @@ data:
       "kagenti-system,mcp-inspector,true,MCP_INSPECTOR_URL"
       "kagenti-system,mcp-proxy,true,MCP_PROXY_FULL_ADDRESS"
       "kagenti-system,phoenix,true,TRACES_DASHBOARD_URL"
+      "kagenti-system,kagenti-api,true,API_URL"
       "istio-system,kiali,true,NETWORK_TRAFFIC_DASHBOARD_URL"
       "keycloak,keycloak,true,KEYCLOAK_CONSOLE_URL"
     )
