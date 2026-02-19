@@ -42,9 +42,7 @@ To deploy the Weather Agent:
 1. Expand the **Environment Variables** dropdown and click **Import from File/URL** to add environment variables including agent LLM information. Use the default `https://raw.githubusercontent.com/kagenti/agent-examples/refs/heads/main/a2a/weather_service/.env.openai` URL or select another file or URL, then click **Fetch & Parse**. Make sure the LLM variables are for a model accessible to you. Variables can be updated in the UI as wanted.
 1. Click **Build & Deploy New Agent** to deploy.
 
-**Note:** To use `ollama`:
-- update the `LLM_API_BASE` to `http://host.docker.internal:11434/v1` (or wherever the model is being served.)
-- update `LLM_MODEL` to `gpt-oss:latest` (or your preferred model that ollama supports)
+**Note:** To use `ollama`, the environment variables suggested can be found in https://raw.githubusercontent.com/kagenti/agent-examples/refs/heads/main/a2a/weather_service/.env.ollama
 - To download an `ollama` model, run `ollama pull <model-name>`. Please ensure an Ollama server is running in a separate terminal via `ollama serve`.
 
 ---
