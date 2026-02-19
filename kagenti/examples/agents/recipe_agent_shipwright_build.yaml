@@ -1,0 +1,39 @@
+# Shipwright Build for recipe-agent
+apiVersion: shipwright.io/v1beta1
+kind: Build
+metadata:
+  name: recipe-agent
+  namespace: team1
+  labels:
+    app.kubernetes.io/created-by: e2e-test
+    app.kubernetes.io/name: recipe-agent
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: OpenAI
+  annotations:
+    kagenti.io/agent-config: |
+      {
+        "protocol": "a2a",
+        "framework": "OpenAI",
+        "createHttpRoute": false
+      }
+spec:
+  source:
+    type: Git
+    git:
+      url: https://github.com/kagenti/agent-examples
+      revision: main
+      cloneSecret: github-shipwright-secret
+    contextDir: a2a/recipe_agent
+  strategy:
+    name: buildah-insecure-push
+    kind: ClusterBuildStrategy
+  paramValues:
+    - name: dockerfile
+      value: Dockerfile
+  output:
+    image: registry.cr-system.svc.cluster.local:5000/recipe-agent:v0.0.1
+  timeout: 15m
+  retention:
+    succeededLimit: 3
+    failedLimit: 3

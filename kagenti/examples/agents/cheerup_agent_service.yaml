@@ -1,0 +1,22 @@
+# Service manifest for cheerup-agent
+# Companion to cheerup_agent_deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: cheerup-agent
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    app.kubernetes.io/name: cheerup-agent
+    app.kubernetes.io/managed-by: kagenti-e2e
+spec:
+  type: ClusterIP
+  selector:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: cheerup-agent
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8000
+    protocol: TCP

@@ -1,0 +1,67 @@
+# Deployment manifest for cheerup-agent
+# A cheerful conversational companion using Ollama
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cheerup-agent
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: OpenAI
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: cheerup-agent
+    app.kubernetes.io/managed-by: kagenti-e2e
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "Cheerful companion agent that brightens your day"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: cheerup-agent
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: OpenAI
+        app.kubernetes.io/name: cheerup-agent
+    spec:
+      containers:
+      - name: agent
+        image: registry.cr-system.svc.cluster.local:5000/cheerup-agent:v0.0.1
+        imagePullPolicy: Never
+        env:
+        - name: PORT
+          value: "8000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
+        - name: LLM_API_BASE
+          value: "http://host.containers.internal:11434/v1"
+        - name: LLM_API_KEY
+          value: "dummy"
+        - name: LLM_MODEL
+          value: "qwen3:4b"
+        - name: UV_CACHE_DIR
+          value: "/app/.cache/uv"
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: cache
+          mountPath: /app/.cache
+      volumes:
+      - name: cache
+        emptyDir: {}
