@@ -226,6 +226,15 @@ data:
               - set(attributes["llm.system"], attributes["gen_ai.system"]) where attributes["gen_ai.system"] != nil
               # Convert GenAI invocation parameters (temperature)
               - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"], "")], "")) where attributes["gen_ai.request.temperature"] != nil
+              # OpenInference span kind from span name patterns
+              - set(attributes["openinference.span.kind"], "AGENT") where IsMatch(name, "^invoke_agent.*")
+              - set(attributes["openinference.span.kind"], "LLM") where IsMatch(name, "^chat.*")
+              - set(attributes["openinference.span.kind"], "TOOL") where IsMatch(name, "^execute_tool.*")
+              # OpenInference input/output from GenAI prompt/completion
+              - set(attributes["input.value"], attributes["gen_ai.prompt"]) where attributes["gen_ai.prompt"] != nil
+              - set(attributes["output.value"], attributes["gen_ai.completion"]) where attributes["gen_ai.completion"] != nil
+              # session.id (OTel semantic convention) for session tracking
+              - set(attributes["session.id"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
       {{- if $.Values.components.mlflow.enabled }}
       # Filter for MLflow: only keep agent spans, filter out A2A framework spans
       # A2A framework spans have names starting with "a2a."
@@ -237,19 +246,32 @@ data:
             # - Spans without any GenAI/agent attributes from our instrumentation
             # Keep: spans with mlflow.spanInputs (our agent spans), LangChain, OpenInference
             - IsMatch(name, "^a2a\\..*")
-      # DISABLED: Agent now sets MLflow attributes directly
-      # The transform below can be re-enabled as a fallback for agents that
-      # don't set mlflow.* attributes themselves.
-      #
-      # transform/genai_to_mlflow:
-      #   trace_statements:
-      #     - context: span
-      #       statements:
-      #         # Map GenAI attributes to MLflow format
-      #         - set(attributes["mlflow.spanInputs"], attributes["gen_ai.prompt"]) where attributes["gen_ai.prompt"] != nil
-      #         - set(attributes["mlflow.spanOutputs"], attributes["gen_ai.completion"]) where attributes["gen_ai.completion"] != nil
-      #         - set(attributes["mlflow.spanType"], "AGENT") where IsMatch(name, "^gen_ai\\.agent\\..*")
-      #         # etc.
+      # Transform GenAI semantic conventions to MLflow format.
+      # The ext_proc sets only gen_ai.* attributes; this transform derives
+      # the MLflow-specific attributes that MLflow UI expects.
+      transform/genai_to_mlflow:
+        trace_statements:
+          - context: span
+            statements:
+              # Root span (invoke_agent) → MLflow AGENT type
+              - set(attributes["mlflow.spanInputs"], attributes["gen_ai.prompt"]) where attributes["gen_ai.prompt"] != nil
+              - set(attributes["mlflow.spanOutputs"], attributes["gen_ai.completion"]) where attributes["gen_ai.completion"] != nil
+              - set(attributes["mlflow.spanType"], "AGENT") where IsMatch(name, "^invoke_agent.*")
+              - set(attributes["mlflow.traceName"], attributes["gen_ai.agent.name"]) where attributes["gen_ai.agent.name"] != nil
+              - set(attributes["mlflow.trace.session"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
+              # session.id is the OTel semantic convention that MLflow's OTLP handler
+              # extracts to populate trace_request_metadata (for sessions UI)
+              - set(attributes["session.id"], attributes["gen_ai.conversation.id"]) where attributes["gen_ai.conversation.id"] != nil
+              - set(attributes["mlflow.version"], attributes["gen_ai.agent.version"]) where attributes["gen_ai.agent.version"] != nil
+              - set(attributes["mlflow.runName"], Concat([attributes["gen_ai.agent.name"], "-invoke"], "")) where attributes["gen_ai.agent.name"] != nil
+              - set(attributes["mlflow.user"], "kagenti") where IsMatch(name, "^invoke_agent.*")
+              - set(attributes["mlflow.source"], resource.attributes["service.name"]) where resource.attributes["service.name"] != nil
+              # LLM spans (chat {model}) → MLflow LLM type + token usage
+              - set(attributes["mlflow.spanType"], "LLM") where IsMatch(name, "^chat.*")
+              - set(attributes["mlflow.span.chat_usage.input_tokens"], attributes["gen_ai.usage.input_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil
+              - set(attributes["mlflow.span.chat_usage.output_tokens"], attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.output_tokens"] != nil
+              # Tool spans (execute_tool {name}) → MLflow TOOL type
+              - set(attributes["mlflow.spanType"], "TOOL") where IsMatch(name, "^execute_tool.*")
       {{- end }}
 
     extensions:
@@ -281,8 +303,7 @@ data:
         {{- if $.Values.components.mlflow.enabled }}
         traces/mlflow:
           receivers: [ otlp ]
-          # Note: transform/genai_to_mlflow removed - agent sets mlflow.* attributes directly
-          processors: [ memory_limiter, filter/mlflow, batch ]
+          processors: [ memory_limiter, filter/mlflow, transform/genai_to_mlflow, batch ]
           exporters: [ debug, otlphttp/mlflow ]
         {{- end }}
 {{- end }}

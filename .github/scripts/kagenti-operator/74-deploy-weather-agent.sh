@@ -107,7 +107,11 @@ log_success "BuildRun completed successfully"
 
 log_info "Creating Deployment and Service..."
 
-# Apply Deployment manifest (use OCP-specific file with correct registry on OpenShift)
+# The OTEL ext_proc image is pre-built and pulled from a container registry.
+# No on-cluster build needed — the deployment YAML references the registry image directly.
+# To build locally for development: see kagenti-extensions repo AuthBridge/otel-ext-proc/
+
+# Apply Deployment manifest
 if [ "$IS_OPENSHIFT" = "true" ]; then
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"
 else
@@ -144,9 +148,14 @@ log_success "Weather-service deployed via Deployment + Service (operator-indepen
 # The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
 # Patch the Service to use the correct targetPort until the operator is fixed
 # TODO: Remove this workaround once kagenti-operator is fixed to use port from Agent spec
-log_info "Patching Service to use correct targetPort (8000)..."
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    TARGET_PORT=15124
+else
+    TARGET_PORT=8000
+fi
+log_info "Patching Service to use correct targetPort ($TARGET_PORT)..."
 kubectl patch svc weather-service -n team1 --type=json \
-    -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": 8000}]' || {
+    -p '[{"op": "replace", "path": "/spec/ports/0/targetPort", "value": '"$TARGET_PORT"'}]' || {
     log_error "Failed to patch Service targetPort"
     kubectl get svc weather-service -n team1 -o yaml
     exit 1
@@ -168,7 +177,7 @@ metadata:
 spec:
   path: /
   port:
-    targetPort: 8000
+    targetPort: 15124
   to:
     kind: Service
     name: weather-service
