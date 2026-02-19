@@ -38,7 +38,8 @@ data:
 
     psql -v ON_ERROR_STOP=1  <<-EOSQL
         ALTER DATABASE postgres OWNER TO testuser;
-        CREATE DATABASE mlflow OWNER testuser;
+        SELECT 'CREATE DATABASE mlflow OWNER testuser'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'mlflow')\gexec
     EOSQL
 ---
 apiVersion: apps/v1
