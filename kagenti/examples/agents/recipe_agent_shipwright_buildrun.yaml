@@ -1,0 +1,13 @@
+# Shipwright BuildRun to trigger recipe-agent build
+apiVersion: shipwright.io/v1beta1
+kind: BuildRun
+metadata:
+  generateName: recipe-agent-run-
+  namespace: team1
+  labels:
+    app.kubernetes.io/created-by: e2e-test
+    kagenti.io/build-name: recipe-agent
+    kagenti.io/type: agent
+spec:
+  build:
+    name: recipe-agent

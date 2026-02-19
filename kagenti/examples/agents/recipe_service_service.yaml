@@ -1,0 +1,22 @@
+# Service manifest for recipe-agent
+# Companion to recipe_service_deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: recipe-agent
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    app.kubernetes.io/name: recipe-agent
+    app.kubernetes.io/managed-by: kagenti-e2e
+spec:
+  type: ClusterIP
+  selector:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: recipe-agent
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8000
+    protocol: TCP
