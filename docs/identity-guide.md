@@ -63,7 +63,7 @@ spiffe://localtest.me/ns/team/sa/slack-researcher
 # Weather Tool
 spiffe://localtest.me/ns/team/sa/weather-tool
 
-# GitHub Issue Agent  
+# GitHub Issue Agent
 spiffe://apps.cluster-swkz5.dynamic.redhatworkshops.io/ns/team/sa/github-issue-agent
 
 # MCP Gateway Service
@@ -204,7 +204,7 @@ admin:
 ### Keycloak Admin Access
 
 ```bash
-# Access Keycloak Admin Console 
+# Access Keycloak Admin Console
 # on kind:
 open http://keycloak.localtest.me:8080/admin/master/console/
 # on OpenShift:
@@ -392,7 +392,7 @@ spec:
   - name: mcp-gateway
     namespace: gateway-system
   hostnames:
-  - "slack-tool.mcp.test.com"
+  - "slack-tool.mcp.local"
   rules:
   - matches:
     - path:
@@ -405,7 +405,7 @@ spec:
         kind: AuthFilter
         name: jwt-validator
     backendRefs:
-    - name: slack-tool
+    - name: slack-tool-mcp
       port: 8000
 ```
 
@@ -417,19 +417,19 @@ spec:
 # In Slack MCP Tool
 def validate_request(request):
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     # Validate with Keycloak
     response = requests.get(
         "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/userinfo",
         headers={"Authorization": f"Bearer {token}"}
     )
-    
+
     if response.status_code != 200:
         raise AuthenticationError("Invalid token")
-    
+
     user_info = response.json()
     scopes = user_info.get("scope", "").split()
-    
+
     # Check permissions
     if "slack-full-access" in scopes:
         return PermissionLevel.FULL
@@ -562,15 +562,15 @@ import os
 
 def exchange_token_for_tool(user_token: str, tool_audience: str) -> str:
     """Exchange user token for tool-scoped token."""
-    
+
     # Read SPIFFE JWT SVID
     with open("/opt/jwt_svid.token", "r") as f:
         jwt_svid = f.read().strip()
-    
+
     # Get client ID from SVID
     payload = jwt.decode(jwt_svid, options={"verify_signature": False})
     client_id = payload["sub"]
-    
+
     # Token exchange request
     token_exchange_data = {
         "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
@@ -579,7 +579,7 @@ def exchange_token_for_tool(user_token: str, tool_audience: str) -> str:
         "audience": tool_audience,
         "client_id": client_id
     }
-    
+
     response = requests.post(
         "http://keycloak.keycloak.svc.cluster.local:8080/realms/master/protocol/openid-connect/token",
         data=token_exchange_data,
@@ -588,10 +588,10 @@ def exchange_token_for_tool(user_token: str, tool_audience: str) -> str:
             "Content-Type": "application/x-www-form-urlencoded"
         }
     )
-    
+
     if response.status_code != 200:
         raise Exception(f"Token exchange failed: {response.text}")
-    
+
     return response.json()["access_token"]
 
 # Usage example
@@ -860,7 +860,7 @@ check_token_expiry() {
   local token=$1
   local exp=$(echo $token | cut -d'.' -f2 | base64 -d | jq -r .exp)
   local now=$(date +%s)
-  
+
   if [ $exp -gt $now ]; then
     echo "Token valid for $((exp - now)) seconds"
   else
@@ -951,7 +951,7 @@ data:
     log_level = "INFO"
     audit_log_enabled = true
     audit_log_path = "/var/log/spire-audit.log"
-    
+
 # Keycloak Audit
 apiVersion: v1
 kind: ConfigMap

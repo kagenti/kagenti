@@ -57,7 +57,7 @@ spec:
         type: PathPrefix
         value: /
     backendRefs:
-    - name: weather-tool
+    - name: weather-tool-mcp
       port: 8000' | kubectl apply -f -
 ```
 
