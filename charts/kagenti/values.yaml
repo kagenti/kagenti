@@ -210,7 +210,8 @@ mlflow:
   url: http://mlflow.localtest.me:8080
   auth:
     # Enable Keycloak OAuth2 authentication for MLflow
-    enabled: true
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
     # Kubernetes secret name containing OAuth credentials
     secretName: mlflow-oauth-secret
 
