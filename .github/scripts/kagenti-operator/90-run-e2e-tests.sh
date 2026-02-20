@@ -120,7 +120,7 @@ fi
 # PYTEST_FILTER: pytest -k filter expression (e.g., "test_mlflow" or "TestGenAI")
 # PYTEST_ARGS: additional pytest arguments (e.g., "-x" for stop on first failure)
 PYTEST_TARGETS="${PYTEST_TARGETS:-tests/e2e/common tests/e2e/kagenti_operator}"
-PYTEST_OPTS="-v --timeout=300 --tb=short --junit-xml=../test-results/e2e-results.xml"
+PYTEST_OPTS="-v --timeout=300 --tb=short"
 
 if [ -n "${PYTEST_FILTER:-}" ]; then
     PYTEST_OPTS="$PYTEST_OPTS -k \"$PYTEST_FILTER\""
@@ -132,13 +132,24 @@ if [ -n "${PYTEST_ARGS:-}" ]; then
     echo "Additional pytest args: $PYTEST_ARGS"
 fi
 
-echo "Running: $PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS"
-eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS" || {
-    log_error "E2E tests failed"
+# Phase 1: Run all tests EXCEPT observability (generates traffic)
+# This runs standard E2E tests that exercise the platform and generate traffic patterns
+log_info "Phase 1: Running E2E tests (excluding observability)"
+echo "Running: $PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS -m \"not observability\" --junit-xml=../test-results/e2e-results.xml"
+eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS -m \"not observability\" --junit-xml=../test-results/e2e-results.xml" || {
+    log_error "E2E tests (phase 1) failed"
     exit 1
 }
 
-log_success "E2E tests passed"
+# Phase 2: Run ONLY observability tests (validates traffic patterns from phase 1)
+# These tests check Kiali for Istio config issues, traffic errors, and mTLS compliance
+log_info "Phase 2: Running observability tests (Kiali validation)"
+eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS -m \"observability\" --junit-xml=../test-results/e2e-observability-results.xml" || {
+    log_error "Observability tests (phase 2) failed"
+    exit 1
+}
+
+log_success "E2E tests passed (both phases)"
 
 # ============================================================================
 # Run Playwright UI E2E tests
