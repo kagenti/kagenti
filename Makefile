@@ -22,6 +22,9 @@ UI_BACKEND_REPO := ghcr.io/kagenti/kagenti-backend
 UI_BACKEND_TAG := $(TAG)
 UI_BACKEND_DIR := kagenti/backend
 
+# Shared Docker build context (matches CI build.yaml)
+DOCKER_BUILD_CONTEXT := kagenti
+
 # --- Conditional Build Flags Logic ---
 
 # Auto-detect if the 'docker' client is using a Podman backend
@@ -50,7 +53,7 @@ build-load-agent-oauth-secret:
 		echo "Info: Podman backend detected. Using --load flag for build."; \
 	fi
 	# $(DOCKER_BUILD_FLAGS) will be '--load' for podman and empty for docker
-	docker build -t $(AGENT_OAUTH_SECRET_IMAGE):$(AGENT_OAUTH_SECRET_TAG) $(AGENT_OAUTH_SECRET_DIR) $(DOCKER_BUILD_FLAGS)
+	docker build -t $(AGENT_OAUTH_SECRET_IMAGE):$(AGENT_OAUTH_SECRET_TAG) -f $(AGENT_OAUTH_SECRET_DIR)/Dockerfile $(DOCKER_BUILD_CONTEXT) $(DOCKER_BUILD_FLAGS)
 	@echo "Loading $(AGENT_OAUTH_SECRET_IMAGE):$(AGENT_OAUTH_SECRET_TAG) image into kind cluster $(KIND_CLUSTER_NAME)..."
 	kind load docker-image $(AGENT_OAUTH_SECRET_IMAGE):$(AGENT_OAUTH_SECRET_TAG) --name $(KIND_CLUSTER_NAME)
 	@echo "✓ $(AGENT_OAUTH_SECRET_IMAGE):$(AGENT_OAUTH_SECRET_TAG) image built and loaded successfully"
@@ -69,7 +72,7 @@ build-load-ui-frontend:
 		echo "Info: Podman backend detected. Using --load flag for build."; \
 	fi
 	@echo ""
-	docker build -t $(UI_FRONTEND_REPO):$(UI_FRONTEND_TAG) -f $(UI_FRONTEND_DIR)/Dockerfile $(UI_FRONTEND_DIR) $(DOCKER_BUILD_FLAGS)
+	docker build -t $(UI_FRONTEND_REPO):$(UI_FRONTEND_TAG) -f $(UI_FRONTEND_DIR)/Dockerfile $(DOCKER_BUILD_CONTEXT) $(DOCKER_BUILD_FLAGS)
 	@echo ""
 	@echo "Loading frontend image into kind cluster $(KIND_CLUSTER_NAME)..."
 	kind load docker-image $(UI_FRONTEND_REPO):$(UI_FRONTEND_TAG) --name $(KIND_CLUSTER_NAME)
@@ -86,7 +89,7 @@ build-load-ui-backend:
 		echo "Info: Podman backend detected. Using --load flag for build."; \
 	fi
 	@echo ""
-	docker build -t $(UI_BACKEND_REPO):$(UI_BACKEND_TAG) -f $(UI_BACKEND_DIR)/Dockerfile $(UI_BACKEND_DIR) $(DOCKER_BUILD_FLAGS)
+	docker build -t $(UI_BACKEND_REPO):$(UI_BACKEND_TAG) -f $(UI_BACKEND_DIR)/Dockerfile $(DOCKER_BUILD_CONTEXT) $(DOCKER_BUILD_FLAGS)
 	@echo ""
 	@echo "Loading backend image into kind cluster $(KIND_CLUSTER_NAME)..."
 	kind load docker-image $(UI_BACKEND_REPO):$(UI_BACKEND_TAG) --name $(KIND_CLUSTER_NAME)
