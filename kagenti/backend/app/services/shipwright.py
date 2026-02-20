@@ -61,11 +61,6 @@ def resolve_clone_secret(core_api: Any, namespace: str) -> Optional[str]:
         )
         return SHIPWRIGHT_GIT_SECRET_NAME
     except Exception:
-        logger.debug(
-            "Clone credential not found in namespace %s, builds will proceed "
-            "without git credentials",
-            namespace,
-        )
         return None
 
 
