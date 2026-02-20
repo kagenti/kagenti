@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from app.core.constants import (
-    SHIPWRIGHT_STRATEGY_INSECURE,
     SHIPWRIGHT_DEFAULT_DOCKERFILE,
     SHIPWRIGHT_DEFAULT_TIMEOUT,
 )

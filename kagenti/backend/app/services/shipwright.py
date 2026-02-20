@@ -56,9 +56,7 @@ def resolve_clone_secret(core_api: Any, namespace: str) -> Optional[str]:
     for public repos to proceed without git credentials.
     """
     try:
-        core_api.read_namespaced_secret(
-            name=SHIPWRIGHT_GIT_SECRET_NAME, namespace=namespace
-        )
+        core_api.read_namespaced_secret(name=SHIPWRIGHT_GIT_SECRET_NAME, namespace=namespace)
         return SHIPWRIGHT_GIT_SECRET_NAME
     except Exception:
         return None

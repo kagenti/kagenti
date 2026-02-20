@@ -1336,7 +1336,9 @@ async def create_tool(
 
             # Step 1: Create Shipwright Build CR
             clone_secret = resolve_clone_secret(kube.core_api, request.namespace)
-            build_manifest = _build_tool_shipwright_build_manifest(request, clone_secret_name=clone_secret)
+            build_manifest = _build_tool_shipwright_build_manifest(
+                request, clone_secret_name=clone_secret
+            )
             kube.create_custom_resource(
                 group=SHIPWRIGHT_CRD_GROUP,
                 version=SHIPWRIGHT_CRD_VERSION,
