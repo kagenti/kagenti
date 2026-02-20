@@ -1416,7 +1416,7 @@
 - name: Install/upgrade mcp-gateway chart
   kubernetes.core.helm:
     release_name: mcp-gateway
-    chart_ref: oci://ghcr.io/kagenti/charts/mcp-gateway
+    chart_ref: oci://ghcr.io/kuadrant/charts/mcp-gateway
     chart_version: "{{ charts.mcpGateway.version }}"
     release_namespace: "{{ charts.mcpGateway.namespace }}"
     create_namespace: true
