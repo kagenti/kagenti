@@ -74,8 +74,45 @@ class TestBuildShipwrightBuildManifest:
         assert manifest["spec"]["source"]["type"] == "Git"
         assert manifest["spec"]["source"]["git"]["url"] == "https://github.com/example/repo"
         assert manifest["spec"]["source"]["git"]["revision"] == "main"
-        assert manifest["spec"]["source"]["git"]["cloneSecret"] == SHIPWRIGHT_GIT_SECRET_NAME
+        # No clone_secret_name passed, so cloneSecret should be absent
+        assert "cloneSecret" not in manifest["spec"]["source"]["git"]
         assert manifest["spec"]["source"]["contextDir"] == "agents/test"
+
+    def test_build_manifest_with_clone_secret(self):
+        """Test that cloneSecret is included when clone_secret_name is provided."""
+        request = CreateAgentRequest(
+            name="test-agent",
+            namespace="team1",
+            protocol="a2a",
+            framework="LangGraph",
+            gitUrl="https://github.com/example/repo",
+            gitPath="agents/test",
+            gitBranch="main",
+            imageTag="v0.0.1",
+            deploymentMethod="source",
+        )
+
+        manifest = _build_agent_shipwright_build_manifest(
+            request, clone_secret_name=SHIPWRIGHT_GIT_SECRET_NAME
+        )
+        assert manifest["spec"]["source"]["git"]["cloneSecret"] == SHIPWRIGHT_GIT_SECRET_NAME
+
+    def test_build_manifest_without_clone_secret(self):
+        """Test that cloneSecret is omitted when no clone_secret_name is provided."""
+        request = CreateAgentRequest(
+            name="test-agent",
+            namespace="team1",
+            protocol="a2a",
+            framework="LangGraph",
+            gitUrl="https://github.com/example/public-repo",
+            gitPath=".",
+            gitBranch="main",
+            imageTag="v0.0.1",
+            deploymentMethod="source",
+        )
+
+        manifest = _build_agent_shipwright_build_manifest(request)
+        assert "cloneSecret" not in manifest["spec"]["source"]["git"]
 
         # Check strategy - should be insecure for internal registry
         assert manifest["spec"]["strategy"]["name"] == SHIPWRIGHT_STRATEGY_INSECURE
@@ -760,3 +797,33 @@ class TestShipwrightBuildInfoResponse:
         assert response.buildRunPhase == "Failed"
         assert response.buildRunFailureMessage == "Dockerfile not found in context"
         assert response.buildRunCompletionTime is None
+
+
+class TestResolveCloneSecret:
+    """Tests for resolve_clone_secret helper."""
+
+    def test_returns_secret_name_when_exists(self):
+        """Test that resolve_clone_secret returns the secret name when it exists."""
+        from unittest.mock import MagicMock
+        from app.services.shipwright import resolve_clone_secret
+
+        mock_core_api = MagicMock()
+        # read_namespaced_secret succeeds (secret exists)
+        mock_core_api.read_namespaced_secret.return_value = MagicMock()
+
+        result = resolve_clone_secret(mock_core_api, "team1")
+        assert result == SHIPWRIGHT_GIT_SECRET_NAME
+        mock_core_api.read_namespaced_secret.assert_called_once_with(
+            name=SHIPWRIGHT_GIT_SECRET_NAME, namespace="team1"
+        )
+
+    def test_returns_none_when_missing(self):
+        """Test that resolve_clone_secret returns None when the secret doesn't exist."""
+        from unittest.mock import MagicMock
+        from app.services.shipwright import resolve_clone_secret
+
+        mock_core_api = MagicMock()
+        mock_core_api.read_namespaced_secret.side_effect = Exception("Not found")
+
+        result = resolve_clone_secret(mock_core_api, "team1")
+        assert result is None

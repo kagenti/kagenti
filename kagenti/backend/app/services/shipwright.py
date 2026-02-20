@@ -49,6 +49,19 @@ from app.models.shipwright import (
 logger = logging.getLogger(__name__)
 
 
+def resolve_clone_secret(core_api: Any, namespace: str) -> Optional[str]:
+    """Check if the GitHub Shipwright clone secret exists in the namespace.
+
+    Returns the secret name if it exists, None otherwise. This allows builds
+    for public repos to proceed without git credentials.
+    """
+    try:
+        core_api.read_namespaced_secret(name=SHIPWRIGHT_GIT_SECRET_NAME, namespace=namespace)
+        return SHIPWRIGHT_GIT_SECRET_NAME
+    except Exception:
+        return None
+
+
 def select_build_strategy(registry_url: str, requested_strategy: Optional[str] = None) -> str:
     """
     Select the appropriate build strategy based on the registry.
@@ -162,7 +175,6 @@ def build_shipwright_build_manifest(
                 "git": {
                     "url": source_config.gitUrl,
                     "revision": source_config.gitRevision,
-                    "cloneSecret": source_config.gitSecretName,
                 },
                 "contextDir": source_config.contextDir,
             },
@@ -186,6 +198,10 @@ def build_shipwright_build_manifest(
             },
         },
     }
+
+    # Add clone secret for private git repos
+    if source_config.gitSecretName:
+        manifest["spec"]["source"]["git"]["cloneSecret"] = source_config.gitSecretName
 
     # Add build arguments if specified
     if build_config.buildArgs:

@@ -80,6 +80,7 @@ from app.services.shipwright import (
     extract_buildrun_info,
     is_build_succeeded,
     get_output_image_from_buildrun,
+    resolve_clone_secret,
 )
 from app.utils.routes import create_route_for_agent_or_tool, route_exists
 
@@ -441,7 +442,9 @@ def _extract_labels(labels: dict) -> ResourceLabels:
     )
 
 
-def _build_tool_shipwright_build_manifest(request: CreateToolRequest) -> dict:
+def _build_tool_shipwright_build_manifest(
+    request: CreateToolRequest, clone_secret_name: Optional[str] = None
+) -> dict:
     """
     Build a Shipwright Build CRD manifest for building a tool from source.
 
@@ -456,6 +459,7 @@ def _build_tool_shipwright_build_manifest(request: CreateToolRequest) -> dict:
         gitUrl=request.gitUrl or "",
         gitRevision=request.gitRevision,
         contextDir=request.contextDir or ".",
+        gitSecretName=clone_secret_name,
     )
 
     # Build output config
@@ -1331,7 +1335,10 @@ async def create_tool(
                 )
 
             # Step 1: Create Shipwright Build CR
-            build_manifest = _build_tool_shipwright_build_manifest(request)
+            clone_secret = resolve_clone_secret(kube.core_api, request.namespace)
+            build_manifest = _build_tool_shipwright_build_manifest(
+                request, clone_secret_name=clone_secret
+            )
             kube.create_custom_resource(
                 group=SHIPWRIGHT_CRD_GROUP,
                 version=SHIPWRIGHT_CRD_VERSION,
