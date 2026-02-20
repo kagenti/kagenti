@@ -23,7 +23,6 @@ spec:
     git:
       url: https://github.com/kagenti/agent-examples
       revision: main
-      cloneSecret: github-shipwright-secret
     contextDir: a2a/recipe_agent
   strategy:
     name: buildah-insecure-push

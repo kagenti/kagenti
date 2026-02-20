@@ -27,7 +27,6 @@ spec:
       # PR: https://github.com/kagenti/agent-examples/pull/XXX
       url: https://github.com/ladas/agent-examples
       revision: genai-autoinstrumentation
-      cloneSecret: github-shipwright-secret
     contextDir: a2a/weather_service
   strategy:
     name: buildah
