@@ -89,6 +89,7 @@ from app.services.shipwright import (
     extract_buildrun_info,
     is_build_succeeded,
     get_output_image_from_buildrun,
+    resolve_clone_secret,
 )
 
 
@@ -1740,7 +1741,9 @@ async def get_shipwright_build_info(
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
-def _build_agent_shipwright_build_manifest(request: CreateAgentRequest) -> dict:
+def _build_agent_shipwright_build_manifest(
+    request: CreateAgentRequest, clone_secret_name: Optional[str] = None
+) -> dict:
     """
     Build a Shipwright Build CRD manifest for building an agent from source.
 
@@ -1755,6 +1758,7 @@ def _build_agent_shipwright_build_manifest(request: CreateAgentRequest) -> dict:
         gitUrl=request.gitUrl,
         gitRevision=request.gitBranch,
         contextDir=request.gitPath or ".",
+        gitSecretName=clone_secret_name,
     )
 
     # Build output config
@@ -2351,7 +2355,8 @@ async def create_agent(
                 )
 
             # Step 1: Create Shipwright Build CR
-            build_manifest = _build_agent_shipwright_build_manifest(request)
+            clone_secret = resolve_clone_secret(kube.core_api, request.namespace)
+            build_manifest = _build_agent_shipwright_build_manifest(request, clone_secret_name=clone_secret)
             kube.create_custom_resource(
                 group=SHIPWRIGHT_CRD_GROUP,
                 version=SHIPWRIGHT_CRD_VERSION,

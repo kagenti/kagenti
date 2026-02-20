@@ -49,6 +49,25 @@ from app.models.shipwright import (
 logger = logging.getLogger(__name__)
 
 
+def resolve_clone_secret(core_api: Any, namespace: str) -> Optional[str]:
+    """Check if the GitHub Shipwright clone secret exists in the namespace.
+
+    Returns the secret name if it exists, None otherwise. This allows builds
+    for public repos to proceed without git credentials.
+    """
+    try:
+        core_api.read_namespaced_secret(
+            name=SHIPWRIGHT_GIT_SECRET_NAME, namespace=namespace
+        )
+        return SHIPWRIGHT_GIT_SECRET_NAME
+    except Exception:
+        logger.debug(
+            f"Clone secret '{SHIPWRIGHT_GIT_SECRET_NAME}' not found in namespace "
+            f"'{namespace}', builds will proceed without git credentials"
+        )
+        return None
+
+
 def select_build_strategy(registry_url: str, requested_strategy: Optional[str] = None) -> str:
     """
     Select the appropriate build strategy based on the registry.

@@ -43,7 +43,7 @@ class BuildSourceConfig(BaseModel):
     gitUrl: str
     gitRevision: str = "main"
     contextDir: str = "."
-    gitSecretName: Optional[str] = "github-shipwright-secret"
+    gitSecretName: Optional[str] = None
 
 
 class BuildOutputConfig(BaseModel):
