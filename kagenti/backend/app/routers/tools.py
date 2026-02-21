@@ -85,11 +85,33 @@ from app.services.shipwright import (
 from app.utils.routes import create_route_for_agent_or_tool, route_exists
 
 
-class EnvVar(BaseModel):
-    """Environment variable."""
+class SecretKeyRef(BaseModel):
+    """Reference to a key in a Secret."""
 
     name: str
-    value: str
+    key: str
+
+
+class ConfigMapKeyRef(BaseModel):
+    """Reference to a key in a ConfigMap."""
+
+    name: str
+    key: str
+
+
+class EnvVarSource(BaseModel):
+    """Source for environment variable value."""
+
+    secretKeyRef: Optional[SecretKeyRef] = None
+    configMapKeyRef: Optional[ConfigMapKeyRef] = None
+
+
+class EnvVar(BaseModel):
+    """Environment variable with support for direct values and references."""
+
+    name: str
+    value: Optional[str] = None
+    valueFrom: Optional[EnvVarSource] = None
 
     @field_validator("name")
     @classmethod
@@ -113,6 +135,21 @@ class EnvVar(BaseModel):
                 "Name must start with a letter or underscore and contain only "
                 "letters, digits, and underscores (e.g., MY_VAR, API_KEY, var123)."
             )
+
+        return v
+
+    @field_validator("valueFrom")
+    @classmethod
+    def check_value_or_value_from(cls, v, info):
+        """Ensure either value or valueFrom is provided, but not both."""
+        values = info.data
+        has_value = values.get("value") is not None
+        has_value_from = v is not None
+
+        if not has_value and not has_value_from:
+            raise ValueError("Either value or valueFrom must be provided")
+        if has_value and has_value_from:
+            raise ValueError("Cannot specify both value and valueFrom")
 
         return v
 
@@ -326,6 +363,46 @@ class BatchMigrateToolsResponse(BaseModel):
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
+
+
+def _build_tool_env_vars(
+    env_var_list: Optional[List[EnvVar]] = None,
+) -> List[dict]:
+    """
+    Build environment variables list with support for valueFrom references.
+
+    Always includes DEFAULT_ENV_VARS so that tools receive required
+    platform variables (PORT, HOST, OTEL_EXPORTER_OTLP_ENDPOINT, etc.).
+
+    Args:
+        env_var_list: Optional list of EnvVar models from the request.
+
+    Returns:
+        List of environment variable dictionaries.
+    """
+    env_vars = list(DEFAULT_ENV_VARS)
+    if env_var_list:
+        for ev in env_var_list:
+            if ev.value is not None:
+                # Direct value
+                env_vars.append({"name": ev.name, "value": ev.value})
+            elif ev.valueFrom is not None:
+                # Reference to Secret or ConfigMap
+                env_entry: Dict[str, Any] = {"name": ev.name, "valueFrom": {}}
+
+                if ev.valueFrom.secretKeyRef:
+                    env_entry["valueFrom"]["secretKeyRef"] = {
+                        "name": ev.valueFrom.secretKeyRef.name,
+                        "key": ev.valueFrom.secretKeyRef.key,
+                    }
+                elif ev.valueFrom.configMapKeyRef:
+                    env_entry["valueFrom"]["configMapKeyRef"] = {
+                        "name": ev.valueFrom.configMapKeyRef.name,
+                        "key": ev.valueFrom.configMapKeyRef.key,
+                    }
+
+                env_vars.append(env_entry)
+    return env_vars
 
 
 def _get_toolhive_service_name(tool_name: str) -> str:
@@ -986,9 +1063,8 @@ def _build_tool_deployment_manifest(
         Deployment manifest dict
     """
     # Build environment variables
-    all_env_vars = list(DEFAULT_ENV_VARS)
-    if env_vars:
-        all_env_vars.extend(env_vars)
+    # Callers are expected to provide DEFAULT_ENV_VARS via _build_tool_env_vars()
+    all_env_vars = env_vars if env_vars else list(DEFAULT_ENV_VARS)
 
     # Build container ports from service_ports
     container_ports = _build_container_ports(service_ports)
@@ -1120,9 +1196,8 @@ def _build_tool_statefulset_manifest(
         StatefulSet manifest dict
     """
     # Build environment variables
-    all_env_vars = list(DEFAULT_ENV_VARS)
-    if env_vars:
-        all_env_vars.extend(env_vars)
+    # Callers are expected to provide DEFAULT_ENV_VARS via _build_tool_env_vars()
+    all_env_vars = env_vars if env_vars else list(DEFAULT_ENV_VARS)
 
     # Build container ports from service_ports
     container_ports = _build_container_ports(service_ports)
@@ -1390,10 +1465,8 @@ async def create_tool(
                     detail="containerImage is required for image deployment",
                 )
 
-            # Prepare env vars
-            env_vars = None
-            if request.envVars:
-                env_vars = [{"name": ev.name, "value": ev.value} for ev in request.envVars]
+            # Prepare env vars (always called so tools get DEFAULT_ENV_VARS)
+            env_vars = _build_tool_env_vars(request.envVars)
 
             # Prepare service ports
             service_ports = None
@@ -1762,12 +1835,13 @@ async def finalize_tool_shipwright_build(
             "workloadType", WORKLOAD_TYPE_DEPLOYMENT
         )
 
-        # Build env vars
-        env_vars = None
+        # Build env vars (always include DEFAULT_ENV_VARS)
         if request.envVars:
-            env_vars = [{"name": ev.name, "value": ev.value} for ev in request.envVars]
+            env_vars = _build_tool_env_vars(request.envVars)
         elif tool_config_dict.get("envVars"):
-            env_vars = tool_config_dict["envVars"]
+            env_vars = _build_tool_env_vars([EnvVar(**ev) for ev in tool_config_dict["envVars"]])
+        else:
+            env_vars = _build_tool_env_vars()
 
         # Build service ports
         service_ports = None

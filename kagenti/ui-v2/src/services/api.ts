@@ -407,7 +407,14 @@ export const toolService = {
     namespace: string;
     protocol: string;
     framework: string;
-    envVars?: Array<{ name: string; value: string }>;
+    envVars?: Array<{
+      name: string;
+      value?: string;
+      valueFrom?: {
+        secretKeyRef?: { name: string; key: string };
+        configMapKeyRef?: { name: string; key: string };
+      };
+    }>;
     servicePorts?: Array<{
       name: string;
       port: number;
@@ -547,7 +554,14 @@ export const toolShipwrightService = {
       framework?: string;
       workloadType?: 'deployment' | 'statefulset';
       persistentStorage?: { enabled: boolean; size: string };
-      envVars?: Array<{ name: string; value: string }>;
+      envVars?: Array<{
+        name: string;
+        value?: string;
+        valueFrom?: {
+          secretKeyRef?: { name: string; key: string };
+          configMapKeyRef?: { name: string; key: string };
+        };
+      }>;
       servicePorts?: Array<{
         name: string;
         port: number;
