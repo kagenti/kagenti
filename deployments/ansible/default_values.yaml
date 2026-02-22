@@ -88,10 +88,19 @@ charts:
   mcpGateway:
     enabled: false
     namespace: mcp-system
-    version: 0.4.0
+    version: 0.5.0
     values:
+      # See https://github.com/Kuadrant/mcp-gateway/blob/main/charts/mcp-gateway/values.yaml
+      # for an example Helm values file for this chart.
       image:
-        tag: v0.4
+        # Container image tag to use for the broker-router
+        tag: v0.5.0
+      imageController:
+        # Container image tag to use for the controller
+        tag: v0.5.0
+      broker:
+        # Start an instance of the broker
+        create: true
 
   ####################################################################
   # kagenti
