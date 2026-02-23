@@ -1,0 +1,17 @@
+[intro]
+In this demo, we explore the Kay-jentee Observability page, which provides a centralized dashboard for monitoring agent interactions and service mesh traffic.
+
+[login]
+We authenticate through Keycloak. The same identity provider secures access to all observability tools integrated with the platform.
+
+[obs_page]
+The Observability page serves as a hub for all monitoring and tracing capabilities. From here, operators can access Phoenix for LLM trace analysis and Kiali for service mesh visualization, all within the unified Kay-jentee interface.
+
+[obs_phoenix]
+The Phoenix card provides access to the OpenTelemetry-based trace viewer. Phoenix receives traces from the OpenTelemetry Collector in real time, showing detailed spans for every LLM interaction, including token counts, latency breakdowns, and model parameters. This is the primary tool for debugging agent behavior and monitoring performance.
+
+[obs_kiali]
+The Kiali card links to the service mesh visualization dashboard. Kiali displays the traffic topology between all platform components, showing how requests flow between agents, tools, and backend services. With Istio Ambient mode, every connection is secured by mutual TLS, and Kiali provides visual confirmation of the security posture.
+
+[end]
+This completes the observability dashboard overview. The Kay-jentee platform integrates Phoenix and Kiali to provide comprehensive visibility into both AI agent behavior and network-level service mesh traffic.

@@ -1,0 +1,308 @@
+/**
+ * Kagenti Navigation and Theme Demo
+ *
+ * A walkthrough of navigation and theme switching:
+ *   1. Login
+ *   2. Walk through all sidebar items (hover each)
+ *   3. Open and close sidebar groups
+ *   4. Switch to dark theme, pause, switch to light
+ *   5. Open user dropdown
+ *
+ * Environment variables (set by run-playwright-demo.sh):
+ *   KAGENTI_UI_URL   - Base URL of the Kagenti UI
+ *   KEYCLOAK_USER    - Keycloak username
+ *   KEYCLOAK_PASS    - Keycloak password
+ */
+import { test, expect } from '@playwright/test';
+import { demoLogin } from './demo-auth';
+
+const PAUSE = 2000;
+const LONG_PAUSE = 3000;
+
+// Timestamp tracking for narration sync
+const stepTimestamps: { step: string; time: number }[] = [];
+const demoStartTime = Date.now();
+const markStep = (step: string) => {
+  const elapsed = (Date.now() - demoStartTime) / 1000;
+  stepTimestamps.push({ step, time: elapsed });
+  console.log(`[demo-ts] ${elapsed.toFixed(1)}s — ${step}`);
+};
+
+const UI_URL = process.env.KAGENTI_UI_URL || '';
+
+test.describe('Navigation and Theme Demo', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test('Navigation: sidebar, groups, theme switch, user menu', async ({ page }) => {
+    test.setTimeout(180000); // 3 minutes
+
+    // ================================================================
+    // Cursor tracking and injection
+    // ================================================================
+    let lastCursorX = 960;
+    let lastCursorY = 540;
+
+    const injectCursor = async () => {
+      await page.evaluate(([startX, startY]) => {
+        if (document.getElementById('pw-cursor')) return;
+        const cursor = document.createElement('div');
+        cursor.id = 'pw-cursor';
+        cursor.style.cssText = `
+          width: 20px; height: 20px;
+          background: rgba(255, 50, 50, 0.7);
+          border: 2px solid rgba(255, 255, 255, 0.9);
+          border-radius: 50%;
+          position: fixed;
+          top: ${startY - 10}px; left: ${startX - 10}px;
+          z-index: 999999;
+          pointer-events: none;
+          transition: transform 0.15s ease;
+          box-shadow: 0 0 8px rgba(0,0,0,0.4);
+        `;
+        document.body.appendChild(cursor);
+        document.addEventListener('mousemove', (e) => {
+          cursor.style.left = (e.clientX - 10) + 'px';
+          cursor.style.top = (e.clientY - 10) + 'px';
+        });
+        document.addEventListener('mousedown', () => {
+          cursor.style.transform = 'scale(0.7)';
+          cursor.style.background = 'rgba(255, 50, 50, 0.95)';
+        });
+        document.addEventListener('mouseup', () => {
+          cursor.style.transform = 'scale(1)';
+          cursor.style.background = 'rgba(255, 50, 50, 0.7)';
+        });
+      }, [lastCursorX, lastCursorY]);
+      await page.mouse.move(lastCursorX, lastCursorY);
+    };
+
+    page.on('load', async () => {
+      await injectCursor().catch(() => {});
+    });
+
+    const humanMove = async (toX: number, toY: number) => {
+      await page.mouse.move(toX, toY, { steps: 25 });
+      lastCursorX = toX;
+      lastCursorY = toY;
+    };
+
+    const demoClick = async (locator: any, description?: string) => {
+      if (description) console.log(`[demo] Clicking: ${description}`);
+      await locator.scrollIntoViewIfNeeded().catch(() => {});
+      const box = await locator.boundingBox();
+      if (box) {
+        const offsetX = (Math.random() - 0.5) * box.width * 0.2;
+        const offsetY = (Math.random() - 0.5) * box.height * 0.2;
+        await humanMove(box.x + box.width / 2 + offsetX, box.y + box.height / 2 + offsetY);
+        await page.waitForTimeout(200);
+      }
+      await locator.click();
+    };
+
+    // ================================================================
+    // STEP 1: Navigate to Kagenti UI
+    // ================================================================
+    console.log('[demo] Step 1: Navigate to Kagenti UI');
+    await page.goto(UI_URL, { waitUntil: 'networkidle', timeout: 30000 });
+    await injectCursor();
+    markStep('intro');
+    await page.waitForTimeout(PAUSE);
+
+    // ================================================================
+    // STEP 2: Login via Keycloak (if needed)
+    // ================================================================
+    markStep('login');
+    await demoLogin(page, demoClick);
+
+    await page.waitForTimeout(LONG_PAUSE);
+
+    // ================================================================
+    // STEP 3: Walk through all sidebar items
+    // ================================================================
+    markStep('nav_sidebar');
+    console.log('[demo] Step 3: Walk through sidebar items');
+
+    // Hover over each sidebar navigation item
+    const navItems = page.locator('nav a, [role="navigation"] a');
+    const navCount = await navItems.count();
+    console.log(`[demo] Found ${navCount} navigation items`);
+    // ASSERT: Sidebar should have navigation items
+    expect(navCount, 'Sidebar should have navigation items').toBeGreaterThan(0);
+
+    for (let i = 0; i < navCount; i++) {
+      const item = navItems.nth(i);
+      if (await item.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const text = await item.textContent();
+        const box = await item.boundingBox();
+        if (box) {
+          await humanMove(box.x + box.width / 2, box.y + box.height / 2);
+          console.log(`[demo]   Hovering: ${text?.trim()}`);
+          await page.waitForTimeout(600);
+        }
+      }
+    }
+    await page.waitForTimeout(PAUSE);
+
+    // ================================================================
+    // STEP 4: Open and close sidebar groups
+    // ================================================================
+    markStep('nav_groups');
+    console.log('[demo] Step 4: Open and close sidebar groups');
+
+    // Find sidebar group toggle buttons (PatternFly expandable sections)
+    const groupButtons = page.locator('nav button, [role="navigation"] button')
+      .or(page.locator('.pf-v5-c-nav__link.pf-m-expandable'))
+      .or(page.locator('[aria-expanded]'));
+
+    const groupCount = await groupButtons.count();
+    console.log(`[demo] Found ${groupCount} sidebar group buttons`);
+
+    for (let i = 0; i < groupCount; i++) {
+      const group = groupButtons.nth(i);
+      if (await group.isVisible({ timeout: 1000 }).catch(() => false)) {
+        const text = await group.textContent();
+        const isExpanded = await group.getAttribute('aria-expanded');
+
+        // Click to toggle the group
+        await demoClick(group, `Toggle group: ${text?.trim()}`);
+        await page.waitForTimeout(800);
+
+        // Hover over child items if expanded
+        const childItems = page.locator('nav a, [role="navigation"] a');
+        const childCount = await childItems.count();
+        for (let j = 0; j < childCount; j++) {
+          const child = childItems.nth(j);
+          if (await child.isVisible({ timeout: 500 }).catch(() => false)) {
+            const childBox = await child.boundingBox();
+            if (childBox) {
+              await humanMove(childBox.x + childBox.width / 2, childBox.y + childBox.height / 2);
+              await page.waitForTimeout(300);
+            }
+          }
+        }
+
+        // Toggle back if we expanded it
+        if (isExpanded === 'false') {
+          await demoClick(group, `Close group: ${text?.trim()}`);
+          await page.waitForTimeout(500);
+        }
+      }
+    }
+    await page.waitForTimeout(PAUSE);
+
+    // ================================================================
+    // STEP 5: Switch to dark theme
+    // ================================================================
+    markStep('nav_theme_dark');
+    console.log('[demo] Step 5: Switch to dark theme');
+
+    const themeButton = page.locator('button:has-text("Theme")')
+      .or(page.locator('[aria-label*="theme" i]'))
+      .or(page.locator('button:has-text("Light")'))
+      .or(page.locator('button:has-text("Dark")'));
+
+    // ASSERT: Theme selector must be visible
+    await expect(themeButton.first()).toBeVisible({ timeout: 5000 });
+    await demoClick(themeButton.first(), 'Theme selector');
+    await page.waitForTimeout(500);
+
+    // Click Dark theme option
+    const darkOption = page.getByText('Dark', { exact: true })
+      .or(page.locator('[role="menuitem"]:has-text("Dark")'))
+      .or(page.locator('[role="option"]:has-text("Dark")'));
+    if (await darkOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+      await demoClick(darkOption.first(), 'Dark theme');
+    }
+
+    // Pause to show dark theme
+    await page.waitForTimeout(LONG_PAUSE);
+
+    // Hover through sidebar items in dark theme to show the contrast
+    for (let i = 0; i < Math.min(navCount, 5); i++) {
+      const item = navItems.nth(i);
+      if (await item.isVisible({ timeout: 500 }).catch(() => false)) {
+        const box = await item.boundingBox();
+        if (box) {
+          await humanMove(box.x + box.width / 2, box.y + box.height / 2);
+          await page.waitForTimeout(400);
+        }
+      }
+    }
+    await page.waitForTimeout(PAUSE);
+
+    // ================================================================
+    // STEP 6: Switch back to light theme
+    // ================================================================
+    markStep('nav_theme_light');
+    console.log('[demo] Step 6: Switch back to light theme');
+
+    if (await themeButton.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+      await demoClick(themeButton.first(), 'Theme selector');
+      await page.waitForTimeout(500);
+
+      const lightOption = page.getByText('Light', { exact: true })
+        .or(page.locator('[role="menuitem"]:has-text("Light")'))
+        .or(page.locator('[role="option"]:has-text("Light")'));
+      if (await lightOption.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+        await demoClick(lightOption.first(), 'Light theme');
+      }
+    }
+    await page.waitForTimeout(LONG_PAUSE);
+
+    // ================================================================
+    // STEP 7: Open user dropdown
+    // ================================================================
+    markStep('nav_user');
+    console.log('[demo] Step 7: Open user dropdown');
+
+    const userDropdown = page.locator('[aria-label*="user" i]')
+      .or(page.locator('button:has-text("admin")'))
+      .or(page.locator('.pf-v5-c-masthead button').last());
+
+    if (await userDropdown.first().isVisible({ timeout: 3000 }).catch(() => false)) {
+      await demoClick(userDropdown.first(), 'User menu');
+      await page.waitForTimeout(LONG_PAUSE);
+
+      // Hover over dropdown menu items
+      const menuItems = page.locator('[role="menuitem"], [role="menu"] a, [role="menu"] button');
+      const menuCount = await menuItems.count();
+      console.log(`[demo] Found ${menuCount} user menu items`);
+
+      for (let i = 0; i < menuCount; i++) {
+        const menuItem = menuItems.nth(i);
+        if (await menuItem.isVisible({ timeout: 1000 }).catch(() => false)) {
+          const box = await menuItem.boundingBox();
+          if (box) {
+            await humanMove(box.x + box.width / 2, box.y + box.height / 2);
+            await page.waitForTimeout(500);
+          }
+        }
+      }
+
+      await page.waitForTimeout(PAUSE);
+
+      // Close the menu
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(PAUSE);
+    } else {
+      console.log('[demo] User dropdown not found');
+      await page.waitForTimeout(PAUSE);
+    }
+
+    // ================================================================
+    // FINAL: End
+    // ================================================================
+    markStep('end');
+    console.log('[demo] Navigation and theme demo complete!');
+
+    // Write timestamps
+    const fs = require('fs');
+    const path = require('path');
+    const scriptDir = process.env.PLAYWRIGHT_OUTPUT_DIR || path.join(__dirname, '..');
+    const tsFile = path.join(scriptDir, '..', 'navigation-theme-timestamps.json');
+    fs.writeFileSync(tsFile, JSON.stringify(stepTimestamps, null, 2));
+    console.log(`[demo] Timestamps written to ${tsFile}`);
+
+    await page.waitForTimeout(10000);
+  });
+});

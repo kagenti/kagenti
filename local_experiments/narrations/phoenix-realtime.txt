@@ -1,0 +1,23 @@
+[intro]
+In this demo, we explore Phoenix, the real-time trace viewer integrated with Kay-jentee. Phoenix provides instant visibility into live agent interactions as they happen.
+
+[login]
+We authenticate through Keycloak using OAuth2. The same identity secures access to all observability tools across the platform.
+
+[phoenix_navigate]
+Now we navigate to Phoenix, an OpenTelemetry-based trace viewer. While MLflow excels at experiment tracking and model registry, Phoenix gives us a timeline-focused perspective ideal for real-time debugging and performance monitoring.
+
+[phoenix_landing]
+The Phoenix landing page shows an overview of recent activity. Phoenix receives traces from the OpenTelemetry Collector in real time, automatically organizing them by project and trace type. The streaming architecture means new traces appear within seconds of an agent interaction completing.
+
+[phoenix_traces]
+In the Traces view, we see a chronological list of all agent interactions. Each trace includes the operation name, duration, status, and span count. Phoenix makes it easy to spot slow or failed interactions at a glance, helping operators quickly identify issues.
+
+[phoenix_trace_detail]
+Clicking on a trace opens the detail view, showing the full call chain as a waterfall diagram. The visual timeline makes it easy to understand where time is spent during an agent interaction, whether it is in the LLM call, tool execution, or response formatting.
+
+[phoenix_spans]
+Hovering over individual spans reveals detailed attributes including token counts, latency breakdowns, model parameters, and any annotations. Phoenix provides complementary insights to MLflow, with its focus on real-time streaming and timeline visualization making it the ideal tool for live debugging sessions.
+
+[end]
+This completes our exploration of Phoenix real-time tracing. Together with MLflow, Phoenix gives Kay-jentee teams comprehensive observability into AI agent behavior from both experiment-tracking and real-time perspectives.

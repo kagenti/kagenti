@@ -1,0 +1,20 @@
+[intro]
+In this demo, we explore the MCP Inspector tool within Kay-jentee, which provides a visual interface for testing and inspecting Model Context Protocol tool definitions.
+
+[login]
+We authenticate through Keycloak using OAuth2. The same identity secures access to all platform capabilities, including the MCP Gateway and Inspector.
+
+[mcp_gateway_page]
+The MCP Gateway page serves as the central management hub for all MCP tool servers registered with the platform. From here, operators can see connected tool servers, their health status, and access the MCP Inspector for interactive testing.
+
+[mcp_inspector_navigate]
+We click through to the MCP Inspector, which provides an interactive environment for exploring and testing MCP tool definitions. The Inspector connects directly to the MCP Gateway, showing all available tools in real time.
+
+[mcp_inspector_tools]
+The Inspector displays a list of all registered MCP tools. Each tool shows its name, description, and input schema. This view helps developers understand what tools are available for their agents and verify that tool registrations are correct.
+
+[mcp_inspector_detail]
+Clicking on a tool reveals its full schema definition, including input parameters, their types, required fields, and descriptions. The Inspector allows developers to test tool calls interactively, verifying that the tool server responds correctly before wiring it into an agent workflow.
+
+[end]
+This completes our exploration of the MCP Inspector. The Inspector provides an essential development and debugging tool for the Model Context Protocol integration, helping teams build reliable agent-to-tool connections within the Kay-jentee platform.

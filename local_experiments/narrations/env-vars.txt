@@ -1,0 +1,26 @@
+[intro]
+In this demo, we explore Kay-jentee's environment variable management for agent deployments, showing how to configure direct values, ConfigMap references, and Secret references when importing an agent.
+
+[login]
+We authenticate through Keycloak using OAuth2. The same identity determines which namespaces and resources the user can access when creating and configuring agents.
+
+[import_navigate]
+We navigate to the Import Agent page, where operators can define new agent deployments. This form provides a structured way to configure all aspects of an agent, including its container image, protocol settings, and environment variables.
+
+[import_basic]
+We start by filling in the basic agent fields, the agent name and target namespace. These define the Kubernetes resource name and the namespace where the agent will be deployed.
+
+[env_direct]
+In the Environment Variables section, we click Add Variable to create a direct value entry. Direct values are stored in the agent's custom resource specification, suitable for non-sensitive configuration like API endpoints or feature flags. We enter an API key as an example, though in production, sensitive values should use Secret references instead.
+
+[env_configmap]
+Adding a second variable, we switch the source type to ConfigMap. This creates a reference to a Kubernetes ConfigMap, allowing the agent to read configuration values from a shared ConfigMap resource. ConfigMap references are ideal for non-sensitive configuration that may be shared across multiple agents or managed independently from the agent deployment.
+
+[env_secret]
+For the third variable, we select Secret as the source type. Secret references pull values from Kubernetes Secrets, which are encrypted at rest and subject to RBAC access controls. This is the recommended approach for sensitive data like API keys, database credentials, and authentication tokens. The actual secret value never appears in the agent spec.
+
+[env_import]
+The Import from File feature allows operators to bulk-import environment variables from a dot-env file or similar configuration file. This accelerates the deployment process when migrating agents from development to production environments.
+
+[end]
+This completes our exploration of environment variable management. Kay-jentee's support for direct values, ConfigMap references, and Secret references gives teams flexible and secure options for configuring their agent deployments.

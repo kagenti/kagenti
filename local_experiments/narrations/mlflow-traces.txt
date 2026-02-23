@@ -1,0 +1,26 @@
+[intro]
+In this demo, we take a deep dive into MLflow trace analysis within the Kay-jentee platform, exploring how every agent interaction is automatically instrumented and recorded as detailed traces.
+
+[login]
+We authenticate through Keycloak using OAuth2. This same identity will be used to access MLflow through the O-I-D-C authentication plugin.
+
+[mlflow_navigate]
+Now we navigate directly to MLflow, the experiment tracking platform integrated with Kay-jentee. MLflow provides a comprehensive view of all agent runs, model parameters, token usage, and performance metrics.
+
+[mlflow_login]
+MLflow uses the O-I-D-C authentication plugin, creating a two-stage login flow. First, MLflow's own login page presents a sign-in button, which then redirects to Keycloak for credential verification. This ensures all access to MLflow is secured through the same identity provider used by the rest of the platform.
+
+[mlflow_experiments]
+After authentication, we arrive at the experiments list. MLflow automatically categorizes experiments as Gen-A-I apps and agents. The Default experiment collects all agent interactions across namespaces, making it easy to find and compare traces from different agent types and teams.
+
+[mlflow_traces]
+In the Traces view, every agent interaction is logged with its request ID, response status, token count, and execution time. Each row represents a complete agent interaction, from the initial user query through tool invocations to the final response.
+
+[mlflow_trace_detail]
+Clicking on a trace reveals the full span tree. This hierarchical view shows exactly how the agent processed the request: the LLM call, any tool invocations, intermediate reasoning steps, and the final response generation. Each span includes timing information for performance analysis.
+
+[mlflow_spans]
+Hovering over individual spans reveals detailed attributes including model parameters, token counts for input and output, latency measurements, and any error information. This level of detail is invaluable for debugging agent behavior and optimizing performance. The OpenTelemetry semantic conventions for Gen-A-I ensure consistent instrumentation across all agent frameworks.
+
+[end]
+This completes our deep dive into MLflow trace analysis. The automatic instrumentation through OpenTelemetry gives teams full visibility into every agent interaction without requiring any changes to their agent code.

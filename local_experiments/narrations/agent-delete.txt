@@ -1,0 +1,26 @@
+[intro]
+In this demo, we walk through the agent deletion workflow in Kay-jentee, including the safety mechanisms that prevent accidental resource removal.
+
+[login]
+We authenticate through Keycloak using OAuth2. Delete operations require appropriate namespace permissions, ensuring only authorized users can remove deployed agents.
+
+[create_temp_agent]
+First, we create a temporary agent called delete-demo to use for this demonstration. We navigate to the Import Agent form, fill in the agent name, select the team1 namespace, and configure the deployment using a pre-built container image. This avoids a full build cycle for our demo purposes.
+
+[agent_created]
+The agent has been created and appears in the Agent Catalog. We can see it listed alongside other deployed agents in the team1 namespace. The agent is now running and would accept requests if queried.
+
+[delete_navigate]
+We locate the delete-demo agent in the catalog and access its actions menu. The kebab menu, the three-dot icon, provides contextual actions for each agent, including viewing details, scaling, and deleting.
+
+[delete_action]
+We select the Delete action from the menu. Kay-jentee immediately presents a confirmation dialog rather than performing the deletion directly. This two-step process is a critical safety measure for production environments.
+
+[delete_confirm]
+The confirmation modal requires typing the exact agent name to proceed. This pattern, common in production platforms, prevents accidental deletions from a mis-click. We type delete-demo to confirm our intent. The delete button only becomes active once the typed name matches exactly.
+
+[delete_complete]
+The deletion is confirmed and Kay-jentee removes the agent's custom resource, which triggers a cascading cleanup of the Kubernetes Deployment, Service, and any associated Istio resources. The agent disappears from the catalog, confirming the cleanup is complete. Kubernetes garbage collection handles the remaining resources in the background.
+
+[end]
+This completes the agent deletion workflow. Kay-jentee's confirmation-based deletion pattern ensures that production agents cannot be accidentally removed, while the cascading cleanup handles all associated Kubernetes resources automatically.

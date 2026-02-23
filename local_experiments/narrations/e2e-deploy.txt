@@ -1,0 +1,29 @@
+[intro]
+In this demo, we walk through the complete end-to-end lifecycle of deploying an agent in Kay-jentee, from importing source code to having a live conversation with the running agent.
+
+[login]
+We authenticate through Keycloak using OAuth2. This single identity carries through every step of the lifecycle, from import to build to chat, providing a unified audit trail.
+
+[e2e_import]
+We begin by navigating to the Import Agent form. We select the weather-service example to pre-fill the form with a known-good configuration, set the agent name and target namespace, and verify the source path and build strategy are configured correctly.
+
+[e2e_submit]
+We submit the import form to kick off the deployment pipeline. Kay-jentee creates the agent custom resource, triggers the Shipwright build, and redirects us to the build progress page where we can monitor the containerization process.
+
+[e2e_building]
+The build phase is now in progress. Shipwright is pulling the source code, resolving dependencies, and building the container image. Build times depend on the agent's complexity and dependency tree. The progress indicator updates as the build moves through its phases.
+
+[e2e_ready]
+The build has completed and Kay-jentee is now deploying the agent to the target namespace. The platform creates the Kubernetes Deployment, Service, and any required Istio resources automatically. We monitor the agent catalog until the agent transitions to a ready state, indicating all pods are running and health checks are passing.
+
+[e2e_detail]
+We navigate to the agent's detail page to verify the deployment. The overview shows the agent's status, replica count, service endpoint, and protocol metadata. Everything looks healthy and the agent is ready to accept requests.
+
+[e2e_chat]
+We open the Chat tab to interact with the agent directly from the Kay-jentee UI. The built-in chat interface communicates with the agent over its configured protocol, whether A-to-A or M-C-P. We send a weather query to test the agent's functionality.
+
+[e2e_response]
+The agent responds with weather information, confirming the complete pipeline is working. The request flowed from the UI through Istio's service mesh with m-TLS encryption, hit the agent's endpoint, and the agent processed the query using its configured tools and language model.
+
+[end]
+This completes the full end-to-end deployment lifecycle. In a single workflow, we went from source code to a live, interactive agent, demonstrating Kay-jentee's integrated pipeline for agent deployment, including build automation, service mesh integration, and built-in chat capabilities.

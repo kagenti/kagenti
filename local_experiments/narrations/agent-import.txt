@@ -1,0 +1,32 @@
+[intro]
+Importing an agent to Kay-jentee.
+
+[login]
+We authenticate through Keycloak. The identity determines namespace access and resource permissions.
+
+[import_navigate]
+From the catalog, we click Import Agent to open the form.
+
+[import_examples]
+Examples provide pre-configured templates.
+
+[import_name]
+We set the agent name and target namespace.
+
+[import_source]
+The source section defines the git repository URL, subdirectory path, and branch to build from.
+
+[import_framework]
+The framework selector sets the runtime.
+
+[import_protocol]
+Protocol determines communication style.
+
+[import_deploy_method]
+Deployment method toggles between building from source and deploying a pre-built container image.
+
+[import_workload]
+Workload type controls the Kubernetes resource kind — Deployment for stateless, StatefulSet for persistent storage.
+
+[end]
+That covers the Import Agent form. Kay-jentee supports the full spectrum of agent deployment configurations.

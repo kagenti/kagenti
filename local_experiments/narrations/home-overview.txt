@@ -1,0 +1,23 @@
+[intro]
+Welcome to the Kay-jentee platform dashboard. This overview covers the home page, navigation, and user interface features.
+
+[login]
+We authenticate through Keycloak using OAuth2. This same identity provider secures all platform services including agents, tools, and observability dashboards.
+
+[home_stats]
+The home page displays live statistics about the platform. We can see the total number of deployed agents, how many are in ready state, the count of available tools, and the namespaces configured for agent isolation.
+
+[home_actions]
+Below the statistics, quick action cards provide direct navigation to the main platform areas. The Agent Catalog for managing deployed agents, the Tool Catalog for M-C-P tools, Observability for trace monitoring, and Administration for platform settings.
+
+[home_theme]
+The platform supports theme switching between light and dark modes. The theme selector in the toolbar lets users choose their preferred visual style, with a system default option that follows the operating system setting.
+
+[home_navigation]
+The sidebar navigation organizes the platform into logical groups. Agentic Workloads contains Agents and Tools. Gateway and Routing covers the M-C-P Gateway, A-I Gateway, and Gateway Policies. Operations provides access to Observability and Administration.
+
+[home_user_menu]
+The user menu in the top toolbar shows the authenticated user's identity and provides access to settings and the logout function. Platform roles are displayed alongside the user profile.
+
+[end]
+This completes the home page overview. The Kay-jentee dashboard provides a centralized entry point to all platform capabilities, from agent management to observability.

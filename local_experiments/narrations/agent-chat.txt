@@ -1,0 +1,32 @@
+[intro]
+In this demo, we explore the Kay-jentee agent chat interface, showing real-time agent interactions using Google's A-to-A protocol.
+
+[login]
+We authenticate through Keycloak to access the platform. The same identity is used when the agent communicates with its backend services.
+
+[agent_catalog]
+In the Agent Catalog, we navigate to the team1 namespace to find our weather service agent. The catalog shows each agent's status, protocol, and framework information.
+
+[agent_detail]
+The weather service agent detail page shows deployment status, the A-to-A agent card with capabilities, and available skills. This agent uses the A-to-A protocol for structured agent communication.
+
+[chat_open]
+We switch to the Chat tab to interact with the agent. The chat interface supports the full A-to-A protocol, including streaming responses, task management, and event tracking.
+
+[chat_query]
+We type a query asking about the weather in San Francisco. The agent will process this through its LLM backend and invoke its weather tool via M-C-P to retrieve real data.
+
+[chat_streaming]
+The agent streams its response in real time using the A-to-A protocol. We can see the Markdown-formatted response as it arrives, including temperature, conditions, and other weather details. Every interaction generates OpenTelemetry traces for observability.
+
+[chat_events]
+The Events panel reveals the underlying A-to-A protocol interactions. We can see task creation, status updates, and artifact generation events. This transparency helps developers debug agent behavior.
+
+[chat_followup]
+We send a follow-up query comparing weather between cities. The agent maintains session context across messages, enabling natural multi-turn conversations.
+
+[chat_followup_response]
+The agent processes the follow-up query using the same session, demonstrating contextual awareness. It compares temperatures and conditions across locations, showcasing the agent's conversational capabilities.
+
+[end]
+This completes the agent chat demonstration. The A-to-A protocol provides structured, observable agent interactions with streaming responses, event transparency, and multi-turn conversation support.
