@@ -1,5 +1,6 @@
-FROM registry.access.redhat.com/ubi9/ubi:latest
+FROM registry.access.redhat.com/ubi9/ubi:9.5
 
+# hadolint ignore=DL3041
 RUN dnf install -y squid && dnf clean all
 
 COPY squid.conf /etc/squid/squid.conf
