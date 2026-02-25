@@ -133,38 +133,62 @@ def _get_ssl_context():
     return ssl.create_default_context(cafile=ca_path)
 
 
-async def _extract_response(client, message):
-    """Send an A2A message and extract the full text response."""
-    full_response = ""
-    events_received = []
+async def _extract_response(client, message, retries=2):
+    """Send an A2A message and extract the full text response.
 
-    async for result in client.send_message(message):
-        if isinstance(result, tuple):
-            task, event = result
-            events_received.append(type(event).__name__ if event else "Task(final)")
+    Retries on transient stream disconnects (503, incomplete chunked read)
+    which can occur when the OpenShift route or Istio proxy times out
+    during long-running LLM calls.
+    """
+    import asyncio
 
-            if isinstance(event, TaskArtifactUpdateEvent):
-                if hasattr(event, "artifact") and event.artifact:
-                    for part in event.artifact.parts or []:
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            full_response = ""
+            events_received = []
+
+            async for result in client.send_message(message):
+                if isinstance(result, tuple):
+                    task, event = result
+                    events_received.append(
+                        type(event).__name__ if event else "Task(final)"
+                    )
+
+                    if isinstance(event, TaskArtifactUpdateEvent):
+                        if hasattr(event, "artifact") and event.artifact:
+                            for part in event.artifact.parts or []:
+                                p = getattr(part, "root", part)
+                                if hasattr(p, "text"):
+                                    full_response += p.text
+
+                    if event is None and task and task.artifacts:
+                        for artifact in task.artifacts:
+                            for part in artifact.parts or []:
+                                p = getattr(part, "root", part)
+                                if hasattr(p, "text"):
+                                    full_response += p.text
+
+                elif isinstance(result, A2AMessage):
+                    events_received.append("Message")
+                    for part in result.parts or []:
                         p = getattr(part, "root", part)
                         if hasattr(p, "text"):
                             full_response += p.text
 
-            if event is None and task and task.artifacts:
-                for artifact in task.artifacts:
-                    for part in artifact.parts or []:
-                        p = getattr(part, "root", part)
-                        if hasattr(p, "text"):
-                            full_response += p.text
-
-        elif isinstance(result, A2AMessage):
-            events_received.append("Message")
-            for part in result.parts or []:
-                p = getattr(part, "root", part)
-                if hasattr(p, "text"):
-                    full_response += p.text
-
-    return full_response, events_received
+            return full_response, events_received
+        except Exception as e:
+            last_error = e
+            err_msg = str(e).lower()
+            is_transient = any(
+                t in err_msg
+                for t in ["503", "incomplete chunked", "peer closed", "connection"]
+            )
+            if is_transient and attempt < retries:
+                print(f"  [Retry {attempt}/{retries}] Stream dropped: {e}")
+                await asyncio.sleep(2)
+                continue
+            raise last_error
 
 
 async def _connect_to_agent(agent_url):
