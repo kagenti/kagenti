@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Sandbox Agent Real Task E2E Tests
+Sandbox Legion Real Task E2E Tests
 
-Tests the sandbox agent performing useful real-world tasks:
+Tests the sandbox legion performing useful real-world tasks:
 - Reading and analyzing public GitHub issues/PRs
 - Performing root cause analysis on CI failure logs
 - Answering questions about repository structure
@@ -37,20 +37,20 @@ from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 
 
 # ---------------------------------------------------------------------------
-# Module-level skip if sandbox-agent is not deployed
+# Module-level skip if sandbox-legion is not deployed
 # ---------------------------------------------------------------------------
 
 
-def _get_sandbox_agent_url() -> str:
-    """Get the sandbox agent URL from env or default to in-cluster DNS."""
+def _get_sandbox_legion_url() -> str:
+    """Get the sandbox legion URL from env or default to in-cluster DNS."""
     return os.getenv(
-        "SANDBOX_AGENT_URL",
-        "http://sandbox-agent.team1.svc.cluster.local:8000",
+        "SANDBOX_LEGION_URL",
+        "http://sandbox-legion.team1.svc.cluster.local:8000",
     )
 
 
 # ---------------------------------------------------------------------------
-# Helpers (shared with test_sandbox_agent.py)
+# Helpers (shared with test_sandbox_legion.py)
 # ---------------------------------------------------------------------------
 
 
@@ -181,7 +181,7 @@ MOCK_CI_FAILURE_LOG = textwrap.dedent("""\
 # ---------------------------------------------------------------------------
 
 
-class TestSandboxAgentGitHubAnalysis:
+class TestSandboxLegionGitHubAnalysis:
     """Test the agent performing real GitHub repository analysis."""
 
     @pytest.mark.asyncio
@@ -192,7 +192,7 @@ class TestSandboxAgentGitHubAnalysis:
         The agent should use web_fetch to read the issue and provide a
         summary that includes relevant keywords.
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -237,7 +237,7 @@ class TestSandboxAgentGitHubAnalysis:
 
         The agent should fetch the PR data and summarize what changed.
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -275,7 +275,7 @@ class TestSandboxAgentGitHubAnalysis:
         )
 
 
-class TestSandboxAgentRCA:
+class TestSandboxLegionRCA:
     """Test the agent performing root cause analysis on CI failures."""
 
     @pytest.mark.asyncio
@@ -289,7 +289,7 @@ class TestSandboxAgentRCA:
         2. Identify the error (CrashLoopBackOff, missing LLM_API_KEY)
         3. Suggest a fix (create the llm-credentials Secret)
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -361,7 +361,7 @@ class TestSandboxAgentRCA:
         print(f"\n  RCA test passed — agent correctly identified root cause")
 
 
-class TestSandboxAgentRepoExploration:
+class TestSandboxLegionRepoExploration:
     """Test the agent exploring its own workspace."""
 
     @pytest.mark.asyncio
@@ -371,7 +371,7 @@ class TestSandboxAgentRepoExploration:
         what it finds. This tests the explore tool indirectly through
         the shell tool.
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:

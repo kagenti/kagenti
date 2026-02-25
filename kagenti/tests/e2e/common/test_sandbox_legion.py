@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Sandbox Agent E2E Tests for Kagenti Platform
+Sandbox Legion E2E Tests for Kagenti Platform
 
-Tests sandbox agent functionality via A2A protocol:
+Tests sandbox legion functionality via A2A protocol:
 - Agent deployment and agent card
 - Shell command execution (ls, grep)
 - File write and read operations
 - Multi-turn context persistence (same contextId sees prior files)
 
 Usage:
-    SANDBOX_AGENT_URL=http://... pytest tests/e2e/common/test_sandbox_agent.py -v
+    SANDBOX_LEGION_URL=http://... pytest tests/e2e/common/test_sandbox_agent.py -v
 """
 
 import os
@@ -31,11 +31,11 @@ from kagenti.tests.e2e.conftest import (
 )
 
 
-def _get_sandbox_agent_url() -> str:
-    """Get the sandbox agent URL from env or default to in-cluster DNS."""
+def _get_sandbox_legion_url() -> str:
+    """Get the sandbox legion URL from env or default to in-cluster DNS."""
     return os.getenv(
-        "SANDBOX_AGENT_URL",
-        "http://sandbox-agent.team1.svc.cluster.local:8000",
+        "SANDBOX_LEGION_URL",
+        "http://sandbox-legion.team1.svc.cluster.local:8000",
     )
 
 
@@ -126,7 +126,7 @@ async def _extract_response(client, message):
 
 
 async def _connect_to_agent(agent_url):
-    """Connect to the sandbox agent via A2A protocol."""
+    """Connect to the sandbox legion via A2A protocol."""
     ssl_verify = _get_ssl_context()
     httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
     config = ClientConfig(httpx_client=httpx_client)
@@ -140,36 +140,38 @@ async def _connect_to_agent(agent_url):
     return client, card
 
 
-class TestSandboxAgentDeployment:
-    """Verify sandbox-agent deployment and agent card."""
+class TestSandboxLegionDeployment:
+    """Verify sandbox-legion deployment and agent card."""
 
     def test_deployment_ready(self, k8s_apps_client):
-        """Verify sandbox-agent deployment exists and is ready."""
+        """Verify sandbox-legion deployment exists and is ready."""
         deployment = k8s_apps_client.read_namespaced_deployment(
-            name="sandbox-agent", namespace="team1"
+            name="sandbox-legion", namespace="team1"
         )
         assert deployment is not None
         desired = deployment.spec.replicas or 1
         ready = deployment.status.ready_replicas or 0
-        assert ready >= desired, f"sandbox-agent not ready: {ready}/{desired} replicas"
+        assert ready >= desired, f"sandbox-legion not ready: {ready}/{desired} replicas"
 
     def test_service_exists(self, k8s_client):
-        """Verify sandbox-agent service exists."""
+        """Verify sandbox-legion service exists."""
         service = k8s_client.read_namespaced_service(
-            name="sandbox-agent", namespace="team1"
+            name="sandbox-legion", namespace="team1"
         )
         assert service is not None
 
     @pytest.mark.asyncio
     async def test_agent_card(self):
         """Verify agent card returns correct metadata."""
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             _, card = await _connect_to_agent(agent_url)
         except Exception as e:
             pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
-        assert card.name == "Sandbox Assistant", f"Unexpected agent name: {card.name}"
+        assert card.name in ("Sandbox Assistant", "Sandbox Legion"), (
+            f"Unexpected agent name: {card.name}"
+        )
         assert card.capabilities.streaming is True
         assert len(card.skills) > 0
 
@@ -183,7 +185,7 @@ class TestSandboxAgentDeployment:
         print(f"  Tags: {skill_tags}")
 
 
-class TestSandboxAgentShellExecution:
+class TestSandboxLegionShellExecution:
     """Test shell command execution via A2A protocol."""
 
     @pytest.mark.asyncio
@@ -194,7 +196,7 @@ class TestSandboxAgentShellExecution:
         Sends a natural language request to list files.
         Expects the response to mention workspace subdirectories.
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -239,7 +241,7 @@ class TestSandboxAgentShellExecution:
         Sends a request to write content to a file, then read it.
         Expects the response to contain the written content.
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -276,7 +278,7 @@ class TestSandboxAgentShellExecution:
         )
 
 
-class TestSandboxAgentContextPersistence:
+class TestSandboxLegionContextPersistence:
     """Test multi-turn context persistence via shared contextId."""
 
     @pytest.mark.asyncio
@@ -288,7 +290,7 @@ class TestSandboxAgentContextPersistence:
         Turn 1: Write a file with unique content
         Turn 2: Read the file back and verify content matches
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -351,7 +353,7 @@ class TestSandboxAgentContextPersistence:
         print(f"  Marker '{unique_marker}' survived across turns")
 
 
-class TestSandboxAgentMemory:
+class TestSandboxLegionMemory:
     """Test multi-turn conversational memory via shared contextId."""
 
     @pytest.mark.asyncio
@@ -363,7 +365,7 @@ class TestSandboxAgentMemory:
         Turn 2: Ask for the name back ("What is my name?")
         Expects the agent to recall "Bob Beep" from turn 1.
         """
-        agent_url = _get_sandbox_agent_url()
+        agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:

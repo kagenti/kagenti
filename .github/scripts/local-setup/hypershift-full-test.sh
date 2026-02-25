@@ -1029,14 +1029,14 @@ if [ "$RUN_TEST" = "true" ]; then
         fi
     fi
 
-    # Get sandbox-agent URL from route (if not already set)
-    if [ -z "${SANDBOX_AGENT_URL:-}" ]; then
-        SANDBOX_ROUTE_HOST=$(oc get route -n team1 sandbox-agent -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    # Get sandbox-legion URL from route (if not already set)
+    if [ -z "${SANDBOX_LEGION_URL:-}" ]; then
+        SANDBOX_ROUTE_HOST=$(oc get route -n team1 sandbox-legion -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
         if [ -n "$SANDBOX_ROUTE_HOST" ]; then
-            export SANDBOX_AGENT_URL="https://$SANDBOX_ROUTE_HOST"
-            log_step "Found sandbox-agent route: $SANDBOX_AGENT_URL"
+            export SANDBOX_LEGION_URL="https://$SANDBOX_ROUTE_HOST"
+            log_step "Found sandbox-legion route: $SANDBOX_LEGION_URL"
         else
-            log_warn "sandbox-agent route not found — sandbox agent tests will use in-cluster DNS"
+            log_warn "sandbox-legion route not found — sandbox legion tests will use in-cluster DNS"
         fi
     fi
 
@@ -1045,7 +1045,7 @@ if [ "$RUN_TEST" = "true" ]; then
 
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
-    log_step "SANDBOX_AGENT_URL: ${SANDBOX_AGENT_URL:-not set}"
+    log_step "SANDBOX_LEGION_URL: ${SANDBOX_LEGION_URL:-not set}"
     log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
     # Export pytest filter options if specified

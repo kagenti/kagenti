@@ -1,36 +1,36 @@
-# Deployment manifest for sandbox-agent
+# Deployment manifest for sandbox-legion
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sandbox-agent
+  name: sandbox-legion
   namespace: team1
   labels:
     kagenti.io/type: agent
     kagenti.io/protocol: a2a
     kagenti.io/framework: LangGraph
     kagenti.io/workload-type: deployment
-    app.kubernetes.io/name: sandbox-agent
+    app.kubernetes.io/name: sandbox-legion
     app.kubernetes.io/managed-by: kagenti-e2e
     app.kubernetes.io/component: agent
   annotations:
-    kagenti.io/description: "Sandbox agent with per-context workspace isolation"
+    kagenti.io/description: "Sandbox Legion multi-sub-agent orchestrator with per-context workspace isolation"
 spec:
   replicas: 1
   selector:
     matchLabels:
       kagenti.io/type: agent
-      app.kubernetes.io/name: sandbox-agent
+      app.kubernetes.io/name: sandbox-legion
   template:
     metadata:
       labels:
         kagenti.io/type: agent
         kagenti.io/protocol: a2a
         kagenti.io/framework: LangGraph
-        app.kubernetes.io/name: sandbox-agent
+        app.kubernetes.io/name: sandbox-legion
     spec:
       containers:
       - name: agent
-        image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-agent:v0.0.1
+        image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-legion:v0.0.1
         imagePullPolicy: Always
         env:
         - name: PORT
@@ -77,7 +77,7 @@ spec:
       - name: workspace
         # TODO: Replace with RWX PVC when EFS CSI driver is installed
         # persistentVolumeClaim:
-        #   claimName: sandbox-agent-workspace
+        #   claimName: sandbox-legion-workspace
         emptyDir:
           sizeLimit: 5Gi
       - name: cache

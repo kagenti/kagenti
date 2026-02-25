@@ -1,4 +1,4 @@
-# Shared RWX PVC for sandbox-agent context workspaces
+# Shared RWX PVC for sandbox-legion context workspaces
 # StorageClass must support ReadWriteMany:
 #   Kind: nfs
 #   OpenShift ODF: ocs-storagecluster-cephfs
@@ -6,11 +6,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: sandbox-agent-workspace
+  name: sandbox-legion-workspace
   namespace: team1
   labels:
     kagenti.io/type: agent-workspace
-    kagenti.io/agent: sandbox-agent
+    kagenti.io/agent: sandbox-legion
 spec:
   accessModes:
     - ReadWriteMany
