@@ -42,11 +42,19 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
         - name: LLM_API_BASE
-          value: "http://dockerhost:11434/v1"
+          value: "https://api.openai.com/v1"
         - name: LLM_API_KEY
-          value: "dummy"
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
         - name: LLM_MODEL
-          value: "qwen2.5:3b"
+          value: "gpt-4o-mini"
         - name: UV_CACHE_DIR
           value: "/app/.cache/uv"
         ports:
