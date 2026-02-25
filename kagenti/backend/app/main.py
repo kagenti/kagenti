@@ -31,7 +31,8 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 
 
 from app.core.config import settings
-from app.routers import agents, tools, namespaces, config, auth, chat
+from app.routers import agents, tools, namespaces, config, auth, chat, sandbox
+from app.services.session_db import close_all_pools
 
 # Configure logging
 logging.basicConfig(
@@ -72,6 +73,9 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+    # Close session DB pools
+    await close_all_pools()
+
     logger.info("Shutting down Kagenti Backend API")
 
 
@@ -104,6 +108,7 @@ app.include_router(agents.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
+app.include_router(sandbox.router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
