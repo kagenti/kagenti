@@ -660,3 +660,43 @@ export const chatService = {
     );
   },
 };
+
+// ---------------------------------------------------------------------------
+// Sandbox Legion session management
+// ---------------------------------------------------------------------------
+
+import type { TaskListResponse, TaskDetail } from '@/types/sandbox';
+
+export const sandboxService = {
+  async listSessions(
+    namespace: string,
+    params?: { limit?: number; offset?: number; search?: string }
+  ): Promise<TaskListResponse> {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.offset) qs.set('offset', String(params.offset));
+    if (params?.search) qs.set('search', params.search);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions${query}`);
+  },
+
+  async getSession(namespace: string, contextId: string): Promise<TaskDetail> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}`
+    );
+  },
+
+  async deleteSession(namespace: string, contextId: string): Promise<void> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  async killSession(namespace: string, contextId: string): Promise<TaskDetail> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/kill`,
+      { method: 'POST' }
+    );
+  },
+};

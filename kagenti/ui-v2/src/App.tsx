@@ -20,6 +20,8 @@ import { ImportAgentPage } from './pages/ImportAgentPage';
 import { ImportToolPage } from './pages/ImportToolPage';
 import { AdminPage } from './pages/AdminPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { SandboxPage } from './pages/SandboxPage';
+import { SessionsTablePage } from './pages/SessionsTablePage';
 
 function App() {
   return (
@@ -130,6 +132,22 @@ function App() {
           element={
             <ProtectedRoute>
               <AdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sandbox"
+          element={
+            <ProtectedRoute>
+              <SandboxPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sandbox/sessions"
+          element={
+            <ProtectedRoute>
+              <SessionsTablePage />
             </ProtectedRoute>
           }
         />
