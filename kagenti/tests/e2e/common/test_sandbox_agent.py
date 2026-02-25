@@ -31,6 +31,26 @@ from kagenti.tests.e2e.conftest import (
 )
 
 
+def _sandbox_agent_deployed() -> bool:
+    """Check if sandbox-agent deployment exists in the cluster."""
+    try:
+        from kubernetes import client, config as kube_config
+
+        kube_config.load_config()
+        apps_v1 = client.AppsV1Api()
+        apps_v1.read_namespaced_deployment(name="sandbox-agent", namespace="team1")
+        return True
+    except Exception:
+        return False
+
+
+# Skip entire module if sandbox-agent is not deployed
+pytestmark = pytest.mark.skipif(
+    not _sandbox_agent_deployed(),
+    reason="sandbox-agent deployment not found in team1 namespace",
+)
+
+
 def _is_openshift_from_config():
     """Detect if running on OpenShift from KAGENTI_CONFIG_FILE."""
     config_file = os.getenv("KAGENTI_CONFIG_FILE")
