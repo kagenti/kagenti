@@ -150,6 +150,52 @@ agent-examples (.worktrees/agent-examples):
 
 ---
 
+## Tests: What Exists vs What's Needed
+
+### Backend E2E Tests (11 written, all passing)
+
+| Test File | Test | What It Does |
+|-----------|------|-------------|
+| `test_sandbox_agent.py` | `test_deployment_ready` | K8s deployment exists with ready replicas |
+| | `test_service_exists` | K8s service exists |
+| | `test_agent_card` | Agent card has correct name, streaming, skills |
+| | `test_shell_ls` | Agent runs `ls`, response contains workspace dirs |
+| | `test_file_write_and_read` | Write payload, read back, verify content match |
+| | `test_multi_turn_file_persistence` | Turn 1: write marker. Turn 2 (same contextId): read back |
+| | `test_multi_turn_memory` | Turn 1: "My name is Bob Beep". Turn 2: recalls it |
+| `test_sandbox_agent_tasks.py` | `test_analyze_closed_issue` | Fetches GitHub issue #751 via web_fetch, checks keywords |
+| | `test_analyze_closed_pr` | Fetches PR #753, verifies title/author/merge |
+| | `test_rca_on_mock_ci_log` | Writes mock CI failure (CrashLoopBackOff), asks RCA, verifies root cause identified |
+| | `test_workspace_structure_analysis` | Agent explores workspace with find, reports subdirs |
+
+### Backend E2E Tests Still Needed
+
+| Test | Description | Priority |
+|------|-------------|----------|
+| `test_web_fetch_retry_on_rate_limit` | web_fetch tool retries on GitHub API 429 rate limit | Medium |
+| `test_session_persists_across_restart` | Send message, restart pod, verify session data in Postgres | High |
+| `test_sub_session_parent_child` | Parent creates sub-agent, verify child contextId linked | High |
+| `test_session_api_list` | Backend `/api/v1/sandbox/team1/sessions` returns sessions | High |
+| `test_session_api_delete` | Delete session via API, verify gone from DB | Medium |
+| `test_session_api_kill` | Kill active session via API, verify status=canceled | Medium |
+| `test_rbac_namespace_isolation` | User in team1 cannot see team2 sessions | High |
+
+### Playwright UI Tests (not yet written — blocked on UI Tasks 5-8)
+
+| Test | Description | Priority |
+|------|-------------|----------|
+| `test_login_navigate_sandbox_chat` | Login → navigate to `/sandbox` → send message → verify response | High |
+| `test_session_appears_in_sidebar` | After chatting, new session shows in left sidebar tree | High |
+| `test_click_sidebar_loads_history` | Click existing session in sidebar → chat history loads | High |
+| `test_advanced_config_toggle` | Expand advanced panel, change model dropdown, verify | Medium |
+| `test_sessions_table_search` | Navigate to `/sandbox/sessions`, search by keyword, verify results | High |
+| `test_sessions_table_filter_status` | Filter by status (active/completed/failed), verify table updates | Medium |
+| `test_kill_session_from_table` | Click kill on active session → verify status changes to canceled | High |
+| `test_sub_session_tree_collapse` | Parent session with children → collapse/expand → verify tree behavior | Medium |
+| `test_shared_session_actor_tracking` | Two users chat in same session → verify actor_user shown per message | Low |
+
+---
+
 ## Next Session Tasks (Priority Order)
 
 1. **Rename sandbox-agent → sandbox-legion** throughout both repos (deployment, service, route, build, settings, tests, docs)
@@ -160,8 +206,10 @@ agent-examples (.worktrees/agent-examples):
 6. **UI Task 6: SandboxPage** — chat panel + sidebar, route `/sandbox`
 7. **UI Task 7: SessionsTable** — searchable table at `/sandbox/sessions`
 8. **UI Task 8: AdvancedConfig** — expandable config panel (model, repo, skills)
-9. **Playwright E2E tests** — login → sandbox → chat → verify session in sidebar
-10. **Fix 1-test Phoenix timing difference** between sbox and sbox1 (trace ingestion race)
+9. **Write backend E2E tests** — session persistence, API CRUD, RBAC isolation, sub-session linking
+10. **Write Playwright UI tests** — login→chat, sidebar, table search/filter, kill session
+11. **Add retry loop to web_fetch** — handle GitHub API 429 rate limits
+12. **Fix 1-test Phoenix timing difference** between sbox and sbox1 (trace ingestion race)
 
 ---
 
