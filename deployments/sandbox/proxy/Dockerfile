@@ -1,7 +1,6 @@
 FROM registry.access.redhat.com/ubi9/ubi:9.5
 
-# hadolint ignore=DL3041
-RUN dnf install -y squid && dnf clean all
+RUN dnf install -y squid-5.5 && dnf clean all
 
 COPY squid.conf /etc/squid/squid.conf
 COPY --chmod=755 entrypoint.sh /usr/local/bin/proxy-entrypoint.sh
