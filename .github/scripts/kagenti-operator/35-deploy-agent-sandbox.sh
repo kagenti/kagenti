@@ -139,25 +139,25 @@ else
     log_info "No OpenShift Build — using staging image: $AGENT_SANDBOX_IMAGE_REF"
 fi
 
-# Apply controller StatefulSet
+# Apply controller manifest (upstream changed from StatefulSet to Deployment in #191)
 if [ "$APPLY_FROM_GIT" = "true" ]; then
     kubectl apply -f "https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/main/k8s/controller.yaml"
 else
     kubectl apply -f "$AGENT_SANDBOX_RESEARCH_DIR/k8s/controller.yaml"
 fi
 
-# Patch with real image and enable extensions
-kubectl patch statefulset agent-sandbox-controller -n "$AGENT_SANDBOX_NS" --type='json' -p='[
+# Clean up old StatefulSet if it exists (upstream migrated to Deployment)
+kubectl delete statefulset agent-sandbox-controller -n "$AGENT_SANDBOX_NS" 2>/dev/null || true
+
+# Patch controller deployment with real image and enable extensions
+kubectl patch deployment agent-sandbox-controller -n "$AGENT_SANDBOX_NS" --type='json' -p='[
   {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"'"$AGENT_SANDBOX_IMAGE_REF"'"},
   {"op":"replace","path":"/spec/template/spec/containers/0/args","value":["--extensions=true"]}
 ]'
 
-# Delete pod to pick up new image (StatefulSet doesn't auto-recreate on spec change)
-kubectl delete pod agent-sandbox-controller-0 -n "$AGENT_SANDBOX_NS" 2>/dev/null || true
-
 # Wait for controller to be ready
 log_info "Waiting for controller pod..."
-kubectl rollout status statefulset/agent-sandbox-controller -n "$AGENT_SANDBOX_NS" --timeout=120s
+kubectl rollout status deployment/agent-sandbox-controller -n "$AGENT_SANDBOX_NS" --timeout=120s
 log_success "Agent-sandbox controller running"
 
 # ── Step 4: Deploy SandboxTemplate ────────────────────────────────────────────
