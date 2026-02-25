@@ -77,16 +77,12 @@ def _fetch_ingress_ca():
     import tempfile
 
     # Try the ingress-specific CA first (signs route certificates)
-    for ns, cm in [
-        ("openshift-config-managed", "default-ingress-cert"),
-        ("kagenti-system", "kube-root-ca.crt"),
-        ("openshift-config", "kube-root-ca.crt"),
+    for ns, cm, key in [
+        ("kagenti-system", "kube-root-ca.crt", "ca.crt"),
+        ("openshift-config", "kube-root-ca.crt", "ca.crt"),
+        ("openshift-config-managed", "default-ingress-cert", "ca-bundle.crt"),
     ]:
-        jsonpath = (
-            "{.data.ca-bundle\\.crt}"
-            if cm == "default-ingress-cert"
-            else "{.data.ca\\.crt}"
-        )
+        jsonpath = "{.data." + key.replace(".", "\\.") + "}"
         try:
             result = subprocess.run(
                 [

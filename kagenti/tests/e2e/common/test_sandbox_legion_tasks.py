@@ -82,15 +82,11 @@ def _fetch_ingress_ca():
     import subprocess
     import tempfile
 
-    for ns, cm in [
-        ("openshift-config-managed", "default-ingress-cert"),
-        ("kagenti-system", "kube-root-ca.crt"),
+    for ns, cm, key in [
+        ("kagenti-system", "kube-root-ca.crt", "ca.crt"),
+        ("openshift-config-managed", "default-ingress-cert", "ca-bundle.crt"),
     ]:
-        jsonpath = (
-            "{.data.ca-bundle\\.crt}"
-            if cm == "default-ingress-cert"
-            else "{.data.ca\\.crt}"
-        )
+        jsonpath = "{.data." + key.replace(".", "\\.") + "}"
         try:
             result = subprocess.run(
                 [
