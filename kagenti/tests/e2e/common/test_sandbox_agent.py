@@ -351,6 +351,72 @@ class TestSandboxAgentContextPersistence:
         print(f"  Marker '{unique_marker}' survived across turns")
 
 
+class TestSandboxAgentMemory:
+    """Test multi-turn conversational memory via shared contextId."""
+
+    @pytest.mark.asyncio
+    async def test_multi_turn_memory(self, test_session_id):
+        """
+        Verify agent remembers context across turns.
+
+        Turn 1: Tell the agent a name ("My name is Bob Beep")
+        Turn 2: Ask for the name back ("What is my name?")
+        Expects the agent to recall "Bob Beep" from turn 1.
+        """
+        agent_url = os.getenv(
+            "SANDBOX_AGENT_URL", "http://sandbox-agent.team1.svc.cluster.local:8000"
+        )
+        try:
+            client, _ = await _connect_to_agent(agent_url)
+        except Exception as e:
+            pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
+
+        context_id = f"memory-{test_session_id}"
+
+        print(f"\n=== Multi-turn Memory Test ===")
+        print(f"  Context ID: {context_id}")
+
+        # Turn 1: Tell the agent a name
+        msg1 = A2AMessage(
+            role="user",
+            parts=[TextPart(text="My name is Bob Beep")],
+            messageId=uuid4().hex,
+            contextId=context_id,
+        )
+
+        try:
+            response1, events1 = await _extract_response(client, msg1)
+        except Exception as e:
+            pytest.fail(f"Turn 1 failed: {e}")
+
+        assert response1, f"Turn 1: No response\n  Events: {events1}"
+        print(f"  Turn 1 response: {response1[:200]}")
+
+        # Turn 2: Ask for the name back
+        msg2 = A2AMessage(
+            role="user",
+            parts=[TextPart(text="What is my name?")],
+            messageId=uuid4().hex,
+            contextId=context_id,
+        )
+
+        try:
+            response2, events2 = await _extract_response(client, msg2)
+        except Exception as e:
+            pytest.fail(f"Turn 2 failed: {e}")
+
+        assert response2, f"Turn 2: No response\n  Events: {events2}"
+        print(f"  Turn 2 response: {response2[:200]}")
+
+        assert "Bob Beep" in response2, (
+            f"Agent didn't remember the name.\n"
+            f"Expected 'Bob Beep' in response.\n"
+            f"Response: {response2}"
+        )
+
+        print(f"\n  Multi-turn memory verified: agent remembered 'Bob Beep'")
+
+
 if __name__ == "__main__":
     import sys
 

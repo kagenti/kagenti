@@ -164,11 +164,13 @@ REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 # Parse arguments - track both include and skip flags
 INCLUDE_CREATE=false
 INCLUDE_INSTALL=false
+INCLUDE_AGENT_SANDBOX=false
 INCLUDE_AGENTS=false
 INCLUDE_TEST=false
 INCLUDE_DESTROY=false
 SKIP_CREATE=false
 SKIP_INSTALL=false
+SKIP_AGENT_SANDBOX=false
 SKIP_AGENTS=false
 SKIP_TEST=false
 SKIP_KAGENTI_UNINSTALL=false
@@ -198,6 +200,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --include-kagenti-install)
             INCLUDE_INSTALL=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-agent-sandbox)
+            INCLUDE_AGENT_SANDBOX=true
             WHITELIST_MODE=true
             HAS_PHASE_FLAGS=true
             shift
@@ -234,6 +242,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-kagenti-install)
             SKIP_INSTALL=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-agent-sandbox)
+            SKIP_AGENT_SANDBOX=true
             HAS_PHASE_FLAGS=true
             shift
             ;;
@@ -302,6 +315,7 @@ fi
 if [ "$WHITELIST_MODE" = "true" ]; then
     RUN_CREATE=$INCLUDE_CREATE
     RUN_INSTALL=$INCLUDE_INSTALL
+    RUN_AGENT_SANDBOX=$INCLUDE_AGENT_SANDBOX
     RUN_AGENTS=$INCLUDE_AGENTS
     RUN_TEST=$INCLUDE_TEST
     RUN_KAGENTI_UNINSTALL=$INCLUDE_KAGENTI_UNINSTALL
@@ -311,12 +325,14 @@ else
     # Note: kagenti-uninstall defaults to false in blacklist mode (opt-in)
     RUN_CREATE=true
     RUN_INSTALL=true
+    RUN_AGENT_SANDBOX=true
     RUN_AGENTS=true
     RUN_TEST=true
     RUN_KAGENTI_UNINSTALL=false
     RUN_DESTROY=true
     [ "$SKIP_CREATE" = "true" ] && RUN_CREATE=false
     [ "$SKIP_INSTALL" = "true" ] && RUN_INSTALL=false
+    [ "$SKIP_AGENT_SANDBOX" = "true" ] && RUN_AGENT_SANDBOX=false
     [ "$SKIP_AGENTS" = "true" ] && RUN_AGENTS=false
     [ "$SKIP_TEST" = "true" ] && RUN_TEST=false
     [ "$SKIP_KAGENTI_UNINSTALL" = "true" ] && RUN_KAGENTI_UNINSTALL=false
@@ -927,6 +943,19 @@ if [ "$RUN_INSTALL" = "true" ]; then
     ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
 else
     log_phase "PHASE 2: Skipping Kagenti Installation"
+fi
+
+# ============================================================================
+# PHASE 2.5: Deploy Agent-Sandbox Controller
+# ============================================================================
+
+if [ "$RUN_AGENT_SANDBOX" = "true" ]; then
+    log_phase "PHASE 2.5: Deploy Agent-Sandbox Controller"
+
+    log_step "Deploying agent-sandbox controller..."
+    ./.github/scripts/kagenti-operator/35-deploy-agent-sandbox.sh
+else
+    log_phase "PHASE 2.5: Skipping Agent-Sandbox Controller"
 fi
 
 # ============================================================================

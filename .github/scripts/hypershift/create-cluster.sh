@@ -101,6 +101,7 @@ HYPERSHIFT_AUTOMATION_DIR=$(find_hypershift_automation)
 REPLICAS="${REPLICAS:-2}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-m5.xlarge}"
 OCP_VERSION="${OCP_VERSION:-4.20.11}"
+ENABLE_GVISOR="${ENABLE_GVISOR:-false}"
 
 # Cluster suffix - if not set, use positional arg, then default to username
 # Set CLUSTER_SUFFIX="" to generate a random suffix
@@ -485,6 +486,130 @@ oc get nodes
 oc get clusterversion
 
 log_success "Cluster $CLUSTER_NAME created and ready"
+
+# ── Optional: Install gVisor Runtime ─────────────────────────────────────────
+# When ENABLE_GVISOR=true, installs gVisor runsc on worker nodes via MachineConfig
+# applied through the NodePool on the management cluster. Nodes will reboot.
+if [ "$ENABLE_GVISOR" = "true" ]; then
+    log_info "Installing gVisor runtime on worker nodes..."
+
+    # Find the NodePool name for this cluster on the management cluster
+    NP_NAME=$(KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters \
+        -o jsonpath='{.items[?(@.spec.clusterName=="'"$CLUSTER_NAME"'")].metadata.name}' 2>/dev/null | awk '{print $1}')
+
+    if [ -z "$NP_NAME" ]; then
+        log_error "Cannot find NodePool for cluster $CLUSTER_NAME — skipping gVisor"
+    else
+        log_info "NodePool: $NP_NAME"
+
+        # Base64-encoded CRI-O config for gVisor handler
+        # Content: [crio.runtime.runtimes.runsc]
+        #          runtime_path = "/usr/local/bin/runsc"
+        #          runtime_type = "oci"
+        CRIO_GVISOR_CONF_B64="W2NyaW8ucnVudGltZS5ydW50aW1lcy5ydW5zY10KcnVudGltZV9wYXRoID0gIi91c3IvbG9jYWwvYmluL3J1bnNjIgpydW50aW1lX3R5cGUgPSAib2NpIg=="
+
+        # Base64-encoded install script
+        # Downloads runsc binary and restarts CRI-O
+        INSTALL_SCRIPT_B64=$(printf '%s' '#!/bin/bash
+set -euo pipefail
+GVISOR_URL="https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc"
+curl -fSsL -o /usr/local/bin/runsc "$GVISOR_URL"
+chmod +x /usr/local/bin/runsc
+mkdir -p /etc/crio/crio.conf.d
+cat > /etc/crio/crio.conf.d/50-gvisor.conf <<EOCONF
+[crio.runtime.runtimes.runsc]
+runtime_path = "/usr/local/bin/runsc"
+runtime_type = "oci"
+EOCONF
+systemctl restart crio.service' | base64)
+
+        # Create ConfigMap with MachineConfig in the clusters namespace (management cluster)
+        KUBECONFIG="$MGMT_KUBECONFIG" kubectl apply -f - <<GVISOR_MC_EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gvisor-machineconfig
+  namespace: clusters
+data:
+  config: |
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      labels:
+        machineconfiguration.openshift.io/role: worker
+      name: 99-gvisor-runsc
+    spec:
+      config:
+        ignition:
+          version: 3.2.0
+        storage:
+          files:
+          - path: /usr/local/bin/install-gvisor.sh
+            mode: 0755
+            contents:
+              source: "data:text/plain;charset=utf-8;base64,$INSTALL_SCRIPT_B64"
+          - path: /etc/crio/crio.conf.d/50-gvisor.conf
+            mode: 0644
+            contents:
+              source: "data:text/plain;charset=utf-8;base64,$CRIO_GVISOR_CONF_B64"
+        systemd:
+          units:
+          - name: gvisor-install.service
+            enabled: true
+            contents: |
+              [Unit]
+              Description=Install gVisor runsc
+              Wants=network-online.target
+              After=network-online.target
+              Before=crio.service
+              ConditionPathExists=!/usr/local/bin/runsc
+
+              [Service]
+              Type=oneshot
+              ExecStart=/usr/local/bin/install-gvisor.sh
+              RemainAfterExit=true
+
+              [Install]
+              WantedBy=multi-user.target
+GVISOR_MC_EOF
+
+        # Patch NodePool to reference the MachineConfig
+        log_info "Patching NodePool $NP_NAME with gVisor MachineConfig..."
+        KUBECONFIG="$MGMT_KUBECONFIG" oc patch nodepool -n clusters "$NP_NAME" \
+            --type=merge -p '{"spec":{"config":[{"name":"gvisor-machineconfig"}]}}'
+
+        # Wait for nodes to update (they will reboot)
+        log_info "Waiting for nodes to update with gVisor (nodes will reboot)..."
+        for i in {1..60}; do
+            UPDATING=$(KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters "$NP_NAME" \
+                -o jsonpath='{.status.conditions[?(@.type=="UpdatingConfig")].status}' 2>/dev/null || echo "Unknown")
+            if [ "$UPDATING" = "False" ]; then
+                log_success "NodePool update complete"
+                break
+            fi
+            echo "  [$i/60] NodePool updating... (UpdatingConfig=$UPDATING)"
+            sleep 15
+        done
+
+        # Wait for nodes to be Ready again after reboot
+        log_info "Waiting for nodes to be Ready after reboot..."
+        oc wait --for=condition=Ready nodes --all --timeout=600s || {
+            log_warn "Timeout waiting for nodes after gVisor install"
+        }
+
+        # Create RuntimeClass on the hosted cluster
+        log_info "Creating gVisor RuntimeClass..."
+        kubectl apply -f - <<'RTCLASS_EOF'
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+RTCLASS_EOF
+
+        log_success "gVisor runtime installed and RuntimeClass created"
+    fi
+fi
 
 # In CI mode, output for subsequent steps
 if [ "$CI_MODE" = "true" ]; then
