@@ -31,24 +31,12 @@ from kagenti.tests.e2e.conftest import (
 )
 
 
-def _sandbox_agent_deployed() -> bool:
-    """Check if sandbox-agent deployment exists in the cluster."""
-    try:
-        from kubernetes import client, config as kube_config
-
-        kube_config.load_config()
-        apps_v1 = client.AppsV1Api()
-        apps_v1.read_namespaced_deployment(name="sandbox-agent", namespace="team1")
-        return True
-    except Exception:
-        return False
-
-
-# Skip entire module if sandbox-agent is not deployed
-pytestmark = pytest.mark.skipif(
-    not _sandbox_agent_deployed(),
-    reason="sandbox-agent deployment not found in team1 namespace",
-)
+def _get_sandbox_agent_url() -> str:
+    """Get the sandbox agent URL from env or default to in-cluster DNS."""
+    return os.getenv(
+        "SANDBOX_AGENT_URL",
+        "http://sandbox-agent.team1.svc.cluster.local:8000",
+    )
 
 
 def _is_openshift_from_config():
@@ -175,9 +163,7 @@ class TestSandboxAgentDeployment:
     @pytest.mark.asyncio
     async def test_agent_card(self):
         """Verify agent card returns correct metadata."""
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL", "http://sandbox-agent.team1.svc.cluster.local:8000"
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             _, card = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -208,9 +194,7 @@ class TestSandboxAgentShellExecution:
         Sends a natural language request to list files.
         Expects the response to mention workspace subdirectories.
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL", "http://sandbox-agent.team1.svc.cluster.local:8000"
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -255,9 +239,7 @@ class TestSandboxAgentShellExecution:
         Sends a request to write content to a file, then read it.
         Expects the response to contain the written content.
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL", "http://sandbox-agent.team1.svc.cluster.local:8000"
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -306,9 +288,7 @@ class TestSandboxAgentContextPersistence:
         Turn 1: Write a file with unique content
         Turn 2: Read the file back and verify content matches
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL", "http://sandbox-agent.team1.svc.cluster.local:8000"
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -383,9 +363,7 @@ class TestSandboxAgentMemory:
         Turn 2: Ask for the name back ("What is my name?")
         Expects the agent to recall "Bob Beep" from turn 1.
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL", "http://sandbox-agent.team1.svc.cluster.local:8000"
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:

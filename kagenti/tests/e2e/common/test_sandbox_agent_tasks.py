@@ -41,22 +41,12 @@ from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 # ---------------------------------------------------------------------------
 
 
-def _sandbox_agent_deployed() -> bool:
-    try:
-        from kubernetes import client, config as kube_config
-
-        kube_config.load_config()
-        apps_v1 = client.AppsV1Api()
-        apps_v1.read_namespaced_deployment(name="sandbox-agent", namespace="team1")
-        return True
-    except Exception:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _sandbox_agent_deployed(),
-    reason="sandbox-agent deployment not found in team1 namespace",
-)
+def _get_sandbox_agent_url() -> str:
+    """Get the sandbox agent URL from env or default to in-cluster DNS."""
+    return os.getenv(
+        "SANDBOX_AGENT_URL",
+        "http://sandbox-agent.team1.svc.cluster.local:8000",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -202,10 +192,7 @@ class TestSandboxAgentGitHubAnalysis:
         The agent should use web_fetch to read the issue and provide a
         summary that includes relevant keywords.
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL",
-            "http://sandbox-agent.team1.svc.cluster.local:8000",
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -250,10 +237,7 @@ class TestSandboxAgentGitHubAnalysis:
 
         The agent should fetch the PR data and summarize what changed.
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL",
-            "http://sandbox-agent.team1.svc.cluster.local:8000",
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -305,10 +289,7 @@ class TestSandboxAgentRCA:
         2. Identify the error (CrashLoopBackOff, missing LLM_API_KEY)
         3. Suggest a fix (create the llm-credentials Secret)
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL",
-            "http://sandbox-agent.team1.svc.cluster.local:8000",
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
@@ -390,10 +371,7 @@ class TestSandboxAgentRepoExploration:
         what it finds. This tests the explore tool indirectly through
         the shell tool.
         """
-        agent_url = os.getenv(
-            "SANDBOX_AGENT_URL",
-            "http://sandbox-agent.team1.svc.cluster.local:8000",
-        )
+        agent_url = _get_sandbox_agent_url()
         try:
             client, _ = await _connect_to_agent(agent_url)
         except Exception as e:
