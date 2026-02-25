@@ -176,6 +176,7 @@ Based on the two execution modes above and research across 7 projects + 15 comme
 | **C18** | **HITL delivery for autonomous agents** — approval requests reach authorized humans via multiple channels, responses routed back securely | Autonomous agents hitting HITL operations need a safe, authenticated way to ask a human and get a decision back | [nono ApprovalBackend trait](https://github.com/always-further/nono/blob/main/crates/nono/src/supervisor/mod.rs); A2A [`input_required` task state](https://google.github.io/A2A/#/documentation?id=task-states) | **BUILD** — multi-channel approval router (see below) |
 | **C19** | **Multi-conversation isolation** — concurrent conversations on the same agent must not leak workspace, context, or state | Multi-tenant agents handle requests from different users/A2A callers simultaneously; one conversation's data must not be visible to another | Kagenti prototype ([workspace.py](https://github.com/Ladas/agent-examples/blob/feat/sandbox-agent/a2a/sandbox_agent/src/sandbox_agent/workspace.py)) per-context dirs; kubernetes-sigs/agent-sandbox Sandbox-per-user | **BUILD** — pod-per-conversation (autonomous) + shared pod with per-context dirs (interactive) |
 | **C20** | **Sub-agent spawning** — parent agent delegates tasks to child agents with scoped tools and skills | Complex tasks require parallel work (research, testing, implementation) with different skill sets and isolation levels | [nanobot subagent.py](https://github.com/HKUDS/nanobot/blob/main/nanobot/agent/subagent.py); LangGraph [StateGraph composition](https://langchain-ai.github.io/langgraph/); A2A delegation | **BUILD** — in-process (LangGraph asyncio) + out-of-process (A2A to separate sandbox pods) |
+| **C21** | **A2A-generic session persistence** — tasks, messages, artifacts persisted at the A2A protocol level via DatabaseTaskStore, framework-agnostic | UI needs to display sessions/history for any agent regardless of framework; LangGraph-specific persistence only serves one framework | [a2a-sdk DatabaseTaskStore](https://github.com/a2aproject/a2a-python), per-namespace PostgreSQL | **USE** — a2a-sdk[postgresql] DatabaseTaskStore |
 
 ### C1: Pod Lifecycle CRD
 
@@ -604,6 +605,24 @@ async def delegate(task: str, skill: str) -> str:
 
 ---
 
+### C21: A2A-Generic Session Persistence
+
+Session data must be available to the Kagenti UI regardless of which agent framework produced it. Rather than building framework-specific persistence (e.g., LangGraph AsyncPostgresSaver), the A2A SDK's DatabaseTaskStore persists tasks, messages, artifacts, and contextId at the protocol level.
+
+**How it works:** The A2A SDK's `DatabaseTaskStore` replaces `InMemoryTaskStore` in the agent's server configuration. It uses SQLAlchemy async with PostgreSQL (asyncpg driver). Every `message/send` and task state change is persisted automatically. The Kagenti backend reads from the same database to power the session UI.
+
+**Two-layer persistence:**
+- **A2A TaskStore (all agents):** Tasks, messages, artifacts, contextId. Framework-agnostic. Read by UI.
+- **Framework checkpointer (optional):** LangGraph AsyncPostgresSaver for graph pause/resume. Internal to Sandbox Legion.
+
+**Agent variant: Sandbox Legion** — the flagship LangGraph-based multi-sub-agent orchestrator that uses both layers. Future agents (CrewAI, AG2) use only the A2A TaskStore.
+
+**What we use:** [a2a-sdk[postgresql]](https://github.com/a2aproject/a2a-python) `DatabaseTaskStore`, per-namespace PostgreSQL (postgres-sessions StatefulSet).
+
+**Relationship to other capabilities:** C19 (contextId links conversations to workspaces), C20 (sub-agent results stored as nested tasks), C14 (HITL state persisted as task state transitions).
+
+---
+
 ### Capability Overlaps and Alignment
 
 Several capabilities share infrastructure or address the same threat from different angles. Understanding these relationships prevents redundant work and ensures defense-in-depth.
@@ -662,6 +681,7 @@ Several capabilities share infrastructure or address the same threat from differ
 | HITLManager (C14, C18) | ✅ Module | [hitl.py](https://github.com/Ladas/kagenti/blob/feat/sandbox-agent/deployments/sandbox/hitl.py) — ContextRegistry + channel adapters |
 | OTEL verification (C13) | ✅ Module | [otel_verification.py](https://github.com/Ladas/kagenti/blob/feat/sandbox-agent/deployments/sandbox/otel_verification.py) — MLflow/trace/GenAI attribute checks |
 | gVisor RuntimeClass (C2) | ⏸️ Deferred | gVisor + SELinux incompatible on RHCOS; runc + hardening + nono provides comparable security (see C2 section) |
+| A2A TaskStore persistence (C21) | ✅ Implemented | DatabaseTaskStore from a2a-sdk[postgresql], per-namespace Postgres |
 | **Platform-level (already existed)** | | |
 | AuthBridge: credential isolation (C6) | ✅ Platform-level | [kagenti-extensions/AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/AuthBridge) — Envoy ext_proc exchanges SVID → scoped token |
 | AuthBridge: token exchange (C12) | ✅ Platform-level | [identity-guide.md](https://github.com/kagenti/kagenti/blob/main/docs/identity-guide.md) — RFC 8693 via Keycloak |
