@@ -1,12 +1,14 @@
-# Sandbox Agent Management UI — Implementation Plan
+# Sandbox Legion Management UI — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add session-persisted sandbox agent management to Kagenti with sidebar tree, chat-first UX, searchable table, and per-namespace PostgreSQL.
+> **Naming:** "Sandbox Legion" is the agent name for the flagship multi-sub-agent LangGraph orchestrator. Use `sandbox-legion` (not `sandbox-agent`) in code, configs, and agent_name fields.
 
-**Architecture:** FastAPI backend gets a new `sandbox` router with dynamic per-namespace Postgres pool discovery. React UI adds a SandboxPage with session sidebar tree (last 20, collapsible parent→child), chat panel with expandable advanced config, and full sessions table. LangGraph agents use AsyncPostgresSaver for checkpoint persistence.
+**Goal:** Add session-persisted Sandbox Legion management to Kagenti with sidebar tree, chat-first UX, searchable table, and per-namespace PostgreSQL.
 
-**Tech Stack:** FastAPI + asyncpg (backend), React + PatternFly + TanStack Query (UI), PostgreSQL 16 (sessions DB), LangGraph AsyncPostgresSaver (checkpointer), Playwright (E2E tests)
+**Architecture:** FastAPI backend gets a new `sandbox` router with dynamic per-namespace Postgres pool discovery. React UI adds a SandboxPage with session sidebar tree (last 20, collapsible parent→child), chat panel with expandable advanced config, and full sessions table. Session persistence is handled by the **A2A SDK's DatabaseTaskStore** (framework-agnostic). Sandbox Legion additionally uses LangGraph AsyncPostgresSaver for internal graph state (HITL pause/resume).
+
+**Tech Stack:** FastAPI + asyncpg (backend), React + PatternFly + TanStack Query (UI), PostgreSQL 16 (shared by A2A SDK DatabaseTaskStore + LangGraph AsyncPostgresSaver), Playwright (E2E tests)
 
 **Design doc:** `docs/plans/2026-02-25-sandbox-ui-design.md`
 
@@ -119,6 +121,8 @@ git commit -s -m "feat: add postgres-sessions StatefulSet for sandbox session pe
 
 ## Task 2: Backend — Session DB Pool Manager
 
+> **IMPORTANT:** The custom `sessions` and `session_messages` tables are **REPLACED** by the A2A SDK's `DatabaseTaskStore` schema. The SDK creates and manages its own tables (`tasks`, `task_messages`, `task_artifacts`, etc.) automatically. The pool manager should provide connections for reading from these SDK-managed tables. Do NOT create custom session tables — the SDK handles schema creation.
+
 **Files:**
 - Create: `kagenti/backend/app/services/session_db.py`
 - Modify: `kagenti/backend/app/main.py` (add startup/shutdown hooks)
@@ -131,6 +135,9 @@ git commit -s -m "feat: add postgres-sessions StatefulSet for sandbox session pe
 
 Discovers DB connection from postgres-sessions-secret in each namespace.
 Pools are created lazily on first access and cached.
+
+NOTE: This pool is used to READ from the A2A SDK's DatabaseTaskStore tables.
+The SDK manages schema creation — do NOT create custom session tables here.
 """
 import asyncpg
 import base64
@@ -148,7 +155,10 @@ POOL_MAX_INACTIVE_LIFETIME = 300  # seconds
 
 
 async def get_session_pool(namespace: str) -> asyncpg.Pool:
-    """Get or create a connection pool for a namespace's session DB."""
+    """Get or create a connection pool for a namespace's session DB.
+
+    Used by the backend to read from A2A SDK DatabaseTaskStore tables.
+    """
     if namespace in _pool_cache:
         return _pool_cache[namespace]
 
@@ -195,38 +205,9 @@ async def close_all_pools():
     _pool_cache.clear()
 
 
-async def ensure_schema(namespace: str):
-    """Create session tables if they don't exist."""
-    pool = await get_session_pool(namespace)
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                context_id    TEXT PRIMARY KEY,
-                parent_id     TEXT REFERENCES sessions(context_id),
-                owner_user    TEXT NOT NULL,
-                owner_group   TEXT NOT NULL,
-                title         TEXT,
-                status        TEXT DEFAULT 'active',
-                agent_name    TEXT NOT NULL,
-                config        JSONB,
-                created_at    TIMESTAMPTZ DEFAULT NOW(),
-                updated_at    TIMESTAMPTZ DEFAULT NOW(),
-                completed_at  TIMESTAMPTZ
-            );
-            CREATE TABLE IF NOT EXISTS session_messages (
-                id            SERIAL PRIMARY KEY,
-                context_id    TEXT REFERENCES sessions(context_id) ON DELETE CASCADE,
-                role          TEXT NOT NULL,
-                content       TEXT NOT NULL,
-                actor_user    TEXT,
-                created_at    TIMESTAMPTZ DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS idx_sessions_owner ON sessions(owner_user);
-            CREATE INDEX IF NOT EXISTS idx_sessions_group ON sessions(owner_group);
-            CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_id);
-            CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-            CREATE INDEX IF NOT EXISTS idx_messages_context ON session_messages(context_id);
-        """)
+# NOTE: ensure_schema() is NOT needed — the A2A SDK's DatabaseTaskStore
+# handles table creation automatically when the agent starts up.
+# The backend only reads from these SDK-managed tables.
 ```
 
 **Step 2: Wire into FastAPI lifecycle**
@@ -251,6 +232,8 @@ git commit -s -m "feat: add dynamic per-namespace session DB pool manager"
 
 ## Task 3: Backend — Sandbox Sessions Router
 
+> **IMPORTANT:** The router queries the **A2A SDK's DatabaseTaskStore tables** (`tasks`, etc.) — NOT custom `sessions` / `session_messages` tables. The SDK manages the schema; the backend is a read-only consumer for UI purposes.
+
 **Files:**
 - Create: `kagenti/backend/app/routers/sandbox.py`
 - Modify: `kagenti/backend/app/main.py` (register router)
@@ -259,10 +242,11 @@ git commit -s -m "feat: add dynamic per-namespace session DB pool manager"
 
 ```python
 # kagenti/backend/app/routers/sandbox.py
-"""Sandbox session management API.
+"""Sandbox Legion session management API.
 
-Endpoints for listing, creating, and managing sandbox agent sessions.
-Session data is stored in per-namespace PostgreSQL.
+Endpoints for listing, creating, and managing Sandbox Legion sessions.
+Session data is read from the A2A SDK's DatabaseTaskStore tables
+(tasks, task_messages, etc.) in per-namespace PostgreSQL.
 """
 import logging
 from datetime import datetime, timezone
@@ -272,7 +256,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.services.session_db import get_session_pool, ensure_schema
+from app.services.session_db import get_session_pool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/sandbox", tags=["sandbox"])
@@ -297,7 +281,7 @@ class SessionDetail(SessionSummary):
     messages: list[dict] = []
 
 class CreateSessionRequest(BaseModel):
-    agent_name: str = "sandbox-agent"
+    agent_name: str = "sandbox-legion"
     model: str = "gpt-4o-mini"
     repo: Optional[str] = None
     branch: str = "main"
@@ -309,6 +293,8 @@ class SendMessageRequest(BaseModel):
 
 
 # --- Endpoints ---
+# NOTE: All queries target the A2A SDK's DatabaseTaskStore tables (e.g., "tasks").
+# The exact table/column names depend on the SDK version — adjust as needed.
 
 @router.get("/{namespace}/sessions")
 async def list_sessions(
@@ -318,7 +304,6 @@ async def list_sessions(
     status: Optional[str] = None,
     search: Optional[str] = None,
 ) -> dict:
-    await ensure_schema(namespace)
     pool = await get_session_pool(namespace)
 
     conditions = ["1=1"]
@@ -330,20 +315,20 @@ async def list_sessions(
         params.append(status)
         idx += 1
     if search:
-        conditions.append(f"(title ILIKE ${idx} OR context_id ILIKE ${idx})")
+        conditions.append(f"(context_id ILIKE ${idx})")
         params.append(f"%{search}%")
         idx += 1
 
     where = " AND ".join(conditions)
 
     async with pool.acquire() as conn:
+        # Query the A2A SDK's tasks table
         total = await conn.fetchval(
-            f"SELECT COUNT(*) FROM sessions WHERE {where}", *params
+            f"SELECT COUNT(*) FROM tasks WHERE {where}", *params
         )
         rows = await conn.fetch(
-            f"""SELECT context_id, parent_id, title, status, agent_name,
-                       owner_user, created_at, updated_at
-                FROM sessions WHERE {where}
+            f"""SELECT id, context_id, status, created_at, updated_at
+                FROM tasks WHERE {where}
                 ORDER BY updated_at DESC
                 LIMIT ${idx} OFFSET ${idx+1}""",
             *params, limit, offset,
@@ -358,36 +343,29 @@ async def list_sessions(
 
 
 @router.get("/{namespace}/sessions/{context_id}")
-async def get_session(namespace: str, context_id: str) -> SessionDetail:
-    await ensure_schema(namespace)
+async def get_session(namespace: str, context_id: str) -> dict:
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
+        # Query the A2A SDK's tasks table by context_id
         row = await conn.fetchrow(
-            "SELECT * FROM sessions WHERE context_id = $1", context_id
+            "SELECT * FROM tasks WHERE context_id = $1", context_id
         )
         if not row:
             raise HTTPException(404, f"Session {context_id} not found")
 
-        children = await conn.fetch(
-            """SELECT context_id, parent_id, title, status, agent_name,
-                      owner_user, created_at, updated_at
-               FROM sessions WHERE parent_id = $1
-               ORDER BY created_at""",
-            context_id,
-        )
+        # Get messages from the SDK's message storage
         messages = await conn.fetch(
-            """SELECT role, content, actor_user, created_at
-               FROM session_messages WHERE context_id = $1
+            """SELECT role, content, created_at
+               FROM task_messages WHERE task_id = $1
                ORDER BY created_at""",
-            context_id,
+            row["id"],
         )
 
-    return SessionDetail(
-        **dict(row),
-        children=[SessionSummary(**dict(c)) for c in children],
-        messages=[dict(m) for m in messages],
-    )
+    return {
+        "task": dict(row),
+        "messages": [dict(m) for m in messages],
+    }
 
 
 @router.delete("/{namespace}/sessions/{context_id}")
@@ -395,7 +373,7 @@ async def delete_session(namespace: str, context_id: str) -> dict:
     pool = await get_session_pool(namespace)
     async with pool.acquire() as conn:
         result = await conn.execute(
-            "DELETE FROM sessions WHERE context_id = $1", context_id
+            "DELETE FROM tasks WHERE context_id = $1", context_id
         )
     if result == "DELETE 0":
         raise HTTPException(404, f"Session {context_id} not found")
@@ -407,9 +385,9 @@ async def kill_session(namespace: str, context_id: str) -> dict:
     pool = await get_session_pool(namespace)
     async with pool.acquire() as conn:
         result = await conn.execute(
-            """UPDATE sessions SET status = 'killed',
-                      completed_at = NOW(), updated_at = NOW()
-               WHERE context_id = $1 AND status = 'active'""",
+            """UPDATE tasks SET status = 'canceled',
+                      updated_at = NOW()
+               WHERE context_id = $1 AND status IN ('submitted', 'working')""",
             context_id,
         )
     if result == "UPDATE 0":
@@ -433,7 +411,13 @@ git commit -s -m "feat: add sandbox sessions API router"
 
 ---
 
-## Task 4: Agent — Wire AsyncPostgresSaver + Session Metadata
+## Task 4: Agent — Wire AsyncPostgresSaver + A2A DatabaseTaskStore (Sandbox Legion)
+
+> **Dual persistence:** Sandbox Legion uses BOTH persistence layers on the same Postgres instance (different tables):
+> 1. **A2A SDK DatabaseTaskStore** — Tasks, messages, artifacts. Read by the Kagenti backend for UI. Framework-agnostic (all A2A agents use this).
+> 2. **LangGraph AsyncPostgresSaver** — Graph state, checkpoints. Internal to Sandbox Legion for HITL pause/resume. NOT read by the UI.
+>
+> Both can share the same PostgreSQL instance with different tables. The A2A SDK manages its tables; LangGraph manages `checkpoints`.
 
 **Files:**
 - Modify: `a2a/sandbox_agent/src/sandbox_agent/agent.py` (agent-examples repo)
@@ -447,6 +431,7 @@ dependencies = [
     # ... existing ...
     "langgraph-checkpoint-postgres>=2.0.0",
     "asyncpg>=0.30.0",
+    "a2a-sdk[postgresql]",
 ]
 ```
 
@@ -461,6 +446,7 @@ class SandboxAgentExecutor(AgentExecutor):
         # ... existing setup ...
         config = Configuration()
 
+        # LangGraph checkpointer (graph state only — NOT session persistence)
         # Use PostgreSQL checkpointer if configured, else MemorySaver
         if config.checkpoint_db_url and config.checkpoint_db_url != "memory":
             import asyncpg
@@ -471,20 +457,23 @@ class SandboxAgentExecutor(AgentExecutor):
             self._checkpointer = MemorySaver()
 ```
 
-**Step 3: Write session metadata on each message**
+**Step 3: A2A SDK DatabaseTaskStore handles session/message persistence**
 
-In the `execute()` method, after resolving workspace, insert session row:
+The A2A SDK's `DatabaseTaskStore` is configured at the A2A server level (not in the agent). It automatically persists tasks and messages to Postgres. No custom `_record_session()` code is needed — the SDK does this.
+
 ```python
-# Record session in DB
-if hasattr(self._checkpointer, 'conn'):  # PostgreSQL mode
-    await self._record_session(context_id, context)
+# In the A2A server setup (NOT in the agent):
+from a2a.server.tasks import DatabaseTaskStore
+
+task_store = DatabaseTaskStore(db_url=config.task_store_db_url)
+# The SDK creates and manages its own tables automatically
 ```
 
 **Step 4: Commit**
 
 ```bash
 git add a2a/sandbox_agent/src/sandbox_agent/agent.py a2a/sandbox_agent/pyproject.toml
-git commit -s -m "feat: wire AsyncPostgresSaver for session persistence"
+git commit -s -m "feat: wire AsyncPostgresSaver + DatabaseTaskStore for Sandbox Legion"
 ```
 
 ---

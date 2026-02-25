@@ -1,10 +1,35 @@
-# Sandbox Agent Management UI — Design Document
+# Sandbox Legion Management UI — Design Document
 
-> **Date:** 2026-02-25 | **Status:** Approved for implementation
+> **Date:** 2026-02-25 | **Status:** Approved for implementation | **Updated:** Pivoted to A2A-generic persistence via `a2a-sdk[postgresql]` DatabaseTaskStore; renamed agent to "Sandbox Legion"
 
 ## Overview
 
-Add a sandbox agent management UI to Kagenti that lets users spawn, chat with, and manage sandbox agents. The UI supports both a chat-first default experience and an advanced wizard for power users. Sessions are persisted in per-namespace PostgreSQL, tracked in a collapsible sidebar tree, and shared across user groups via Keycloak RBAC.
+Add a Sandbox Legion management UI to Kagenti that lets users spawn, chat with, and manage Sandbox Legion agents. The UI supports both a chat-first default experience and an advanced wizard for power users. Sessions are persisted in per-namespace PostgreSQL via the **A2A SDK's DatabaseTaskStore** (framework-agnostic), tracked in a collapsible sidebar tree, and shared across user groups via Keycloak RBAC.
+
+> **Naming:** "Sandbox Legion" is the agent name for the flagship multi-sub-agent orchestrator. The generic concept of "a sandbox agent" may still appear when discussing the framework-agnostic pattern.
+
+### Agent Variants
+
+- **Sandbox Legion** — The flagship multi-sub-agent orchestrator. LangGraph-based, uses C20 sub-agent spawning (explore + delegate), AsyncPostgresSaver for graph pause/resume (HITL). Can run multiple sub-agents in a shared workspace.
+- **Future variants** — Other sandbox agents can be built with CrewAI, AG2, or custom frameworks. All share the same A2A TaskStore persistence and UI, differing only in the internal agent framework.
+
+### Persistence Architecture
+
+```
+┌─── A2A Protocol Level (framework-agnostic) ───────────────────────┐
+│  TaskStore (a2a-sdk[postgresql] DatabaseTaskStore)                  │
+│  Persists: tasks, messages, artifacts, contextId                   │
+│  Used by: ALL A2A agents (any framework)                           │
+│  Read by: Kagenti backend → UI (sessions, chat history)            │
+└────────────────────────────────────────────────────────────────────┘
+
+┌─── Agent Framework Level (optional, per-agent) ───────────────────┐
+│  LangGraph AsyncPostgresSaver (Sandbox Legion only)                │
+│  Persists: graph state, node outputs, tool call results            │
+│  Used for: HITL interrupt/resume, graph replay                     │
+│  NOT read by UI — internal to the agent                            │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ## Architecture
 
@@ -14,6 +39,7 @@ Add a sandbox agent management UI to Kagenti that lets users spawn, chat with, a
 │  [Sidebar: Session Tree]     [Main Panel: Chat / Table / Wizard]      │
 │  Last 20 sessions            Chat-first default + Advanced config     │
 │  Collapsible parent→child    Session table at /sandbox/sessions       │
+│  Agent variant:              Sandbox Legion (LangGraph)               │
 │                                                                       │
 └───────────────────────────────────┬───────────────────────────────────┘
                                     │
@@ -41,51 +67,41 @@ Add a sandbox agent management UI to Kagenti that lets users spawn, chat with, a
          │  (RDS, Cloud SQL, any Postgres-compatible)          │
          │  Connection string via ConfigMap/Secret per NS      │
          │                                                     │
-         │  Tables:                                            │
-         │  - checkpoints (LangGraph AsyncPostgresSaver)       │
-         │  - sessions (metadata, owner, status, config)       │
-         │  - session_messages (chat history, actor tracking)  │
+         │  Tables (managed by SDKs — do NOT create custom):     │
+         │  - tasks, artifacts, … (A2A SDK DatabaseTaskStore)  │
+         │    → PRIMARY persistence, read by backend for UI    │
+         │  - checkpoints (LangGraph AsyncPostgresSaver)        │
+         │    → Internal to Sandbox Legion, not read by UI     │
          └────────────────────────────────────────────────────┘
 ```
 
 ## Data Model
 
-### sessions table
+> **IMPORTANT:** Custom `sessions` and `session_messages` tables have been **REMOVED**. The A2A SDK's `DatabaseTaskStore` manages all task/session persistence. The backend reads directly from the SDK-managed tables.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `context_id` | TEXT PK | A2A context ID |
-| `parent_id` | TEXT FK → sessions | Parent session (for sub-agents) |
-| `owner_user` | TEXT | Keycloak username who created the session |
-| `owner_group` | TEXT | Keycloak group (maps to namespace) |
-| `title` | TEXT | Auto-generated from first message |
-| `status` | TEXT | `active`, `completed`, `failed`, `killed` |
-| `agent_name` | TEXT | e.g. `sandbox-agent` |
-| `config` | JSONB | `{model, repo, branch, skills, workspace_size}` |
-| `created_at` | TIMESTAMPTZ | Creation time |
-| `updated_at` | TIMESTAMPTZ | Last activity |
-| `completed_at` | TIMESTAMPTZ | When session ended |
+### A2A SDK DatabaseTaskStore Tables (managed by the SDK)
 
-### session_messages table
+The `a2a-sdk[postgresql]` package creates and manages these tables automatically:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment |
-| `context_id` | TEXT FK → sessions | Session reference |
-| `role` | TEXT | `user` or `assistant` |
-| `content` | TEXT | Message content |
-| `actor_user` | TEXT | Who sent this (for shared sessions) |
-| `created_at` | TIMESTAMPTZ | Message time |
+| Table | Key Columns | Description |
+|-------|-------------|-------------|
+| `tasks` | `id`, `context_id`, `status`, `created_at`, `updated_at` | One row per A2A task (maps to a session) |
+| `task_messages` | `task_id`, `role`, `content`, `created_at` | Messages within a task |
+| `task_artifacts` | `task_id`, `name`, `data` | Artifacts produced by agents |
 
-### Indexes
+The backend queries these SDK-managed tables to populate the UI (session list, chat history, status). The SDK handles schema creation, migrations, and indexing.
 
-```sql
-CREATE INDEX idx_sessions_owner ON sessions(owner_user);
-CREATE INDEX idx_sessions_group ON sessions(owner_group);
-CREATE INDEX idx_sessions_parent ON sessions(parent_id);
-CREATE INDEX idx_sessions_status ON sessions(status);
-CREATE INDEX idx_messages_context ON session_messages(context_id);
-```
+### Additional Metadata (Kagenti-specific)
+
+For fields not covered by the A2A SDK schema (e.g., `owner_group`, `agent_name` like `sandbox-legion`), the backend can:
+1. Store them as task metadata within the SDK's JSONB fields
+2. Or maintain a lightweight `task_metadata` extension table (keyed by `task_id`)
+
+### LangGraph Tables (internal to Sandbox Legion)
+
+| Table | Description |
+|-------|-------------|
+| `checkpoints` | AsyncPostgresSaver graph state (NOT read by UI) |
 
 ## UI Components
 
@@ -159,7 +175,7 @@ PatternFly Table with:
 | Namespace admin | Full control over all sessions in namespace |
 | Platform admin | Full control everywhere |
 
-- `actor_user` field in `session_messages` tracks who is talking in shared sessions
+- Actor tracking is handled via A2A SDK task message metadata
 - Sub-sessions inherit parent's namespace access
 - Backend validates JWT group claims on every request
 
@@ -284,8 +300,8 @@ spec:
 
 ## Implementation Phases
 
-1. **Postgres + Backend API** — Deploy postgres-sessions, add session router to backend, connection pooling
-2. **Agent Integration** — Wire AsyncPostgresSaver into sandbox agent, write session metadata on each message
+1. **Postgres + Backend API** — Deploy postgres-sessions, add session router to backend, connection pooling. Backend reads from A2A SDK's DatabaseTaskStore tables (no custom session tables).
+2. **Agent Integration** — Wire AsyncPostgresSaver into Sandbox Legion for graph state, A2A SDK DatabaseTaskStore for task/session persistence
 3. **UI: Chat + Sidebar** — New SandboxPage with chat view, session sidebar tree
 4. **UI: Advanced Config** — Expandable config panel, sandbox creation API
 5. **UI: Session Table** — Full page table with search/filter/pagination/bulk actions
