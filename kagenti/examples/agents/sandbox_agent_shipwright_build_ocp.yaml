@@ -22,7 +22,7 @@ spec:
     type: Git
     git:
       url: https://github.com/ladas/agent-examples
-      revision: feat/otel-authbridge-minimal-agent-667
+      revision: feat/sandbox-agent
       cloneSecret: github-shipwright-secret
     contextDir: a2a/sandbox_agent
   strategy:
