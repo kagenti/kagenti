@@ -75,10 +75,54 @@ def _get_ssl_context():
         return True
     ca_path = os.getenv("OPENSHIFT_INGRESS_CA")
     if not ca_path or not pathlib.Path(ca_path).exists():
+        ca_path = _fetch_ingress_ca()
+    if not ca_path:
         ca_path = _fetch_openshift_ingress_ca()
     if not ca_path:
         raise RuntimeError("Could not fetch OpenShift ingress CA certificate.")
     return ssl.create_default_context(cafile=ca_path)
+
+
+def _fetch_ingress_ca():
+    """Fetch OpenShift ingress CA from default-ingress-cert configmap."""
+    import subprocess
+    import tempfile
+
+    for ns, cm in [
+        ("openshift-config-managed", "default-ingress-cert"),
+        ("kagenti-system", "kube-root-ca.crt"),
+    ]:
+        jsonpath = (
+            "{.data.ca-bundle\\.crt}"
+            if cm == "default-ingress-cert"
+            else "{.data.ca\\.crt}"
+        )
+        try:
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "configmap",
+                    cm,
+                    "-n",
+                    ns,
+                    "-o",
+                    f"jsonpath={jsonpath}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0 and result.stdout.startswith("-----BEGIN"):
+                f = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".crt", delete=False, prefix="ingress-ca-"
+                )
+                f.write(result.stdout)
+                f.close()
+                return f.name
+        except Exception:
+            continue
+    return None
 
 
 # ---------------------------------------------------------------------------
