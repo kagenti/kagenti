@@ -4,19 +4,19 @@
 """
 Sandbox sessions API endpoints.
 
-Provides CRUD operations for sandbox agent sessions stored in per-namespace
-PostgreSQL databases.
+Provides read-only access to sandbox agent sessions stored in per-namespace
+PostgreSQL databases. Session data is managed by the A2A SDK's DatabaseTaskStore
+(table: 'tasks') — the backend only reads from it for UI purposes.
 """
 
 import json
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.services.session_db import ensure_schema, get_session_pool
+from app.services.session_db import get_session_pool
 
 logger = logging.getLogger(__name__)
 
@@ -28,44 +28,27 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 # ---------------------------------------------------------------------------
 
 
-class SessionMessage(BaseModel):
-    """A single message within a session."""
+class TaskSummary(BaseModel):
+    """Lightweight task/session representation for list views."""
 
-    id: int
+    id: str
     context_id: str
-    role: str
-    content: str
-    actor_user: Optional[str] = None
-    created_at: datetime
+    kind: str
+    status: Dict[str, Any]
+    metadata: Optional[Dict[str, Any]] = None
 
 
-class SessionSummary(BaseModel):
-    """Lightweight session representation for list views."""
+class TaskDetail(TaskSummary):
+    """Full task with artifacts and history."""
 
-    context_id: str
-    parent_id: Optional[str] = None
-    owner_user: str
-    owner_group: str
-    title: Optional[str] = None
-    status: str
-    agent_name: str
-    config: Optional[Dict[str, Any]] = None
-    created_at: datetime
-    updated_at: datetime
-    completed_at: Optional[datetime] = None
+    artifacts: Optional[List[Dict[str, Any]]] = None
+    history: Optional[List[Dict[str, Any]]] = None
 
 
-class SessionDetail(SessionSummary):
-    """Full session with children and messages."""
+class TaskListResponse(BaseModel):
+    """Paginated list of tasks/sessions."""
 
-    children: List[SessionSummary] = []
-    messages: List[SessionMessage] = []
-
-
-class SessionListResponse(BaseModel):
-    """Paginated list of sessions."""
-
-    items: List[SessionSummary]
+    items: List[TaskSummary]
     total: int
     limit: int
     offset: int
@@ -76,48 +59,54 @@ class SessionListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _row_to_summary(row: dict) -> SessionSummary:
-    """Convert an asyncpg Record (as dict) to a SessionSummary."""
+def _parse_json_field(value: Any) -> Any:
+    """Parse a JSON field that may be a string or already a dict/list."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
+def _row_to_summary(row: dict) -> TaskSummary:
+    """Convert an asyncpg Record (as dict) to a TaskSummary."""
     data = dict(row)
-    # config is stored as JSONB; asyncpg returns it as a str or dict
-    if isinstance(data.get("config"), str):
-        data["config"] = json.loads(data["config"])
-    return SessionSummary(**data)
+    data["status"] = _parse_json_field(data.get("status"))
+    data["metadata"] = _parse_json_field(data.get("metadata"))
+    return TaskSummary(**data)
 
 
-def _row_to_message(row: dict) -> SessionMessage:
-    return SessionMessage(**dict(row))
+def _row_to_detail(row: dict) -> TaskDetail:
+    """Convert an asyncpg Record (as dict) to a TaskDetail."""
+    data = dict(row)
+    data["status"] = _parse_json_field(data.get("status"))
+    data["metadata"] = _parse_json_field(data.get("metadata"))
+    data["artifacts"] = _parse_json_field(data.get("artifacts"))
+    data["history"] = _parse_json_field(data.get("history"))
+    return TaskDetail(**data)
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Endpoints — reading from A2A SDK's 'tasks' table
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{namespace}/sessions", response_model=SessionListResponse)
+@router.get("/{namespace}/sessions", response_model=TaskListResponse)
 async def list_sessions(
     namespace: str,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    status: Optional[str] = Query(default=None, description="Filter by session status"),
-    search: Optional[str] = Query(default=None, description="Search title or context_id"),
+    search: Optional[str] = Query(default=None, description="Search by context_id"),
 ):
-    """List sessions with pagination, optional status filter, and text search."""
-    await ensure_schema(namespace)
+    """List sessions (tasks) with pagination and optional search."""
     pool = await get_session_pool(namespace)
 
-    # Build dynamic WHERE clause
     conditions: List[str] = []
     args: List[Any] = []
     idx = 1
 
-    if status:
-        conditions.append(f"status = ${idx}")
-        args.append(status)
-        idx += 1
-
     if search:
-        conditions.append(f"(title ILIKE ${idx} OR context_id ILIKE ${idx})")
+        conditions.append(f"context_id ILIKE ${idx}")
         args.append(f"%{search}%")
         idx += 1
 
@@ -126,77 +115,79 @@ async def list_sessions(
         where = "WHERE " + " AND ".join(conditions)
 
     async with pool.acquire() as conn:
-        total = await conn.fetchval(f"SELECT COUNT(*) FROM sessions {where}", *args)
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM tasks {where}", *args)
 
         rows = await conn.fetch(
-            f"SELECT * FROM sessions {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT id, context_id, kind, status, metadata"
+            f" FROM tasks {where}"
+            f" ORDER BY id DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
             limit,
             offset,
         )
 
     items = [_row_to_summary(r) for r in rows]
-    return SessionListResponse(items=items, total=total, limit=limit, offset=offset)
+    return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/{namespace}/sessions/{context_id}", response_model=SessionDetail)
+@router.get("/{namespace}/sessions/{context_id}", response_model=TaskDetail)
 async def get_session(namespace: str, context_id: str):
-    """Get a session with its children and messages."""
-    await ensure_schema(namespace)
+    """Get a task/session by context_id with full history and artifacts."""
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM sessions WHERE context_id = $1", context_id)
+        row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        children_rows = await conn.fetch(
-            "SELECT * FROM sessions WHERE parent_id = $1 ORDER BY created_at", context_id
-        )
-
-        message_rows = await conn.fetch(
-            "SELECT * FROM session_messages WHERE context_id = $1 ORDER BY created_at",
-            context_id,
-        )
-
-    detail = SessionDetail(
-        **_row_to_summary(row).model_dump(),
-        children=[_row_to_summary(r) for r in children_rows],
-        messages=[_row_to_message(r) for r in message_rows],
-    )
-    return detail
+    return _row_to_detail(row)
 
 
 @router.delete("/{namespace}/sessions/{context_id}", status_code=204)
 async def delete_session(namespace: str, context_id: str):
-    """Delete a session and cascade-delete its messages."""
-    await ensure_schema(namespace)
+    """Delete a task/session by context_id."""
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        result = await conn.execute("DELETE FROM sessions WHERE context_id = $1", context_id)
+        result = await conn.execute("DELETE FROM tasks WHERE context_id = $1", context_id)
 
-    # result is e.g. "DELETE 1" or "DELETE 0"
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Session not found")
 
     return None
 
 
-@router.post("/{namespace}/sessions/{context_id}/kill", response_model=SessionSummary)
+@router.post(
+    "/{namespace}/sessions/{context_id}/kill",
+    response_model=TaskDetail,
+)
 async def kill_session(namespace: str, context_id: str):
-    """Mark a session as killed (set status='killed', completed_at=NOW())."""
-    await ensure_schema(namespace)
+    """Mark a task as canceled by updating its status JSON."""
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "UPDATE sessions SET status = 'killed', completed_at = NOW(), updated_at = NOW() "
-            "WHERE context_id = $1 RETURNING *",
+        row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Update the status JSON to set state to 'canceled'
+        status = _parse_json_field(row["status"])
+        if isinstance(status, dict):
+            state = status.get("state", {})
+            if isinstance(state, dict):
+                state["state"] = "canceled"
+            else:
+                status["state"] = "canceled"
+        else:
+            status = {"state": "canceled"}
+
+        await conn.execute(
+            "UPDATE tasks SET status = $1::json WHERE context_id = $2",
+            json.dumps(status),
             context_id,
         )
 
-    if row is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+        # Re-fetch updated row
+        row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
 
-    return _row_to_summary(row)
+    return _row_to_detail(row)

@@ -113,50 +113,6 @@ async def close_all_pools() -> None:
     _pool_cache.clear()
 
 
-# ---------------------------------------------------------------------------
-# Schema bootstrap
-# ---------------------------------------------------------------------------
-
-_SCHEMA_SQL = """\
-CREATE TABLE IF NOT EXISTS sessions (
-    context_id   TEXT PRIMARY KEY,
-    parent_id    TEXT REFERENCES sessions(context_id),
-    owner_user   TEXT NOT NULL,
-    owner_group  TEXT NOT NULL,
-    title        TEXT,
-    status       TEXT DEFAULT 'active',
-    agent_name   TEXT NOT NULL,
-    config       JSONB,
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-
-CREATE TABLE IF NOT EXISTS session_messages (
-    id         SERIAL PRIMARY KEY,
-    context_id TEXT REFERENCES sessions(context_id) ON DELETE CASCADE,
-    role       TEXT NOT NULL,
-    content    TEXT NOT NULL,
-    actor_user TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_owner_user
-    ON sessions(owner_user);
-CREATE INDEX IF NOT EXISTS idx_sessions_owner_group
-    ON sessions(owner_group);
-CREATE INDEX IF NOT EXISTS idx_sessions_parent_id
-    ON sessions(parent_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_status
-    ON sessions(status);
-CREATE INDEX IF NOT EXISTS idx_session_messages_context_id
-    ON session_messages(context_id);
-"""
-
-
-async def ensure_schema(namespace: str) -> None:
-    """Create the sessions / session_messages tables if they do not exist."""
-    pool = await get_session_pool(namespace)
-    async with pool.acquire() as conn:
-        await conn.execute(_SCHEMA_SQL)
-    logger.info("Schema ensured for namespace=%s", namespace)
+# NOTE: Schema management is handled by the A2A SDK's DatabaseTaskStore.
+# The backend only reads from the SDK-managed 'tasks' table.
+# No ensure_schema() is needed — the SDK creates tables on agent startup.
