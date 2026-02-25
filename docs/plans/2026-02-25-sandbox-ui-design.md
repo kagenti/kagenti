@@ -163,26 +163,60 @@ PatternFly Table with:
 - Sub-sessions inherit parent's namespace access
 - Backend validates JWT group claims on every request
 
-## Backend Connection Pooling
+## Backend Connection Pooling (Dynamic Discovery)
+
+DB connections are **not hardcoded** — the backend discovers Postgres per namespace dynamically:
+
+1. User authenticates → JWT groups = namespaces they can access
+2. For each namespace, backend looks for `postgres-sessions-secret` Secret
+3. Secret contains: `host`, `port`, `database`, `username`, `password`
+4. Connection pools created lazily on first access, cached per namespace
+5. Falls back to convention: `postgres-sessions.{namespace}:5432/sessions`
 
 ```python
-# Per-namespace asyncpg connection pool
-# Configured via env var or ConfigMap
+# Dynamic per-namespace pool discovery
+_pool_cache: dict[str, asyncpg.Pool] = {}
 
-# Environment variable pattern:
-SANDBOX_DB_URL_team1=postgresql://user:pass@postgres-sessions.team1:5432/sessions
-SANDBOX_DB_URL_team2=postgresql://user:pass@rds.amazonaws.com:5432/team2_sessions
+async def get_session_pool(namespace: str) -> asyncpg.Pool:
+    """Get or create a connection pool for a namespace's session DB."""
+    if namespace in _pool_cache:
+        return _pool_cache[namespace]
 
-# Pool configuration (reasonable limits):
-pool = asyncpg.create_pool(
-    dsn=db_url,
-    min_size=2,       # keep 2 warm connections
-    max_size=10,      # max 10 concurrent per namespace
-    max_inactive_connection_lifetime=300,  # close idle after 5 min
-)
+    # Read DB connection from namespace Secret
+    try:
+        secret = k8s_client.read_namespaced_secret(
+            "postgres-sessions-secret", namespace
+        )
+        dsn = _build_dsn_from_secret(secret)
+    except ApiException:
+        # Fallback: convention-based in-cluster Postgres
+        dsn = f"postgresql://kagenti:kagenti@postgres-sessions.{namespace}:5432/sessions"
+
+    pool = await asyncpg.create_pool(
+        dsn,
+        min_size=2,       # keep 2 warm connections
+        max_size=10,      # max 10 concurrent per namespace
+        max_inactive_connection_lifetime=300,  # close idle after 5 min
+    )
+    _pool_cache[namespace] = pool
+    return pool
 ```
 
-External Postgres fully supported — connection string is the only configuration needed.
+**External Postgres:** Users point to RDS, Cloud SQL, or any managed Postgres by creating a `postgres-sessions-secret` in their namespace:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-sessions-secret
+  namespace: team2
+stringData:
+  host: my-rds-instance.us-east-1.rds.amazonaws.com
+  port: "5432"
+  database: team2_sessions
+  username: kagenti_team2
+  password: <password>
+```
 
 ## PostgreSQL Deployment (in-cluster option)
 
