@@ -941,6 +941,9 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     log_step "Applying pipeline template..."
     ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
+
+    log_step "Fixing Keycloak admin (RHBK operator workaround)..."
+    ./.github/scripts/kagenti-operator/36-fix-keycloak-admin.sh
 else
     log_phase "PHASE 2: Skipping Kagenti Installation"
 fi
