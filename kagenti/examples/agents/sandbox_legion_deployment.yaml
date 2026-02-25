@@ -57,6 +57,10 @@ spec:
           value: "gpt-4o-mini"
         - name: UV_CACHE_DIR
           value: "/app/.cache/uv"
+        - name: TASK_STORE_DB_URL
+          value: "postgresql+asyncpg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions"
+        - name: CHECKPOINT_DB_URL
+          value: "postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions"
         ports:
         - containerPort: 8000
           name: http
