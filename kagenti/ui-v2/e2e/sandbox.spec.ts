@@ -217,6 +217,58 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   });
 });
 
+test.describe('Sandbox Legion - Agents Panel', () => {
+  test.setTimeout(60000);
+
+  test('should show sandbox agents panel in sidebar', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await page.waitForLoadState('networkidle');
+
+    // Agents panel should be visible below sessions
+    await expect(
+      page.getByText(/Sandboxes/i).first()
+    ).toBeVisible({ timeout: 15000 });
+  });
+
+  test('should show Import Agent button and navigate to wizard', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await page.waitForLoadState('networkidle');
+
+    // Import Agent button should be visible
+    const importBtn = page.getByRole('button', { name: /Import Agent/i });
+    await expect(importBtn).toBeVisible({ timeout: 10000 });
+
+    // Click should navigate to wizard
+    await importBtn.click();
+    await page.waitForLoadState('networkidle');
+    await expect(
+      page.getByRole('heading', { name: /Create Sandbox Agent/i })
+    ).toBeVisible({ timeout: 15000 });
+  });
+});
+
+test.describe('Sandbox Legion - Root Only Toggle', () => {
+  test.setTimeout(60000);
+
+  test('should toggle between root-only and all sessions', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await page.waitForLoadState('networkidle');
+
+    // Root only toggle should be visible
+    const toggle = page.locator('#root-only-toggle');
+    await expect(toggle).toBeVisible({ timeout: 10000 });
+
+    // Should be checked by default
+    await expect(toggle).toBeChecked();
+  });
+});
+
 test.describe('Sandbox Legion - Advanced Config', () => {
   test.setTimeout(60000);
 

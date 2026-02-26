@@ -23,7 +23,6 @@ import remarkGfm from 'remark-gfm';
 import { sandboxService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
-import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 
@@ -678,7 +677,6 @@ export const SandboxPage: React.FC = () => {
             activeContextId={contextId}
             onSelectSession={handleSelectSession}
           />
-          <SandboxAgentsPanel namespace={namespace} />
         </div>
 
         <div
