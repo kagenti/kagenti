@@ -259,6 +259,55 @@ async def delete_session(namespace: str, context_id: str):
     return None
 
 
+class RenameRequest(BaseModel):
+    title: str
+
+
+@router.put("/{namespace}/sessions/{context_id}/rename")
+async def rename_session(namespace: str, context_id: str, request: RenameRequest):
+    """Set or clear a custom session title.
+
+    Pass an empty title to revert to the auto-generated default (first message).
+    """
+    pool = await get_session_pool(namespace)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT metadata, history FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        meta = _parse_json_field(row["metadata"]) or {}
+
+        if request.title.strip():
+            meta["title"] = request.title.strip()[:120]
+        else:
+            # Revert to default: first user message
+            history = _parse_json_field(row["history"]) or []
+            first_msg = next(
+                (
+                    m
+                    for m in history
+                    if m.get("role") == "user" and m.get("parts") and m["parts"][0].get("text")
+                ),
+                None,
+            )
+            if first_msg:
+                meta["title"] = first_msg["parts"][0]["text"][:80].replace("\n", " ")
+            else:
+                meta.pop("title", None)
+
+        await conn.execute(
+            "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+            json.dumps(meta),
+            context_id,
+        )
+
+    return {"title": meta.get("title", "")}
+
+
 @router.post(
     "/{namespace}/sessions/{context_id}/kill",
     response_model=TaskDetail,
@@ -371,9 +420,31 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
         except (ValueError, SyntaxError):
             pass  # keep original text
 
+    # Auto-set session title from first message (truncated to 80 chars)
+    final_context_id = result.get("contextId", context_id)
+    try:
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                final_context_id,
+            )
+            if row:
+                meta = _parse_json_field(row["metadata"]) or {}
+                if not meta.get("title"):
+                    title = request.message[:80].replace("\n", " ")
+                    meta["title"] = title
+                    await conn.execute(
+                        "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                        json.dumps(meta),
+                        final_context_id,
+                    )
+    except Exception:
+        pass  # non-critical
+
     return {
         "content": text,
-        "context_id": result.get("contextId", context_id),
+        "context_id": final_context_id,
         "task_id": result.get("id"),
         "status": result.get("status", {}),
     }

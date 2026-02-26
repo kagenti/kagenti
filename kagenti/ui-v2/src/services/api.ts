@@ -700,6 +700,20 @@ export const sandboxService = {
     );
   },
 
+  async renameSession(
+    namespace: string,
+    contextId: string,
+    title: string
+  ): Promise<{ title: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/rename`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ title }),
+      }
+    );
+  },
+
   async getHistory(
     namespace: string,
     contextId: string,
