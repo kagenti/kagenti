@@ -153,9 +153,16 @@ test.describe('Import Wizard — Basic Agent', () => {
     await clickNext(page);
     await snap(page, 'basic-step3-identity');
 
-    // Step 3: Identity — accept defaults (PAT mode)
+    // Step 3: Identity — verify defaults (PAT mode + existing secret)
     const credMode = page.locator('#cred-mode');
     await expect(credMode).toBeVisible();
+
+    // Existing secret should be the default for LLM key
+    const llmKeySource = page.locator('#llm-key-source');
+    await expect(llmKeySource).toBeVisible({ timeout: 5000 });
+
+    // Secret name field should show default "openai-api-key"
+    await expect(page.locator('#llm-secret-name')).toHaveValue('openai-api-key');
     await clickNext(page);
     await snap(page, 'basic-step4-persistence');
 
@@ -243,7 +250,8 @@ test.describe('Import Wizard — Hardened Agent', () => {
     await snap(page, 'hardened-step2-configured');
     await clickNext(page);
 
-    // Step 3: Identity — keep PAT, add a fake API key
+    // Step 3: Identity — keep PAT, switch to "paste new key" mode
+    await page.locator('#llm-key-source').selectOption('new');
     await page.locator('#llm-key').fill('sk-test-hardened-key-123');
     await snap(page, 'hardened-step3-identity');
     await clickNext(page);
@@ -300,7 +308,8 @@ test.describe('Import Wizard — Enterprise Agent', () => {
       page.getByText(/GitHub App Setup/i)
     ).toBeVisible({ timeout: 5000 });
 
-    // LLM key still required
+    // LLM key — switch to paste mode and fill
+    await page.locator('#llm-key-source').selectOption('new');
     await page.locator('#llm-key').fill('sk-enterprise-key-456');
     await clickNext(page);
 
