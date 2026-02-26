@@ -26,11 +26,21 @@ import { SessionSidebar } from '../components/SessionSidebar';
 import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 
+interface ToolCallData {
+  type: 'tool_call' | 'tool_result' | 'thinking';
+  name?: string;
+  args?: string;
+  output?: string;
+  content?: string;
+  tools?: Array<{ name: string; args: string }>;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  toolData?: ToolCallData;
 }
 
 /** Number of history messages to show initially; rest behind "Load earlier". */
@@ -53,8 +63,112 @@ function isGraphDump(text: string): boolean {
 // Message bubble component
 // ---------------------------------------------------------------------------
 
+/** Expandable tool call step in the conversation. */
+const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  if (data.type === 'tool_call') {
+    return (
+      <div
+        style={{
+          margin: '4px 0',
+          padding: '6px 10px',
+          borderLeft: '3px solid var(--pf-v5-global--info-color--100)',
+          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+          borderRadius: '0 4px 4px 0',
+          fontSize: '0.85em',
+          cursor: 'pointer',
+        }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div style={{ fontWeight: 600 }}>
+          {expanded ? '▼' : '▶'} Tool Call:{' '}
+          {data.tools?.map((t) => t.name).join(', ') || 'unknown'}
+        </div>
+        {expanded &&
+          data.tools?.map((t, i) => (
+            <pre
+              key={i}
+              style={{
+                margin: '4px 0',
+                padding: 8,
+                backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+                color: 'var(--pf-v5-global--Color--light-100)',
+                borderRadius: 4,
+                fontSize: '0.9em',
+                overflow: 'auto',
+              }}
+            >
+              {t.name}({t.args})
+            </pre>
+          ))}
+      </div>
+    );
+  }
+
+  if (data.type === 'tool_result') {
+    return (
+      <div
+        style={{
+          margin: '4px 0',
+          padding: '6px 10px',
+          borderLeft: '3px solid var(--pf-v5-global--success-color--100)',
+          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+          borderRadius: '0 4px 4px 0',
+          fontSize: '0.85em',
+          cursor: 'pointer',
+        }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div style={{ fontWeight: 600 }}>
+          {expanded ? '▼' : '▶'} Result: {data.name || 'tool'}
+        </div>
+        {expanded && (
+          <pre
+            style={{
+              margin: '4px 0',
+              padding: 8,
+              backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+              color: 'var(--pf-v5-global--Color--light-100)',
+              borderRadius: 4,
+              fontSize: '0.9em',
+              overflow: 'auto',
+              maxHeight: 200,
+            }}
+          >
+            {data.output || '(no output)'}
+          </pre>
+        )}
+      </div>
+    );
+  }
+
+  if (data.type === 'thinking') {
+    return (
+      <div
+        style={{
+          margin: '4px 0',
+          padding: '4px 10px',
+          fontSize: '0.82em',
+          fontStyle: 'italic',
+          color: 'var(--pf-v5-global--Color--200)',
+        }}
+      >
+        {data.content}
+      </div>
+    );
+  }
+
+  return null;
+};
+
 const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
   const isUser = msg.role === 'user';
+
+  // Tool call/result steps render as compact expandable items
+  if (!isUser && msg.toolData) {
+    return <ToolCallStep data={msg.toolData} />;
+  }
 
   return (
     <div
@@ -193,18 +307,33 @@ export const SandboxPage: React.FC = () => {
 
   /** Convert a history message from the API into a Message for display. */
   const toMessage = (
-    h: { role: string; parts?: Array<{ kind: string; text?: string }>; _index?: number },
+    h: { role: string; parts?: Array<Record<string, unknown>>; _index?: number },
     i: number
-  ): Message => ({
-    id: `history-${h._index ?? i}`,
-    role: h.role as 'user' | 'assistant',
-    content:
-      h.parts
-        ?.map((p) => p.text)
-        .filter(Boolean)
-        .join('') || '',
-    timestamp: new Date(),
-  });
+  ): Message => {
+    const firstPart = h.parts?.[0] as Record<string, unknown> | undefined;
+
+    // Check if this is a tool call/result/thinking (kind: "data")
+    if (firstPart?.kind === 'data' && firstPart?.type) {
+      return {
+        id: `history-${h._index ?? i}`,
+        role: h.role as 'user' | 'assistant',
+        content: '',
+        timestamp: new Date(),
+        toolData: firstPart as unknown as ToolCallData,
+      };
+    }
+
+    return {
+      id: `history-${h._index ?? i}`,
+      role: h.role as 'user' | 'assistant',
+      content:
+        h.parts
+          ?.map((p) => p.text as string)
+          .filter(Boolean)
+          .join('') || '',
+      timestamp: new Date(),
+    };
+  };
 
   /** Load the initial (most recent) page of history. */
   const loadInitialHistory = useCallback(

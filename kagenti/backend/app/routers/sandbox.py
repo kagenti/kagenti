@@ -126,11 +126,20 @@ async def list_sessions(
         where = "WHERE " + " AND ".join(conditions)
 
     async with pool.acquire() as conn:
-        total = await conn.fetchval(f"SELECT COUNT(*) FROM tasks {where}", *args)
+        # Deduplicate: keep only the latest task per context_id (highest id).
+        # This handles retries/re-submissions that create multiple records.
+        dedup_cte = (
+            f"WITH latest AS ("
+            f"  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
+            f"  FROM tasks ORDER BY context_id, id DESC"
+            f")"
+        )
+
+        total = await conn.fetchval(f"{dedup_cte} SELECT COUNT(*) FROM latest {where}", *args)
 
         rows = await conn.fetch(
-            f"SELECT id, context_id, kind, status, metadata"
-            f" FROM tasks {where}"
+            f"{dedup_cte} SELECT id, context_id, kind, status, metadata"
+            f" FROM latest {where}"
             f" ORDER BY COALESCE((status::json->>'timestamp')::text, id::text) DESC"
             f" LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
@@ -199,32 +208,78 @@ async def get_session_history(
             raise HTTPException(status_code=404, detail="Session not found")
 
     raw_history: list = _parse_json_field(row["history"]) or []
-
-    # The A2A agent stores graph event dumps in history (e.g. "assistant: {...}",
-    # "tools: {...}") — these are not user-readable.  The actual final agent
-    # responses live in the *artifacts* array.  Build a conversation view by
-    # pairing each user message with the corresponding artifact text.
     artifacts: list = _parse_json_field(row.get("artifacts")) or []
+
+    # Extract final response text from artifacts
     artifact_texts: List[str] = []
     for art in artifacts if isinstance(artifacts, list) else []:
         for part in art.get("parts") or []:
             if part.get("text"):
                 artifact_texts.append(part["text"])
 
+    # Parse graph event dumps into structured tool call data.
+    # Raw history contains: user messages + graph events like:
+    #   "assistant: {'messages': [AIMessage(content='...', tool_calls=[...])]}"
+    #   "tools: {'messages': [ToolMessage(content='output', name='shell')]}"
+    # We parse these into a richer conversation view.
+    def _parse_graph_event(text: str) -> Optional[Dict[str, Any]]:
+        """Try to extract tool call info from a graph event dump."""
+        if text.startswith("assistant:"):
+            # Extract tool_calls if present
+            if "tool_calls=" in text:
+                import re as _re
+
+                calls = _re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]+\})", text)
+                if calls:
+                    return {
+                        "type": "tool_call",
+                        "tools": [{"name": c[0], "args": c[1]} for c in calls],
+                    }
+            # Extract thinking/content
+            match = re.search(r"content='([^']{1,500})'", text)
+            if match and match.group(1):
+                return {"type": "thinking", "content": match.group(1)}
+        elif text.startswith("tools:"):
+            # Extract tool result
+            match = re.search(r"content='((?:[^'\\]|\\.)*)'\s*,\s*name='([^']*)'", text)
+            if match:
+                output = match.group(1)[:2000].replace("\\n", "\n")
+                return {
+                    "type": "tool_result",
+                    "name": match.group(2),
+                    "output": output,
+                }
+        return None
+
     filtered: List[Dict[str, Any]] = []
     user_idx = 0
     for msg in raw_history:
         if msg.get("role") == "user":
             filtered.append(msg)
-            # Pair with the corresponding artifact (agent response)
-            if user_idx < len(artifact_texts):
-                filtered.append(
-                    {
-                        "role": "agent",
-                        "parts": [{"kind": "text", "text": artifact_texts[user_idx]}],
-                    }
-                )
-            user_idx += 1
+            continue
+
+        # Try to parse graph event dumps
+        text = "".join(p.get("text", "") for p in (msg.get("parts") or []) if p.get("text"))
+        if not text:
+            continue
+
+        parsed = _parse_graph_event(text.strip())
+        if parsed:
+            filtered.append(
+                {
+                    "role": "agent",
+                    "parts": [{"kind": "data", **parsed}],
+                }
+            )
+
+    # Append the final response from artifacts at the end
+    for art_text in artifact_texts:
+        filtered.append(
+            {
+                "role": "agent",
+                "parts": [{"kind": "text", "text": art_text}],
+            }
+        )
 
     total = len(filtered)
 
