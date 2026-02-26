@@ -665,7 +665,7 @@ export const chatService = {
 // Sandbox Legion session management
 // ---------------------------------------------------------------------------
 
-import type { TaskListResponse, TaskDetail, HistoryPage } from '@/types/sandbox';
+import type { TaskListResponse, TaskDetail, HistoryPage, SandboxAgentInfo } from '@/types/sandbox';
 
 export const sandboxService = {
   async listSessions(
@@ -731,6 +731,12 @@ export const sandboxService = {
   /** Return the URL for the SSE streaming chat endpoint. */
   getStreamUrl(namespace: string): string {
     return `${API_CONFIG.baseUrl}/sandbox/${encodeURIComponent(namespace)}/chat/stream`;
+  },
+
+  async listAgents(namespace: string): Promise<SandboxAgentInfo[]> {
+    return apiFetch<SandboxAgentInfo[]>(
+      `/sandbox/${encodeURIComponent(namespace)}/agents`
+    );
   },
 
   async createSandbox(

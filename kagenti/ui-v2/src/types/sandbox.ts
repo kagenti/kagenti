@@ -57,3 +57,14 @@ export interface HistoryPage {
   total: number;
   has_more: boolean;
 }
+
+export interface SandboxAgentInfo {
+  name: string;
+  namespace: string;
+  status: 'ready' | 'pending' | 'error';
+  replicas: string;
+  session_count: number;
+  active_sessions: number;
+  image: string;
+  created: string | null;
+}

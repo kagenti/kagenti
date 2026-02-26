@@ -11,6 +11,7 @@ PostgreSQL databases. Session data is managed by the A2A SDK's DatabaseTaskStore
 
 import json
 import logging
+import os
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
@@ -488,6 +489,132 @@ async def cleanup_stale_sessions(
             )
 
     return CleanupResponse(cleaned=cleaned)
+
+
+# ---------------------------------------------------------------------------
+# Sandbox agent visibility — list agent deployments with session counts
+# ---------------------------------------------------------------------------
+
+
+class SandboxAgentInfo(BaseModel):
+    """Summary of a sandbox agent deployment."""
+
+    name: str
+    namespace: str
+    status: str  # "ready", "pending", "error"
+    replicas: str  # "1/1"
+    session_count: int
+    active_sessions: int
+    image: str
+    created: Optional[str] = None
+
+
+def _get_apps_api():
+    """Return an AppsV1Api client, or None if K8s is unavailable."""
+    try:
+        import kubernetes.client
+        import kubernetes.config
+        from kubernetes.config import ConfigException
+
+        try:
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes.config.load_incluster_config()
+            else:
+                kubernetes.config.load_kube_config()
+        except ConfigException:
+            return None
+        return kubernetes.client.AppsV1Api()
+    except ImportError:
+        return None
+
+
+@router.get("/{namespace}/agents", response_model=List[SandboxAgentInfo])
+async def list_sandbox_agents(namespace: str):
+    """List sandbox agent deployments in the namespace with session counts."""
+    apps_api = _get_apps_api()
+    if apps_api is None:
+        return []
+
+    try:
+        deployments = apps_api.list_namespaced_deployment(
+            namespace=namespace,
+            label_selector="kagenti.io/type=agent",
+        )
+    except Exception as exc:
+        logger.warning("Failed to list deployments in %s: %s", namespace, exc)
+        return []
+
+    # Query session counts from DB (best effort)
+    session_counts: Dict[str, int] = {}
+    active_counts: Dict[str, int] = {}
+    try:
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            # Total sessions per agent_name
+            rows = await conn.fetch(
+                "SELECT COALESCE(metadata::json->>'agent_name', 'sandbox-legion') AS agent,"
+                " COUNT(*) AS cnt"
+                " FROM tasks GROUP BY agent"
+            )
+            for row in rows:
+                session_counts[row["agent"]] = row["cnt"]
+
+            # Active sessions (working or submitted)
+            rows = await conn.fetch(
+                "SELECT COALESCE(metadata::json->>'agent_name', 'sandbox-legion') AS agent,"
+                " COUNT(*) AS cnt"
+                " FROM tasks"
+                " WHERE status::text ILIKE '%working%' OR status::text ILIKE '%submitted%'"
+                " GROUP BY agent"
+            )
+            for row in rows:
+                active_counts[row["agent"]] = row["cnt"]
+    except Exception as exc:
+        logger.debug("Could not query session counts for %s: %s", namespace, exc)
+
+    result: List[SandboxAgentInfo] = []
+    for dep in deployments.items:
+        name = dep.metadata.name
+        ready = dep.status.ready_replicas or 0
+        desired = dep.spec.replicas or 1
+
+        if ready >= desired:
+            status = "ready"
+        elif ready > 0:
+            status = "pending"
+        else:
+            # Check if there are unavailable replicas with error conditions
+            if dep.status.conditions:
+                has_error = any(
+                    c.type == "Available" and c.status == "False" for c in dep.status.conditions
+                )
+                status = "error" if has_error else "pending"
+            else:
+                status = "pending"
+
+        # Extract container image from the first container
+        image = ""
+        if dep.spec.template.spec.containers:
+            image = dep.spec.template.spec.containers[0].image or ""
+
+        created = None
+        if dep.metadata.creation_timestamp:
+            created = dep.metadata.creation_timestamp.isoformat()
+
+        result.append(
+            SandboxAgentInfo(
+                name=name,
+                namespace=namespace,
+                status=status,
+                replicas=f"{ready}/{desired}",
+                session_count=session_counts.get(name, 0),
+                active_sessions=active_counts.get(name, 0),
+                image=image,
+                created=created,
+            )
+        )
+
+    return result
 
 
 # ---------------------------------------------------------------------------

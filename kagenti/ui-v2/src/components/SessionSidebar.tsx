@@ -305,8 +305,16 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           variant="primary"
           isBlock
           onClick={() => onSelectSession('')}
+          style={{ marginBottom: 4 }}
         >
           + New Session
+        </Button>
+        <Button
+          variant="secondary"
+          isBlock
+          onClick={() => navigate('/sandbox/create')}
+        >
+          + Import Agent
         </Button>
       </div>
     </div>
