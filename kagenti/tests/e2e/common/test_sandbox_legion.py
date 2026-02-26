@@ -403,7 +403,8 @@ class TestSandboxLegionContextPersistence:
         """
         agent_url = _get_sandbox_legion_url()
 
-        context_id = f"e2e-{test_session_id}"
+        # contextId must be <= 36 chars (VARCHAR(36) in A2A SDK tasks table)
+        context_id = uuid4().hex[:36]
         unique_marker = f"persistence-check-{uuid4().hex[:8]}"
 
         print(f"\n=== Multi-turn Context Persistence Test ===")
@@ -472,7 +473,8 @@ class TestSandboxLegionMemory:
         """
         agent_url = _get_sandbox_legion_url()
 
-        context_id = f"memory-{test_session_id}"
+        # contextId must be <= 36 chars (VARCHAR(36) in A2A SDK tasks table)
+        context_id = uuid4().hex[:36]
 
         print(f"\n=== Multi-turn Memory Test ===")
         print(f"  Context ID: {context_id}")
