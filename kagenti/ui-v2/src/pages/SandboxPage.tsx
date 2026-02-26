@@ -138,19 +138,40 @@ const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
 const STORAGE_KEY_SESSION = 'kagenti-sandbox-last-session';
 const STORAGE_KEY_NAMESPACE = 'kagenti-sandbox-last-namespace';
 
+/**
+ * Determine initial session ID.
+ *
+ * Priority: URL ?session= param > localStorage (only if URL has no param
+ * and the page was just reloaded, not a fresh navigation).
+ */
+function getInitialSession(params: URLSearchParams): string {
+  const fromUrl = params.get('session');
+  if (fromUrl) return fromUrl;
+
+  // Only restore from localStorage if this looks like a reload (referrer is same origin)
+  // or if the navigation entry type is "reload".
+  try {
+    const navEntries = performance.getEntriesByType('navigation');
+    const isReload =
+      navEntries.length > 0 &&
+      (navEntries[0] as PerformanceNavigationTiming).type === 'reload';
+    if (isReload) {
+      return localStorage.getItem(STORAGE_KEY_SESSION) || '';
+    }
+  } catch {
+    // fallback — don't restore
+  }
+  return '';
+}
+
 export const SandboxPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [namespace, setNamespace] = useState(
     () =>
-      searchParams.get('ns') ||
-      localStorage.getItem(STORAGE_KEY_NAMESPACE) ||
-      'team1'
+      localStorage.getItem(STORAGE_KEY_NAMESPACE) || 'team1'
   );
-  const [contextId, setContextId] = useState(
-    () =>
-      searchParams.get('session') ||
-      localStorage.getItem(STORAGE_KEY_SESSION) ||
-      ''
+  const [contextId, setContextId] = useState(() =>
+    getInitialSession(searchParams)
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
