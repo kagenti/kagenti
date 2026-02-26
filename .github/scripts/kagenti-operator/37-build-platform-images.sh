@@ -115,7 +115,10 @@ EOF
     CONTAINER_NAME=$(kubectl get deployment "$NAME" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || echo "")
     if [ -n "$CONTAINER_NAME" ]; then
         kubectl set image "deployment/$NAME" -n "$NS" "$CONTAINER_NAME=$REGISTRY/$NAME:$TAG"
-        log_info "Patched $NAME deployment → $REGISTRY/$NAME:$TAG"
+        # Force pull to avoid node-level image cache serving stale layers
+        kubectl patch deployment "$NAME" -n "$NS" --type=json \
+            -p="[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"Always\"}]" 2>/dev/null || true
+        log_info "Patched $NAME deployment → $REGISTRY/$NAME:$TAG (Always pull)"
     else
         log_warn "Deployment $NAME not found — skipping patch"
     fi
