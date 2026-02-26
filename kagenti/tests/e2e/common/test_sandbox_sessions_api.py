@@ -223,27 +223,25 @@ class TestSandboxSessionsAPI:
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id, f"No context_id in result: {result}"
 
-        # Wait for DatabaseTaskStore async commit
+        # Poll for the session to appear (TaskStore commits asynchronously)
         import asyncio
 
-        await asyncio.sleep(2)
-
-        # Query the backend sessions API
         ssl_verify = _get_ssl_context()
-        async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
-            resp = await client.get(f"{backend_url}/api/v1/sandbox/team1/sessions")
-            assert resp.status_code == 200, (
-                f"List failed: {resp.status_code} {resp.text}"
-            )
-            data = resp.json()
-            assert data["total"] > 0, "No sessions found"
+        found = False
+        for attempt in range(6):
+            await asyncio.sleep(2)
+            async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
+                resp = await client.get(f"{backend_url}/api/v1/sandbox/team1/sessions")
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                found = any(
+                    item["context_id"] == context_id for item in data.get("items", [])
+                )
+                if found:
+                    break
 
-            # Find our session
-            found = any(item["context_id"] == context_id for item in data["items"])
-            assert found, (
-                f"Session {context_id} not found in list.\n"
-                f"Available: {[i['context_id'][:12] for i in data['items']]}"
-            )
+        assert found, f"Session {context_id} not found after {attempt + 1} attempts"
 
     @pytest.mark.asyncio
     async def test_session_detail_has_history(self):
