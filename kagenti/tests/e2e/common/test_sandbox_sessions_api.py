@@ -223,6 +223,11 @@ class TestSandboxSessionsAPI:
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id, f"No context_id in result: {result}"
 
+        # Wait for DatabaseTaskStore async commit
+        import asyncio
+
+        await asyncio.sleep(2)
+
         # Query the backend sessions API
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
