@@ -19,9 +19,11 @@ import pytest
 import httpx
 import yaml
 from uuid import uuid4
+from a2a.client import ClientConfig, ClientFactory
 from a2a.types import (
     Message as A2AMessage,
     TextPart,
+    TaskArtifactUpdateEvent,
 )
 
 from kagenti.tests.e2e.conftest import (
@@ -186,6 +188,65 @@ async def _connect_to_agent(agent_url):
     return client, card
 
 
+async def _connect_to_agent_streaming(agent_url):
+    """Connect to the sandbox legion via A2A streaming protocol.
+
+    Uses ClientFactory which returns a streaming-capable client.
+    SSE streaming keeps the connection alive with heartbeat events,
+    avoiding gateway timeouts on multi-turn requests.
+    """
+    ssl_verify = _get_ssl_context()
+    httpx_client = httpx.AsyncClient(timeout=180.0, verify=ssl_verify)
+    config = ClientConfig(httpx_client=httpx_client)
+
+    from a2a.client.card_resolver import A2ACardResolver
+
+    resolver = A2ACardResolver(httpx_client, agent_url)
+    card = await resolver.get_agent_card()
+    card.url = agent_url
+    client = await ClientFactory.connect(card, client_config=config)
+    return client, card
+
+
+async def _extract_response_streaming(client, message):
+    """Send an A2A message via streaming and extract the text response.
+
+    Uses SSE streaming which keeps the connection alive with heartbeat
+    events, preventing gateway timeouts on long-running multi-turn
+    requests (LLM call + checkpointer lookup).
+    """
+    full_response = ""
+    events_received = []
+
+    async for result in client.send_message(message):
+        if isinstance(result, tuple):
+            task, event = result
+            events_received.append(type(event).__name__ if event else "Task(final)")
+
+            if isinstance(event, TaskArtifactUpdateEvent):
+                if hasattr(event, "artifact") and event.artifact:
+                    for part in event.artifact.parts or []:
+                        p = getattr(part, "root", part)
+                        if hasattr(p, "text"):
+                            full_response += p.text
+
+            if event is None and task and task.artifacts:
+                for artifact in task.artifacts:
+                    for part in artifact.parts or []:
+                        p = getattr(part, "root", part)
+                        if hasattr(p, "text"):
+                            full_response += p.text
+
+        elif isinstance(result, A2AMessage):
+            events_received.append("Message")
+            for part in result.parts or []:
+                p = getattr(part, "root", part)
+                if hasattr(p, "text"):
+                    full_response += p.text
+
+    return full_response, events_received
+
+
 class TestSandboxLegionDeployment:
     """Verify sandbox-legion deployment and agent card."""
 
@@ -325,7 +386,11 @@ class TestSandboxLegionShellExecution:
 
 
 class TestSandboxLegionContextPersistence:
-    """Test multi-turn context persistence via shared contextId."""
+    """Test multi-turn context persistence via shared contextId.
+
+    Uses streaming (SSE) to avoid gateway timeouts on multi-turn requests
+    where the server performs LLM calls + checkpointer lookups.
+    """
 
     @pytest.mark.asyncio
     async def test_multi_turn_file_persistence(self, test_session_id):
@@ -338,7 +403,7 @@ class TestSandboxLegionContextPersistence:
         """
         agent_url = _get_sandbox_legion_url()
         try:
-            client, _ = await _connect_to_agent(agent_url)
+            client, _ = await _connect_to_agent_streaming(agent_url)
         except Exception as e:
             pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
@@ -362,7 +427,7 @@ class TestSandboxLegionContextPersistence:
         )
 
         try:
-            response1, events1 = await _extract_response(client, msg1)
+            response1, events1 = await _extract_response_streaming(client, msg1)
         except Exception as e:
             pytest.fail(f"Turn 1 failed: {e}")
 
@@ -382,7 +447,7 @@ class TestSandboxLegionContextPersistence:
         )
 
         try:
-            response2, events2 = await _extract_response(client, msg2)
+            response2, events2 = await _extract_response_streaming(client, msg2)
         except Exception as e:
             pytest.fail(f"Turn 2 failed: {e}")
 
@@ -400,7 +465,11 @@ class TestSandboxLegionContextPersistence:
 
 
 class TestSandboxLegionMemory:
-    """Test multi-turn conversational memory via shared contextId."""
+    """Test multi-turn conversational memory via shared contextId.
+
+    Uses streaming (SSE) to avoid gateway timeouts on multi-turn requests
+    where the server performs LLM calls + checkpointer lookups.
+    """
 
     @pytest.mark.asyncio
     async def test_multi_turn_memory(self, test_session_id):
@@ -413,7 +482,7 @@ class TestSandboxLegionMemory:
         """
         agent_url = _get_sandbox_legion_url()
         try:
-            client, _ = await _connect_to_agent(agent_url)
+            client, _ = await _connect_to_agent_streaming(agent_url)
         except Exception as e:
             pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
@@ -431,7 +500,7 @@ class TestSandboxLegionMemory:
         )
 
         try:
-            response1, events1 = await _extract_response(client, msg1)
+            response1, events1 = await _extract_response_streaming(client, msg1)
         except Exception as e:
             pytest.fail(f"Turn 1 failed: {e}")
 
@@ -447,7 +516,7 @@ class TestSandboxLegionMemory:
         )
 
         try:
-            response2, events2 = await _extract_response(client, msg2)
+            response2, events2 = await _extract_response_streaming(client, msg2)
         except Exception as e:
             pytest.fail(f"Turn 2 failed: {e}")
 
