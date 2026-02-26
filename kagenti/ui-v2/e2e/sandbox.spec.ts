@@ -62,6 +62,59 @@ async function loginIfNeeded(page: Page) {
   await page.waitForLoadState('networkidle');
 }
 
+/**
+ * Assert no unexpected error states are visible on the page.
+ * Call this after navigating to any sandbox page to catch regressions.
+ */
+async function assertNoErrors(page: Page) {
+  // No danger/error alerts should be visible
+  const dangerAlerts = page.locator('.pf-v5-c-alert.pf-m-danger');
+  const dangerCount = await dangerAlerts.count();
+  expect(dangerCount).toBe(0);
+
+  // No "Error:" messages in the chat area
+  const errorMessages = page.locator('text=/^Error:/');
+  const errorMsgCount = await errorMessages.count();
+  expect(errorMsgCount).toBe(0);
+}
+
+/**
+ * Assert no failed/errored sessions in the sidebar.
+ * Failed sessions from test cleanup or crashes indicate a problem.
+ */
+async function assertNoFailedSessions(page: Page) {
+  // Wait for sidebar to populate
+  await page.waitForTimeout(5000);
+
+  // Check for "Failed" labels in the session sidebar
+  const failedLabels = page.locator('[class*="pf-v5-c-label"][class*="pf-m-red"]');
+  const failedCount = await failedLabels.count();
+  if (failedCount > 0) {
+    console.warn(`[WARN] Found ${failedCount} failed session(s) in sidebar`);
+  }
+  // Strict: no failed sessions should exist
+  expect(failedCount).toBe(0);
+}
+
+test.describe('Sandbox Legion - Health Check', () => {
+  test.setTimeout(60000);
+
+  test('should have no error alerts or failed sessions on load', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await page.waitForLoadState('networkidle');
+
+    await expect(
+      page.getByRole('heading', { name: /Sandbox Legion/i })
+    ).toBeVisible({ timeout: 15000 });
+
+    // Core assertions: no errors, no failed sessions
+    await assertNoErrors(page);
+    await assertNoFailedSessions(page);
+  });
+});
+
 test.describe('Sandbox Legion - Navigation', () => {
   test.setTimeout(60000);
 
@@ -124,6 +177,9 @@ test.describe('Sandbox Legion - Chat', () => {
     await expect(
       page.locator('text=/playwright-sandbox-test|Legion/i').first()
     ).toBeVisible({ timeout: 90000 });
+
+    // Verify no errors appeared during chat
+    await assertNoErrors(page);
   });
 });
 
