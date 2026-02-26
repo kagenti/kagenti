@@ -1,32 +1,34 @@
-# Deployment manifest for sandbox-legion
+# Deployment manifest for sandbox-agent (basic variant)
+# Same image as sandbox-legion but without session persistence.
+# Uses InMemoryTaskStore + MemorySaver (no postgres required).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sandbox-legion
+  name: sandbox-agent
   namespace: team1
   labels:
     kagenti.io/type: agent
     kagenti.io/protocol: a2a
     kagenti.io/framework: LangGraph
     kagenti.io/workload-type: deployment
-    app.kubernetes.io/name: sandbox-legion
+    app.kubernetes.io/name: sandbox-agent
     app.kubernetes.io/managed-by: kagenti-e2e
     app.kubernetes.io/component: agent
   annotations:
-    kagenti.io/description: "Sandbox Legion multi-sub-agent orchestrator with per-context workspace isolation"
+    kagenti.io/description: "Basic sandbox agent with per-context workspace isolation (stateless)"
 spec:
   replicas: 1
   selector:
     matchLabels:
       kagenti.io/type: agent
-      app.kubernetes.io/name: sandbox-legion
+      app.kubernetes.io/name: sandbox-agent
   template:
     metadata:
       labels:
         kagenti.io/type: agent
         kagenti.io/protocol: a2a
         kagenti.io/framework: LangGraph
-        app.kubernetes.io/name: sandbox-legion
+        app.kubernetes.io/name: sandbox-agent
     spec:
       containers:
       - name: agent
@@ -57,10 +59,6 @@ spec:
           value: "gpt-4o-mini"
         - name: UV_CACHE_DIR
           value: "/app/.cache/uv"
-        - name: TASK_STORE_DB_URL
-          value: "postgresql+asyncpg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions"
-        - name: CHECKPOINT_DB_URL
-          value: "postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable"
         ports:
         - containerPort: 8000
           name: http
@@ -79,9 +77,6 @@ spec:
           mountPath: /app/.cache
       volumes:
       - name: workspace
-        # TODO: Replace with RWX PVC when EFS CSI driver is installed
-        # persistentVolumeClaim:
-        #   claimName: sandbox-legion-workspace
         emptyDir:
           sizeLimit: 5Gi
       - name: cache

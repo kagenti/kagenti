@@ -1,28 +1,22 @@
-# Shipwright Build for sandbox-legion (OpenShift)
+# Shipwright Build for sandbox-agent base image (OpenShift)
+# This image is shared by all sandbox variants (sandbox-agent, sandbox-legion)
 apiVersion: shipwright.io/v1beta1
 kind: Build
 metadata:
-  name: sandbox-legion
+  name: sandbox-agent
   namespace: team1
   labels:
     app.kubernetes.io/created-by: e2e-test
-    app.kubernetes.io/name: sandbox-legion
+    app.kubernetes.io/name: sandbox-agent
     kagenti.io/type: agent
     kagenti.io/protocol: a2a
     kagenti.io/framework: LangGraph
-  annotations:
-    kagenti.io/agent-config: |
-      {
-        "protocol": "a2a",
-        "framework": "LangGraph",
-        "createHttpRoute": false
-      }
 spec:
   source:
     type: Git
     git:
       url: https://github.com/ladas/agent-examples
-      revision: feat/sandbox-legion
+      revision: feat/sandbox-agent
       cloneSecret: github-shipwright-secret
     contextDir: a2a/sandbox_agent
   strategy:
@@ -32,7 +26,7 @@ spec:
     - name: dockerfile
       value: Dockerfile
   output:
-    image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-legion:v0.0.1
+    image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-agent:v0.0.1
   timeout: 15m
   retention:
     succeededLimit: 3
