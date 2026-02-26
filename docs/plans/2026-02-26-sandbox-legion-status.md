@@ -118,7 +118,46 @@ Two walkthrough tests needed:
 - Tests the full onboarding flow with security layers
 - Blocked on: wizard UI implementation
 
-### 4. Minor Items
+### 4. HITL + OpenShift Sandbox Provisioning (NEW)
+
+**Problem:** An agent working on a task may need an OpenShift sandbox cluster for testing (e.g., deploying a fix, running integration tests). Currently this requires manual intervention. We want the agent to request a cluster via HITL and the namespace admin to approve with a button click.
+
+**Proposed flow:**
+1. Agent hits HITL: "I need an OpenShift sandbox to test this fix"
+2. Kagenti UI shows HITL approval request with one-click buttons:
+   - **Provision Sandbox** → creates a HyperShift hosted cluster
+   - **Assign Existing** → selects from available clusters
+   - **Deny** → agent continues without cluster
+3. Namespace admin clicks "Provision Sandbox"
+4. Kagenti backend calls HyperShift management cluster API to create a hosted cluster
+5. Agent receives the kubeconfig and continues
+
+**Requirements:**
+- Kagenti backend connected to HyperShift management cluster (via kubeconfig or SA token)
+- HITL UI with actionable buttons (not just approve/deny text)
+- RBAC: only namespace admins can provision clusters
+- Cluster lifecycle: auto-destroy after TTL or agent completion
+
+**Architecture:**
+```
+Agent → HITL interrupt() → Kagenti UI → Namespace admin clicks "Provision"
+                                              ↓
+                                    Backend → HyperShift mgmt API
+                                              ↓
+                                    Hosted cluster created
+                                              ↓
+                                    Kubeconfig returned to agent
+                                    Agent resumes with cluster access
+```
+
+**RBAC model:**
+| Role | Keycloak Group | Namespace Access | Cluster Provisioning |
+|------|---------------|-----------------|---------------------|
+| Developer | `team1-dev` | Read sessions, chat | No |
+| Namespace Admin | `team1-admin` | Full session control, approve HITL | Yes — provision/destroy sandbox clusters |
+| Platform Admin | `kagenti-admin` | Full access everywhere | Yes — all namespaces |
+
+### 5. Minor Items
 | Item | Priority | Status |
 |------|----------|--------|
 | web_fetch retry (429 rate limit) | Low | Not started |
