@@ -52,14 +52,26 @@
 | Ladas/kagenti | [#758](https://github.com/kagenti/kagenti/pull/758) | Draft, pushed |
 | kagenti/agent-examples | [#126](https://github.com/kagenti/agent-examples/pull/126) | Draft, pushed |
 
-## Next Session Tasks
+## Known Issues (from visual debug test)
 
-1. **Verify rebuild on sbox** — backend+UI building from source, check new UI works
-2. **Deploy kagenti on sbox1** — fresh install for parallel testing
-3. **Backend API for wizard** — `POST /api/v1/sandbox/create` that orchestrates deployment
-4. **Sub-session DAG visualization** — add ReactFlow dependency, stub out DAG component
-5. **Refactor backend tests** — use Keycloak token + public API instead of direct in-cluster calls
-6. **Address pdettori's review comments** on agent-examples PR #126
+| Bug | Status | Notes |
+|-----|--------|-------|
+| Sidebar empty on initial load | Timing | Sessions load after ~3s polling; namespace selector shows "Loading..." initially |
+| Page reload → home page | Keycloak | SSO redirect loses SPA path; localStorage restore only works on actual reload |
+| Session ID not captured on fresh nav | Fixed | localStorage no longer restores stale session on fresh navigation |
+| nginx 60s proxy timeout | Fixed | Increased to 300s for long-running agent tool calls |
+| History shows only user messages | Fixed | History endpoint now pairs user msgs with artifact responses |
+
+## Next Session Tasks (Priority Order)
+
+1. **SSE streaming for live chat updates** — Backend: `POST /sandbox/{ns}/chat/stream` proxying A2A `message/stream`. Frontend: EventSource/ReadableStream for real-time chat updates as agent thinks/executes.
+2. **Sidebar live status updates** — SSE subscription per visible session, or reduce polling to 3s. Show status transitions dynamically.
+3. **Session switching test with long-running command** — Send `sleep 30`, switch sessions, come back, verify stream reconnects. Needs streaming to be implemented first.
+4. **Backend API for wizard** — `POST /api/v1/sandbox/create` that orchestrates deployment
+5. **Sub-session DAG visualization** — Add ReactFlow dependency, stub out DAG component
+6. **Refactor backend tests** — Use Keycloak token + public API instead of direct in-cluster calls
+7. **Fix Keycloak redirect_uri** — Preserve full SPA path through SSO redirect
+8. **Address pdettori's review comments** on agent-examples PR #126
 
 ## Startup Command for Next Session
 

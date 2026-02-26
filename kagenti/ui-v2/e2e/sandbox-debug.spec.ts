@@ -157,8 +157,8 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
     const sendButton = page.getByRole('button', { name: /Send/i });
     await sendButton.click();
 
-    // Verify user message appears
-    await expect(page.getByText('debug-test-alpha')).toBeVisible({
+    // Verify user message appears (use first() since text may appear multiple times)
+    await expect(page.getByText('debug-test-alpha').first()).toBeVisible({
       timeout: 5000,
     });
     await snap(page, 'after-send-user-message');
