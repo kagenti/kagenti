@@ -144,11 +144,18 @@ async def list_sessions(
 
 @router.get("/{namespace}/sessions/{context_id}", response_model=TaskDetail)
 async def get_session(namespace: str, context_id: str):
-    """Get a task/session by context_id with full history and artifacts."""
+    """Get a task/session by context_id with full history and artifacts.
+
+    If multiple tasks share the same context_id (e.g. retries), returns
+    the latest one (highest id).
+    """
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
+        row = await conn.fetchrow(
+            "SELECT * FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
+        )
         if row is None:
             raise HTTPException(status_code=404, detail="Session not found")
 
@@ -185,7 +192,7 @@ async def get_session_history(
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT history, artifacts FROM tasks WHERE context_id = $1",
+            "SELECT history, artifacts FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
             context_id,
         )
         if row is None:
@@ -261,7 +268,9 @@ async def kill_session(namespace: str, context_id: str):
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
+        row = await conn.fetchrow(
+            "SELECT * FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1", context_id
+        )
         if row is None:
             raise HTTPException(status_code=404, detail="Session not found")
 
@@ -283,7 +292,9 @@ async def kill_session(namespace: str, context_id: str):
         )
 
         # Re-fetch updated row
-        row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
+        row = await conn.fetchrow(
+            "SELECT * FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1", context_id
+        )
 
     return _row_to_detail(row)
 

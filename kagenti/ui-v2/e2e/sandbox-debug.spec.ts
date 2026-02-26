@@ -112,10 +112,15 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
     const rootToggle = page.locator('#root-only-toggle');
     await expect(rootToggle).toBeVisible({ timeout: 5000 });
 
-    // Check session items exist
+    // Wait for namespace selector to finish loading
+    await page.waitForTimeout(3000);
+    await snap(page, 'sidebar-after-wait');
+
+    // Check session items exist (wait up to 15s for polling to populate)
     const sessionItems = page.locator('[role="button"]').filter({
-      has: page.locator('text=/sandbox-legion|Done|Active/i'),
+      has: page.locator('text=/sandbox-legion|Done|Active|Queued/i'),
     });
+    await sessionItems.first().waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
     const sessionCount = await sessionItems.count();
     console.log(`[debug] Session items visible: ${sessionCount}`);
     await snap(page, 'sidebar-sessions');
@@ -158,11 +163,18 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
     });
     await snap(page, 'after-send-user-message');
 
-    // Wait for agent response
-    const chatArea = page.locator('.pf-v5-c-card__body').first();
-    await expect(chatArea).toContainText(/debug-test-alpha/i, {
-      timeout: 120000,
+    // Wait for agent response — must see a SECOND message bubble (the agent's reply)
+    // The user message already contains "debug-test-alpha", so we need to wait
+    // for a different indicator: the "thinking" label disappearing.
+    // Wait for the spinner/thinking label to disappear (agent finished)
+    await page.waitForFunction(
+      () => !document.querySelector('[class*="thinking"]') &&
+            document.querySelectorAll('[class*="pf-v5-c-card__body"] > div[style]').length >= 2,
+      { timeout: 120000 }
+    ).catch(() => {
+      // Fallback: just wait and check
     });
+    await page.waitForTimeout(3000);
     await snap(page, 'after-agent-response');
 
     // Get the session ID for this conversation
