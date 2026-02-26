@@ -13,8 +13,9 @@ import {
   SplitItem,
   Spinner,
   Alert,
+  Label,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon } from '@patternfly/react-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -33,6 +34,108 @@ interface Message {
   timestamp: Date;
 }
 
+/** Number of history messages to show initially; rest behind "Load earlier". */
+const INITIAL_HISTORY_LIMIT = 30;
+
+/** Format timestamp for display. */
+function formatMsgTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Detect and filter out LangGraph intermediate status dumps from history. */
+function isGraphDump(text: string): boolean {
+  return /^(assistant|tools|__end__):\s/m.test(text.trim());
+}
+
+// ---------------------------------------------------------------------------
+// Message bubble component
+// ---------------------------------------------------------------------------
+
+const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
+  const isUser = msg.role === 'user';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 10,
+        padding: '10px 14px',
+        marginBottom: 4,
+        borderRadius: 8,
+        backgroundColor: isUser
+          ? 'var(--pf-v5-global--BackgroundColor--200)'
+          : 'var(--pf-v5-global--BackgroundColor--100)',
+        border: isUser
+          ? 'none'
+          : '1px solid var(--pf-v5-global--BorderColor--100)',
+      }}
+    >
+      {/* Avatar */}
+      <div
+        style={{
+          flexShrink: 0,
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: isUser
+            ? 'var(--pf-v5-global--primary-color--100)'
+            : 'var(--pf-v5-global--success-color--100)',
+          color: '#fff',
+          fontSize: 14,
+        }}
+      >
+        {isUser ? <UserIcon /> : <RobotIcon />}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Header row */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 4,
+          }}
+        >
+          <span style={{ fontWeight: 600, fontSize: '0.9em' }}>
+            {isUser ? 'You' : 'Legion'}
+          </span>
+          <span
+            style={{
+              fontSize: '0.75em',
+              color: 'var(--pf-v5-global--Color--200)',
+            }}
+          >
+            {formatMsgTime(msg.timestamp)}
+          </span>
+        </div>
+
+        {/* Body */}
+        {isUser ? (
+          <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
+        ) : (
+          <div className="sandbox-markdown" style={{ fontSize: '0.92em' }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {msg.content}
+            </ReactMarkdown>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// SandboxPage
+// ---------------------------------------------------------------------------
+
 export const SandboxPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [namespace, setNamespace] = useState('team1');
@@ -44,7 +147,9 @@ export const SandboxPage: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [historyLimit, setHistoryLimit] = useState(INITIAL_HISTORY_LIMIT);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { getToken } = useAuth();
   const [config, setConfig] = useState<SandboxConfigValues>({
     model: 'gpt-4o-mini',
@@ -59,9 +164,27 @@ export const SandboxPage: React.FC = () => {
     enabled: !!contextId && !!namespace,
   });
 
+  // Parse & filter history, respecting historyLimit for batch loading
   useEffect(() => {
     if (sessionDetail?.history) {
-      const loaded: Message[] = sessionDetail.history.map((h, i) => ({
+      const filtered = sessionDetail.history.filter((h) => {
+        if (h.role === 'user') return true;
+        const text =
+          h.parts
+            ?.map((p) => p.text)
+            .filter(Boolean)
+            .join('') || '';
+        if (!text) return false;
+        return !isGraphDump(text);
+      });
+
+      // Show the most recent messages up to historyLimit
+      const sliced =
+        filtered.length > historyLimit
+          ? filtered.slice(filtered.length - historyLimit)
+          : filtered;
+
+      const loaded: Message[] = sliced.map((h, i) => ({
         id: `history-${i}`,
         role: h.role as 'user' | 'assistant',
         content:
@@ -69,22 +192,51 @@ export const SandboxPage: React.FC = () => {
             ?.map((p) => p.text)
             .filter(Boolean)
             .join('') || '',
-        timestamp: new Date(),
+        timestamp: new Date(
+          (h as Record<string, unknown>).timestamp as string || Date.now()
+        ),
       }));
       setMessages(loaded);
     }
-  }, [sessionDetail]);
+  }, [sessionDetail, historyLimit]);
 
-  // Scroll to bottom on new messages
+  // Total filtered history count (for "load earlier" button)
+  const totalHistoryCount =
+    sessionDetail?.history?.filter((h) => {
+      if (h.role === 'user') return true;
+      const text =
+        h.parts
+          ?.map((p) => p.text)
+          .filter(Boolean)
+          .join('') || '';
+      return text ? !isGraphDump(text) : false;
+    }).length ?? 0;
+  const hasMoreHistory = totalHistoryCount > historyLimit;
+
+  // Scroll to bottom on new messages (only for new messages, not history load)
+  const shouldAutoScroll = useRef(true);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (shouldAutoScroll.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, streamingContent]);
+
+  const handleLoadEarlier = () => {
+    shouldAutoScroll.current = false;
+    setHistoryLimit((prev) => prev + INITIAL_HISTORY_LIMIT);
+    // Restore auto-scroll after a tick
+    setTimeout(() => {
+      shouldAutoScroll.current = true;
+    }, 100);
+  };
 
   const handleSelectSession = useCallback(
     (id: string) => {
       setContextId(id);
       setMessages([]);
       setError(null);
+      setHistoryLimit(INITIAL_HISTORY_LIMIT);
+      shouldAutoScroll.current = true;
       if (id) {
         setSearchParams({ session: id });
       } else {
@@ -97,6 +249,7 @@ export const SandboxPage: React.FC = () => {
   const handleSendMessage = async () => {
     if (!input.trim() || isStreaming) return;
 
+    shouldAutoScroll.current = true;
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -218,13 +371,32 @@ export const SandboxPage: React.FC = () => {
           {/* Chat messages */}
           <Card style={{ flex: 1, overflow: 'hidden' }}>
             <CardBody
+              ref={scrollContainerRef}
               style={{
                 height: '100%',
                 overflowY: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
+                padding: '12px 16px',
               }}
             >
+              {/* Load earlier messages */}
+              {hasMoreHistory && (
+                <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                  <Button
+                    variant="link"
+                    onClick={handleLoadEarlier}
+                    size="sm"
+                  >
+                    Load {Math.min(
+                      INITIAL_HISTORY_LIMIT,
+                      totalHistoryCount - historyLimit
+                    )}{' '}
+                    earlier messages
+                  </Button>
+                </div>
+              )}
+
               {messages.length === 0 && !isStreaming && (
                 <div
                   style={{
@@ -240,39 +412,54 @@ export const SandboxPage: React.FC = () => {
               )}
 
               {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    padding: '8px 12px',
-                    marginBottom: 8,
-                    backgroundColor:
-                      msg.role === 'user'
-                        ? 'var(--pf-v5-global--BackgroundColor--200)'
-                        : 'transparent',
-                    borderRadius: 4,
-                  }}
-                >
-                  <strong>{msg.role === 'user' ? 'You' : 'Legion'}:</strong>
-                  {msg.role === 'assistant' ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  ) : (
-                    <p style={{ margin: '4px 0 0' }}>{msg.content}</p>
-                  )}
-                </div>
+                <ChatBubble key={msg.id} msg={msg} />
               ))}
 
               {isStreaming && (
-                <div style={{ padding: '8px 12px' }}>
-                  <strong>Legion:</strong>
-                  {streamingContent ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {streamingContent}
-                    </ReactMarkdown>
-                  ) : (
-                    <Spinner size="sm" style={{ marginLeft: 8 }} />
-                  )}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border:
+                      '1px solid var(--pf-v5-global--BorderColor--100)',
+                  }}
+                >
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor:
+                        'var(--pf-v5-global--success-color--100)',
+                      color: '#fff',
+                      fontSize: 14,
+                    }}
+                  >
+                    <RobotIcon />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9em', marginBottom: 4 }}>
+                      Legion{' '}
+                      <Label color="blue" isCompact style={{ marginLeft: 4 }}>
+                        thinking
+                      </Label>
+                    </div>
+                    {streamingContent ? (
+                      <div className="sandbox-markdown" style={{ fontSize: '0.92em' }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {streamingContent}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <Spinner size="sm" />
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -311,6 +498,57 @@ export const SandboxPage: React.FC = () => {
           </Split>
         </div>
       </div>
+
+      {/* Markdown styling */}
+      <style>{`
+        .sandbox-markdown pre {
+          background: var(--pf-v5-global--BackgroundColor--dark-300);
+          color: var(--pf-v5-global--Color--light-100);
+          padding: 12px;
+          border-radius: 6px;
+          overflow-x: auto;
+          font-size: 0.88em;
+          margin: 8px 0;
+        }
+        .sandbox-markdown code {
+          font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+          font-size: 0.9em;
+        }
+        .sandbox-markdown :not(pre) > code {
+          background: var(--pf-v5-global--BackgroundColor--200);
+          padding: 2px 5px;
+          border-radius: 3px;
+        }
+        .sandbox-markdown table {
+          border-collapse: collapse;
+          margin: 8px 0;
+          width: 100%;
+        }
+        .sandbox-markdown th,
+        .sandbox-markdown td {
+          border: 1px solid var(--pf-v5-global--BorderColor--100);
+          padding: 6px 10px;
+          text-align: left;
+        }
+        .sandbox-markdown th {
+          background: var(--pf-v5-global--BackgroundColor--200);
+          font-weight: 600;
+        }
+        .sandbox-markdown p {
+          margin: 4px 0;
+        }
+        .sandbox-markdown ul,
+        .sandbox-markdown ol {
+          margin: 4px 0;
+          padding-left: 20px;
+        }
+        .sandbox-markdown blockquote {
+          border-left: 3px solid var(--pf-v5-global--BorderColor--100);
+          padding-left: 12px;
+          margin: 8px 0;
+          color: var(--pf-v5-global--Color--200);
+        }
+      `}</style>
     </PageSection>
   );
 };

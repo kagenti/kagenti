@@ -243,7 +243,7 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
     if "error" in data:
         raise HTTPException(502, f"A2A error: {data['error']}")
 
-    # Extract text from artifacts
+    # Extract text from artifacts — only the final human-readable content
     text = ""
     artifacts = result.get("artifacts", [])
     if artifacts:
@@ -251,6 +251,22 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
             for part in artifact.get("parts", []):
                 if "text" in part:
                     text += part["text"]
+
+    # Guard: if the agent serialized a list of content blocks (e.g. from a
+    # tool-calling model), extract only the text portions.
+    if text.startswith("[{") and "'type': 'text'" in text:
+        try:
+            import ast
+
+            blocks = ast.literal_eval(text)
+            if isinstance(blocks, list):
+                text = "\n".join(
+                    b.get("text", "")
+                    for b in blocks
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+        except (ValueError, SyntaxError):
+            pass  # keep original text
 
     return {
         "content": text,

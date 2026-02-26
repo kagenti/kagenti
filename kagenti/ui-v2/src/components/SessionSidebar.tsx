@@ -4,10 +4,12 @@
 import React, { useState, useMemo } from 'react';
 import {
   Button,
+  Popover,
   SearchInput,
   Spinner,
-  TreeView,
-  TreeViewDataItem,
+  Label,
+  Switch,
+  Title,
 } from '@patternfly/react-core';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -20,75 +22,133 @@ interface SessionSidebarProps {
   onSelectSession: (contextId: string) => void;
 }
 
-function stateIcon(state: string): string {
+/** Extract agent name from metadata or fall back to "sandbox-legion". */
+function agentName(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return (meta?.agent_name as string) || 'sandbox-legion';
+}
+
+/** Extract a short display name: title, PR/issue ref, or truncated context ID. */
+function sessionName(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  if (meta?.title) {
+    const t = meta.title as string;
+    return t.length > 24 ? t.substring(0, 24) + '...' : t;
+  }
+  if (meta?.ref) return meta.ref as string; // e.g., "#123" or "PR-45"
+  return task.context_id.substring(0, 8);
+}
+
+/** Format a timestamp into compact relative or absolute time. */
+function formatTime(task: TaskSummary): string {
+  const ts = task.status?.timestamp as string | undefined;
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    const now = Date.now();
+    const diffMs = now - d.getTime();
+    if (diffMs < 60_000) return 'just now';
+    if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
+    if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function stateColor(state: string): 'blue' | 'green' | 'red' | 'orange' | 'grey' {
   switch (state) {
     case 'working':
     case 'submitted':
-      return '\u{1F7E1}'; // yellow circle
+      return 'blue';
     case 'completed':
-      return '\u26AA'; // white circle
+      return 'green';
     case 'failed':
+      return 'red';
     case 'canceled':
-      return '\u{1F534}'; // red circle
+      return 'orange';
     default:
-      return '\u{1F7E2}'; // green circle
+      return 'grey';
   }
 }
 
-function sessionLabel(task: TaskSummary): string {
-  const state = task.status?.state ?? 'unknown';
-  const shortId = task.context_id.substring(0, 8);
-  // Use title from metadata if available
+function stateLabel(state: string): string {
+  switch (state) {
+    case 'working':
+      return 'Active';
+    case 'submitted':
+      return 'Queued';
+    case 'completed':
+      return 'Done';
+    case 'failed':
+      return 'Failed';
+    case 'canceled':
+      return 'Canceled';
+    default:
+      return state;
+  }
+}
+
+/** Is a session a root session (no parent)? */
+function isRoot(task: TaskSummary): boolean {
   const meta = task.metadata as Record<string, unknown> | null;
-  const title = meta?.title as string | undefined;
-  if (title) {
-    const truncated = title.length > 18 ? title.substring(0, 18) + '...' : title;
-    return `${stateIcon(state)} ${truncated}`;
-  }
-  return `${stateIcon(state)} ${shortId}`;
+  return !meta?.parent_context_id;
 }
 
-/**
- * Build a tree from flat session list.
- *
- * Parent sessions have metadata.parent_context_id === undefined.
- * Sub-sessions have metadata.parent_context_id pointing to a parent.
- *
- * If no parent-child relationships exist, all sessions are top-level.
- * Each parent is expandable to show its sub-sessions for quick-jump.
- */
-function buildTree(sessions: TaskSummary[]): TreeViewDataItem[] {
-  const parentMap = new Map<string, TaskSummary[]>();
-  const topLevel: TaskSummary[] = [];
-
-  for (const s of sessions) {
+/** Count sub-sessions for a given parent context_id. */
+function subSessionCount(
+  sessions: TaskSummary[],
+  parentContextId: string
+): number {
+  return sessions.filter((s) => {
     const meta = s.metadata as Record<string, unknown> | null;
-    const parentId = meta?.parent_context_id as string | undefined;
-    if (parentId) {
-      const children = parentMap.get(parentId) || [];
-      children.push(s);
-      parentMap.set(parentId, children);
-    } else {
-      topLevel.push(s);
-    }
-  }
-
-  return topLevel.map((parent) => {
-    const children = parentMap.get(parent.context_id) || [];
-    const item: TreeViewDataItem = {
-      name: sessionLabel(parent),
-      id: parent.context_id,
-      defaultExpanded: children.length > 0,
-    };
-    if (children.length > 0) {
-      item.children = children.map((child) => ({
-        name: sessionLabel(child),
-        id: child.context_id,
-      }));
-    }
-    return item;
-  });
+    return meta?.parent_context_id === parentContextId;
+  }).length;
 }
+
+/** Popover body for session hover preview. */
+const SessionPopoverBody: React.FC<{
+  task: TaskSummary;
+  childCount: number;
+}> = ({ task, childCount }) => {
+  const state = task.status?.state ?? 'unknown';
+  const ts = task.status?.timestamp as string | undefined;
+  const created = ts ? new Date(ts).toLocaleString() : 'Unknown';
+  const meta = task.metadata as Record<string, unknown> | null;
+
+  return (
+    <div style={{ minWidth: 200 }}>
+      <div style={{ marginBottom: 4 }}>
+        <strong>Agent:</strong> {agentName(task)}
+      </div>
+      <div style={{ marginBottom: 4 }}>
+        <strong>Created:</strong> {created}
+      </div>
+      <div style={{ marginBottom: 4 }}>
+        <strong>Status:</strong>{' '}
+        <Label color={stateColor(state)} isCompact>
+          {stateLabel(state)}
+        </Label>
+      </div>
+      <div style={{ marginBottom: 4 }}>
+        <strong>Context ID:</strong>{' '}
+        <code style={{ fontSize: '0.85em' }}>
+          {task.context_id.substring(0, 12)}
+        </code>
+      </div>
+      {childCount > 0 && (
+        <div>
+          <strong>Sub-sessions:</strong> {childCount}
+        </div>
+      )}
+      {typeof meta?.ref === 'string' && (
+        <div>
+          <strong>Ref:</strong> {meta.ref}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   namespace,
@@ -97,37 +157,30 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 }) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [rootOnly, setRootOnly] = useState(true);
 
   const { data, isLoading } = useQuery({
     queryKey: ['sandbox-sessions', namespace, search],
     queryFn: () =>
       sandboxService.listSessions(namespace, {
-        limit: 20,
+        limit: 50,
         search: search || undefined,
       }),
     enabled: !!namespace,
     refetchInterval: 10000,
   });
 
-  const sessions = data?.items ?? [];
-  const treeData = useMemo(() => buildTree(sessions), [sessions]);
+  const allSessions = data?.items ?? [];
 
-  // Find active item in tree (could be at top level or nested)
-  const findActive = (items: TreeViewDataItem[]): TreeViewDataItem[] => {
-    const result: TreeViewDataItem[] = [];
-    for (const item of items) {
-      if (item.id === activeContextId) result.push(item);
-      if (item.children) {
-        result.push(...findActive(item.children));
-      }
-    }
-    return result;
-  };
+  const displaySessions = useMemo(
+    () => (rootOnly ? allSessions.filter(isRoot) : allSessions),
+    [allSessions, rootOnly]
+  );
 
   return (
     <div
       style={{
-        width: 260,
+        width: 280,
         borderRight: '1px solid var(--pf-v5-global--BorderColor--100)',
         display: 'flex',
         flexDirection: 'column',
@@ -135,33 +188,141 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         padding: '8px',
       }}
     >
+      <Title headingLevel="h3" size="md" style={{ marginBottom: 8 }}>
+        Sessions
+      </Title>
+
       <SearchInput
         placeholder="Search sessions"
         value={search}
         onChange={(_e, value) => setSearch(value)}
         onClear={() => setSearch('')}
-        style={{ marginBottom: 8 }}
+        style={{ marginBottom: 4 }}
       />
+
+      <div style={{ marginBottom: 8 }}>
+        <Switch
+          id="root-only-toggle"
+          label="Root only"
+          labelOff="All sessions"
+          isChecked={rootOnly}
+          onChange={(_e, checked) => setRootOnly(checked)}
+          isReversed
+        />
+      </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {isLoading && <Spinner size="md" />}
-        {!isLoading && sessions.length === 0 && (
-          <div style={{ padding: 16, color: 'var(--pf-v5-global--Color--200)' }}>
+        {!isLoading && displaySessions.length === 0 && (
+          <div
+            style={{
+              padding: 16,
+              color: 'var(--pf-v5-global--Color--200)',
+            }}
+          >
             No sessions yet
           </div>
         )}
-        {!isLoading && sessions.length > 0 && (
-          <TreeView
-            data={treeData}
-            activeItems={activeContextId ? findActive(treeData) : []}
-            onSelect={(_e, item) => {
-              if (item.id) onSelectSession(item.id as string);
-            }}
-          />
-        )}
+        {!isLoading &&
+          displaySessions.map((session) => {
+            const state = session.status?.state ?? 'unknown';
+            const isActive = session.context_id === activeContextId;
+            const childCount = subSessionCount(
+              allSessions,
+              session.context_id
+            );
+
+            return (
+              <Popover
+                key={session.context_id}
+                position="right"
+                headerContent={sessionName(session)}
+                bodyContent={
+                  <SessionPopoverBody
+                    task={session}
+                    childCount={childCount}
+                  />
+                }
+                triggerAction="hover"
+                minWidth="240px"
+              >
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelectSession(session.context_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      onSelectSession(session.context_id);
+                  }}
+                  style={{
+                    padding: '6px 8px',
+                    marginBottom: 2,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    backgroundColor: isActive
+                      ? 'var(--pf-v5-global--active-color--100)'
+                      : 'transparent',
+                    color: isActive
+                      ? '#fff'
+                      : 'var(--pf-v5-global--Color--100)',
+                  }}
+                >
+                  {/* Row 1: agent name + time */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '0.8em',
+                      opacity: 0.7,
+                      marginBottom: 2,
+                    }}
+                  >
+                    <span>{agentName(session)}</span>
+                    <span>{formatTime(session)}</span>
+                  </div>
+                  {/* Row 2: session name + status */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span style={{ fontWeight: 500, fontSize: '0.9em' }}>
+                      {sessionName(session)}
+                    </span>
+                    <Label
+                      color={stateColor(state)}
+                      isCompact
+                      style={{ fontSize: '0.75em' }}
+                    >
+                      {stateLabel(state)}
+                    </Label>
+                  </div>
+                  {/* Row 3: sub-session indicator */}
+                  {childCount > 0 && (
+                    <div
+                      style={{
+                        fontSize: '0.75em',
+                        opacity: 0.6,
+                        marginTop: 2,
+                      }}
+                    >
+                      {childCount} sub-session{childCount > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              </Popover>
+            );
+          })}
       </div>
 
-      <div style={{ borderTop: '1px solid var(--pf-v5-global--BorderColor--100)', paddingTop: 8 }}>
+      <div
+        style={{
+          borderTop: '1px solid var(--pf-v5-global--BorderColor--100)',
+          paddingTop: 8,
+        }}
+      >
         <Button
           variant="link"
           isBlock

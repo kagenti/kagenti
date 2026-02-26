@@ -1,7 +1,7 @@
 // Copyright 2025 IBM Corp.
 // Licensed under the Apache License, Version 2.0
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   PageSection,
   Title,
@@ -16,6 +16,7 @@ import {
   Pagination,
   Modal,
   ModalVariant,
+  Switch,
 } from '@patternfly/react-core';
 import {
   Table,
@@ -48,6 +49,41 @@ function statusLabel(state: string) {
   }
 }
 
+function isRoot(task: TaskSummary): boolean {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return !meta?.parent_context_id;
+}
+
+function agentName(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return (meta?.agent_name as string) || 'sandbox-legion';
+}
+
+function sessionName(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  if (meta?.title) {
+    const t = meta.title as string;
+    return t.length > 30 ? t.substring(0, 30) + '...' : t;
+  }
+  if (meta?.ref) return meta.ref as string;
+  return task.context_id.substring(0, 12);
+}
+
+function formatTimestamp(task: TaskSummary): string {
+  const ts = task.status?.timestamp as string | undefined;
+  if (!ts) return '-';
+  try {
+    return new Date(ts).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '-';
+  }
+}
+
 export const SessionsTablePage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -56,13 +92,14 @@ export const SessionsTablePage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(20);
   const [killTarget, setKillTarget] = useState<TaskSummary | null>(null);
+  const [rootOnly, setRootOnly] = useState(true);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['sandbox-sessions', namespace, search, page, perPage],
     queryFn: () =>
       sandboxService.listSessions(namespace, {
-        limit: perPage,
-        offset: (page - 1) * perPage,
+        limit: 100, // Fetch more so we can filter client-side and count subs
+        offset: 0,
         search: search || undefined,
       }),
     enabled: !!namespace,
@@ -89,8 +126,28 @@ export const SessionsTablePage: React.FC = () => {
     },
   });
 
-  const sessions = data?.items ?? [];
-  const total = data?.total ?? 0;
+  const allSessions = data?.items ?? [];
+
+  // Count sub-sessions per parent
+  const subCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of allSessions) {
+      const meta = s.metadata as Record<string, unknown> | null;
+      const parentId = meta?.parent_context_id as string | undefined;
+      if (parentId) {
+        counts.set(parentId, (counts.get(parentId) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [allSessions]);
+
+  // Apply root-only filter then paginate client-side
+  const filtered = useMemo(
+    () => (rootOnly ? allSessions.filter(isRoot) : allSessions),
+    [allSessions, rootOnly]
+  );
+  const total = filtered.length;
+  const sessions = filtered.slice((page - 1) * perPage, page * perPage);
 
   return (
     <PageSection variant="light">
@@ -123,6 +180,19 @@ export const SessionsTablePage: React.FC = () => {
               }}
             />
           </ToolbarItem>
+          <ToolbarItem>
+            <Switch
+              id="table-root-only"
+              label="Root only"
+              labelOff="All sessions"
+              isChecked={rootOnly}
+              onChange={(_e, checked) => {
+                setRootOnly(checked);
+                setPage(1);
+              }}
+              isReversed
+            />
+          </ToolbarItem>
           <ToolbarItem align={{ default: 'alignRight' }}>
             <Button
               variant="primary"
@@ -147,15 +217,18 @@ export const SessionsTablePage: React.FC = () => {
           <Table aria-label="Sessions table">
             <Thead>
               <Tr>
-                <Th>Context ID</Th>
-                <Th>Kind</Th>
+                <Th>Session</Th>
+                <Th>Agent</Th>
+                <Th>Created</Th>
                 <Th>Status</Th>
+                <Th>Subs</Th>
                 <Th>Actions</Th>
               </Tr>
             </Thead>
             <Tbody>
               {sessions.map((session) => {
                 const state = session.status?.state ?? 'unknown';
+                const subs = subCounts.get(session.context_id) || 0;
                 return (
                   <Tr
                     key={session.id}
@@ -166,11 +239,19 @@ export const SessionsTablePage: React.FC = () => {
                       )
                     }
                   >
-                    <Td dataLabel="Context ID">
-                      {session.context_id.substring(0, 12)}...
-                    </Td>
-                    <Td dataLabel="Kind">{session.kind}</Td>
+                    <Td dataLabel="Session">{sessionName(session)}</Td>
+                    <Td dataLabel="Agent">{agentName(session)}</Td>
+                    <Td dataLabel="Created">{formatTimestamp(session)}</Td>
                     <Td dataLabel="Status">{statusLabel(state)}</Td>
+                    <Td dataLabel="Subs">
+                      {subs > 0 ? (
+                        <Label color="blue" isCompact>
+                          {subs}
+                        </Label>
+                      ) : (
+                        '-'
+                      )}
+                    </Td>
                     <Td dataLabel="Actions">
                       {(state === 'working' || state === 'submitted') && (
                         <Button

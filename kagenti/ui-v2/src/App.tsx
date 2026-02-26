@@ -21,6 +21,7 @@ import { ImportToolPage } from './pages/ImportToolPage';
 import { AdminPage } from './pages/AdminPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SandboxPage } from './pages/SandboxPage';
+import { SandboxCreatePage } from './pages/SandboxCreatePage';
 import { SessionsTablePage } from './pages/SessionsTablePage';
 
 function App() {
@@ -140,6 +141,14 @@ function App() {
           element={
             <ProtectedRoute>
               <SandboxPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sandbox/create"
+          element={
+            <ProtectedRoute>
+              <SandboxCreatePage />
             </ProtectedRoute>
           }
         />

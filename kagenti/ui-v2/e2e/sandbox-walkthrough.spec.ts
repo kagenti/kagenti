@@ -236,13 +236,12 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('end');
 
     // Write timestamps file for narration sync
-    const fs = require('fs');
-    const path = require('path');
-    const tsFile = path.join(
-      __dirname,
-      'sandbox-walkthrough-timestamps.json'
-    );
-    fs.writeFileSync(tsFile, JSON.stringify(stepTimestamps, null, 2));
+    const { writeFileSync } = await import('fs');
+    const { join, dirname } = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __dir = dirname(fileURLToPath(import.meta.url));
+    const tsFile = join(__dir, 'sandbox-walkthrough-timestamps.json');
+    writeFileSync(tsFile, JSON.stringify(stepTimestamps, null, 2));
     console.log(`[walkthrough] Timestamps: ${tsFile}`);
     console.log(
       `[walkthrough] Total duration: ${((Date.now() - demoStartTime) / 1000).toFixed(1)}s`

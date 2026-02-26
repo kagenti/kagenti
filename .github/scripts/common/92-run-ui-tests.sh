@@ -50,9 +50,18 @@ if [ -z "${KEYCLOAK_PASSWORD:-}" ]; then
     log_info "Keycloak password: ${KC_PASS:0:4}..."
 fi
 
-# Run Playwright tests (only our agent-chat tests for now, existing tests need auth updates)
-log_info "Running Playwright E2E tests..."
-CI=true npx playwright test agent-chat --reporter=list,html 2>&1 || {
+# Determine which test suites to run.
+# Start with agent-chat (always present). Add sandbox tests if the sandbox
+# spec exists (only in the sandbox-agent branch).
+TEST_SPECS="agent-chat"
+if [ -f "e2e/sandbox.spec.ts" ]; then
+    TEST_SPECS="$TEST_SPECS sandbox"
+    log_info "Sandbox tests detected — including sandbox.spec.ts"
+fi
+
+# Run Playwright tests
+log_info "Running Playwright E2E tests: $TEST_SPECS"
+CI=true npx playwright test $TEST_SPECS --reporter=list,html 2>&1 || {
     log_error "Playwright UI tests failed"
 
     if [ -d playwright-report ]; then

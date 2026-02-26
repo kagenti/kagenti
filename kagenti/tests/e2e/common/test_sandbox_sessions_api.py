@@ -205,6 +205,39 @@ async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = 
 
 
 # ---------------------------------------------------------------------------
+# Polling helper — TaskStore commits asynchronously so tests must wait
+# ---------------------------------------------------------------------------
+
+_MAX_POLL_ATTEMPTS = 10
+_POLL_INTERVAL_S = 2
+
+
+async def _wait_for_session(
+    backend_url: str,
+    context_id: str,
+    *,
+    max_attempts: int = _MAX_POLL_ATTEMPTS,
+    interval: float = _POLL_INTERVAL_S,
+) -> dict | None:
+    """Poll the sessions API until *context_id* appears, returning the detail."""
+    import asyncio
+
+    ssl_verify = _get_ssl_context()
+    for attempt in range(max_attempts):
+        await asyncio.sleep(interval)
+        try:
+            async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
+                resp = await client.get(
+                    f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}"
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+        except httpx.HTTPError:
+            pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -218,30 +251,14 @@ class TestSandboxSessionsAPI:
         agent_url = _get_sandbox_legion_url()
         backend_url = _get_backend_url()
 
-        # Send a message to create a task
         result = await _send_a2a_message(agent_url, "Say: session-api-test")
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id, f"No context_id in result: {result}"
 
-        # Poll for the session to appear (TaskStore commits asynchronously)
-        import asyncio
-
-        ssl_verify = _get_ssl_context()
-        found = False
-        for attempt in range(6):
-            await asyncio.sleep(2)
-            async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
-                resp = await client.get(f"{backend_url}/api/v1/sandbox/team1/sessions")
-                if resp.status_code != 200:
-                    continue
-                data = resp.json()
-                found = any(
-                    item["context_id"] == context_id for item in data.get("items", [])
-                )
-                if found:
-                    break
-
-        assert found, f"Session {context_id} not found after {attempt + 1} attempts"
+        detail = await _wait_for_session(backend_url, context_id)
+        assert detail is not None, (
+            f"Session {context_id} not found after {_MAX_POLL_ATTEMPTS} attempts"
+        )
 
     @pytest.mark.asyncio
     async def test_session_detail_has_history(self):
@@ -253,16 +270,11 @@ class TestSandboxSessionsAPI:
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
 
-        ssl_verify = _get_ssl_context()
-        async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
-            resp = await client.get(
-                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}"
-            )
-            assert resp.status_code == 200, f"Detail failed: {resp.status_code}"
-            detail = resp.json()
-            assert detail["context_id"] == context_id
-            assert detail["kind"] == "task"
-            assert "status" in detail
+        detail = await _wait_for_session(backend_url, context_id)
+        assert detail is not None, f"Session {context_id} not found"
+        assert detail["context_id"] == context_id
+        assert detail["kind"] == "task"
+        assert "status" in detail
 
     @pytest.mark.asyncio
     async def test_session_list_search(self):
@@ -307,6 +319,10 @@ class TestSandboxSessionsAPI:
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
 
+        # Wait for DB commit before operating
+        detail = await _wait_for_session(backend_url, context_id)
+        assert detail is not None, f"Session {context_id} not found before kill"
+
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
             resp = await client.post(
@@ -329,6 +345,10 @@ class TestSandboxSessionsAPI:
         result = await _send_a2a_message(agent_url, "Say: delete-test")
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
+
+        # Wait for DB commit before operating
+        detail = await _wait_for_session(backend_url, context_id)
+        assert detail is not None, f"Session {context_id} not found before delete"
 
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
