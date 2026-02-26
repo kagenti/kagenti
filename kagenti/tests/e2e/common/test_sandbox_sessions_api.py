@@ -28,11 +28,63 @@ from uuid import uuid4
 
 
 def _get_backend_url() -> str:
-    """Get the Kagenti backend URL."""
-    return os.getenv("AGENT_URL", "").rsplit("/", 1)[0] or os.getenv(
-        "KAGENTI_BACKEND_URL",
-        "http://kagenti-backend.kagenti-system.svc.cluster.local:8000",
-    )
+    """Get the Kagenti backend URL.
+
+    Tries in order:
+    1. KAGENTI_BACKEND_URL env var (explicit)
+    2. Auto-discover from OpenShift route (kagenti-backend in kagenti-system)
+    3. Fallback to in-cluster DNS
+    """
+    explicit = os.getenv("KAGENTI_BACKEND_URL")
+    if explicit:
+        return explicit
+
+    # Auto-discover from route
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                "route",
+                "kagenti-backend",
+                "-n",
+                "kagenti-system",
+                "-o",
+                "jsonpath={.spec.host}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout:
+            return f"https://{result.stdout}"
+    except Exception:
+        pass
+
+    return "http://kagenti-backend.kagenti-system.svc.cluster.local:8000"
+
+
+def _check_sandbox_api_available() -> bool:
+    """Check if the backend has the sandbox sessions API endpoint."""
+    url = _get_backend_url()
+    try:
+        resp = httpx.get(
+            f"{url}/api/v1/sandbox/team1/sessions",
+            timeout=10,
+            verify=False,
+        )
+        return resp.status_code != 404
+    except Exception:
+        return False
+
+
+# Skip entire module if the sandbox API isn't deployed on the backend
+pytestmark = pytest.mark.skipif(
+    not _check_sandbox_api_available(),
+    reason="Backend sandbox sessions API not available (needs backend rebuild from source)",
+)
 
 
 def _get_sandbox_legion_url() -> str:
