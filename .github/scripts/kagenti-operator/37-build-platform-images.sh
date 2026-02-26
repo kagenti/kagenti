@@ -59,10 +59,12 @@ fi
 
 log_info "Building from: $GIT_REPO_URL @ $GIT_BRANCH"
 
-# Components to build: name, dockerfile path, image tag
+# Components to build: name:dockerfile:tag
+# Dockerfiles expect context=kagenti/ (e.g. COPY backend/pyproject.toml)
+CONTEXT_DIR="kagenti"
 COMPONENTS=(
-    "kagenti-backend:kagenti/backend/Dockerfile:worktree"
-    "kagenti-ui:kagenti/ui-v2/Dockerfile:worktree"
+    "kagenti-backend:backend/Dockerfile:worktree"
+    "kagenti-ui:ui-v2/Dockerfile:worktree"
 )
 
 for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
@@ -90,6 +92,7 @@ spec:
     git:
       uri: $GIT_REPO_URL
       ref: $GIT_BRANCH
+    contextDir: $CONTEXT_DIR
   strategy:
     type: Docker
     dockerStrategy:
