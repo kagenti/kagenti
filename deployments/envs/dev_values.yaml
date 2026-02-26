@@ -92,6 +92,24 @@ charts:
   ####################################################################
   spire:
     enabled: true
+    values:
+      global:
+        spire:
+          jwtIssuer: "spiffe://localtest.me"
+      # Configure SPIFFE OIDC Discovery Provider to include "use" field in JWKS
+      # This is required for Keycloak SPIFFE provider compatibility
+      spiffe-oidc-discovery-provider:
+        config:
+          set_key_use: true
+      # CRITICAL: Set JWT TTL to 5 minutes for Keycloak compatibility
+      # Keycloak rejects JWTs older than ~3 minutes. With 5-minute TTL,
+      # SPIRE refreshes every ~2.5 minutes, keeping JWTs fresh enough.
+      spire-server:
+        controllerManager:
+          identities:
+            clusterSPIFFEIDs:
+              default:
+                jwtTTL: "5m"
 
 kind_images_preload: false
 # docker or podman
