@@ -118,66 +118,37 @@ export const SandboxPage: React.FC = () => {
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const response = await fetch(
-        `/api/v1/chat/${encodeURIComponent(namespace)}/sandbox-legion/stream`,
+        `/api/v1/sandbox/${encodeURIComponent(namespace)}/chat`,
         {
           method: 'POST',
           headers,
           body: JSON.stringify({
             message: messageToSend,
             session_id: contextId || undefined,
+            agent_name: 'sandbox-legion',
           }),
         }
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `HTTP error: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedContent = '';
-      let buffer = '';
+      const data = await response.json();
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.session_id && !contextId) {
-                  setContextId(data.session_id);
-                  setSearchParams({ session: data.session_id });
-                }
-                if (data.content) {
-                  accumulatedContent += data.content;
-                  setStreamingContent(accumulatedContent);
-                }
-                if (data.error) {
-                  setError(data.error);
-                }
-                if (data.done) break;
-              } catch {
-                // skip parse errors
-              }
-            }
-          }
-        }
+      if (data.context_id && !contextId) {
+        setContextId(data.context_id);
+        setSearchParams({ session: data.context_id });
       }
 
-      if (accumulatedContent) {
+      if (data.content) {
         setMessages((prev) => [
           ...prev,
           {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
-            content: accumulatedContent,
+            content: data.content,
             timestamp: new Date(),
           },
         ]);

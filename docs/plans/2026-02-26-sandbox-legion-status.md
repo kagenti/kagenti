@@ -164,6 +164,7 @@ Agent → HITL interrupt() → Kagenti UI → Namespace admin clicks "Provision"
 | Phoenix timing fix | Low | Not started |
 | Expand tdd:hypershift skill for UI TDD | Medium | Not started |
 | Update research doc with C21 | Low | Not started |
+| Vault integration for secret management | Medium | Research complete (see [vault-research.md](2026-02-26-vault-research.md)); deploy standalone Vault + VSO, integrate with AuthBridge for dynamic GitHub tokens and LLM API key rotation |
 
 ---
 

@@ -12,8 +12,11 @@ PostgreSQL databases. Session data is managed by the A2A SDK's DatabaseTaskStore
 import json
 import logging
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.session_db import get_session_pool
@@ -191,3 +194,67 @@ async def kill_session(namespace: str, context_id: str):
         row = await conn.fetchrow("SELECT * FROM tasks WHERE context_id = $1", context_id)
 
     return _row_to_detail(row)
+
+
+# ---------------------------------------------------------------------------
+# Chat proxy — forwards A2A messages to sandbox agents on port 8000
+# ---------------------------------------------------------------------------
+
+
+class SandboxChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    agent_name: str = "sandbox-legion"
+
+
+@router.post("/{namespace}/chat")
+async def chat_send(namespace: str, request: SandboxChatRequest):
+    """Send a message to a sandbox agent via A2A JSON-RPC (non-streaming).
+
+    Proxies the message to the agent's in-cluster service on port 8000.
+    Returns the complete response (no SSE streaming).
+    """
+    agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
+    context_id = request.session_id or uuid4().hex[:36]
+
+    a2a_msg = {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "id": uuid4().hex,
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": request.message}],
+                "messageId": uuid4().hex,
+                "contextId": context_id,
+            }
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(f"{agent_url}/", json=a2a_msg)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Agent error: {e}")
+
+    result = data.get("result", {})
+    if "error" in data:
+        raise HTTPException(502, f"A2A error: {data['error']}")
+
+    # Extract text from artifacts
+    text = ""
+    artifacts = result.get("artifacts", [])
+    if artifacts:
+        for artifact in artifacts:
+            for part in artifact.get("parts", []):
+                if "text" in part:
+                    text += part["text"]
+
+    return {
+        "content": text,
+        "context_id": result.get("contextId", context_id),
+        "task_id": result.get("id"),
+        "status": result.get("status", {}),
+    }

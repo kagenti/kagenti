@@ -131,8 +131,10 @@ test.describe('Sandbox Legion - Sidebar', () => {
   test.setTimeout(60000);
 
   test('should show session sidebar with search', async ({ page }) => {
-    await page.goto('/sandbox');
+    await page.goto('/');
     await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     // Sidebar search should be visible
     const searchInput = page.getByPlaceholder(/Search sessions/i);
@@ -150,8 +152,10 @@ test.describe('Sandbox Legion - Sidebar', () => {
   });
 
   test('should navigate to sessions table via View All', async ({ page }) => {
-    await page.goto('/sandbox');
+    await page.goto('/');
     await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     await page
       .getByRole('button', { name: /View All Sessions/i })
@@ -168,8 +172,12 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   test.setTimeout(60000);
 
   test('should display sessions table with search', async ({ page }) => {
-    await page.goto('/sandbox/sessions');
+    await page.goto('/');
     await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: /View All Sessions/i }).click();
+    await page.waitForLoadState('networkidle');
 
     await expect(
       page.getByRole('heading', { name: /Sandbox Sessions/i })
@@ -186,8 +194,12 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   });
 
   test('should search and filter results', async ({ page }) => {
-    await page.goto('/sandbox/sessions');
+    await page.goto('/');
     await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: /View All Sessions/i }).click();
+    await page.waitForLoadState('networkidle');
 
     await expect(
       page.getByRole('heading', { name: /Sandbox Sessions/i })
@@ -209,8 +221,10 @@ test.describe('Sandbox Legion - Advanced Config', () => {
   test.setTimeout(60000);
 
   test('should toggle advanced config panel', async ({ page }) => {
-    await page.goto('/sandbox');
+    await page.goto('/');
     await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     // Find and click the advanced config toggle
     const configToggle = page.getByText(/Advanced Configuration/i);
