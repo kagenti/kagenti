@@ -172,14 +172,16 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // ------------------------------------------------------------------
     // Step 6: Wait for agent response
     // ------------------------------------------------------------------
-    // Look for workspace directory indicators in the response
+    // Wait for a "Legion:" response to appear (the agent's reply)
     await expect(
-      page
-        .locator(
-          'text=/data|scripts|repos|output|workspace|directory|file/i'
-        )
-        .first()
+      page.locator('strong:has-text("Legion")').first()
     ).toBeVisible({ timeout: 120000 });
+
+    // Verify the response contains workspace-related content
+    const chatArea = page.locator('.pf-v5-c-card__body').first();
+    await expect(chatArea).toContainText(/data|scripts|repos|output/i, {
+      timeout: 5000,
+    });
     markStep('sandbox_chat_response');
 
     // ------------------------------------------------------------------
