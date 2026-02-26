@@ -341,6 +341,142 @@ export const SandboxPage: React.FC = () => {
     localStorage.setItem(STORAGE_KEY_NAMESPACE, namespace);
   }, [namespace]);
 
+  /** Send via non-streaming /chat endpoint (fallback). */
+  const sendNonStreaming = async (
+    messageToSend: string,
+    headers: Record<string, string>,
+  ) => {
+    const response = await fetch(
+      `/api/v1/sandbox/${encodeURIComponent(namespace)}/chat`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          message: messageToSend,
+          session_id: contextId || undefined,
+          agent_name: 'sandbox-legion',
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || `HTTP error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.context_id && !contextId) {
+      setContextId(data.context_id);
+      setSearchParams({ session: data.context_id });
+      localStorage.setItem(STORAGE_KEY_SESSION, data.context_id);
+    }
+
+    if (data.content) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: data.content,
+          timestamp: new Date(),
+        },
+      ]);
+    }
+  };
+
+  /** Attempt SSE streaming via /chat/stream, return true on success. */
+  const sendStreaming = async (
+    messageToSend: string,
+    headers: Record<string, string>,
+  ): Promise<boolean> => {
+    const streamUrl = sandboxService.getStreamUrl(namespace);
+    const response = await fetch(streamUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message: messageToSend,
+        session_id: contextId || undefined,
+        agent_name: 'sandbox-legion',
+      }),
+    });
+
+    if (!response.ok) {
+      // If streaming not supported (404) or server error, signal fallback
+      return false;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) return false;
+
+    const decoder = new TextDecoder();
+    let accumulatedContent = '';
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            // Track session from the streaming response
+            if (data.session_id && !contextId) {
+              setContextId(data.session_id);
+              setSearchParams({ session: data.session_id });
+              localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
+            }
+
+            // Accumulate content for real-time display
+            if (data.content) {
+              accumulatedContent += data.content;
+              setStreamingContent(accumulatedContent);
+            }
+
+            // Handle errors from the backend
+            if (data.error) {
+              accumulatedContent = `Error: ${data.error}`;
+              setStreamingContent(accumulatedContent);
+            }
+
+            if (data.done) {
+              break;
+            }
+          } catch {
+            // Incomplete JSON chunk -- skip
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Finalize the assistant message
+    if (accumulatedContent) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: accumulatedContent,
+          timestamp: new Date(),
+        },
+      ]);
+    }
+
+    return true;
+  };
+
   const handleSendMessage = async () => {
     if (!input.trim() || isStreaming) return;
 
@@ -365,42 +501,16 @@ export const SandboxPage: React.FC = () => {
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const response = await fetch(
-        `/api/v1/sandbox/${encodeURIComponent(namespace)}/chat`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            message: messageToSend,
-            session_id: contextId || undefined,
-            agent_name: 'sandbox-legion',
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `HTTP error: ${response.status}`);
+      // Try streaming first; fall back to non-streaming on failure
+      let streamed = false;
+      try {
+        streamed = await sendStreaming(messageToSend, headers);
+      } catch {
+        // Streaming failed (network error, etc.) -- fall through
       }
 
-      const data = await response.json();
-
-      if (data.context_id && !contextId) {
-        setContextId(data.context_id);
-        setSearchParams({ session: data.context_id });
-        localStorage.setItem(STORAGE_KEY_SESSION, data.context_id);
-      }
-
-      if (data.content) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: data.content,
-            timestamp: new Date(),
-          },
-        ]);
+      if (!streamed) {
+        await sendNonStreaming(messageToSend, headers);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to send';

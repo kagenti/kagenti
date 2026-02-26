@@ -140,7 +140,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         search: search || undefined,
       }),
     enabled: !!namespace,
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 
   const allSessions = data?.items ?? [];

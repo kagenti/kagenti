@@ -11,7 +11,7 @@ PostgreSQL databases. Session data is managed by the A2A SDK's DatabaseTaskStore
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
 import httpx
@@ -535,3 +535,243 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
         "task_id": result.get("id"),
         "status": result.get("status", {}),
     }
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming endpoint
+# ---------------------------------------------------------------------------
+
+
+def _extract_text_from_parts(parts: list) -> str:
+    """Extract text content from A2A message parts."""
+    content = ""
+    for part in parts:
+        if isinstance(part, dict):
+            if "text" in part:
+                content += part["text"]
+            elif part.get("kind") == "text":
+                content += part.get("text", "")
+            elif "data" in part:
+                data = part["data"]
+                if isinstance(data, dict):
+                    if "content_type" in data and "content" in data:
+                        content_type = data.get("content_type", "")
+                        content_value = data.get("content", "")
+                        if content_type == "application/json" and content_value:
+                            try:
+                                json_data = json.loads(content_value)
+                                formatted = json.dumps(json_data, indent=2)
+                                content += f"\n```json\n{formatted}\n```\n"
+                            except json.JSONDecodeError:
+                                content += f"\n{content_value}\n"
+                        elif not content_type.startswith("image/"):
+                            content += f"\n{content_value}\n"
+                    else:
+                        formatted = json.dumps(data, indent=2)
+                        content += f"\n```json\n{formatted}\n```\n"
+                elif isinstance(data, str):
+                    try:
+                        json_data = json.loads(data)
+                        formatted = json.dumps(json_data, indent=2)
+                        content += f"\n```json\n{formatted}\n```\n"
+                    except (json.JSONDecodeError, TypeError):
+                        content += f"\n{data}\n"
+                elif isinstance(data, (list, int, float, bool)):
+                    formatted = json.dumps(data, indent=2)
+                    content += f"\n```json\n{formatted}\n```\n"
+    return content
+
+
+async def _stream_sandbox_response(
+    agent_url: str,
+    message: str,
+    session_id: str,
+) -> AsyncGenerator[str, None]:
+    """Async generator that proxies A2A SSE events from the agent."""
+    a2a_msg = {
+        "jsonrpc": "2.0",
+        "id": str(uuid4()),
+        "method": "message/stream",
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": message}],
+                "messageId": uuid4().hex,
+                "contextId": session_id,
+            },
+        },
+    }
+
+    logger.info("Starting sandbox SSE stream to %s (session=%s)", agent_url, session_id)
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "POST",
+                agent_url,
+                json=a2a_msg,
+                headers=headers,
+            ) as response:
+                response.raise_for_status()
+                logger.info("Connected to agent, status=%d", response.status_code)
+
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+
+                    logger.debug("Agent SSE line: %s", line[:300])
+
+                    if line.startswith("data: "):
+                        data = line[6:]
+
+                        if data == "[DONE]":
+                            logger.info("Received [DONE] from agent")
+                            yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                            break
+
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError as e:
+                            logger.warning(
+                                "Failed to parse SSE data: %s, error: %s",
+                                data[:200],
+                                e,
+                            )
+                            continue
+
+                        if "result" not in chunk:
+                            continue
+
+                        result = chunk["result"]
+                        payload: dict = {"session_id": session_id}
+
+                        # --- TaskArtifactUpdateEvent ---
+                        if "artifact" in result:
+                            artifact = result["artifact"]
+                            parts = artifact.get("parts", [])
+                            content = _extract_text_from_parts(parts)
+
+                            payload["event"] = {
+                                "type": "artifact",
+                                "taskId": result.get("taskId", ""),
+                                "name": artifact.get("name"),
+                                "index": artifact.get("index"),
+                            }
+                            if content:
+                                payload["content"] = content
+
+                            yield f"data: {json.dumps(payload)}\n\n"
+
+                        # --- TaskStatusUpdateEvent ---
+                        elif "status" in result and "taskId" in result:
+                            status = result["status"]
+                            is_final = result.get("final", False)
+                            state = status.get("state", "UNKNOWN")
+
+                            status_message = ""
+                            if "message" in status and status["message"]:
+                                parts = status["message"].get("parts", [])
+                                status_message = _extract_text_from_parts(parts)
+
+                            payload["event"] = {
+                                "type": "status",
+                                "taskId": result.get("taskId", ""),
+                                "state": state,
+                                "final": is_final,
+                                "message": status_message or None,
+                            }
+
+                            if is_final or state in ("COMPLETED", "FAILED"):
+                                if status_message:
+                                    payload["content"] = status_message
+
+                            yield f"data: {json.dumps(payload)}\n\n"
+
+                        # --- Task object (initial response) ---
+                        elif "id" in result and "status" in result:
+                            task_status = result["status"]
+                            state = task_status.get("state", "UNKNOWN")
+
+                            payload["event"] = {
+                                "type": "status",
+                                "taskId": result.get("id", ""),
+                                "state": state,
+                                "final": state in ("COMPLETED", "FAILED"),
+                            }
+
+                            if state in ("COMPLETED", "FAILED"):
+                                if "message" in task_status and task_status["message"]:
+                                    parts = task_status["message"].get("parts", [])
+                                    content = _extract_text_from_parts(parts)
+                                    if content:
+                                        payload["content"] = content
+
+                            yield f"data: {json.dumps(payload)}\n\n"
+
+                        # --- Direct message (A2AMessage) ---
+                        elif "parts" in result:
+                            content = _extract_text_from_parts(result["parts"])
+                            message_id = result.get("messageId", "")
+
+                            payload["event"] = {
+                                "type": "status",
+                                "taskId": message_id,
+                                "state": "WORKING",
+                                "final": False,
+                                "message": content or None,
+                            }
+                            if content:
+                                payload["content"] = content
+
+                            yield f"data: {json.dumps(payload)}\n\n"
+
+                        else:
+                            logger.warning(
+                                "Unknown result structure: keys=%s",
+                                list(result.keys()),
+                            )
+
+    except httpx.HTTPStatusError as e:
+        error_msg = f"Agent error: {e.response.status_code}"
+        logger.error("%s: %s", error_msg, e.response.text[:500])
+        yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+    except httpx.RequestError as e:
+        error_msg = f"Connection error: {str(e)}"
+        logger.error(error_msg)
+        yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+
+
+@router.post("/{namespace}/chat/stream")
+async def chat_stream(namespace: str, request: SandboxChatRequest):
+    """Stream agent responses via Server-Sent Events (SSE).
+
+    Sends the user message to the A2A agent using ``message/stream`` and
+    proxies the resulting SSE events back to the browser in real-time,
+    so the UI can display intermediate status (thinking, tool execution)
+    as well as partial results.
+
+    The connection is kept alive for up to 5 minutes.  If the agent
+    disconnects or errors, a final error event is emitted so the client
+    can surface the failure gracefully.
+    """
+    agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
+    session_id = request.session_id or uuid4().hex[:36]
+
+    return StreamingResponse(
+        _stream_sandbox_response(agent_url, request.message, session_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -728,6 +728,11 @@ export const sandboxService = {
     );
   },
 
+  /** Return the URL for the SSE streaming chat endpoint. */
+  getStreamUrl(namespace: string): string {
+    return `${API_CONFIG.baseUrl}/sandbox/${encodeURIComponent(namespace)}/chat/stream`;
+  },
+
   async createSandbox(
     namespace: string,
     data: {
