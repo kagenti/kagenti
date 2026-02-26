@@ -256,7 +256,7 @@ The MCP Gateway provides a unified entry point for [Model Context Protocol (MCP)
 | Component | Namespace | Purpose |
 |-----------|-----------|---------|
 | `mcp-gateway-istio` | `gateway-system` | Envoy proxy for request routing |
-| `mcp-controller` | `mcp-system` | Manages MCPServer custom resources |
+| `mcp-controller` | `mcp-system` | Manages MCPServerRegistration custom resources |
 | `mcp-broker-router` | `mcp-system` | Routes requests to registered MCP servers |
 
 ### Registering Tools with the Gateway
@@ -284,9 +284,9 @@ spec:
 ```
 
 ```yaml
-# MCPServer - Register with the gateway
+# MCPServerRegistration - Register with the gateway
 apiVersion: mcp.kagenti.com/v1alpha1
-kind: MCPServer
+kind: MCPServerRegistration
 metadata:
   name: weather-tool-servers
 spec:
