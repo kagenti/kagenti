@@ -388,8 +388,8 @@ class TestSandboxLegionShellExecution:
 class TestSandboxLegionContextPersistence:
     """Test multi-turn context persistence via shared contextId.
 
-    Uses streaming (SSE) to avoid gateway timeouts on multi-turn requests
-    where the server performs LLM calls + checkpointer lookups.
+    Each turn uses a fresh non-streaming HTTP request to avoid
+    connection drops from the OpenShift route / Istio ztunnel.
     """
 
     @pytest.mark.asyncio
@@ -402,10 +402,6 @@ class TestSandboxLegionContextPersistence:
         Turn 2: Read the file back and verify content matches
         """
         agent_url = _get_sandbox_legion_url()
-        try:
-            client, _ = await _connect_to_agent_streaming(agent_url)
-        except Exception as e:
-            pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
         context_id = f"e2e-{test_session_id}"
         unique_marker = f"persistence-check-{uuid4().hex[:8]}"
@@ -414,7 +410,8 @@ class TestSandboxLegionContextPersistence:
         print(f"  Context ID: {context_id}")
         print(f"  Unique marker: {unique_marker}")
 
-        # Turn 1: Write a file
+        # Turn 1: Write a file (fresh connection)
+        client1, _ = await _connect_to_agent(agent_url)
         msg1 = A2AMessage(
             role="user",
             parts=[
@@ -426,15 +423,12 @@ class TestSandboxLegionContextPersistence:
             contextId=context_id,
         )
 
-        try:
-            response1, events1 = await _extract_response_streaming(client, msg1)
-        except Exception as e:
-            pytest.fail(f"Turn 1 failed: {e}")
-
+        response1, events1 = await _extract_response(client1, msg1)
         assert response1, f"Turn 1: No response\n  Events: {events1}"
         print(f"  Turn 1 response: {response1[:200]}")
 
-        # Turn 2: Read the file back
+        # Turn 2: Read the file back (fresh connection)
+        client2, _ = await _connect_to_agent(agent_url)
         msg2 = A2AMessage(
             role="user",
             parts=[
@@ -446,11 +440,7 @@ class TestSandboxLegionContextPersistence:
             contextId=context_id,
         )
 
-        try:
-            response2, events2 = await _extract_response_streaming(client, msg2)
-        except Exception as e:
-            pytest.fail(f"Turn 2 failed: {e}")
-
+        response2, events2 = await _extract_response(client2, msg2)
         assert response2, f"Turn 2: No response\n  Events: {events2}"
         print(f"  Turn 2 response: {response2[:200]}")
 
@@ -467,8 +457,8 @@ class TestSandboxLegionContextPersistence:
 class TestSandboxLegionMemory:
     """Test multi-turn conversational memory via shared contextId.
 
-    Uses streaming (SSE) to avoid gateway timeouts on multi-turn requests
-    where the server performs LLM calls + checkpointer lookups.
+    Each turn uses a fresh non-streaming HTTP request to avoid
+    connection drops from the OpenShift route / Istio ztunnel.
     """
 
     @pytest.mark.asyncio
@@ -481,17 +471,14 @@ class TestSandboxLegionMemory:
         Expects the agent to recall "Bob Beep" from turn 1.
         """
         agent_url = _get_sandbox_legion_url()
-        try:
-            client, _ = await _connect_to_agent_streaming(agent_url)
-        except Exception as e:
-            pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
         context_id = f"memory-{test_session_id}"
 
         print(f"\n=== Multi-turn Memory Test ===")
         print(f"  Context ID: {context_id}")
 
-        # Turn 1: Tell the agent a name
+        # Turn 1: Tell the agent a name (fresh connection)
+        client1, _ = await _connect_to_agent(agent_url)
         msg1 = A2AMessage(
             role="user",
             parts=[TextPart(text="My name is Bob Beep")],
@@ -499,15 +486,12 @@ class TestSandboxLegionMemory:
             contextId=context_id,
         )
 
-        try:
-            response1, events1 = await _extract_response_streaming(client, msg1)
-        except Exception as e:
-            pytest.fail(f"Turn 1 failed: {e}")
-
+        response1, events1 = await _extract_response(client1, msg1)
         assert response1, f"Turn 1: No response\n  Events: {events1}"
         print(f"  Turn 1 response: {response1[:200]}")
 
-        # Turn 2: Ask for the name back
+        # Turn 2: Ask for the name back (fresh connection)
+        client2, _ = await _connect_to_agent(agent_url)
         msg2 = A2AMessage(
             role="user",
             parts=[TextPart(text="What is my name?")],
@@ -515,11 +499,7 @@ class TestSandboxLegionMemory:
             contextId=context_id,
         )
 
-        try:
-            response2, events2 = await _extract_response_streaming(client, msg2)
-        except Exception as e:
-            pytest.fail(f"Turn 2 failed: {e}")
-
+        response2, events2 = await _extract_response(client2, msg2)
         assert response2, f"Turn 2: No response\n  Events: {events2}"
         print(f"  Turn 2 response: {response2[:200]}")
 
