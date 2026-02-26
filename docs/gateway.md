@@ -61,18 +61,17 @@ spec:
       port: 8000' | kubectl apply -f -
 ```
 
-and then create an `MCPServer` Custom Resource:
+and then create an `MCPServerRegistration` Custom Resource:
 
 ```
 echo 'apiVersion: mcp.kagenti.com/v1alpha1
-kind: MCPServer
+kind: MCPServerRegistration
 metadata:
   name: weather-tool-servers
   namespace: default
 spec:
   toolPrefix: weather_
 
-  # Reference all three test MCP servers via their HTTPRoutes
   targetRef:
     group: gateway.networking.k8s.io
     kind: HTTPRoute
