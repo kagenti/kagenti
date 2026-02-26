@@ -63,6 +63,8 @@ interface WizardState {
   // Step 3: Identity
   credentialMode: 'pat' | 'github-app';
   githubPat: string;
+  llmKeySource: 'new' | 'existing';
+  llmSecretName: string;
   llmApiKey: string;
   // Step 4: Persistence
   enablePersistence: boolean;
@@ -92,6 +94,8 @@ const INITIAL_STATE: WizardState = {
   sessionTtl: '7d',
   credentialMode: 'pat',
   githubPat: '',
+  llmKeySource: 'existing',
+  llmSecretName: 'openai-api-key',
   llmApiKey: '',
   enablePersistence: true,
   dbSource: 'in-cluster',
@@ -373,15 +377,50 @@ export const SandboxCreatePage: React.FC = () => {
           repos/permissions.
         </Alert>
       )}
-      <FormGroup label="LLM API Key" isRequired fieldId="llm-key">
-        <TextInput
-          id="llm-key"
-          type="password"
-          value={state.llmApiKey}
-          onChange={(_e, v) => update('llmApiKey', v)}
-          placeholder="sk-..."
-        />
+      <FormGroup label="LLM API Key" isRequired fieldId="llm-key-source">
+        <FormSelect
+          id="llm-key-source"
+          value={state.llmKeySource}
+          onChange={(_e, v) =>
+            update('llmKeySource', v as 'new' | 'existing')
+          }
+        >
+          <FormSelectOption
+            value="existing"
+            label="Use existing namespace secret (recommended)"
+          />
+          <FormSelectOption value="new" label="Paste a new API key" />
+        </FormSelect>
       </FormGroup>
+      {state.llmKeySource === 'existing' && (
+        <FormGroup label="Secret Name" fieldId="llm-secret-name">
+          <TextInput
+            id="llm-secret-name"
+            value={state.llmSecretName}
+            onChange={(_e, v) => update('llmSecretName', v)}
+            placeholder="openai-api-key"
+          />
+          <div style={{ fontSize: '0.82em', color: 'var(--pf-v5-global--Color--200)', marginTop: 4 }}>
+            Kubernetes Secret in the target namespace containing the API key.
+            {/* TODO: List available secrets dynamically from the API */}
+            {/* TODO: Integrate with HashiCorp Vault for dynamic secret rotation */}
+          </div>
+        </FormGroup>
+      )}
+      {state.llmKeySource === 'new' && (
+        <FormGroup label="API Key" fieldId="llm-key">
+          <TextInput
+            id="llm-key"
+            type="password"
+            value={state.llmApiKey}
+            onChange={(_e, v) => update('llmApiKey', v)}
+            placeholder="sk-..."
+          />
+          <div style={{ fontSize: '0.82em', color: 'var(--pf-v5-global--Color--200)', marginTop: 4 }}>
+            Will be stored as a Kubernetes Secret in the target namespace.
+          </div>
+        </FormGroup>
+      )}
     </Form>
   );
 
