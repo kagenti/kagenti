@@ -106,7 +106,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // ------------------------------------------------------------------
     const sandboxNav = page
       .locator('nav a, nav button, [role="navigation"] a')
-      .filter({ hasText: /^Sandbox$/ });
+      .filter({ hasText: /^Sessions$/ });
     await expect(sandboxNav.first()).toBeVisible({ timeout: 10000 });
     await sandboxNav.first().click();
     await page.waitForLoadState('networkidle');
@@ -173,14 +173,11 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // Step 6: Wait for agent response
     // ------------------------------------------------------------------
     // Wait for a "Legion:" response to appear (the agent's reply)
-    await expect(
-      page.locator('strong:has-text("Legion")').first()
-    ).toBeVisible({ timeout: 120000 });
-
-    // Verify the response contains workspace-related content
+    // Wait for agent response — look for content in the chat card body
+    // (not the "Sandbox Legion" heading, which is always visible)
     const chatArea = page.locator('.pf-v5-c-card__body').first();
     await expect(chatArea).toContainText(/data|scripts|repos|output/i, {
-      timeout: 5000,
+      timeout: 120000,
     });
     markStep('sandbox_chat_response');
 

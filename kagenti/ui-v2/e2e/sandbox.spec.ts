@@ -65,12 +65,12 @@ async function loginIfNeeded(page: Page) {
 test.describe('Sandbox Legion - Navigation', () => {
   test.setTimeout(60000);
 
-  test('should have Sandbox in navigation sidebar', async ({ page }) => {
+  test('should have Sessions in navigation sidebar', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
 
     const sandboxNav = page.locator('nav a, nav button', {
-      hasText: 'Sandbox',
+      hasText: 'Sessions',
     });
     await expect(sandboxNav.first()).toBeVisible({ timeout: 10000 });
   });
@@ -79,7 +79,7 @@ test.describe('Sandbox Legion - Navigation', () => {
     await page.goto('/');
     await loginIfNeeded(page);
 
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
 
     await expect(
@@ -98,7 +98,7 @@ test.describe('Sandbox Legion - Chat', () => {
     await loginIfNeeded(page);
 
     // Navigate to sandbox
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
 
     await expect(
@@ -133,7 +133,7 @@ test.describe('Sandbox Legion - Sidebar', () => {
   test('should show session sidebar with search', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
 
     // Sidebar search should be visible
@@ -154,7 +154,7 @@ test.describe('Sandbox Legion - Sidebar', () => {
   test('should navigate to sessions table via View All', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
 
     await page
@@ -174,7 +174,7 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   test('should display sessions table with search', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: /View All Sessions/i }).click();
     await page.waitForLoadState('networkidle');
@@ -196,7 +196,7 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   test('should search and filter results', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: /View All Sessions/i }).click();
     await page.waitForLoadState('networkidle');
@@ -223,7 +223,7 @@ test.describe('Sandbox Legion - Advanced Config', () => {
   test('should toggle advanced config panel', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sandbox' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
     await page.waitForLoadState('networkidle');
 
     // Find and click the advanced config toggle

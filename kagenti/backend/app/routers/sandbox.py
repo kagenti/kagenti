@@ -184,22 +184,40 @@ async def get_session_history(
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT history FROM tasks WHERE context_id = $1", context_id)
+        row = await conn.fetchrow(
+            "SELECT history, artifacts FROM tasks WHERE context_id = $1",
+            context_id,
+        )
         if row is None:
             raise HTTPException(status_code=404, detail="Session not found")
 
     raw_history: list = _parse_json_field(row["history"]) or []
 
-    # Filter out intermediate graph event dumps
-    graph_dump_re = re.compile(r"^(assistant|tools|__end__):\s", re.MULTILINE)
+    # The A2A agent stores graph event dumps in history (e.g. "assistant: {...}",
+    # "tools: {...}") — these are not user-readable.  The actual final agent
+    # responses live in the *artifacts* array.  Build a conversation view by
+    # pairing each user message with the corresponding artifact text.
+    artifacts: list = _parse_json_field(row.get("artifacts")) or []
+    artifact_texts: List[str] = []
+    for art in artifacts if isinstance(artifacts, list) else []:
+        for part in art.get("parts") or []:
+            if part.get("text"):
+                artifact_texts.append(part["text"])
+
     filtered: List[Dict[str, Any]] = []
+    user_idx = 0
     for msg in raw_history:
         if msg.get("role") == "user":
             filtered.append(msg)
-        else:
-            text = "".join(p.get("text", "") for p in (msg.get("parts") or []) if p.get("text"))
-            if text and not graph_dump_re.search(text.strip()):
-                filtered.append(msg)
+            # Pair with the corresponding artifact (agent response)
+            if user_idx < len(artifact_texts):
+                filtered.append(
+                    {
+                        "role": "agent",
+                        "parts": [{"kind": "text", "text": artifact_texts[user_idx]}],
+                    }
+                )
+            user_idx += 1
 
     total = len(filtered)
 
