@@ -665,7 +665,7 @@ export const chatService = {
 // Sandbox Legion session management
 // ---------------------------------------------------------------------------
 
-import type { TaskListResponse, TaskDetail } from '@/types/sandbox';
+import type { TaskListResponse, TaskDetail, HistoryPage } from '@/types/sandbox';
 
 export const sandboxService = {
   async listSessions(
@@ -697,6 +697,20 @@ export const sandboxService = {
     return apiFetch(
       `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/kill`,
       { method: 'POST' }
+    );
+  },
+
+  async getHistory(
+    namespace: string,
+    contextId: string,
+    params?: { limit?: number; before?: number }
+  ): Promise<HistoryPage> {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.before !== undefined) qs.set('before', String(params.before));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/history${query}`
     );
   },
 };

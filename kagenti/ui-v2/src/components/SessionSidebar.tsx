@@ -4,12 +4,12 @@
 import React, { useState, useMemo } from 'react';
 import {
   Button,
-  Popover,
   SearchInput,
   Spinner,
   Label,
   Switch,
   Title,
+  Tooltip,
 } from '@patternfly/react-core';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -106,49 +106,22 @@ function subSessionCount(
   }).length;
 }
 
-/** Popover body for session hover preview. */
-const SessionPopoverBody: React.FC<{
-  task: TaskSummary;
-  childCount: number;
-}> = ({ task, childCount }) => {
+/** Build a plain-text tooltip string for session hover preview. */
+function sessionTooltip(task: TaskSummary, childCount: number): string {
   const state = task.status?.state ?? 'unknown';
   const ts = task.status?.timestamp as string | undefined;
   const created = ts ? new Date(ts).toLocaleString() : 'Unknown';
   const meta = task.metadata as Record<string, unknown> | null;
-
-  return (
-    <div style={{ minWidth: 200 }}>
-      <div style={{ marginBottom: 4 }}>
-        <strong>Agent:</strong> {agentName(task)}
-      </div>
-      <div style={{ marginBottom: 4 }}>
-        <strong>Created:</strong> {created}
-      </div>
-      <div style={{ marginBottom: 4 }}>
-        <strong>Status:</strong>{' '}
-        <Label color={stateColor(state)} isCompact>
-          {stateLabel(state)}
-        </Label>
-      </div>
-      <div style={{ marginBottom: 4 }}>
-        <strong>Context ID:</strong>{' '}
-        <code style={{ fontSize: '0.85em' }}>
-          {task.context_id.substring(0, 12)}
-        </code>
-      </div>
-      {childCount > 0 && (
-        <div>
-          <strong>Sub-sessions:</strong> {childCount}
-        </div>
-      )}
-      {typeof meta?.ref === 'string' && (
-        <div>
-          <strong>Ref:</strong> {meta.ref}
-        </div>
-      )}
-    </div>
-  );
-};
+  const lines = [
+    `Agent: ${agentName(task)}`,
+    `Created: ${created}`,
+    `Status: ${stateLabel(state)}`,
+    `ID: ${task.context_id.substring(0, 12)}`,
+  ];
+  if (childCount > 0) lines.push(`Sub-sessions: ${childCount}`);
+  if (typeof meta?.ref === 'string') lines.push(`Ref: ${meta.ref}`);
+  return lines.join('\n');
+}
 
 export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   namespace,
@@ -233,18 +206,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             );
 
             return (
-              <Popover
+              <Tooltip
                 key={session.context_id}
                 position="right"
-                headerContent={sessionName(session)}
-                bodyContent={
-                  <SessionPopoverBody
-                    task={session}
-                    childCount={childCount}
-                  />
+                content={
+                  <span style={{ whiteSpace: 'pre-line' }}>
+                    {sessionTooltip(session, childCount)}
+                  </span>
                 }
-                triggerAction="hover"
-                minWidth="240px"
+                entryDelay={400}
               >
                 <div
                   role="button"
@@ -312,7 +282,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                     </div>
                   )}
                 </div>
-              </Popover>
+              </Tooltip>
             );
           })}
       </div>

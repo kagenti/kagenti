@@ -44,3 +44,16 @@ export interface TaskListResponse {
   limit: number;
   offset: number;
 }
+
+export interface HistoryMessage {
+  role: string;
+  parts: Array<{ kind: string; text?: string }>;
+  messageId?: string;
+  _index?: number;
+}
+
+export interface HistoryPage {
+  messages: HistoryMessage[];
+  total: number;
+  has_more: boolean;
+}

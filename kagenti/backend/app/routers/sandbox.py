@@ -57,6 +57,14 @@ class TaskListResponse(BaseModel):
     offset: int
 
 
+class HistoryPage(BaseModel):
+    """Paginated slice of session history messages."""
+
+    messages: List[Dict[str, Any]]
+    total: int
+    has_more: bool
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -123,7 +131,8 @@ async def list_sessions(
         rows = await conn.fetch(
             f"SELECT id, context_id, kind, status, metadata"
             f" FROM tasks {where}"
-            f" ORDER BY id DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f" ORDER BY COALESCE((status::json->>'timestamp')::text, id::text) DESC"
+            f" LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
             limit,
             offset,
@@ -144,6 +153,71 @@ async def get_session(namespace: str, context_id: str):
             raise HTTPException(status_code=404, detail="Session not found")
 
     return _row_to_detail(row)
+
+
+@router.get(
+    "/{namespace}/sessions/{context_id}/history",
+    response_model=HistoryPage,
+)
+async def get_session_history(
+    namespace: str,
+    context_id: str,
+    limit: int = Query(default=30, ge=1, le=200),
+    before: Optional[int] = Query(
+        default=None,
+        description="Return messages before this index (for reverse pagination). "
+        "Omit to get the most recent messages.",
+    ),
+):
+    """Return a paginated slice of session history.
+
+    Messages are ordered oldest-first in the DB. We serve them in reverse
+    (newest-first) so the client can implement reverse infinite scroll:
+    load the latest page, then fetch progressively older pages on scroll-up.
+
+    Intermediate graph-event dumps (``assistant: {...}``, ``tools: {...}``)
+    are filtered out server-side so the client receives only meaningful
+    user/agent messages.
+    """
+    import re
+
+    pool = await get_session_pool(namespace)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT history FROM tasks WHERE context_id = $1", context_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    raw_history: list = _parse_json_field(row["history"]) or []
+
+    # Filter out intermediate graph event dumps
+    graph_dump_re = re.compile(r"^(assistant|tools|__end__):\s", re.MULTILINE)
+    filtered: List[Dict[str, Any]] = []
+    for msg in raw_history:
+        if msg.get("role") == "user":
+            filtered.append(msg)
+        else:
+            text = "".join(p.get("text", "") for p in (msg.get("parts") or []) if p.get("text"))
+            if text and not graph_dump_re.search(text.strip()):
+                filtered.append(msg)
+
+    total = len(filtered)
+
+    # Reverse pagination: slice from the end
+    if before is not None:
+        end_idx = max(before, 0)
+    else:
+        end_idx = total
+    start_idx = max(end_idx - limit, 0)
+
+    page = filtered[start_idx:end_idx]
+    has_more = start_idx > 0
+
+    # Add index to each message so the client can request the next page
+    for i, msg in enumerate(page):
+        msg["_index"] = start_idx + i
+
+    return HistoryPage(messages=page, total=total, has_more=has_more)
 
 
 @router.delete("/{namespace}/sessions/{context_id}", status_code=204)

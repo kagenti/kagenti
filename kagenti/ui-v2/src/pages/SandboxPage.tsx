@@ -16,7 +16,6 @@ import {
   Label,
 } from '@patternfly/react-core';
 import { PaperPlaneIcon, UserIcon, RobotIcon } from '@patternfly/react-icons';
-import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -147,9 +146,12 @@ export const SandboxPage: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [historyLimit, setHistoryLimit] = useState(INITIAL_HISTORY_LIMIT);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [oldestIndex, setOldestIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const { getToken } = useAuth();
   const [config, setConfig] = useState<SandboxConfigValues>({
     model: 'gpt-4o-mini',
@@ -157,63 +159,121 @@ export const SandboxPage: React.FC = () => {
     branch: 'main',
   });
 
-  // Load session history when selecting an existing session
-  const { data: sessionDetail } = useQuery({
-    queryKey: ['sandbox-session', namespace, contextId],
-    queryFn: () => sandboxService.getSession(namespace, contextId),
-    enabled: !!contextId && !!namespace,
+  /** Convert a history message from the API into a Message for display. */
+  const toMessage = (
+    h: { role: string; parts?: Array<{ kind: string; text?: string }>; _index?: number },
+    i: number
+  ): Message => ({
+    id: `history-${h._index ?? i}`,
+    role: h.role as 'user' | 'assistant',
+    content:
+      h.parts
+        ?.map((p) => p.text)
+        .filter(Boolean)
+        .join('') || '',
+    timestamp: new Date(),
   });
 
-  // Parse & filter history, respecting historyLimit for batch loading
+  /** Load the initial (most recent) page of history. */
+  const loadInitialHistory = useCallback(
+    async (ns: string, ctxId: string) => {
+      if (!ns || !ctxId) return;
+      setLoadingHistory(true);
+      try {
+        const page = await sandboxService.getHistory(ns, ctxId, {
+          limit: INITIAL_HISTORY_LIMIT,
+        });
+        setMessages(page.messages.map(toMessage));
+        setHasMoreHistory(page.has_more);
+        if (page.messages.length > 0) {
+          setOldestIndex(page.messages[0]._index ?? 0);
+        }
+      } catch {
+        // Fallback: endpoint may not exist on older backends
+        try {
+          const detail = await sandboxService.getSession(ns, ctxId);
+          if (detail?.history) {
+            const filtered = detail.history.filter((h) => {
+              if (h.role === 'user') return true;
+              const text =
+                h.parts?.map((p) => p.text).filter(Boolean).join('') || '';
+              return text ? !isGraphDump(text) : false;
+            });
+            setMessages(filtered.slice(-INITIAL_HISTORY_LIMIT).map(toMessage));
+            setHasMoreHistory(filtered.length > INITIAL_HISTORY_LIMIT);
+          }
+        } catch {
+          // ignore
+        }
+      } finally {
+        setLoadingHistory(false);
+      }
+    },
+    []
+  );
+
+  // Load history on session change
   useEffect(() => {
-    if (sessionDetail?.history) {
-      const filtered = sessionDetail.history.filter((h) => {
-        if (h.role === 'user') return true;
-        const text =
-          h.parts
-            ?.map((p) => p.text)
-            .filter(Boolean)
-            .join('') || '';
-        if (!text) return false;
-        return !isGraphDump(text);
-      });
-
-      // Show the most recent messages up to historyLimit
-      const sliced =
-        filtered.length > historyLimit
-          ? filtered.slice(filtered.length - historyLimit)
-          : filtered;
-
-      const loaded: Message[] = sliced.map((h, i) => ({
-        id: `history-${i}`,
-        role: h.role as 'user' | 'assistant',
-        content:
-          h.parts
-            ?.map((p) => p.text)
-            .filter(Boolean)
-            .join('') || '',
-        timestamp: new Date(
-          (h as Record<string, unknown>).timestamp as string || Date.now()
-        ),
-      }));
-      setMessages(loaded);
+    if (contextId && namespace) {
+      loadInitialHistory(namespace, contextId);
     }
-  }, [sessionDetail, historyLimit]);
+  }, [contextId, namespace, loadInitialHistory]);
 
-  // Total filtered history count (for "load earlier" button)
-  const totalHistoryCount =
-    sessionDetail?.history?.filter((h) => {
-      if (h.role === 'user') return true;
-      const text =
-        h.parts
-          ?.map((p) => p.text)
-          .filter(Boolean)
-          .join('') || '';
-      return text ? !isGraphDump(text) : false;
-    }).length ?? 0;
-  const hasMoreHistory = totalHistoryCount > historyLimit;
+  /** Load an older page of history (triggered by scrolling to top). */
+  const loadOlderHistory = useCallback(async () => {
+    if (!hasMoreHistory || loadingHistory || oldestIndex === null) return;
+    setLoadingHistory(true);
+    const container = scrollContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
 
-  // Scroll to bottom on new messages (only for new messages, not history load)
+    try {
+      const page = await sandboxService.getHistory(namespace, contextId, {
+        limit: INITIAL_HISTORY_LIMIT,
+        before: oldestIndex,
+      });
+      if (page.messages.length > 0) {
+        setMessages((prev) => [
+          ...page.messages.map(toMessage),
+          ...prev,
+        ]);
+        setOldestIndex(page.messages[0]._index ?? 0);
+        setHasMoreHistory(page.has_more);
+
+        // Preserve scroll position after prepending
+        requestAnimationFrame(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop += newScrollHeight - prevScrollHeight;
+          }
+        });
+      } else {
+        setHasMoreHistory(false);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [hasMoreHistory, loadingHistory, oldestIndex, namespace, contextId]);
+
+  // IntersectionObserver for infinite scroll — triggers when sentinel at top is visible
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMoreHistory && !loadingHistory) {
+          loadOlderHistory();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreHistory, loadingHistory, loadOlderHistory]);
+
+  // Auto-scroll to bottom on new messages
   const shouldAutoScroll = useRef(true);
   useEffect(() => {
     if (shouldAutoScroll.current) {
@@ -221,21 +281,13 @@ export const SandboxPage: React.FC = () => {
     }
   }, [messages, streamingContent]);
 
-  const handleLoadEarlier = () => {
-    shouldAutoScroll.current = false;
-    setHistoryLimit((prev) => prev + INITIAL_HISTORY_LIMIT);
-    // Restore auto-scroll after a tick
-    setTimeout(() => {
-      shouldAutoScroll.current = true;
-    }, 100);
-  };
-
   const handleSelectSession = useCallback(
     (id: string) => {
       setContextId(id);
       setMessages([]);
       setError(null);
-      setHistoryLimit(INITIAL_HISTORY_LIMIT);
+      setHasMoreHistory(false);
+      setOldestIndex(null);
       shouldAutoScroll.current = true;
       if (id) {
         setSearchParams({ session: id });
@@ -380,20 +432,11 @@ export const SandboxPage: React.FC = () => {
                 padding: '12px 16px',
               }}
             >
-              {/* Load earlier messages */}
-              {hasMoreHistory && (
-                <div style={{ textAlign: 'center', marginBottom: 8 }}>
-                  <Button
-                    variant="link"
-                    onClick={handleLoadEarlier}
-                    size="sm"
-                  >
-                    Load {Math.min(
-                      INITIAL_HISTORY_LIMIT,
-                      totalHistoryCount - historyLimit
-                    )}{' '}
-                    earlier messages
-                  </Button>
+              {/* Sentinel for infinite scroll — loads older messages */}
+              <div ref={sentinelRef} style={{ minHeight: 1 }} />
+              {loadingHistory && (
+                <div style={{ textAlign: 'center', padding: 8 }}>
+                  <Spinner size="sm" />
                 </div>
               )}
 

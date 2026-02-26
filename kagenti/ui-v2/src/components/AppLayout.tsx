@@ -339,7 +339,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     isActive={isNavItemActive('/sandbox')}
                     onClick={() => handleNavSelect('/sandbox')}
                   >
-                    Sandbox
+                    Sessions
                   </NavItem>
                 </NavList>
               </NavGroup>
