@@ -1895,6 +1895,8 @@ def _build_common_labels(
     Returns:
         Dictionary of labels.
     """
+    from app.core.constants import PROTOCOL_LABEL_PREFIX
+
     labels = {
         # Required labels
         KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
