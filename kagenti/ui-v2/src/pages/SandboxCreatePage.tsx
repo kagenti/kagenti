@@ -41,6 +41,7 @@ import {
   SplitItem,
 } from '@patternfly/react-core';
 import { useNavigate } from 'react-router-dom';
+import { sandboxService } from '@/services/api';
 
 interface WizardState {
   // Step 1: Source
@@ -160,10 +161,25 @@ export const SandboxCreatePage: React.FC = () => {
     setDeploying(true);
     setDeployError(null);
     try {
-      // TODO: POST /api/v1/sandbox/create with wizard state
-      // For now, just navigate back to sandbox page
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      navigate('/sandbox');
+      const namespace = 'team1'; // default namespace for sandbox agents
+      const result = await sandboxService.createSandbox(namespace, {
+        name: state.name,
+        repo: state.repo,
+        branch: state.branch,
+        context_dir: state.contextDir,
+        dockerfile: state.dockerfile,
+        variant: state.variant,
+        model: state.model,
+        namespace,
+        enable_persistence: state.enablePersistence,
+        isolation_mode: state.isolationMode,
+        proxy_allowlist: state.proxyAllowlist,
+      });
+      if (result.status === 'failed') {
+        setDeployError(result.message);
+      } else {
+        navigate('/sandbox');
+      }
     } catch (err) {
       setDeployError(
         err instanceof Error ? err.message : 'Deployment failed'

@@ -349,6 +349,93 @@ async def kill_session(namespace: str, context_id: str):
 
 
 # ---------------------------------------------------------------------------
+# TTL cleanup — mark stale submitted tasks as failed
+# ---------------------------------------------------------------------------
+
+
+class CleanupResponse(BaseModel):
+    """Result of a stale-session cleanup run."""
+
+    cleaned: int
+
+
+@router.post("/{namespace}/cleanup", response_model=CleanupResponse)
+async def cleanup_stale_sessions(
+    namespace: str,
+    ttl_minutes: int = Query(default=5, ge=1, description="Age threshold in minutes"),
+):
+    """Mark stale *submitted* tasks as failed.
+
+    Scans the ``tasks`` table for rows whose status JSON contains a state of
+    ``submitted`` and whose status timestamp is older than *ttl_minutes*
+    minutes ago (or has no timestamp at all).  Each matching task is updated
+    to state ``failed`` with the message ``"Agent timeout"``.
+    """
+    pool = await get_session_pool(namespace)
+
+    async with pool.acquire() as conn:
+        # Fetch all tasks that are still in "submitted" state.
+        rows = await conn.fetch(
+            "SELECT id, context_id, status FROM tasks WHERE status::text ILIKE '%submitted%'"
+        )
+
+        if not rows:
+            return CleanupResponse(cleaned=0)
+
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)
+        cleaned = 0
+
+        for row in rows:
+            status = _parse_json_field(row["status"])
+            if not isinstance(status, dict):
+                continue
+
+            # Determine the current state — handle both flat and nested shapes.
+            state_value = status.get("state", {})
+            current_state = (
+                state_value.get("state") if isinstance(state_value, dict) else state_value
+            )
+            if current_state != "submitted":
+                continue
+
+            # Check timestamp: if present, skip tasks that are still fresh.
+            ts_str = status.get("timestamp")
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if ts > cutoff:
+                        continue  # still within TTL
+                except (ValueError, TypeError):
+                    pass  # unparseable timestamp — treat as stale
+
+            # Mark as failed.
+            if isinstance(state_value, dict):
+                state_value["state"] = "failed"
+            else:
+                status["state"] = "failed"
+            status["message"] = {
+                "role": "agent",
+                "parts": [{"kind": "text", "text": "Agent timeout"}],
+            }
+
+            await conn.execute(
+                "UPDATE tasks SET status = $1::json WHERE id = $2",
+                json.dumps(status),
+                row["id"],
+            )
+            cleaned += 1
+            logger.info(
+                "Cleanup: marked task %s (context_id=%s) as failed (agent timeout)",
+                row["id"],
+                row["context_id"],
+            )
+
+    return CleanupResponse(cleaned=cleaned)
+
+
+# ---------------------------------------------------------------------------
 # Chat proxy — forwards A2A messages to sandbox agents on port 8000
 # ---------------------------------------------------------------------------
 

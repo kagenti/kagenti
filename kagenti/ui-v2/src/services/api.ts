@@ -727,4 +727,29 @@ export const sandboxService = {
       `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/history${query}`
     );
   },
+
+  async createSandbox(
+    namespace: string,
+    data: {
+      name: string;
+      repo: string;
+      branch?: string;
+      context_dir?: string;
+      dockerfile?: string;
+      variant?: string;
+      model?: string;
+      namespace?: string;
+      enable_persistence?: boolean;
+      isolation_mode?: string;
+      proxy_allowlist?: string;
+    }
+  ): Promise<{ status: string; message: string; agent_url?: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/create`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
 };
