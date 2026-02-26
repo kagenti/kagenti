@@ -6,8 +6,8 @@ This document provides context for AI assistants working across the Kagenti orga
 
 **Kagenti** is a cloud-native middleware platform for deploying and orchestrating AI agents. The project provides a framework-neutral, scalable, and secure infrastructure for running agents built with any framework through standardized protocols (A2A, MCP).
 
-**Website**: [kagenti.io](http://kagenti.io)  
-**GitHub Organization**: [github.com/kagenti](https://github.com/kagenti)  
+**Website**: [kagenti.io](http://kagenti.io)
+**GitHub Organization**: [github.com/kagenti](https://github.com/kagenti)
 **Discord**: [Kagenti Discord](https://discord.gg/aJ92dNDzqB)
 
 ## Repository Structure
@@ -215,7 +215,7 @@ mcp-gateway/
 **CRD**:
 ```yaml
 apiVersion: mcp.kagenti.com/v1alpha1
-kind: MCPServer
+kind: MCPServerRegistration
 metadata:
   name: weather-tool-servers
 spec:
