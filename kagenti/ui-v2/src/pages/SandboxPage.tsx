@@ -135,11 +135,22 @@ const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
 // SandboxPage
 // ---------------------------------------------------------------------------
 
+const STORAGE_KEY_SESSION = 'kagenti-sandbox-last-session';
+const STORAGE_KEY_NAMESPACE = 'kagenti-sandbox-last-namespace';
+
 export const SandboxPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [namespace, setNamespace] = useState('team1');
+  const [namespace, setNamespace] = useState(
+    () =>
+      searchParams.get('ns') ||
+      localStorage.getItem(STORAGE_KEY_NAMESPACE) ||
+      'team1'
+  );
   const [contextId, setContextId] = useState(
-    searchParams.get('session') || ''
+    () =>
+      searchParams.get('session') ||
+      localStorage.getItem(STORAGE_KEY_SESSION) ||
+      ''
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -212,12 +223,16 @@ export const SandboxPage: React.FC = () => {
     []
   );
 
-  // Load history on session change
+  // Load history on session change + sync URL if restored from localStorage
   useEffect(() => {
     if (contextId && namespace) {
       loadInitialHistory(namespace, contextId);
+      // Sync URL if session was restored from localStorage
+      if (!searchParams.get('session') && contextId) {
+        setSearchParams({ session: contextId }, { replace: true });
+      }
     }
-  }, [contextId, namespace, loadInitialHistory]);
+  }, [contextId, namespace, loadInitialHistory, searchParams, setSearchParams]);
 
   /** Load an older page of history (triggered by scrolling to top). */
   const loadOlderHistory = useCallback(async () => {
@@ -291,12 +306,19 @@ export const SandboxPage: React.FC = () => {
       shouldAutoScroll.current = true;
       if (id) {
         setSearchParams({ session: id });
+        localStorage.setItem(STORAGE_KEY_SESSION, id);
       } else {
         setSearchParams({});
+        localStorage.removeItem(STORAGE_KEY_SESSION);
       }
     },
     [setSearchParams]
   );
+
+  // Persist namespace to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_NAMESPACE, namespace);
+  }, [namespace]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isStreaming) return;
@@ -345,6 +367,7 @@ export const SandboxPage: React.FC = () => {
       if (data.context_id && !contextId) {
         setContextId(data.context_id);
         setSearchParams({ session: data.context_id });
+        localStorage.setItem(STORAGE_KEY_SESSION, data.context_id);
       }
 
       if (data.content) {
