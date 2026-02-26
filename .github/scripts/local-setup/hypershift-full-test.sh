@@ -979,6 +979,9 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    log_step "Deploying sandbox-legion..."
+    ./.github/scripts/kagenti-operator/76-deploy-sandbox-legion.sh
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
