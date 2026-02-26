@@ -48,7 +48,7 @@ def _get_backend_url() -> str:
                 "kubectl",
                 "get",
                 "route",
-                "kagenti-backend",
+                "kagenti-api",
                 "-n",
                 "kagenti-system",
                 "-o",

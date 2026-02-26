@@ -133,7 +133,7 @@ async def _extract_response(client, message):
     from a2a.types import SendMessageRequest, MessageSendParams
 
     params = MessageSendParams(message=message)
-    request = SendMessageRequest(params=params)
+    request = SendMessageRequest(id=uuid4().hex, params=params)
     response = await client.send_message(request)
 
     root = getattr(response, "root", response)
