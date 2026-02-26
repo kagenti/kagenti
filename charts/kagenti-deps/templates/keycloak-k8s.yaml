@@ -55,9 +55,11 @@ spec:
     spec:
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.3.3
+          image: quay.io/keycloak/keycloak:26.5.2
           args: ["start"]
           env:
+            - name: KC_FEATURES
+              value: "client-auth-federated:v1,spiffe:v1"
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: "admin"
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
