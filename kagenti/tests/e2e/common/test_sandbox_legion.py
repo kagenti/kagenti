@@ -19,11 +19,9 @@ import pytest
 import httpx
 import yaml
 from uuid import uuid4
-from a2a.client import ClientConfig, ClientFactory
 from a2a.types import (
     Message as A2AMessage,
     TextPart,
-    TaskArtifactUpdateEvent,
 )
 
 from kagenti.tests.e2e.conftest import (
@@ -133,76 +131,58 @@ def _get_ssl_context():
     return ssl.create_default_context(cafile=ca_path)
 
 
-async def _extract_response(client, message, retries=2):
-    """Send an A2A message and extract the full text response.
+async def _extract_response(client, message):
+    """Send an A2A message (non-streaming) and extract the text response.
 
-    Retries on transient stream disconnects (503, incomplete chunked read)
-    which can occur when the OpenShift route or Istio proxy times out
-    during long-running LLM calls.
+    Uses the non-streaming send_message API which returns a direct JSON
+    response. This avoids SSE connection drops from OpenShift routes.
     """
-    import asyncio
+    from a2a.types import SendMessageRequest, MessageSendParams
 
-    last_error = None
-    for attempt in range(1, retries + 1):
-        try:
-            full_response = ""
-            events_received = []
+    params = MessageSendParams(message=message)
+    request = SendMessageRequest(params=params)
+    response = await client.send_message(request)
 
-            async for result in client.send_message(message):
-                if isinstance(result, tuple):
-                    task, event = result
-                    events_received.append(
-                        type(event).__name__ if event else "Task(final)"
-                    )
+    # Extract from response
+    root = getattr(response, "root", response)
+    if hasattr(root, "error") and root.error:
+        raise RuntimeError(f"A2A error: {root.error}")
 
-                    if isinstance(event, TaskArtifactUpdateEvent):
-                        if hasattr(event, "artifact") and event.artifact:
-                            for part in event.artifact.parts or []:
-                                p = getattr(part, "root", part)
-                                if hasattr(p, "text"):
-                                    full_response += p.text
+    result = getattr(root, "result", None)
+    if result is None:
+        return "", ["NoResult"]
 
-                    if event is None and task and task.artifacts:
-                        for artifact in task.artifacts:
-                            for part in artifact.parts or []:
-                                p = getattr(part, "root", part)
-                                if hasattr(p, "text"):
-                                    full_response += p.text
+    full_response = ""
+    events_received = ["NonStreaming"]
 
-                elif isinstance(result, A2AMessage):
-                    events_received.append("Message")
-                    for part in result.parts or []:
-                        p = getattr(part, "root", part)
-                        if hasattr(p, "text"):
-                            full_response += p.text
+    # Result can be a Task or a Message
+    if hasattr(result, "artifacts") and result.artifacts:
+        for artifact in result.artifacts:
+            for part in artifact.parts or []:
+                p = getattr(part, "root", part)
+                if hasattr(p, "text"):
+                    full_response += p.text
+    elif hasattr(result, "parts"):
+        for part in result.parts or []:
+            p = getattr(part, "root", part)
+            if hasattr(p, "text"):
+                full_response += p.text
 
-            return full_response, events_received
-        except Exception as e:
-            last_error = e
-            err_msg = str(e).lower()
-            is_transient = any(
-                t in err_msg
-                for t in ["503", "incomplete chunked", "peer closed", "connection"]
-            )
-            if is_transient and attempt < retries:
-                print(f"  [Retry {attempt}/{retries}] Stream dropped: {e}")
-                await asyncio.sleep(2)
-                continue
-            raise last_error
+    return full_response, events_received
 
 
 async def _connect_to_agent(agent_url):
     """Connect to the sandbox legion via A2A protocol."""
     ssl_verify = _get_ssl_context()
-    httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
-    config = ClientConfig(httpx_client=httpx_client)
+    httpx_client = httpx.AsyncClient(timeout=180.0, verify=ssl_verify)
 
+    from a2a.client import A2AClient
     from a2a.client.card_resolver import A2ACardResolver
 
     resolver = A2ACardResolver(httpx_client, agent_url)
     card = await resolver.get_agent_card()
     card.url = agent_url
-    client = await ClientFactory.connect(card, client_config=config)
+    client = A2AClient(httpx_client=httpx_client, url=agent_url)
     return client, card
 
 

@@ -949,6 +949,16 @@ else
 fi
 
 # ============================================================================
+# PHASE 2.1: Build platform images from source (backend, UI)
+# ============================================================================
+
+if [ "$RUN_INSTALL" = "true" ]; then
+    log_phase "PHASE 2.1: Build Platform Images from Source"
+    log_step "Building backend and UI from current branch..."
+    ./.github/scripts/kagenti-operator/37-build-platform-images.sh
+fi
+
+# ============================================================================
 # PHASE 2.5: Deploy Agent-Sandbox Controller
 # ============================================================================
 

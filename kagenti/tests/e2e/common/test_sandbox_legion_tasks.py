@@ -26,11 +26,9 @@ import pytest
 import httpx
 import yaml
 from uuid import uuid4
-from a2a.client import ClientConfig, ClientFactory
 from a2a.types import (
     Message as A2AMessage,
     TextPart,
-    TaskArtifactUpdateEvent,
 )
 
 from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
@@ -131,40 +129,48 @@ def _get_ssl_context():
 
 
 async def _extract_response(client, message):
+    """Send an A2A message (non-streaming) and extract the text response."""
+    from a2a.types import SendMessageRequest, MessageSendParams
+
+    params = MessageSendParams(message=message)
+    request = SendMessageRequest(params=params)
+    response = await client.send_message(request)
+
+    root = getattr(response, "root", response)
+    if hasattr(root, "error") and root.error:
+        raise RuntimeError(f"A2A error: {root.error}")
+
+    result = getattr(root, "result", None)
+    if result is None:
+        return ""
+
     full_response = ""
-    async for result in client.send_message(message):
-        if isinstance(result, tuple):
-            task, event = result
-            if isinstance(event, TaskArtifactUpdateEvent):
-                if hasattr(event, "artifact") and event.artifact:
-                    for part in event.artifact.parts or []:
-                        p = getattr(part, "root", part)
-                        if hasattr(p, "text"):
-                            full_response += p.text
-            if event is None and task and task.artifacts:
-                for artifact in task.artifacts:
-                    for part in artifact.parts or []:
-                        p = getattr(part, "root", part)
-                        if hasattr(p, "text"):
-                            full_response += p.text
-        elif isinstance(result, A2AMessage):
-            for part in result.parts or []:
+    if hasattr(result, "artifacts") and result.artifacts:
+        for artifact in result.artifacts:
+            for part in artifact.parts or []:
                 p = getattr(part, "root", part)
                 if hasattr(p, "text"):
                     full_response += p.text
+    elif hasattr(result, "parts"):
+        for part in result.parts or []:
+            p = getattr(part, "root", part)
+            if hasattr(p, "text"):
+                full_response += p.text
+
     return full_response
 
 
 async def _connect_to_agent(agent_url):
     ssl_verify = _get_ssl_context()
     httpx_client = httpx.AsyncClient(timeout=180.0, verify=ssl_verify)
-    config = ClientConfig(httpx_client=httpx_client)
+
+    from a2a.client import A2AClient
     from a2a.client.card_resolver import A2ACardResolver
 
     resolver = A2ACardResolver(httpx_client, agent_url)
     card = await resolver.get_agent_card()
     card.url = agent_url
-    client = await ClientFactory.connect(card, client_config=config)
+    client = A2AClient(httpx_client=httpx_client, url=agent_url)
     return client, card
 
 
