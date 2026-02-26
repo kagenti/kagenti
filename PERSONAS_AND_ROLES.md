@@ -282,7 +282,7 @@ Kagenti is a cloud-native middleware platform that provides framework-neutral, s
 
 1. Understand Envoy-based gateway architecture
 2. Configure HTTPRoute resources for tool registration
-3. Set up MCPServer custom resources
+3. Set up MCPServerRegistration custom resources
 4. Monitor gateway performance and scaling
 5. Troubleshoot protocol routing issues
 
