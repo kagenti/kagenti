@@ -1102,6 +1102,7 @@ def _build_tool_deployment_manifest(
         KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
         KAGENTI_FRAMEWORK_LABEL: framework,
+        KAGENTI_INJECT_LABEL: "enabled" if auth_bridge_enabled else "disabled",
     }
 
     # SPIRE identity label (triggers spiffe-helper sidecar injection by kagenti-webhook)
@@ -1249,6 +1250,7 @@ def _build_tool_statefulset_manifest(
         KAGENTI_PROTOCOL_LABEL: VALUE_PROTOCOL_MCP,
         KAGENTI_TRANSPORT_LABEL: VALUE_TRANSPORT_STREAMABLE_HTTP,
         KAGENTI_FRAMEWORK_LABEL: framework,
+        KAGENTI_INJECT_LABEL: "enabled" if auth_bridge_enabled else "disabled",
     }
 
     # SPIRE identity label (triggers spiffe-helper sidecar injection by kagenti-webhook)
@@ -2301,6 +2303,10 @@ def _build_deployment_from_mcpserver(mcpserver: Dict, namespace: str) -> Dict:
     # Add framework if present
     if KAGENTI_FRAMEWORK_LABEL in labels:
         pod_labels[KAGENTI_FRAMEWORK_LABEL] = labels[KAGENTI_FRAMEWORK_LABEL]
+
+    # Propagate inject label to pod template so the webhook can read it
+    if KAGENTI_INJECT_LABEL in labels:
+        pod_labels[KAGENTI_INJECT_LABEL] = labels[KAGENTI_INJECT_LABEL]
 
     # Build pod spec
     new_pod_spec = {
