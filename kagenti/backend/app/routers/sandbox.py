@@ -12,19 +12,23 @@ PostgreSQL databases. Session data is managed by the A2A SDK's DatabaseTaskStore
 import json
 import logging
 import os
+import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.services.session_db import get_session_pool
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
+
+# Kubernetes name validation: lowercase alphanumeric + dashes, max 63 chars
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +200,6 @@ async def get_session_history(
     are filtered out server-side so the client receives only meaningful
     user/agent messages.
     """
-    import re
-
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
@@ -245,9 +247,7 @@ async def get_session_history(
         # Old format: Python repr — regex fallback for backward compat
         if stripped.startswith("assistant:"):
             if "tool_calls=" in stripped:
-                import re as _re
-
-                calls = _re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]+\})", stripped)
+                calls = re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]+\})", stripped)
                 if calls:
                     return {
                         "type": "tool_call",
@@ -268,7 +268,6 @@ async def get_session_history(
         return None
 
     filtered: List[Dict[str, Any]] = []
-    user_idx = 0
     for msg in raw_history:
         if msg.get("role") == "user":
             filtered.append(msg)
@@ -642,6 +641,20 @@ class SandboxChatRequest(BaseModel):
     session_id: Optional[str] = None
     agent_name: str = "sandbox-legion"
 
+    @field_validator("agent_name")
+    @classmethod
+    def validate_agent_name(cls, v: str) -> str:
+        if not _K8S_NAME_RE.match(v):
+            raise ValueError("Invalid agent name — must be a valid Kubernetes name")
+        return v
+
+
+def _validate_namespace(namespace: str) -> str:
+    """Validate namespace matches Kubernetes naming rules (prevent SSRF)."""
+    if not _K8S_NAME_RE.match(namespace):
+        raise HTTPException(400, "Invalid namespace name")
+    return namespace
+
 
 @router.post("/{namespace}/chat")
 async def chat_send(namespace: str, request: SandboxChatRequest):
@@ -650,6 +663,7 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
     Proxies the message to the agent's in-cluster service on port 8000.
     Returns the complete response (no SSE streaming).
     """
+    _validate_namespace(namespace)
     agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
     context_id = request.session_id or uuid4().hex[:36]
 
@@ -690,7 +704,7 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
 
     # Guard: if the agent serialized a list of content blocks (e.g. from a
     # tool-calling model), extract only the text portions.
-    if text.startswith("[{") and "'type': 'text'" in text:
+    if text.startswith("[{") and "'type': 'text'" in text and len(text) < 100_000:
         try:
             import ast
 
@@ -960,6 +974,7 @@ async def chat_stream(namespace: str, request: SandboxChatRequest):
     disconnects or errors, a final error event is emitted so the client
     can surface the failure gracefully.
     """
+    _validate_namespace(namespace)
     agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
     session_id = request.session_id or uuid4().hex[:36]
 

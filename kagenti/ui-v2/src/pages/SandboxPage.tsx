@@ -266,7 +266,7 @@ const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
           }}
         >
           <span style={{ fontWeight: 600, fontSize: '0.9em' }}>
-            {isUser ? 'You' : 'Legion'}
+            {isUser ? 'You' : 'Agent'}
           </span>
           <span
             style={{
@@ -578,7 +578,7 @@ export const SandboxPage: React.FC = () => {
       body: JSON.stringify({
         message: messageToSend,
         session_id: contextId || undefined,
-        agent_name: 'sandbox-legion',
+        agent_name: selectedAgent,
       }),
     });
 
