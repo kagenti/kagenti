@@ -714,6 +714,20 @@ export const sandboxService = {
     );
   },
 
+  async setVisibility(
+    namespace: string,
+    contextId: string,
+    visibility: 'private' | 'namespace'
+  ): Promise<{ visibility: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/visibility`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ visibility }),
+      }
+    );
+  },
+
   async getHistory(
     namespace: string,
     contextId: string,

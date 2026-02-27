@@ -142,6 +142,16 @@ export const SessionsTablePage: React.FC = () => {
     },
   });
 
+  const visibilityMutation = useMutation({
+    mutationFn: ({ contextId, visibility }: { contextId: string; visibility: 'private' | 'namespace' }) =>
+      sandboxService.setVisibility(namespace, contextId, visibility),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['sandbox-sessions', namespace],
+      });
+    },
+  });
+
   const allSessions = data?.items ?? [];
 
   // Count sub-sessions per parent
@@ -276,14 +286,40 @@ export const SessionsTablePage: React.FC = () => {
                       )}
                     </Td>
                     <Td dataLabel="Visibility">
-                      {visibility === 'namespace' ? (
-                        <Label color="green" isCompact icon={<GlobeIcon />}>
-                          Shared
-                        </Label>
+                      {canModify ? (
+                        <Button
+                          variant="plain"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            visibilityMutation.mutate({
+                              contextId: session.context_id,
+                              visibility: visibility === 'namespace' ? 'private' : 'namespace',
+                            });
+                          }}
+                          isLoading={visibilityMutation.isPending}
+                          style={{ padding: 0 }}
+                        >
+                          {visibility === 'namespace' ? (
+                            <Label color="green" isCompact icon={<GlobeIcon />}>
+                              Shared
+                            </Label>
+                          ) : (
+                            <Label isCompact icon={<LockIcon />}>
+                              Private
+                            </Label>
+                          )}
+                        </Button>
                       ) : (
-                        <Label isCompact icon={<LockIcon />}>
-                          Private
-                        </Label>
+                        visibility === 'namespace' ? (
+                          <Label color="green" isCompact icon={<GlobeIcon />}>
+                            Shared
+                          </Label>
+                        ) : (
+                          <Label isCompact icon={<LockIcon />}>
+                            Private
+                          </Label>
+                        )
                       )}
                     </Td>
                     <Td dataLabel="Agent">{agentName(session)}</Td>
