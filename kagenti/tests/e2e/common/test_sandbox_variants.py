@@ -32,6 +32,12 @@ from uuid import uuid4
 
 from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 
+# Skip entire module if sandbox agents are not deployed
+pytestmark = pytest.mark.skipif(
+    not os.getenv("SANDBOX_LEGION_URL") and not os.getenv("ENABLE_SANDBOX_TESTS"),
+    reason="Sandbox agents not deployed (set SANDBOX_LEGION_URL or ENABLE_SANDBOX_TESTS)",
+)
+
 
 # ---------------------------------------------------------------------------
 # Agent variant configurations

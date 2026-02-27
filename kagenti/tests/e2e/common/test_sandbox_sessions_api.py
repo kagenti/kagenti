@@ -80,11 +80,17 @@ def _check_sandbox_api_available() -> bool:
         return False
 
 
-# Skip entire module if the sandbox API isn't deployed on the backend
-pytestmark = pytest.mark.skipif(
-    not _check_sandbox_api_available(),
-    reason="Backend sandbox sessions API not available (needs backend rebuild from source)",
-)
+# Skip entire module if sandbox agents are not deployed
+pytestmark = [
+    pytest.mark.skipif(
+        not os.getenv("SANDBOX_LEGION_URL") and not os.getenv("ENABLE_SANDBOX_TESTS"),
+        reason="Sandbox agents not deployed (set SANDBOX_LEGION_URL or ENABLE_SANDBOX_TESTS)",
+    ),
+    pytest.mark.skipif(
+        not _check_sandbox_api_available(),
+        reason="Backend sandbox sessions API not available (needs backend rebuild from source)",
+    ),
+]
 
 
 def _get_sandbox_legion_url() -> str:
