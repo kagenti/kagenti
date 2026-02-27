@@ -92,7 +92,6 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
-  console.log('[AgentChat] user:', user?.username, 'currentUsername:', currentUsername);
 
   // Fetch agent card to check capabilities
   const { data: agentCard, isLoading: isLoadingCard, error: cardError } = useQuery({

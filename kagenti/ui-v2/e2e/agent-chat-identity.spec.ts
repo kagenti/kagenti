@@ -354,7 +354,11 @@ test.describe('Agent Chat - HITL Approval', () => {
     const approvalCard = page.locator('[data-testid="hitl-approval-task-safe"]');
     await expect(approvalCard).not.toBeVisible();
 
-    // Assert: AUTO_APPROVED label appears instead
+    // Assert: Events panel exists (contains the auto-approved event)
+    // The panel may be collapsed, so expand it to verify the AUTO_APPROVED label
+    const eventsToggle = page.getByText(/Events \(\d+\)/).first();
+    await expect(eventsToggle).toBeVisible({ timeout: 5000 });
+    await eventsToggle.click();
     await expect(page.getByText('AUTO_APPROVED').first()).toBeVisible({ timeout: 5000 });
   });
 });
