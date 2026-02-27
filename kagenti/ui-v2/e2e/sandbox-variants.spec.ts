@@ -99,19 +99,22 @@ async function navigateToSandbox(page: Page) {
  * The panel may be below the fold — scroll into view first.
  */
 async function selectAgent(page: Page, agentName: string) {
-  // The Sandboxes panel title
-  const sandboxesTitle = page.locator('h4').filter({ hasText: /Sandboxes/i });
+  // The Sandboxes/Sandbox panel title (changes based on whether an agent is selected)
+  const sandboxesTitle = page.locator('h4').filter({ hasText: /Sandbox/i });
+
+  // If panel shows "Sandbox" (filtered), click "Change sandbox" first
+  const changeLink = page.getByText('Change sandbox');
+  if (await changeLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await changeLink.click();
+    await page.waitForTimeout(500);
+  }
 
   // Scroll the sidebar to make the Sandboxes panel visible
   await sandboxesTitle.scrollIntoViewIfNeeded();
   await expect(sandboxesTitle).toBeVisible({ timeout: 15000 });
 
   // Wait for agent list to populate (agents fetched every 15s)
-  // Agent names appear as text inside divs within the Sandboxes section
-  const agentItem = page.locator('div').filter({
-    has: page.locator(`div:has-text("${agentName}")`),
-  }).locator(`div:text-is("${agentName}")`);
-
+  const agentItem = page.getByText(agentName, { exact: true });
   await expect(agentItem.first()).toBeVisible({ timeout: 20000 });
   await agentItem.first().click();
   await page.waitForTimeout(500);

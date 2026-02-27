@@ -346,14 +346,20 @@ async def get_session_history(
         if not text:
             continue
 
-        parsed = _parse_graph_event(text.strip())
-        if parsed:
-            filtered.append(
-                {
-                    "role": "agent",
-                    "parts": [{"kind": "data", **parsed}],
-                }
-            )
+        # Text may contain multiple JSON events on separate lines
+        # (agent emits "\n".join(serializer.serialize(...) for ...))
+        for line in text.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parsed = _parse_graph_event(line)
+            if parsed:
+                filtered.append(
+                    {
+                        "role": "agent",
+                        "parts": [{"kind": "data", **parsed}],
+                    }
+                )
 
     # Append the final response from artifacts at the end
     for art_text in artifact_texts:
