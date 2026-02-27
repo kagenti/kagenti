@@ -1,0 +1,74 @@
+forge:
+  storage:
+    storage: 512Mi  
+    storageClass: ibmc-vpc-block-10iops-tier
+
+trustProxyHeaders: true
+
+encryptionKey: "3YwblH4IiFObl0igcHFqd-9BxV7csrrCrunaVotMda8="
+
+docling:
+  enabled: false
+
+# Exclude agentstack pods from Istio ambient mesh
+podLabels:
+  istio.io/dataplane-mode: none
+
+auth:
+  enabled: true
+  validateAudience: false
+  nextauthUrl: "http://agentstack.localtest.me:8080"
+  apiUrl: "http://agentstack-api.localtest.me:8080"
+
+keycloak:
+  enabled: false
+
+externalOidcProvider:
+  enabled: true
+  name: "keycloak"
+  id: "keycloak"
+  issuerUrl: "http://keycloak.localtest.me:8080/realms/agentstack"
+  uiClientId: "agentstack-ui"
+  uiClientSecret: "agentstack-ui-secret"
+  uiClientSecretKey: "uiClientSecret"
+  serverClientId: "agentstack-server"
+  serverClientSecret: "agentstack-server-secret"
+  serverClientSecretKey: "serverClientSecret"
+  existingSecret: ""
+  
+
+providerBuilds:
+  enabled: false
+
+contextTokenPermissions:
+  grant_global_permissions:
+    files: []
+    feedback: []
+    vector_stores: []
+    llm: ["*"]
+    embeddings: ["*"]
+    model_providers: []
+    a2a_proxy: ["*"]
+    providers: ["read"]
+    provider_variables: []
+    contexts: []
+    context_data: []
+    mcp_providers: []
+    mcp_tools: []
+    mcp_proxy: []
+    connectors: []
+  grant_context_permissions:
+    files: ["*"]
+    vector_stores: ["*"]
+    context_data: ["*"]
+
+ui:
+  appName: "Agent Stack (Kagenti Demo)"
+  podLabels:
+    istio.io/dataplane-mode: none
+
+postgresql:
+  passwordUpdateJob:
+    enabled: false
+  
+disableProviderDownscaling: true

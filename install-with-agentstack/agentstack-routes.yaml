@@ -1,0 +1,47 @@
+# HTTPRoute for AgentStack API
+# Routes agentstack-api.localtest.me → agentstack-server-svc
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentstack-api
+  namespace: team1
+  labels:
+    app: agentstack-api
+spec:
+  parentRefs:
+    - name: http
+      namespace: kagenti-system
+  hostnames:
+    - "agentstack-api.localtest.me"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: agentstack-server-svc
+          port: 8333
+---
+# HTTPRoute for AgentStack UI
+# Routes agentstack.localtest.me → agentstack-ui-svc
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentstack-ui
+  namespace: team1
+  labels:
+    app: agentstack-ui
+spec:
+  parentRefs:
+    - name: http
+      namespace: kagenti-system
+  hostnames:
+    - "agentstack.localtest.me"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: agentstack-ui-svc
+          port: 8334
