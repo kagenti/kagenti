@@ -1072,8 +1072,13 @@ async def _stream_sandbox_response(
                                 parts = status["message"].get("parts", [])
                                 status_message = _extract_text_from_parts(parts)
 
+                            # Detect HITL (Human-in-the-Loop) requests
+                            event_type = "status"
+                            if state == "INPUT_REQUIRED":
+                                event_type = "hitl_request"
+
                             payload["event"] = {
-                                "type": "status",
+                                "type": event_type,
                                 "taskId": result.get("taskId", ""),
                                 "state": state,
                                 "final": is_final,

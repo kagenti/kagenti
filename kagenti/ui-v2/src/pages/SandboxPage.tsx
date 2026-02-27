@@ -45,6 +45,7 @@ interface Message {
   content: string;
   timestamp: Date;
   toolData?: ToolCallData;
+  username?: string;
 }
 
 /** Number of history messages to show initially; rest behind "Load earlier". */
@@ -210,13 +211,20 @@ const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
   return null;
 };
 
-const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
+const ChatBubble: React.FC<{ msg: Message; currentUsername?: string }> = ({ msg, currentUsername }) => {
   const isUser = msg.role === 'user';
 
   // Tool call/result steps render as compact expandable items
   if (!isUser && msg.toolData) {
     return <ToolCallStep data={msg.toolData} />;
   }
+
+  // Display name: show actual username with (you) suffix for own messages
+  const displayName = isUser
+    ? (msg.username
+        ? (msg.username === currentUsername ? `${msg.username} (you)` : msg.username)
+        : 'You')
+    : 'Agent';
 
   return (
     <div
@@ -265,8 +273,8 @@ const ChatBubble: React.FC<{ msg: Message }> = ({ msg }) => {
             marginBottom: 4,
           }}
         >
-          <span style={{ fontWeight: 600, fontSize: '0.9em' }}>
-            {isUser ? 'You' : 'Agent'}
+          <span style={{ fontWeight: 600, fontSize: '0.9em' }} data-testid={`chat-sender-${msg.id}`}>
+            {displayName}
           </span>
           <span
             style={{
@@ -346,7 +354,8 @@ export const SandboxPage: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
+  const currentUsername = user?.username || 'you';
   const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
   const [config, setConfig] = useState<SandboxConfigValues>({
     model: 'gpt-4o-mini',
@@ -667,6 +676,7 @@ export const SandboxPage: React.FC = () => {
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
+      username: currentUsername,
     };
     setMessages((prev) => [...prev, userMessage]);
     const messageToSend = input.trim();
@@ -806,7 +816,7 @@ export const SandboxPage: React.FC = () => {
               )}
 
               {messages.map((msg) => (
-                <ChatBubble key={msg.id} msg={msg} />
+                <ChatBubble key={msg.id} msg={msg} currentUsername={currentUsername} />
               ))}
 
               {isStreaming && (
