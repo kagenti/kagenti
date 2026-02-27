@@ -25,3 +25,10 @@ AVD-KSV-0048
 
 # AVD-KSV-0049: ClusterRole managing configmaps (required for Kagenti config)
 AVD-KSV-0049
+
+# AVD-KSV-0014: PostgreSQL StatefulSet requires writable root filesystem
+# PostgreSQL writes to /var/lib/postgresql/data, /var/run/postgresql, and /tmp.
+# readOnlyRootFilesystem=true would prevent the database from starting.
+# All other security hardening is applied (non-root, drop caps, seccomp).
+# File: deployments/sandbox/postgres-sessions.yaml
+AVD-KSV-0014
