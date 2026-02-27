@@ -29,8 +29,11 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
+import { LockIcon, GlobeIcon } from '@patternfly/react-icons';
+
 import { sandboxService } from '../services/api';
 import { NamespaceSelector } from '../components/NamespaceSelector';
+import { useAuth } from '../contexts/AuthContext';
 import type { TaskSummary } from '../types/sandbox';
 
 function statusLabel(state: string) {
@@ -57,6 +60,16 @@ function isRoot(task: TaskSummary): boolean {
 function agentName(task: TaskSummary): string {
   const meta = task.metadata as Record<string, unknown> | null;
   return (meta?.agent_name as string) || 'sandbox-legion';
+}
+
+function sessionOwner(task: TaskSummary): string | null {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return (meta?.owner as string) || null;
+}
+
+function sessionVisibility(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return (meta?.visibility as string) || 'private';
 }
 
 function sessionName(task: TaskSummary): string {
@@ -87,6 +100,9 @@ function formatTimestamp(task: TaskSummary): string {
 export const SessionsTablePage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currentUsername = user?.username;
+  const isAdmin = user?.roles?.includes('kagenti-admin') || user?.roles?.includes('admin');
   const [namespace, setNamespace] = useState('team1');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -218,6 +234,8 @@ export const SessionsTablePage: React.FC = () => {
             <Thead>
               <Tr>
                 <Th>Session</Th>
+                <Th>Owner</Th>
+                <Th>Visibility</Th>
                 <Th>Agent</Th>
                 <Th>Created</Th>
                 <Th>Status</Th>
@@ -229,6 +247,9 @@ export const SessionsTablePage: React.FC = () => {
               {sessions.map((session) => {
                 const state = session.status?.state ?? 'unknown';
                 const subs = subCounts.get(session.context_id) || 0;
+                const owner = sessionOwner(session);
+                const visibility = sessionVisibility(session);
+                const canModify = isAdmin || !owner || owner === currentUsername;
                 return (
                   <Tr
                     key={session.id}
@@ -240,6 +261,31 @@ export const SessionsTablePage: React.FC = () => {
                     }
                   >
                     <Td dataLabel="Session">{sessionName(session)}</Td>
+                    <Td dataLabel="Owner">
+                      {owner ? (
+                        <span>
+                          {owner}
+                          {owner === currentUsername && (
+                            <Label color="blue" isCompact style={{ marginLeft: 4 }}>
+                              you
+                            </Label>
+                          )}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--pf-v5-global--Color--200)' }}>-</span>
+                      )}
+                    </Td>
+                    <Td dataLabel="Visibility">
+                      {visibility === 'namespace' ? (
+                        <Label color="green" isCompact icon={<GlobeIcon />}>
+                          Shared
+                        </Label>
+                      ) : (
+                        <Label isCompact icon={<LockIcon />}>
+                          Private
+                        </Label>
+                      )}
+                    </Td>
                     <Td dataLabel="Agent">{agentName(session)}</Td>
                     <Td dataLabel="Created">{formatTimestamp(session)}</Td>
                     <Td dataLabel="Status">{statusLabel(state)}</Td>
@@ -253,7 +299,7 @@ export const SessionsTablePage: React.FC = () => {
                       )}
                     </Td>
                     <Td dataLabel="Actions">
-                      {(state === 'working' || state === 'submitted') && (
+                      {(state === 'working' || state === 'submitted') && canModify && (
                         <Button
                           variant="warning"
                           size="sm"
@@ -267,7 +313,7 @@ export const SessionsTablePage: React.FC = () => {
                       )}
                       {(state === 'completed' ||
                         state === 'failed' ||
-                        state === 'canceled') && (
+                        state === 'canceled') && canModify && (
                         <Button
                           variant="link"
                           isDanger
