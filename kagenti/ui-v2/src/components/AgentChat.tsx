@@ -63,6 +63,9 @@ const markdownComponents = {
   strong: ({ children }: any) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
 };
 
+// Tool names considered safe for auto-approve (no HITL card shown)
+const AUTO_APPROVE_TOOLS = ['get_weather', 'search', 'get_time', 'list_items'];
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -70,6 +73,7 @@ interface Message {
   timestamp: Date;
   events?: A2AEvent[];
   isComplete?: boolean;
+  username?: string;
 }
 
 interface AgentChatProps {
@@ -86,7 +90,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
   const [streamingEvents, setStreamingEvents] = useState<A2AEvent[]>([]);
   const [showAgentCard, setShowAgentCard] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
+  const currentUsername = user?.username || 'you';
+  console.log('[AgentChat] user:', user?.username, 'currentUsername:', currentUsername);
 
   // Fetch agent card to check capabilities
   const { data: agentCard, isLoading: isLoadingCard, error: cardError } = useQuery({
@@ -107,6 +113,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
           content: response.content,
           timestamp: new Date(),
           isComplete: true,
+          username: name, // agent name as assistant username
         },
       ]);
     },
@@ -126,6 +133,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
       content: input.trim(),
       timestamp: new Date(),
       isComplete: true,
+      username: currentUsername,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -215,6 +223,18 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
                       }
                     }
 
+                    // Auto-approve safe HITL requests
+                    if (data.event.type === 'hitl_request') {
+                      const toolName = data.event.message?.match(/tool[:\s]+(\w+)/i)?.[1] || '';
+                      if (AUTO_APPROVE_TOOLS.includes(toolName.toLowerCase())) {
+                        console.log(`[AgentChat] Auto-approving safe tool: ${toolName}`);
+                        event.type = 'status';
+                        event.state = 'AUTO_APPROVED';
+                        // Send approval response
+                        handleHitlResponse(data.event.taskId, 'approve');
+                      }
+                    }
+
                     collectedEvents.push(event);
                     console.log('[AgentChat] Added event to collection, total events:', collectedEvents.length, event);
                     setStreamingEvents([...collectedEvents]);
@@ -292,6 +312,29 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
     } else {
       // Use non-streaming
       sendMessageMutation.mutate(messageToSend);
+    }
+  };
+
+  const handleHitlResponse = async (taskId: string, action: 'approve' | 'deny') => {
+    try {
+      const token = await getToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const message = action === 'approve' ? 'Approved' : 'Denied';
+      await fetch(
+        `/api/v1/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/stream`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ message, session_id: sessionId }),
+        }
+      );
+      console.log(`[AgentChat] HITL ${action} sent for task ${taskId}`);
+    } catch (error) {
+      console.error(`[AgentChat] Failed to send HITL ${action}:`, error);
     }
   };
 
@@ -427,6 +470,24 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
                     alignItems: message.role === 'user' ? 'flex-end' : 'flex-start',
                   }}
                 >
+                  {/* Username label */}
+                  {message.username && (
+                    <div
+                      data-testid={`message-username-${message.id}`}
+                      style={{
+                        fontSize: '0.75em',
+                        fontWeight: 600,
+                        color: 'var(--pf-v5-global--Color--200)',
+                        marginBottom: '2px',
+                        paddingLeft: message.role === 'user' ? undefined : '4px',
+                        paddingRight: message.role === 'user' ? '4px' : undefined,
+                      }}
+                    >
+                      {message.username === currentUsername
+                        ? `${message.username} (you)`
+                        : message.username}
+                    </div>
+                  )}
                   <div
                     style={{
                       maxWidth: '80%',
@@ -448,6 +509,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
                         events={message.events}
                         isComplete={message.isComplete ?? true}
                         defaultExpanded={false}
+                        onHitlApprove={(taskId) => handleHitlResponse(taskId, 'approve')}
+                        onHitlDeny={(taskId) => handleHitlResponse(taskId, 'deny')}
                       />
                     )}
                     {message.role === 'assistant' ? (
@@ -496,6 +559,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
                         events={streamingEvents}
                         isComplete={false}
                         defaultExpanded={true}
+                        onHitlApprove={(taskId) => handleHitlResponse(taskId, 'approve')}
+                        onHitlDeny={(taskId) => handleHitlResponse(taskId, 'deny')}
                       />
                     )}
                     {streamingContent ? (

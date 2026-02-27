@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
+from app.core.auth import require_roles, get_required_user, ROLE_VIEWER, ROLE_OPERATOR, TokenData
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,7 @@ class ChatResponse(BaseModel):
     content: str
     session_id: str
     is_complete: bool = True
+    username: Optional[str] = None
 
 
 def _get_agent_url(name: str, namespace: str) -> str:
@@ -153,6 +154,7 @@ async def send_message(
     name: str,
     request: ChatRequest,
     http_request: Request,
+    user: TokenData = Depends(get_required_user),
 ) -> ChatResponse:
     """
     Send a message to an A2A agent and get the response.
@@ -223,6 +225,7 @@ async def send_message(
                 content=content or "No response from agent",
                 session_id=session_id,
                 is_complete=True,
+                username=user.username,
             )
 
     except httpx.HTTPStatusError as e:
@@ -291,7 +294,11 @@ def _extract_text_from_parts(parts: list) -> str:
 
 
 async def _stream_a2a_response(
-    agent_url: str, message: str, session_id: str, authorization: Optional[str] = None
+    agent_url: str,
+    message: str,
+    session_id: str,
+    authorization: Optional[str] = None,
+    username: Optional[str] = None,
 ):
     """Generator for streaming A2A responses with event metadata."""
     import json
@@ -344,7 +351,10 @@ async def _stream_a2a_response(
                         data = line[6:]
                         if data == "[DONE]":
                             logger.info("Received [DONE] signal from agent")
-                            yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                            done_payload = {"done": True, "session_id": session_id}
+                            if username:
+                                done_payload["username"] = username
+                            yield f"data: {json.dumps(done_payload)}\n\n"
                             break
 
                         try:
@@ -359,6 +369,8 @@ async def _stream_a2a_response(
 
                             result = chunk["result"]
                             payload = {"session_id": session_id}
+                            if username:
+                                payload["username"] = username
 
                             # TaskArtifactUpdateEvent
                             if "artifact" in result:
@@ -396,8 +408,16 @@ async def _stream_a2a_response(
                                     parts = status["message"].get("parts", [])
                                     status_message = _extract_text_from_parts(parts)
 
+                                # Detect HITL (Human-in-the-Loop) requests
+                                event_type = "status"
+                                if state == "INPUT_REQUIRED":
+                                    event_type = "hitl_request"
+                                    logger.info(
+                                        f"HITL request detected: taskId={result.get('taskId')}"
+                                    )
+
                                 payload["event"] = {
-                                    "type": "status",
+                                    "type": event_type,
                                     "taskId": result.get("taskId", ""),
                                     "state": state,
                                     "final": is_final,
@@ -492,6 +512,7 @@ async def stream_message(
     name: str,
     request: ChatRequest,
     http_request: Request,
+    user: TokenData = Depends(get_required_user),
 ):
     """
     Send a message to an A2A agent and stream the response.
@@ -509,7 +530,7 @@ async def stream_message(
     authorization = http_request.headers.get("Authorization")
 
     return StreamingResponse(
-        _stream_a2a_response(agent_url, request.message, session_id, authorization),
+        _stream_a2a_response(agent_url, request.message, session_id, authorization, user.username),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
