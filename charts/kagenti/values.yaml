@@ -149,7 +149,7 @@ kagenti-operator-chart:
   controllerManager:
     container:
       image:
-        tag: 0.2.0-alpha.19
+        tag: 0.2.0-alpha.20
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
