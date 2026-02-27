@@ -731,7 +731,8 @@ export const SandboxPage: React.FC = () => {
           />
           <SandboxAgentsPanel
             namespace={namespace}
-            onFilterByAgent={(name) => setSelectedAgent(name)}
+            selectedAgent={selectedAgent}
+            onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
           />
         </div>
 

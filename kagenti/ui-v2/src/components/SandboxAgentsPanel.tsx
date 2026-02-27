@@ -9,7 +9,10 @@ import type { SandboxAgentInfo } from '../types/sandbox';
 
 interface SandboxAgentsPanelProps {
   namespace: string;
-  onFilterByAgent?: (agentName: string) => void;
+  /** Currently selected/active agent name. */
+  selectedAgent?: string;
+  /** Called when user clicks an agent to switch. */
+  onSelectAgent?: (agentName: string) => void;
 }
 
 function statusDotColor(status: SandboxAgentInfo['status']): string {
@@ -48,7 +51,8 @@ function tooltipContent(agent: SandboxAgentInfo): string {
 
 export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
   namespace,
-  onFilterByAgent,
+  selectedAgent,
+  onSelectAgent,
 }) => {
   const { data: agents, isLoading } = useQuery({
     queryKey: ['sandbox-agents', namespace],
@@ -56,6 +60,12 @@ export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
     enabled: !!namespace,
     refetchInterval: 15000,
   });
+
+  // Filter: when an agent is selected, only show that agent.
+  // When no agent is selected (new session), show all as a picker.
+  const displayAgents = selectedAgent
+    ? agents?.filter((a) => a.name === selectedAgent)
+    : agents;
 
   return (
     <div
@@ -65,12 +75,12 @@ export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
       }}
     >
       <Title headingLevel="h4" size="md" style={{ marginBottom: 6 }}>
-        Sandboxes
+        {selectedAgent ? 'Sandbox' : 'Select Sandbox'}
       </Title>
 
       {isLoading && <Spinner size="sm" />}
 
-      {!isLoading && (!agents || agents.length === 0) && (
+      {!isLoading && (!displayAgents || displayAgents.length === 0) && (
         <div
           style={{
             fontSize: '0.82em',
@@ -83,79 +93,110 @@ export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
       )}
 
       {!isLoading &&
-        agents?.map((agent) => (
-          <Tooltip
-            key={agent.name}
-            position="right"
-            content={
-              <span style={{ whiteSpace: 'pre-line' }}>
-                {tooltipContent(agent)}
-              </span>
-            }
-            entryDelay={400}
-          >
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => onFilterByAgent?.(agent.name)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onFilterByAgent?.(agent.name);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '4px 6px',
-                marginBottom: 2,
-                borderRadius: 4,
-                cursor: onFilterByAgent ? 'pointer' : 'default',
-                fontSize: '0.85em',
-              }}
+        displayAgents?.map((agent) => {
+          const isActive = agent.name === selectedAgent;
+          return (
+            <Tooltip
+              key={agent.name}
+              position="right"
+              content={
+                <span style={{ whiteSpace: 'pre-line' }}>
+                  {tooltipContent(agent)}
+                </span>
+              }
+              entryDelay={400}
             >
-              {/* Status dot */}
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  backgroundColor: statusDotColor(agent.status),
-                  flexShrink: 0,
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelectAgent?.(agent.name)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSelectAgent?.(agent.name);
                 }}
-              />
-
-              {/* Name + session info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontWeight: 500,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {agent.name}
-                </div>
-                <div
-                  style={{
-                    fontSize: '0.85em',
-                    color: 'var(--pf-v5-global--Color--200)',
-                  }}
-                >
-                  {sessionText(agent)}
-                </div>
-              </div>
-
-              {/* Replicas label */}
-              <Label
-                isCompact
-                color={agent.status === 'ready' ? 'green' : agent.status === 'error' ? 'red' : 'orange'}
-                style={{ fontSize: '0.75em', flexShrink: 0 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 6px',
+                  marginBottom: 2,
+                  borderRadius: 4,
+                  cursor: onSelectAgent ? 'pointer' : 'default',
+                  fontSize: '0.85em',
+                  backgroundColor: isActive
+                    ? 'var(--pf-v5-global--active-color--100)'
+                    : 'transparent',
+                  color: isActive
+                    ? '#fff'
+                    : 'var(--pf-v5-global--Color--100)',
+                }}
               >
-                {agent.replicas}
-              </Label>
-            </div>
-          </Tooltip>
-        ))}
+                {/* Status dot */}
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    backgroundColor: isActive ? '#fff' : statusDotColor(agent.status),
+                    flexShrink: 0,
+                  }}
+                />
+
+                {/* Name + session info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {agent.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.85em',
+                      opacity: isActive ? 0.8 : 1,
+                      color: isActive ? '#fff' : 'var(--pf-v5-global--Color--200)',
+                    }}
+                  >
+                    {sessionText(agent)}
+                  </div>
+                </div>
+
+                {/* Replicas label */}
+                <Label
+                  isCompact
+                  color={agent.status === 'ready' ? 'green' : agent.status === 'error' ? 'red' : 'orange'}
+                  style={{ fontSize: '0.75em', flexShrink: 0 }}
+                >
+                  {agent.replicas}
+                </Label>
+              </div>
+            </Tooltip>
+          );
+        })}
+
+      {/* Show "Change" link when filtered to one agent */}
+      {selectedAgent && !isLoading && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onSelectAgent?.('')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSelectAgent?.('');
+          }}
+          style={{
+            fontSize: '0.8em',
+            color: 'var(--pf-v5-global--link--Color)',
+            cursor: 'pointer',
+            padding: '4px 6px',
+            textAlign: 'center',
+          }}
+        >
+          Change sandbox
+        </div>
+      )}
     </div>
   );
 };
