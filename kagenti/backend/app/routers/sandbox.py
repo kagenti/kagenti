@@ -224,25 +224,40 @@ async def get_session_history(
     #   "tools: {'messages': [ToolMessage(content='output', name='shell')]}"
     # We parse these into a richer conversation view.
     def _parse_graph_event(text: str) -> Optional[Dict[str, Any]]:
-        """Try to extract tool call info from a graph event dump."""
-        if text.startswith("assistant:"):
-            # Extract tool_calls if present
-            if "tool_calls=" in text:
+        """Parse a graph event — try JSON first, regex fallback for old format.
+
+        New agents emit structured JSON like:
+            {"type": "tool_call", "tools": [{"name": "shell", "args": {...}}]}
+
+        Old agents emitted Python repr strings like:
+            assistant: {'messages': [AIMessage(content='...', tool_calls=[...])]}
+        """
+        stripped = text.strip()
+
+        # New format: structured JSON
+        try:
+            data = json.loads(stripped)
+            if isinstance(data, dict) and "type" in data:
+                return data
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Old format: Python repr — regex fallback for backward compat
+        if stripped.startswith("assistant:"):
+            if "tool_calls=" in stripped:
                 import re as _re
 
-                calls = _re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]+\})", text)
+                calls = _re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]+\})", stripped)
                 if calls:
                     return {
                         "type": "tool_call",
                         "tools": [{"name": c[0], "args": c[1]} for c in calls],
                     }
-            # Extract thinking/content
-            match = re.search(r"content='([^']{1,500})'", text)
+            match = re.search(r"content='([^']{1,500})'", stripped)
             if match and match.group(1):
                 return {"type": "thinking", "content": match.group(1)}
-        elif text.startswith("tools:"):
-            # Extract tool result
-            match = re.search(r"content='((?:[^'\\]|\\.)*)'\s*,\s*name='([^']*)'", text)
+        elif stripped.startswith("tools:"):
+            match = re.search(r"content='((?:[^'\\]|\\.)*)'\s*,\s*name='([^']*)'", stripped)
             if match:
                 output = match.group(1)[:2000].replace("\\n", "\n")
                 return {

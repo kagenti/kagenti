@@ -28,13 +28,10 @@ function agentName(task: TaskSummary): string {
   return (meta?.agent_name as string) || 'sandbox-legion';
 }
 
-/** Extract a short display name: title, PR/issue ref, or truncated context ID. */
+/** Extract display name: custom title, PR/issue ref, or context ID prefix. */
 function sessionName(task: TaskSummary): string {
   const meta = task.metadata as Record<string, unknown> | null;
-  if (meta?.title) {
-    const t = meta.title as string;
-    return t.length > 24 ? t.substring(0, 24) + '...' : t;
-  }
+  if (meta?.title) return meta.title as string;
   if (meta?.ref) return meta.ref as string; // e.g., "#123" or "PR-45"
   return task.context_id.substring(0, 8);
 }
@@ -258,7 +255,17 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                       alignItems: 'center',
                     }}
                   >
-                    <span style={{ fontWeight: 500, fontSize: '0.9em' }}>
+                    <span
+                      style={{
+                        fontWeight: 500,
+                        fontSize: '0.9em',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
                       {sessionName(session)}
                     </span>
                     <Label

@@ -27,12 +27,15 @@ import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig'
 import { NamespaceSelector } from '../components/NamespaceSelector';
 
 interface ToolCallData {
-  type: 'tool_call' | 'tool_result' | 'thinking';
+  type: 'tool_call' | 'tool_result' | 'thinking' | 'llm_response' | 'error' | 'hitl_request';
   name?: string;
-  args?: string;
+  args?: string | Record<string, unknown>;
   output?: string;
   content?: string;
-  tools?: Array<{ name: string; args: string }>;
+  message?: string;
+  command?: string;
+  reason?: string;
+  tools?: Array<{ name: string; args: string | Record<string, unknown> }>;
 }
 
 interface Message {
@@ -99,7 +102,7 @@ const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
                 overflow: 'auto',
               }}
             >
-              {t.name}({t.args})
+              {t.name}({typeof t.args === 'string' ? t.args : JSON.stringify(t.args, null, 2)})
             </pre>
           ))}
       </div>
@@ -143,7 +146,7 @@ const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
     );
   }
 
-  if (data.type === 'thinking') {
+  if (data.type === 'thinking' || data.type === 'llm_response') {
     return (
       <div
         style={{
@@ -155,6 +158,50 @@ const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
         }}
       >
         {data.content}
+      </div>
+    );
+  }
+
+  if (data.type === 'error') {
+    return (
+      <div
+        style={{
+          margin: '4px 0',
+          padding: '6px 10px',
+          borderLeft: '3px solid var(--pf-v5-global--danger-color--100)',
+          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+          borderRadius: '0 4px 4px 0',
+          fontSize: '0.85em',
+        }}
+      >
+        <div style={{ fontWeight: 600, color: 'var(--pf-v5-global--danger-color--100)' }}>
+          Error
+        </div>
+        <pre style={{ margin: '4px 0', padding: 8, fontSize: '0.9em', overflow: 'auto', maxHeight: 150 }}>
+          {data.message || '(unknown error)'}
+        </pre>
+      </div>
+    );
+  }
+
+  if (data.type === 'hitl_request') {
+    return (
+      <div
+        style={{
+          margin: '4px 0',
+          padding: '6px 10px',
+          borderLeft: '3px solid var(--pf-v5-global--warning-color--100)',
+          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+          borderRadius: '0 4px 4px 0',
+          fontSize: '0.85em',
+        }}
+      >
+        <div style={{ fontWeight: 600, color: 'var(--pf-v5-global--warning-color--100)' }}>
+          Approval Required
+        </div>
+        <pre style={{ margin: '4px 0', padding: 8, fontSize: '0.9em', overflow: 'auto' }}>
+          Command: {data.command}{'\n'}Reason: {data.reason}
+        </pre>
       </div>
     );
   }
@@ -450,6 +497,9 @@ export const SandboxPage: React.FC = () => {
     (id: string) => {
       setContextId(id);
       setMessages([]);
+      setInput('');
+      setStreamingContent('');
+      setIsStreaming(false);
       setError(null);
       setHasMoreHistory(false);
       setOldestIndex(null);
