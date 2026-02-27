@@ -125,8 +125,9 @@ async function navigateToSandbox(page: Page) {
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
   await page.waitForLoadState('networkidle');
+  // Wait for the sandbox page to load — title or empty state message
   await expect(
-    page.getByRole('heading', { name: /Sandbox Legion/i })
+    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted|Start a conversation/i).first()
   ).toBeVisible({ timeout: 15000 });
 }
 
