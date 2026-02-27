@@ -185,12 +185,15 @@ async def list_sessions(
         where = "WHERE " + " AND ".join(conditions)
 
     async with pool.acquire() as conn:
-        # Deduplicate: keep only the latest task per context_id (highest id).
-        # This handles retries/re-submissions that create multiple records.
+        # Deduplicate: keep the task with the longest history per context_id.
+        # The A2A SDK creates a new record per message exchange, so the record
+        # with the most history entries is the most complete conversation view.
+        # Falls back to latest id for records with equal history length.
         dedup_cte = (
             f"WITH latest AS ("
             f"  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
-            f"  FROM tasks ORDER BY context_id, id DESC"
+            f"  FROM tasks ORDER BY context_id,"
+            f"    COALESCE(json_array_length(history::json), 0) DESC, id DESC"
             f")"
         )
 
@@ -224,8 +227,11 @@ async def get_session(namespace: str, context_id: str):
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
+        # Pick the record with the longest history (most complete conversation)
         row = await conn.fetchrow(
-            "SELECT * FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM tasks WHERE context_id = $1"
+            " ORDER BY COALESCE(json_array_length(history::json), 0) DESC, id DESC"
+            " LIMIT 1",
             context_id,
         )
         if row is None:
@@ -262,8 +268,11 @@ async def get_session_history(
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
+        # Pick the record with the longest history (most complete conversation)
         row = await conn.fetchrow(
-            "SELECT history, artifacts FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            "SELECT history, artifacts FROM tasks WHERE context_id = $1"
+            " ORDER BY COALESCE(json_array_length(history::json), 0) DESC, id DESC"
+            " LIMIT 1",
             context_id,
         )
         if row is None:
