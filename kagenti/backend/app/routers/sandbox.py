@@ -17,10 +17,18 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
+from app.core.auth import (
+    get_required_user,
+    require_roles,
+    TokenData,
+    ROLE_ADMIN,
+    ROLE_OPERATOR,
+    ROLE_VIEWER,
+)
 from app.services.session_db import get_session_pool
 
 logger = logging.getLogger(__name__)
@@ -102,19 +110,46 @@ def _row_to_detail(row: dict) -> TaskDetail:
     return TaskDetail(**data)
 
 
+def _check_session_ownership(meta: Optional[Dict[str, Any]], user: TokenData, action: str) -> None:
+    """Raise 403 if user is not the session owner (unless admin)."""
+    if user.has_role(ROLE_ADMIN):
+        return
+    owner = (meta or {}).get("owner")
+    if owner and owner != user.username:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot {action}: session owned by '{owner}'",
+        )
+
+
+class VisibilityRequest(BaseModel):
+    visibility: str  # "private" or "namespace"
+
+
 # ---------------------------------------------------------------------------
 # Endpoints — reading from A2A SDK's 'tasks' table
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{namespace}/sessions", response_model=TaskListResponse)
+@router.get(
+    "/{namespace}/sessions",
+    response_model=TaskListResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
 async def list_sessions(
     namespace: str,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     search: Optional[str] = Query(default=None, description="Search by context_id"),
+    user: TokenData = Depends(get_required_user),
 ):
-    """List sessions (tasks) with pagination and optional search."""
+    """List sessions (tasks) with pagination and optional search.
+
+    Visibility is role-based:
+    - Admin: all sessions across all namespaces.
+    - Operator: own sessions + sessions with visibility='namespace'.
+    - Viewer: only own sessions.
+    """
     pool = await get_session_pool(namespace)
 
     conditions: List[str] = []
@@ -125,6 +160,25 @@ async def list_sessions(
         conditions.append(f"context_id ILIKE ${idx}")
         args.append(f"%{search}%")
         idx += 1
+
+    # Role-based visibility filtering
+    if not user.has_role(ROLE_ADMIN):
+        if user.has_role(ROLE_OPERATOR):
+            # Operators see own sessions + namespace-shared sessions
+            conditions.append(
+                f"(metadata::json->>'owner' = ${idx}"
+                f" OR metadata::json->>'visibility' = 'namespace'"
+                f" OR metadata::json->>'owner' IS NULL)"
+            )
+            args.append(user.username)
+            idx += 1
+        else:
+            # Viewers see only their own sessions
+            conditions.append(
+                f"(metadata::json->>'owner' = ${idx} OR metadata::json->>'owner' IS NULL)"
+            )
+            args.append(user.username)
+            idx += 1
 
     where = ""
     if conditions:
@@ -156,7 +210,11 @@ async def list_sessions(
     return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/{namespace}/sessions/{context_id}", response_model=TaskDetail)
+@router.get(
+    "/{namespace}/sessions/{context_id}",
+    response_model=TaskDetail,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
 async def get_session(namespace: str, context_id: str):
     """Get a task/session by context_id with full history and artifacts.
 
@@ -179,6 +237,7 @@ async def get_session(namespace: str, context_id: str):
 @router.get(
     "/{namespace}/sessions/{context_id}/history",
     response_model=HistoryPage,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_session_history(
     namespace: str,
@@ -315,16 +374,31 @@ async def get_session_history(
     return HistoryPage(messages=page, total=total, has_more=has_more)
 
 
-@router.delete("/{namespace}/sessions/{context_id}", status_code=204)
-async def delete_session(namespace: str, context_id: str):
-    """Delete a task/session by context_id."""
+@router.delete(
+    "/{namespace}/sessions/{context_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def delete_session(
+    namespace: str,
+    context_id: str,
+    user: TokenData = Depends(get_required_user),
+):
+    """Delete a task/session by context_id. Only owner or admin can delete."""
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        result = await conn.execute("DELETE FROM tasks WHERE context_id = $1", context_id)
+        row = await conn.fetchrow(
+            "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found")
 
-    if result == "DELETE 0":
-        raise HTTPException(status_code=404, detail="Session not found")
+        meta = _parse_json_field(row["metadata"])
+        _check_session_ownership(meta, user, "delete")
+
+        await conn.execute("DELETE FROM tasks WHERE context_id = $1", context_id)
 
     return None
 
@@ -333,8 +407,16 @@ class RenameRequest(BaseModel):
     title: str
 
 
-@router.put("/{namespace}/sessions/{context_id}/rename")
-async def rename_session(namespace: str, context_id: str, request: RenameRequest):
+@router.put(
+    "/{namespace}/sessions/{context_id}/rename",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def rename_session(
+    namespace: str,
+    context_id: str,
+    request: RenameRequest,
+    user: TokenData = Depends(get_required_user),
+):
     """Set or clear a custom session title.
 
     Pass an empty title to revert to the auto-generated default (first message).
@@ -350,6 +432,7 @@ async def rename_session(namespace: str, context_id: str, request: RenameRequest
             raise HTTPException(status_code=404, detail="Session not found")
 
         meta = _parse_json_field(row["metadata"]) or {}
+        _check_session_ownership(meta, user, "rename")
 
         if request.title.strip():
             meta["title"] = request.title.strip()[:120]
@@ -381,9 +464,14 @@ async def rename_session(namespace: str, context_id: str, request: RenameRequest
 @router.post(
     "/{namespace}/sessions/{context_id}/kill",
     response_model=TaskDetail,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
 )
-async def kill_session(namespace: str, context_id: str):
-    """Mark a task as canceled by updating its status JSON."""
+async def kill_session(
+    namespace: str,
+    context_id: str,
+    user: TokenData = Depends(get_required_user),
+):
+    """Mark a task as canceled by updating its status JSON. Only owner or admin."""
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
@@ -392,6 +480,9 @@ async def kill_session(namespace: str, context_id: str):
         )
         if row is None:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        meta = _parse_json_field(row["metadata"])
+        _check_session_ownership(meta, user, "kill")
 
         # Update the status JSON to set state to 'canceled'
         status = _parse_json_field(row["status"])
@@ -416,6 +507,46 @@ async def kill_session(namespace: str, context_id: str):
         )
 
     return _row_to_detail(row)
+
+
+@router.put(
+    "/{namespace}/sessions/{context_id}/visibility",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def set_session_visibility(
+    namespace: str,
+    context_id: str,
+    request: VisibilityRequest,
+    user: TokenData = Depends(get_required_user),
+):
+    """Toggle session visibility between 'private' and 'namespace'.
+
+    Only the session owner or admin can change visibility.
+    """
+    if request.visibility not in ("private", "namespace"):
+        raise HTTPException(400, "visibility must be 'private' or 'namespace'")
+
+    pool = await get_session_pool(namespace)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        meta = _parse_json_field(row["metadata"]) or {}
+        _check_session_ownership(meta, user, "change visibility")
+
+        meta["visibility"] = request.visibility
+        await conn.execute(
+            "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+            json.dumps(meta),
+            context_id,
+        )
+
+    return {"visibility": request.visibility}
 
 
 # ---------------------------------------------------------------------------
@@ -656,8 +787,15 @@ def _validate_namespace(namespace: str) -> str:
     return namespace
 
 
-@router.post("/{namespace}/chat")
-async def chat_send(namespace: str, request: SandboxChatRequest):
+@router.post(
+    "/{namespace}/chat",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def chat_send(
+    namespace: str,
+    request: SandboxChatRequest,
+    user: TokenData = Depends(get_required_user),
+):
     """Send a message to a sandbox agent via A2A JSON-RPC (non-streaming).
 
     Proxies the message to the agent's in-cluster service on port 8000.
@@ -729,9 +867,15 @@ async def chat_send(namespace: str, request: SandboxChatRequest):
             )
             if row:
                 meta = _parse_json_field(row["metadata"]) or {}
+                changed = False
                 if not meta.get("title"):
-                    title = request.message[:80].replace("\n", " ")
-                    meta["title"] = title
+                    meta["title"] = request.message[:80].replace("\n", " ")
+                    changed = True
+                if not meta.get("owner"):
+                    meta["owner"] = user.username
+                    meta["visibility"] = "private"
+                    changed = True
+                if changed:
                     await conn.execute(
                         "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
                         json.dumps(meta),
@@ -797,8 +941,40 @@ async def _stream_sandbox_response(
     agent_url: str,
     message: str,
     session_id: str,
+    owner: Optional[str] = None,
+    namespace: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator that proxies A2A SSE events from the agent."""
+    owner_set = False
+
+    async def _set_owner_metadata():
+        """Set owner on session metadata after task is created."""
+        nonlocal owner_set
+        if owner_set or not owner or not namespace:
+            return
+        owner_set = True
+        try:
+            pool = await get_session_pool(namespace)
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                    session_id,
+                )
+                if row:
+                    meta = _parse_json_field(row["metadata"]) or {}
+                    if not meta.get("owner"):
+                        meta["owner"] = owner
+                        meta["visibility"] = "private"
+                        if not meta.get("title"):
+                            meta["title"] = message[:80].replace("\n", " ")
+                        await conn.execute(
+                            "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                            json.dumps(meta),
+                            session_id,
+                        )
+        except Exception:
+            logger.debug("Failed to set owner on session %s", session_id)
+
     a2a_msg = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
@@ -842,6 +1018,7 @@ async def _stream_sandbox_response(
 
                         if data == "[DONE]":
                             logger.info("Received [DONE] from agent")
+                            await _set_owner_metadata()
                             yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                             break
 
@@ -860,6 +1037,12 @@ async def _stream_sandbox_response(
 
                         result = chunk["result"]
                         payload: dict = {"session_id": session_id}
+                        if owner:
+                            payload["username"] = owner
+
+                        # Set owner after first event (task exists in DB)
+                        if not owner_set:
+                            await _set_owner_metadata()
 
                         # --- TaskArtifactUpdateEvent ---
                         if "artifact" in result:
@@ -961,8 +1144,15 @@ async def _stream_sandbox_response(
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
 
 
-@router.post("/{namespace}/chat/stream")
-async def chat_stream(namespace: str, request: SandboxChatRequest):
+@router.post(
+    "/{namespace}/chat/stream",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def chat_stream(
+    namespace: str,
+    request: SandboxChatRequest,
+    user: TokenData = Depends(get_required_user),
+):
     """Stream agent responses via Server-Sent Events (SSE).
 
     Sends the user message to the A2A agent using ``message/stream`` and
@@ -979,7 +1169,13 @@ async def chat_stream(namespace: str, request: SandboxChatRequest):
     session_id = request.session_id or uuid4().hex[:36]
 
     return StreamingResponse(
-        _stream_sandbox_response(agent_url, request.message, session_id),
+        _stream_sandbox_response(
+            agent_url,
+            request.message,
+            session_id,
+            owner=user.username,
+            namespace=namespace,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
