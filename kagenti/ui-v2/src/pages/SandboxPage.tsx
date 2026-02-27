@@ -23,6 +23,7 @@ import remarkGfm from 'remark-gfm';
 import { sandboxService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
+import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 
@@ -346,6 +347,7 @@ export const SandboxPage: React.FC = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const { getToken } = useAuth();
+  const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
   const [config, setConfig] = useState<SandboxConfigValues>({
     model: 'gpt-4o-mini',
     repo: '',
@@ -533,7 +535,7 @@ export const SandboxPage: React.FC = () => {
         body: JSON.stringify({
           message: messageToSend,
           session_id: contextId || undefined,
-          agent_name: 'sandbox-legion',
+          agent_name: selectedAgent,
         }),
       }
     );
@@ -727,6 +729,10 @@ export const SandboxPage: React.FC = () => {
             activeContextId={contextId}
             onSelectSession={handleSelectSession}
           />
+          <SandboxAgentsPanel
+            namespace={namespace}
+            onFilterByAgent={(name) => setSelectedAgent(name)}
+          />
         </div>
 
         <div
@@ -741,7 +747,7 @@ export const SandboxPage: React.FC = () => {
           <Split hasGutter style={{ marginBottom: 8 }}>
             <SplitItem>
               <Title headingLevel="h1" size="xl">
-                Sandbox Legion
+                {selectedAgent}
               </Title>
             </SplitItem>
             <SplitItem isFilled />
@@ -794,7 +800,7 @@ export const SandboxPage: React.FC = () => {
                     color: 'var(--pf-v5-global--Color--200)',
                   }}
                 >
-                  Start a conversation with Sandbox Legion
+                  Start a conversation with {selectedAgent}
                 </div>
               )}
 
