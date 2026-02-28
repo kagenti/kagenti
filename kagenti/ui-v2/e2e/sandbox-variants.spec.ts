@@ -102,20 +102,24 @@ async function selectAgent(page: Page, agentName: string) {
   // The Sandboxes/Sandbox panel title (changes based on whether an agent is selected)
   const sandboxesTitle = page.locator('h4').filter({ hasText: /Sandbox/i });
 
-  // If panel shows "Sandbox" (filtered), click "Change sandbox" first
+  // If panel shows "Sandbox" (filtered to one agent), click "Change sandbox" to show all
   const changeLink = page.getByText('Change sandbox');
-  if (await changeLink.isVisible({ timeout: 2000 }).catch(() => false)) {
+  if (await changeLink.isVisible({ timeout: 3000 }).catch(() => false)) {
     await changeLink.click();
-    await page.waitForTimeout(500);
+    // Wait for the panel to re-render with all agents (API polls every 15s)
+    await page.waitForTimeout(2000);
   }
 
-  // Scroll the sidebar to make the Sandboxes panel visible
+  // Scroll the sidebar to make the panel visible
   await sandboxesTitle.scrollIntoViewIfNeeded();
   await expect(sandboxesTitle).toBeVisible({ timeout: 15000 });
 
-  // Wait for agent list to populate (agents fetched every 15s)
-  const agentItem = page.getByText(agentName, { exact: true });
-  await expect(agentItem.first()).toBeVisible({ timeout: 20000 });
+  // Wait for agent list — the API refreshes every 15s, so wait up to 20s
+  // Use a broader locator since the text may be inside nested divs
+  const agentItem = page.locator(`div:has-text("${agentName}")`).filter({
+    has: page.locator('text=/session/i'),
+  });
+  await expect(agentItem.first()).toBeVisible({ timeout: 25000 });
   await agentItem.first().click();
   await page.waitForTimeout(500);
 }
