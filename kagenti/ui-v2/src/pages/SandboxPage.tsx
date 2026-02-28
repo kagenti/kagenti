@@ -696,8 +696,13 @@ export const SandboxPage: React.FC = () => {
       let streamed = false;
       try {
         streamed = await sendStreaming(messageToSend, headers);
-      } catch {
-        // Streaming failed (network error, etc.) -- fall through
+      } catch (streamErr) {
+        // Streaming failed — check if it's a connection error
+        const streamMsg = streamErr instanceof Error ? streamErr.message : '';
+        if (streamMsg.includes('connection') || streamMsg.includes('chunked')) {
+          throw streamErr; // Let the outer catch handle with backoff
+        }
+        // Other errors: fall through to non-streaming
       }
 
       if (!streamed) {
@@ -705,16 +710,45 @@ export const SandboxPage: React.FC = () => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to send';
-      setError(msg);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content: `Error: ${msg}`,
-          timestamp: new Date(),
-        },
-      ]);
+      const isConnectionError = msg.includes('connection') || msg.includes('chunked') || msg.includes('network');
+      if (isConnectionError && contextId) {
+        // Connection dropped — agent may still be processing.
+        // Backoff loop: poll session status until completed or timeout.
+        setError('Connection interrupted — waiting for agent to finish...');
+        const pollSession = async (attempt: number) => {
+          if (attempt > 5) {
+            setError('Agent did not complete — try refreshing the page.');
+            return;
+          }
+          const delay = Math.min(2000 * Math.pow(1.5, attempt), 10000);
+          await new Promise((r) => setTimeout(r, delay));
+          try {
+            const detail = await sandboxService.getSession(namespace, contextId);
+            const state = detail?.status?.state;
+            if (state === 'completed' || state === 'failed') {
+              await loadInitialHistory(namespace, contextId);
+              setError(null);
+            } else {
+              setError(`Agent still working (attempt ${attempt + 1}/5)...`);
+              await pollSession(attempt + 1);
+            }
+          } catch {
+            await pollSession(attempt + 1);
+          }
+        };
+        pollSession(0);
+      } else {
+        setError(msg);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: `Error: ${msg}`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
     } finally {
       setIsStreaming(false);
       setStreamingContent('');
