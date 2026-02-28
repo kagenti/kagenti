@@ -178,6 +178,11 @@ export const SandboxCreatePage: React.FC = () => {
         enable_persistence: state.enablePersistence,
         isolation_mode: state.isolationMode,
         proxy_allowlist: state.proxyAllowlist,
+        // Credentials
+        github_pat: state.githubPat || undefined,
+        llm_api_key: state.llmApiKey || undefined,
+        llm_key_source: state.llmKeySource,
+        llm_secret_name: state.llmSecretName,
       });
       if (result.status === 'failed') {
         setDeployError(result.message);
@@ -544,9 +549,23 @@ export const SandboxCreatePage: React.FC = () => {
           <DescriptionListDescription>{state.model}</DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
-          <DescriptionListTerm>Credentials</DescriptionListTerm>
+          <DescriptionListTerm>GitHub Credential</DescriptionListTerm>
           <DescriptionListDescription>
-            {state.credentialMode === 'pat' ? 'PAT (Quick Setup)' : 'GitHub App (Enterprise)'}
+            {state.credentialMode === 'pat'
+              ? state.githubPat
+                ? 'PAT provided (will create Secret)'
+                : 'PAT (not provided)'
+              : 'GitHub App (Enterprise)'}
+          </DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
+          <DescriptionListTerm>LLM API Key</DescriptionListTerm>
+          <DescriptionListDescription>
+            {state.llmKeySource === 'existing'
+              ? `Existing secret: ${state.llmSecretName}`
+              : state.llmApiKey
+                ? 'New key provided (will create Secret)'
+                : 'New key (not provided)'}
           </DescriptionListDescription>
         </DescriptionListGroup>
       </DescriptionList>

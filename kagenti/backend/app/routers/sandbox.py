@@ -364,7 +364,15 @@ async def get_session_history(
     filtered: List[Dict[str, Any]] = []
     for msg in raw_history:
         if msg.get("role") == "user":
-            filtered.append(msg)
+            # Propagate username from A2A message metadata to top level
+            username = msg.get("metadata", {}).get("username")
+            entry: Dict[str, Any] = {
+                "role": "user",
+                "parts": msg.get("parts", []),
+            }
+            if username:
+                entry["username"] = username
+            filtered.append(entry)
             continue
 
         # Try to parse graph event dumps
@@ -564,6 +572,48 @@ async def kill_session(
         )
 
     return _row_to_detail(row)
+
+
+@router.post(
+    "/{namespace}/sessions/{context_id}/approve",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def approve_session(
+    namespace: str,
+    context_id: str,
+    user: TokenData = Depends(get_required_user),
+):
+    """Approve a pending HITL request (stub -- agent resume not yet wired)."""
+    _validate_namespace(namespace)
+    logger.info(
+        "User %s approved HITL request for session %s in namespace %s",
+        user.username,
+        context_id,
+        namespace,
+    )
+    # TODO: Resume the LangGraph graph with approval
+    return {"status": "approved", "context_id": context_id}
+
+
+@router.post(
+    "/{namespace}/sessions/{context_id}/deny",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def deny_session(
+    namespace: str,
+    context_id: str,
+    user: TokenData = Depends(get_required_user),
+):
+    """Deny a pending HITL request (stub -- agent resume not yet wired)."""
+    _validate_namespace(namespace)
+    logger.info(
+        "User %s denied HITL request for session %s in namespace %s",
+        user.username,
+        context_id,
+        namespace,
+    )
+    # TODO: Resume the LangGraph graph with denial
+    return {"status": "denied", "context_id": context_id}
 
 
 @router.put(
@@ -872,6 +922,7 @@ async def chat_send(
                 "parts": [{"kind": "text", "text": request.message}],
                 "messageId": uuid4().hex,
                 "contextId": context_id,
+                "metadata": {"username": user.username},
             }
         },
     }
@@ -1042,6 +1093,7 @@ async def _stream_sandbox_response(
                 "parts": [{"kind": "text", "text": message}],
                 "messageId": uuid4().hex,
                 "contextId": session_id,
+                "metadata": {"username": owner},
             },
         },
     }

@@ -47,6 +47,11 @@ class SandboxCreateRequest(BaseModel):
     drop_caps: bool = True
     read_only_root: bool = False
     workspace_size: str = "5Gi"
+    # Credentials
+    github_pat: Optional[str] = None
+    llm_api_key: Optional[str] = None
+    llm_key_source: str = "existing"  # "existing" or "new"
+    llm_secret_name: str = "openai-secret"
 
 
 class SandboxCreateResponse(BaseModel):
@@ -62,11 +67,21 @@ class SandboxCreateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _build_deployment_manifest(req: SandboxCreateRequest) -> dict:
+def _build_deployment_manifest(
+    req: SandboxCreateRequest,
+    llm_secret: str = "openai-secret",
+    github_pat_secret: Optional[str] = None,
+) -> dict:
     """Build a Kubernetes Deployment manifest matching 76-deploy-sandbox-agents.sh.
 
     The deployment spec mirrors sandbox_legion_deployment.yaml / sandbox_agent_deployment.yaml
     with environment variables for the chosen variant and model.
+
+    Args:
+        req: The sandbox create request.
+        llm_secret: Name of the K8s Secret containing the LLM API key (key: "apikey").
+        github_pat_secret: Name of the K8s Secret containing the GitHub PAT (key: "token").
+                           If None, no GITHUB_TOKEN env var is injected.
     """
     namespace = req.namespace
     name = req.name
@@ -86,15 +101,24 @@ def _build_deployment_manifest(req: SandboxCreateRequest) -> dict:
         {"name": "LLM_API_BASE", "value": "https://api.openai.com/v1"},
         {
             "name": "LLM_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}},
+            "valueFrom": {"secretKeyRef": {"name": llm_secret, "key": "apikey"}},
         },
         {
             "name": "OPENAI_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}},
+            "valueFrom": {"secretKeyRef": {"name": llm_secret, "key": "apikey"}},
         },
         {"name": "LLM_MODEL", "value": req.model},
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
     ]
+
+    # Inject GitHub PAT as GITHUB_TOKEN if a secret was created/specified
+    if github_pat_secret:
+        env_vars.append(
+            {
+                "name": "GITHUB_TOKEN",
+                "valueFrom": {"secretKeyRef": {"name": github_pat_secret, "key": "token"}},
+            }
+        )
 
     # Persistence env vars (PostgreSQL session store + checkpointing)
     if req.enable_persistence:
@@ -252,7 +276,58 @@ async def create_sandbox(
     # Override namespace from the path parameter
     request.namespace = namespace
 
-    deployment_manifest = _build_deployment_manifest(request)
+    # --- Create credential Secrets when the user provides new values ---
+    managed_labels = {
+        "app.kubernetes.io/managed-by": "kagenti-ui",
+        "app.kubernetes.io/part-of": request.name,
+    }
+
+    # LLM API key secret
+    if request.llm_key_source == "new" and request.llm_api_key:
+        llm_secret = f"{request.name}-llm-secret"
+        try:
+            kube.create_secret(
+                namespace=namespace,
+                name=llm_secret,
+                string_data={"apikey": request.llm_api_key},
+                labels=managed_labels,
+            )
+            logger.info(f"Created LLM API key Secret '{llm_secret}' in namespace '{namespace}'")
+        except ApiException as e:
+            logger.error(f"Failed to create LLM Secret: {e}")
+            return SandboxCreateResponse(
+                status="failed",
+                message=f"Failed to create LLM API key Secret: {e.reason}",
+            )
+    else:
+        llm_secret = request.llm_secret_name
+
+    # GitHub PAT secret
+    github_pat_secret: Optional[str] = None
+    if request.github_pat:
+        github_pat_secret = f"{request.name}-github-pat"
+        try:
+            kube.create_secret(
+                namespace=namespace,
+                name=github_pat_secret,
+                string_data={"token": request.github_pat},
+                labels=managed_labels,
+            )
+            logger.info(
+                f"Created GitHub PAT Secret '{github_pat_secret}' in namespace '{namespace}'"
+            )
+        except ApiException as e:
+            logger.error(f"Failed to create GitHub PAT Secret: {e}")
+            return SandboxCreateResponse(
+                status="failed",
+                message=f"Failed to create GitHub PAT Secret: {e.reason}",
+            )
+
+    deployment_manifest = _build_deployment_manifest(
+        request,
+        llm_secret=llm_secret,
+        github_pat_secret=github_pat_secret,
+    )
     service_manifest = _build_service_manifest(request)
 
     # --- Create the Deployment ---

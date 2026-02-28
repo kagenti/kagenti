@@ -700,6 +700,26 @@ export const sandboxService = {
     );
   },
 
+  async approveSession(
+    namespace: string,
+    contextId: string
+  ): Promise<{ status: string; context_id: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/approve`,
+      { method: 'POST' }
+    );
+  },
+
+  async denySession(
+    namespace: string,
+    contextId: string
+  ): Promise<{ status: string; context_id: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/deny`,
+      { method: 'POST' }
+    );
+  },
+
   async renameSession(
     namespace: string,
     contextId: string,
@@ -767,6 +787,11 @@ export const sandboxService = {
       enable_persistence?: boolean;
       isolation_mode?: string;
       proxy_allowlist?: string;
+      // Credentials
+      github_pat?: string;
+      llm_api_key?: string;
+      llm_key_source?: string;
+      llm_secret_name?: string;
     }
   ): Promise<{ status: string; message: string; agent_url?: string }> {
     return apiFetch(

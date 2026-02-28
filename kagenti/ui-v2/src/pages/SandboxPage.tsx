@@ -15,7 +15,7 @@ import {
   Alert,
   Label,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -70,8 +70,13 @@ function isGraphDump(text: string): boolean {
 // ---------------------------------------------------------------------------
 
 /** Expandable tool call step in the conversation. */
-const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
+const ToolCallStep: React.FC<{
+  data: ToolCallData;
+  onApprove?: () => void;
+  onDeny?: () => void;
+}> = ({ data, onApprove, onDeny }) => {
   const [expanded, setExpanded] = useState(false);
+  const [hitlActioned, setHitlActioned] = useState<'approved' | 'denied' | null>(null);
 
   if (data.type === 'tool_call') {
     return (
@@ -205,6 +210,42 @@ const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
         <pre style={{ margin: '4px 0', padding: 8, fontSize: '0.9em', overflow: 'auto' }}>
           Command: {data.command}{'\n'}Reason: {data.reason}
         </pre>
+        {hitlActioned ? (
+          <div style={{ marginTop: 8 }}>
+            <Label
+              color={hitlActioned === 'approved' ? 'green' : 'red'}
+              icon={hitlActioned === 'approved' ? <CheckCircleIcon /> : <TimesCircleIcon />}
+            >
+              {hitlActioned === 'approved' ? 'Approved' : 'Denied'}
+            </Label>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<CheckCircleIcon />}
+              style={{ backgroundColor: 'var(--pf-v5-global--success-color--100)' }}
+              onClick={() => {
+                setHitlActioned('approved');
+                onApprove?.();
+              }}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              icon={<TimesCircleIcon />}
+              onClick={() => {
+                setHitlActioned('denied');
+                onDeny?.();
+              }}
+            >
+              Deny
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -212,12 +253,17 @@ const ToolCallStep: React.FC<{ data: ToolCallData }> = ({ data }) => {
   return null;
 };
 
-const ChatBubble: React.FC<{ msg: Message; currentUsername?: string }> = ({ msg, currentUsername }) => {
+const ChatBubble: React.FC<{
+  msg: Message;
+  currentUsername?: string;
+  onApprove?: () => void;
+  onDeny?: () => void;
+}> = ({ msg, currentUsername, onApprove, onDeny }) => {
   const isUser = msg.role === 'user';
 
   // Tool call/result steps render as compact expandable items
   if (!isUser && msg.toolData) {
-    return <ToolCallStep data={msg.toolData} />;
+    return <ToolCallStep data={msg.toolData} onApprove={onApprove} onDeny={onDeny} />;
   }
 
   // Display name: show actual username with (you) suffix for own messages
@@ -361,9 +407,31 @@ export const SandboxPage: React.FC = () => {
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
 
+  /** Handle HITL approve action. */
+  const handleHitlApprove = useCallback(async () => {
+    if (!namespace || !contextId) return;
+    try {
+      await sandboxService.approveSession(namespace, contextId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to approve';
+      setError(msg);
+    }
+  }, [namespace, contextId]);
+
+  /** Handle HITL deny action. */
+  const handleHitlDeny = useCallback(async () => {
+    if (!namespace || !contextId) return;
+    try {
+      await sandboxService.denySession(namespace, contextId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to deny';
+      setError(msg);
+    }
+  }, [namespace, contextId]);
+
   /** Convert a history message from the API into a Message for display. */
   const toMessage = (
-    h: { role: string; parts?: Array<Record<string, unknown>>; _index?: number },
+    h: { role: string; parts?: Array<Record<string, unknown>>; _index?: number; username?: string; metadata?: Record<string, unknown> },
     i: number
   ): Message => {
     const firstPart = h.parts?.[0] as Record<string, unknown> | undefined;
@@ -388,6 +456,7 @@ export const SandboxPage: React.FC = () => {
           .filter(Boolean)
           .join('') || '',
       timestamp: new Date(),
+      username: h.username || (h.metadata?.username as string | undefined),
     };
   };
 
@@ -853,7 +922,13 @@ export const SandboxPage: React.FC = () => {
               )}
 
               {messages.map((msg) => (
-                <ChatBubble key={msg.id} msg={msg} currentUsername={currentUsername} />
+                <ChatBubble
+                  key={msg.id}
+                  msg={msg}
+                  currentUsername={currentUsername}
+                  onApprove={msg.toolData?.type === 'hitl_request' ? handleHitlApprove : undefined}
+                  onDeny={msg.toolData?.type === 'hitl_request' ? handleHitlDeny : undefined}
+                />
               ))}
 
               {isStreaming && (
