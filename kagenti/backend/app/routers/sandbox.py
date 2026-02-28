@@ -280,8 +280,11 @@ async def get_session_history(
 
     # Merge history from all task records (ordered by task creation time)
     raw_history: list = []
-    artifacts: list = []
     seen_user_msgs: set = set()  # Deduplicate user messages across tasks
+
+    # Collect artifacts from all tasks (each task may have a final answer)
+    all_artifact_texts: List[str] = []
+
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
         for msg in task_history:
@@ -293,17 +296,14 @@ async def get_session_history(
                     continue
                 seen_user_msgs.add(key)
             raw_history.append(msg)
-        # Only use artifacts from the latest task (final answer)
-        task_artifacts = _parse_json_field(row.get("artifacts")) or []
-        if task_artifacts:
-            artifacts = task_artifacts  # overwrite with latest
 
-    # Extract final response text from artifacts
-    artifact_texts: List[str] = []
-    for art in artifacts if isinstance(artifacts, list) else []:
-        for part in art.get("parts") or []:
-            if part.get("text"):
-                artifact_texts.append(part["text"])
+        # Accumulate artifacts from ALL task records
+        task_artifacts = _parse_json_field(row.get("artifacts")) or []
+        if isinstance(task_artifacts, list):
+            for art in task_artifacts:
+                for part in art.get("parts") or []:
+                    if part.get("text"):
+                        all_artifact_texts.append(part["text"])
 
     # Parse graph event dumps into structured tool call data.
     # Raw history contains: user messages + graph events like:
@@ -311,14 +311,7 @@ async def get_session_history(
     #   "tools: {'messages': [ToolMessage(content='output', name='shell')]}"
     # We parse these into a richer conversation view.
     def _parse_graph_event(text: str) -> Optional[Dict[str, Any]]:
-        """Parse a graph event — try JSON first, regex fallback for old format.
-
-        New agents emit structured JSON like:
-            {"type": "tool_call", "tools": [{"name": "shell", "args": {...}}]}
-
-        Old agents emitted Python repr strings like:
-            assistant: {'messages': [AIMessage(content='...', tool_calls=[...])]}
-        """
+        """Parse a graph event — JSON first, improved regex for old format."""
         stripped = text.strip()
 
         # New format: structured JSON
@@ -329,27 +322,43 @@ async def get_session_history(
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Old format: Python repr — regex fallback for backward compat
+        # Old format: Python repr — improved regex for robustness
         if stripped.startswith("assistant:"):
-            if "tool_calls=" in stripped:
-                calls = re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]+\})", stripped)
+            # Try to extract tool calls (may be truncated)
+            if "tool_calls=" in stripped or ("'name':" in stripped and "'args':" in stripped):
+                calls = re.findall(r"'name':\s*'([^']+)'.*?'args':\s*(\{[^}]*\}?)", stripped)
                 if calls:
                     return {
                         "type": "tool_call",
                         "tools": [{"name": c[0], "args": c[1]} for c in calls],
                     }
-            match = re.search(r"content='([^']{1,500})'", stripped)
-            if match and match.group(1):
-                return {"type": "thinking", "content": match.group(1)}
+            # Extract content — try single quotes then double quotes
+            for pattern in [
+                r"content='((?:[^'\\]|\\.){1,2000})'",
+                r'content="((?:[^"\\]|\\.){1,2000})"',
+                r"content='([^']{1,500})",  # truncated (no closing quote)
+            ]:
+                match = re.search(pattern, stripped)
+                if match and match.group(1).strip():
+                    return {"type": "llm_response", "content": match.group(1)[:2000]}
+
         elif stripped.startswith("tools:"):
-            match = re.search(r"content='((?:[^'\\]|\\.)*)'\s*,\s*name='([^']*)'", stripped)
-            if match:
-                output = match.group(1)[:2000].replace("\\n", "\n")
-                return {
-                    "type": "tool_result",
-                    "name": match.group(2),
-                    "output": output,
-                }
+            # Extract tool result — try single then double quotes
+            for pattern in [
+                r"content='((?:[^'\\]|\\.)*?)'\s*,\s*name='([^']*)'",
+                r'content="((?:[^"\\]|\\.)*?)"\s*,\s*name=\'([^\']*)\'',
+                r"content='((?:[^'\\]|\\.)*?)'\s*,\s*name=\"([^\"]*)\"",
+                r'content="((?:[^"\\]|\\.)*?)"\s*,\s*name="([^"]*)"',
+            ]:
+                match = re.search(pattern, stripped)
+                if match:
+                    output = match.group(1)[:2000].replace("\\n", "\n")
+                    return {
+                        "type": "tool_result",
+                        "name": match.group(2),
+                        "output": output,
+                    }
+
         return None
 
     filtered: List[Dict[str, Any]] = []
@@ -378,8 +387,8 @@ async def get_session_history(
                     }
                 )
 
-    # Append the final response from artifacts at the end
-    for art_text in artifact_texts:
+    # Append final responses from artifacts (accumulated from all tasks)
+    for art_text in all_artifact_texts:
         filtered.append(
             {
                 "role": "agent",
