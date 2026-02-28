@@ -669,6 +669,7 @@ export const SandboxPage: React.FC = () => {
     const decoder = new TextDecoder();
     let accumulatedContent = '';
     let buffer = '';
+    const collectedMessages: Message[] = [];
 
     try {
       while (true) {
@@ -694,7 +695,31 @@ export const SandboxPage: React.FC = () => {
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
             }
 
-            // Accumulate content for real-time display
+            // Collect tool call/result events as separate messages
+            if (data.event && data.event.message) {
+              const eventText = data.event.message;
+              // Try to parse as structured JSON (from LangGraphSerializer)
+              for (const eventLine of eventText.split('\n')) {
+                const trimmed = eventLine.trim();
+                if (!trimmed) continue;
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  if (parsed.type && (parsed.type === 'tool_call' || parsed.type === 'tool_result' || parsed.type === 'llm_response')) {
+                    collectedMessages.push({
+                      id: `stream-event-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                      role: 'assistant',
+                      content: '',
+                      timestamp: new Date(),
+                      toolData: parsed as ToolCallData,
+                    });
+                  }
+                } catch {
+                  // Not JSON — skip
+                }
+              }
+            }
+
+            // Accumulate content for real-time display (final answer)
             if (data.content) {
               accumulatedContent += data.content;
               setStreamingContent(accumulatedContent);
@@ -718,10 +743,11 @@ export const SandboxPage: React.FC = () => {
       reader.releaseLock();
     }
 
-    // Finalize the assistant message
-    if (accumulatedContent) {
+    // Finalize: add tool call messages first, then the final response
+    if (collectedMessages.length > 0 || accumulatedContent) {
       setMessages((prev) => [
         ...prev,
+        ...collectedMessages, // Tool call/result steps rendered inline
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
