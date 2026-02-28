@@ -420,34 +420,15 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await page.waitForLoadState('networkidle');
     // May need to re-login after reload (Keycloak may strip URL params)
     await loginIfNeeded(page);
-    // Navigate back to sandbox if redirected to home
-    await navigateToSandbox(page);
 
-    // Wait for session list to load in sidebar, then click our session
+    // Navigate directly to the sandbox page with the session ID in the URL.
+    // This avoids clicking the wrong session in the sidebar when multiple
+    // sessions exist from parallel test runs.
+    await page.goto(`/sandbox?session=${sessionBeforeReload}`);
+    await page.waitForLoadState('networkidle');
+
+    // Wait for history to load
     await page.waitForTimeout(3000);
-
-    // The session should be in localStorage — click it in the sidebar
-    const restoredFromStorage = await page.evaluate(
-      () => localStorage.getItem('kagenti-sandbox-last-session')
-    );
-    expect(restoredFromStorage).toBe(sessionBeforeReload);
-
-    // Find and click the session in the sidebar (it should show our marker as title)
-    const sessionInSidebar = page.locator('[role="button"]').filter({
-      hasText: new RegExp(reloadMarker.substring(0, 20), 'i'),
-    });
-    if ((await sessionInSidebar.count()) > 0) {
-      await sessionInSidebar.first().click();
-    } else {
-      // If session title doesn't match, try clicking any session with sandbox-legion
-      const anySession = page.locator('[role="button"]').filter({
-        hasText: /sandbox-legion/i,
-      });
-      if ((await anySession.count()) > 0) {
-        await anySession.first().click();
-      }
-    }
-    await page.waitForTimeout(3000); // Wait for history to load
     await snap(page, 'after-reload');
 
     // ---- Assert: messages are restored from history ----

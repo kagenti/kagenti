@@ -387,8 +387,24 @@ async def get_session_history(
                     }
                 )
 
-    # Append final responses from artifacts (accumulated from all tasks)
+    # Append final responses from artifacts, but deduplicate against
+    # llm_response entries already parsed from graph events.  Without this
+    # guard the same final answer appears twice: once from the graph event
+    # dump (kind=data, type=llm_response) and once from the artifact.
+    seen_llm_texts: set = set()
+    for msg in filtered:
+        parts = msg.get("parts") or []
+        for p in parts:
+            if p.get("kind") == "data" and p.get("type") == "llm_response":
+                content = (p.get("content") or "").strip()
+                if content:
+                    # Store a normalised prefix for fuzzy dedup
+                    seen_llm_texts.add(content[:200])
+
     for art_text in all_artifact_texts:
+        normalised = art_text.strip()[:200]
+        if normalised and normalised in seen_llm_texts:
+            continue  # already present as an llm_response
         filtered.append(
             {
                 "role": "agent",
