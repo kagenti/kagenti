@@ -150,12 +150,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   return (
     <div
       style={{
-        width: 280,
-        borderRight: '1px solid var(--pf-v5-global--BorderColor--100)',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         padding: '8px',
+        overflow: 'hidden',
       }}
     >
       <Title headingLevel="h3" size="md" style={{ marginBottom: 8 }}>

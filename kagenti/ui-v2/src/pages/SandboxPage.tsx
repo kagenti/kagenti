@@ -734,11 +734,13 @@ export const SandboxPage: React.FC = () => {
             borderRight: '1px solid var(--pf-v5-global--BorderColor--100)',
           }}
         >
-          <SessionSidebar
-            namespace={namespace}
-            activeContextId={contextId}
-            onSelectSession={handleSelectSession}
-          />
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <SessionSidebar
+              namespace={namespace}
+              activeContextId={contextId}
+              onSelectSession={handleSelectSession}
+            />
+          </div>
           <SandboxAgentsPanel
             namespace={namespace}
             selectedAgent={selectedAgent}
