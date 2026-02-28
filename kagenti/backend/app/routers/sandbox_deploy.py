@@ -43,6 +43,10 @@ class SandboxCreateRequest(BaseModel):
     enable_persistence: bool = True
     isolation_mode: str = "shared"  # shared or pod-per-session
     proxy_allowlist: str = "github.com, api.openai.com, pypi.org"
+    non_root: bool = True
+    drop_caps: bool = True
+    read_only_root: bool = False
+    workspace_size: str = "5Gi"
 
 
 class SandboxCreateResponse(BaseModel):
@@ -115,6 +119,18 @@ def _build_deployment_manifest(req: SandboxCreateRequest) -> dict:
         "app.kubernetes.io/component": "agent",
     }
 
+    # -- Container security context from wizard settings --
+    security_context: dict = {}
+    if req.non_root:
+        security_context["runAsNonRoot"] = True
+    if req.drop_caps:
+        security_context["allowPrivilegeEscalation"] = False
+        security_context["capabilities"] = {"drop": ["ALL"]}
+    security_context["seccompProfile"] = {"type": "RuntimeDefault"}
+    # readOnlyRootFilesystem only if explicitly requested AND not postgres-dependent
+    if req.read_only_root:
+        security_context["readOnlyRootFilesystem"] = True
+
     return {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
@@ -166,6 +182,7 @@ def _build_deployment_manifest(req: SandboxCreateRequest) -> dict:
                                 "requests": {"cpu": "100m", "memory": "256Mi"},
                                 "limits": {"cpu": "500m", "memory": "1Gi"},
                             },
+                            "securityContext": security_context,
                             "volumeMounts": [
                                 {"name": "workspace", "mountPath": "/workspace"},
                                 {"name": "cache", "mountPath": "/app/.cache"},
@@ -173,7 +190,7 @@ def _build_deployment_manifest(req: SandboxCreateRequest) -> dict:
                         }
                     ],
                     "volumes": [
-                        {"name": "workspace", "emptyDir": {"sizeLimit": "5Gi"}},
+                        {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
                         {"name": "cache", "emptyDir": {}},
                     ],
                 },

@@ -24,7 +24,8 @@ import { sandboxService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
 import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
-import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
+// SandboxConfig disabled — model/repo/branch not yet wired to backend
+// import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 
 interface ToolCallData {
@@ -357,11 +358,8 @@ export const SandboxPage: React.FC = () => {
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
   const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
-  const [config, setConfig] = useState<SandboxConfigValues>({
-    model: 'gpt-4o-mini',
-    repo: '',
-    branch: 'main',
-  });
+  // SandboxConfig disabled — model/repo/branch not yet wired to backend
+  // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
 
   /** Convert a history message from the API into a Message for display. */
   const toMessage = (
@@ -806,7 +804,10 @@ export const SandboxPage: React.FC = () => {
             </SplitItem>
           </Split>
 
+          {/* SandboxConfig disabled — model/repo/branch not yet wired to backend.
+              TODO: wire config to agent via A2A message metadata or per-session config endpoint.
           <SandboxConfig config={config} onChange={setConfig} />
+          */}
 
           {error && (
             <Alert
@@ -885,7 +886,7 @@ export const SandboxPage: React.FC = () => {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: '0.9em', marginBottom: 4 }}>
-                      Legion{' '}
+                      {selectedAgent || 'Agent'}{' '}
                       <Label color="blue" isCompact style={{ marginLeft: 4 }}>
                         thinking
                       </Label>
