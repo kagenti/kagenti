@@ -61,11 +61,8 @@ export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
     refetchInterval: 15000,
   });
 
-  // Filter: when an agent is selected, only show that agent.
-  // When no agent is selected (new session), show all as a picker.
-  const displayAgents = selectedAgent
-    ? agents?.filter((a) => a.name === selectedAgent)
-    : agents;
+  // Always show all agents — highlight the selected one
+  const displayAgents = agents;
 
   return (
     <div
@@ -75,7 +72,7 @@ export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
       }}
     >
       <Title headingLevel="h4" size="md" style={{ marginBottom: 6 }}>
-        {selectedAgent ? 'Sandbox' : 'Select Sandbox'}
+        Sandboxes
       </Title>
 
       {isLoading && <Spinner size="sm" />}
@@ -177,26 +174,6 @@ export const SandboxAgentsPanel: React.FC<SandboxAgentsPanelProps> = ({
           );
         })}
 
-      {/* Show "Change" link when filtered to one agent */}
-      {selectedAgent && !isLoading && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => onSelectAgent?.('')}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onSelectAgent?.('');
-          }}
-          style={{
-            fontSize: '0.8em',
-            color: 'var(--pf-v5-global--link--Color)',
-            cursor: 'pointer',
-            padding: '4px 6px',
-            textAlign: 'center',
-          }}
-        >
-          Change sandbox
-        </div>
-      )}
     </div>
   );
 };

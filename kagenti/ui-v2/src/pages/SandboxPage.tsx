@@ -544,7 +544,7 @@ export const SandboxPage: React.FC = () => {
         body: JSON.stringify({
           message: messageToSend,
           session_id: contextId || undefined,
-          agent_name: selectedAgent || 'sandbox-legion',
+          agent_name: selectedAgent,
         }),
       }
     );
@@ -744,14 +744,7 @@ export const SandboxPage: React.FC = () => {
           <SandboxAgentsPanel
             namespace={namespace}
             selectedAgent={selectedAgent}
-            onSelectAgent={(name) => {
-              if (name) {
-                setSelectedAgent(name);
-              } else {
-                // "Change sandbox" clicked — clear selection to show all agents
-                setSelectedAgent('');
-              }
-            }}
+            onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
           />
         </div>
 
