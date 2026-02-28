@@ -185,15 +185,14 @@ async def list_sessions(
         where = "WHERE " + " AND ".join(conditions)
 
     async with pool.acquire() as conn:
-        # Deduplicate: keep the task with the longest history per context_id.
-        # The A2A SDK creates a new record per message exchange, so the record
-        # with the most history entries is the most complete conversation view.
-        # Falls back to latest id for records with equal history length.
+        # Deduplicate: A2A SDK creates a new immutable task per message exchange.
+        # Multiple tasks share the same context_id. For the session list, pick
+        # the latest task (most recent status) and merge in any title/owner
+        # metadata that may have been set on earlier records.
         dedup_cte = (
             f"WITH latest AS ("
             f"  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
-            f"  FROM tasks ORDER BY context_id,"
-            f"    COALESCE(json_array_length(history::json), 0) DESC, id DESC"
+            f"  FROM tasks ORDER BY context_id, id DESC"
             f")"
         )
 
@@ -268,18 +267,36 @@ async def get_session_history(
     pool = await get_session_pool(namespace)
 
     async with pool.acquire() as conn:
-        # Pick the record with the longest history (most complete conversation)
-        row = await conn.fetchrow(
-            "SELECT history, artifacts FROM tasks WHERE context_id = $1"
-            " ORDER BY COALESCE(json_array_length(history::json), 0) DESC, id DESC"
-            " LIMIT 1",
+        # Aggregate history + artifacts across ALL task records for this context_id.
+        # The A2A SDK creates a new immutable task per message exchange, so a
+        # multi-turn session has N task records. Each record's history contains
+        # the messages for that specific exchange. We merge them all in order.
+        rows = await conn.fetch(
+            "SELECT history, artifacts FROM tasks WHERE context_id = $1 ORDER BY id ASC",
             context_id,
         )
-        if row is None:
+        if not rows:
             raise HTTPException(status_code=404, detail="Session not found")
 
-    raw_history: list = _parse_json_field(row["history"]) or []
-    artifacts: list = _parse_json_field(row.get("artifacts")) or []
+    # Merge history from all task records (ordered by task creation time)
+    raw_history: list = []
+    artifacts: list = []
+    seen_user_msgs: set = set()  # Deduplicate user messages across tasks
+    for row in rows:
+        task_history = _parse_json_field(row["history"]) or []
+        for msg in task_history:
+            # Deduplicate: skip user messages we've already seen
+            if msg.get("role") == "user":
+                text = "".join(p.get("text", "") for p in (msg.get("parts") or []))
+                key = text[:200]
+                if key in seen_user_msgs:
+                    continue
+                seen_user_msgs.add(key)
+            raw_history.append(msg)
+        # Only use artifacts from the latest task (final answer)
+        task_artifacts = _parse_json_field(row.get("artifacts")) or []
+        if task_artifacts:
+            artifacts = task_artifacts  # overwrite with latest
 
     # Extract final response text from artifacts
     artifact_texts: List[str] = []
