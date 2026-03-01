@@ -65,11 +65,12 @@ a0c2a706 feat: add role-based session ownership and visibility
 c6ac29bf feat: add multi-user identity and HITL approval cards
 ```
 
-### Remaining Work
-1. **Fix tool call step rendering** (3 test failures) — streaming handler collects events in `collectedMessages` but doesn't flush them to UI during streaming
-2. **Wire HITL approve/deny to LangGraph `graph.resume()`** — currently stub
-3. **Session reload persistence** (1 test failure) — session ID not in URL after page reload
-4. **Multi-user E2E test** — needs second Keycloak user
+### Session A Progress (2026-03-01)
+1. ~~**Fix tool call step rendering**~~ ✅ `bb2f73e6` — parseGraphEvent regex fallback + immediate flush during streaming
+2. ~~**Fix Istio+asyncpg DB connection**~~ ✅ `5f7596d6` — ssl=False, retry with backoff, pool eviction
+3. ~~**Session name matching content**~~ ✅ `cf026bb9` — metadata merge across task rows for title/owner propagation
+4. **Wire HITL approve/deny to LangGraph `graph.resume()`** — moved to Session C
+5. **Multi-user E2E test** — moved to Session D
 
 ### Files Modified
 - `kagenti/backend/app/routers/chat.py` — username in SSE, HITL detection
