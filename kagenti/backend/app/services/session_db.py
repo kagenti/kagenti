@@ -6,8 +6,13 @@ Dynamic per-namespace PostgreSQL connection pool manager for sandbox sessions.
 
 Discovers DB connection details from a Kubernetes Secret in each namespace,
 with a convention-based fallback. Pools are created lazily and cached.
+
+SSL is disabled at the application level because Istio ambient mesh provides
+mTLS for all inter-pod traffic. This avoids SSL negotiation failures that
+can occur when ztunnel intercepts the PostgreSQL binary protocol.
 """
 
+import asyncio
 import base64
 import logging
 import os
@@ -26,6 +31,10 @@ _pool_cache: Dict[str, asyncpg.Pool] = {}
 # Secret name and expected keys
 SESSION_SECRET_NAME = "postgres-sessions-secret"
 SECRET_KEYS = ("host", "port", "database", "username", "password")
+
+# Pool creation retry config
+_POOL_MAX_RETRIES = 3
+_POOL_RETRY_DELAY = 2.0  # seconds
 
 
 # ---------------------------------------------------------------------------
@@ -75,11 +84,21 @@ def _dsn_for_namespace(namespace: str) -> str:
     """Build a DSN from the namespace secret, falling back to convention."""
     creds = _read_secret(namespace)
     if creds:
+        logger.info(
+            "Using DB credentials from secret for namespace=%s (host=%s)",
+            namespace,
+            creds["host"],
+        )
         return (
             f"postgresql://{creds['username']}:{creds['password']}"
             f"@{creds['host']}:{creds['port']}/{creds['database']}"
         )
     # Convention-based fallback
+    logger.warning(
+        "Secret %s not found in %s — using convention-based fallback",
+        SESSION_SECRET_NAME,
+        namespace,
+    )
     return f"postgresql://kagenti:kagenti@postgres-sessions.{namespace}:5432/sessions"
 
 
@@ -88,21 +107,73 @@ def _dsn_for_namespace(namespace: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+async def _create_pool(dsn: str) -> asyncpg.Pool:
+    """Create an asyncpg pool with retry and SSL disabled for Istio compat."""
+    last_error: Optional[Exception] = None
+    for attempt in range(1, _POOL_MAX_RETRIES + 1):
+        try:
+            pool = await asyncpg.create_pool(
+                dsn,
+                min_size=1,
+                max_size=10,
+                max_inactive_connection_lifetime=300,
+                command_timeout=30,
+                # Disable app-level SSL — Istio ambient provides mTLS
+                ssl=False,
+            )
+            return pool
+        except (
+            asyncpg.InvalidPasswordError,
+            asyncpg.InvalidCatalogNameError,
+        ):
+            # Auth/DB errors won't fix themselves on retry
+            raise
+        except Exception as exc:
+            last_error = exc
+            if attempt < _POOL_MAX_RETRIES:
+                logger.warning(
+                    "DB pool creation failed (attempt %d/%d): %s — retrying in %.0fs",
+                    attempt,
+                    _POOL_MAX_RETRIES,
+                    exc,
+                    _POOL_RETRY_DELAY,
+                )
+                await asyncio.sleep(_POOL_RETRY_DELAY)
+            else:
+                logger.error(
+                    "DB pool creation failed after %d attempts: %s",
+                    _POOL_MAX_RETRIES,
+                    exc,
+                )
+    raise last_error  # type: ignore[misc]
+
+
 async def get_session_pool(namespace: str) -> asyncpg.Pool:
     """Return (or lazily create) the asyncpg pool for *namespace*."""
-    if namespace in _pool_cache:
-        return _pool_cache[namespace]
+    pool = _pool_cache.get(namespace)
+    if pool is not None:
+        if not pool._closed:
+            return pool
+        # Pool was closed externally — recreate
+        logger.warning("DB pool for namespace=%s was closed — recreating", namespace)
+        del _pool_cache[namespace]
 
     dsn = _dsn_for_namespace(namespace)
     logger.info("Creating session DB pool for namespace=%s", namespace)
-    pool = await asyncpg.create_pool(
-        dsn,
-        min_size=2,
-        max_size=10,
-        max_inactive_connection_lifetime=300,
-    )
+    pool = await _create_pool(dsn)
     _pool_cache[namespace] = pool
     return pool
+
+
+async def evict_pool(namespace: str) -> None:
+    """Remove a pool from cache (call on connection errors to force recreation)."""
+    pool = _pool_cache.pop(namespace, None)
+    if pool is not None:
+        logger.info("Evicting stale DB pool for namespace=%s", namespace)
+        try:
+            await pool.close()
+        except Exception:
+            pass
 
 
 async def close_all_pools() -> None:
