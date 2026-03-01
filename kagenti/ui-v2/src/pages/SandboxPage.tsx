@@ -65,6 +65,66 @@ function isGraphDump(text: string): boolean {
   return /^(assistant|tools|__end__):\s/m.test(text.trim());
 }
 
+/**
+ * Parse a graph event line — JSON first, regex fallback for old Python repr.
+ * Mirrors the backend's _parse_graph_event() logic so tool calls render
+ * during streaming even when the LangGraphSerializer isn't deployed.
+ */
+function parseGraphEvent(text: string): ToolCallData | null {
+  const stripped = text.trim();
+  if (!stripped) return null;
+
+  // New format: structured JSON
+  try {
+    const data = JSON.parse(stripped);
+    if (data && typeof data === 'object' && data.type) {
+      return data as ToolCallData;
+    }
+  } catch {
+    // Not JSON — try regex fallback
+  }
+
+  // Old format: Python repr — "assistant: {'messages': [AIMessage(...)]}"
+  if (stripped.startsWith('assistant:')) {
+    if (stripped.includes('tool_calls=') || (stripped.includes("'name':") && stripped.includes("'args':"))) {
+      const calls = [...stripped.matchAll(/'name':\s*'([^']+)'.*?'args':\s*(\{[^}]*\}?)/g)];
+      if (calls.length > 0) {
+        return {
+          type: 'tool_call',
+          tools: calls.map(c => ({ name: c[1], args: c[2] })),
+        };
+      }
+    }
+    // Extract content
+    const contentMatch = stripped.match(/content='((?:[^'\\]|\\.){1,2000})'/) ||
+                         stripped.match(/content="((?:[^"\\]|\\.){1,2000})"/) ||
+                         stripped.match(/content='([^']{1,500})/);
+    if (contentMatch && contentMatch[1].trim()) {
+      return { type: 'llm_response', content: contentMatch[1].slice(0, 2000) };
+    }
+  } else if (stripped.startsWith('tools:')) {
+    // Extract tool result
+    const patterns = [
+      /content='((?:[^'\\]|\\.)*?)'\s*,\s*name='([^']*)'/,
+      /content="((?:[^"\\]|\\.)*?)"\s*,\s*name='([^']*)'/,
+      /content='((?:[^'\\]|\\.)*?)'\s*,\s*name="([^"]*)"/,
+      /content="((?:[^"\\]|\\.)*?)"\s*,\s*name="([^"]*)"/,
+    ];
+    for (const pattern of patterns) {
+      const match = stripped.match(pattern);
+      if (match) {
+        return {
+          type: 'tool_result',
+          name: match[2],
+          output: match[1].slice(0, 2000).replace(/\\n/g, '\n'),
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Message bubble component
 // ---------------------------------------------------------------------------
@@ -713,27 +773,26 @@ export const SandboxPage: React.FC = () => {
               setStreamingContent('');
             }
 
-            // Collect tool call/result events as separate messages
+            // Parse and immediately flush tool call/result events
             if (data.event && data.event.message) {
               const eventText = data.event.message;
-              // Try to parse as structured JSON (from LangGraphSerializer)
+              let hadToolEvents = false;
               for (const eventLine of eventText.split('\n')) {
-                const trimmed = eventLine.trim();
-                if (!trimmed) continue;
-                try {
-                  const parsed = JSON.parse(trimmed);
-                  if (parsed.type && (parsed.type === 'tool_call' || parsed.type === 'tool_result' || parsed.type === 'llm_response')) {
-                    collectedMessages.push({
-                      id: `stream-event-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                      role: 'assistant',
-                      content: '',
-                      timestamp: new Date(),
-                      toolData: parsed as ToolCallData,
-                    });
-                  }
-                } catch {
-                  // Not JSON — skip
+                const parsed = parseGraphEvent(eventLine);
+                if (parsed && (parsed.type === 'tool_call' || parsed.type === 'tool_result' || parsed.type === 'llm_response')) {
+                  collectedMessages.push({
+                    id: `stream-event-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    role: 'assistant',
+                    content: '',
+                    timestamp: new Date(),
+                    toolData: parsed,
+                  });
+                  hadToolEvents = true;
                 }
+              }
+              // Flush tool call events immediately so they render during streaming
+              if (hadToolEvents) {
+                setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
               }
             }
 
