@@ -32,7 +32,10 @@ KC_NS="${KEYCLOAK_NAMESPACE:-keycloak}"
 KC_POD="keycloak-0"
 KCADM="/opt/keycloak/bin/kcadm.sh"
 DESIRED_USER="admin"
-DESIRED_PASS="admin"
+# Generate random password unless KEYCLOAK_ADMIN_PASSWORD is set
+# The password is stored in the keycloak-initial-admin K8s secret
+# and displayed by show-services.sh — NEVER hardcode admin/admin
+DESIRED_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 16)}"
 
 # ── Step 1: Wait for Keycloak pod ────────────────────────────────────────────
 log_info "Waiting for Keycloak pod to be ready..."

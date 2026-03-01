@@ -123,6 +123,14 @@ function App() {
           }
         />
         <Route
+          path="/sessions"
+          element={
+            <ProtectedRoute>
+              <SessionsTablePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/mcp-gateway"
           element={
             <ProtectedRoute>
