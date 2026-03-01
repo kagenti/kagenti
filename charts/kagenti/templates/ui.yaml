@@ -361,6 +361,10 @@ rules:
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Integration CRDs for repository integrations
+  - apiGroups: ["kagenti.io"]
+    resources: ["integrations", "integrations/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
