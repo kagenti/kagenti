@@ -8,11 +8,15 @@ Manages Integration custom resources that connect repositories
 to agents via webhooks, cron schedules, and alert triggers.
 """
 
+import base64
+import hashlib
+import hmac
+import json as json_module
 import logging
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
@@ -373,4 +377,208 @@ async def test_integration_connection(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Test failed: {e!s}",
+        )
+
+
+@router.post(
+    "/{namespace}/{name}/webhook",
+)
+async def receive_webhook(
+    namespace: str,
+    name: str,
+    request: Request,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+):
+    """
+    Receive a webhook event from GitHub/GitLab.
+
+    This endpoint is public (no auth required) — it validates the webhook
+    signature using the secret stored in the Integration CRD.
+    """
+    body = await request.body()
+
+    # Get the Integration CRD
+    try:
+        obj = kube.custom_api.get_namespaced_custom_object(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=CRD_PLURAL,
+            name=name,
+        )
+    except Exception as e:
+        if "NotFound" in str(e) or "404" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Integration {namespace}/{name} not found",
+            )
+        raise
+
+    spec = obj.get("spec", {})
+    repo = spec.get("repository", {})
+    agents = spec.get("agents", [])
+    webhooks = spec.get("webhooks", [])
+
+    # Validate webhook signature if configured
+    webhook_secret = None
+    for wh in webhooks:
+        if wh.get("secret"):
+            webhook_secret = wh["secret"]
+            break
+
+    if webhook_secret:
+        # Look up the secret value from K8s
+        try:
+            secret_obj = kube.core_api.read_namespaced_secret(
+                name=webhook_secret, namespace=namespace
+            )
+            secret_value = base64.b64decode(secret_obj.data.get("webhook-secret", "")).decode()
+
+            # Validate HMAC signature
+            signature = request.headers.get("X-Hub-Signature-256", "")
+            if signature:
+                expected = (
+                    "sha256=" + hmac.new(secret_value.encode(), body, hashlib.sha256).hexdigest()
+                )
+                if not hmac.compare_digest(signature, expected):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Invalid webhook signature",
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("Could not validate webhook signature: %s", e)
+
+    # Parse the event
+    try:
+        payload = json_module.loads(body)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        )
+
+    event_type = request.headers.get("X-GitHub-Event", "unknown")
+    delivery_id = request.headers.get("X-GitHub-Delivery", "")
+
+    # Build event summary for the agent
+    event_summary = _summarize_github_event(event_type, payload)
+
+    # Log the event
+    logger.info(
+        "Webhook received: integration=%s/%s event=%s delivery=%s agents=%d",
+        namespace,
+        name,
+        event_type,
+        delivery_id,
+        len(agents),
+    )
+
+    # Forward to assigned agents via A2A
+    results = []
+    for agent_ref in agents:
+        agent_name = agent_ref.get("name", "")
+        agent_ns = agent_ref.get("namespace", namespace)
+
+        # Build A2A message
+        a2a_payload = {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": event_summary}],
+            },
+            "metadata": {
+                "session_type": "trigger",
+                "trigger_source": "webhook",
+                "trigger_event": f"{event_type}",
+                "trigger_repo": repo.get("url", ""),
+                "trigger_delivery_id": delivery_id,
+                "integration_name": name,
+                "integration_namespace": namespace,
+            },
+        }
+
+        # Send to agent's A2A endpoint
+        agent_url = f"http://{agent_name}.{agent_ns}.svc.cluster.local:8000"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{agent_url}/ap/v1/agent/tasks/send",
+                    json=a2a_payload,
+                    timeout=30.0,
+                )
+                results.append(
+                    {
+                        "agent": f"{agent_ns}/{agent_name}",
+                        "status": resp.status_code,
+                        "success": resp.status_code < 400,
+                    }
+                )
+        except Exception as e:
+            logger.error("Failed to forward webhook to %s: %s", agent_name, e)
+            results.append(
+                {
+                    "agent": f"{agent_ns}/{agent_name}",
+                    "status": 0,
+                    "success": False,
+                    "error": str(e),
+                }
+            )
+
+    return {
+        "received": True,
+        "event": event_type,
+        "delivery_id": delivery_id,
+        "agents_notified": len(results),
+        "results": results,
+    }
+
+
+def _summarize_github_event(event_type: str, payload: dict) -> str:
+    """Create a human-readable summary of a GitHub webhook event."""
+    repo_name = payload.get("repository", {}).get("full_name", "unknown")
+    sender = payload.get("sender", {}).get("login", "unknown")
+
+    if event_type == "pull_request":
+        pr = payload.get("pull_request", {})
+        action = payload.get("action", "")
+        return (
+            f"GitHub PR #{pr.get('number', '?')} {action} in {repo_name}\n"
+            f"Title: {pr.get('title', '')}\n"
+            f"Author: {sender}\n"
+            f"Branch: {pr.get('head', {}).get('ref', '')} "
+            f"\u2192 {pr.get('base', {}).get('ref', '')}\n"
+            f"URL: {pr.get('html_url', '')}\n"
+            f"\n{pr.get('body', '')[:500]}"
+        )
+    elif event_type == "issue_comment":
+        comment = payload.get("comment", {})
+        issue = payload.get("issue", {})
+        return (
+            f"GitHub comment on #{issue.get('number', '?')} in {repo_name}\n"
+            f"By: {sender}\n"
+            f"Issue: {issue.get('title', '')}\n"
+            f"Comment: {comment.get('body', '')[:500]}"
+        )
+    elif event_type == "push":
+        commits = payload.get("commits", [])
+        ref = payload.get("ref", "")
+        return (
+            f"GitHub push to {ref} in {repo_name}\n"
+            f"By: {sender}\n"
+            f"Commits: {len(commits)}\n"
+            + "\n".join(f"  - {c.get('message', '').split(chr(10))[0]}" for c in commits[:5])
+        )
+    elif event_type == "check_suite":
+        suite = payload.get("check_suite", {})
+        return (
+            f"GitHub check suite {payload.get('action', '')} in {repo_name}\n"
+            f"Status: {suite.get('status', '')} / {suite.get('conclusion', '')}\n"
+            f"Branch: {suite.get('head_branch', '')}"
+        )
+    else:
+        return (
+            f"GitHub {event_type} event in {repo_name}\n"
+            f"By: {sender}\n"
+            f"Action: {payload.get('action', 'N/A')}"
         )
