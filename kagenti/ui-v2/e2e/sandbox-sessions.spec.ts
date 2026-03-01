@@ -399,6 +399,63 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await snap(page, 'new-session-clean-input');
   });
 
+  test('session title appears in sidebar from first message', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+
+    // Skip if Session A wasn't created
+    test.skip(!sessionAId, 'Session A not created — previous test may have failed');
+
+    // ---- Login & Navigate ----
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await navigateToSandbox(page);
+    await page.waitForTimeout(3000); // Wait for session list to load
+    await snap(page, 'sidebar-title-test-loaded');
+
+    // ---- Assert: Session A shows first message as title in sidebar ----
+    // The first message sent was "Say exactly: <SESSION_A_MARKER>-turn1"
+    // The sidebar should show this text (truncated) as the session title,
+    // NOT just a context_id prefix like "d8a46094"
+    const sidebar = page.locator('[style*="width: 280"]').first();
+    const sidebarText = (await sidebar.textContent()) || '';
+
+    // Session title should contain part of the first message marker
+    // (the backend merges metadata from the first task row)
+    const markerPrefix = SESSION_A_MARKER.substring(0, 15);
+    const hasTitle = sidebarText.includes(markerPrefix) ||
+      sidebarText.toLowerCase().includes('say exactly');
+
+    console.log(
+      `[sessions] Sidebar text preview: ${sidebarText.substring(0, 300)}`
+    );
+    console.log(
+      `[sessions] Looking for marker prefix: ${markerPrefix}`
+    );
+
+    // The sidebar MUST show meaningful session titles, not raw context_id prefixes
+    // This validates the metadata merge in list_sessions()
+    expect(hasTitle).toBe(true);
+
+    // Also verify: the sidebar item is clickable and loads the session
+    const sessionItem = page.locator('[role="button"]').filter({
+      hasText: new RegExp(markerPrefix, 'i'),
+    });
+    if ((await sessionItem.count()) > 0) {
+      await sessionItem.first().click();
+      await page.waitForTimeout(2000);
+
+      // After clicking, the session content should load
+      const chatContent = await page
+        .locator('[style*="overflow-y: auto"][style*="height"]')
+        .first()
+        .textContent() || '';
+      expect(chatContent).toContain(SESSION_A_MARKER);
+      await snap(page, 'sidebar-title-session-loaded');
+    }
+  });
+
   test('session persists across page reload', async ({ page }) => {
     test.setTimeout(120_000);
 
