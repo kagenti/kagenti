@@ -43,14 +43,15 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        fsGroup: 999
+        fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: postgres
-        image: postgres:16-alpine
+        image: bitnami/postgresql:16
         securityContext:
           runAsNonRoot: true
+          runAsUser: 1001
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: false
           seccompProfile:
@@ -63,17 +64,15 @@ spec:
           name: postgres
           protocol: TCP
         env:
-        - name: POSTGRES_DB
+        - name: POSTGRESQL_DATABASE
           value: sessions
-        - name: POSTGRES_USER
+        - name: POSTGRESQL_USERNAME
           value: kagenti
-        - name: POSTGRES_PASSWORD
+        - name: POSTGRESQL_PASSWORD
           valueFrom:
             secretKeyRef:
               name: postgres-sessions-secret
               key: password
-        - name: PGDATA
-          value: /var/lib/postgresql/data/pgdata
         resources:
           requests:
             cpu: 100m
@@ -83,7 +82,7 @@ spec:
             memory: 512Mi
         volumeMounts:
         - name: postgres-data
-          mountPath: /var/lib/postgresql/data
+          mountPath: /bitnami/postgresql
   volumeClaimTemplates:
   - metadata:
       name: postgres-data
