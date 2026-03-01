@@ -20,6 +20,7 @@ import { ImportAgentPage } from './pages/ImportAgentPage';
 import { ImportToolPage } from './pages/ImportToolPage';
 import { AdminPage } from './pages/AdminPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
+import { AddIntegrationPage } from './pages/AddIntegrationPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SandboxPage } from './pages/SandboxPage';
 import { SandboxCreatePage } from './pages/SandboxCreatePage';
@@ -110,7 +111,7 @@ function App() {
           path="/integrations/add"
           element={
             <ProtectedRoute>
-              <IntegrationsPage />
+              <AddIntegrationPage />
             </ProtectedRoute>
           }
         />
