@@ -186,11 +186,14 @@ if [ "$VERBOSE" = "false" ]; then
     fi
     echo ""
 
-    # Demo realm users
+    # Demo realm users — read passwords from kagenti-test-users secret
+    DEMO_ADMIN_PASS=$($CLI get secret -n keycloak kagenti-test-users -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+    DEMO_DEV_PASS=$($CLI get secret -n keycloak kagenti-test-users -o jsonpath='{.data.dev-user-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "dev-user")
+    DEMO_NS_PASS=$($CLI get secret -n keycloak kagenti-test-users -o jsonpath='{.data.ns-admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "ns-admin")
     echo -e "${GREEN}Demo Realm Users${NC}  ${DIM}(for Kagenti UI, MLflow login)${NC}"
-    echo -e "  admin      / $(show_pass "admin")      ${DIM}role: admin${NC}"
-    echo -e "  dev-user   / $(show_pass "dev-user")   ${DIM}role: developer${NC}"
-    echo -e "  ns-admin   / $(show_pass "ns-admin")   ${DIM}role: ns-admin${NC}"
+    echo -e "  admin      / $(show_pass "$DEMO_ADMIN_PASS")      ${DIM}role: admin${NC}"
+    echo -e "  dev-user   / $(show_pass "$DEMO_DEV_PASS")   ${DIM}role: developer${NC}"
+    echo -e "  ns-admin   / $(show_pass "$DEMO_NS_PASS")   ${DIM}role: ns-admin${NC}"
     if [ "$REVEAL" = "false" ]; then
         echo -e "  ${DIM}Use --reveal to show passwords${NC}"
     fi
@@ -309,9 +312,9 @@ echo -e "${GREEN}Demo Realm Users:${NC} ${YELLOW}(for Kagenti UI, MLflow, API lo
 echo "  ┌──────────────┬──────────────┬─────────────┐"
 echo "  │ Username     │ Password     │ Role        │"
 echo "  ├──────────────┼──────────────┼─────────────┤"
-printf "  │ %-12s │ %-12s │ %-11s │\n" "admin" "$(show_pass "admin")" "admin"
-printf "  │ %-12s │ %-12s │ %-11s │\n" "dev-user" "$(show_pass "dev-user")" "developer"
-printf "  │ %-12s │ %-12s │ %-11s │\n" "ns-admin" "$(show_pass "ns-admin")" "ns-admin"
+printf "  │ %-12s │ %-12s │ %-11s │\n" "admin" "$(show_pass "$DEMO_ADMIN_PASS")" "admin"
+printf "  │ %-12s │ %-12s │ %-11s │\n" "dev-user" "$(show_pass "$DEMO_DEV_PASS")" "developer"
+printf "  │ %-12s │ %-12s │ %-11s │\n" "ns-admin" "$(show_pass "$DEMO_NS_PASS")" "ns-admin"
 echo "  └──────────────┴──────────────┴─────────────┘"
 if [ "$REVEAL" = "false" ]; then
     echo -e "  ${DIM}Use --reveal to show passwords${NC}"

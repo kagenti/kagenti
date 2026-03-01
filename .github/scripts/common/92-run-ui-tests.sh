@@ -45,7 +45,10 @@ if [ -z "${KEYCLOAK_USER:-}" ]; then
     log_info "Keycloak user: $KC_USER"
 fi
 if [ -z "${KEYCLOAK_PASSWORD:-}" ]; then
-    KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+    # Try demo realm test user password first (kagenti-test-users secret)
+    # then fall back to master realm admin (keycloak-initial-admin secret)
+    KC_PASS=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || \
+              kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
     export KEYCLOAK_PASSWORD="$KC_PASS"
     log_info "Keycloak password: ${KC_PASS:0:4}..."
 fi

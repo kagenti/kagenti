@@ -14,7 +14,30 @@
   to create users in the master realm.
 */ -}}
 
+{{- /* Generate random passwords for demo realm test users */ -}}
+{{- $adminPass := .Values.keycloak.testUsers.adminPassword | default (randAlphaNum 16) }}
+{{- $devPass := .Values.keycloak.testUsers.devUserPassword | default (randAlphaNum 16) }}
+{{- $nsAdminPass := .Values.keycloak.testUsers.nsAdminPassword | default (randAlphaNum 16) }}
+
 {{- if .Values.openshift }}
+---
+# Store test user passwords in a K8s secret so show-services.sh can read them
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kagenti-test-users
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/resource-policy": keep
+type: Opaque
+stringData:
+  admin-password: {{ $adminPass | quote }}
+  dev-user-password: {{ $devPass | quote }}
+  ns-admin-password: {{ $nsAdminPass | quote }}
 ---
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: KeycloakRealmImport
@@ -49,7 +72,7 @@ spec:
         email: admin@kagenti.local
         credentials:
           - type: password
-            value: admin
+            value: {{ $adminPass | quote }}
             temporary: false
         realmRoles:
           - admin
@@ -61,7 +84,7 @@ spec:
         email: dev-user@kagenti.local
         credentials:
           - type: password
-            value: dev-user
+            value: {{ $devPass | quote }}
             temporary: false
         realmRoles:
           - developer
@@ -73,7 +96,7 @@ spec:
         email: ns-admin@kagenti.local
         credentials:
           - type: password
-            value: ns-admin
+            value: {{ $nsAdminPass | quote }}
             temporary: false
         realmRoles:
           - ns-admin
