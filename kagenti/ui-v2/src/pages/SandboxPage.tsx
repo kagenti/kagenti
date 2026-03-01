@@ -695,6 +695,24 @@ export const SandboxPage: React.FC = () => {
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
             }
 
+            // Handle HITL (Human-in-the-Loop) events
+            if (data.event?.type === 'hitl_request') {
+              collectedMessages.push({
+                id: `hitl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                role: 'assistant',
+                content: '',
+                timestamp: new Date(),
+                toolData: {
+                  type: 'hitl_request',
+                  command: data.event.taskId || '',
+                  reason: data.event.message || 'Agent requests approval',
+                },
+              });
+              // Show the HITL message immediately
+              setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
+              setStreamingContent('');
+            }
+
             // Collect tool call/result events as separate messages
             if (data.event && data.event.message) {
               const eventText = data.event.message;
