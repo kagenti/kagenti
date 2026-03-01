@@ -11,6 +11,13 @@ import type {
   Tool,
   ToolDetail,
   ApiListResponse,
+  Integration,
+  IntegrationDetail,
+  IntegrationProvider,
+  IntegrationAgentRef,
+  IntegrationWebhook,
+  IntegrationSchedule,
+  IntegrationAlert,
 } from '@/types';
 
 // API configuration
@@ -800,6 +807,80 @@ export const sandboxService = {
         method: 'POST',
         body: JSON.stringify(data),
       }
+    );
+  },
+};
+
+/**
+ * Integration service for managing repository integrations
+ */
+export const integrationService = {
+  async list(namespace: string): Promise<Integration[]> {
+    const response = await apiFetch<ApiListResponse<Integration>>(
+      `/integrations?namespace=${encodeURIComponent(namespace)}`
+    );
+    return response.items;
+  },
+
+  async get(namespace: string, name: string): Promise<IntegrationDetail> {
+    return apiFetch<IntegrationDetail>(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`
+    );
+  },
+
+  async create(data: {
+    name: string;
+    namespace: string;
+    repository: {
+      url: string;
+      provider: IntegrationProvider;
+      branch: string;
+      credentialsSecret?: string;
+    };
+    agents: IntegrationAgentRef[];
+    webhooks?: IntegrationWebhook[];
+    schedules?: IntegrationSchedule[];
+    alerts?: IntegrationAlert[];
+  }): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
+    return apiFetch('/integrations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async update(
+    namespace: string,
+    name: string,
+    data: Partial<{
+      agents: IntegrationAgentRef[];
+      webhooks: IntegrationWebhook[];
+      schedules: IntegrationSchedule[];
+      alerts: IntegrationAlert[];
+    }>
+  ): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async delete(namespace: string, name: string): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  async testConnection(
+    namespace: string,
+    name: string
+  ): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/test`,
+      { method: 'POST' }
     );
   },
 };
