@@ -25,6 +25,9 @@ spec:
   paramValues:
     - name: dockerfile
       value: Dockerfile
+    - name: build-args
+      values:
+        - value: CACHE_BUST=1
   output:
     image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-agent:v0.0.1
   timeout: 15m
