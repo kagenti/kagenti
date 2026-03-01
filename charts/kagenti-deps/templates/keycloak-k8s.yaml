@@ -56,12 +56,18 @@ spec:
       containers:
         - name: keycloak
           image: quay.io/keycloak/keycloak:26.3.3
-          args: ["start"]
+          args: ["start", "--import-realm"]
           env:
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
-              value: "admin"
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-initial-admin
+                  key: username
             - name: KC_BOOTSTRAP_ADMIN_PASSWORD
-              value: "admin"
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-initial-admin
+                  key: password
             # In a production environment, add a TLS certificate to Keycloak to either end-to-end encrypt the traffic between
             # the client or Keycloak, or to encrypt the traffic between your proxy and Keycloak.
             # Respect the proxy headers forwarded by the reverse proxy
@@ -132,6 +138,10 @@ spec:
               port: 9000
             periodSeconds: 10
             failureThreshold: 3
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
           resources:
             limits:
               cpu: 500m
@@ -139,6 +149,10 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+      volumes:
+        - name: realm-import
+          configMap:
+            name: keycloak-realm-import
 ---
 # This is deployment of PostgreSQL with an ephemeral storage for testing: Once the Pod stops, the data is lost.
 # For a production setup, replace it with a database setup that persists your data.
@@ -212,18 +226,30 @@ spec:
       targetPort: 5432
   type: ClusterIP
 ---
+{{- $secretName := "keycloak-initial-admin" }}
+{{- $ns := .Values.keycloak.namespace }}
+{{- $existingSecret := (lookup "v1" "Secret" $ns $secretName) }}
+{{- $adminUser := "admin" }}
+{{- $adminPass := "" }}
+{{- if $existingSecret }}
+  {{- /* Preserve existing password across upgrades */ -}}
+  {{- $adminPass = (index $existingSecret.data "password" | b64dec) }}
+{{- else }}
+  {{- /* Generate a random 16-char password on first install */ -}}
+  {{- $adminPass = (randAlphaNum 16) }}
+{{- end }}
 apiVersion: v1
 kind: Secret
 metadata:
-  name: keycloak-initial-admin
-  namespace: {{ .Values.keycloak.namespace }}
+  name: {{ $secretName }}
+  namespace: {{ $ns }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: keycloak
     app.kubernetes.io/instance: keycloak
 data:
-  password: YWRtaW4=
-  username: YWRtaW4=
+  password: {{ $adminPass | b64enc | quote }}
+  username: {{ $adminUser | b64enc | quote }}
 type: kubernetes.io/basic-auth
 ---
 apiVersion: gateway.networking.k8s.io/v1

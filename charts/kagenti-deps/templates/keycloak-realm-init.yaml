@@ -1,0 +1,132 @@
+{{- if .Values.components.keycloak.enabled }}
+{{- $realm := .Values.keycloak.realm | default "demo" }}
+{{- $ns := .Values.keycloak.namespace }}
+{{- /*
+  Keycloak Realm Initialization
+  Creates the demo realm with test users (admin, dev-user, ns-admin).
+
+  Kind:      ConfigMap mounted into Keycloak pod via --import-realm
+  OpenShift: KeycloakRealmImport CR managed by RHBK operator
+*/ -}}
+
+{{- if .Values.openshift }}
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: {{ $realm }}-realm-import
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "2"
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: {{ $realm }}
+    enabled: true
+    registrationAllowed: false
+    roles:
+      realm:
+        - name: admin
+          description: "Platform administrator"
+        - name: developer
+          description: "Developer with namespace-scoped access"
+        - name: ns-admin
+          description: "Namespace administrator"
+    users:
+      - username: admin
+        enabled: true
+        emailVerified: true
+        firstName: Admin
+        lastName: User
+        email: admin@kagenti.local
+        credentials:
+          - type: password
+            value: admin
+            temporary: false
+        realmRoles:
+          - admin
+      - username: dev-user
+        enabled: true
+        emailVerified: true
+        firstName: Dev
+        lastName: User
+        email: dev-user@kagenti.local
+        credentials:
+          - type: password
+            value: dev-user
+            temporary: false
+        realmRoles:
+          - developer
+      - username: ns-admin
+        enabled: true
+        emailVerified: true
+        firstName: Namespace
+        lastName: Admin
+        email: ns-admin@kagenti.local
+        credentials:
+          - type: password
+            value: ns-admin
+            temporary: false
+        realmRoles:
+          - ns-admin
+{{- else }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-import
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app: keycloak
+data:
+  {{ $realm }}-realm.json: |
+    {
+      "realm": {{ $realm | quote }},
+      "enabled": true,
+      "registrationAllowed": false,
+      "roles": {
+        "realm": [
+          { "name": "admin", "description": "Platform administrator" },
+          { "name": "developer", "description": "Developer with namespace-scoped access" },
+          { "name": "ns-admin", "description": "Namespace administrator" }
+        ]
+      },
+      "users": [
+        {
+          "username": "admin",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Admin",
+          "lastName": "User",
+          "email": "admin@kagenti.local",
+          "credentials": [{ "type": "password", "value": "admin", "temporary": false }],
+          "realmRoles": ["admin"]
+        },
+        {
+          "username": "dev-user",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Dev",
+          "lastName": "User",
+          "email": "dev-user@kagenti.local",
+          "credentials": [{ "type": "password", "value": "dev-user", "temporary": false }],
+          "realmRoles": ["developer"]
+        },
+        {
+          "username": "ns-admin",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Namespace",
+          "lastName": "Admin",
+          "email": "ns-admin@kagenti.local",
+          "credentials": [{ "type": "password", "value": "ns-admin", "temporary": false }],
+          "realmRoles": ["ns-admin"]
+        }
+      ]
+    }
+{{- end }}
+{{- end }}
