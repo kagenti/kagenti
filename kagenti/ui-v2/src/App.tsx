@@ -19,6 +19,7 @@ import { ObservabilityPage } from './pages/ObservabilityPage';
 import { ImportAgentPage } from './pages/ImportAgentPage';
 import { ImportToolPage } from './pages/ImportToolPage';
 import { AdminPage } from './pages/AdminPage';
+import { IntegrationsPage } from './pages/IntegrationsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SandboxPage } from './pages/SandboxPage';
 import { SandboxCreatePage } from './pages/SandboxCreatePage';
@@ -94,6 +95,30 @@ function App() {
           element={
             <ProtectedRoute>
               <ToolDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/integrations"
+          element={
+            <ProtectedRoute>
+              <IntegrationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/integrations/add"
+          element={
+            <ProtectedRoute>
+              <IntegrationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/integrations/:namespace/:name"
+          element={
+            <ProtectedRoute>
+              <IntegrationsPage />
             </ProtectedRoute>
           }
         />
