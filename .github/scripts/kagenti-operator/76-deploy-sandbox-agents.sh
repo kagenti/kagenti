@@ -102,6 +102,9 @@ log_success "sandbox-agent image built"
 VARIANTS=(
     "sandbox-agent"
     "sandbox-legion"
+    "sandbox-hardened"
+    "sandbox-basic"
+    "sandbox-restricted"
 )
 
 for VARIANT in "${VARIANTS[@]}"; do
