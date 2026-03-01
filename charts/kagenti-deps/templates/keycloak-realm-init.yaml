@@ -3,10 +3,15 @@
 {{- $ns := .Values.keycloak.namespace }}
 {{- /*
   Keycloak Realm Initialization
-  Creates the demo realm with test users (admin, dev-user, ns-admin).
+  Creates the demo realm with roles and test users (admin, dev-user, ns-admin).
 
   Kind:      ConfigMap mounted into Keycloak pod via --import-realm
   OpenShift: KeycloakRealmImport CR managed by RHBK operator
+
+  NOTE: The UI OAuth client is currently registered in the MASTER realm.
+  These demo realm users are for future use when the backend migrates to
+  the demo realm. For current UI login, run kagenti/auth/create-test-users.sh
+  to create users in the master realm.
 */ -}}
 
 {{- if .Values.openshift }}
