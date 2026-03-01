@@ -187,13 +187,12 @@ async def list_sessions(
     async with pool.acquire() as conn:
         # Deduplicate: A2A SDK creates a new immutable task per message exchange.
         # Multiple tasks share the same context_id. For the session list, pick
-        # the latest task (most recent status) and merge in any title/owner
-        # metadata that may have been set on earlier records.
+        # the latest task (most recent status) for each context_id.
         dedup_cte = (
-            f"WITH latest AS ("
-            f"  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
-            f"  FROM tasks ORDER BY context_id, id DESC"
-            f")"
+            "WITH latest AS ("
+            "  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
+            "  FROM tasks ORDER BY context_id, id DESC"
+            ")"
         )
 
         total = await conn.fetchval(f"{dedup_cte} SELECT COUNT(*) FROM latest {where}", *args)
@@ -208,7 +207,36 @@ async def list_sessions(
             offset,
         )
 
-    items = [_row_to_summary(r) for r in rows]
+        # Merge metadata across rows: _set_owner_metadata() sets title/owner
+        # on the first task row, but the agent creates later rows without it.
+        # For each session where the latest row lacks title/owner, look for
+        # it in sibling rows.
+        items = [_row_to_summary(r) for r in rows]
+        missing_meta = [s for s in items if not (s.metadata or {}).get("title")]
+        if missing_meta:
+            ctx_ids = [s.context_id for s in missing_meta]
+            meta_rows = await conn.fetch(
+                "SELECT DISTINCT ON (context_id) context_id, metadata"
+                " FROM tasks"
+                " WHERE context_id = ANY($1)"
+                "   AND metadata::json->>'title' IS NOT NULL"
+                " ORDER BY context_id, id DESC",
+                ctx_ids,
+            )
+            meta_map = {}
+            for mr in meta_rows:
+                parsed = _parse_json_field(mr["metadata"])
+                if parsed:
+                    meta_map[mr["context_id"]] = parsed
+            for s in missing_meta:
+                donor = meta_map.get(s.context_id)
+                if donor:
+                    if s.metadata is None:
+                        s.metadata = {}
+                    for key in ("title", "owner", "visibility"):
+                        if key not in s.metadata and key in donor:
+                            s.metadata[key] = donor[key]
+
     return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
