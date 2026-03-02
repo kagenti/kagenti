@@ -63,6 +63,24 @@ class FileContent(BaseModel):
     encoding: str = "utf-8"
 
 
+class MountInfo(BaseModel):
+    """Single mount entry from ``df -h`` output."""
+
+    filesystem: str
+    size: str
+    used: str
+    available: str
+    use_percent: str
+    mount_point: str
+
+
+class PodStorageStats(BaseModel):
+    """Aggregated storage statistics for a sandbox pod."""
+
+    mounts: List[MountInfo]
+    total_mounts: int
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -218,6 +236,61 @@ def _parse_ls_output(raw: str, base_path: str) -> List[FileEntry]:
     return entries
 
 
+# Pseudo-filesystem types to filter out of storage stats
+_PSEUDO_FS = {"proc", "sysfs", "devtmpfs"}
+
+
+def _parse_df_output(raw: str) -> List[MountInfo]:
+    """
+    Parse output of ``df -h`` into :class:`MountInfo` objects.
+
+    Expected header::
+
+        Filesystem      Size  Used Avail Use% Mounted on
+
+    Each subsequent line has 6 whitespace-separated fields (the last field,
+    *Mounted on*, may contain spaces so we split into at most 6 parts).
+
+    Filters out pseudo-filesystems (proc, sysfs, devtmpfs) and tmpfs mounts
+    that report 0 size.
+    """
+    mounts: List[MountInfo] = []
+    lines = raw.strip().splitlines()
+
+    # Skip the header line
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+
+        parts = line.split(None, 5)
+        if len(parts) < 6:
+            continue
+
+        filesystem, size, used, available, use_percent, mount_point = parts
+
+        # Filter pseudo-filesystems
+        if filesystem in _PSEUDO_FS:
+            continue
+
+        # Filter tmpfs with 0 size
+        if filesystem == "tmpfs" and size == "0":
+            continue
+
+        mounts.append(
+            MountInfo(
+                filesystem=filesystem,
+                size=size,
+                used=used,
+                available=available,
+                use_percent=use_percent,
+                mount_point=mount_point,
+            )
+        )
+
+    return mounts
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -310,4 +383,36 @@ async def get_sandbox_files(
         content=content,
         size=file_size,
         modified=mtime_output,
+    )
+
+
+@router.get(
+    "/{namespace}/stats/{agent_name}",
+    response_model=PodStorageStats,
+    summary="Get storage/mount statistics for a sandbox agent pod",
+)
+async def get_pod_storage_stats(
+    namespace: str,
+    agent_name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+):
+    """
+    Execute ``df -h`` inside the sandbox pod and return parsed mount
+    information, filtering out pseudo-filesystems (proc, sysfs, devtmpfs)
+    and zero-size tmpfs mounts.
+    """
+    pod_name = _find_pod(kube, namespace, agent_name)
+
+    df_output = _exec_in_pod(
+        kube,
+        namespace,
+        pod_name,
+        ["df", "-h"],
+    )
+
+    mounts = _parse_df_output(df_output)
+
+    return PodStorageStats(
+        mounts=mounts,
+        total_mounts=len(mounts),
     )

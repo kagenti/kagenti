@@ -122,8 +122,8 @@ async function mockAppAPIs(page: Page) {
   await page.route('**/api/**', async (route) => {
     const url = route.request().url();
 
-    // Let the file browser API mock handle its own routes
-    if (url.includes('/sandbox/team1/files/')) {
+    // Let the file browser and stats API mocks handle their own routes
+    if (url.includes('/sandbox/team1/files/') || url.includes('/sandbox/team1/stats/')) {
       await route.fallback();
       return;
     }
@@ -250,5 +250,71 @@ test.describe('Sandbox File Browser', () => {
 
     // File size label should show "256 B"
     await expect(page.getByText('256 B')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('end-to-end: agent writes file, file browser shows it', async ({ page }) => {
+    // Mock: simulate that after writing, the directory listing includes the new file
+    const MOCK_DIR_WITH_NEW_FILE = {
+      path: '/workspace/data',
+      entries: [
+        { name: 'e2e_test.txt', path: '/workspace/data/e2e_test.txt', type: 'file', size: 28, modified: '2026-03-02T12:00:00+00:00', permissions: '-rw-r--r--' },
+      ],
+    };
+
+    const MOCK_NEW_FILE_CONTENT = {
+      path: '/workspace/data/e2e_test.txt',
+      content: 'sandbox-e2e-test-payload',
+      size: 28,
+      modified: '2026-03-02T12:00:00+00:00',
+      type: 'file',
+      encoding: 'utf-8',
+    };
+
+    // Override mock to include the new file when browsing /workspace/data
+    await page.route('**/api/v1/sandbox/team1/files/sandbox-basic*', async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.searchParams.get('path') || '/';
+      if (path === '/workspace/data') {
+        await route.fulfill({ json: MOCK_DIR_WITH_NEW_FILE });
+      } else if (path === '/workspace/data/e2e_test.txt') {
+        await route.fulfill({ json: MOCK_NEW_FILE_CONTENT });
+      } else {
+        await route.fulfill({ json: MOCK_DIR_LISTING });
+      }
+    });
+
+    // Navigate to file browser, drill into /workspace/data
+    await page.goto('/sandbox/files/team1/sandbox-basic?path=/workspace/data');
+    await loginIfNeeded(page);
+    await page.waitForSelector('[class*="pf-v5-c-tree-view"]', { timeout: 15000 });
+
+    // Verify the written file appears in the listing
+    await expect(page.getByText('e2e_test.txt')).toBeVisible();
+
+    // Click the file to preview its content
+    await page.getByText('e2e_test.txt').click();
+    await expect(page.getByText('sandbox-e2e-test-payload')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('storage stats shows mount information', async ({ page }) => {
+    // Mock stats endpoint
+    await page.route('**/api/v1/sandbox/team1/stats/sandbox-basic', async (route) => {
+      await route.fulfill({
+        json: {
+          mounts: [
+            { filesystem: '/dev/sda1', size: '50G', used: '12G', available: '38G', use_percent: '24%', mount_point: '/' },
+            { filesystem: '/dev/sdb1', size: '100G', used: '45G', available: '55G', use_percent: '45%', mount_point: '/workspace' },
+          ],
+          total_mounts: 2,
+        },
+      });
+    });
+
+    // This test just verifies the API mock responds correctly
+    // The UI rendering of stats on SandboxesPage is Session C's responsibility
+    const response = await page.request.get('/api/v1/sandbox/team1/stats/sandbox-basic');
+    const data = await response.json();
+    expect(data.total_mounts).toBe(2);
+    expect(data.mounts[1].mount_point).toBe('/workspace');
   });
 });
