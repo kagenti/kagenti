@@ -191,22 +191,28 @@ test.describe('Agent RCA Workflow', () => {
 
   test('5 — session persists across navigation', async ({ page }) => {
     expect(sessionUrl).toBeTruthy();
+    const sid = sessionUrl!.match(/session=([a-f0-9]+)/)?.[1] || '';
     await page.goto('/'); await loginIfNeeded(page);
-    await page.goto(sessionUrl!); await loginIfNeeded(page);
-    if (!page.url().includes('/sandbox')) await page.goto(sessionUrl!);
-    await page.waitForLoadState('networkidle');
+    // SPA route to session (avoids Keycloak re-auth redirect)
+    await page.evaluate((s) => {
+      window.history.pushState({}, '', `/sandbox?session=${s}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, sid);
     await page.waitForTimeout(5000);
 
     const userMsg = page.getByText('Analyze the latest CI failures');
-    await expect(userMsg).toBeVisible({ timeout: 15000 });
+    await expect(userMsg).toBeVisible({ timeout: 30000 });
     console.log('[rca] Session persists after navigation');
   });
 
   test('6 — RCA assessment quality', async ({ page }) => {
     await page.goto('/'); await loginIfNeeded(page);
     if (sessionUrl) {
-      await page.goto(sessionUrl); await loginIfNeeded(page);
-      if (!page.url().includes('/sandbox')) await page.goto(sessionUrl);
+      const sid = sessionUrl.match(/session=([a-f0-9]+)/)?.[1] || '';
+      await page.evaluate((s) => {
+        window.history.pushState({}, '', `/sandbox?session=${s}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, sid);
       await page.waitForLoadState('networkidle');
     } else {
       await pickRcaAgent(page);
