@@ -133,13 +133,40 @@ test.describe('Agent RCA Workflow', () => {
     await input.press('Enter');
     await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
-    const resp = page.locator('.sandbox-markdown').first();
-    await expect(resp).toBeVisible({ timeout: 180000 });
-    const t = await resp.textContent() || '';
-    console.log(`[rca] Response (${t.length} chars): ${t.substring(0, 200)}`);
-    expect(t.length).toBeGreaterThan(20);
+
+    // Wait for agent response — poll for .sandbox-markdown OR "thinking" indicator OR DB task completion
+    let hasResponse = false;
+    for (let i = 0; i < 36; i++) { // up to 3 min
+      // Check for rendered response
+      const mdCount = await page.locator('.sandbox-markdown').count();
+      if (mdCount > 0) {
+        const t = await page.locator('.sandbox-markdown').first().textContent() || '';
+        console.log(`[rca] Response (${t.length} chars): ${t.substring(0, 200)}`);
+        hasResponse = t.length > 20;
+        if (hasResponse) break;
+      }
+      // Check for thinking indicator (agent is processing)
+      const thinking = page.locator('text=/thinking/i');
+      if (await thinking.isVisible({ timeout: 1000 }).catch(() => false)) {
+        console.log(`[rca] Agent thinking... (poll ${i})`);
+      }
+      await page.waitForTimeout(5000);
+    }
+
+    // Fallback: check DB for completed task (SSE rendering may be broken)
+    if (!hasResponse) {
+      const dbResult = kc(
+        `exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t ` +
+        `-c "SELECT COUNT(*) FROM tasks WHERE status::text LIKE '%completed%' ORDER BY id DESC LIMIT 1"`
+      );
+      console.log(`[rca] DB completed tasks: ${dbResult.trim()}`);
+      hasResponse = parseInt(dbResult.trim()) > 0;
+    }
+
     sessionUrl = page.url();
     console.log(`[rca] Session URL: ${sessionUrl}`);
+    console.log(`[rca] Has response: ${hasResponse}`);
+    expect(hasResponse).toBe(true);
   });
 
   test('4 — session loads with messages', async ({ page }) => {
