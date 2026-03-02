@@ -51,13 +51,13 @@ interface WizardState {
   contextDir: string;
   dockerfile: string;
   variant: string;
-  // Step 2: Security
+  // Step 2: Security (composable layers)
   isolationMode: 'shared' | 'pod-per-session';
-  readOnlyRoot: boolean;
-  dropCaps: boolean;
-  nonRoot: boolean;
-  landlockRules: string;
-  proxyAllowlist: string;
+  secctx: boolean;
+  landlock: boolean;
+  proxy: boolean;
+  gvisor: boolean;
+  proxyDomains: string;
   workspaceSize: string;
   sessionTtl: string;
   // Step 3: Identity
@@ -85,11 +85,11 @@ const INITIAL_STATE: WizardState = {
   dockerfile: 'Dockerfile',
   variant: 'sandbox-legion',
   isolationMode: 'shared',
-  readOnlyRoot: true,
-  dropCaps: true,
-  nonRoot: true,
-  landlockRules: '/workspace:rw, /tmp:rw',
-  proxyAllowlist: 'github.com, api.openai.com, pypi.org',
+  secctx: true,
+  landlock: false,
+  proxy: false,
+  gvisor: false,
+  proxyDomains: 'github.com, api.openai.com, pypi.org',
   workspaceSize: '5Gi',
   sessionTtl: '7d',
   credentialMode: 'pat',
@@ -172,12 +172,18 @@ export const SandboxCreatePage: React.FC = () => {
         branch: state.branch,
         context_dir: state.contextDir,
         dockerfile: state.dockerfile,
-        variant: state.variant,
+        base_agent: state.variant,
         model: state.model,
         namespace,
         enable_persistence: state.enablePersistence,
         isolation_mode: state.isolationMode,
-        proxy_allowlist: state.proxyAllowlist,
+        workspace_size: state.workspaceSize,
+        // Composable security layers
+        secctx: state.secctx,
+        landlock: state.landlock,
+        proxy: state.proxy,
+        gvisor: state.gvisor,
+        proxy_domains: state.proxy ? state.proxyDomains : undefined,
         // Credentials
         github_pat: state.githubPat || undefined,
         llm_api_key: state.llmApiKey || undefined,
@@ -186,6 +192,9 @@ export const SandboxCreatePage: React.FC = () => {
       });
       if (result.status === 'failed') {
         setDeployError(result.message);
+      } else if (result.security_warnings?.length) {
+        setDeployError(`Deployed with warnings: ${result.security_warnings.join('; ')}`);
+        setTimeout(() => navigate('/sandbox'), 3000);
       } else {
         navigate('/sandbox');
       }
@@ -272,42 +281,43 @@ export const SandboxCreatePage: React.FC = () => {
           />
         </FormSelect>
       </FormGroup>
-      <FormGroup label="Security Hardening" fieldId="hardening">
+      <FormGroup label="Security Layers" fieldId="security-layers">
         <Switch
-          id="readonly-root"
-          label="Read-only root filesystem"
-          isChecked={state.readOnlyRoot}
-          onChange={(_e, c) => update('readOnlyRoot', c)}
+          id="secctx"
+          label="Container Hardening (non-root, drop caps, seccomp)"
+          isChecked={state.secctx}
+          onChange={(_e, c) => update('secctx', c)}
           style={{ marginBottom: 8 }}
         />
         <Switch
-          id="drop-caps"
-          label="Drop all capabilities"
-          isChecked={state.dropCaps}
-          onChange={(_e, c) => update('dropCaps', c)}
-          style={{ marginBottom: 8 }}
-        />
-        <Switch
-          id="non-root"
-          label="Non-root user"
-          isChecked={state.nonRoot}
-          onChange={(_e, c) => update('nonRoot', c)}
-        />
-      </FormGroup>
-      <FormGroup label="Landlock Filesystem Rules" fieldId="landlock">
-        <TextArea
           id="landlock"
-          value={state.landlockRules}
-          onChange={(_e, v) => update('landlockRules', v)}
-          rows={2}
+          label="Landlock Filesystem Sandbox"
+          isChecked={state.landlock}
+          onChange={(_e, c) => update('landlock', c)}
+          style={{ marginBottom: 8 }}
         />
-      </FormGroup>
-      <FormGroup label="Network Proxy Allowlist" fieldId="proxy-allowlist">
-        <TextArea
-          id="proxy-allowlist"
-          value={state.proxyAllowlist}
-          onChange={(_e, v) => update('proxyAllowlist', v)}
-          rows={2}
+        <Switch
+          id="proxy"
+          label="Network Proxy (egress allowlist)"
+          isChecked={state.proxy}
+          onChange={(_e, c) => update('proxy', c)}
+          style={{ marginBottom: 8 }}
+        />
+        {state.proxy && (
+          <FormGroup label="Allowed Domains" fieldId="proxy-domains" style={{ marginLeft: 24, marginBottom: 8 }}>
+            <TextArea
+              id="proxy-domains"
+              value={state.proxyDomains}
+              onChange={(_e, v) => update('proxyDomains', v)}
+              rows={2}
+            />
+          </FormGroup>
+        )}
+        <Switch
+          id="gvisor"
+          label="gVisor Kernel Sandbox"
+          isChecked={state.gvisor}
+          onChange={(_e, c) => update('gvisor', c)}
         />
       </FormGroup>
       <Split hasGutter>
