@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultURL       = "http://localhost:8080"
+	defaultURL       = "http://kagenti-api.localtest.me:8080"
 	defaultNamespace = "team1"
 	configDir        = ".config/kagenti"
 	configFile       = "tui.yaml"

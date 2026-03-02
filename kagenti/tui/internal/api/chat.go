@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // GetAgentCard fetches the A2A agent card.
@@ -71,15 +73,25 @@ func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-cha
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 
-	// Use a client without timeout for streaming
-	streamClient := &http.Client{}
+	// Use a client with a generous timeout for the initial connection.
+	// Individual event reads are governed by the scanner in the goroutine.
+	streamClient := &http.Client{
+		Timeout: 0, // no overall timeout; we use transport-level timeouts
+		Transport: &http.Transport{
+			ResponseHeaderTimeout: 30 * time.Second, // fail fast if agent never responds
+		},
+	}
 	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("stream request failed: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		if len(body) > 0 {
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
