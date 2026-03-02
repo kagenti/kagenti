@@ -85,7 +85,7 @@ Demo realm users (dev-user, ns-admin) still use username=password (by design for
 | E | `f046c22a` | DelegationCard + graph tests (Session A+E collab) |
 | F | `5423f206` | P0 fix: replace parents[4] with walk-up loop |
 | G | `019f52b6` | keep RCA agent after test for inspection |
-| H | `06779a2f` | clickable file paths in sandbox chat |
+| H | `b77ecfeb` | **ALL DONE** — 11 tests (8 mocked + 3 live), file browser + stats + chat links |
 
 ## Architecture Reference
 
@@ -691,9 +691,19 @@ Leave agent + sessions deployed for UI inspection. Add your session ID to this d
 7. ✅ API: `sandboxFileService` with `listDirectory()`, `getFileContent()`, `getStorageStats()`
 8. ✅ Mermaid: diagram rendering in .md file preview
 9. ✅ Full filesystem: browse from `/` — not locked to `/workspace`
-10. ✅ E2E: 8 Playwright tests (dir listing, md preview, mermaid, code, breadcrumbs, metadata, write-then-browse, stats)
+10. ✅ E2E mocked: 8 Playwright tests (dir listing, md preview, mermaid, code, breadcrumbs, metadata, write-then-browse, stats)
 11. ✅ Cross-session: SandboxesPage — mount count + disk% labels + Browse Files button (`f78171f4`)
 12. ✅ Cross-session: SandboxPage — clickable file paths in chat → file browser (`06779a2f`)
+13. ✅ E2E live: 3 integration tests (write .md with mermaid via chat → browse → verify rendering; write .py → browse → verify CodeBlock; storage stats endpoint)
+14. ✅ **Total: 11 Playwright tests** (8 mocked + 3 live cluster)
+
+**Test Results:**
+- Mocked tests: 8/8 (no cluster needed)
+- Live cluster tests: requires `KAGENTI_UI_URL` — run with:
+  ```bash
+  KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com \
+    npx playwright test sandbox-file-browser.spec.ts
+  ```
 
 **Commits (worktree feat/sandbox-agent):**
 ```
@@ -706,6 +716,7 @@ a01fe271 feat(ui): FilePreview and FileBrowser components (Session H)
 e50adb6b feat(sandbox): browse full pod filesystem, not just /workspace (Session H)
 b6767a91 feat(sandbox): add pod storage stats endpoint + comprehensive E2E tests (Session H)
 06779a2f feat(ui): clickable file paths in sandbox chat link to file browser (Session H)
+b77ecfeb test(ui): live cluster E2E tests — write .md with mermaid, browse, verify (Session H)
 ```
 
 ---
@@ -719,4 +730,4 @@ b6767a91 feat(sandbox): add pod storage stats endpoint + comprehensive E2E tests
 5. **Session 42**: Re-run full suite after B fixes path crash
 6. **Session F**: Deploy nono launcher + Landlock to cluster for testing
 7. **Session G**: Run RCA workflow test Phase 1 on sbox42, iterate to green
-8. **Session H**: Brainstorm file browser UI, then implement backend + frontend
+8. ~~**Session H**: Brainstorm file browser UI, then implement backend + frontend~~ ✅ ALL DONE — 11 tests, file browser + stats + chat links + mermaid rendering
