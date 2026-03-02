@@ -20,6 +20,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { loginIfNeeded } from './helpers/auth';
+import { execSync } from 'child_process';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
@@ -29,12 +30,74 @@ const AGENT_NAME = 'rca-agent';
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
 
+/**
+ * Clean up any existing deployment of the test agent.
+ * Deletes deployment, service, and sessions so we start fresh every time.
+ */
+function cleanupAgent() {
+  const kubeconfig = process.env.KUBECONFIG ||
+    `${process.env.HOME}/clusters/hcp/kagenti-team-sbox/auth/kubeconfig`;
+  const kubectl = `KUBECONFIG=${kubeconfig} kubectl`;
+
+  try {
+    // Delete deployment if it exists
+    execSync(`${kubectl} delete deployment ${AGENT_NAME} -n ${NAMESPACE} --ignore-not-found`, {
+      timeout: 15000,
+      stdio: 'pipe',
+    });
+    // Delete service if it exists
+    execSync(`${kubectl} delete service ${AGENT_NAME} -n ${NAMESPACE} --ignore-not-found`, {
+      timeout: 15000,
+      stdio: 'pipe',
+    });
+    // Delete sessions for this agent from PostgreSQL
+    execSync(
+      `${kubectl} exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -c "DELETE FROM tasks WHERE metadata::text ILIKE '%${AGENT_NAME}%'"`,
+      { timeout: 15000, stdio: 'pipe' }
+    );
+    console.log(`[rca-test] Cleaned up existing ${AGENT_NAME} deployment + sessions`);
+  } catch (e) {
+    console.log(`[rca-test] Cleanup (non-fatal): ${e}`);
+  }
+}
+
 test.describe('Agent RCA Workflow — Full Pipeline', () => {
   test.setTimeout(300000); // 5 minutes — agent work takes time
+
+  // Clean up before the entire suite — always start fresh
+  test.beforeAll(() => {
+    console.log(`[rca-test] Cleaning up any existing ${AGENT_NAME} deployment...`);
+    cleanupAgent();
+
+    // Verify cleanup: deployment should not exist
+    const kubeconfig = process.env.KUBECONFIG ||
+      `${process.env.HOME}/clusters/hcp/kagenti-team-sbox/auth/kubeconfig`;
+    try {
+      const result = execSync(
+        `KUBECONFIG=${kubeconfig} kubectl get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`,
+        { timeout: 10000, stdio: 'pipe' }
+      ).toString();
+      if (!result.includes('NotFound') && !result.includes('not found')) {
+        throw new Error(`${AGENT_NAME} still exists after cleanup: ${result}`);
+      }
+    } catch (e: any) {
+      // "not found" error is expected — cleanup worked
+      if (!e.message?.includes('not found') && !e.stderr?.toString().includes('not found')) {
+        console.log(`[rca-test] Cleanup verification: ${e.message}`);
+      }
+    }
+    console.log(`[rca-test] Clean slate confirmed — ${AGENT_NAME} does not exist`);
+  });
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
+  });
+
+  // Clean up after the entire suite so next run starts fresh too
+  test.afterAll(() => {
+    console.log(`[rca-test] Post-suite cleanup...`);
+    cleanupAgent();
   });
 
   test('Step 1: Deploy agent via wizard with kagenti repo', async ({ page }) => {
@@ -69,18 +132,35 @@ test.describe('Agent RCA Workflow — Full Pipeline', () => {
       stepCount++;
     }
 
-    // Click Deploy (if visible)
+    // Click Deploy
     const deployBtn = page.getByRole('button', { name: /Deploy/i });
     if (await deployBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await deployBtn.click();
       await page.waitForTimeout(5000);
     }
 
-    // Verify: agent should appear in sandbox list or deployment started
-    // This may take time on real clusters
+    // Wait for agent pod to be ready (check via kubectl)
+    let agentReady = false;
+    for (let i = 0; i < 30; i++) {
+      try {
+        const kubeconfig = process.env.KUBECONFIG ||
+          `${process.env.HOME}/clusters/hcp/kagenti-team-sbox/auth/kubeconfig`;
+        const result = execSync(
+          `KUBECONFIG=${kubeconfig} kubectl get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`,
+          { timeout: 10000, stdio: 'pipe' }
+        ).toString().trim();
+        if (result === '1') {
+          agentReady = true;
+          break;
+        }
+      } catch { /* not ready yet */ }
+      await page.waitForTimeout(5000);
+    }
+
+    expect(agentReady).toBe(true);
     test.info().annotations.push({
       type: 'step-complete',
-      description: `Agent ${AGENT_NAME} deployment initiated`,
+      description: `Agent ${AGENT_NAME} deployed and ready`,
     });
   });
 
