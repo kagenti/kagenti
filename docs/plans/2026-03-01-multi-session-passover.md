@@ -289,6 +289,8 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 - `kagenti/ui-v2/e2e/add-integration.spec.ts` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/sessions-table.spec.ts` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/sandbox-hitl.spec.ts` — EXCLUSIVE
+- `kagenti/ui-v2/src/pages/TriggerManagementPage.tsx` — EXCLUSIVE
+- `kagenti/ui-v2/e2e/triggers.spec.ts` — EXCLUSIVE
 - `kagenti/backend/app/routers/integrations.py` — EXCLUSIVE
 - `charts/kagenti/templates/integration-crd.yaml` — EXCLUSIVE
 - `docs/plans/2026-02-28-integrations-hub-design.md` — EXCLUSIVE
@@ -302,15 +304,15 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 5. ✅ Sub-agent delegation design doc
 6. ✅ Webhook receiver endpoint
 7. ✅ HITL approval flow Playwright tests — 5/5 (mocked SSE + approve/deny buttons)
+8. ✅ Trigger Management UI — TriggerManagementPage (cron/webhook/alert tabs) + 15/15 tests
 
 **Remaining Tasks:**
 1. P1: Wire HITL approve/deny backend (needs sandbox.py + agent graph.py — cross-session TODO posted to A+B)
 2. P2: Implement delegate tool (needs agent-examples — Session B file)
 3. P2: Passover chain API (needs sandbox.py — cross-session TODO posted)
-4. P3: Trigger management UI (handoff from Session F — cron editor, webhook config, alert mapping)
-5. P3: Automated passover (context_monitor node)
+4. P3: Automated passover (context_monitor node)
 
-**Test Results (local):** 63/63 Playwright tests (24 integrations + 14 add-integration + 20 sessions + 5 HITL)
+**Test Results (local):** 78/78 Playwright tests (24 integrations + 14 add-integration + 20 sessions + 5 HITL + 15 triggers)
 **sbox42 Results:** 7/7 passing (sandbox-chat-identity 3/3, session-ownership 4/4)
 
 **Startup:**
