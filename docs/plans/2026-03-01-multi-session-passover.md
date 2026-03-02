@@ -462,6 +462,9 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 | O (sbox42 test) | A | `sandbox-rendering.spec.ts` | Tool call steps not rendered (`found: 0`). Agent streams response but ToolCallStep components produce no DOM elements. Frontend rendering bug. | NEW |
 | F | B | `sandbox_deploy.py` | Session F added SandboxProfile import + composable fields (secctx, landlock, proxy, gvisor) to SandboxCreateRequest + composable_name/warnings in response. Commit `47e38a16`. Review needed. | NEW |
 | F | B | `deployments/sandbox/` | Session F added NEW files: `sandbox_profile.py`, `nono_launcher.py`, `tests/`. Did NOT modify existing Session B files. | INFO |
+| F (handoff) | B | `ImportAgentPage.tsx` | **P1**: Add composable security toggles (secctx, landlock, proxy, gvisor checkboxes). Backend `SandboxCreateRequest` already accepts these fields. `sandbox_profile.py` generates composable name + K8s manifests. See design doc Section 3.5 for wireframe. 63 tests cover the backend. | NEW |
+| F (handoff) | O | `sandbox-template-full.yaml` | **P1**: Deploy updated template to cluster. Entrypoint changed from `sleep 36000` to `exec python3 nono_launcher.py python3 agent_server.py`. Verify Landlock + TOFU work on RHCOS. | NEW |
+| F (handoff) | C | Trigger management UI | **P3**: New page for cron/webhook/alert sandbox triggers. `POST /api/v1/sandbox/trigger` endpoint is ready with `ROLE_OPERATOR` auth. Similar to Integrations Hub pattern. | NEW |
 
 ---
 
@@ -510,10 +513,13 @@ a544ca90 feat(sandbox): add trigger API with ROLE_OPERATOR auth (Session F)
 
 **Status: ALL SESSION F TASKS COMPLETE.** All security layers wired and tested. Deploy endpoint uses composable profile. Trigger API auth-protected. 63 sandbox + 9 trigger tests passing.
 
-**Remaining Tasks (blocked on other sessions):**
-- P1: Update wizard UI (ImportAgentPage.tsx) with composable security layer toggles (needs Session A/B coordination — ImportAgentPage is currently unowned)
-- P1: Deploy wired templates to cluster and run E2E test (needs cluster access — coordinate with Session O)
-- P3: UI for trigger management (cron schedule editor, webhook config, alert mapping)
+**Handoff Tasks (Session F done — these need other sessions to pick up):**
+
+| Task | Assigned To | Priority | What to Do |
+|------|------------|----------|------------|
+| Wizard UI composable toggles | **Session B** | P1 | Add secctx/landlock/proxy/gvisor checkboxes to ImportAgentPage.tsx. Backend already accepts these fields in `SandboxCreateRequest`. `sandbox_profile.py` generates the composable name + warnings. See design doc Section 3.5 for wireframe. |
+| Deploy to cluster + E2E test | **Session O** | P1 | Deploy `sandbox-template-full.yaml` (updated entrypoint: `nono_launcher.py` → `agent_server.py`). Verify Landlock enforcement + TOFU verification on RHCOS kernel. Run sandbox E2E suite. |
+| Trigger management UI | **Session C** | P3 | New page for managing cron/webhook/alert triggers. Backend endpoint `POST /api/v1/sandbox/trigger` is ready with auth. Similar pattern to Integrations Hub (Session C already built that). |
 
 **Note:** Session B owns `deployments/sandbox/` and `sandbox_deploy.py` as EXCLUSIVE. Session F added NEW files (sandbox_profile.py, tests/) and modified `sandbox_deploy.py` to wire SandboxProfile. See cross-session TODO below.
 
