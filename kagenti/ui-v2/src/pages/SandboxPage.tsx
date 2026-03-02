@@ -76,6 +76,17 @@ function isGraphDump(text: string): boolean {
 }
 
 /**
+ * Convert file paths in text to markdown links pointing to the file browser.
+ * Matches absolute paths like /workspace/foo.py, /data/bar.txt, /repos/src/main.go
+ */
+function linkifyFilePaths(text: string, namespace: string, agentName: string): string {
+  return text.replace(
+    /(?<!\w)(\/(?:workspace|data|repos|app|home|tmp|opt|var|srv)\/[\w./_-]+\.\w+)/g,
+    (match) => `[${match}](/sandbox/files/${namespace}/${agentName}?path=${encodeURIComponent(match)})`
+  );
+}
+
+/**
  * Parse a graph event line — JSON first, regex fallback for old Python repr.
  * Mirrors the backend's _parse_graph_event() logic so tool calls render
  * during streaming even when the LangGraphSerializer isn't deployed.
@@ -340,9 +351,11 @@ const ToolCallStep: React.FC<{
 const ChatBubble: React.FC<{
   msg: Message;
   currentUsername?: string;
+  namespace: string;
+  agentName: string;
   onApprove?: () => void;
   onDeny?: () => void;
-}> = ({ msg, currentUsername, onApprove, onDeny }) => {
+}> = ({ msg, currentUsername, namespace, agentName, onApprove, onDeny }) => {
   const isUser = msg.role === 'user';
 
   // Tool call/result steps render as compact expandable items
@@ -423,7 +436,7 @@ const ChatBubble: React.FC<{
         ) : (
           <div className="sandbox-markdown" style={{ fontSize: '0.92em' }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {msg.content}
+              {linkifyFilePaths(msg.content, namespace, agentName)}
             </ReactMarkdown>
           </div>
         )}
@@ -1075,6 +1088,8 @@ export const SandboxPage: React.FC = () => {
                   key={msg.id}
                   msg={msg}
                   currentUsername={currentUsername}
+                  namespace={namespace}
+                  agentName={selectedAgent}
                   onApprove={msg.toolData?.type === 'hitl_request' ? handleHitlApprove : undefined}
                   onDeny={msg.toolData?.type === 'hitl_request' ? handleHitlDeny : undefined}
                 />
