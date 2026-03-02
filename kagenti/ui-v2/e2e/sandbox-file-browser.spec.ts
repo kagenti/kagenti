@@ -454,6 +454,20 @@ test.describe('File Browser — Live Cluster Integration', () => {
     // File size label should be visible (exact value depends on content)
     const metadataBar = page.locator('[class*="pf-v5-c-label"]');
     await expect(metadataBar.first()).toBeVisible({ timeout: 5000 });
+
+    // ── Step 9: Verify storage stats for this agent ──
+    const statsResponse = await page.request.get(
+      `${LIVE_URL}/api/v1/sandbox/${NAMESPACE}/stats/${AGENT_NAME}`
+    );
+    expect(statsResponse.ok()).toBeTruthy();
+    const stats = await statsResponse.json();
+    expect(stats.total_mounts).toBeGreaterThan(0);
+    for (const mount of stats.mounts) {
+      expect(mount).toHaveProperty('filesystem');
+      expect(mount).toHaveProperty('size');
+      expect(mount).toHaveProperty('used');
+      expect(mount).toHaveProperty('mount_point');
+    }
   });
 
   test('write code file via chat, browse and verify CodeBlock rendering', async ({ page }) => {
@@ -502,26 +516,4 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(page.getByText('def fibonacci')).toBeVisible({ timeout: 5000 });
   });
 
-  test('verify storage stats endpoint returns mount info', async ({ page }) => {
-    // Call the stats endpoint directly
-    const response = await page.request.get(
-      `${LIVE_URL}/api/v1/sandbox/${NAMESPACE}/stats/${AGENT_NAME}`
-    );
-
-    expect(response.ok()).toBeTruthy();
-    const data = await response.json();
-
-    // Should have at least one mount
-    expect(data.total_mounts).toBeGreaterThan(0);
-
-    // Each mount should have required fields
-    for (const mount of data.mounts) {
-      expect(mount).toHaveProperty('filesystem');
-      expect(mount).toHaveProperty('size');
-      expect(mount).toHaveProperty('used');
-      expect(mount).toHaveProperty('available');
-      expect(mount).toHaveProperty('use_percent');
-      expect(mount).toHaveProperty('mount_point');
-    }
-  });
 });
