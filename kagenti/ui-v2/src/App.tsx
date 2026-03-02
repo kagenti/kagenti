@@ -22,7 +22,6 @@ import { AdminPage } from './pages/AdminPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { IntegrationDetailPage } from './pages/IntegrationDetailPage';
 import { AddIntegrationPage } from './pages/AddIntegrationPage';
-import { SessionGraphPage } from './pages/SessionGraphPage';
 import { FileBrowser } from './components/FileBrowser';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SandboxPage } from './pages/SandboxPage';
