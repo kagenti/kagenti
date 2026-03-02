@@ -41,6 +41,7 @@ from app.routers import (
     sandbox,
     sandbox_deploy,
     sandbox_trigger,
+    sandbox_files,
     integrations,
 )
 from app.services.session_db import close_all_pools
@@ -122,6 +123,7 @@ app.include_router(chat.router, prefix="/api/v1")
 app.include_router(sandbox.router, prefix="/api/v1")
 app.include_router(sandbox_deploy.router, prefix="/api/v1")
 app.include_router(sandbox_trigger.router, prefix="/api/v1")
+app.include_router(sandbox_files.router, prefix="/api/v1")
 app.include_router(integrations.router, prefix="/api/v1")
 
 
