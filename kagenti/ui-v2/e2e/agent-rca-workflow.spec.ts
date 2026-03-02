@@ -136,11 +136,11 @@ test.describe('Agent RCA Workflow', () => {
 
     // Wait for agent response: either .sandbox-markdown (text) or tool call/result steps
     // Tool calls render as divs with "Tool Call:" or "Result:" text, not <details>
-    const agentOutput = page.locator('.sandbox-markdown').or(page.getByText(/^[▶▼] (Tool Call|Result):/));
+    const agentOutput = page.locator('.sandbox-markdown').or(page.locator('text=/Tool Call:|Result:/i'));
     await expect(agentOutput.first()).toBeVisible({ timeout: 180000 }); // 3 min for LLM
 
     const mdCount = await page.locator('.sandbox-markdown').count();
-    const toolCount = await page.getByText(/^[▶▼] (Tool Call|Result):/).count();
+    const toolCount = await page.locator('text=/Tool Call:|Result:.*tool/i').count();
     console.log(`[rca] Agent output: ${mdCount} markdown, ${toolCount} tool calls`);
     expect(mdCount + toolCount).toBeGreaterThan(0);
 
@@ -184,7 +184,7 @@ test.describe('Agent RCA Workflow', () => {
 
     // Agent response must render (markdown text or tool call steps)
     const mdCount = await page.locator('.sandbox-markdown').count();
-    const toolCount = await page.getByText(/^[▶▼] (Tool Call|Result):/).count();
+    const toolCount = await page.locator('text=/Tool Call:|Result:.*tool/i').count();
     console.log(`[rca] On reload: ${mdCount} markdown, ${toolCount} tool calls`);
     expect(mdCount + toolCount).toBeGreaterThanOrEqual(1);
   });
