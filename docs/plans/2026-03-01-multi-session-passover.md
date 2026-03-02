@@ -551,10 +551,14 @@ a544ca90 feat(sandbox): add trigger API with ROLE_OPERATOR auth (Session F)
 6. ✅ Route: `/sandbox/graph` in App.tsx, "Session Graph" nav item in AppLayout.tsx
 7. ✅ Dependencies: @xyflow/react@12.10.1, dagre@0.8.5 installed
 
-**Test Results:** 9/10 graph tests passing locally (1 edge visibility flake), 0/6 delegation tests (need SandboxPage delegation event handler)
+**Worktree:** Main repo (no worktree — working directly on `fix/hypershift-ci-deploy` branch)
+
+**Test Results:** **10/10 graph tests passing** locally (all green), 0/6 delegation tests (need SandboxPage delegation event handler)
+
+**IMPORTANT — Shared file conflicts:** Other sessions reverted `App.tsx`, `AppLayout.tsx`, and `api.ts` changes. Session E re-adds: SessionGraphPage route in App.tsx, "Session Graph" nav item in AppLayout.tsx, sessionGraphService + types in api.ts. These are additive changes (new route, new nav item, new exports) — should not conflict.
 
 **Remaining Tasks:**
-- P1: Fix remaining graph test flake (edge count assertion)
+- ~~P1: Fix remaining graph test flake (edge count assertion)~~ ✅ FIXED — 10/10 passing
 - P1: Add delegation event types to SandboxPage streaming parser
 - P1: Implement `in-process` delegation in agent code (subagents.py)
 - P2: Backend: wire graph endpoint to real task metadata

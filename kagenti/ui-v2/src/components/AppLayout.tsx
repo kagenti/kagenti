@@ -400,6 +400,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               <NavGroup title="Operations">
                 <NavList>
                   <NavItem
+                    itemId="session-graph"
+                    isActive={isNavItemActive('/sandbox/graph')}
+                    onClick={() => handleNavSelect('/sandbox/graph')}
+                  >
+                    Session Graph
+                  </NavItem>
+                  <NavItem
                     itemId="observability"
                     isActive={isNavItemActive('/observability')}
                     onClick={() => handleNavSelect('/observability')}

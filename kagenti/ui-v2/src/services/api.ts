@@ -621,6 +621,44 @@ export const configService = {
 };
 
 /**
+ * Session Graph types and service (Session E)
+ */
+export interface GraphNode {
+  id: string;
+  agent: string;
+  status: 'running' | 'completed' | 'failed' | 'pending';
+  mode: 'root' | 'in-process' | 'shared-pvc' | 'isolated' | 'sidecar';
+  tier: string;
+  started_at: string | null;
+  duration_ms: number;
+  task_summary: string;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  mode: 'in-process' | 'shared-pvc' | 'isolated' | 'sidecar';
+  task: string;
+}
+
+export interface SessionGraphData {
+  root: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export const sessionGraphService = {
+  async getGraph(
+    namespace: string,
+    contextId: string
+  ): Promise<SessionGraphData> {
+    return apiFetch(
+      `/chat/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/graph`
+    );
+  },
+};
+
+/**
  * Chat service for A2A agent communication
  */
 export const chatService = {
