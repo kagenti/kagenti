@@ -218,3 +218,35 @@ Tests: `agent-chat-identity.spec.ts` lines 394, 433, 469, 508.
 3. **Session D**: Provision Keycloak test users → unblocks 4 multi-user tests
 4. **Session A**: Session title in sidebar (1 test)
 5. **Session C**: Already all passing (44/44)
+
+---
+
+## Orchestrator Integration Test Results (sandbox44)
+
+**Date:** 2026-03-02
+**Cluster:** sandbox44 (fresh deploy, Mistral Small 24B)
+**Total:** 113 passed, 23 failed, 1 skipped out of 140 tests (80%)
+
+### Passing (113)
+All core sandbox tests, agent variants, chat identity, weather agent, integrations pages, create wizard, home page.
+
+### Failing (23) — by category
+| Category | Failed | Root Cause | Fix Owner |
+|----------|--------|------------|-----------|
+| Agent catalog API (5) | API timing/format | Session A |
+| Multi-user identity (4) | Demo realm users not on sandbox44 | Session D |
+| Session ownership (4) | Needs ownership data | Session A |
+| Tool catalog API (3) | API format mismatch | Session A |
+| Walkthroughs (3) | UI timing | Session A |
+| Rendering (1) | Agent serializer not in image | Session B |
+| Create wizard cancel (1) | Navigation path | Session A |
+| Home → agent catalog (1) | Route mismatch | Session A |
+| Sessions table search (1) | Timing | Session A |
+
+### Install Issues Found
+1. Helm `keycloak.testUsers` nil pointer → fixed (`default dict`)
+2. `bitnami/postgresql:16` blocked on OpenShift → use `postgres:16-alpine`
+3. TOFU hash permission denied with `runAsNonRoot` → `/tmp` emptyDir + `TOFU_HASH_DIR`
+4. Keycloak needs `36-fix-keycloak-admin.sh` post-install
+5. Fulltest doesn't deploy sandbox agents → need `--include-agent-sandbox`
+6. MAAS model not in default install → manual LLM_API_BASE update needed
