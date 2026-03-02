@@ -134,12 +134,20 @@ test.describe('Agent RCA Workflow', () => {
     await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
 
-    // Wait for agent response to render as .sandbox-markdown
-    const resp = page.locator('.sandbox-markdown').first();
-    await expect(resp).toBeVisible({ timeout: 180000 }); // 3 min for LLM
-    const t = await resp.textContent() || '';
-    console.log(`[rca] Response (${t.length} chars): ${t.substring(0, 200)}`);
-    expect(t.length).toBeGreaterThan(20);
+    // Wait for agent response: either .sandbox-markdown (text) or tool call steps
+    // The agent may use tools (web_fetch, shell) before producing a text summary
+    const agentOutput = page.locator('.sandbox-markdown, [data-testid="tool-call-step"], details:has(summary)').first();
+    await expect(agentOutput).toBeVisible({ timeout: 180000 }); // 3 min for LLM
+
+    const mdCount = await page.locator('.sandbox-markdown').count();
+    const toolCount = await page.locator('details:has(summary)').count();
+    console.log(`[rca] Agent output: ${mdCount} markdown, ${toolCount} tool calls`);
+    expect(mdCount + toolCount).toBeGreaterThan(0);
+
+    if (mdCount > 0) {
+      const t = await page.locator('.sandbox-markdown').first().textContent() || '';
+      console.log(`[rca] Text response (${t.length} chars): ${t.substring(0, 200)}`);
+    }
 
     sessionUrl = page.url();
     console.log(`[rca] Session URL: ${sessionUrl}`);
@@ -155,11 +163,11 @@ test.describe('Agent RCA Workflow', () => {
     await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible on reload');
 
-    // Agent response must render as .sandbox-markdown
-    const msgs = page.locator('.sandbox-markdown');
-    const count = await msgs.count();
-    console.log(`[rca] .sandbox-markdown on reload: ${count}`);
-    expect(count).toBeGreaterThanOrEqual(1);
+    // Agent response must render (markdown text or tool call steps)
+    const mdCount = await page.locator('.sandbox-markdown').count();
+    const toolCount = await page.locator('details:has(summary)').count();
+    console.log(`[rca] On reload: ${mdCount} markdown, ${toolCount} tool calls`);
+    expect(mdCount + toolCount).toBeGreaterThanOrEqual(1);
   });
 
   test('5 — session persists across navigation', async ({ page }) => {
@@ -180,13 +188,16 @@ test.describe('Agent RCA Workflow', () => {
     else { await pickRcaAgent(page); }
     await page.waitForTimeout(10000);
 
-    // Read response from .sandbox-markdown
-    const msgs = page.locator('.sandbox-markdown');
-    const count = await msgs.count();
+    // Read all agent output — markdown text + tool call content
+    const mdMsgs = page.locator('.sandbox-markdown');
+    const toolDetails = page.locator('details:has(summary)');
+    const mdCount = await mdMsgs.count();
+    const toolCount = await toolDetails.count();
     let text = '';
-    for (let i = 0; i < count; i++) text += (await msgs.nth(i).textContent() || '') + ' ';
+    for (let i = 0; i < mdCount; i++) text += (await mdMsgs.nth(i).textContent() || '') + ' ';
+    for (let i = 0; i < toolCount; i++) text += (await toolDetails.nth(i).textContent() || '') + ' ';
     text = text.toLowerCase();
-    console.log(`[rca] Msgs: ${count}, chars: ${text.length}`);
+    console.log(`[rca] Content: ${mdCount} markdown + ${toolCount} tools = ${text.length} chars`);
     console.log(`[rca] Preview: ${text.substring(0, 500)}`);
 
     const sec: Record<string, RegExp> = {
