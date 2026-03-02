@@ -89,13 +89,13 @@ const INITIAL_STATE: WizardState = {
   landlock: false,
   proxy: false,
   gvisor: false,
-  proxyDomains: 'github.com, api.openai.com, pypi.org',
+  proxyDomains: 'github.com, pypi.org',
   workspaceSize: '5Gi',
   sessionTtl: '7d',
   credentialMode: 'pat',
   githubPat: '',
   llmKeySource: 'existing',
-  llmSecretName: 'openai-api-key',
+  llmSecretName: 'openai-secret',
   llmApiKey: '',
   enablePersistence: true,
   dbSource: 'in-cluster',
@@ -103,7 +103,7 @@ const INITIAL_STATE: WizardState = {
   enableCheckpointing: true,
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
-  model: 'gpt-4o-mini',
+  model: 'mistral-small-24b-w8a8',
 };
 
 const STEPS = [
@@ -122,10 +122,10 @@ const VARIANTS = [
 ];
 
 const MODELS = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'gpt-4o', label: 'GPT-4o' },
-  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+  { value: 'mistral-small-24b-w8a8', label: 'Mistral Small 24B (cluster default)' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (requires OpenAI key)' },
+  { value: 'gpt-4o', label: 'GPT-4o (requires OpenAI key)' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (requires Anthropic key)' },
 ];
 
 const WORKSPACE_SIZES = [
@@ -413,7 +413,7 @@ export const SandboxCreatePage: React.FC = () => {
             id="llm-secret-name"
             value={state.llmSecretName}
             onChange={(_e, v) => update('llmSecretName', v)}
-            placeholder="openai-api-key"
+            placeholder="openai-secret"
           />
           <div style={{ fontSize: '0.82em', color: 'var(--pf-v5-global--Color--200)', marginTop: 4 }}>
             Kubernetes Secret in the target namespace containing the API key.

@@ -10,6 +10,7 @@ via the Kubernetes Python client. Mirrors the resources created by
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -40,6 +41,15 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Cluster-aware LLM defaults — set via env vars on the backend deployment
+# or via Helm values. Falls back to Mistral (available on all clusters).
+DEFAULT_LLM_API_BASE = os.environ.get(
+    "SANDBOX_LLM_API_BASE",
+    "https://mistral-small-24b-w8a8-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1",
+)
+DEFAULT_LLM_MODEL = os.environ.get("SANDBOX_LLM_MODEL", "mistral-small-24b-w8a8")
+DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "openai-secret")
+
 router = APIRouter(prefix="/sandbox", tags=["sandbox-deploy"])
 
 
@@ -57,7 +67,7 @@ class SandboxCreateRequest(BaseModel):
     context_dir: str = "/"
     dockerfile: str = "Dockerfile"
     base_agent: str = "sandbox-legion"
-    model: str = "gpt-4o-mini"
+    model: str = ""  # Empty = use cluster default (DEFAULT_LLM_MODEL)
     namespace: str = "team1"
     enable_persistence: bool = True
     isolation_mode: str = "shared"  # shared or pod-per-session
@@ -75,12 +85,12 @@ class SandboxCreateRequest(BaseModel):
     non_root: bool = True
     drop_caps: bool = True
     read_only_root: bool = False
-    proxy_allowlist: str = "github.com, api.openai.com, pypi.org"
+    proxy_allowlist: str = "github.com, pypi.org"
     # Credentials
     github_pat: Optional[str] = None
     llm_api_key: Optional[str] = None
     llm_key_source: str = "existing"  # "existing" or "new"
-    llm_secret_name: str = "openai-secret"
+    llm_secret_name: str = ""  # Empty = use cluster default (DEFAULT_LLM_SECRET)
 
     @property
     def profile(self):
@@ -122,7 +132,7 @@ class SandboxCreateResponse(BaseModel):
 
 def _build_deployment_manifest(
     req: SandboxCreateRequest,
-    llm_secret: str = "openai-secret",
+    llm_secret: Optional[str] = None,
     github_pat_secret: Optional[str] = None,
 ) -> dict:
     """Build a Kubernetes Deployment manifest matching 76-deploy-sandbox-agents.sh.
@@ -142,6 +152,11 @@ def _build_deployment_manifest(
     # Image from internal registry (same as 76-deploy-sandbox-agents.sh)
     image = f"image-registry.openshift-image-registry.svc:5000/{namespace}/sandbox-agent:v0.0.1"
 
+    # Resolve cluster-aware defaults
+    effective_secret = llm_secret or req.llm_secret_name or DEFAULT_LLM_SECRET
+    effective_model = req.model or DEFAULT_LLM_MODEL
+    effective_api_base = DEFAULT_LLM_API_BASE
+
     # Core env vars shared by all variants
     env_vars = [
         {"name": "PORT", "value": "8000"},
@@ -151,16 +166,16 @@ def _build_deployment_manifest(
             "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
             "value": "http://otel-collector.kagenti-system.svc.cluster.local:8335",
         },
-        {"name": "LLM_API_BASE", "value": "https://api.openai.com/v1"},
+        {"name": "LLM_API_BASE", "value": effective_api_base},
         {
             "name": "LLM_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": llm_secret, "key": "apikey"}},
+            "valueFrom": {"secretKeyRef": {"name": effective_secret, "key": "apikey"}},
         },
         {
             "name": "OPENAI_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": llm_secret, "key": "apikey"}},
+            "valueFrom": {"secretKeyRef": {"name": effective_secret, "key": "apikey"}},
         },
-        {"name": "LLM_MODEL", "value": req.model},
+        {"name": "LLM_MODEL", "value": effective_model},
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
     ]
 

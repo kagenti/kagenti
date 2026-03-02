@@ -16,10 +16,7 @@ const AGENT_NAME = 'rca-agent';
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
 
-// TODO(wizard-api): Wizard hardcodes LLM_API_BASE=api.openai.com. Fix to support cluster LLM.
-const LLM_API_BASE = process.env.LLM_API_BASE ||
-  'https://mistral-small-24b-w8a8-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'mistral-small-24b-w8a8';
+// Wizard now defaults to cluster LLM (Mistral). Override via env if needed.
 const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'openai-secret';
 
 function getKubeconfig(): string {
@@ -101,10 +98,10 @@ test.describe('Agent RCA Workflow', () => {
     for (let i = 0; i < 12; i++) { if (!kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found')) { ok = true; break; } await page.waitForTimeout(5000); }
     expect(ok).toBe(true);
 
-    // TODO(wizard-api): Fix hardcoded OpenAI. TODO(installer): Fix TOFU PermissionError.
-    const p = { spec: { template: { spec: { securityContext: { runAsUser: 1001 }, containers: [{ name: 'agent', env: [{ name: 'LLM_API_BASE', value: LLM_API_BASE }, { name: 'LLM_MODEL', value: LLM_MODEL }] }] } } } };
-    kc(`patch deploy ${AGENT_NAME} -n ${NAMESPACE} --type=strategic -p '${JSON.stringify(p)}'`);
-    console.log('[rca] Patched LLM + security');
+    // TODO(installer): Fix TOFU PermissionError — Dockerfile should chmod g+w /app
+    const p = { spec: { template: { spec: { securityContext: { runAsUser: 1001 } } } } };
+    kc(`patch deploy ${AGENT_NAME} -n ${NAMESPACE} -p '${JSON.stringify(p)}'`);
+    console.log('[rca] Patched runAsUser for TOFU');
 
     let ready = false;
     for (let i = 0; i < 36; i++) { if (kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1') { ready = true; break; } await page.waitForTimeout(5000); }
