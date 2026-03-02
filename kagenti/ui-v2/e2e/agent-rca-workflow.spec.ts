@@ -134,111 +134,59 @@ test.describe('Agent RCA Workflow', () => {
     await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
 
-    // Wait for agent response — poll for .sandbox-markdown OR "thinking" indicator OR DB task completion
-    let hasResponse = false;
-    for (let i = 0; i < 36; i++) { // up to 3 min
-      // Check for rendered response
-      const mdCount = await page.locator('.sandbox-markdown').count();
-      if (mdCount > 0) {
-        const t = await page.locator('.sandbox-markdown').first().textContent() || '';
-        console.log(`[rca] Response (${t.length} chars): ${t.substring(0, 200)}`);
-        hasResponse = t.length > 20;
-        if (hasResponse) break;
-      }
-      // Check for thinking indicator (agent is processing)
-      const thinking = page.locator('text=/thinking/i');
-      if (await thinking.isVisible({ timeout: 1000 }).catch(() => false)) {
-        console.log(`[rca] Agent thinking... (poll ${i})`);
-      }
-      await page.waitForTimeout(5000);
-    }
-
-    // Fallback: check DB for completed task (SSE rendering may be broken)
-    if (!hasResponse) {
-      const dbResult = kc(
-        `exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t ` +
-        `-c "SELECT COUNT(*) FROM tasks WHERE status::text LIKE '%completed%' ORDER BY id DESC LIMIT 1"`
-      );
-      console.log(`[rca] DB completed tasks: ${dbResult.trim()}`);
-      hasResponse = parseInt(dbResult.trim()) > 0;
-    }
+    // Wait for agent response to render as .sandbox-markdown
+    const resp = page.locator('.sandbox-markdown').first();
+    await expect(resp).toBeVisible({ timeout: 180000 }); // 3 min for LLM
+    const t = await resp.textContent() || '';
+    console.log(`[rca] Response (${t.length} chars): ${t.substring(0, 200)}`);
+    expect(t.length).toBeGreaterThan(20);
 
     sessionUrl = page.url();
     console.log(`[rca] Session URL: ${sessionUrl}`);
-    console.log(`[rca] Has response: ${hasResponse}`);
-    expect(hasResponse).toBe(true);
   });
 
-  test('4 — session loads with messages', async ({ page }) => {
-    await page.goto('/'); await loginIfNeeded(page);
-    if (sessionUrl) { await page.goto(sessionUrl); await page.waitForLoadState('networkidle'); }
-    else { await pickRcaAgent(page); }
-
-    // Poll for messages — SSE rendering can be slow on reload
-    let hasContent = false;
-    for (let i = 0; i < 12; i++) {
-      await page.waitForTimeout(5000);
-      const mdCount = await page.locator('.sandbox-markdown').count();
-      const userMsg = await page.getByText('Analyze the latest CI failures').isVisible({ timeout: 2000 }).catch(() => false);
-      console.log(`[rca] Poll ${i}: markdown=${mdCount}, userMsg=${userMsg}`);
-      if (mdCount > 0 || userMsg) { hasContent = true; break; }
-    }
-
-    // DB fallback: session must exist even if UI rendering is flaky
-    if (!hasContent) {
-      const sid = sessionUrl?.match(/session=([a-f0-9]+)/)?.[1] || '';
-      const dbCheck = kc(`exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t -c "SELECT COUNT(*) FROM tasks WHERE context_id='${sid}'"`, 15000);
-      console.log(`[rca] DB tasks for session ${sid}: ${dbCheck.trim()}`);
-      hasContent = parseInt(dbCheck.trim()) > 0;
-    }
-    expect(hasContent).toBe(true);
-  });
-
-  test('5 — session persists on reload', async ({ page }) => {
+  test('4 — session loads with messages on reload', async ({ page }) => {
     expect(sessionUrl).toBeTruthy();
-    const sid = sessionUrl!.match(/session=([a-f0-9]+)/)?.[1] || '';
-
-    // Verify session exists in DB (ground truth, independent of UI rendering)
-    const dbCheck = kc(`exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t -c "SELECT COUNT(*) FROM tasks WHERE context_id='${sid}'"`, 15000);
-    console.log(`[rca] DB tasks for session ${sid}: ${dbCheck.trim()}`);
-    expect(parseInt(dbCheck.trim())).toBeGreaterThan(0);
-
-    // Also verify UI loads the session
     await page.goto('/'); await loginIfNeeded(page);
     await page.goto(sessionUrl!); await page.waitForLoadState('networkidle');
     await page.waitForTimeout(5000);
-    const has = await page.getByText('Analyze the latest CI failures').isVisible({ timeout: 15000 }).catch(() => false);
-    console.log(`[rca] User message on reload: ${has}`);
-    // UI visibility is informational — DB is the source of truth
+
+    // User message must be visible
+    await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
+    console.log('[rca] User message visible on reload');
+
+    // Agent response must render as .sandbox-markdown
+    const msgs = page.locator('.sandbox-markdown');
+    const count = await msgs.count();
+    console.log(`[rca] .sandbox-markdown on reload: ${count}`);
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
+
+  test('5 — session persists across navigation', async ({ page }) => {
+    expect(sessionUrl).toBeTruthy();
+    // Navigate away then back
+    await page.goto('/'); await loginIfNeeded(page);
+    await page.goto(sessionUrl!); await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(5000);
+
+    const userMsg = page.getByText('Analyze the latest CI failures');
+    await expect(userMsg).toBeVisible({ timeout: 15000 });
+    console.log('[rca] Session persists after navigation');
   });
 
   test('6 — RCA assessment quality', async ({ page }) => {
-    const sid = sessionUrl?.match(/session=([a-f0-9]+)/)?.[1] || '';
+    await page.goto('/'); await loginIfNeeded(page);
+    if (sessionUrl) { await page.goto(sessionUrl); await page.waitForLoadState('networkidle'); }
+    else { await pickRcaAgent(page); }
+    await page.waitForTimeout(10000);
 
-    // Get response from DB — more reliable than .sandbox-markdown which may not render
+    // Read response from .sandbox-markdown
+    const msgs = page.locator('.sandbox-markdown');
+    const count = await msgs.count();
     let text = '';
-    const dbHistory = kc(
-      `exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t ` +
-      `-c "SELECT substring(history::text, 1, 2000) FROM tasks WHERE context_id='${sid}' AND history IS NOT NULL LIMIT 1"`,
-      15000
-    );
-    if (dbHistory.trim().length > 50) {
-      text = dbHistory.toLowerCase();
-      console.log(`[rca] DB history (${text.length} chars): ${text.substring(0, 300)}`);
-    }
-
-    // Also try UI
-    if (text.length < 50) {
-      await page.goto('/'); await loginIfNeeded(page);
-      if (sessionUrl) { await page.goto(sessionUrl); await page.waitForLoadState('networkidle'); }
-      await page.waitForTimeout(10000);
-      const msgs = page.locator('.sandbox-markdown');
-      const c = await msgs.count();
-      for (let i = 0; i < c; i++) text += (await msgs.nth(i).textContent() || '') + ' ';
-      text = text.toLowerCase();
-      console.log(`[rca] UI msgs: ${c}, chars: ${text.length}`);
-    }
-
+    for (let i = 0; i < count; i++) text += (await msgs.nth(i).textContent() || '') + ' ';
+    text = text.toLowerCase();
+    console.log(`[rca] Msgs: ${count}, chars: ${text.length}`);
     console.log(`[rca] Preview: ${text.substring(0, 500)}`);
 
     const sec: Record<string, RegExp> = {

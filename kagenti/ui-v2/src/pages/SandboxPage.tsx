@@ -20,10 +20,12 @@ import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { sandboxService } from '../services/api';
+import { useQuery } from '@tanstack/react-query';
+import { sandboxService, chatService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
 import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
+import { SkillWhisperer } from '../components/SkillWhisperer';
 // SandboxConfig disabled — model/repo/branch not yet wired to backend
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
@@ -501,8 +503,34 @@ export const SandboxPage: React.FC = () => {
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
   const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
+  const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
+
+  // Fetch agent card to get skills for / autocomplete
+  const { data: agentCard } = useQuery({
+    queryKey: ['agent-card', namespace, selectedAgent],
+    queryFn: () => chatService.getAgentCard(namespace, selectedAgent),
+    enabled: !!namespace && !!selectedAgent,
+    staleTime: 60000,
+    retry: 1,
+  });
+  const agentSkills = agentCard?.skills || [];
+
+  // Reset whisperer dismiss state when input changes
+  useEffect(() => {
+    setSkillWhispererDismissed(false);
+  }, [input]);
+
+  // Handle skill selection from whisperer
+  const handleSkillSelect = useCallback((skillId: string) => {
+    // Replace the /query part with the selected skill
+    setInput((prev) => prev.replace(/(?:^|\s)\/([\w:.-]*)$/, (match) => {
+      const prefix = match.startsWith(' ') ? ' ' : '';
+      return `${prefix}/${skillId} `;
+    }));
+    setSkillWhispererDismissed(false);
+  }, []);
 
   /** Handle HITL approve action. */
   const handleHitlApprove = useCallback(async () => {
@@ -533,8 +561,9 @@ export const SandboxPage: React.FC = () => {
   ): Message => {
     const firstPart = h.parts?.[0] as Record<string, unknown> | undefined;
 
-    // Check if this is a tool call/result/thinking (kind: "data")
-    if (firstPart?.kind === 'data' && firstPart?.type) {
+    // Only treat as tool data if it's an explicit tool call/result/thinking event
+    const toolTypes = ['tool_call', 'tool_result', 'thinking', 'hitl_request', 'hitl_response', 'graph_event'];
+    if (firstPart?.kind === 'data' && toolTypes.includes(firstPart?.type as string)) {
       return {
         id: `history-${h._index ?? i}`,
         role: h.role as 'user' | 'assistant',
@@ -544,14 +573,21 @@ export const SandboxPage: React.FC = () => {
       };
     }
 
+    // Extract text from all parts (handles kind: "text", kind: "data" with text, etc.)
+    const content = h.parts
+      ?.map((p) => {
+        if (typeof p.text === 'string') return p.text;
+        // Data parts that aren't tool calls may contain text content
+        if (p.kind === 'data' && typeof p.content === 'string') return p.content;
+        return '';
+      })
+      .filter(Boolean)
+      .join('') || '';
+
     return {
       id: `history-${h._index ?? i}`,
       role: h.role as 'user' | 'assistant',
-      content:
-        h.parts
-          ?.map((p) => p.text as string)
-          .filter(Boolean)
-          .join('') || '',
+      content,
       timestamp: new Date(),
       username: h.username || (h.metadata?.username as string | undefined),
     };
@@ -1149,7 +1185,15 @@ export const SandboxPage: React.FC = () => {
 
           {/* Input area */}
           <Split hasGutter style={{ marginTop: 8 }}>
-            <SplitItem isFilled>
+            <SplitItem isFilled style={{ position: 'relative' }}>
+              {!skillWhispererDismissed && agentSkills.length > 0 && (
+                <SkillWhisperer
+                  skills={agentSkills}
+                  input={input}
+                  onSelect={handleSkillSelect}
+                  onDismiss={() => setSkillWhispererDismissed(true)}
+                />
+              )}
               <TextArea
                 value={input}
                 onChange={(_e, value) => setInput(value)}
