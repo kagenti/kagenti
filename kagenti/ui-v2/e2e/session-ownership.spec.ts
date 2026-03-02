@@ -47,6 +47,25 @@ async function loginIfNeeded(page: Page) {
   await page.waitForLoadState('networkidle');
 }
 
+/** Create a sandbox session by sending a quick message */
+async function ensureSessionExists(page: Page) {
+  await page.locator('nav a', { hasText: 'Sessions' }).first().click();
+  await page.waitForLoadState('networkidle');
+
+  // Check if sessions already exist
+  const hasSession = await page.locator('text=/sandbox-legion|sandbox-agent/').first()
+    .isVisible({ timeout: 3000 }).catch(() => false);
+  if (hasSession) return;
+
+  // No sessions — create one
+  const chatInput = page.locator('textarea[aria-label="Message input"]').first();
+  if (await chatInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await chatInput.fill('Hello ownership test');
+    await page.getByRole('button', { name: /Send/i }).click();
+    await page.waitForTimeout(5000); // Wait for session to be created
+  }
+}
+
 /** Navigate to the Sessions TABLE page (not the sidebar chat view) */
 async function navigateToSessionsTable(page: Page) {
   // Sessions sidebar → click "View All Sessions" link to get to the table
@@ -68,6 +87,7 @@ test.describe('Session Ownership & Visibility', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
+    await ensureSessionExists(page);
   });
 
   test('sessions table shows Owner and Visibility columns', async ({ page }) => {

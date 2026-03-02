@@ -12,11 +12,14 @@
  * - At least one agent deployed (e.g., weather-service in team1)
  */
 import { test, expect } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 test.describe('Agent Catalog Page', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to the agent catalog page before each test
-    await page.goto('/agents');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display agent catalog page with title', async ({ page }) => {

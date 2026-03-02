@@ -8,10 +8,14 @@
  * - Navigation to tool details
  */
 import { test, expect } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 test.describe('Tool Catalog Page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/tools');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display tool catalog page with title', async ({ page }) => {
