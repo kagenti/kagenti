@@ -73,7 +73,7 @@ def _sanitize_path(path: str) -> str:
     Validate and normalise the requested filesystem path.
 
     Raises HTTPException(400) if the path contains traversal sequences or
-    does not start with ``/workspace``.
+    is not an absolute path.
     """
     # Normalise the path (collapse //, resolve . but NOT ..)
     normalised = posixpath.normpath(path)
@@ -85,11 +85,11 @@ def _sanitize_path(path: str) -> str:
             detail="Path traversal ('..') is not allowed.",
         )
 
-    # Must be rooted under /workspace
-    if not normalised.startswith(WORKSPACE_ROOT):
+    # Must be an absolute path
+    if not normalised.startswith("/"):
         raise HTTPException(
             status_code=400,
-            detail=f"Path must start with {WORKSPACE_ROOT}.",
+            detail="Path must be absolute (start with '/').",
         )
 
     return normalised
@@ -237,14 +237,14 @@ router = APIRouter(
 async def get_sandbox_files(
     namespace: str,
     agent_name: str,
-    path: str = Query(default=WORKSPACE_ROOT, description="Absolute path inside the pod"),
+    path: str = Query(default="/", description="Absolute path inside the pod"),
     kube: KubernetesService = Depends(get_kubernetes_service),
 ):
     """
     If *path* is a directory, return a :class:`DirectoryListing`.
     If *path* is a regular file, return its :class:`FileContent` (up to 1 MB).
 
-    The path must be under ``/workspace`` — traversal via ``..`` is rejected.
+    Traversal via ``..`` is rejected. Path must be absolute.
     """
     safe_path = _sanitize_path(path)
     pod_name = _find_pod(kube, namespace, agent_name)

@@ -81,7 +81,7 @@ function pathSegments(path: string): Array<{ label: string; fullPath: string }> 
 export const FileBrowser: React.FC = () => {
   const { namespace, agentName } = useParams<{ namespace: string; agentName: string }>();
 
-  const [currentPath, setCurrentPath] = useState('/workspace');
+  const [currentPath, setCurrentPath] = useState('/');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   // Fetch directory listing
