@@ -65,11 +65,11 @@ var (
 // StatusBadge returns a styled status indicator.
 func StatusBadge(status string) string {
 	switch status {
-	case "Running", "Available", "True", "ready":
+	case "Running", "Available", "True", "ready", "Ready":
 		return SuccessStyle.Render("● " + status)
 	case "Pending", "Progressing", "Unknown":
 		return WarningStyle.Render("◐ " + status)
-	case "Failed", "Error", "CrashLoopBackOff", "False":
+	case "Failed", "Error", "CrashLoopBackOff", "False", "Not Ready":
 		return ErrorStyle.Render("✖ " + status)
 	default:
 		return MutedStyle.Render("○ " + status)

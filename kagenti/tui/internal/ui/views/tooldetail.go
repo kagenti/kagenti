@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -19,6 +20,7 @@ type ToolDetailView struct {
 	name    string
 	detail  map[string]any
 	err     error
+	polling bool
 }
 
 // NewToolDetailView creates a new tool detail view.
@@ -42,8 +44,11 @@ type toolDetailMsg struct {
 	err    error
 }
 
+type toolPollTickMsg struct{}
+
 // Init fetches tool detail.
 func (v ToolDetailView) Init() tea.Cmd {
+	v.polling = true
 	client := v.client
 	name := v.name
 	return func() tea.Msg {
@@ -57,13 +62,44 @@ func (v ToolDetailView) Init() tea.Cmd {
 
 // Update handles messages.
 func (v ToolDetailView) Update(msg tea.Msg) (ToolDetailView, tea.Cmd) {
-	switch msg := msg.(type) {
+	switch msg.(type) {
 	case toolDetailMsg:
+		m := msg.(toolDetailMsg)
 		v.loading = false
-		v.detail = msg.detail
-		v.err = msg.err
+		v.detail = m.detail
+		v.err = m.err
+
+		// Start polling if status is not terminal
+		rs := v.readyStatus()
+		if rs != "Ready" && rs != "Failed" && m.err == nil {
+			v.polling = true
+			return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+				return toolPollTickMsg{}
+			})
+		}
+		v.polling = false
+
+	case toolPollTickMsg:
+		// Re-fetch detail
+		client := v.client
+		name := v.name
+		return v, func() tea.Msg {
+			detail, err := client.GetTool("", name)
+			if err != nil {
+				return toolDetailMsg{err: err}
+			}
+			return toolDetailMsg{detail: detail}
+		}
 	}
 	return v, nil
+}
+
+// readyStatus extracts the readyStatus string from the detail.
+func (v ToolDetailView) readyStatus() string {
+	if v.detail == nil {
+		return ""
+	}
+	return str(v.detail["readyStatus"])
 }
 
 // View renders the tool detail.
@@ -107,10 +143,13 @@ func (v ToolDetailView) View() string {
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", theme.LabelStyle.Render("Workload:"), wt))
 	}
 
-	if rs, ok := v.detail["readyStatus"].(map[string]any); ok {
-		ready := str(rs["ready"])
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", theme.LabelStyle.Render("Ready:"), theme.StatusBadge(ready)))
+	// Status
+	if rs := v.readyStatus(); rs != "" {
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", theme.LabelStyle.Render("Status:"), theme.StatusBadge(rs)))
 	}
+
+	// K8s status details (replicas and conditions)
+	renderK8sStatus(&b, v.detail)
 
 	// Service info
 	if svc, ok := v.detail["service"].(map[string]any); ok {
@@ -131,7 +170,12 @@ func (v ToolDetailView) View() string {
 		}
 	}
 
-	b.WriteString("\n" + theme.MutedStyle.Render("  Esc back"))
+	// Polling indicator
+	hint := "Esc back"
+	if v.polling {
+		hint = "Auto-refreshing...  •  " + hint
+	}
+	b.WriteString("\n" + theme.MutedStyle.Render("  "+hint))
 
 	return b.String()
 }

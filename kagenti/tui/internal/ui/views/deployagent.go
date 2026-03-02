@@ -88,6 +88,13 @@ func (v DeployAgentView) Update(msg tea.Msg) (DeployAgentView, tea.Cmd) {
 		v.deploying = false
 		v.result = msg.result
 		v.err = msg.err
+		// Navigate to agent detail on success
+		if msg.err == nil && msg.result != nil && msg.result.Success {
+			name := msg.result.Name
+			return v, func() tea.Msg {
+				return NavigateMsg{Target: "agent-detail", Name: name}
+			}
+		}
 		return v, nil
 
 	case tea.KeyMsg:
