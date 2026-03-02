@@ -10,7 +10,7 @@ providing a file browser experience in the UI.
 
 import logging
 import posixpath
-from typing import List, Union
+from typing import List, Literal, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client import ApiException
@@ -39,9 +39,10 @@ class FileEntry(BaseModel):
 
     name: str
     path: str  # absolute path inside the pod
-    is_dir: bool
+    type: Literal["file", "directory"]
     size: int  # bytes
     modified: str  # ISO-8601 timestamp string
+    permissions: str  # e.g. "drwxr-xr-x" or "-rw-r--r--"
 
 
 class DirectoryListing(BaseModel):
@@ -57,6 +58,9 @@ class FileContent(BaseModel):
     path: str
     content: str
     size: int
+    modified: str
+    type: str = "file"
+    encoding: str = "utf-8"
 
 
 # ---------------------------------------------------------------------------
@@ -195,16 +199,19 @@ def _parse_ls_output(raw: str, base_path: str) -> List[FileEntry]:
         if name in (".", ".."):
             continue
 
-        is_dir = permissions.startswith("d")
+        entry_type: Literal["file", "directory"] = (
+            "directory" if permissions.startswith("d") else "file"
+        )
         entry_path = posixpath.join(base_path, name)
 
         entries.append(
             FileEntry(
                 name=name,
                 path=entry_path,
-                is_dir=is_dir,
+                type=entry_type,
                 size=size,
                 modified=modified,
+                permissions=permissions,
             )
         )
 
@@ -290,4 +297,17 @@ async def get_sandbox_files(
         ["cat", safe_path],
     )
 
-    return FileContent(path=safe_path, content=content, size=file_size)
+    # Get modification time for the file
+    mtime_output = _exec_in_pod(
+        kube,
+        namespace,
+        pod_name,
+        ["stat", "--format=%y", safe_path],
+    ).strip()
+
+    return FileContent(
+        path=safe_path,
+        content=content,
+        size=file_size,
+        modified=mtime_output,
+    )
