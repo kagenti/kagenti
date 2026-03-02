@@ -645,14 +645,31 @@ Old pod still serving (not crashed). New builds crash on startup.
 
 ### Session G — RCA Workflow Integration Testing
 
-**Claude Session ID:** (to be assigned)
+**Claude Session ID:** Session G (this session)
 **Role:** Iterate on `agent-rca-workflow.spec.ts` — full pipeline test across agent configs
 **Cluster:** sbox42
+**Session Active:** YES — Phase 1 COMPLETE (6/6 tests green)
 **File Ownership:**
 - `kagenti/ui-v2/e2e/agent-rca-workflow.spec.ts` — EXCLUSIVE
+- `kagenti/ui-v2/src/pages/SandboxPage.tsx` — toMessage() fix (shared with Session A)
+
+**Completed Tasks:**
+1. ✅ Phase 1 — 6/6 tests GREEN on sbox42 (run 19)
+2. ✅ Fixed `findKubectl()` — prefers `/opt/homebrew/bin/oc` over Rancher Desktop's flaky kubectl
+3. ✅ Fixed wizard deploy: patch LLM config (Mistral) + `runAsUser: 1001` for TOFU permission
+4. ✅ Fixed `toMessage()` — was misclassifying all `kind: "data"` history parts as tool calls
+5. ✅ Fixed session reload: SPA routing via `pushState` (Keycloak re-auth redirect broke `page.goto`)
+6. ✅ Fixed selectors: `text=/Tool Call:|Result:/i` for ToolCallStep divs (not `<details>`)
+7. ✅ Committed SkillWhisperer (Session I) + removed unused SessionGraphPage import (Session E) to fix UI build
+
+**Key Findings:**
+- Wizard hardcodes `LLM_API_BASE=api.openai.com` — needs configurable LLM provider (TODO for wizard API)
+- TOFU hash write fails on OCP arbitrary UID — agent Dockerfile needs `chmod g+w /app` (TODO for installer)
+- Agent sessions not tagged with agent name in DB metadata — sidebar shows "0 sessions" for rca-agent
+- AuthBridge label `kagenti.io/inject: enabled` NOT set by wizard deploy (agents don't get authbridge sidecars)
 
 **Phases:**
-1. **Phase 1** — Default config: deploy rca-agent (sandbox-legion), run /rca:ci, verify assessment has root cause + impact + fix. Get all 6 tests green.
+1. **Phase 1** — ✅ DONE: 6/6 tests green
 2. **Phase 2** — Hardened: same test with sandbox-hardened base. Verify security doesn't break.
 3. **Phase 3** — Restricted: sandbox-restricted + Squid proxy. Verify agent can reach GitHub.
 4. **Phase 4** — Sub-agent delegation: verify child sessions appear (depends on Session E).
