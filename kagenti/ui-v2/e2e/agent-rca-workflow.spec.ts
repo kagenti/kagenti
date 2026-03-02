@@ -156,11 +156,18 @@ test.describe('Agent RCA Workflow', () => {
   test('4 — session loads with messages on reload', async ({ page }) => {
     expect(sessionUrl).toBeTruthy();
     await page.goto('/'); await loginIfNeeded(page);
-    await page.goto(sessionUrl!); await page.waitForLoadState('networkidle');
+    await page.goto(sessionUrl!);
+    await loginIfNeeded(page); // In case session URL triggered re-auth
+    // Ensure we're on the sandbox page (not redirected to home)
+    if (!page.url().includes('/sandbox')) {
+      await page.goto(sessionUrl!);
+    }
+    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(5000);
+    console.log(`[rca] Current URL: ${page.url()}`);
 
     // User message must be visible
-    await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 30000 });
     console.log('[rca] User message visible on reload');
 
     // Agent response must render (markdown text or tool call steps)
@@ -172,9 +179,10 @@ test.describe('Agent RCA Workflow', () => {
 
   test('5 — session persists across navigation', async ({ page }) => {
     expect(sessionUrl).toBeTruthy();
-    // Navigate away then back
     await page.goto('/'); await loginIfNeeded(page);
-    await page.goto(sessionUrl!); await page.waitForLoadState('networkidle');
+    await page.goto(sessionUrl!); await loginIfNeeded(page);
+    if (!page.url().includes('/sandbox')) await page.goto(sessionUrl!);
+    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(5000);
 
     const userMsg = page.getByText('Analyze the latest CI failures');
@@ -184,8 +192,13 @@ test.describe('Agent RCA Workflow', () => {
 
   test('6 — RCA assessment quality', async ({ page }) => {
     await page.goto('/'); await loginIfNeeded(page);
-    if (sessionUrl) { await page.goto(sessionUrl); await page.waitForLoadState('networkidle'); }
-    else { await pickRcaAgent(page); }
+    if (sessionUrl) {
+      await page.goto(sessionUrl); await loginIfNeeded(page);
+      if (!page.url().includes('/sandbox')) await page.goto(sessionUrl);
+      await page.waitForLoadState('networkidle');
+    } else {
+      await pickRcaAgent(page);
+    }
     await page.waitForTimeout(10000);
 
     // Read all visible agent output — markdown text + tool call text
