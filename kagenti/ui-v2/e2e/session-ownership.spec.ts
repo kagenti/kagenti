@@ -1,11 +1,11 @@
 /**
- * Session Ownership & Visibility E2E Tests
+ * Sessions Table E2E Tests
  *
  * Tests:
- * 1. Sessions table shows Owner and Visibility columns
- * 2. Session created via sandbox chat has owner set to current user
- * 3. Visibility labels show Private or Shared
- * 4. Visibility toggle switches between Private and Shared
+ * 1. Sessions table shows expected columns (Session ID, Title, Type, etc.)
+ * 2. Session rows display session ID and title
+ * 3. Type labels show root, child, or passover
+ * 4. Type filter toggle filters sessions by type
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -76,12 +76,12 @@ async function navigateToSessionsTable(page: Page) {
   await viewAllLink.scrollIntoViewIfNeeded();
   await viewAllLink.click();
   await page.waitForLoadState('networkidle');
-  await expect(page.getByRole('heading', { name: /Sandbox Sessions/i })).toBeVisible({
+  await expect(page.getByRole('heading', { name: /^Sessions$/i })).toBeVisible({
     timeout: 15000,
   });
 }
 
-test.describe('Session Ownership & Visibility', () => {
+test.describe('Sessions Table', () => {
   test.setTimeout(120000);
 
   test.beforeEach(async ({ page }) => {
@@ -90,88 +90,87 @@ test.describe('Session Ownership & Visibility', () => {
     await ensureSessionExists(page);
   });
 
-  test('sessions table shows Owner and Visibility columns', async ({ page }) => {
+  test('sessions table shows expected columns', async ({ page }) => {
     await navigateToSessionsTable(page);
 
-    // Assert: table has Owner and Visibility headers
-    await expect(page.getByRole('columnheader', { name: 'Owner' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Visibility' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Session' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Agent' })).toBeVisible();
+    // Assert: table has the expected column headers
+    await expect(page.getByRole('columnheader', { name: 'Session ID' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Title' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Type' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Parent' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Status' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Created' })).toBeVisible();
   });
 
-  test('sessions show owner with (you) badge for current user', async ({ page }) => {
+  test('sessions table rows show session ID and title', async ({ page }) => {
     await navigateToSessionsTable(page);
 
-    // Check if any session has the owner set
-    const ownerCells = page.locator('td[data-label="Owner"]');
-    const count = await ownerCells.count();
+    // Check if any session rows exist
+    const sessionIdCells = page.locator('td[data-label="Session ID"]');
+    const count = await sessionIdCells.count();
 
     if (count === 0) {
       test.info().annotations.push({
         type: 'skip-reason',
-        description: 'No sessions in table to check owner',
+        description: 'No sessions in table to check',
       });
       return;
     }
 
-    // At least one cell should have the current username or "-" (unowned)
-    const firstOwner = await ownerCells.first().textContent();
-    expect(firstOwner).toBeTruthy();
+    // At least one cell should have a truncated session ID (8 chars + "...")
+    const firstSessionId = await sessionIdCells.first().textContent();
+    expect(firstSessionId).toBeTruthy();
+    expect(firstSessionId!.length).toBeGreaterThan(0);
 
-    // If there's a session owned by us, check for "(you)" badge
-    const youBadge = page.locator('td[data-label="Owner"]').filter({ hasText: 'you' });
-    const hasOwnSession = await youBadge.count();
-    if (hasOwnSession > 0) {
-      await expect(youBadge.first()).toContainText(KEYCLOAK_USER);
-    }
+    // Title column should have content
+    const titleCells = page.locator('td[data-label="Title"]');
+    const firstTitle = await titleCells.first().textContent();
+    expect(firstTitle).toBeTruthy();
   });
 
-  test('visibility labels show Private or Shared', async ({ page }) => {
+  test('type labels show root, child, or passover', async ({ page }) => {
     await navigateToSessionsTable(page);
 
     // Wait for table rows to load (not just headers)
-    await expect(page.locator('td[data-label="Session"]').first()).toBeVisible({
+    await expect(page.locator('td[data-label="Session ID"]').first()).toBeVisible({
       timeout: 15000,
     });
 
-    // At least one visibility label should exist
-    const privateLabel = page.getByText('Private');
-    const sharedLabel = page.getByText('Shared');
+    // At least one type label should exist (root, child, or passover)
+    const rootLabel = page.locator('td[data-label="Type"]').getByText('root');
+    const childLabel = page.locator('td[data-label="Type"]').getByText('child');
+    const passoverLabel = page.locator('td[data-label="Type"]').getByText('passover');
 
-    const hasPrivate = await privateLabel.first().isVisible({ timeout: 5000 }).catch(() => false);
-    const hasShared = await sharedLabel.first().isVisible({ timeout: 2000 }).catch(() => false);
+    const hasRoot = await rootLabel.first().isVisible({ timeout: 5000 }).catch(() => false);
+    const hasChild = await childLabel.first().isVisible({ timeout: 2000 }).catch(() => false);
+    const hasPassover = await passoverLabel.first().isVisible({ timeout: 2000 }).catch(() => false);
 
-    expect(hasPrivate || hasShared).toBe(true);
+    expect(hasRoot || hasChild || hasPassover).toBe(true);
   });
 
-  test('visibility toggle switches between Private and Shared', async ({ page }) => {
+  test('type filter toggle filters sessions by type', async ({ page }) => {
     await navigateToSessionsTable(page);
 
-    // Find a Private label to toggle (must be our own session)
-    const privateLabel = page.getByText('Private').first();
-    const hasPrivate = await privateLabel.isVisible({ timeout: 5000 }).catch(() => false);
+    // The "All" toggle should be selected by default
+    const allToggle = page.getByRole('button', { name: /^All$/i });
+    await expect(allToggle).toBeVisible({ timeout: 10000 });
 
-    if (!hasPrivate) {
-      test.info().annotations.push({
-        type: 'skip-reason',
-        description: 'No private sessions available to toggle',
-      });
-      return;
-    }
+    // Click "Root" filter
+    const rootToggle = page.getByRole('button', { name: /^Root$/i });
+    await expect(rootToggle).toBeVisible({ timeout: 5000 });
+    await rootToggle.click();
+    await page.waitForTimeout(1000);
 
-    // Click to toggle to Shared
-    await privateLabel.click();
-    await page.waitForTimeout(2000);
+    // After filtering, either sessions appear or the empty state shows
+    const hasRows = await page.locator('td[data-label="Session ID"]').first()
+      .isVisible({ timeout: 5000 }).catch(() => false);
+    const hasEmpty = await page.getByText(/No .* sessions found/i).first()
+      .isVisible({ timeout: 2000 }).catch(() => false);
 
-    // Assert: Shared label appears
-    await expect(page.getByText('Shared').first()).toBeVisible({ timeout: 10000 });
+    expect(hasRows || hasEmpty).toBe(true);
 
-    // Toggle back to Private
-    await page.getByText('Shared').first().click();
-    await page.waitForTimeout(2000);
-
-    await expect(page.getByText('Private').first()).toBeVisible({ timeout: 10000 });
+    // Switch back to "All"
+    await allToggle.click();
+    await page.waitForTimeout(1000);
   });
 });

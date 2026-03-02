@@ -35,7 +35,8 @@ test.describe('Home Page', () => {
 
     if (await agentLink.isVisible()) {
       await agentLink.click();
-      await expect(page).toHaveURL(/\/agents/);
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/\/agents/, { timeout: 15000 });
     }
   });
 

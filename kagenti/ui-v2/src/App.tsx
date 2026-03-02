@@ -28,6 +28,7 @@ import { SandboxPage } from './pages/SandboxPage';
 import { SandboxCreatePage } from './pages/SandboxCreatePage';
 import { SandboxesPage } from './pages/SandboxesPage';
 import { SessionsTablePage } from './pages/SessionsTablePage';
+import { SessionGraphPage } from './pages/SessionGraphPage';
 import { TriggerManagementPage } from './pages/TriggerManagementPage';
 
 function App() {
@@ -203,6 +204,14 @@ function App() {
           element={
             <ProtectedRoute>
               <SessionsTablePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sandbox/graph"
+          element={
+            <ProtectedRoute>
+              <SessionGraphPage />
             </ProtectedRoute>
           }
         />

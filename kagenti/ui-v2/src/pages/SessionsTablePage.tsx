@@ -58,6 +58,7 @@ export const SessionsTablePage: React.FC = () => {
   const queryClient = useQueryClient();
   const [namespace, setNamespace] = useState<string>('team1');
   const [typeFilter, setTypeFilter] = useState<SessionType>('all');
+  const [searchText, setSearchText] = useState('');
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<any>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -76,13 +77,20 @@ export const SessionsTablePage: React.FC = () => {
 
   const sessions = sessionsResponse?.items ?? [];
 
-  // Filter by session type
-  const filteredSessions = typeFilter === 'all'
-    ? sessions
-    : sessions.filter((s: any) => {
-        const sessionType = s.metadata?.session_type || 'root';
-        return sessionType === typeFilter;
-      });
+  // Filter by session type and search text
+  const filteredSessions = sessions.filter((s: any) => {
+    // Type filter
+    if (typeFilter !== 'all') {
+      const sessionType = s.metadata?.session_type || 'root';
+      if (sessionType !== typeFilter) return false;
+    }
+    // Search by context ID
+    if (searchText.trim()) {
+      const contextId = (s.context_id || s.id || '').toLowerCase();
+      if (!contextId.includes(searchText.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
 
   const deleteMutation = useMutation({
     mutationFn: ({ contextId }: { contextId: string }) =>
@@ -165,6 +173,15 @@ export const SessionsTablePage: React.FC = () => {
               <NamespaceSelector
                 namespace={namespace}
                 onNamespaceChange={setNamespace}
+              />
+            </ToolbarItem>
+            <ToolbarItem>
+              <TextInput
+                type="search"
+                aria-label="Search by context ID"
+                placeholder="Search by context ID"
+                value={searchText}
+                onChange={(_e, value) => setSearchText(value)}
               />
             </ToolbarItem>
             <ToolbarItem>

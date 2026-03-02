@@ -177,7 +177,7 @@ test.describe('Sandbox Delegation - Event Cards', () => {
     await page.getByRole('button', { name: /Send/i }).click();
 
     // Delegation card should appear
-    const delegationCard = page.locator('[data-testid="delegation-card-child-inproc-001"]');
+    const delegationCard = page.locator('[data-testid="delegation-card-child-inproc-001"]').first();
     await expect(delegationCard).toBeVisible({ timeout: 15000 });
 
     // Card should show the delegation mode
@@ -224,7 +224,7 @@ test.describe('Sandbox Delegation - Event Cards', () => {
     await chatInput.fill('Build a PR for the auth feature');
     await page.getByRole('button', { name: /Send/i }).click();
 
-    const delegationCard = page.locator('[data-testid="delegation-card-child-iso-002"]');
+    const delegationCard = page.locator('[data-testid="delegation-card-child-iso-002"]').first();
     await expect(delegationCard).toBeVisible({ timeout: 15000 });
 
     // Should show isolated mode badge
@@ -270,7 +270,7 @@ test.describe('Sandbox Delegation - Event Cards', () => {
     await chatInput.fill('Run the tests on my changes');
     await page.getByRole('button', { name: /Send/i }).click();
 
-    const delegationCard = page.locator('[data-testid="delegation-card-child-shared-003"]');
+    const delegationCard = page.locator('[data-testid="delegation-card-child-shared-003"]').first();
     await expect(delegationCard).toBeVisible({ timeout: 15000 });
 
     // Should show shared-pvc mode
@@ -344,18 +344,18 @@ test.describe('Sandbox Delegation - Multiple Children', () => {
 
     // Both delegation cards should be visible
     await expect(
-      page.locator('[data-testid="delegation-card-child-multi-a"]')
+      page.locator('[data-testid="delegation-card-child-multi-a"]').first()
     ).toBeVisible({ timeout: 15000 });
     await expect(
-      page.locator('[data-testid="delegation-card-child-multi-b"]')
+      page.locator('[data-testid="delegation-card-child-multi-b"]').first()
     ).toBeVisible();
 
     // Both should show results
     await expect(
-      page.locator('[data-testid="delegation-card-child-multi-a"]')
+      page.locator('[data-testid="delegation-card-child-multi-a"]').first()
     ).toContainText('PR #42');
     await expect(
-      page.locator('[data-testid="delegation-card-child-multi-b"]')
+      page.locator('[data-testid="delegation-card-child-multi-b"]').first()
     ).toContainText('PR #43');
   });
 });
@@ -402,7 +402,7 @@ test.describe('Sandbox Delegation - Child Session Link', () => {
     await page.getByRole('button', { name: /Send/i }).click();
 
     // Wait for delegation card
-    const delegationCard = page.locator('[data-testid="delegation-card-child-link-001"]');
+    const delegationCard = page.locator('[data-testid="delegation-card-child-link-001"]').first();
     await expect(delegationCard).toBeVisible({ timeout: 15000 });
 
     // Should have a "View Session" or "Open" link

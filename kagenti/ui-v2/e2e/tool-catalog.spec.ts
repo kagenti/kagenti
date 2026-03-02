@@ -48,8 +48,13 @@ test.describe('Tool Catalog - With Deployed Tools', () => {
   });
 
   test('should display tools table when tools are deployed', async ({ page }) => {
+    await page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/v1/tools') && response.status() === 200,
+      { timeout: 30000 }
+    );
     const table = page.getByRole('table');
-    const emptyState = page.getByText(/No tools found/i);
+    const emptyState = page.getByText(/No tools found/i).first();
     await expect(table.or(emptyState)).toBeVisible({ timeout: 30000 });
   });
 
@@ -76,20 +81,18 @@ test.describe('Tool Catalog - With Deployed Tools', () => {
 
 test.describe('Tool Catalog - API Integration', () => {
   test('should call backend API when loading tools', async ({ page }) => {
-    let apiCalled = false;
-
-    page.on('response', (response) => {
-      if (response.url().includes('/api/v1/tools')) {
-        apiCalled = true;
-      }
-    });
-
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a', { hasText: 'Tools' }).first().click();
-    await page.waitForLoadState('networkidle');
 
-    expect(apiCalled).toBe(true);
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/v1/tools'),
+      { timeout: 30000 }
+    );
+
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+
+    const response = await responsePromise;
+    expect(response.url()).toContain('/api/v1/tools');
   });
 
   test('should handle API error gracefully', async ({ page }) => {
@@ -126,7 +129,7 @@ test.describe('Tool Catalog - API Integration', () => {
     await page.locator('nav a', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/No tools found/i)).toBeVisible({
+    await expect(page.getByText(/No tools found/i).first()).toBeVisible({
       timeout: 10000,
     });
   });

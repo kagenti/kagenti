@@ -154,9 +154,11 @@ function getSessionIdFromUrl(page: Page): string {
 /**
  * Locate all "Tool Call" expandable step blocks.
  * These render with border-left info-color and contain "Tool Call:" text.
+ * We match on the inline border-left style (info-color) to target the
+ * ToolCallStep wrapper div precisely.
  */
 function getToolCallSteps(page: Page) {
-  return page.locator('div').filter({ hasText: /^[\u25B6\u25BC] Tool Call:/ });
+  return page.locator('div[style*="info-color"]').filter({ hasText: /Tool Call:/ });
 }
 
 /**
@@ -164,7 +166,7 @@ function getToolCallSteps(page: Page) {
  * These render with border-left success-color and contain "Result:" text.
  */
 function getResultSteps(page: Page) {
-  return page.locator('div').filter({ hasText: /^[\u25B6\u25BC] Result:/ });
+  return page.locator('div[style*="success-color"]').filter({ hasText: /Result:/ });
 }
 
 /**

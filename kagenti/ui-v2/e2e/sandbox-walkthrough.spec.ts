@@ -112,7 +112,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(
-      page.getByRole('heading', { name: /Sandbox Legion/i })
+      page.getByRole('heading', { name: /sandbox-legion/i })
     ).toBeVisible({ timeout: 15000 });
     markStep('sandbox_navigate');
 
@@ -223,7 +223,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(
-      page.getByRole('heading', { name: /Sandbox Legion/i })
+      page.getByRole('heading', { name: /sandbox-legion/i })
     ).toBeVisible({ timeout: 15000 });
     markStep('sandbox_return_chat');
 

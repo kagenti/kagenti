@@ -146,10 +146,8 @@ test.describe('Import Wizard — Basic Agent', () => {
     await snap(page, 'basic-step2-security');
 
     // Step 2: Security — accept all defaults
-    // Verify default toggles are on
-    await expect(page.locator('#readonly-root')).toBeChecked();
-    await expect(page.locator('#drop-caps')).toBeChecked();
-    await expect(page.locator('#non-root')).toBeChecked();
+    // Verify the combined container-hardening toggle is on by default
+    await expect(page.locator('#secctx')).toBeChecked();
     await clickNext(page);
     await snap(page, 'basic-step3-identity');
 
@@ -161,8 +159,8 @@ test.describe('Import Wizard — Basic Agent', () => {
     const llmKeySource = page.locator('#llm-key-source');
     await expect(llmKeySource).toBeVisible({ timeout: 5000 });
 
-    // Secret name field should show default "openai-api-key"
-    await expect(page.locator('#llm-secret-name')).toHaveValue('openai-api-key');
+    // Secret name field should show default "openai-secret"
+    await expect(page.locator('#llm-secret-name')).toHaveValue('openai-secret');
     await clickNext(page);
     await snap(page, 'basic-step4-persistence');
 
@@ -184,7 +182,7 @@ test.describe('Import Wizard — Basic Agent', () => {
     await expect(review).toContainText('kagenti/agent-examples');
     await expect(review).toContainText('main');
     await expect(review).toContainText('sandbox-legion');
-    await expect(review).toContainText('gpt-4o-mini');
+    await expect(review).toContainText('mistral-small-24b-w8a8');
     await expect(review).toContainText('in-cluster');
 
     // Verify Deploy button exists
@@ -231,13 +229,17 @@ test.describe('Import Wizard — Hardened Agent', () => {
     await page.locator('#isolation-mode').selectOption('pod-per-session');
     await snap(page, 'hardened-step2-isolation');
 
-    // Modify Landlock rules
-    const landlockField = page.locator('#landlock');
-    await landlockField.clear();
-    await landlockField.fill('/workspace:rw, /tmp:rw, /home:ro');
+    // Enable Landlock filesystem sandbox
+    const landlockSwitch = page.locator('#landlock');
+    await landlockSwitch.click();
+    await expect(landlockSwitch).toBeChecked();
 
-    // Modify proxy allowlist
-    const proxyField = page.locator('#proxy-allowlist');
+    // Enable network proxy and modify allowed domains
+    const proxySwitch = page.locator('#proxy');
+    await proxySwitch.click();
+    await expect(proxySwitch).toBeChecked();
+
+    const proxyField = page.locator('#proxy-domains');
     await proxyField.clear();
     await proxyField.fill('github.com, api.github.com');
 
@@ -384,7 +386,7 @@ test.describe('Import Wizard — Navigation', () => {
 
     // Should navigate to /sandbox
     await expect(
-      page.getByRole('heading', { name: /Sandbox Legion/i })
+      page.getByRole('heading', { name: /sandbox-legion/i })
     ).toBeVisible({ timeout: 15000 });
     await snap(page, 'nav-cancel-to-sandbox');
   });

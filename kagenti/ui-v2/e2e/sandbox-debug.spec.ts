@@ -100,7 +100,7 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
 
     // Verify heading
     await expect(
-      page.getByRole('heading', { name: /Sandbox Legion/i })
+      page.getByRole('heading', { name: /sandbox-legion/i })
     ).toBeVisible({ timeout: 15000 });
 
     // ---- Step 3: Verify sidebar ----
