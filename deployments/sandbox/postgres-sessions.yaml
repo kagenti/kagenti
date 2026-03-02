@@ -43,15 +43,13 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: postgres
-        image: bitnami/postgresql:16
+        image: registry.redhat.io/rhel9/postgresql-16:latest
         securityContext:
           runAsNonRoot: true
-          runAsUser: 1001
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: false
           seccompProfile:
@@ -66,7 +64,7 @@ spec:
         env:
         - name: POSTGRESQL_DATABASE
           value: sessions
-        - name: POSTGRESQL_USERNAME
+        - name: POSTGRESQL_USER
           value: kagenti
         - name: POSTGRESQL_PASSWORD
           valueFrom:
@@ -82,7 +80,7 @@ spec:
             memory: 512Mi
         volumeMounts:
         - name: postgres-data
-          mountPath: /bitnami/postgresql
+          mountPath: /var/lib/pgsql/data
   volumeClaimTemplates:
   - metadata:
       name: postgres-data
