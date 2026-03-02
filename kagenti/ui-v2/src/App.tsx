@@ -29,6 +29,7 @@ import { SandboxPage } from './pages/SandboxPage';
 import { SandboxCreatePage } from './pages/SandboxCreatePage';
 import { SandboxesPage } from './pages/SandboxesPage';
 import { SessionsTablePage } from './pages/SessionsTablePage';
+import { TriggerManagementPage } from './pages/TriggerManagementPage';
 
 function App() {
   return (
@@ -131,6 +132,14 @@ function App() {
           element={
             <ProtectedRoute>
               <SessionsTablePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/triggers"
+          element={
+            <ProtectedRoute>
+              <TriggerManagementPage />
             </ProtectedRoute>
           }
         />
