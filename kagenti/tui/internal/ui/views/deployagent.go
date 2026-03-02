@@ -24,6 +24,9 @@ type agentFormValues struct {
 	gitBranch      string
 	createRoute    bool
 	spireEnabled   bool
+	mcpTool        string
+	mcpURLOverride string
+	extraEnvVars   string
 }
 
 // DeployAgentView handles the agent deploy form.
@@ -37,6 +40,7 @@ type DeployAgentView struct {
 	result     *api.CreateAgentResponse
 	err        error
 	namespaces []string
+	tools      []api.ToolSummary
 	vals       *agentFormValues
 }
 
@@ -61,6 +65,10 @@ type agentDeployedMsg struct {
 	err    error
 }
 
+type toolsForAgentMsg struct {
+	tools []api.ToolSummary
+}
+
 // Init fetches namespaces for the form.
 func (v DeployAgentView) Init() tea.Cmd {
 	client := v.client
@@ -81,6 +89,18 @@ func (v DeployAgentView) Update(msg tea.Msg) (DeployAgentView, tea.Cmd) {
 		if len(v.namespaces) == 0 {
 			v.namespaces = []string{"team1", "team2"}
 		}
+		// Fetch available tools before building the form
+		client := v.client
+		return v, func() tea.Msg {
+			resp, err := client.ListTools("")
+			if err != nil {
+				return toolsForAgentMsg{}
+			}
+			return toolsForAgentMsg{tools: resp.Items}
+		}
+
+	case toolsForAgentMsg:
+		v.tools = msg.tools
 		v.buildForm()
 		return v, v.form.Init()
 
@@ -134,6 +154,17 @@ func (v DeployAgentView) Update(msg tea.Msg) (DeployAgentView, tea.Cmd) {
 	return v, nil
 }
 
+// mcpToolURL generates the in-cluster service URL for an MCP tool.
+func mcpToolURL(tool api.ToolSummary) string {
+	path := "/mcp"
+	switch tool.Labels.Protocol {
+	case "sse":
+		path = "/sse"
+	}
+	return fmt.Sprintf("http://%s-mcp.%s.svc.cluster.local:8000%s",
+		tool.Name, tool.Namespace, path)
+}
+
 func (v *DeployAgentView) buildForm() {
 	nsOptions := make([]huh.Option[string], len(v.namespaces))
 	for i, ns := range v.namespaces {
@@ -151,6 +182,16 @@ func (v *DeployAgentView) buildForm() {
 	}
 
 	fv := v.vals
+
+	// Build tool select options
+	toolOptions := []huh.Option[string]{huh.NewOption("None", "")}
+	for _, t := range v.tools {
+		label := t.Name
+		if t.Namespace != "" {
+			label += " (" + t.Namespace + ")"
+		}
+		toolOptions = append(toolOptions, huh.NewOption(label, t.Name))
+	}
 
 	v.form = huh.NewForm(
 		huh.NewGroup(
@@ -226,12 +267,64 @@ func (v *DeployAgentView) buildForm() {
 				Title("Enable SPIRE Identity?").
 				Value(&fv.spireEnabled),
 		).Title("Networking"),
+
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Connect to MCP Tool").
+				Description("Auto-generates MCP_URL from tool's in-cluster service").
+				Options(toolOptions...).
+				Value(&fv.mcpTool),
+			huh.NewInput().
+				Title("MCP URL Override").
+				Description("Leave empty to auto-generate, or enter a custom URL").
+				Value(&fv.mcpURLOverride),
+			huh.NewInput().
+				Title("Extra Env Vars").
+				Description("KEY=VALUE pairs, comma-separated (optional)").
+				Value(&fv.extraEnvVars),
+		).Title("Environment"),
 	).WithWidth(v.width - 4)
+}
+
+// parseEnvVars builds the env var list from form values.
+func parseEnvVars(mcpURL, extraEnvVars string) []api.EnvVar {
+	var envVars []api.EnvVar
+	if mcpURL != "" {
+		envVars = append(envVars, api.EnvVar{Name: "MCP_URL", Value: mcpURL})
+	}
+	if extraEnvVars != "" {
+		for _, pair := range strings.Split(extraEnvVars, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			parts := strings.SplitN(pair, "=", 2)
+			if len(parts) == 2 {
+				envVars = append(envVars, api.EnvVar{
+					Name:  strings.TrimSpace(parts[0]),
+					Value: strings.TrimSpace(parts[1]),
+				})
+			}
+		}
+	}
+	return envVars
 }
 
 func (v *DeployAgentView) deploy() tea.Cmd {
 	client := v.client
 	fv := v.vals
+
+	// Resolve MCP_URL: explicit override wins, otherwise generate from selected tool
+	mcpURL := fv.mcpURLOverride
+	if mcpURL == "" && fv.mcpTool != "" {
+		for _, t := range v.tools {
+			if t.Name == fv.mcpTool {
+				mcpURL = mcpToolURL(t)
+				break
+			}
+		}
+	}
+
 	req := &api.CreateAgentRequest{
 		Name:              fv.name,
 		Namespace:         fv.namespace,
@@ -245,6 +338,7 @@ func (v *DeployAgentView) deploy() tea.Cmd {
 		CreateHTTPRoute:   fv.createRoute,
 		AuthBridgeEnabled: true,
 		SpireEnabled:      fv.spireEnabled,
+		EnvVars:           parseEnvVars(mcpURL, fv.extraEnvVars),
 	}
 	return func() tea.Msg {
 		resp, err := client.CreateAgent(req)
@@ -283,6 +377,24 @@ func (v DeployAgentView) View() string {
 
 	if v.form != nil && !v.submitted {
 		b.WriteString(v.form.View())
+
+		// Live preview of the MCP_URL that will be injected
+		if v.vals != nil {
+			var previewURL string
+			if v.vals.mcpURLOverride != "" {
+				previewURL = v.vals.mcpURLOverride
+			} else if v.vals.mcpTool != "" {
+				for _, t := range v.tools {
+					if t.Name == v.vals.mcpTool {
+						previewURL = mcpToolURL(t)
+						break
+					}
+				}
+			}
+			if previewURL != "" {
+				b.WriteString("\n" + theme.LabelStyle.Render("  MCP_URL → ") + theme.MutedStyle.Render(previewURL))
+			}
+		}
 	}
 
 	return b.String()

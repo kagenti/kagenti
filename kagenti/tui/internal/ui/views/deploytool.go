@@ -26,6 +26,7 @@ type toolFormValues struct {
 	workloadType   string
 	createRoute    bool
 	spireEnabled   bool
+	extraEnvVars   string
 }
 
 // DeployToolView handles the tool deploy form.
@@ -220,6 +221,13 @@ func (v *DeployToolView) buildForm() {
 				Title("Enable SPIRE Identity?").
 				Value(&fv.spireEnabled),
 		).Title("Networking"),
+
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Env Vars").
+				Description("KEY=VALUE pairs, comma-separated (optional)").
+				Value(&fv.extraEnvVars),
+		).Title("Environment"),
 	).WithWidth(v.width - 4)
 }
 
@@ -239,6 +247,7 @@ func (v *DeployToolView) deploy() tea.Cmd {
 		GitRevision:      fv.gitRevision,
 		CreateHTTPRoute:  fv.createRoute,
 		SpireEnabled:     fv.spireEnabled,
+		EnvVars:          parseEnvVars("", fv.extraEnvVars),
 	}
 	return func() tea.Msg {
 		resp, err := client.CreateTool(req)
