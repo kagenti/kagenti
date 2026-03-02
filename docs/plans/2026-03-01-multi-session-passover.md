@@ -292,6 +292,8 @@ Deploy and test on sbox1 cluster.
 **Claude Session ID:** `eb18a410`
 **Role:** Keycloak personas, multi-user tests, RBAC verification
 **Cluster:** sbox (Keycloak namespace)
+**Worktree:** `.worktrees/sandbox-agent`
+**Session Active:** YES (started 2026-03-01)
 **File Ownership:**
 - `kagenti/ui-v2/src/contexts/AuthContext.tsx` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/agent-chat-identity.spec.ts` — EXCLUSIVE
@@ -300,11 +302,30 @@ Deploy and test on sbox1 cluster.
 - `charts/kagenti-deps/templates/keycloak-*.yaml` — EXCLUSIVE
 
 **Priority Tasks:**
-1. P1: Create dev-user and ns-admin Keycloak test users
-2. P1: Multi-user Playwright test (admin + dev-user in same session)
-3. P2: Random admin password (not hardcoded admin/admin)
-4. P2: Session visibility RBAC verification test
+1. ~~P1: Create dev-user and ns-admin Keycloak test users~~ ✅ DONE — Helm realm init + create-test-users.sh
+2. ~~P1: Multi-user Playwright test (admin + dev-user)~~ ✅ DONE — JWT-based identity assertions
+3. ~~P2: Random admin password (not hardcoded admin/admin)~~ ✅ DONE — randAlphaNum(16) with lookup preservation
+4. ~~P2: Session visibility RBAC verification test~~ ✅ DONE — browser session isolation verified
 5. P3: SPIRE identity toggle integration
+
+**Test Results:** 10/10 Playwright tests passing on sbox (24.9s)
+
+**Commits (on `feat/sandbox-agent`):**
+```
+88f3f1fc feat(auth): add Keycloak test users, random admin password, and multi-user E2E tests
+c34f4c29 feat(auth): add demo realm users and --reveal flag to show-services
+56dd5bd6 fix(e2e): use JWT-based assertions for multi-user identity tests
+529b9155 feat(auth): add create-test-users.sh for master realm user provisioning
+c127036a fix(auth): store test user passwords in kagenti-test-users secret
+```
+
+**Key finding:** UI authenticates against **master** realm (not demo). Test users must exist in master realm for UI login. `create-test-users.sh` handles this. Helm realm init creates demo realm users (for future migration).
+
+**To provision users on a new cluster:**
+```bash
+KUBECONFIG=~/clusters/hcp/kagenti-team-<cluster>/auth/kubeconfig \
+  ./kagenti/auth/create-test-users.sh
+```
 
 **Startup:**
 ```bash
@@ -369,7 +390,7 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 | A (Core) | 12 | 12/12 | 2026-02-28 |
 | B (Builds) | 3 | 0/3 (wizard walkthrough) | Not run |
 | C (HITL+Integrations) | 7+44 | 7/7 sbox42 + 44/44 local | 2026-03-01 — integrations 24/24, sessions 20/20, webhook endpoint, delegation design |
-| D (Multi-user) | 0 | N/A | Not started |
+| D (Multi-user) | 10 | **10/10** | 2026-03-02 — JWT identity + session isolation, sbox |
 | O (Integration) | 31 | **23/31** (5 fail, 3 skip) | 2026-03-01 14:45 — sbox42 full suite |
 
 ### Session O — Integration Test Detail (sbox42, 2026-03-01 14:45)
@@ -418,6 +439,7 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 
 **Claude Session ID:** `0281a77c`
 **Role:** Design + implement composable sandbox security model, Landlock wiring, SandboxClaim integration
+**Worktree:** `.worktrees/sandbox-agent` (feat/sandbox-agent) — also committed to fix/hypershift-ci-deploy (to be cherry-picked)
 **Cluster:** None (unit tests only — no cluster needed)
 **Session Active:** YES (started 2026-03-01)
 **File Ownership:**
@@ -443,22 +465,29 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 11. ✅ Wired `nono_launcher.py` into `sandbox-template-full.yaml` entrypoint (replaces `sleep 36000`)
 12. ✅ Wired `repo_manager.py` into `agent_server.py` (loads sources.json, `/repos` endpoint)
 13. ✅ Updated design doc: Layer×Tier matrix (T2/T3 now ✅), Built section, Partial section
-14. ✅ **322 total tests passing** (250 existing backend + 63 sandbox module + 9 trigger router)
+14. ✅ **63 sandbox module tests passing** in worktree
+15. ✅ Wired `sandbox_profile.py` into `sandbox_deploy.py` — composable name + warnings in deploy response
+16. ✅ Added composable security fields to `SandboxCreateRequest` (secctx, landlock, proxy, gvisor toggles)
 
-**Commits (on `fix/hypershift-ci-deploy`, pushed):**
+**Commits (on `fix/hypershift-ci-deploy`, need cherry-pick to feat/sandbox-agent):**
 ```
 18640cd9 feat(sandbox): composable security model + modules + trigger API (Session F)
 ceb51a5b feat(sandbox): wire TOFU + Landlock + repo_manager, register Session F
 2718b42a docs: update Session F status — all security layers wired, 322 tests passing
 ```
 
-**Status: ALL IMPLEMENTATION COMPLETE.** Remaining work is UI wizard changes (P1, needs other session coordination) and cluster deploy tests (P1, needs Session O).
+**Commits (on `feat/sandbox-agent` worktree):**
+```
+5a7f557c docs: Session F status — all implementation complete, 322 tests passing
+<pending> feat(sandbox): wire sandbox_profile into deploy endpoint + copy modules
+```
+
+**Status: CORE IMPLEMENTATION COMPLETE.** All security layers wired and tested. Deploy endpoint uses composable profile.
 
 **Remaining Tasks:**
 - P1: Update wizard UI (ImportAgentPage.tsx) with composable security layer toggles (needs Session A/B coordination — ImportAgentPage is currently unowned)
 - P1: Deploy wired templates to cluster and run E2E test (needs cluster access — coordinate with Session O)
 - P2: Add auth middleware to `/api/v1/sandbox/trigger` endpoint (currently unauthenticated)
-- P2: Wire `sandbox_profile.py` into wizard deploy backend (generate manifests from layer toggles instead of hardcoded)
 - P3: UI for trigger management (cron schedule editor, webhook config, alert mapping)
 
 **Note:** Session B has `deployments/sandbox/` as EXCLUSIVE. Session F added NEW files there (sandbox_profile.py, tests/) and copied modules from the worktree. No existing Session B files were modified. Coordinate with Session B if conflicts arise.

@@ -10,6 +10,8 @@ via the Kubernetes Python client. Mirrors the resources created by
 """
 
 import logging
+import sys
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +20,13 @@ from pydantic import BaseModel
 
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.utils.routes import create_route_for_agent_or_tool, detect_platform
+
+# Add deployments/sandbox to path for SandboxProfile
+_sandbox_dir = Path(__file__).parents[4] / "deployments" / "sandbox"
+if str(_sandbox_dir) not in sys.path:
+    sys.path.insert(0, str(_sandbox_dir))
+
+from sandbox_profile import SandboxProfile  # pylint: disable=wrong-import-position
 
 logger = logging.getLogger(__name__)
 
@@ -37,21 +46,51 @@ class SandboxCreateRequest(BaseModel):
     branch: str = "main"
     context_dir: str = "/"
     dockerfile: str = "Dockerfile"
-    variant: str = "sandbox-legion"
+    base_agent: str = "sandbox-legion"
     model: str = "gpt-4o-mini"
     namespace: str = "team1"
     enable_persistence: bool = True
     isolation_mode: str = "shared"  # shared or pod-per-session
-    proxy_allowlist: str = "github.com, api.openai.com, pypi.org"
+    workspace_size: str = "5Gi"
+    # Composable security layers (Session F)
+    secctx: bool = True
+    landlock: bool = False
+    proxy: bool = False
+    gvisor: bool = False
+    proxy_domains: Optional[str] = None
+    # Deployment mechanism
+    managed_lifecycle: bool = False
+    ttl_hours: int = 2
+    # Legacy fields (kept for backwards compat)
     non_root: bool = True
     drop_caps: bool = True
     read_only_root: bool = False
-    workspace_size: str = "5Gi"
+    proxy_allowlist: str = "github.com, api.openai.com, pypi.org"
     # Credentials
     github_pat: Optional[str] = None
     llm_api_key: Optional[str] = None
     llm_key_source: str = "existing"  # "existing" or "new"
     llm_secret_name: str = "openai-secret"
+
+    @property
+    def profile(self) -> SandboxProfile:
+        """Build a SandboxProfile from this request's security toggles."""
+        return SandboxProfile(
+            base_agent=self.base_agent,
+            secctx=self.secctx,
+            landlock=self.landlock,
+            proxy=self.proxy,
+            gvisor=self.gvisor,
+            managed_lifecycle=self.managed_lifecycle,
+            ttl_hours=self.ttl_hours,
+            namespace=self.namespace,
+            proxy_domains=self.proxy_domains,
+        )
+
+    @property
+    def composable_name(self) -> str:
+        """Self-documenting agent name from active layers."""
+        return self.profile.name
 
 
 class SandboxCreateResponse(BaseModel):
@@ -60,6 +99,8 @@ class SandboxCreateResponse(BaseModel):
     status: str  # "deploying", "ready", "failed"
     message: str
     agent_url: Optional[str] = None
+    composable_name: Optional[str] = None
+    security_warnings: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +317,17 @@ async def create_sandbox(
     # Override namespace from the path parameter
     request.namespace = namespace
 
+    # --- Composable security profile (Session F) ---
+    profile = request.profile
+    composable_name = profile.name
+    security_warnings = profile.warnings
+    if security_warnings:
+        logger.warning(
+            "Security warnings for '%s': %s",
+            composable_name,
+            "; ".join(security_warnings),
+        )
+
     # --- Create credential Secrets when the user provides new values ---
     managed_labels = {
         "app.kubernetes.io/managed-by": "kagenti-ui",
@@ -379,6 +431,8 @@ async def create_sandbox(
 
     return SandboxCreateResponse(
         status="deploying",
-        message=f"Sandbox agent '{request.name}' is being deployed in namespace '{namespace}'",
+        message=f"Sandbox agent '{request.name}' ({composable_name}) is being deployed in namespace '{namespace}'",
+        composable_name=composable_name,
+        security_warnings=security_warnings,
         agent_url=agent_url,
     )

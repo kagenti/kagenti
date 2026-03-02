@@ -29,12 +29,18 @@ sys.path.insert(0, "/tmp/pip-packages")
 
 from skills_loader import SkillsLoader
 
+try:
+    from repo_manager import RepoManager
+except ImportError:
+    RepoManager = None
+
 
 class AgentHandler(BaseHTTPRequestHandler):
     """Simple HTTP handler for agent interaction."""
 
     loader: SkillsLoader = None  # Set by server setup
     model: str = "openai/gpt-4o-mini"
+    repo_manager: "RepoManager | None" = None  # Set by server setup
 
     def do_POST(self):
         """Handle agent query."""
@@ -92,14 +98,25 @@ class AgentHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send_json(200, {"status": "ok"})
         elif self.path == "/info":
+            info = {
+                "model": self.model,
+                "workspace": str(self.loader.workspace),
+                "claude_md": self.loader.claude_md is not None,
+                "skills": self.loader.list_skills(),
+                "skills_count": len(self.loader.skills),
+            }
+            if self.repo_manager:
+                info["repos"] = self.repo_manager.list_repos_on_disk()
+            self._send_json(200, info)
+        elif self.path == "/repos":
+            if not self.repo_manager:
+                self._send_json(503, {"error": "repo_manager not available"})
+                return
             self._send_json(
                 200,
                 {
-                    "model": self.model,
-                    "workspace": str(self.loader.workspace),
-                    "claude_md": self.loader.claude_md is not None,
-                    "skills": self.loader.list_skills(),
-                    "skills_count": len(self.loader.skills),
+                    "cloned": self.repo_manager.list_cloned(),
+                    "on_disk": self.repo_manager.list_repos_on_disk(),
                 },
             )
         else:
@@ -130,9 +147,24 @@ def main():
     )
     print(f"Model: {model}")
 
+    # Initialize repo manager (if sources.json exists)
+    repo_mgr = None
+    if RepoManager is not None:
+        sources_path = os.path.join(workspace, "sources.json")
+        if os.path.exists(sources_path):
+            repo_mgr = RepoManager(workspace, sources_path)
+            print(
+                f"RepoManager: loaded ({len(repo_mgr.allowed_remotes)} allowed patterns)"
+            )
+        else:
+            print("RepoManager: no sources.json found (permissive mode)")
+    else:
+        print("RepoManager: not available (repo_manager module missing)")
+
     # Configure handler
     AgentHandler.loader = loader
     AgentHandler.model = model
+    AgentHandler.repo_manager = repo_mgr
 
     # Start server
     server = HTTPServer(("0.0.0.0", port), AgentHandler)
