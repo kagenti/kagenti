@@ -590,6 +590,70 @@ Old pod still serving (not crashed). New builds crash on startup.
 3. **Phase 3** — Restricted: sandbox-restricted + Squid proxy. Verify agent can reach GitHub.
 4. **Phase 4** — Sub-agent delegation: verify child sessions appear (depends on Session E).
 
+**Startup:**
+```bash
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
+cd .worktrees/sandbox-agent
+claude
+
+Read docs/plans/2026-03-01-multi-session-passover.md. You are Session G (RCA Workflow Testing).
+Run e2e/agent-rca-workflow.spec.ts Phase 1 on sbox42. Fix failures, iterate to green.
+Leave agent + sessions deployed for UI inspection. Add your session ID to this doc.
+```
+
+---
+
+### Session H — Sandbox File Browser
+
+**Claude Session ID:** (to be assigned)
+**Role:** Build file browser UI for exploring sandbox agent workspaces
+**Cluster:** sbox (for testing)
+**File Ownership:**
+- `kagenti/ui-v2/src/components/FileBrowser.tsx` — EXCLUSIVE (new)
+- `kagenti/ui-v2/src/components/FilePreview.tsx` — EXCLUSIVE (new)
+- `kagenti/backend/app/routers/sandbox_files.py` — EXCLUSIVE (new)
+- `kagenti/ui-v2/e2e/sandbox-file-browser.spec.ts` — EXCLUSIVE (new)
+
+**Design:**
+- Tree view of sandbox workspace (`/workspace` directory in agent pod)
+- Split layout: file tree (left) + preview panel (right)
+- .md files: full markdown preview (ReactMarkdown + remarkGfm)
+- Code files: syntax highlighting
+- Clickable file paths in session chat → opens file browser
+- Breadcrumb navigation (/ > workspace > src > file.py)
+- File metadata: size, modified time
+
+**Backend:**
+- `GET /api/v1/sandbox/{namespace}/files/{agent_name}?path=/workspace` — directory listing or file content
+- Implementation: kubectl exec into agent pod, run `ls -la` or `cat`
+- Auth: `require_roles(ROLE_VIEWER)`
+
+**Integration points (Cross-Session TODO needed):**
+- Session A: Add file browser link/button in SandboxPage chat (when agent mentions file paths)
+- Session C: Add "Files" tab or nav link to Sessions page
+
+**Priority Tasks:**
+1. P0: Brainstorm UI layout (use `superpowers:brainstorming` skill)
+2. P1: Backend endpoint — pod exec for file listing + content
+3. P1: FileBrowser component — tree view + FilePreview
+4. P2: Markdown preview with full rendering
+5. P2: Wire into Sessions page (link from chat messages)
+6. P3: Playwright tests
+
+**Startup:**
+```bash
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox/auth/kubeconfig
+cd .worktrees/sandbox-agent
+claude
+
+Read docs/plans/2026-03-01-multi-session-passover.md. You are Session H (Sandbox File Browser).
+Build a file browser for exploring sandbox agent workspaces.
+Start by brainstorming the UI layout, then implement backend + frontend.
+Do NOT modify other sessions' files. Add your session ID to this doc.
+```
+
 ---
 
 ## Priority Order
@@ -601,3 +665,4 @@ Old pod still serving (not crashed). New builds crash on startup.
 5. **Session 42**: Re-run full suite after B fixes path crash
 6. **Session F**: Deploy nono launcher + Landlock to cluster for testing
 7. **Session G**: Run RCA workflow test Phase 1 on sbox42, iterate to green
+8. **Session H**: Brainstorm file browser UI, then implement backend + frontend
