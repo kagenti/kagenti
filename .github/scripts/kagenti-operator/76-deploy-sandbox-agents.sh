@@ -42,22 +42,59 @@ run_with_timeout 120 "kubectl rollout status statefulset/postgres-sessions -n $N
 log_success "postgres-sessions running"
 
 # ============================================================================
-# Step 2: Build shared sandbox-agent image via Shipwright
+# Step 2: Build shared sandbox-agent image
 # ============================================================================
+# Uses OpenShift BuildConfig (Docker strategy with noCache: true) to avoid
+# buildah layer caching issues. Falls back to Shipwright if OCP builds
+# are not available.
 
 log_info "Building sandbox-agent image (shared by all variants)..."
-kubectl delete build sandbox-agent -n "$NAMESPACE" --ignore-not-found 2>/dev/null || true
-sleep 2
-kubectl apply -f "$AGENTS_DIR/sandbox_agent_shipwright_build_ocp.yaml"
 
-run_with_timeout 60 "kubectl get builds.shipwright.io sandbox-agent -n $NAMESPACE" || {
-    log_error "Shipwright Build not found after 60 seconds"
-    kubectl get builds.shipwright.io -n "$NAMESPACE" 2>&1 || echo "  (none)"
-    exit 1
-}
+if [ "$IS_OPENSHIFT" = "true" ] && oc api-resources --api-group=build.openshift.io 2>/dev/null | grep -q BuildConfig; then
+    # ── OpenShift BuildConfig (preferred — no layer caching) ──
+    log_info "Using OpenShift BuildConfig (Docker strategy, noCache)..."
 
-log_info "Triggering BuildRun..."
-BUILDRUN_NAME=$(kubectl create -f - -o jsonpath='{.metadata.name}' <<EOF
+    # Create ImageStream if it doesn't exist
+    oc create imagestream sandbox-agent -n "$NAMESPACE" 2>/dev/null || true
+
+    # Apply BuildConfig
+    kubectl apply -f "$AGENTS_DIR/sandbox_agent_buildconfig_ocp.yaml"
+
+    # Start build and follow logs
+    log_info "Starting build (this may take a few minutes)..."
+    BUILD_NAME=$(oc start-build sandbox-agent -n "$NAMESPACE" -o name 2>&1) || {
+        log_error "Failed to start build"
+        exit 1
+    }
+    log_info "Build: $BUILD_NAME"
+
+    # Wait for build to complete
+    run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete --timeout=600s $BUILD_NAME -n $NAMESPACE" || {
+        BUILD_PHASE=$(oc get "$BUILD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        if [ "$BUILD_PHASE" = "Complete" ]; then
+            log_info "Build completed (status race condition). Proceeding..."
+        else
+            log_error "Build did not complete (phase: $BUILD_PHASE)"
+            oc logs "$BUILD_NAME" -n "$NAMESPACE" 2>&1 | tail -30 || true
+            exit 1
+        fi
+    }
+    log_success "sandbox-agent image built (OpenShift BuildConfig)"
+
+else
+    # ── Shipwright fallback (non-OpenShift or no Build API) ──
+    log_info "Using Shipwright Build (fallback)..."
+    kubectl delete build sandbox-agent -n "$NAMESPACE" --ignore-not-found 2>/dev/null || true
+    sleep 2
+    kubectl apply -f "$AGENTS_DIR/sandbox_agent_shipwright_build_ocp.yaml"
+
+    run_with_timeout 60 "kubectl get builds.shipwright.io sandbox-agent -n $NAMESPACE" || {
+        log_error "Shipwright Build not found after 60 seconds"
+        exit 1
+    }
+
+    log_info "Triggering BuildRun..."
+    BUILDRUN_NAME=$(kubectl create -f - -o jsonpath='{.metadata.name}' <<EOF
 apiVersion: shipwright.io/v1beta1
 kind: BuildRun
 metadata:
@@ -67,31 +104,18 @@ spec:
   build:
     name: sandbox-agent
 EOF
-)
-log_info "BuildRun: $BUILDRUN_NAME"
+    )
+    log_info "BuildRun: $BUILDRUN_NAME"
 
-log_info "Waiting for build (this may take a few minutes)..."
-run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buildrun/$BUILDRUN_NAME -n $NAMESPACE" || {
-    log_error "BuildRun did not succeed"
-
-    FAILURE_REASON=$(kubectl get buildrun "$BUILDRUN_NAME" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || echo "")
-    if [ "$FAILURE_REASON" = "TaskRunStopSidecarFailed" ]; then
-        IMAGE_EXISTS=$(kubectl get imagestreamtag sandbox-agent:v0.0.1 -n "$NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
-        if [ "$IMAGE_EXISTS" = "yes" ]; then
-            log_info "Image built despite sidecar cleanup failure. Proceeding..."
-        else
-            log_error "Image not found. Build failed."
-            BUILD_POD=$(kubectl get pods -n "$NAMESPACE" -l build.shipwright.io/name=sandbox-agent --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
-            [ -n "$BUILD_POD" ] && kubectl logs -n "$NAMESPACE" "$BUILD_POD" --all-containers=true 2>&1 | tail -50 || true
-            exit 1
-        fi
-    else
+    log_info "Waiting for build..."
+    run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buildrun/$BUILDRUN_NAME -n $NAMESPACE" || {
+        log_error "BuildRun did not succeed"
         BUILD_POD=$(kubectl get pods -n "$NAMESPACE" -l build.shipwright.io/name=sandbox-agent --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
-        [ -n "$BUILD_POD" ] && kubectl logs -n "$NAMESPACE" "$BUILD_POD" --all-containers=true 2>&1 | tail -50 || true
+        [ -n "$BUILD_POD" ] && kubectl logs -n "$NAMESPACE" "$BUILD_POD" --all-containers=true 2>&1 | tail -30 || true
         exit 1
-    fi
-}
-log_success "sandbox-agent image built"
+    }
+    log_success "sandbox-agent image built (Shipwright)"
+fi
 
 # ============================================================================
 # Step 3: Deploy all sandbox agent variants

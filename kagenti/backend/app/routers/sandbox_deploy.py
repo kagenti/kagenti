@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from kubernetes.client import ApiException
 from pydantic import BaseModel
 
@@ -26,7 +26,7 @@ _sandbox_dir = Path(__file__).parents[4] / "deployments" / "sandbox"
 if str(_sandbox_dir) not in sys.path:
     sys.path.insert(0, str(_sandbox_dir))
 
-from sandbox_profile import SandboxProfile  # pylint: disable=wrong-import-position
+from sandbox_profile import SandboxProfile  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order
 
 logger = logging.getLogger(__name__)
 
