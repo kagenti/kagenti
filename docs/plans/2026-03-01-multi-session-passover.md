@@ -193,13 +193,11 @@ npx playwright test e2e/agent-chat.spec.ts e2e/agent-chat-identity.spec.ts \
 
 ## Session Fix Instructions
 
-### Session A: Fix sandbox.spec.ts timeouts (10 failures)
-Tests have `loginIfNeeded()` but still timeout. Investigate:
-- Health check: "should have no error alerts" — timeout 1m
-- Navigation: "should have Sessions in nav" — timeout 1m
-- Chat: "should send a chat message" — timeout 2m
-- Sessions table: "should display/search" — timeout 23s
-Likely cause: tests wait for elements that load slowly or have changed selectors.
+### Session A: ~~Fix sandbox.spec.ts timeouts (10 failures)~~ ✅ FIXED (e6eb9b8b)
+Root cause: stale selectors — heading "Sandbox Legion" → actual "sandbox-legion" (hyphen),
+"Sandbox Sessions" → "Sessions", Advanced Config panel disabled. Also: assertNoFailedSessions
+was strict (prior runs leave state), switched to shared auth helper.
+- sandbox-sessions.spec.ts title test also improved (iterates items, better logging)
 
 ### Session B: Fix rendering tests (1+3 failures)
 Root cause: `event_serializer.py` not in agent image → agent emits Python repr, not JSON.
