@@ -158,21 +158,54 @@ npx playwright test e2e/agent-chat.spec.ts e2e/agent-chat-identity.spec.ts \
   --reporter=list
 ```
 
-| Category | Passing | Failing | Root Cause |
-|----------|---------|---------|------------|
-| Agent chat (identity, HITL) | 9 | 0 | — |
-| Session ownership | 4 | 0 | — |
-| Sandbox chat identity | 3 | 0 | — |
-| Sandbox sessions (multi-turn) | 4 | 1 | Session ID not in URL after reload |
-| Sandbox rendering (tool calls) | 0 | 3 | Tool call steps not flushed during streaming |
-| **Total** | **20** | **4** | |
+| File | Tests | Pass | Fail | Owner | Root Cause |
+|------|-------|------|------|-------|------------|
+| integrations.spec.ts | 24 | 24 | 0 | Session C | — |
+| sessions-table.spec.ts | 20 | 20 | 0 | Session C | — |
+| agent-chat-identity.spec.ts | 10 | 6 | 4 | **Session D** | dev-user/ns-admin not in Keycloak |
+| sandbox-create-walkthrough.spec.ts | 6 | 5 | 1 | Session B | Wizard test |
+| home.spec.ts | 6 | 6 | 0 | Fixed | Auth added |
+| sandbox.spec.ts | 14 | 4 | 10 | **Session A** | Timeouts, needs investigation |
+| sandbox-variants.spec.ts | 4 | 4 | 0 | Session A | — |
+| sandbox-chat-identity.spec.ts | 3 | 3 | 0 | Session C | — |
+| agent-chat.spec.ts | 3 | 3 | 0 | Shared | — |
+| sandbox-sessions.spec.ts | 6 | 5 | 1 | **Session A** | Title in sidebar test |
+| agent-catalog.spec.ts | 12 | ? | ? | Fixed | Auth added (rerun needed) |
+| tool-catalog.spec.ts | 9 | ? | ? | Fixed | Auth added (rerun needed) |
+| session-ownership.spec.ts | 4 | ? | ? | Fixed | Creates session first now |
+| sandbox-rendering.spec.ts | 4 | 0 | 1+3skip | **Session B** | Serializer not in agent image |
+| sandbox-walkthrough.spec.ts | 1 | 0 | 1 | Session B | Auth/nav issue |
+| sandbox-debug.spec.ts | 1 | 0 | 1 | Debug | — |
+| test-sse-debug.spec.ts | 1 | 1 | 0 | Debug | — |
+
+---
+
+## Session Fix Instructions
+
+### Session A: Fix sandbox.spec.ts timeouts (10 failures)
+Tests have `loginIfNeeded()` but still timeout. Investigate:
+- Health check: "should have no error alerts" — timeout 1m
+- Navigation: "should have Sessions in nav" — timeout 1m
+- Chat: "should send a chat message" — timeout 2m
+- Sessions table: "should display/search" — timeout 23s
+Likely cause: tests wait for elements that load slowly or have changed selectors.
+
+### Session B: Fix rendering tests (1+3 failures)
+Root cause: `event_serializer.py` not in agent image → agent emits Python repr, not JSON.
+Fix: Include serializer in pyproject.toml or Dockerfile, rebuild agent image.
+Once fixed, tool call steps will render and all 4 rendering tests should pass.
+
+### Session D: Fix multi-user tests (4 failures)
+Root cause: `dev-user` and `ns-admin` not provisioned in Keycloak.
+Fix: Ensure `create-test-users.sh` runs during cluster setup, or add realm-init job.
+Tests: `agent-chat-identity.spec.ts` lines 394, 433, 469, 508.
 
 ---
 
 ## Priority Order
 
-1. **Session B**: Fix source builds → deploy serializer → unblocks tool call rendering
-2. **Session A**: Fix tool call step flushing → fix 3 rendering test failures
-3. **Session A**: Wire HITL approve/deny to graph.resume()
-4. **Session C**: Integrations hub UI pages
-5. **Session A**: Multi-user E2E test + second Keycloak user
+1. **Session B**: Fix agent image (serializer) → unblocks 4 rendering tests
+2. **Session A**: Fix sandbox.spec.ts timeouts (10 tests)
+3. **Session D**: Provision Keycloak test users → unblocks 4 multi-user tests
+4. **Session A**: Session title in sidebar (1 test)
+5. **Session C**: Already all passing (44/44)
