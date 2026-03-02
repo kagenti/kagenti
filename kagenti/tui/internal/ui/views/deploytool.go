@@ -85,6 +85,13 @@ func (v DeployToolView) Update(msg tea.Msg) (DeployToolView, tea.Cmd) {
 		v.deploying = false
 		v.result = msg.result
 		v.err = msg.err
+		// Navigate to tool detail on success
+		if msg.err == nil && msg.result != nil && msg.result.Success {
+			name := msg.result.Name
+			return v, func() tea.Msg {
+				return NavigateMsg{Target: "tool-detail", Name: name}
+			}
+		}
 		return v, nil
 
 	case tea.KeyMsg:

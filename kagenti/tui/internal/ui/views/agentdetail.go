@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -20,6 +21,7 @@ type AgentDetailView struct {
 	name    string
 	detail  map[string]any
 	err     error
+	polling bool
 }
 
 // NewAgentDetailView creates a new agent detail view.
@@ -43,8 +45,11 @@ type agentDetailMsg struct {
 	err    error
 }
 
+type agentPollTickMsg struct{}
+
 // Init fetches agent detail.
 func (v AgentDetailView) Init() tea.Cmd {
+	v.polling = true
 	client := v.client
 	name := v.name
 	return func() tea.Msg {
@@ -58,13 +63,44 @@ func (v AgentDetailView) Init() tea.Cmd {
 
 // Update handles messages.
 func (v AgentDetailView) Update(msg tea.Msg) (AgentDetailView, tea.Cmd) {
-	switch msg := msg.(type) {
+	switch msg.(type) {
 	case agentDetailMsg:
+		m := msg.(agentDetailMsg)
 		v.loading = false
-		v.detail = msg.detail
-		v.err = msg.err
+		v.detail = m.detail
+		v.err = m.err
+
+		// Start polling if status is not terminal
+		rs := v.readyStatus()
+		if rs != "Ready" && rs != "Failed" && m.err == nil {
+			v.polling = true
+			return v, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+				return agentPollTickMsg{}
+			})
+		}
+		v.polling = false
+
+	case agentPollTickMsg:
+		// Re-fetch detail
+		client := v.client
+		name := v.name
+		return v, func() tea.Msg {
+			detail, err := client.GetAgent("", name)
+			if err != nil {
+				return agentDetailMsg{err: err}
+			}
+			return agentDetailMsg{detail: detail}
+		}
 	}
 	return v, nil
+}
+
+// readyStatus extracts the readyStatus string from the detail.
+func (v AgentDetailView) readyStatus() string {
+	if v.detail == nil {
+		return ""
+	}
+	return str(v.detail["readyStatus"])
 }
 
 // View renders the agent detail.
@@ -111,13 +147,12 @@ func (v AgentDetailView) View() string {
 	}
 
 	// Status
-	if rs, ok := v.detail["readyStatus"].(map[string]any); ok {
-		ready := str(rs["ready"])
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", theme.LabelStyle.Render("Ready:"), theme.StatusBadge(ready)))
-		if msg := str(rs["message"]); msg != "" {
-			b.WriteString(fmt.Sprintf("  %-18s %s\n", theme.LabelStyle.Render("Message:"), theme.MutedStyle.Render(msg)))
-		}
+	if rs := v.readyStatus(); rs != "" {
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", theme.LabelStyle.Render("Status:"), theme.StatusBadge(rs)))
 	}
+
+	// K8s status details (replicas and conditions)
+	renderK8sStatus(&b, v.detail)
 
 	// Containers
 	if spec, ok := v.detail["spec"].(map[string]any); ok {
@@ -137,8 +172,12 @@ func (v AgentDetailView) View() string {
 		}
 	}
 
-	// Raw JSON fallback for other fields
-	b.WriteString("\n" + theme.MutedStyle.Render("  Esc back  •  /chat "+v.name+" to chat"))
+	// Polling indicator
+	hint := "Esc back  •  /chat " + v.name + " to chat"
+	if v.polling {
+		hint = "Auto-refreshing...  •  " + hint
+	}
+	b.WriteString("\n" + theme.MutedStyle.Render("  "+hint))
 
 	return b.String()
 }
@@ -158,5 +197,57 @@ func str(v any) string {
 		return fmt.Sprintf("%v", val)
 	default:
 		return fmt.Sprintf("%v", val)
+	}
+}
+
+// renderK8sStatus writes replica counts and conditions from the status field.
+func renderK8sStatus(b *strings.Builder, detail map[string]any) {
+	status, ok := detail["status"].(map[string]any)
+	if !ok {
+		return
+	}
+
+	// Replica counts
+	replicas := str(status["replicas"])
+	readyReplicas := str(status["readyReplicas"])
+	availableReplicas := str(status["availableReplicas"])
+	if replicas != "" || readyReplicas != "" {
+		b.WriteString("\n" + theme.SubtitleStyle.Render("  Replicas") + "\n")
+		if replicas != "" {
+			b.WriteString(fmt.Sprintf("    %-16s %s\n", theme.LabelStyle.Render("Desired:"), replicas))
+		}
+		if readyReplicas != "" {
+			b.WriteString(fmt.Sprintf("    %-16s %s\n", theme.LabelStyle.Render("Ready:"), readyReplicas))
+		}
+		if availableReplicas != "" {
+			b.WriteString(fmt.Sprintf("    %-16s %s\n", theme.LabelStyle.Render("Available:"), availableReplicas))
+		}
+	}
+
+	// Conditions
+	conditions, ok := status["conditions"].([]any)
+	if !ok || len(conditions) == 0 {
+		return
+	}
+	b.WriteString("\n" + theme.SubtitleStyle.Render("  Conditions") + "\n")
+	for _, c := range conditions {
+		cond, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		condType := str(cond["type"])
+		condStatus := str(cond["status"])
+		reason := str(cond["reason"])
+		message := str(cond["message"])
+
+		badge := theme.StatusBadge(condStatus)
+		line := fmt.Sprintf("    %s %s", badge, theme.LabelStyle.Render(condType))
+		if reason != "" {
+			line += fmt.Sprintf("  %s", theme.MutedStyle.Render(reason))
+		}
+		b.WriteString(line + "\n")
+		if message != "" {
+			b.WriteString(fmt.Sprintf("      %s\n", theme.MutedStyle.Render(message)))
+		}
 	}
 }
