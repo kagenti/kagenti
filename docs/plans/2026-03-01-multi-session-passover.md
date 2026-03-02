@@ -456,6 +456,7 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 | B | A | `sandbox.py` | FYI: asyncpg fix is `TASK_STORE_DB_URL` driver scheme (`postgresql+psycopg://`), not ssl or retry. Checkpointer already uses psycopg via `AsyncPostgresSaver`. | INFO |
 | C | A | `sandbox.py` | Add `GET /sessions/{context_id}/chain` endpoint — traverse `parent_context_id` and `passover_from`/`passover_to` in metadata to return full session lineage. See `docs/plans/2026-03-01-sub-agent-delegation-design.md` Phase 2. | NEW |
 | C | A+B | `sandbox.py` + agent `graph.py` | **P1 HITL RESUME**: approve/deny endpoints (lines 606-645) are stubs. Need to: (1) Backend sends A2A message to agent with `{"approved": true/false}` payload, (2) Agent's `interrupt()` call in `_make_shell_tool` receives approval and resumes graph. Agent URL: `http://{variant}.{namespace}.svc:8000`. See LangGraph `Command(resume=...)` pattern. | NEW |
+| 42 | B | `sandbox_deploy.py` | **P0 CRASH**: `Path(__file__).parents[4]` raises `IndexError: 4` in container. Backend pod crashes on startup after latest build. Old pod still serves. Fix: use relative path or env var for `_sandbox_dir`. Error: `sandbox_deploy.py:25` | NEW |
 | O (sbox42 test) | B | `postgres-sessions.yaml` | **P0**: `bitnami/postgresql:16` tag does NOT exist on Docker Hub (manifest unknown). sbox42 workaround: `registry.redhat.io/rhel9/postgresql-16:latest`. Fix: use valid tag (e.g. `bitnami/postgresql:16.6.0`) or switch to RHEL image. | NEW |
 | O (sbox42 test) | B | agent Dockerfile / `agent.py` | **P0**: TOFU hash write `PermissionError: /app/.tofu-hashes.json` on OCP with arbitrary UID. `/app` owned by 1001 but OCP assigns different UID. Fix: `chmod g+w /app` in Dockerfile OR write to `/tmp`. sbox42 workaround: `runAsUser: 1001` patch. | NEW |
 | O (sbox42 test) | D | `agent-chat-identity.spec.ts` | 4 multi-user tests fail on sbox42 — Keycloak `dev-user`/`ns-admin` not created. Session D must run user creation on sbox42 or tests need cluster-agnostic setup. | NEW |
@@ -562,11 +563,41 @@ a544ca90 feat(sandbox): add trigger API with ROLE_OPERATOR auth (Session F)
 
 ---
 
+## Latest Test Results (Session 42 — 2026-03-02)
+
+| Cluster | Total | Passed | Failed | Rate | Key Blocker |
+|---------|-------|--------|--------|------|-------------|
+| **sbox** | 16 core | **16/16** | 0 | 100% | — |
+| **sbox42** | 152 all | **113/152** | 30 | 74% | Backend crash (sandbox_deploy.py path bug) |
+| **sandbox44** | 140 all | **115/140** | 21 | 82% | Agent catalog API, multi-user, ownership |
+
+### New P0: Backend Crash on sbox42
+`sandbox_deploy.py:25` — `Path(__file__).parents[4]` raises `IndexError: 4` in container.
+Old pod still serving (not crashed). New builds crash on startup.
+**Owner: Session B** — fix the `_sandbox_dir` path resolution.
+
+### Session G — RCA Workflow Integration Testing
+
+**Claude Session ID:** (to be assigned)
+**Role:** Iterate on `agent-rca-workflow.spec.ts` — full pipeline test across agent configs
+**Cluster:** sbox42
+**File Ownership:**
+- `kagenti/ui-v2/e2e/agent-rca-workflow.spec.ts` — EXCLUSIVE
+
+**Phases:**
+1. **Phase 1** — Default config: deploy rca-agent (sandbox-legion), run /rca:ci, verify assessment has root cause + impact + fix. Get all 6 tests green.
+2. **Phase 2** — Hardened: same test with sandbox-hardened base. Verify security doesn't break.
+3. **Phase 3** — Restricted: sandbox-restricted + Squid proxy. Verify agent can reach GitHub.
+4. **Phase 4** — Sub-agent delegation: verify child sessions appear (depends on Session E).
+
+---
+
 ## Priority Order
 
-1. ~~**Session B**: Fix source builds -> deploy serializer~~ ✅ ALL P0s DONE
+1. **Session B**: P0 — Fix `sandbox_deploy.py` path crash (`parents[4]` IndexError)
 2. **Session A**: Tool call rendering (streaming flush), session name propagation
 3. **Session C**: Wire HITL approve/deny to graph.resume()
-4. **Session D**: Create Keycloak test users, multi-user Playwright tests
-5. **Session O**: Pull latest (`2417c723`), re-deploy sbox42 with bitnami postgres, run integration suite
-6. **Session B**: Create deployment manifests for hardened/basic/restricted variants
+4. **Session D**: Create Keycloak test users on sbox42 + sandbox44
+5. **Session 42**: Re-run full suite after B fixes path crash
+6. **Session F**: Deploy nono launcher + Landlock to cluster for testing
+7. **Session G**: Run RCA workflow test Phase 1 on sbox42, iterate to green
