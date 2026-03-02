@@ -162,3 +162,19 @@ preload-file: preflight-check
 	kubectl get pods --all-namespaces -o json | jq -r '.items[] | (.spec.containers // [])[].image, (.spec.initContainers // [])[].image' | sort -u | grep -E '^(docker\.io/|[^./]+/[^./])' | \
 	tee $(PRELOAD_FILE) && \
 	echo "Filtered local and docker.io images have been saved to $(PRELOAD_FILE)"
+
+# --- TUI targets ---
+
+.PHONY: build-tui install-tui lint-tui test-tui
+
+build-tui:
+	$(MAKE) -C kagenti/tui build
+
+install-tui:
+	$(MAKE) -C kagenti/tui install
+
+lint-tui:
+	$(MAKE) -C kagenti/tui lint
+
+test-tui:
+	$(MAKE) -C kagenti/tui test
