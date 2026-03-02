@@ -298,9 +298,10 @@ async def get_session_history(
         # Aggregate history + artifacts across ALL task records for this context_id.
         # The A2A SDK creates a new immutable task per message exchange, so a
         # multi-turn session has N task records. Each record's history contains
-        # the messages for that specific exchange. We merge them all in order.
+        # the messages for that specific exchange. We merge them chronologically.
         rows = await conn.fetch(
-            "SELECT history, artifacts FROM tasks WHERE context_id = $1 ORDER BY id ASC",
+            "SELECT history, artifacts FROM tasks WHERE context_id = $1"
+            " ORDER BY COALESCE((status::json->>'timestamp')::text, '') ASC",
             context_id,
         )
         if not rows:

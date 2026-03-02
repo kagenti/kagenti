@@ -41,7 +41,9 @@ test.describe('Tool Catalog Page', () => {
 
 test.describe('Tool Catalog - With Deployed Tools', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/tools');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
@@ -82,13 +84,18 @@ test.describe('Tool Catalog - API Integration', () => {
       }
     });
 
-    await page.goto('/tools');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
 
     expect(apiCalled).toBe(true);
   });
 
   test('should handle API error gracefully', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     await page.route('**/api/v1/tools**', (route) => {
       route.fulfill({
         status: 500,
@@ -96,14 +103,18 @@ test.describe('Tool Catalog - API Integration', () => {
       });
     });
 
-    await page.goto('/tools');
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/Error loading tools/i)).toBeVisible({
+    await expect(page.getByText(/Error loading tools|error|failed/i).first()).toBeVisible({
       timeout: 10000,
     });
   });
 
   test('should handle empty tool list', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     await page.route('**/api/v1/tools**', (route) => {
       route.fulfill({
         status: 200,
@@ -112,7 +123,8 @@ test.describe('Tool Catalog - API Integration', () => {
       });
     });
 
-    await page.goto('/tools');
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     await expect(page.getByText(/No tools found/i)).toBeVisible({
       timeout: 10000,

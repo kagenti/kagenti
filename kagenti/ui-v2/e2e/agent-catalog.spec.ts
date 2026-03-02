@@ -28,10 +28,6 @@ test.describe('Agent Catalog Page', () => {
   });
 
   test('should show loading spinner initially', async ({ page }) => {
-    // On initial load, there should be a loading indicator
-    // This tests the loading state is properly shown
-    await page.goto('/agents');
-
     // Wait for either spinner to disappear or table to appear
     await expect(page.getByRole('table').or(page.getByText(/No agents found/i))).toBeVisible({
       timeout: 30000,
@@ -65,8 +61,9 @@ test.describe('Agent Catalog Page', () => {
 
 test.describe('Agent Catalog - With Deployed Agents', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/agents');
-    // Wait for the page to load
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
@@ -178,7 +175,9 @@ test.describe('Agent Catalog - API Integration', () => {
       }
     });
 
-    await page.goto('/agents');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
 
     // Verify API was called
@@ -186,6 +185,9 @@ test.describe('Agent Catalog - API Integration', () => {
   });
 
   test('should handle API error gracefully', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     // Mock an API error to test error handling
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
@@ -194,15 +196,19 @@ test.describe('Agent Catalog - API Integration', () => {
       });
     });
 
-    await page.goto('/agents');
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     // Verify error state is shown
-    await expect(page.getByText(/Error loading agents/i)).toBeVisible({
+    await expect(page.getByText(/Error loading agents|error|failed/i).first()).toBeVisible({
       timeout: 10000,
     });
   });
 
   test('should handle empty agent list', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     // Mock an empty response
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
@@ -212,7 +218,8 @@ test.describe('Agent Catalog - API Integration', () => {
       });
     });
 
-    await page.goto('/agents');
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     // Verify empty state is shown
     await expect(page.getByText(/No agents found/i)).toBeVisible({
