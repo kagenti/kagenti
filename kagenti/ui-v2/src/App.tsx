@@ -22,6 +22,8 @@ import { AdminPage } from './pages/AdminPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { IntegrationDetailPage } from './pages/IntegrationDetailPage';
 import { AddIntegrationPage } from './pages/AddIntegrationPage';
+import { SessionGraphPage } from './pages/SessionGraphPage';
+import { FileBrowser } from './components/FileBrowser';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SandboxPage } from './pages/SandboxPage';
 import { SandboxCreatePage } from './pages/SandboxCreatePage';
@@ -201,6 +203,14 @@ function App() {
           element={
             <ProtectedRoute>
               <SandboxesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sandbox/files/:namespace/:agentName"
+          element={
+            <ProtectedRoute>
+              <FileBrowser />
             </ProtectedRoute>
           }
         />
