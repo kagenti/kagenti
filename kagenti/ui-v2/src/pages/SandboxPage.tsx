@@ -27,9 +27,13 @@ import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 // SandboxConfig disabled — model/repo/branch not yet wired to backend
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
+import { DelegationCard, type DelegationState } from '../components/DelegationCard';
+
+const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
+type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
 
 interface ToolCallData {
-  type: 'tool_call' | 'tool_result' | 'thinking' | 'llm_response' | 'error' | 'hitl_request';
+  type: 'tool_call' | 'tool_result' | 'thinking' | 'llm_response' | 'error' | 'hitl_request' | DelegationEventType;
   name?: string;
   args?: string | Record<string, unknown>;
   output?: string;
@@ -38,6 +42,12 @@ interface ToolCallData {
   command?: string;
   reason?: string;
   tools?: Array<{ name: string; args: string | Record<string, unknown> }>;
+  // Delegation fields
+  child_context_id?: string;
+  delegation_mode?: string;
+  task?: string;
+  variant?: string;
+  state?: string;
 }
 
 interface Message {
@@ -308,6 +318,20 @@ const ToolCallStep: React.FC<{
         )}
       </div>
     );
+  }
+
+  // Delegation events — render DelegationCard inline
+  if (DELEGATION_EVENT_TYPES.includes(data.type as DelegationEventType)) {
+    const delegationState: DelegationState = {
+      childId: data.child_context_id || '',
+      mode: data.delegation_mode || 'in-process',
+      task: data.task || data.message || '',
+      variant: data.variant || 'sandbox-legion',
+      status: data.type === 'delegation_complete'
+        ? (data.state === 'COMPLETED' ? 'completed' : 'failed')
+        : data.type === 'delegation_progress' ? 'working' : 'spawning',
+    };
+    return <DelegationCard delegation={delegationState} result={data.content} />;
   }
 
   return null;
@@ -771,6 +795,28 @@ export const SandboxPage: React.FC = () => {
               // Show the HITL message immediately
               setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
               setStreamingContent('');
+            }
+
+            // Handle delegation events (Session E: sub-agent spawning)
+            if (data.event && DELEGATION_EVENT_TYPES.includes(data.event.type)) {
+              collectedMessages.push({
+                id: `deleg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                role: 'assistant',
+                content: '',
+                timestamp: new Date(),
+                toolData: {
+                  type: data.event.type,
+                  child_context_id: data.event.child_context_id,
+                  delegation_mode: data.event.delegation_mode,
+                  task: data.event.task,
+                  variant: data.event.variant,
+                  state: data.event.state,
+                  content: data.content,
+                  message: data.event.message,
+                },
+              });
+              // Flush delegation events immediately
+              setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
             }
 
             // Parse and immediately flush tool call/result events
