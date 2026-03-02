@@ -95,7 +95,7 @@ Previous research (reference only): [2026-02-23-sandbox-agent-research.md](2026-
 
 **Role:** Test coordination, integration testing, conflict resolution
 **Cluster:** sbox42 (creating — ETA ~10 min)
-**Claude Session:** Session O active as of 2026-03-01
+**Claude Session ID:** `25db5acf`
 **Responsibilities:**
 - Run full E2E test suite after each session pushes
 - Detect conflicts between sessions
@@ -134,6 +134,7 @@ export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
 ### Session A — Core Platform (sbox cluster)
 
+**Claude Session ID:** `411cade4`
 **Role:** Fix DB connection, tool call rendering, session management
 **Cluster:** sbox (existing)
 **File Ownership:**
@@ -173,7 +174,7 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 
 ### Session B — Source Builds & Agent Image (sbox cluster)
 
-**Claude Session ID:** (this session — Session B)
+**Claude Session ID:** `1d8e455f`
 **Role:** Fix Shipwright builds, agent image packaging, deploy scripts
 **Cluster:** sbox (shared with A, different namespace resources)
 **File Ownership:**
@@ -236,8 +237,8 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 
 ### Session C — HITL & Session Orchestration (sbox1 cluster)
 
+**Claude Session ID:** `487d5f15`
 **Role:** Wire HITL approve/deny, implement sub-agent delegation, passover
-**Claude Session:** `487d5f15`
 **Cluster:** sbox1
 **File Ownership:**
 - `kagenti/ui-v2/src/pages/SandboxesPage.tsx` — EXCLUSIVE
@@ -288,6 +289,7 @@ Deploy and test on sbox1 cluster.
 
 ### Session D — Keycloak & Multi-User (sbox cluster)
 
+**Claude Session ID:** `eb18a410`
 **Role:** Keycloak personas, multi-user tests, RBAC verification
 **Cluster:** sbox (Keycloak namespace)
 **File Ownership:**
@@ -414,7 +416,7 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 
 ### Session F — Composable Sandbox Security (no cluster)
 
-**Claude Session:** `00b11888-7e0c-4fb4-bb39-32ea32e09b64`
+**Claude Session ID:** `0281a77c`
 **Role:** Design + implement composable sandbox security model, Landlock wiring, SandboxClaim integration
 **Cluster:** None (unit tests only — no cluster needed)
 **Session Active:** YES (started 2026-03-01)
