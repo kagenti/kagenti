@@ -13,11 +13,20 @@ Previous research (reference only): [2026-02-23-sandbox-agent-research.md](2026-
 
 ## Session Overview
 
-| Session | Role | Branch | Cluster | Focus |
-|---------|------|--------|---------|-------|
-| **Session A** (this) | Coordinator | `feat/sandbox-agent` | sbox | Identity, HITL, sessions, ownership, test suite |
-| **Session B** | Builder | TBD | sbox | Source builds (Shipwright) for UI + backend from worktree |
-| **Session C** | Feature | TBD | sbox | Integrations hub pages in UI |
+| Session | Claude Session ID | Cluster | Focus | Status |
+|---------|------------------|---------|-------|--------|
+| **Session A** | `9468f782-48b0-4deb-81b2-7a47e05c80a0` | sbox | Identity, HITL, sessions, test fixes | Active, 15MB |
+| **Session D** | `eb18a410-e3b1-4457-99b4-89e1f0b0ac7d` | sbox | Keycloak users, multi-user tests | 10/10 pass |
+| **Session O** (main) | `25db5acf-b246-4e0b-b052-e4c25c912d19` | sbox42 | Orchestrator, integration testing | 26MB, very active |
+| **Session O** (clone) | `487d5f15-468f-4314-98a3-79420df5bc52` | sbox42 | 58/58 test verification | Completed |
+| **Session O** (clone) | `411cade4-6112-4f28-af76-46f3afbbc1b4` | sbox | sandbox.spec.ts selector fixes | Completed |
+| **Session O** (clone) | `fab47f37-06f9-482f-8a1d-99ae13a0f134` | sbox | IntegrationDetailPage routing | Completed |
+| **Session O** (clone) | `1d8e455f-2f65-4889-8733-d855be516e56` | sbox | BuildConfig + Shipwright fixes | Active |
+| **Session O** (clone) | `19fda572-91cf-4421-9cf2-93a631ce7574` | sbox42 | Sandbox agent setup | Active |
+| **Session A** (older) | `0281a77c-43dd-46cf-866c-1ee0d7f399ab` | sbox42 | tofu.py unit tests | Active |
+
+**WARNING:** 5 Session O clones pushing to same branch → sbox deployment churn causing test instability.
+sbox42 is the stable baseline (112/140 pass). sbox has 71 failures due to concurrent deploys.
 
 ## Shared Resources
 
