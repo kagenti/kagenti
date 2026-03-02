@@ -282,7 +282,8 @@ def main() -> None:
             "protocol": "openid-connect",
             "fullScopeAllowed": True,
             "attributes": {
-                "pkce.code.challenge.method": "S256"  # Enable PKCE with S256
+                "pkce.code.challenge.method": "S256",  # Enable PKCE with S256
+                "oauth2.device.authorization.grant.enabled": "true",  # Device code flow for TUI/CLI
             },
         }
 
