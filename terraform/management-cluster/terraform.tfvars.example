@@ -4,7 +4,7 @@
 cluster_name = "mgmt-421"
 base_domain  = "example.com"  # Change to your domain
 aws_region   = "us-east-1"
-ocp_version  = "4.21"
+ocp_version  = "4.20.11"  # Tested and recommended version
 
 # Network configuration
 vpc_cidr           = "10.0.0.0/16"

@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.0"
+    }
   }
 
   # Using local state for now
@@ -26,6 +30,13 @@ provider "aws" {
       "kagenti.io/ocp-version" = var.ocp_version
     }
   }
+}
+
+# Kubernetes provider for post-installation configuration (autoscaling, etc.)
+# Only used after OpenShift cluster is installed
+# Set KUBE_CONFIG_PATH environment variable or pass -var="kubeconfig_path=..."
+provider "kubernetes" {
+  config_path = var.kubeconfig_path != "" ? var.kubeconfig_path : null
 }
 
 # ============================================================================

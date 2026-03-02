@@ -124,6 +124,83 @@ oc get deployment operator -n hypershift \
   -o jsonpath='{.spec.template.spec.containers[0].image}'
 ```
 
+## Autoscaling (Optional but Recommended)
+
+The management cluster can automatically scale workers based on hosted cluster workload. Each hosted cluster adds ~70 control plane pods to the management workers.
+
+### Configure Autoscaling
+
+Autoscaling is **enabled by default** but can be customized:
+
+```hcl
+# terraform.tfvars
+autoscaling_enabled              = true
+autoscaling_min_replicas_per_az  = 1     # Min workers per AZ
+autoscaling_max_replicas_per_az  = 4     # Max workers per AZ
+autoscaling_max_nodes_total      = 15    # Total worker limit
+
+# Scale-down behavior (production defaults)
+autoscaling_scale_down_delay_after_add   = "10m"
+autoscaling_scale_down_unneeded_time     = "10m"
+autoscaling_scale_down_utilization_threshold = 0.5  # 50%
+```
+
+### Apply Autoscaling After Cluster Creation
+
+Autoscaling resources are applied **after** the OpenShift cluster is created:
+
+```bash
+# Ensure KUBECONFIG is set
+export KUBECONFIG=~/openshift-clusters/<cluster-name>/auth/kubeconfig
+
+# Apply autoscaling configuration
+terraform apply
+
+# Verify autoscaling is configured
+oc get clusterautoscaler
+oc get machineautoscaler -n openshift-machine-api
+```
+
+### Autoscaling Behavior
+
+**Scale-Up:**
+- Triggered when pods cannot be scheduled due to resource constraints
+- New workers join in ~3-5 minutes
+- Example: Creating 5 hosted clusters scales from 3→6 workers
+
+**Scale-Down:**
+- Triggered after 10m of low utilization (configurable)
+- Workers removed in ~2-3 minutes after grace period
+- Respects `minReplicas` (1 worker per AZ for HA)
+
+**Capacity Planning:**
+- **2-4 hosted clusters**: 3 workers sufficient
+- **5-9 hosted clusters**: 6 workers needed
+- **10-14 hosted clusters**: 9 workers needed
+
+### Testing Autoscaling
+
+```bash
+# Create multiple hosted clusters to trigger scale-up
+for i in 3 4 5; do
+  ./.github/scripts/local-setup/hypershift-full-test.sh $i \
+    --skip-cluster-destroy > /tmp/cluster-$i.log 2>&1 &
+done
+
+# Monitor autoscaler
+oc logs -n openshift-machine-api deployment/cluster-autoscaler-default -f
+
+# Watch workers scaling
+watch -n 5 'oc get nodes -l node-role.kubernetes.io/worker'
+
+# Destroy clusters to trigger scale-down
+for i in 3 4 5; do
+  ./.github/scripts/hypershift/destroy-cluster.sh $i &
+done
+```
+
+See [AUTOSCALING-TUTORIAL.md](../../AUTOSCALING-TUTORIAL.md) for detailed testing guide.
+
 ## Creating Hosted Clusters
 
 After MCE 2.10 is installed, you can create hosted clusters (4.19, 4.20, or 4.21):
