@@ -318,3 +318,210 @@ test.describe('Sandbox File Browser', () => {
     expect(data.mounts[1].mount_point).toBe('/workspace');
   });
 });
+
+// =============================================================================
+// Live Cluster Tests — require a running sandbox agent
+// =============================================================================
+// Run with: KAGENTI_UI_URL=https://... npx playwright test sandbox-file-browser
+// Skipped automatically when KAGENTI_UI_URL is not set.
+
+const LIVE_URL = process.env.KAGENTI_UI_URL;
+const AGENT_NAME = process.env.SANDBOX_AGENT || 'sandbox-basic';
+const NAMESPACE = process.env.SANDBOX_NAMESPACE || 'team1';
+const AGENT_TIMEOUT = 120_000; // 2 min for LLM response
+
+/**
+ * Send a message in the sandbox chat and wait for the agent to finish.
+ */
+async function sendChatMessage(page: Page, message: string): Promise<void> {
+  const chatInput = page.getByPlaceholder(/Type your message/i);
+  await expect(chatInput).toBeVisible({ timeout: 10000 });
+  await expect(chatInput).toBeEnabled({ timeout: 5000 });
+  await chatInput.fill(message);
+
+  const sendButton = page.getByRole('button', { name: /Send/i });
+  await expect(sendButton).toBeEnabled({ timeout: 5000 });
+  await sendButton.click();
+
+  // Wait for agent to finish — input is re-enabled
+  await expect(chatInput).toBeEnabled({ timeout: AGENT_TIMEOUT });
+  await page.waitForTimeout(1000);
+}
+
+test.describe('File Browser — Live Cluster Integration', () => {
+  test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL environment variable');
+  test.setTimeout(300_000); // 5 min for full flow
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(LIVE_URL!);
+    await loginIfNeeded(page);
+  });
+
+  test('write .md file with mermaid via chat, then browse and verify rendering', async ({ page }) => {
+    // ── Step 1: Navigate to sandbox chat ──
+    const sessionsNav = page
+      .locator('nav a, nav button, [role="navigation"] a')
+      .filter({ hasText: /^Sessions$/ });
+    await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
+    await sessionsNav.first().click();
+    await page.waitForLoadState('networkidle');
+
+    // Wait for sandbox page to load
+    await expect(
+      page.getByText(new RegExp(AGENT_NAME, 'i')).first()
+    ).toBeVisible({ timeout: 15000 });
+
+    // Click new session
+    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
+    if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await newSessionBtn.click();
+      await page.waitForTimeout(500);
+    }
+
+    // ── Step 2: Ask agent to write a .md file with mermaid diagram ──
+    const mdContent = [
+      '# E2E Test Report',
+      '',
+      'This file was created by an **automated test**.',
+      '',
+      '## Architecture',
+      '',
+      '```mermaid',
+      'graph TD',
+      '  User[User] --> UI[Kagenti UI]',
+      '  UI --> Backend[FastAPI Backend]',
+      '  Backend --> K8s[Kubernetes API]',
+      '  K8s --> Pod[Agent Pod]',
+      '```',
+      '',
+      '## Results',
+      '',
+      '| Test | Status |',
+      '|------|--------|',
+      '| Write file | PASS |',
+      '| Browse file | PASS |',
+      '',
+      'Generated at: ' + new Date().toISOString(),
+    ].join('\\n');
+
+    await sendChatMessage(
+      page,
+      `Write the following markdown content to a file called data/e2e-report.md. ` +
+      `Create the data directory if it does not exist. Here is the content:\n\n${mdContent}`
+    );
+
+    // Verify agent acknowledged the write
+    const lastResponse = page.locator(
+      'div[style*="flex-start"] .sandbox-markdown, div[style*="flex-start"] p'
+    ).last();
+    await expect(lastResponse).toBeVisible({ timeout: 10000 });
+
+    // ── Step 3: Navigate to file browser for this agent ──
+    await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
+    await page.waitForLoadState('networkidle');
+
+    // Wait for tree view to render with real data from pod exec
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    await expect(treeView).toBeVisible({ timeout: 30000 });
+
+    // ── Step 4: Verify e2e-report.md appears in directory listing ──
+    await expect(page.getByText('e2e-report.md')).toBeVisible({ timeout: 15000 });
+
+    // ── Step 5: Click the file to preview ──
+    await page.getByText('e2e-report.md').click();
+
+    // ── Step 6: Verify markdown renders ──
+    // Heading should render as H1
+    await expect(page.locator('h1').filter({ hasText: 'E2E Test Report' })).toBeVisible({ timeout: 15000 });
+
+    // Bold text should render
+    await expect(page.locator('strong').filter({ hasText: 'automated test' })).toBeVisible({ timeout: 5000 });
+
+    // GFM table should render
+    await expect(page.getByText('Write file')).toBeVisible({ timeout: 5000 });
+
+    // ── Step 7: Verify mermaid diagram renders as SVG ──
+    // Mermaid diagrams render as <svg> elements inside the preview
+    const mermaidSvg = page.locator('svg').first();
+    await expect(mermaidSvg).toBeVisible({ timeout: 20000 });
+
+    // The SVG should contain nodes from our diagram
+    // (mermaid renders text labels inside the SVG)
+    await expect(page.locator('svg').filter({ hasText: /User|Backend|Kubernetes/i }).first())
+      .toBeVisible({ timeout: 10000 });
+
+    // ── Step 8: Verify file metadata ──
+    // File size label should be visible (exact value depends on content)
+    const metadataBar = page.locator('[class*="pf-v5-c-label"]');
+    await expect(metadataBar.first()).toBeVisible({ timeout: 5000 });
+  });
+
+  test('write code file via chat, browse and verify CodeBlock rendering', async ({ page }) => {
+    // ── Step 1: Navigate to sandbox chat ──
+    const sessionsNav = page
+      .locator('nav a, nav button, [role="navigation"] a')
+      .filter({ hasText: /^Sessions$/ });
+    await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
+    await sessionsNav.first().click();
+    await page.waitForLoadState('networkidle');
+    await expect(
+      page.getByText(new RegExp(AGENT_NAME, 'i')).first()
+    ).toBeVisible({ timeout: 15000 });
+
+    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
+    if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await newSessionBtn.click();
+      await page.waitForTimeout(500);
+    }
+
+    // ── Step 2: Ask agent to write a Python file ──
+    await sendChatMessage(
+      page,
+      'Write a Python file at data/fibonacci.py with a function called fibonacci(n) ' +
+      'that returns the nth Fibonacci number using iteration. Include a docstring.'
+    );
+
+    // ── Step 3: Navigate to file browser ──
+    await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
+    await page.waitForLoadState('networkidle');
+
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    await expect(treeView).toBeVisible({ timeout: 30000 });
+
+    // ── Step 4: Verify fibonacci.py appears ──
+    await expect(page.getByText('fibonacci.py')).toBeVisible({ timeout: 15000 });
+
+    // ── Step 5: Click to preview ──
+    await page.getByText('fibonacci.py').click();
+
+    // ── Step 6: Verify CodeBlock renders ──
+    const codeBlock = page.locator('[class*="pf-v5-c-code-block"]');
+    await expect(codeBlock).toBeVisible({ timeout: 15000 });
+
+    // Verify the function definition is visible
+    await expect(page.getByText('def fibonacci')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('verify storage stats endpoint returns mount info', async ({ page }) => {
+    // Call the stats endpoint directly
+    const response = await page.request.get(
+      `${LIVE_URL}/api/v1/sandbox/${NAMESPACE}/stats/${AGENT_NAME}`
+    );
+
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+
+    // Should have at least one mount
+    expect(data.total_mounts).toBeGreaterThan(0);
+
+    // Each mount should have required fields
+    for (const mount of data.mounts) {
+      expect(mount).toHaveProperty('filesystem');
+      expect(mount).toHaveProperty('size');
+      expect(mount).toHaveProperty('used');
+      expect(mount).toHaveProperty('available');
+      expect(mount).toHaveProperty('use_percent');
+      expect(mount).toHaveProperty('mount_point');
+    }
+  });
+});
