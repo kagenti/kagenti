@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -28,6 +29,7 @@ type ChatView struct {
 	sessionID string
 	streaming bool
 	streamBuf string
+	streamCh  <-chan api.ChatStreamEvent
 	err       error
 }
 
@@ -50,6 +52,7 @@ func (v *ChatView) SetAgent(name string) {
 	v.sessionID = ""
 	v.streaming = false
 	v.streamBuf = ""
+	v.streamCh = nil
 	v.agentCard = nil
 	v.err = nil
 }
@@ -64,6 +67,10 @@ type chatStreamEventMsg struct {
 }
 
 type chatStreamDoneMsg struct{}
+
+type chatStreamErrMsg struct {
+	err error
+}
 
 // Init fetches the agent card.
 func (v ChatView) Init() tea.Cmd {
@@ -85,14 +92,25 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 		v.agentCard = msg.card
 		v.err = msg.err
 
+	case chatStreamStartedMsg:
+		v.streamCh = msg.ch
+		return v, v.readNextEvent()
+
 	case chatStreamEventMsg:
 		evt := msg.event
 		if evt.Done {
-			return v, func() tea.Msg { return chatStreamDoneMsg{} }
+			v.streaming = false
+			v.streamCh = nil
+			if v.streamBuf != "" {
+				v.messages = append(v.messages, chatMessage{role: "assistant", content: v.streamBuf})
+				v.streamBuf = ""
+			}
+			return v, nil
 		}
 		if evt.Error != "" {
 			v.err = fmt.Errorf("%s", evt.Error)
 			v.streaming = false
+			v.streamCh = nil
 			return v, nil
 		}
 		if evt.Content != "" {
@@ -101,15 +119,22 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 		if evt.SessionID != "" {
 			v.sessionID = evt.SessionID
 		}
-		// Continue reading stream
-		return v, nil
+		// Read the next event from the stream
+		return v, v.readNextEvent()
 
 	case chatStreamDoneMsg:
 		v.streaming = false
+		v.streamCh = nil
 		if v.streamBuf != "" {
 			v.messages = append(v.messages, chatMessage{role: "assistant", content: v.streamBuf})
 			v.streamBuf = ""
 		}
+		return v, nil
+
+	case chatStreamErrMsg:
+		v.streaming = false
+		v.streamCh = nil
+		v.err = msg.err
 		return v, nil
 
 	case tea.KeyMsg:
@@ -130,6 +155,7 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 				v.messages = append(v.messages, chatMessage{role: "user", content: text})
 				v.streaming = true
 				v.streamBuf = ""
+				v.err = nil
 				return v, v.sendMessage(text)
 			}
 
@@ -165,7 +191,7 @@ func (v *ChatView) sendMessage(text string) tea.Cmd {
 			// Fall back to non-streaming
 			resp, err2 := client.SendMessage("", agentName, chatReq)
 			if err2 != nil {
-				return chatStreamEventMsg{event: api.ChatStreamEvent{Error: err2.Error()}}
+				return chatStreamErrMsg{err: fmt.Errorf("stream: %s\nfallback: %s", err, err2)}
 			}
 			return chatStreamEventMsg{event: api.ChatStreamEvent{
 				Content:   resp.Content,
@@ -174,19 +200,31 @@ func (v *ChatView) sendMessage(text string) tea.Cmd {
 			}}
 		}
 
-		// Read first event from stream
-		evt, ok := <-ch
-		if !ok {
-			return chatStreamDoneMsg{}
-		}
-		// Start a goroutine to pump remaining events
-		go func() {
-			for range ch {
-				// Events are consumed by the pumper; we rely on the
-				// tea.Cmd chain below to pull them one at a time.
+		// Return the channel so Update can pull events one at a time
+		return chatStreamStartedMsg{ch: ch}
+	}
+}
+
+type chatStreamStartedMsg struct {
+	ch <-chan api.ChatStreamEvent
+}
+
+// readNextEvent returns a command that reads the next event from the stored channel.
+func (v *ChatView) readNextEvent() tea.Cmd {
+	ch := v.streamCh
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		select {
+		case evt, ok := <-ch:
+			if !ok {
+				return chatStreamDoneMsg{}
 			}
-		}()
-		return chatStreamEventMsg{event: evt}
+			return chatStreamEventMsg{event: evt}
+		case <-time.After(60 * time.Second):
+			return chatStreamErrMsg{err: fmt.Errorf("agent response timed out (60s with no data)")}
+		}
 	}
 }
 
@@ -237,6 +275,11 @@ func (v ChatView) View() string {
 		b.WriteString(theme.SuccessStyle.Render("  Agent: ") + v.streamBuf + theme.MutedStyle.Render("▌") + "\n\n")
 	} else if v.streaming {
 		b.WriteString(theme.MutedStyle.Render("  Thinking...") + "\n\n")
+	}
+
+	// Error (shown inline after messages so user sees what went wrong)
+	if v.err != nil && v.agentCard != nil {
+		b.WriteString(theme.ErrorStyle.Render(fmt.Sprintf("  Error: %s", v.err.Error())) + "\n\n")
 	}
 
 	// Input
