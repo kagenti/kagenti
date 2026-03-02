@@ -134,13 +134,13 @@ test.describe('Agent RCA Workflow', () => {
     await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
 
-    // Wait for agent response: either .sandbox-markdown (text) or tool call steps
-    // The agent may use tools (web_fetch, shell) before producing a text summary
-    const agentOutput = page.locator('.sandbox-markdown, [data-testid="tool-call-step"], details:has(summary)').first();
-    await expect(agentOutput).toBeVisible({ timeout: 180000 }); // 3 min for LLM
+    // Wait for agent response: either .sandbox-markdown (text) or tool call/result steps
+    // Tool calls render as divs with "Tool Call:" or "Result:" text, not <details>
+    const agentOutput = page.locator('.sandbox-markdown').or(page.getByText(/^[▶▼] (Tool Call|Result):/));
+    await expect(agentOutput.first()).toBeVisible({ timeout: 180000 }); // 3 min for LLM
 
     const mdCount = await page.locator('.sandbox-markdown').count();
-    const toolCount = await page.locator('details:has(summary)').count();
+    const toolCount = await page.getByText(/^[▶▼] (Tool Call|Result):/).count();
     console.log(`[rca] Agent output: ${mdCount} markdown, ${toolCount} tool calls`);
     expect(mdCount + toolCount).toBeGreaterThan(0);
 
@@ -165,7 +165,7 @@ test.describe('Agent RCA Workflow', () => {
 
     // Agent response must render (markdown text or tool call steps)
     const mdCount = await page.locator('.sandbox-markdown').count();
-    const toolCount = await page.locator('details:has(summary)').count();
+    const toolCount = await page.getByText(/^[▶▼] (Tool Call|Result):/).count();
     console.log(`[rca] On reload: ${mdCount} markdown, ${toolCount} tool calls`);
     expect(mdCount + toolCount).toBeGreaterThanOrEqual(1);
   });
@@ -188,16 +188,17 @@ test.describe('Agent RCA Workflow', () => {
     else { await pickRcaAgent(page); }
     await page.waitForTimeout(10000);
 
-    // Read all agent output — markdown text + tool call content
+    // Read all visible agent output — markdown text + tool call text
     const mdMsgs = page.locator('.sandbox-markdown');
-    const toolDetails = page.locator('details:has(summary)');
     const mdCount = await mdMsgs.count();
-    const toolCount = await toolDetails.count();
     let text = '';
     for (let i = 0; i < mdCount; i++) text += (await mdMsgs.nth(i).textContent() || '') + ' ';
-    for (let i = 0; i < toolCount; i++) text += (await toolDetails.nth(i).textContent() || '') + ' ';
+    // Also grab all visible text in the chat area for tool results
+    const chatArea = page.locator('.pf-v5-c-card__body').last();
+    const chatText = await chatArea.textContent() || '';
+    if (text.trim().length < 50) text = chatText;
     text = text.toLowerCase();
-    console.log(`[rca] Content: ${mdCount} markdown + ${toolCount} tools = ${text.length} chars`);
+    console.log(`[rca] Content: ${mdCount} markdown, chat=${chatText.length} chars`);
     console.log(`[rca] Preview: ${text.substring(0, 500)}`);
 
     const sec: Record<string, RegExp> = {
