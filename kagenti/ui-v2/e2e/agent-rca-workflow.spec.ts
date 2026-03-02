@@ -155,16 +155,28 @@ test.describe('Agent RCA Workflow', () => {
 
   test('4 — session loads with messages on reload', async ({ page }) => {
     expect(sessionUrl).toBeTruthy();
-    await page.goto('/'); await loginIfNeeded(page);
-    await page.goto(sessionUrl!);
-    await loginIfNeeded(page); // In case session URL triggered re-auth
-    // Ensure we're on the sandbox page (not redirected to home)
+    // Login first to establish Keycloak session
+    await page.goto('/');
+    await loginIfNeeded(page);
+    console.log(`[rca] After login: ${page.url()}`);
+
+    // Navigate to session via SPA routing (avoids full page reload through Keycloak)
+    const sessionId = sessionUrl!.match(/session=([a-f0-9]+)/)?.[1] || '';
+    await page.evaluate((sid) => {
+      window.history.pushState({}, '', `/sandbox?session=${sid}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, sessionId);
+    await page.waitForTimeout(3000);
+    console.log(`[rca] After SPA nav: ${page.url()}`);
+
+    // If SPA routing didn't work, try clicking Sessions nav
     if (!page.url().includes('/sandbox')) {
-      await page.goto(sessionUrl!);
+      const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
+      await nav.first().click();
+      await page.waitForLoadState('networkidle');
     }
-    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(5000);
-    console.log(`[rca] Current URL: ${page.url()}`);
+    console.log(`[rca] Final URL: ${page.url()}`);
 
     // User message must be visible
     await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 30000 });
