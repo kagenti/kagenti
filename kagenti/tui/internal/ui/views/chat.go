@@ -164,6 +164,9 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 				v.input = v.input[:len(v.input)-1]
 			}
 
+		case tea.KeySpace:
+			v.input += " "
+
 		case tea.KeyRunes:
 			r := msg.Runes
 			if len(r) > 0 {
