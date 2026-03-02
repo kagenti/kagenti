@@ -459,6 +459,8 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 | O (sbox42 test) | B | agent Dockerfile / `agent.py` | **P0**: TOFU hash write `PermissionError: /app/.tofu-hashes.json` on OCP with arbitrary UID. `/app` owned by 1001 but OCP assigns different UID. Fix: `chmod g+w /app` in Dockerfile OR write to `/tmp`. sbox42 workaround: `runAsUser: 1001` patch. | NEW |
 | O (sbox42 test) | D | `agent-chat-identity.spec.ts` | 4 multi-user tests fail on sbox42 — Keycloak `dev-user`/`ns-admin` not created. Session D must run user creation on sbox42 or tests need cluster-agnostic setup. | NEW |
 | O (sbox42 test) | A | `sandbox-rendering.spec.ts` | Tool call steps not rendered (`found: 0`). Agent streams response but ToolCallStep components produce no DOM elements. Frontend rendering bug. | NEW |
+| F | B | `sandbox_deploy.py` | Session F added SandboxProfile import + composable fields (secctx, landlock, proxy, gvisor) to SandboxCreateRequest + composable_name/warnings in response. Commit `47e38a16`. Review needed. | NEW |
+| F | B | `deployments/sandbox/` | Session F added NEW files: `sandbox_profile.py`, `nono_launcher.py`, `tests/`. Did NOT modify existing Session B files. | INFO |
 
 ---
 
@@ -496,20 +498,20 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 15. ✅ Wired `sandbox_profile.py` into `sandbox_deploy.py` — composable name + warnings in deploy response
 16. ✅ Added composable security fields to `SandboxCreateRequest` (secctx, landlock, proxy, gvisor toggles)
 
-**Commits (on `fix/hypershift-ci-deploy`, need cherry-pick to feat/sandbox-agent):**
+**Commits (on `fix/hypershift-ci-deploy` — code needs to move to worktree, plans/skills only on that branch):**
 ```
 18640cd9 feat(sandbox): composable security model + modules + trigger API (Session F)
 ceb51a5b feat(sandbox): wire TOFU + Landlock + repo_manager, register Session F
 2718b42a docs: update Session F status — all security layers wired, 322 tests passing
 ```
 
-**Commits (on `feat/sandbox-agent` worktree):**
+**Commits (on `feat/sandbox-agent` worktree — source of truth for code):**
 ```
 5a7f557c docs: Session F status — all implementation complete, 322 tests passing
-<pending> feat(sandbox): wire sandbox_profile into deploy endpoint + copy modules
+47e38a16 feat(sandbox): composable security model + deploy integration (Session F)
 ```
 
-**Status: CORE IMPLEMENTATION COMPLETE.** All security layers wired and tested. Deploy endpoint uses composable profile.
+**Status: CORE IMPLEMENTATION COMPLETE.** All security layers wired and tested. Deploy endpoint uses composable profile. 63 sandbox unit tests passing.
 
 **Remaining Tasks:**
 - P1: Update wizard UI (ImportAgentPage.tsx) with composable security layer toggles (needs Session A/B coordination — ImportAgentPage is currently unowned)
@@ -517,7 +519,7 @@ ceb51a5b feat(sandbox): wire TOFU + Landlock + repo_manager, register Session F
 - P2: Add auth middleware to `/api/v1/sandbox/trigger` endpoint (currently unauthenticated)
 - P3: UI for trigger management (cron schedule editor, webhook config, alert mapping)
 
-**Note:** Session B has `deployments/sandbox/` as EXCLUSIVE. Session F added NEW files there (sandbox_profile.py, tests/) and copied modules from the worktree. No existing Session B files were modified. Coordinate with Session B if conflicts arise.
+**Note:** Session B owns `deployments/sandbox/` and `sandbox_deploy.py` as EXCLUSIVE. Session F added NEW files (sandbox_profile.py, tests/) and modified `sandbox_deploy.py` to wire SandboxProfile. See cross-session TODO below.
 
 ---
 
