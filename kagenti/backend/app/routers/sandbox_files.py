@@ -10,8 +10,7 @@ providing a file browser experience in the UI.
 
 import logging
 import posixpath
-import re
-from typing import List, Optional, Union
+from typing import List, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client import ApiException
