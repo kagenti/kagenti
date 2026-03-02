@@ -443,11 +443,14 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 13. ✅ Updated design doc: Layer×Tier matrix (T2/T3 now ✅), Built section, Partial section
 14. ✅ **322 total tests passing** (250 existing backend + 63 sandbox module + 9 trigger router)
 
-**Commits:**
+**Commits (on `fix/hypershift-ci-deploy`, pushed):**
 ```
 18640cd9 feat(sandbox): composable security model + modules + trigger API (Session F)
 ceb51a5b feat(sandbox): wire TOFU + Landlock + repo_manager, register Session F
+2718b42a docs: update Session F status — all security layers wired, 322 tests passing
 ```
+
+**Status: ALL IMPLEMENTATION COMPLETE.** Remaining work is UI wizard changes (P1, needs other session coordination) and cluster deploy tests (P1, needs Session O).
 
 **Remaining Tasks:**
 - P1: Update wizard UI (ImportAgentPage.tsx) with composable security layer toggles (needs Session A/B coordination — ImportAgentPage is currently unowned)
