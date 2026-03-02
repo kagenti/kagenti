@@ -2,9 +2,10 @@
 
 > **Date:** 2026-03-01
 > **Main Coordinator:** `9468f782` — runs cross-cluster tests, monitors all sessions, updates doc
-> **Orchestrator:** Session O (spawns sub-sessions)
-> **Active Sessions:** A, B, C, D, E, F, O
-> **Test Clusters:** sbox (dev), sbox1 (staging), sbox42 (integration)
+> **Orchestrator O:** `25db5acf` — spawns sub-sessions
+> **Orchestrator 42:** `19fda572` — sandbox44 integration testing
+> **Active Sessions:** A, B, C, D, E, F, G, H, O, 42 + Coordinator
+> **Test Clusters:** sbox (dev), sbox42, sandbox42, sandbox44 (integration)
 
 ## CRITICAL: Passwords Changed on ALL Clusters
 
