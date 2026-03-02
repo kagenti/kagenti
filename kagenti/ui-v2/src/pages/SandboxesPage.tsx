@@ -28,7 +28,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
-import { sandboxService } from '../services/api';
+import { sandboxService, sandboxFileService } from '../services/api';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 import type { SandboxAgentInfo, TaskSummary } from '../types/sandbox';
 
@@ -68,9 +68,17 @@ const SandboxAgentCard: React.FC<{
   agent: SandboxAgentInfo;
   sessions: TaskSummary[];
   namespace: string;
-}> = ({ agent, sessions }) => {
+}> = ({ agent, sessions, namespace }) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(agent.active_sessions > 0);
+
+  const { data: storageStats } = useQuery({
+    queryKey: ['sandbox-stats', namespace, agent.name],
+    queryFn: () => sandboxFileService.getStorageStats(namespace, agent.name),
+    enabled: !!namespace && agent.status === 'ready',
+    staleTime: 60000,
+    retry: 1,
+  });
 
   const agentSessions = sessions.filter((s) => {
     const meta = s.metadata as Record<string, unknown> | null;
@@ -106,6 +114,21 @@ const SandboxAgentCard: React.FC<{
                 {agent.active_sessions} active
               </Label>
             </SplitItem>
+          )}
+          {storageStats && (
+            <>
+              <SplitItem>
+                <Label color="purple" isCompact>
+                  {storageStats.total_mounts} mounts
+                </Label>
+              </SplitItem>
+              <SplitItem>
+                <Label color="grey" isCompact>
+                  {storageStats.mounts.find(m => m.mount_point === '/workspace')?.use_percent ||
+                   storageStats.mounts[0]?.use_percent || '\u2014'} disk
+                </Label>
+              </SplitItem>
+            </>
           )}
         </Split>
       </CardTitle>
@@ -184,13 +207,20 @@ const SandboxAgentCard: React.FC<{
           </ExpandableSection>
         )}
 
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           <Button
             variant="link"
             size="sm"
             onClick={() => navigate(`/sandbox?agent=${agent.name}`)}
           >
             Chat with {agent.name}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate(`/sandbox/files/${namespace}/${agent.name}`)}
+          >
+            Browse Files
           </Button>
         </div>
       </CardBody>

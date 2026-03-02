@@ -18,6 +18,9 @@ import type {
   IntegrationWebhook,
   IntegrationSchedule,
   IntegrationAlert,
+  FileEntry,
+  FileContent,
+  PodStorageStats,
 } from '@/types';
 
 // API configuration
@@ -827,18 +830,26 @@ export const sandboxService = {
       context_dir?: string;
       dockerfile?: string;
       variant?: string;
+      base_agent?: string;
       model?: string;
       namespace?: string;
       enable_persistence?: boolean;
       isolation_mode?: string;
+      workspace_size?: string;
       proxy_allowlist?: string;
+      // Composable security layers
+      secctx?: boolean;
+      landlock?: boolean;
+      proxy?: boolean;
+      gvisor?: boolean;
+      proxy_domains?: string;
       // Credentials
       github_pat?: string;
       llm_api_key?: string;
       llm_key_source?: string;
       llm_secret_name?: string;
     }
-  ): Promise<{ status: string; message: string; agent_url?: string }> {
+  ): Promise<{ status: string; message: string; agent_url?: string; security_warnings?: string[] }> {
     return apiFetch(
       `/sandbox/${encodeURIComponent(namespace)}/create`,
       {
@@ -920,5 +931,64 @@ export const integrationService = {
       `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/test`,
       { method: 'POST' }
     );
+  },
+};
+
+/**
+ * Sandbox file service for browsing agent sandbox files
+ */
+export const sandboxFileService = {
+  async listDirectory(
+    namespace: string,
+    agentName: string,
+    path: string
+  ): Promise<{ entries: FileEntry[] }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/list?path=${encodeURIComponent(path)}`
+    );
+  },
+
+  async getFileContent(
+    namespace: string,
+    agentName: string,
+    filePath: string
+  ): Promise<FileContent> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/content?path=${encodeURIComponent(filePath)}`
+    );
+  },
+
+  async getStorageStats(
+    namespace: string,
+    agentName: string
+  ): Promise<PodStorageStats> {
+    return apiFetch<PodStorageStats>(
+      `/sandbox/${encodeURIComponent(namespace)}/stats/${encodeURIComponent(agentName)}`
+    );
+  },
+};
+
+/**
+ * Sandbox trigger service for managing automated triggers
+ */
+export const triggerService = {
+  async create(data: {
+    type: 'cron' | 'webhook' | 'alert';
+    skill?: string;
+    schedule?: string;
+    event?: string;
+    repo?: string;
+    branch?: string;
+    pr_number?: number;
+    alert?: string;
+    cluster?: string;
+    severity?: string;
+    namespace?: string;
+    ttl_hours?: number;
+  }): Promise<{ sandbox_claim: string; namespace: string }> {
+    return apiFetch('/sandbox/trigger', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 };

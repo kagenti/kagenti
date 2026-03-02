@@ -379,3 +379,34 @@ export interface IntegrationDetail extends Integration {
     message?: string;
   }>;
 }
+
+// File browser types
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  modified?: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  size: number;
+  modified: string;
+}
+
+// Pod storage / mount stats
+export interface MountInfo {
+  filesystem: string;
+  size: string;
+  used: string;
+  available: string;
+  use_percent: string;
+  mount_point: string;
+}
+
+export interface PodStorageStats {
+  mounts: MountInfo[];
+  total_mounts: number;
+}

@@ -207,8 +207,12 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 6. ~~P1: Graceful 429/quota error handling~~ ✅ DONE — retry + clean error via SSE
 7. ~~P0: Fix stale agent code in sandbox-legion~~ ✅ **ROOT CAUSE FOUND** — ConfigMap `agent-code-patch` volume mount was overlaying agent.py + event_serializer.py with old versions. Removed mounts. Builds were correct all along.
 8. ~~P1: OpenShift BuildConfig alternative~~ ✅ DONE — created `sandbox_agent_buildconfig_ocp.yaml` with `noCache: true`
-9. P1: Wizard deploy triggers Shipwright Build (not just Deployment)
-10. P2: Source build from git URL (wizard end-to-end)
+9. ~~P0: Fix postgres image tag~~ ✅ FIXED — switched to `registry.redhat.io/rhel9/postgresql-16:latest`
+10. ~~P0: Fix TOFU PermissionError on OCP~~ ✅ FIXED — write to `/tmp`, `chmod g+w /app`
+11. ~~P1: Composable security toggles in wizard~~ ✅ DONE — secctx/landlock/proxy/gvisor in SandboxCreatePage
+12. ~~P2: Wire multi-mode delegate tool~~ ✅ DONE — 4 modes (in-process functional, 3 placeholders)
+13. P1: Wizard deploy triggers Shipwright Build (not just Deployment)
+14. P2: Source build from git URL (wizard end-to-end)
 
 **Session Active:** YES (started 2026-03-01T12:04Z)
 
@@ -217,14 +221,16 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 # agent-examples repo:
 2e2590b fix(sandbox): switch TaskStore from asyncpg to psycopg driver
 048f0de fix(sandbox): handle LLM 429/quota errors gracefully in SSE stream
-e489461 fix(sandbox): add CACHE_BUST arg to Dockerfile
-b83a366 debug: add agent.py line count check to Dockerfile build
+dd84219 fix(sandbox): OCP arbitrary UID compatibility
+b9bdc5c feat(sandbox): wire multi-mode delegate tool into agent
 
 # kagenti repo:
 6d5aee22 fix(deploy): switch sandbox-legion TaskStore URL from asyncpg to psycopg
 2417c723 fix(deploy): switch postgres-sessions to bitnami/postgresql for OCP
 2bf50b24 feat(deploy): add deployment manifests for all sandbox agent variants
-bb196a00 fix(deploy): add CACHE_BUST build-arg to Shipwright Build
+d35b4a0c docs: Session B update — root cause found, OCP BuildConfig added
+26db4348 fix(deploy): switch postgres to RHEL image, fix trigger lint
+042a661a feat(ui): add composable security layer toggles to sandbox wizard
 ```
 
 **Status / Findings:**
