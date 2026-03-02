@@ -91,18 +91,25 @@ Previous research (reference only): [2026-02-23-sandbox-agent-research.md](2026-
 
 ## Session Definitions
 
-### Session O — Orchestrator (sbox42 cluster)
+### Session 42 (was Session O) — Orchestrator (sandbox44 cluster)
 
-**Role:** Test coordination, integration testing, conflict resolution
-**Cluster:** sbox42 (creating — ETA ~10 min)
+**Role:** Test coordination, integration testing, cluster deployment
+**Cluster:** sandbox44 (deployed, Mistral Small 24B, 4 agents running)
 **Claude Session ID:** `25db5acf`
-**Responsibilities:**
-- Run full E2E test suite after each session pushes
-- Detect conflicts between sessions
-- Update this passover doc with test results
-- Deploy fresh cluster for integration testing
+**Worktree:** `.worktrees/sandbox-agent` (read-only for testing)
+**Cost:** ~$280, Tokens: ~4M input / ~250k output (Opus 4.6)
+**Status:** Active — running integration tests on sandbox44
 
-**Does NOT write code** — only reads, tests, and coordinates
+**Latest:** sandbox44 115/140 E2E (82%), sbox 12/12 core, sbox42 13/13 core
+
+**Completed:**
+- Deployed clusters: sbox42, sandbox42→destroyed, sandbox43→destroyed, sandbox44
+- Rotated all Keycloak passwords to random on all clusters
+- Configured MAAS models (DeepSeek R1 + Mistral) on all clusters
+- Fixed: Helm nil pointer, postgres image, TOFU permissions, route timeouts
+- Full 140-test E2E suite on fresh sandbox44
+
+**Does NOT write feature code** — only tests, deploys, coordinates
 
 **Startup:**
 ```bash
