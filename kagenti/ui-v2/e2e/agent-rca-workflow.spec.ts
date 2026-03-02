@@ -98,9 +98,8 @@ test.describe('Agent RCA Workflow', () => {
     console.log(`[rca] Pre-check: ${result.includes('not found') ? 'clean' : 'EXISTS (unexpected)'}`);
   });
 
-  test.afterAll(() => {
-    cleanupAgent();
-  });
+  // Do NOT cleanup after — leave agent + sessions visible in UI for inspection
+  // Next run's beforeAll will clean up before redeploying
 
   test('1 — deploy agent via wizard with kagenti/kagenti repo', async ({ page }) => {
     await page.goto('/');
