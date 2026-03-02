@@ -30,7 +30,10 @@ for _parent in _this_dir.parents:
 if _sandbox_dir and str(_sandbox_dir) not in sys.path:
     sys.path.insert(0, str(_sandbox_dir))
 
-from triggers import SandboxTrigger  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order
+try:
+    from triggers import SandboxTrigger  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order
+except ImportError:
+    SandboxTrigger = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,8 @@ async def create_sandbox_trigger(request: TriggerRequest) -> TriggerResponse:
 
     Requires ROLE_OPERATOR — creates SandboxClaim K8s resources.
     """
+    if SandboxTrigger is None:
+        raise HTTPException(501, "Trigger module not available (missing deployments/sandbox)")
     trigger = SandboxTrigger(
         namespace=request.namespace,
         ttl_hours=request.ttl_hours,
