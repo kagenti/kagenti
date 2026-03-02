@@ -267,6 +267,120 @@ async def get_session(namespace: str, context_id: str):
     return _row_to_detail(row)
 
 
+class SessionChainEntry(BaseModel):
+    """One node in a session lineage chain."""
+
+    context_id: str
+    type: str  # "root", "child", "passover"
+    status: Optional[str] = None
+    parent: Optional[str] = None
+    passover_from: Optional[str] = None
+    title: Optional[str] = None
+
+
+class SessionChainResponse(BaseModel):
+    """Full session lineage: root + ordered chain of children/passovers."""
+
+    root: str
+    chain: List[SessionChainEntry]
+
+
+@router.get(
+    "/{namespace}/sessions/{context_id}/chain",
+    response_model=SessionChainResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def get_session_chain(namespace: str, context_id: str):
+    """Return the full lineage chain for a session.
+
+    Walks parent_context_id upward to find the root, then collects all
+    children (via parent_context_id) and passovers (via passover_from/to).
+    Returns an ordered list starting from the root.
+    """
+    _validate_namespace(namespace)
+    pool = await get_session_pool(namespace)
+
+    async with pool.acquire() as conn:
+        # Fetch all sessions with their metadata (deduplicated by context_id)
+        rows = await conn.fetch(
+            "SELECT DISTINCT ON (context_id) context_id, status, metadata"
+            " FROM tasks ORDER BY context_id, id DESC"
+        )
+
+    # Build lookup maps
+    meta_map: Dict[str, Dict] = {}
+    for r in rows:
+        meta = _parse_json_field(r["metadata"]) or {}
+        status = _parse_json_field(r["status"]) or {}
+        meta_map[r["context_id"]] = {
+            "meta": meta if isinstance(meta, dict) else {},
+            "status": status if isinstance(status, dict) else {},
+        }
+
+    if context_id not in meta_map:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Walk upward to find root
+    root_id = context_id
+    visited = {root_id}
+    while True:
+        entry = meta_map.get(root_id, {})
+        parent = entry.get("meta", {}).get("parent_context_id")
+        pf = entry.get("meta", {}).get("passover_from")
+        ancestor = parent or pf
+        if not ancestor or ancestor in visited or ancestor not in meta_map:
+            break
+        visited.add(ancestor)
+        root_id = ancestor
+
+    # Collect chain: BFS from root following children + passovers
+    chain: List[SessionChainEntry] = []
+    queue = [root_id]
+    seen = set()
+
+    while queue:
+        cid = queue.pop(0)
+        if cid in seen:
+            continue
+        seen.add(cid)
+
+        entry = meta_map.get(cid, {})
+        meta = entry.get("meta", {})
+        status = entry.get("status", {})
+        state = status.get("state") if isinstance(status, dict) else None
+
+        # Determine type
+        if cid == root_id:
+            node_type = "root"
+        elif meta.get("parent_context_id"):
+            node_type = "child"
+        elif meta.get("passover_from"):
+            node_type = "passover"
+        else:
+            node_type = "related"
+
+        chain.append(
+            SessionChainEntry(
+                context_id=cid,
+                type=node_type,
+                status=state,
+                parent=meta.get("parent_context_id"),
+                passover_from=meta.get("passover_from"),
+                title=meta.get("title"),
+            )
+        )
+
+        # Find children and passovers pointing FROM this node
+        for other_cid, other in meta_map.items():
+            om = other.get("meta", {})
+            if om.get("parent_context_id") == cid and other_cid not in seen:
+                queue.append(other_cid)
+            if om.get("passover_from") == cid and other_cid not in seen:
+                queue.append(other_cid)
+
+    return SessionChainResponse(root=root_id, chain=chain)
+
+
 @router.get(
     "/{namespace}/sessions/{context_id}/history",
     response_model=HistoryPage,

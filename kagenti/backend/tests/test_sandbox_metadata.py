@@ -228,3 +228,69 @@ class TestMetadataMergeLogic:
         # Only the second item should need merging
         assert len(missing_meta) == 1
         assert missing_meta[0].context_id == "ctx-eee"
+
+
+class TestSessionChainModels:
+    """Tests for SessionChainEntry and SessionChainResponse models."""
+
+    def test_chain_entry_root(self):
+        from app.routers.sandbox import SessionChainEntry
+
+        entry = SessionChainEntry(
+            context_id="ctx-root",
+            type="root",
+            status="completed",
+            title="Root session",
+        )
+        assert entry.context_id == "ctx-root"
+        assert entry.type == "root"
+        assert entry.parent is None
+
+    def test_chain_entry_child(self):
+        from app.routers.sandbox import SessionChainEntry
+
+        entry = SessionChainEntry(
+            context_id="ctx-child",
+            type="child",
+            status="working",
+            parent="ctx-root",
+        )
+        assert entry.parent == "ctx-root"
+        assert entry.passover_from is None
+
+    def test_chain_entry_passover(self):
+        from app.routers.sandbox import SessionChainEntry
+
+        entry = SessionChainEntry(
+            context_id="ctx-pass",
+            type="passover",
+            passover_from="ctx-root",
+        )
+        assert entry.passover_from == "ctx-root"
+
+    def test_chain_response_structure(self):
+        from app.routers.sandbox import SessionChainEntry, SessionChainResponse
+
+        response = SessionChainResponse(
+            root="ctx-root",
+            chain=[
+                SessionChainEntry(context_id="ctx-root", type="root", status="completed"),
+                SessionChainEntry(
+                    context_id="ctx-child1",
+                    type="child",
+                    parent="ctx-root",
+                    status="working",
+                ),
+                SessionChainEntry(
+                    context_id="ctx-pass1",
+                    type="passover",
+                    passover_from="ctx-root",
+                    status="active",
+                ),
+            ],
+        )
+        assert response.root == "ctx-root"
+        assert len(response.chain) == 3
+        assert response.chain[0].type == "root"
+        assert response.chain[1].type == "child"
+        assert response.chain[2].type == "passover"
