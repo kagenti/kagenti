@@ -22,11 +22,21 @@ from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.utils.routes import create_route_for_agent_or_tool, detect_platform
 
 # Add deployments/sandbox to path for SandboxProfile
-_sandbox_dir = Path(__file__).parents[4] / "deployments" / "sandbox"
-if str(_sandbox_dir) not in sys.path:
+# Walk up to find repo root (works at any depth, including containers)
+_this_dir = Path(__file__).resolve().parent
+_sandbox_dir = None
+for _parent in _this_dir.parents:
+    _candidate = _parent / "deployments" / "sandbox"
+    if _candidate.is_dir():
+        _sandbox_dir = _candidate
+        break
+if _sandbox_dir and str(_sandbox_dir) not in sys.path:
     sys.path.insert(0, str(_sandbox_dir))
 
-from sandbox_profile import SandboxProfile  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order
+try:
+    from sandbox_profile import SandboxProfile  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order
+except ImportError:
+    SandboxProfile = None
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +83,10 @@ class SandboxCreateRequest(BaseModel):
     llm_secret_name: str = "openai-secret"
 
     @property
-    def profile(self) -> SandboxProfile:
+    def profile(self):
         """Build a SandboxProfile from this request's security toggles."""
+        if SandboxProfile is None:
+            return None
         return SandboxProfile(
             base_agent=self.base_agent,
             secctx=self.secctx,
@@ -319,8 +331,8 @@ async def create_sandbox(
 
     # --- Composable security profile (Session F) ---
     profile = request.profile
-    composable_name = profile.name
-    security_warnings = profile.warnings
+    composable_name = profile.name if profile else request.name
+    security_warnings = profile.warnings if profile else []
     if security_warnings:
         logger.warning(
             "Security warnings for '%s': %s",

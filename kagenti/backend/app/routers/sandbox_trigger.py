@@ -19,8 +19,15 @@ from pydantic import BaseModel
 from app.core.auth import require_roles, ROLE_OPERATOR
 
 # Add deployments/sandbox to path for trigger module
-_sandbox_dir = Path(__file__).parents[4] / "deployments" / "sandbox"
-if str(_sandbox_dir) not in sys.path:
+# Walk up to find repo root (works at any depth, including containers)
+_this_dir = Path(__file__).resolve().parent
+_sandbox_dir = None
+for _parent in _this_dir.parents:
+    _candidate = _parent / "deployments" / "sandbox"
+    if _candidate.is_dir():
+        _sandbox_dir = _candidate
+        break
+if _sandbox_dir and str(_sandbox_dir) not in sys.path:
     sys.path.insert(0, str(_sandbox_dir))
 
 from triggers import SandboxTrigger  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order
