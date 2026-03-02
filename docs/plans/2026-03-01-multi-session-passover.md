@@ -135,7 +135,8 @@ export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 ### Session A — Core Platform (sbox cluster)
 
 **Claude Session ID:** `411cade4`
-**Role:** Fix DB connection, tool call rendering, session management
+**Worktree:** `.worktrees/sandbox-agent`
+**Role:** Fix DB connection, tool call rendering, session management, test fixes
 **Cluster:** sbox (existing)
 **File Ownership:**
 - `kagenti/backend/app/routers/sandbox.py` — EXCLUSIVE
@@ -146,14 +147,17 @@ export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 - `kagenti/ui-v2/e2e/sandbox-rendering.spec.ts` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/sandbox-variants.spec.ts` — EXCLUSIVE
 
-**Priority Tasks:**
-1. ~~P0: Fix Istio + asyncpg DB connection~~ ✅ DONE — ssl=False, retry, eviction (5f7596d6)
-2. P0: Fix agent serializer in image (Dockerfile/pyproject.toml) — Session B
-3. ~~P1: Tool call rendering during streaming + in loaded history~~ ✅ DONE — parseGraphEvent regex fallback + immediate flush (bb2f73e6)
-4. ~~P1: Session name matching content~~ ✅ DONE — metadata merge across task rows (cf026bb9)
-5. ~~P2: Streaming tool call events -> ToolCallStep messages~~ ✅ DONE (merged with #3)
+**Commits:** `bb2f73e6`, `5f7596d6`, `cf026bb9`, `1bb39522`, `e6eb9b8b`
 
-**All Session A P0/P1 tasks complete.** Backend deployed to sbox. Awaiting Session O integration test.
+**Completed Tasks:**
+1. ~~P0: DB pool hardening~~ ✅ ssl=False, retry, eviction (5f7596d6)
+2. ~~P1: Tool call streaming~~ ✅ regex fallback + flush (bb2f73e6)
+3. ~~P1: Session title merge~~ ✅ metadata across task rows (cf026bb9)
+4. ~~P1: sandbox.spec.ts 10 failures~~ ✅ selector fixes (e6eb9b8b)
+5. ~~P1: sidebar title test~~ ✅ improved assertion (e6eb9b8b)
+6. ~~P1: Unit + E2E tests~~ ✅ 23 backend + 1 E2E (1bb39522)
+
+**All Session A tasks complete.** Backend + UI deployed to sbox.
 
 **Startup:**
 ```bash
@@ -177,6 +181,7 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 **Claude Session ID:** `1d8e455f`
 **Role:** Fix Shipwright builds, agent image packaging, deploy scripts
 **Cluster:** sbox (shared with A, different namespace resources)
+**Worktree:** `.worktrees/sandbox-agent` (kagenti repo) + `.worktrees/agent-examples` (agent code)
 **File Ownership:**
 - `.worktrees/agent-examples/` — EXCLUSIVE (all agent code)
 - `kagenti/backend/app/routers/sandbox_deploy.py` — EXCLUSIVE
@@ -192,8 +197,10 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 4. ~~P0: Fix postgres-sessions non-root~~ ✅ FIXED — switched to `bitnami/postgresql:16`
 5. ~~P1: Create deployment manifests for all variants~~ ✅ DONE — 5 variants with services
 6. ~~P1: Graceful 429/quota error handling~~ ✅ DONE — retry + clean error via SSE
-7. P1: Wizard deploy triggers Shipwright Build (not just Deployment)
-8. P2: Source build from git URL (wizard end-to-end)
+7. ~~P0: Fix stale agent code in sandbox-legion~~ ✅ **ROOT CAUSE FOUND** — ConfigMap `agent-code-patch` volume mount was overlaying agent.py + event_serializer.py with old versions. Removed mounts. Builds were correct all along.
+8. ~~P1: OpenShift BuildConfig alternative~~ ✅ DONE — created `sandbox_agent_buildconfig_ocp.yaml` with `noCache: true`
+9. P1: Wizard deploy triggers Shipwright Build (not just Deployment)
+10. P2: Source build from git URL (wizard end-to-end)
 
 **Session Active:** YES (started 2026-03-01T12:04Z)
 
@@ -202,11 +209,14 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 # agent-examples repo:
 2e2590b fix(sandbox): switch TaskStore from asyncpg to psycopg driver
 048f0de fix(sandbox): handle LLM 429/quota errors gracefully in SSE stream
+e489461 fix(sandbox): add CACHE_BUST arg to Dockerfile
+b83a366 debug: add agent.py line count check to Dockerfile build
 
 # kagenti repo:
 6d5aee22 fix(deploy): switch sandbox-legion TaskStore URL from asyncpg to psycopg
 2417c723 fix(deploy): switch postgres-sessions to bitnami/postgresql for OCP
 2bf50b24 feat(deploy): add deployment manifests for all sandbox agent variants
+bb196a00 fix(deploy): add CACHE_BUST build-arg to Shipwright Build
 ```
 
 **Status / Findings:**
@@ -216,8 +226,9 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 - ✅ postgres-sessions: bitnami/postgresql:16 (UID 1001) for OCP compatibility
 - ✅ All 5 variant manifests created with services
 - ✅ 429 handling: quota exhaustion → clean error, transient → retry 3x with backoff
-- ⏳ Agent image rebuild in progress (BuildRun sandbox-agent-rebuild-rwjw6)
-- ⚠️ E2E test blocked by OpenAI quota exhaustion
+- ✅ **Stale code root cause: ConfigMap volume mount `agent-code-patch`** was overlaying agent.py/event_serializer.py with old versions. Fixed by removing mounts. sandbox-legion now has 536-line agent.py with all fixes.
+- ✅ OpenShift BuildConfig created as Shipwright alternative (noCache: true)
+- ⚠️ Agents switched to Mistral (mistral-small-24b-w8a8) — OpenAI quota exceeded
 
 **Startup:**
 ```bash
@@ -239,6 +250,7 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 
 **Claude Session ID:** `487d5f15`
 **Role:** Wire HITL approve/deny, implement sub-agent delegation, passover
+**Worktree:** `.claude/worktrees/integrations-hub` (code cherry-picked to `.worktrees/sandbox-agent`)
 **Cluster:** sbox1
 **File Ownership:**
 - `kagenti/ui-v2/src/pages/SandboxesPage.tsx` — EXCLUSIVE
@@ -251,23 +263,31 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 
 **Additional File Ownership (Integrations Hub + Sessions):**
 - `kagenti/ui-v2/src/pages/IntegrationsPage.tsx` — EXCLUSIVE
+- `kagenti/ui-v2/src/pages/AddIntegrationPage.tsx` — EXCLUSIVE
+- `kagenti/ui-v2/src/pages/IntegrationDetailPage.tsx` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/integrations.spec.ts` — EXCLUSIVE
+- `kagenti/ui-v2/e2e/add-integration.spec.ts` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/sessions-table.spec.ts` — EXCLUSIVE
 - `kagenti/backend/app/routers/integrations.py` — EXCLUSIVE
 - `charts/kagenti/templates/integration-crd.yaml` — EXCLUSIVE
+- `docs/plans/2026-02-28-integrations-hub-design.md` — EXCLUSIVE
+- `docs/plans/2026-03-01-sub-agent-delegation-design.md` — EXCLUSIVE
 
-**Priority Tasks:**
-1. ~~P1: Integrations Hub UI (7 commits)~~ ✅ DONE — merged into feat/sandbox-agent
-2. ~~P1: Integrations Hub Playwright tests~~ ✅ DONE — 24/24 passing
-3. ~~P1: Sessions table with passover chain column~~ ✅ DONE — SessionsTablePage + 20/20 tests
-4. ~~P2: Sub-agent delegation design~~ ✅ DONE — docs/plans/2026-03-01-sub-agent-delegation-design.md
-5. ~~P2: Webhook receiver endpoint~~ ✅ DONE — POST /integrations/:ns/:name/webhook
-6. P1: Wire HITL approve/deny to LangGraph graph resume (Session A DB fix done, models available)
-7. P2: Implement delegate tool in agent code
-8. P2: Passover chain API endpoint (requires Session A — cross-session TODO posted)
-9. P3: Automated passover (context_monitor node)
+**Completed Tasks:**
+1. ✅ Integrations Hub UI — IntegrationsPage (tabbed), AddIntegrationPage (form), IntegrationDetailPage
+2. ✅ Backend Integration router — 7 endpoints (CRUD + webhook + test connection)
+3. ✅ Helm Integration CRD + RBAC rules
+4. ✅ SessionsTablePage — type filter, parent/child links, status badges
+5. ✅ Sub-agent delegation design doc
+6. ✅ Webhook receiver endpoint
 
-**Test Results (local):** 44/44 Playwright tests passing (24 integrations + 20 sessions)
+**Remaining Tasks:**
+1. P1: Wire HITL approve/deny (needs sandbox.py — Session A file)
+2. P2: Implement delegate tool (needs agent-examples — Session B file)
+3. P2: Passover chain API (needs sandbox.py — cross-session TODO posted)
+4. P3: Automated passover (context_monitor node)
+
+**Test Results (local):** 58/58 Playwright tests (24 integrations + 14 add-integration + 20 sessions)
 **sbox42 Results:** 7/7 passing (sandbox-chat-identity 3/3, session-ownership 4/4)
 
 **Startup:**
