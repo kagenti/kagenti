@@ -151,6 +151,28 @@ keycloak:
   autoBootstrapRealm: true
 
 # ------------------------------------------------------------------
+#  AuthBridge Configuration
+# ------------------------------------------------------------------
+authBridge:
+  # CLIENT_AUTH_TYPE: Controls how Keycloak clients authenticate
+  #   - "client-secret": Traditional client_secret authentication (default)
+  #   - "federated-jwt": JWT-SVID authentication via SPIFFE identity provider
+  # For federated-jwt, you must configure a SPIFFE identity provider in Keycloak
+  clientAuthType: "client-secret"
+  # SPIFFE_IDP_ALIAS: Keycloak SPIFFE identity provider alias (only used with federated-jwt)
+  spiffeIdpAlias: "spire-spiffe"
+
+# ------------------------------------------------------------------
+#  SPIFFE Identity Provider Setup Job Configuration
+#  (Only runs when SPIRE is enabled)
+# ------------------------------------------------------------------
+spiffeIdp:
+  image:
+    repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# ------------------------------------------------------------------
 #  Kagenti Operator Configuration
 # ------------------------------------------------------------------
 kagenti-operator-chart:

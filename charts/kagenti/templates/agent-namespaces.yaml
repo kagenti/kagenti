@@ -222,6 +222,29 @@ stringData:
 
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
+#  Used by kagenti-client-registration sidecar injected by the webhook
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagenti-webhook-config
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+data:
+  SPIRE_ENABLED: "{{ $root.Values.spire.enabled }}"
+  KEYCLOAK_URL: "{{ $root.Values.keycloak.url }}"
+  KEYCLOAK_REALM: "{{ $root.Values.keycloak.realm }}"
+  KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
+  KEYCLOAK_ADMIN_SECRET_NAME: "{{ $root.Values.keycloak.adminSecretName }}"
+  KEYCLOAK_ADMIN_USERNAME_KEY: "{{ $root.Values.keycloak.adminUsernameKey }}"
+  KEYCLOAK_ADMIN_PASSWORD_KEY: "{{ $root.Values.keycloak.adminPasswordKey }}"
+  CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
+  SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
+  JWT_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  ConfigMap for AuthBridge (Token Exchange) in Namespace: {{ . }}
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -390,6 +413,30 @@ data:
                   socket_address:
                     address: 127.0.0.1
                     port_value: 9090
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  ConfigMap for SPIFFE Helper in Namespace: {{ . }}
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spiffe-helper-config
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+data:
+  helper.conf: |
+    agent_address = "/spiffe-workload-api/spire-agent.sock"
+    cmd = ""
+    cmd_args = ""
+    cert_dir = "/opt"
+    renew_signal = ""
+    svid_file_name = "svid.pem"
+    svid_key_file_name = "svid_key.pem"
+    svid_bundle_file_name = "svid_bundle.pem"
+    # jwt_audience must match Keycloak's issuer URL for JWT-SVID authentication
+    # For client-secret auth, this can be any value (e.g., "kagenti")
+    jwt_svids = [{jwt_audience="{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}", jwt_svid_file_name="jwt_svid.token"}]
 ---
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————
