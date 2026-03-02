@@ -82,15 +82,30 @@ $KCADM set-password --config /tmp/kc/kcadm.config -r $REALM \
 "
 }
 
-create_user "dev-user"  "dev-user"  "dev-user@kagenti.local"  "Dev"       "User"
-create_user "ns-admin"  "ns-admin"  "ns-admin@kagenti.local"  "Namespace" "Admin"
+ADMIN_PASS="${ADMIN_PASSWORD:-admin}"
+DEV_PASS="dev-user"
+NS_PASS="ns-admin"
 
-# ── Step 4: Summary ──────────────────────────────────────────────────────
+create_user "admin"     "$ADMIN_PASS" "admin@kagenti.local"    "Admin"     "User"
+create_user "dev-user"  "$DEV_PASS"   "dev-user@kagenti.local" "Dev"       "User"
+create_user "ns-admin"  "$NS_PASS"    "ns-admin@kagenti.local" "Namespace" "Admin"
+
+# ── Step 4: Store passwords in a secret for show-services.sh ──────────────
+log_info "Storing test user passwords in kagenti-test-users secret..."
+kubectl create secret generic kagenti-test-users -n "$KC_NS" \
+    --from-literal=admin-password="$ADMIN_PASS" \
+    --from-literal=dev-user-password="$DEV_PASS" \
+    --from-literal=ns-admin-password="$NS_PASS" \
+    --dry-run=client -o yaml | kubectl apply -f -
+log_success "kagenti-test-users secret updated"
+
+# ── Step 5: Summary ──────────────────────────────────────────────────────
 log_success "Test users created in realm: $REALM"
 echo ""
 echo "  Users:"
-echo "    dev-user  / dev-user   (developer)"
-echo "    ns-admin  / ns-admin   (namespace admin)"
+echo "    admin     / $ADMIN_PASS   (admin)"
+echo "    dev-user  / $DEV_PASS   (developer)"
+echo "    ns-admin  / $NS_PASS   (namespace admin)"
 echo ""
 echo "  These users can log in to the Kagenti UI."
 echo "  Run show-services.sh --reveal to see all credentials."

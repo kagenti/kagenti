@@ -20,20 +20,20 @@
  *   KEYCLOAK_USER: Keycloak admin username (default: admin)
  *   KEYCLOAK_PASSWORD: Keycloak admin password (default: admin)
  */
-import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 
-// Test users created by keycloak-realm-init Helm template
+// Test users created by create-test-users.sh
 const DEV_USER = 'dev-user';
 const DEV_PASSWORD = 'dev-user';
 const NS_ADMIN_USER = 'ns-admin';
 const NS_ADMIN_PASSWORD = 'ns-admin';
 
 /**
- * Login to Keycloak with specific credentials.
- * Works with both community Keycloak and Red Hat Build of Keycloak.
+ * Login to Keycloak with specific credentials (for multi-user tests).
+ * Uses the same pattern as the shared loginIfNeeded helper.
  */
 async function loginAs(page: Page, username: string, password: string) {
   await page.waitForLoadState('networkidle', { timeout: 30000 });
@@ -71,7 +71,7 @@ async function loginAs(page: Page, username: string, password: string) {
 }
 
 /**
- * Reusable login helper with default credentials
+ * Login with default admin credentials (same pattern as e2e/helpers/auth.ts)
  */
 async function loginIfNeeded(page: Page) {
   await loginAs(page, KEYCLOAK_USER, KEYCLOAK_PASSWORD);
