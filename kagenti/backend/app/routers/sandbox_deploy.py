@@ -231,8 +231,8 @@ def _build_deployment_manifest(
             "namespace": namespace,
             "labels": labels,
             "annotations": {
-                "kagenti.io/description": f"Sandbox agent ({req.variant}) deployed via UI wizard",
-                "kagenti.io/variant": req.variant,
+                "kagenti.io/description": f"Sandbox agent ({req.base_agent}) deployed via UI wizard",
+                "kagenti.io/variant": req.base_agent,
                 "kagenti.io/isolation-mode": req.isolation_mode,
                 "kagenti.io/proxy-allowlist": req.proxy_allowlist,
                 "kagenti.io/source-repo": req.repo,
