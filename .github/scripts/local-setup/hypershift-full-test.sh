@@ -944,6 +944,9 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     log_step "Fixing Keycloak admin (RHBK operator workaround)..."
     ./.github/scripts/kagenti-operator/36-fix-keycloak-admin.sh
+
+    log_step "Creating test users in Keycloak (admin, dev-user, ns-admin)..."
+    ./kagenti/auth/create-test-users.sh
 else
     log_phase "PHASE 2: Skipping Kagenti Installation"
 fi
