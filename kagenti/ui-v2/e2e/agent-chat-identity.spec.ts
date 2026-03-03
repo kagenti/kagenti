@@ -21,15 +21,32 @@
  *   KEYCLOAK_PASSWORD: Keycloak admin password (default: admin)
  */
 import { test, expect, type Page } from '@playwright/test';
+import { execSync } from 'child_process';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 
-// Test users created by create-test-users.sh
+// Test users created by create-test-users.sh — passwords stored in K8s secret
 const DEV_USER = 'dev-user';
-const DEV_PASSWORD = 'dev-user';
 const NS_ADMIN_USER = 'ns-admin';
-const NS_ADMIN_PASSWORD = 'ns-admin';
+
+function getTestUserPassword(key: string): string {
+  const kc = process.env.KUBECONFIG || '';
+  const kcBin = ['/opt/homebrew/bin/oc', 'kubectl'].find(b => {
+    try { execSync(`${b} version --client 2>/dev/null`, { stdio: 'pipe' }); return true; } catch { return false; }
+  }) || 'kubectl';
+  try {
+    return execSync(
+      `KUBECONFIG=${kc} ${kcBin} -n keycloak get secret kagenti-test-users -o jsonpath='{.data.${key}}' | base64 -d`,
+      { timeout: 10000, stdio: 'pipe' }
+    ).toString().trim();
+  } catch {
+    return key.replace('-password', ''); // fallback to username=password
+  }
+}
+
+const DEV_PASSWORD = process.env.DEV_USER_PASSWORD || getTestUserPassword('dev-user-password');
+const NS_ADMIN_PASSWORD = process.env.NS_ADMIN_PASSWORD || getTestUserPassword('ns-admin-password');
 
 /**
  * Login to Keycloak with specific credentials (for multi-user tests).

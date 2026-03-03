@@ -82,9 +82,21 @@ $KCADM set-password --config /tmp/kc/kcadm.config -r $REALM \
 "
 }
 
-ADMIN_PASS="${ADMIN_PASSWORD:-admin}"
-DEV_PASS="dev-user"
-NS_PASS="ns-admin"
+# Generate random passwords if not provided via env vars.
+# If the kagenti-test-users secret already exists, reuse those passwords
+# so repeated runs don't break existing sessions.
+_existing_admin=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
+    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+_existing_dev=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
+    -o jsonpath='{.data.dev-user-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+_existing_ns=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
+    -o jsonpath='{.data.ns-admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+
+_rand() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 15; }
+
+ADMIN_PASS="${ADMIN_PASSWORD:-${_existing_admin:-$(_rand)}}"
+DEV_PASS="${DEV_USER_PASSWORD:-${_existing_dev:-$(_rand)}}"
+NS_PASS="${NS_ADMIN_PASSWORD:-${_existing_ns:-$(_rand)}}"
 
 create_user "admin"     "$ADMIN_PASS" "admin@kagenti.local"    "Admin"     "User"
 create_user "dev-user"  "$DEV_PASS"   "dev-user@kagenti.local" "Dev"       "User"
