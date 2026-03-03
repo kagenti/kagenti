@@ -1,5 +1,7 @@
 # Global settings
 openshift: true
+# Domain name for SPIFFE trust domain and service URLs
+domain: localtest.me
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here

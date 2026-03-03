@@ -1,4 +1,4 @@
-{{- if and .Values.components.keycloak.enabled .Values.spire.enabled }}
+{{- if and .Values.keycloak.enabled .Values.spire.enabled }}
 ---
 # ServiceAccount for the SPIFFE IdP Setup Job
 apiVersion: v1
