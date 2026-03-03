@@ -510,9 +510,12 @@ test.describe('Sandbox Rendering — Tool Call Steps (mocked)', () => {
 
     await navigateToSandboxChat(page);
 
-    // Navigate to the history session via URL
-    await page.goto(`/sandbox?session=${historySessionId}`);
-    await page.waitForTimeout(3000);
+    // Navigate to the history session via SPA routing (avoids Keycloak redirect)
+    await page.evaluate((sid) => {
+      window.history.pushState({}, '', `/sandbox?session=${sid}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, historySessionId);
+    await page.waitForTimeout(5000);
     await snap(page, 'history-loaded');
 
     // ---- Assert: Tool Call steps rendered from history ----
