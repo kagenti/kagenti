@@ -27,23 +27,14 @@ test.describe('Agent Catalog Page', () => {
     await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible();
   });
 
-  test('should show loading spinner initially', async ({ page }) => {
-    // First ensure the page has loaded by checking for the heading
+  test('should show agents or empty state after loading', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
       timeout: 15000,
     });
-
-    // Wait for API response and assert success
-    const response = await page.waitForResponse(
-      (r) => r.url().includes('/api/v1/agents'),
-      { timeout: 30000 }
-    );
-    expect(response.status()).toBe(200);
-
-    // Table or empty state must render
+    // Page loaded via beforeEach — table or empty state must be visible
     await expect(
       page.getByRole('table').or(page.getByText(/No agents found/i).first())
-    ).toBeVisible({ timeout: 10000 });
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('should have namespace selector', async ({ page }) => {
@@ -93,12 +84,10 @@ test.describe('Agent Catalog - With Deployed Agents', () => {
   });
 
   test('should list weather-service agent if deployed', async ({ page }) => {
-    // Wait for the API response
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/v1/agents') && response.status() === 200,
-      { timeout: 30000 }
-    );
+    // Wait for page content to render (API already called in beforeEach)
+    await expect(
+      page.getByRole('table').or(page.getByText(/No agents found/i).first())
+    ).toBeVisible({ timeout: 15000 });
 
     // Look for weather-service in the page
     const weatherServiceRow = page.getByRole('row', { name: /weather-service/i });
