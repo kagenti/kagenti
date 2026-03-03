@@ -16,7 +16,6 @@
  * Run: npx playwright test sandbox-rendering
  */
 import { test, expect, type Page } from '@playwright/test';
-import { loginIfNeeded } from './helpers/auth';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
