@@ -30,11 +30,12 @@ test.describe('Home Page', () => {
     await page.goto('/');
     await loginIfNeeded(page);
 
-    // Find and click the Agent Catalog link
-    const agentLink = page.getByRole('link', { name: /Agent/i }).first();
+    // The "View Agents" action in the QuickLinkCard is a PatternFly Button
+    // (variant="link"), which renders as <button>, not <a>.
+    const agentButton = page.getByRole('button', { name: /View Agents/i }).first();
 
-    if (await agentLink.isVisible()) {
-      await agentLink.click();
+    if (await agentButton.isVisible()) {
+      await agentButton.click();
       await page.waitForLoadState('networkidle');
       await expect(page).toHaveURL(/\/agents/, { timeout: 15000 });
     }
@@ -44,12 +45,14 @@ test.describe('Home Page', () => {
     await page.goto('/');
     await loginIfNeeded(page);
 
-    // Find and click the Tool Catalog link
-    const toolLink = page.getByRole('link', { name: /Tool/i }).first();
+    // The "View Tools" action in the QuickLinkCard is a PatternFly Button
+    // (variant="link"), which renders as <button>, not <a>.
+    const toolButton = page.getByRole('button', { name: /View Tools/i }).first();
 
-    if (await toolLink.isVisible()) {
-      await toolLink.click();
-      await expect(page).toHaveURL(/\/tools/);
+    if (await toolButton.isVisible()) {
+      await toolButton.click();
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/\/tools/, { timeout: 15000 });
     }
   });
 });

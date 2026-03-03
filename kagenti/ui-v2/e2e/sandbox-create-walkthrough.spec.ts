@@ -230,16 +230,20 @@ test.describe('Import Wizard — Hardened Agent', () => {
     await snap(page, 'hardened-step2-isolation');
 
     // Enable Landlock filesystem sandbox
+    // PatternFly <Switch> hides the <input> (opacity: 0), so use .check()
+    // which handles hidden checkboxes, instead of .click() which requires visibility.
     const landlockSwitch = page.locator('#landlock');
-    await landlockSwitch.click();
+    await landlockSwitch.check({ force: true });
     await expect(landlockSwitch).toBeChecked();
 
     // Enable network proxy and modify allowed domains
     const proxySwitch = page.locator('#proxy');
-    await proxySwitch.click();
+    await proxySwitch.check({ force: true });
     await expect(proxySwitch).toBeChecked();
 
+    // Wait for proxy-domains field to appear (conditional on proxy being checked)
     const proxyField = page.locator('#proxy-domains');
+    await expect(proxyField).toBeVisible({ timeout: 5000 });
     await proxyField.clear();
     await proxyField.fill('github.com, api.github.com');
 

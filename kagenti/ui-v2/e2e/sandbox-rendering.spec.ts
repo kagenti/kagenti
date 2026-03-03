@@ -153,20 +153,22 @@ function getSessionIdFromUrl(page: Page): string {
 
 /**
  * Locate all "Tool Call" expandable step blocks.
- * These render with border-left info-color and contain "Tool Call:" text.
- * We match on the inline border-left style (info-color) to target the
- * ToolCallStep wrapper div precisely.
+ * These render with border-left and contain "Tool Call:" text with a bold header.
+ * We match on the border-left inline style (3px solid) to target the
+ * ToolCallStep wrapper div precisely. CSS attribute selectors on `style` with
+ * var(...) custom-property names are unreliable across browsers, so we match
+ * on the literal "border-left" + "3px solid" portion instead.
  */
 function getToolCallSteps(page: Page) {
-  return page.locator('div[style*="info-color"]').filter({ hasText: /Tool Call:/ });
+  return page.locator('div[style*="border-left"]').filter({ hasText: /Tool Call:/ });
 }
 
 /**
  * Locate all "Result" expandable step blocks.
- * These render with border-left success-color and contain "Result:" text.
+ * These render with border-left and contain "Result:" text.
  */
 function getResultSteps(page: Page) {
-  return page.locator('div[style*="success-color"]').filter({ hasText: /Result:/ });
+  return page.locator('div[style*="border-left"]').filter({ hasText: /Result:/ });
 }
 
 /**

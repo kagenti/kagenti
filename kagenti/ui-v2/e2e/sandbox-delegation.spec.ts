@@ -176,18 +176,18 @@ test.describe('Sandbox Delegation - Event Cards', () => {
     await chatInput.fill('Explore the auth module');
     await page.getByRole('button', { name: /Send/i }).click();
 
-    // Delegation card should appear
-    const delegationCard = page.locator('[data-testid="delegation-card-child-inproc-001"]').first();
-    await expect(delegationCard).toBeVisible({ timeout: 15000 });
+    // Delegation cards should appear (each SSE event creates a separate card)
+    const delegationCards = page.locator('[data-testid="delegation-card-child-inproc-001"]');
+    await expect(delegationCards.first()).toBeVisible({ timeout: 15000 });
 
-    // Card should show the delegation mode
-    await expect(delegationCard.locator('[data-testid="delegation-mode-badge"]')).toContainText('in-process');
+    // The delegation_start card should show mode and task
+    const startCard = delegationCards.first();
+    await expect(startCard.locator('[data-testid="delegation-mode-badge"]')).toContainText('in-process');
+    await expect(startCard).toContainText('explore the auth module');
 
-    // Card should show the task description
-    await expect(delegationCard).toContainText('explore the auth module');
-
-    // Card should show completed result
-    await expect(delegationCard).toContainText(/Found 3 auth files|auth\.py/);
+    // The delegation_complete card should show the result
+    const completeCard = delegationCards.last();
+    await expect(completeCard).toContainText(/Found 3 auth files|auth\.py/);
   });
 
   test('should show delegation card with isolated mode for PR build', async ({ page }) => {
@@ -270,14 +270,14 @@ test.describe('Sandbox Delegation - Event Cards', () => {
     await chatInput.fill('Run the tests on my changes');
     await page.getByRole('button', { name: /Send/i }).click();
 
-    const delegationCard = page.locator('[data-testid="delegation-card-child-shared-003"]').first();
-    await expect(delegationCard).toBeVisible({ timeout: 15000 });
+    const delegationCards = page.locator('[data-testid="delegation-card-child-shared-003"]');
+    await expect(delegationCards.first()).toBeVisible({ timeout: 15000 });
 
-    // Should show shared-pvc mode
-    await expect(delegationCard.locator('[data-testid="delegation-mode-badge"]')).toContainText('shared-pvc');
+    // The delegation_start card should show shared-pvc mode
+    await expect(delegationCards.first().locator('[data-testid="delegation-mode-badge"]')).toContainText('shared-pvc');
 
-    // Should show the result
-    await expect(delegationCard).toContainText('42 tests passed');
+    // The delegation_complete card should show the result
+    await expect(delegationCards.last()).toContainText('42 tests passed');
   });
 });
 
@@ -342,21 +342,15 @@ test.describe('Sandbox Delegation - Multiple Children', () => {
     await chatInput.fill('Build both auth and rbac features in parallel');
     await page.getByRole('button', { name: /Send/i }).click();
 
-    // Both delegation cards should be visible
-    await expect(
-      page.locator('[data-testid="delegation-card-child-multi-a"]').first()
-    ).toBeVisible({ timeout: 15000 });
-    await expect(
-      page.locator('[data-testid="delegation-card-child-multi-b"]').first()
-    ).toBeVisible();
+    // Both delegation card sets should be visible (start + complete for each)
+    const cardsA = page.locator('[data-testid="delegation-card-child-multi-a"]');
+    const cardsB = page.locator('[data-testid="delegation-card-child-multi-b"]');
+    await expect(cardsA.first()).toBeVisible({ timeout: 15000 });
+    await expect(cardsB.first()).toBeVisible();
 
-    // Both should show results
-    await expect(
-      page.locator('[data-testid="delegation-card-child-multi-a"]').first()
-    ).toContainText('PR #42');
-    await expect(
-      page.locator('[data-testid="delegation-card-child-multi-b"]').first()
-    ).toContainText('PR #43');
+    // The delegation_complete cards should show results
+    await expect(cardsA.last()).toContainText('PR #42');
+    await expect(cardsB.last()).toContainText('PR #43');
   });
 });
 
