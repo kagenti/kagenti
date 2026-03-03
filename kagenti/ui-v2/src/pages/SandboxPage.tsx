@@ -24,7 +24,8 @@ import { useQuery } from '@tanstack/react-query';
 import { sandboxService, chatService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
-import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
+// SandboxAgentsPanel hidden — agent selection via header dropdown
+// import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 import { SkillWhisperer } from '../components/SkillWhisperer';
 // SandboxConfig disabled — model/repo/branch not yet wired to backend
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
@@ -502,7 +503,9 @@ export const SandboxPage: React.FC = () => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
-  const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
+  const [selectedAgent, _setSelectedAgent] = useState('sandbox-legion');
+  // TODO: wire agent selection to header dropdown (currently fixed to sandbox-legion)
+  void _setSelectedAgent;
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
