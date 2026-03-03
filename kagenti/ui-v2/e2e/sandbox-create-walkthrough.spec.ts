@@ -208,7 +208,7 @@ test.describe('Import Wizard — Hardened Agent', () => {
   test('configures pod-per-session isolation with custom security', async ({
     page,
   }) => {
-    test.setTimeout(120000);
+    test.setTimeout(180000);
     screenshotIdx = 100;
 
     await page.goto('/');

@@ -93,7 +93,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
   test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL — live cluster with sandbox-legion agent');
 
   test('full sandbox user journey', async ({ page }) => {
-    test.setTimeout(300000); // 5 min for LLM calls
+    test.setTimeout(600000); // 10 min — Llama 4 Scout (109B) is slower than Mistral
     demoStartTime = Date.now();
 
     // ------------------------------------------------------------------
