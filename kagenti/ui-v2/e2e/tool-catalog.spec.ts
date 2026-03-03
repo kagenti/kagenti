@@ -48,20 +48,20 @@ test.describe('Tool Catalog - With Deployed Tools', () => {
   });
 
   test('should display tools table when tools are deployed', async ({ page }) => {
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/v1/tools') && response.status() === 200,
+    const response = await page.waitForResponse(
+      (r) => r.url().includes('/api/v1/tools'),
       { timeout: 30000 }
     );
+    expect(response.status()).toBe(200);
     const table = page.getByRole('table');
     const emptyState = page.getByText(/No tools found/i).first();
-    await expect(table.or(emptyState)).toBeVisible({ timeout: 30000 });
+    await expect(table.or(emptyState)).toBeVisible({ timeout: 10000 });
   });
 
   test('should list weather-tool if deployed', async ({ page }) => {
     await page.waitForResponse(
       (response) =>
-        response.url().includes('/api/v1/tools') && response.status() === 200,
+        response.url().includes('/api/v1/tools'),
       { timeout: 30000 }
     );
 

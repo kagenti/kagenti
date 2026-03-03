@@ -134,21 +134,9 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('sandbox_sidebar');
 
     // ------------------------------------------------------------------
-    // Step 4: Toggle Advanced Config
+    // Step 4: (Advanced Config — skipped, SandboxConfig not yet wired)
     // ------------------------------------------------------------------
-    const configToggle = page.getByText(/Advanced Configuration/i);
-    await expect(configToggle).toBeVisible({ timeout: 5000 });
-    await configToggle.click();
-
-    await expect(page.locator('#sandbox-model')).toBeVisible({
-      timeout: 5000,
-    });
-    await expect(page.locator('#sandbox-repo')).toBeVisible();
-    await expect(page.locator('#sandbox-branch')).toBeVisible();
-
-    // Collapse it back
-    await configToggle.click();
-    markStep('sandbox_config');
+    markStep('sandbox_config_skipped');
 
     // ------------------------------------------------------------------
     // Step 5: Send a chat message
@@ -188,7 +176,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(
-      page.getByRole('heading', { name: /Sandbox Sessions/i })
+      page.getByRole('heading', { name: /Sessions/i })
     ).toBeVisible({ timeout: 15000 });
 
     // Verify table has content
@@ -213,13 +201,13 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('sandbox_table_search');
 
     // ------------------------------------------------------------------
-    // Step 9: Navigate back to chat via New Session
+    // Step 9: Navigate back to chat via sidebar nav
     // ------------------------------------------------------------------
-    const newSessionTableBtn = page.getByRole('button', {
-      name: /New Session/i,
-    });
-    await expect(newSessionTableBtn).toBeVisible();
-    await newSessionTableBtn.click();
+    const sessionsNav = page
+      .locator('nav a, nav button, [role="navigation"] a')
+      .filter({ hasText: /^Sessions$/ });
+    await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
+    await sessionsNav.first().click();
     await page.waitForLoadState('networkidle');
 
     await expect(

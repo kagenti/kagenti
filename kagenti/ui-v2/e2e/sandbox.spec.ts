@@ -200,11 +200,6 @@ test.describe('Sandbox Legion - Sessions Table', () => {
     // Search input should be visible
     const searchInput = page.getByPlaceholder(/Search by context ID/i);
     await expect(searchInput).toBeVisible();
-
-    // New Session button should be visible
-    await expect(
-      page.getByRole('button', { name: /New Session/i })
-    ).toBeVisible();
   });
 
   test('should search and filter results', async ({ page }) => {

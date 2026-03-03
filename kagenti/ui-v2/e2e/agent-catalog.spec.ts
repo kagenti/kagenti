@@ -33,12 +33,17 @@ test.describe('Agent Catalog Page', () => {
       timeout: 15000,
     });
 
-    // Wait for either spinner to disappear or table/empty state to appear
+    // Wait for API response and assert success
+    const response = await page.waitForResponse(
+      (r) => r.url().includes('/api/v1/agents'),
+      { timeout: 30000 }
+    );
+    expect(response.status()).toBe(200);
+
+    // Table or empty state must render
     await expect(
       page.getByRole('table').or(page.getByText(/No agents found/i).first())
-    ).toBeVisible({
-      timeout: 30000,
-    });
+    ).toBeVisible({ timeout: 10000 });
   });
 
   test('should have namespace selector', async ({ page }) => {
@@ -84,7 +89,6 @@ test.describe('Agent Catalog - With Deployed Agents', () => {
     const table = page.getByRole('table');
     const emptyState = page.getByText(/No agents found/i).first();
 
-    // Either should be visible
     await expect(table.or(emptyState)).toBeVisible({ timeout: 30000 });
   });
 
