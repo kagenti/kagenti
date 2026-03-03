@@ -201,6 +201,42 @@ Existing tests validate the graph works:
 - `sandbox-variants.spec.ts` → all variants execute tools
 - `agent-rca-workflow.spec.ts` → full RCA with web_fetch + analysis
 
+## MAAS Model Compatibility
+
+Tested on Red Hat AI Services (MAAS) vLLM endpoints (2026-03-03):
+
+| Model | Size | `tool_choice=auto` | `tool_choice=required` | Recommended For |
+|-------|------|-------------------|----------------------|-----------------|
+| **Llama 4 Scout 17B-16E** | 109B MoE | ✅ 10/10 structured | ✅ | Tool-calling agents (default) |
+| **Mistral Small 3.1 24B** | 24B | ❌ 0/10 (text JSON) | ✅ 5/5 | Chat-only (no tool execution with auto) |
+| **DeepSeek R1 Qwen 14B** | 14B | ❌ (reasoning only) | N/A | Reasoning tasks, no tool support |
+| **Llama 3.2 3B** | 3B | ❌ 0/3 (ignores tools) | N/A | Too small for function calling |
+
+### Key Finding: Mistral MAAS Bug
+
+Mistral Small 24B via MAAS vLLM **does not return structured `tool_calls`** when
+`tool_choice=auto`. The model generates correct tool call JSON but puts it in the
+`content` field (text), not the `tool_calls` field. `finish_reason` is `stop`
+instead of `tool_calls`. LangGraph's `tools_condition` sees no tool_calls and
+skips tool execution.
+
+With `tool_choice=required` Mistral works correctly (5/5). This is a vLLM/MAAS
+proxy issue, not a model limitation.
+
+### Recommended Configuration
+
+- **Sandbox agents** (need tools): Llama 4 Scout — reliable `auto` mode
+- **Chat-only agents**: Mistral Small 24B — fast, good text quality
+- **Future**: Add parser node to handle text JSON tool calls as fallback
+
+### API Key Management
+
+```
+openai-secret     → active model key (currently Llama 4 Scout)
+mistral-secret    → Mistral key (for chat-only agents)
+llama4-secret     → Llama 4 Scout key (backup)
+```
+
 ## Implementation Order
 
 1. `tools.py` — Core 4 tool definitions with workspace sandboxing
