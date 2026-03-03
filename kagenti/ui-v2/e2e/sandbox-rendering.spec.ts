@@ -16,6 +16,7 @@
  * Run: npx playwright test sandbox-rendering
  */
 import { test, expect, type Page } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
@@ -508,13 +509,16 @@ test.describe('Sandbox Rendering — Tool Call Steps (mocked)', () => {
       return route.fallback();
     });
 
-    await navigateToSandboxChat(page);
-
-    // Navigate to the history session via SPA routing (avoids Keycloak redirect)
-    await page.evaluate((sid) => {
-      window.history.pushState({}, '', `/sandbox?session=${sid}`);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }, historySessionId);
+    // Navigate directly to the session (mocked routes handle all API calls)
+    await page.goto(`/sandbox?session=${historySessionId}`);
+    await loginIfNeeded(page);
+    // If redirected to home, try SPA routing
+    if (!page.url().includes('/sandbox')) {
+      await page.evaluate((sid) => {
+        window.history.pushState({}, '', `/sandbox?session=${sid}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, historySessionId);
+    }
     await page.waitForTimeout(5000);
     await snap(page, 'history-loaded');
 
