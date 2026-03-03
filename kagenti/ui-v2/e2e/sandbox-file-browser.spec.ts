@@ -103,7 +103,7 @@ const MOCK_PY_CONTENT = {
 
 /** Set up mock routes for the sandbox file browser API */
 function setupMockRoutes(page: Page) {
-  return page.route('**/api/v1/sandbox/team1/files/sandbox-basic*', async (route) => {
+  return page.route('**/api/v1/sandbox/team1/files/sandbox-basic/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.searchParams.get('path') || '/workspace';
 
@@ -162,7 +162,7 @@ test.describe('Sandbox File Browser', () => {
     await page.waitForLoadState('networkidle');
 
     // TreeView should appear
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
 
     // All three entries should be visible in the tree
@@ -178,7 +178,7 @@ test.describe('Sandbox File Browser', () => {
     // The route /sandbox/files without :namespace/:agentName does not match
     // the router definition, so the app should show a not-found or fallback page.
     // Check that the file browser tree is NOT visible.
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).not.toBeVisible({ timeout: 5000 });
   });
 
@@ -187,7 +187,7 @@ test.describe('Sandbox File Browser', () => {
     await page.waitForLoadState('networkidle');
 
     // Wait for tree to render
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
 
     // Click README.md in the tree
@@ -211,7 +211,7 @@ test.describe('Sandbox File Browser', () => {
     await page.waitForLoadState('networkidle');
 
     // Wait for tree to render
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
 
     // Click main.py in the tree
@@ -229,12 +229,20 @@ test.describe('Sandbox File Browser', () => {
     await page.goto('/sandbox/files/team1/sandbox-basic');
     await page.waitForLoadState('networkidle');
 
-    // Breadcrumb should be visible
-    const breadcrumb = page.locator('[class*="pf-v5-c-breadcrumb"]');
+    // Wait for tree to render, then click a directory to generate breadcrumb segments
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
+    await expect(treeView).toBeVisible({ timeout: 10000 });
+
+    // Click the "src" directory to navigate into /workspace/src
+    await page.getByText('src').click();
+
+    // Breadcrumb should be visible (use nav tag to avoid matching nested ol)
+    const breadcrumb = page.locator('nav[class*="pf-v5-c-breadcrumb"]');
     await expect(breadcrumb).toBeVisible({ timeout: 10000 });
 
-    // "workspace" segment should be present in the breadcrumb
+    // "workspace" and "src" segments should be present in the breadcrumb
     await expect(breadcrumb).toContainText('workspace');
+    await expect(breadcrumb).toContainText('src');
   });
 
   test('file metadata displays size and date', async ({ page }) => {
@@ -242,7 +250,7 @@ test.describe('Sandbox File Browser', () => {
     await page.waitForLoadState('networkidle');
 
     // Wait for tree to render
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
 
     // Click README.md to show file preview with metadata
@@ -270,21 +278,21 @@ test.describe('Sandbox File Browser', () => {
       encoding: 'utf-8',
     };
 
-    // Override mock to include the new file when browsing /workspace/data
-    await page.route('**/api/v1/sandbox/team1/files/sandbox-basic*', async (route) => {
+    // Override mock: the component always starts at currentPath='/' so
+    // return the new-file listing as the default directory response.
+    await page.route('**/api/v1/sandbox/team1/files/sandbox-basic/**', async (route) => {
       const url = new URL(route.request().url());
       const path = url.searchParams.get('path') || '/';
-      if (path === '/workspace/data') {
-        await route.fulfill({ json: MOCK_DIR_WITH_NEW_FILE });
-      } else if (path === '/workspace/data/e2e_test.txt') {
+      if (path === '/workspace/data/e2e_test.txt') {
         await route.fulfill({ json: MOCK_NEW_FILE_CONTENT });
       } else {
-        await route.fulfill({ json: MOCK_DIR_LISTING });
+        // Default directory listing includes the new file
+        await route.fulfill({ json: MOCK_DIR_WITH_NEW_FILE });
       }
     });
 
-    // Navigate to file browser, drill into /workspace/data
-    await page.goto('/sandbox/files/team1/sandbox-basic?path=/workspace/data');
+    // Navigate to file browser (component always starts at '/')
+    await page.goto('/sandbox/files/team1/sandbox-basic');
     await loginIfNeeded(page);
     await page.waitForSelector('[class*="pf-v5-c-tree-view"]', { timeout: 15000 });
 
@@ -310,10 +318,16 @@ test.describe('Sandbox File Browser', () => {
       });
     });
 
-    // This test just verifies the API mock responds correctly
-    // The UI rendering of stats on SandboxesPage is Session C's responsibility
-    const response = await page.request.get('/api/v1/sandbox/team1/stats/sandbox-basic');
-    const data = await response.json();
+    // Navigate to any page so the browser context is active for fetch()
+    await page.goto('/sandbox/files/team1/sandbox-basic');
+    await page.waitForLoadState('networkidle');
+
+    // Use page.evaluate + fetch() so the request goes through page.route() mocks
+    // (page.request.get() bypasses page route interception)
+    const data = await page.evaluate(async () => {
+      const res = await fetch('/api/v1/sandbox/team1/stats/sandbox-basic');
+      return res.json();
+    });
     expect(data.total_mounts).toBe(2);
     expect(data.mounts[1].mount_point).toBe('/workspace');
   });
@@ -421,7 +435,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await page.waitForLoadState('networkidle');
 
     // Wait for tree view to render with real data from pod exec
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 30000 });
 
     // ── Step 4: Verify e2e-report.md appears in directory listing ──
@@ -499,7 +513,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
     await page.waitForLoadState('networkidle');
 
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]');
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 30000 });
 
     // ── Step 4: Verify fibonacci.py appears ──
