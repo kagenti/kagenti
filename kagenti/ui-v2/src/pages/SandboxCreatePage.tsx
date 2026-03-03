@@ -103,7 +103,7 @@ const INITIAL_STATE: WizardState = {
   enableCheckpointing: true,
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
-  model: 'mistral-small-24b-w8a8',
+  model: 'llama-4-scout-17b-16e-w4a16',
 };
 
 const STEPS = [
@@ -122,9 +122,9 @@ const VARIANTS = [
 ];
 
 const MODELS = [
-  { value: 'mistral-small-24b-w8a8', label: 'Mistral Small 24B (cluster default)' },
+  { value: 'llama-4-scout-17b-16e-w4a16', label: 'Llama 4 Scout 109B (tool calling)' },
+  { value: 'mistral-small-24b-w8a8', label: 'Mistral Small 24B (chat only)' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini (requires OpenAI key)' },
-  { value: 'gpt-4o', label: 'GPT-4o (requires OpenAI key)' },
   { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (requires Anthropic key)' },
 ];
 

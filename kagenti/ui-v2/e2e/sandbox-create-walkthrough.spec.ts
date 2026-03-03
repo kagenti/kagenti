@@ -182,7 +182,7 @@ test.describe('Import Wizard — Basic Agent', () => {
     await expect(review).toContainText('kagenti/agent-examples');
     await expect(review).toContainText('main');
     await expect(review).toContainText('sandbox-legion');
-    await expect(review).toContainText('mistral-small-24b-w8a8');
+    await expect(review).toContainText('llama-4-scout-17b-16e-w4a16');
     await expect(review).toContainText('in-cluster');
 
     // Verify Deploy button exists
