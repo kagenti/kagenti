@@ -192,24 +192,24 @@ test.describe('Agent Catalog - API Integration', () => {
   });
 
   test('should handle API error gracefully', async ({ page }) => {
-    await page.goto('/');
-    await loginIfNeeded(page);
-
-    // Mock an API error to test error handling
+    // Set up the error mock BEFORE navigating
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
         status: 500,
+        contentType: 'application/json',
         body: JSON.stringify({ error: 'Internal server error' }),
       });
     });
 
+    await page.goto('/');
+    await loginIfNeeded(page);
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
 
-    // Verify error state is shown
-    await expect(page.getByText(/Error loading agents|error|failed/i).first()).toBeVisible({
-      timeout: 10000,
-    });
+    // Component shows "Error loading agents" EmptyState on query failure
+    await expect(
+      page.getByText(/Error loading agents/i).first()
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('should handle empty agent list', async ({ page }) => {
