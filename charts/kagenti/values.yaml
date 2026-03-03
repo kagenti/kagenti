@@ -1,5 +1,7 @@
 # Global settings
 openshift: true
+# Domain name for SPIFFE trust domain and service URLs
+domain: localtest.me
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -140,7 +142,7 @@ keycloak:
   adminPasswordKey: password
   url: http://keycloak-service.keycloak:8080
   publicUrl: http://keycloak.localtest.me:8080
-  realm: master
+  realm: demo
 
 # ------------------------------------------------------------------
 #  AuthBridge Configuration

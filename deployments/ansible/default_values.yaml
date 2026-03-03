@@ -181,6 +181,8 @@ charts:
 
       spiffe-oidc-discovery-provider:
         enabled: true
+        config:
+          set_key_use: true
         tls:
           spire:
             enabled: false
