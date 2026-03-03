@@ -135,9 +135,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     queryKey: ['sandbox-sessions', namespace, search, selectedAgentName],
     queryFn: () =>
       sandboxService.listSessions(namespace, {
-        limit: 20,
+        limit: 50,
         search: search || undefined,
-        agent_name: selectedAgentName || undefined,
+        // Don't filter by agent_name — old sessions lack this metadata field.
+        // TODO: Enable once all sessions have agent_name set.
+        // agent_name: selectedAgentName || undefined,
       }),
     enabled: !!namespace,
     refetchInterval: 5000,
