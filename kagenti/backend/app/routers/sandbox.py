@@ -1223,13 +1223,18 @@ async def _stream_sandbox_response(
                 )
                 if row:
                     meta = _parse_json_field(row["metadata"]) or {}
+                    changed = False
                     if not meta.get("owner"):
                         meta["owner"] = owner
                         meta["visibility"] = "private"
-                        if not meta.get("title"):
-                            meta["title"] = message[:80].replace("\n", " ")
-                        if agent_name:
-                            meta["agent_name"] = agent_name
+                        changed = True
+                    if not meta.get("title"):
+                        meta["title"] = message[:80].replace("\n", " ")
+                        changed = True
+                    if agent_name and not meta.get("agent_name"):
+                        meta["agent_name"] = agent_name
+                        changed = True
+                    if changed:
                         await conn.execute(
                             "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
                             json.dumps(meta),
