@@ -1049,11 +1049,9 @@ export const SandboxPage: React.FC = () => {
               selectedAgentName={selectedAgent}
             />
           </div>
-          <SandboxAgentsPanel
-            namespace={namespace}
-            selectedAgent={selectedAgent}
-            onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
-          />
+          {/* SandboxAgentsPanel hidden — agent selection via header dropdown.
+              The panel showed ALL sandboxes which was confusing when a session
+              is active. Agent is tied to the session. */}
         </div>
 
         <div
