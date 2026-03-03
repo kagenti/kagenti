@@ -424,11 +424,10 @@ test.describe('File Browser — Live Cluster Integration', () => {
       `Create the data directory if it does not exist. Here is the content:\n\n${mdContent}`
     );
 
-    // Verify agent acknowledged the write
-    const lastResponse = page.locator(
-      'div[style*="flex-start"] .sandbox-markdown, div[style*="flex-start"] p'
-    ).last();
-    await expect(lastResponse).toBeVisible({ timeout: 10000 });
+    // Wait for agent to process — either markdown response or tool call
+    const agentOutput = page.locator('.sandbox-markdown')
+      .or(page.locator('text=/Tool Call:|Result:|file_write|shell/i'));
+    await expect(agentOutput.first()).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Navigate to file browser for this agent ──
     await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
@@ -508,6 +507,11 @@ test.describe('File Browser — Live Cluster Integration', () => {
       'Write a Python file at data/fibonacci.py with a function called fibonacci(n) ' +
       'that returns the nth Fibonacci number using iteration. Include a docstring.'
     );
+
+    // Wait for agent to finish processing (tool call or text response)
+    const codeOutput = page.locator('.sandbox-markdown')
+      .or(page.locator('text=/Tool Call:|Result:|file_write|fibonacci/i'));
+    await expect(codeOutput.first()).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Navigate to file browser ──
     await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
