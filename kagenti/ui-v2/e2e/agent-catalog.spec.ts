@@ -33,7 +33,7 @@ test.describe('Agent Catalog Page', () => {
     });
     // Page loaded via beforeEach — table or empty state must be visible
     await expect(
-      page.getByRole('table').or(page.getByText(/No agents found/i).first())
+      page.getByRole('grid').or(page.getByText(/No agents found/i).first())
     ).toBeVisible({ timeout: 15000 });
   });
 
@@ -77,7 +77,7 @@ test.describe('Agent Catalog - With Deployed Agents', () => {
     });
 
     // Wait for either the table or the empty state message
-    const table = page.getByRole('table');
+    const table = page.getByRole('grid');
     const emptyState = page.getByText(/No agents found/i).first();
 
     await expect(table.or(emptyState)).toBeVisible({ timeout: 30000 });
@@ -86,7 +86,7 @@ test.describe('Agent Catalog - With Deployed Agents', () => {
   test('should list weather-service agent if deployed', async ({ page }) => {
     // Wait for page content to render (API already called in beforeEach)
     await expect(
-      page.getByRole('table').or(page.getByText(/No agents found/i).first())
+      page.getByRole('grid').or(page.getByText(/No agents found/i).first())
     ).toBeVisible({ timeout: 15000 });
 
     // Look for weather-service in the page
@@ -119,7 +119,7 @@ test.describe('Agent Catalog - With Deployed Agents', () => {
     });
 
     // If agents are deployed, status badges should be visible
-    const table = page.getByRole('table');
+    const table = page.getByRole('grid');
     if (await table.isVisible()) {
       const rows = page.getByRole('row');
       const rowCount = await rows.count();
@@ -140,7 +140,7 @@ test.describe('Agent Catalog - With Deployed Agents', () => {
     );
 
     // Find any agent link in the table (scoped to the table to avoid nav links)
-    const table = page.getByRole('table');
+    const table = page.getByRole('grid');
     if (!(await table.isVisible())) {
       test.info().annotations.push({
         type: 'skip-reason',

@@ -49,7 +49,7 @@ test.describe('Tool Catalog - With Deployed Tools', () => {
 
   test('should display tools table when tools are deployed', async ({ page }) => {
     // Page loaded via beforeEach — table or empty state must be visible
-    const table = page.getByRole('table');
+    const table = page.getByRole('grid');
     const emptyState = page.getByText(/No tools found/i).first();
     await expect(table.or(emptyState)).toBeVisible({ timeout: 15000 });
   });
@@ -57,7 +57,7 @@ test.describe('Tool Catalog - With Deployed Tools', () => {
   test('should list weather-tool if deployed', async ({ page }) => {
     // Wait for page to fully render (API called during beforeEach navigation)
     await expect(
-      page.getByRole('table').or(page.getByText(/No tools found/i).first())
+      page.getByRole('grid').or(page.getByText(/No tools found/i).first())
     ).toBeVisible({ timeout: 15000 });
 
     const weatherToolRow = page.getByRole('row', { name: /weather-tool/i });
