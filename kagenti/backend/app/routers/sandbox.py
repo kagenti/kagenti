@@ -141,6 +141,7 @@ async def list_sessions(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     search: Optional[str] = Query(default=None, description="Search by context_id"),
+    agent_name: Optional[str] = Query(default=None, description="Filter by agent name"),
     user: TokenData = Depends(get_required_user),
 ):
     """List sessions (tasks) with pagination and optional search.
@@ -159,6 +160,11 @@ async def list_sessions(
     if search:
         conditions.append(f"context_id ILIKE ${idx}")
         args.append(f"%{search}%")
+        idx += 1
+
+    if agent_name:
+        conditions.append(f"metadata::json->>'agent_name' = ${idx}")
+        args.append(agent_name)
         idx += 1
 
     # Role-based visibility filtering
@@ -1126,6 +1132,9 @@ async def chat_send(
                     meta["owner"] = user.username
                     meta["visibility"] = "private"
                     changed = True
+                if not meta.get("agent_name") and request.agent_name:
+                    meta["agent_name"] = request.agent_name
+                    changed = True
                 if changed:
                     await conn.execute(
                         "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
@@ -1194,6 +1203,7 @@ async def _stream_sandbox_response(
     session_id: str,
     owner: Optional[str] = None,
     namespace: Optional[str] = None,
+    agent_name: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator that proxies A2A SSE events from the agent."""
     owner_set = False
@@ -1218,6 +1228,8 @@ async def _stream_sandbox_response(
                         meta["visibility"] = "private"
                         if not meta.get("title"):
                             meta["title"] = message[:80].replace("\n", " ")
+                        if agent_name:
+                            meta["agent_name"] = agent_name
                         await conn.execute(
                             "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
                             json.dumps(meta),
@@ -1432,6 +1444,7 @@ async def chat_stream(
             session_id,
             owner=user.username,
             namespace=namespace,
+            agent_name=request.agent_name,
         ),
         media_type="text/event-stream",
         headers={

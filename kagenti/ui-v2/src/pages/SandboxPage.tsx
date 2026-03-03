@@ -15,7 +15,7 @@ import {
   Alert,
   Label,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -1046,6 +1046,7 @@ export const SandboxPage: React.FC = () => {
               namespace={namespace}
               activeContextId={contextId}
               onSelectSession={handleSelectSession}
+              selectedAgentName={selectedAgent}
             />
           </div>
           <SandboxAgentsPanel
@@ -1076,6 +1077,17 @@ export const SandboxPage: React.FC = () => {
                 namespace={namespace}
                 onNamespaceChange={setNamespace}
               />
+            </SplitItem>
+            <SplitItem>
+              <Button
+                variant="link"
+                component="a"
+                href={`/sandbox/files/${namespace}/${selectedAgent}`}
+                icon={<FolderOpenIcon />}
+                isDisabled={!selectedAgent}
+              >
+                Files
+              </Button>
             </SplitItem>
           </Split>
 

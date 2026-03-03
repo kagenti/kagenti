@@ -20,6 +20,7 @@ interface SessionSidebarProps {
   namespace: string;
   activeContextId?: string;
   onSelectSession: (contextId: string) => void;
+  selectedAgentName?: string;
 }
 
 /** Extract agent name from metadata or fall back to "sandbox-legion". */
@@ -124,17 +125,19 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   namespace,
   activeContextId,
   onSelectSession,
+  selectedAgentName,
 }) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [rootOnly, setRootOnly] = useState(true);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['sandbox-sessions', namespace, search],
+    queryKey: ['sandbox-sessions', namespace, search, selectedAgentName],
     queryFn: () =>
       sandboxService.listSessions(namespace, {
-        limit: 50,
+        limit: 20,
         search: search || undefined,
+        agent_name: selectedAgentName || undefined,
       }),
     enabled: !!namespace,
     refetchInterval: 5000,
