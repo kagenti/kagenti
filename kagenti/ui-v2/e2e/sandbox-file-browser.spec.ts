@@ -217,8 +217,8 @@ test.describe('Sandbox File Browser', () => {
     // Click main.py in the tree
     await page.getByText('main.py').click();
 
-    // PatternFly CodeBlock should appear
-    const codeBlock = page.locator('[class*="pf-v5-c-code-block"]');
+    // PatternFly CodeBlock should appear (use .first() — PF nests child elements with same prefix)
+    const codeBlock = page.locator('.pf-v5-c-code-block').first();
     await expect(codeBlock).toBeVisible({ timeout: 10000 });
 
     // Code content should be visible

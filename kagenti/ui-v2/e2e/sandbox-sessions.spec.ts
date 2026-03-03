@@ -181,7 +181,10 @@ async function getMessageTexts(page: Page): Promise<string[]> {
 // TESTS
 // ===========================================================================
 
+const LIVE_URL = process.env.KAGENTI_UI_URL;
+
 test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
+  test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL — live cluster with sandbox agent');
   test.setTimeout(600_000); // 10 min for the full suite
 
   let sessionAId = '';

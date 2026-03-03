@@ -841,8 +841,9 @@ export const SandboxPage: React.FC = () => {
                   reason: data.event.message || 'Agent requests approval',
                 },
               });
-              // Show the HITL message immediately
-              setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
+              // Show the HITL message immediately (snapshot for StrictMode safety)
+              const hitlSnapshot = collectedMessages.splice(0);
+              setMessages((prev) => [...prev, ...hitlSnapshot]);
               setStreamingContent('');
             }
 
@@ -864,8 +865,9 @@ export const SandboxPage: React.FC = () => {
                   message: data.event.message,
                 },
               });
-              // Flush delegation events immediately
-              setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
+              // Flush delegation events immediately (snapshot for StrictMode safety)
+              const delegSnapshot = collectedMessages.splice(0);
+              setMessages((prev) => [...prev, ...delegSnapshot]);
             }
 
             // Parse and immediately flush tool call/result events
@@ -885,9 +887,13 @@ export const SandboxPage: React.FC = () => {
                   hadToolEvents = true;
                 }
               }
-              // Flush tool call events immediately so they render during streaming
+              // Flush tool call events immediately so they render during streaming.
+              // Snapshot the items BEFORE passing to the updater — React StrictMode
+              // may invoke updater functions twice, so splice() inside would lose
+              // items on the second invocation.
               if (hadToolEvents) {
-                setMessages((prev) => [...prev, ...collectedMessages.splice(0)]);
+                const snapshot = collectedMessages.splice(0);
+                setMessages((prev) => [...prev, ...snapshot]);
               }
             }
 
@@ -915,11 +921,13 @@ export const SandboxPage: React.FC = () => {
       reader.releaseLock();
     }
 
-    // Finalize: add tool call messages first, then the final response
-    if (collectedMessages.length > 0 || accumulatedContent) {
+    // Finalize: add any remaining tool call messages, then the final response.
+    // Snapshot collectedMessages for the same StrictMode reason as above.
+    const finalSnapshot = collectedMessages.splice(0);
+    if (finalSnapshot.length > 0 || accumulatedContent) {
       setMessages((prev) => [
         ...prev,
-        ...collectedMessages, // Tool call/result steps rendered inline
+        ...finalSnapshot,
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',

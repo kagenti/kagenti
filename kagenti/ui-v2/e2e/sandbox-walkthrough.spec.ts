@@ -87,7 +87,11 @@ async function loginIfNeeded(page: Page) {
 // WALKTHROUGH TEST
 // ==========================================================================
 
+const LIVE_URL = process.env.KAGENTI_UI_URL;
+
 test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
+  test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL — live cluster with sandbox-legion agent');
+
   test('full sandbox user journey', async ({ page }) => {
     test.setTimeout(300000); // 5 min for LLM calls
     demoStartTime = Date.now();
@@ -96,7 +100,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // Step 1: Login
     // ------------------------------------------------------------------
     markStep('intro');
-    await page.goto('/');
+    await page.goto(LIVE_URL!);
     await loginIfNeeded(page);
     expect(page.url()).not.toContain('/realms/');
     markStep('login');
