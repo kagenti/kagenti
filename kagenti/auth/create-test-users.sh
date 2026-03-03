@@ -82,11 +82,9 @@ $KCADM set-password --config /tmp/kc/kcadm.config -r $REALM \
 "
 }
 
-# Generate random passwords if not provided via env vars.
-# If the kagenti-test-users secret already exists, reuse those passwords
-# so repeated runs don't break existing sessions.
-_existing_admin=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
-    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+# For the admin user, preserve the existing password from keycloak-initial-admin
+# (changing it via kcadm can fail silently, causing test/secret mismatch).
+# For dev-user and ns-admin, reuse existing passwords or generate random ones.
 _existing_dev=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
     -o jsonpath='{.data.dev-user-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 _existing_ns=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
@@ -94,11 +92,13 @@ _existing_ns=$(kubectl get secret kagenti-test-users -n "$KC_NS" \
 
 _rand() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 15; }
 
-ADMIN_PASS="${ADMIN_PASSWORD:-${_existing_admin:-$(_rand)}}"
+# Admin password: use the actual Keycloak password (do not try to change it)
+ADMIN_PASS="$KC_PASS"
 DEV_PASS="${DEV_USER_PASSWORD:-${_existing_dev:-$(_rand)}}"
 NS_PASS="${NS_ADMIN_PASSWORD:-${_existing_ns:-$(_rand)}}"
 
-create_user "admin"     "$ADMIN_PASS" "admin@kagenti.local"    "Admin"     "User"
+# Admin user already exists (created by 36-fix-keycloak-admin.sh) — skip creation
+log_info "Admin user already exists with keycloak-initial-admin password — skipping"
 create_user "dev-user"  "$DEV_PASS"   "dev-user@kagenti.local" "Dev"       "User"
 create_user "ns-admin"  "$NS_PASS"    "ns-admin@kagenti.local" "Namespace" "Admin"
 
