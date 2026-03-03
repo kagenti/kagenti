@@ -24,8 +24,7 @@ import { useQuery } from '@tanstack/react-query';
 import { sandboxService, chatService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
-// SandboxAgentsPanel hidden — agent selection via header dropdown
-// import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
+import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 import { SkillWhisperer } from '../components/SkillWhisperer';
 // SandboxConfig disabled — model/repo/branch not yet wired to backend
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
@@ -503,9 +502,7 @@ export const SandboxPage: React.FC = () => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
-  const [selectedAgent, _setSelectedAgent] = useState('sandbox-legion');
-  // TODO: wire agent selection to header dropdown (currently fixed to sandbox-legion)
-  void _setSelectedAgent;
+  const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
@@ -1052,9 +1049,11 @@ export const SandboxPage: React.FC = () => {
               selectedAgentName={selectedAgent}
             />
           </div>
-          {/* SandboxAgentsPanel hidden — agent selection via header dropdown.
-              The panel showed ALL sandboxes which was confusing when a session
-              is active. Agent is tied to the session. */}
+          <SandboxAgentsPanel
+            namespace={namespace}
+            selectedAgent={selectedAgent}
+            onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
+          />
         </div>
 
         <div
