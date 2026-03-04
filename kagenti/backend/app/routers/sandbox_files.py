@@ -387,6 +387,84 @@ async def get_sandbox_files(
 
 
 @router.get(
+    "/{namespace}/files/{agent_name}/list",
+    response_model=DirectoryListing,
+    summary="List directory contents in a sandbox agent pod",
+)
+async def list_sandbox_directory(
+    namespace: str,
+    agent_name: str,
+    path: str = Query(default="/", description="Absolute path inside the pod"),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+):
+    """List directory contents. Alias for the main files endpoint when path is a directory."""
+    safe_path = _sanitize_path(path)
+    pod_name = _find_pod(kube, namespace, agent_name)
+
+    ls_output = _exec_in_pod(
+        kube,
+        namespace,
+        pod_name,
+        ["ls", "-la", "--time-style=full-iso", safe_path],
+    )
+    entries = _parse_ls_output(ls_output, safe_path)
+    return DirectoryListing(path=safe_path, entries=entries)
+
+
+@router.get(
+    "/{namespace}/files/{agent_name}/content",
+    response_model=FileContent,
+    summary="Read file content from a sandbox agent pod",
+)
+async def read_sandbox_file(
+    namespace: str,
+    agent_name: str,
+    path: str = Query(default="/", description="Absolute path inside the pod"),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+):
+    """Read file content. Alias for the main files endpoint when path is a file."""
+    safe_path = _sanitize_path(path)
+    pod_name = _find_pod(kube, namespace, agent_name)
+
+    stat_output = _exec_in_pod(
+        kube,
+        namespace,
+        pod_name,
+        ["stat", "--format=%F|%s|%Y", safe_path],
+    ).strip()
+
+    if not stat_output or "|" not in stat_output:
+        raise HTTPException(status_code=404, detail=f"Path not found: {safe_path}")
+
+    parts = stat_output.split("|", 2)
+    try:
+        file_size = int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
+        file_size = 0
+
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({file_size} bytes). Maximum is {MAX_FILE_SIZE} bytes.",
+        )
+
+    content = _exec_in_pod(kube, namespace, pod_name, ["cat", safe_path])
+    mtime_output = _exec_in_pod(
+        kube,
+        namespace,
+        pod_name,
+        ["stat", "--format=%y", safe_path],
+    ).strip()
+
+    return FileContent(
+        path=safe_path,
+        content=content,
+        size=file_size,
+        modified=mtime_output,
+    )
+
+
+@router.get(
     "/{namespace}/stats/{agent_name}",
     response_model=PodStorageStats,
     summary="Get storage/mount statistics for a sandbox agent pod",
