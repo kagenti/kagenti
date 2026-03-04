@@ -46,14 +46,17 @@ graph TB
     subgraph "Agent Layer (pluggable)"
         LG["LangGraph Agent<br/>(graph.py + tools)"]
         OC["OpenCode Agent<br/>(opencode serve + wrapper)"]
-        CS["Claude Agent SDK<br/>(query() + wrapper)"]
-        OH["OpenHands Agent<br/>(controller + wrapper)"]
+    end
+
+    subgraph "Future Integrations"
+        CS["Claude Agent SDK"]
+        OH["OpenHands"]
+        GOOSE["Goose"]
+        CUSTOM["Custom (any language)"]
     end
 
     A2A --> LG
     A2A --> OC
-    A2A --> CS
-    A2A --> OH
 
     AB -.->|transparent| LG
     AB -.->|transparent| OC
@@ -69,8 +72,10 @@ graph TB
     style GV fill:#3F51B5,color:white
     style LG fill:#FF9800,color:white
     style OC fill:#FF9800,color:white
-    style CS fill:#FF9800,color:white
-    style OH fill:#FF9800,color:white
+    style CS fill:#9E9E9E,color:white
+    style OH fill:#9E9E9E,color:white
+    style GOOSE fill:#9E9E9E,color:white
+    style CUSTOM fill:#9E9E9E,color:white
 ```
 
 ## 2. Architecture: The A2A Boundary
