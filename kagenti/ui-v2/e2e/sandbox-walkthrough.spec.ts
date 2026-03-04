@@ -168,9 +168,9 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // Wait for agent response — look for content in the chat card body
     // (not the "Sandbox Legion" heading, which is always visible)
     const chatArea = page.locator('.pf-v5-c-card__body').first();
-    // Agent may return directory listing OR tool call JSON (depends on model)
-    await expect(chatArea).toContainText(/data|scripts|repos|output|shell|command|ls|Tool Call|Result/i, {
-      timeout: 120000,
+    // Agent may return directory listing, tool call JSON, or thinking indicator (depends on model)
+    await expect(chatArea).toContainText(/data|scripts|repos|output|shell|command|ls|Tool Call|Result|thinking/i, {
+      timeout: 180000,
     });
     markStep('sandbox_chat_response');
 

@@ -40,6 +40,18 @@ export function setTokenGetter(getter: () => Promise<string | null>): void {
 }
 
 /**
+ * Error class that preserves the HTTP status code from API responses.
+ */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
  * Generic fetch wrapper with error handling and optional authentication
  */
 async function apiFetch<T>(
@@ -74,8 +86,9 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.detail || `API error: ${response.status} ${response.statusText}`
+    throw new ApiError(
+      errorData.detail || `API error: ${response.status} ${response.statusText}`,
+      response.status
     );
   }
 

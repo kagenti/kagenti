@@ -17,10 +17,17 @@ import {
   Alert,
 } from '@patternfly/react-core';
 import type { TreeViewDataItem } from '@patternfly/react-core';
-import { FolderIcon, FileCodeIcon, FileIcon } from '@patternfly/react-icons';
+import {
+  FolderIcon,
+  FileCodeIcon,
+  FileIcon,
+  LockIcon,
+  ExclamationCircleIcon,
+  CubesIcon,
+} from '@patternfly/react-icons';
 import { useQuery } from '@tanstack/react-query';
 
-import { sandboxFileService } from '@/services/api';
+import { sandboxFileService, ApiError } from '@/services/api';
 import type { FileEntry } from '@/types';
 import { FilePreview } from './FilePreview';
 
@@ -88,21 +95,37 @@ export const FileBrowser: React.FC = () => {
   const {
     data: dirListing,
     isLoading: isDirLoading,
+    isError: isDirError,
     error: dirError,
   } = useQuery({
     queryKey: ['sandbox-files', namespace, agentName, currentPath],
     queryFn: () => sandboxFileService.listDirectory(namespace!, agentName!, currentPath),
     enabled: !!namespace && !!agentName,
+    retry: (failureCount, error) => {
+      // Don't retry auth errors or not-found errors
+      if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+        return false;
+      }
+      return failureCount < 2;
+    },
   });
 
   // Fetch file content when a file is selected
   const {
     data: fileContent,
     isLoading: isFileLoading,
+    isError: isFileError,
+    error: fileError,
   } = useQuery({
     queryKey: ['sandbox-file-content', namespace, agentName, selectedFilePath],
     queryFn: () => sandboxFileService.getFileContent(namespace!, agentName!, selectedFilePath!),
     enabled: !!namespace && !!agentName && !!selectedFilePath,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+        return false;
+      }
+      return failureCount < 2;
+    },
   });
 
   // Build TreeView data from directory listing
@@ -144,6 +167,72 @@ export const FileBrowser: React.FC = () => {
           <EmptyStateBody>
             Select an agent to browse its sandbox files.
           </EmptyStateBody>
+        </EmptyState>
+      </PageSection>
+    );
+  }
+
+  // --- Error states for the directory listing ---
+  if (isDirError && dirError) {
+    const status = dirError instanceof ApiError ? dirError.status : 0;
+    const message = dirError instanceof Error ? dirError.message : 'Unknown error';
+
+    // 401 / 403 — authentication or authorization problem
+    if (status === 401 || status === 403) {
+      return (
+        <PageSection>
+          <EmptyState>
+            <EmptyStateHeader
+              titleText="Authentication required"
+              icon={<EmptyStateIcon icon={LockIcon} />}
+              headingLevel="h4"
+            />
+            <EmptyStateBody>
+              You do not have permission to browse files for this agent.
+              Please check your credentials and try again.
+            </EmptyStateBody>
+          </EmptyState>
+        </PageSection>
+      );
+    }
+
+    // 404 — agent pod not found
+    if (status === 404) {
+      // Distinguish "agent not found" from other 404s by checking the message
+      const isAgentNotFound =
+        /not found|no.*(pod|agent|sandbox)/i.test(message);
+      return (
+        <PageSection>
+          <EmptyState>
+            <EmptyStateHeader
+              titleText={isAgentNotFound ? 'Agent not found' : 'Unable to load files'}
+              icon={
+                <EmptyStateIcon
+                  icon={isAgentNotFound ? CubesIcon : ExclamationCircleIcon}
+                />
+              }
+              headingLevel="h4"
+            />
+            <EmptyStateBody>
+              {isAgentNotFound
+                ? `The agent "${agentName}" was not found in namespace "${namespace}". It may have been deleted or has not been created yet.`
+                : message}
+            </EmptyStateBody>
+          </EmptyState>
+        </PageSection>
+      );
+    }
+
+    // Any other error (500, network failure, etc.)
+    return (
+      <PageSection>
+        <EmptyState>
+          <EmptyStateHeader
+            titleText="Unable to load files"
+            icon={<EmptyStateIcon icon={ExclamationCircleIcon} />}
+            headingLevel="h4"
+          />
+          <EmptyStateBody>{message}</EmptyStateBody>
         </EmptyState>
       </PageSection>
     );
@@ -191,11 +280,11 @@ export const FileBrowser: React.FC = () => {
         </Title>
       </div>
 
-      {/* Error alert */}
-      {dirError && (
+      {/* File content error alert (non-fatal — only affects the preview pane) */}
+      {isFileError && fileError && (
         <div style={{ padding: '12px' }}>
-          <Alert variant="danger" title="Failed to load directory" isInline>
-            {dirError instanceof Error ? dirError.message : 'Unknown error'}
+          <Alert variant="danger" title="Failed to load file" isInline>
+            {fileError instanceof Error ? fileError.message : 'Unknown error'}
           </Alert>
         </div>
       )}

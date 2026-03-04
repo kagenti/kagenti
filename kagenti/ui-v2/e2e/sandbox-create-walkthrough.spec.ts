@@ -266,7 +266,7 @@ test.describe('Import Wizard — Hardened Agent', () => {
     await clickNext(page);
 
     // Step 5: Observability — change model
-    await page.locator('#model').selectOption('gpt-4o');
+    await page.locator('#model').selectOption('mistral-small-24b-w8a8');
     await snap(page, 'hardened-step5-model');
     await clickNext(page);
 
@@ -276,7 +276,7 @@ test.describe('Import Wizard — Hardened Agent', () => {
     await expect(review).toContainText('code-review-agent');
     await expect(review).toContainText('sandbox-agent'); // variant
     await expect(review).toContainText('pod-per-session');
-    await expect(review).toContainText('gpt-4o');
+    await expect(review).toContainText('mistral-small-24b-w8a8');
     await snap(page, 'hardened-review-verified');
   });
 });
