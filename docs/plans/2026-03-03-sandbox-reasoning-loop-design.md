@@ -5,17 +5,36 @@
 > **Status:** Approved
 > **Depends on:** Section 9 of sandbox-platform-design.md (Legion delegation)
 
+## Current State (as of Session G)
+
+The sandbox agent container image ALREADY has a LangGraph graph
+(`/app/src/sandbox_agent/graph.py`) with:
+- ✅ 6 tools (shell, file_read, file_write, web_fetch, explore, delegate)
+- ✅ Tool binding via `llm.bind_tools(tools)` + `ToolNode` + `tools_condition`
+- ✅ State: `SandboxState(MessagesState)` with context_id, workspace, final_answer
+- ✅ HITL via `interrupt()` in shell tool
+- ✅ PostgreSQL checkpointer for state persistence
+- ✅ Streaming via `graph.astream(stream_mode="updates")`
+
+The `deployments/sandbox/agent_server.py` file is a SEPARATE simpler server
+that uses raw `litellm.completion()` — it's NOT the A2A agent. The actual
+A2A agent uses `agent.py` which imports `graph.py`.
+
 ## Problem
 
-The sandbox agent uses raw `litellm.completion()` without tool binding or execution.
-When the LLM generates tool calls (shell, file_write, web_fetch), they appear as
-JSON text in the response instead of being executed. This breaks 3 E2E tests and
-makes the agent unable to perform any real work.
+Despite having the graph, 3 E2E tests fail because the agent doesn't produce
+visible responses in the chat UI within timeout. The graph executes but the
+SSE stream doesn't deliver tool call events to the frontend properly.
+
+Additionally, Mistral Small 24B's MAAS endpoint doesn't return structured
+`tool_calls` with `tool_choice=auto` (0/10 consistency). All clusters were
+switched to Llama 4 Scout (10/10 structured tool_calls).
 
 ## Solution
 
-Replace `litellm.completion()` with a LangGraph StateGraph implementing a
-plan-execute-reflect reasoning loop with tool execution.
+Two-phase approach:
+1. **Debug & fix** the SSE streaming issue (unblocks 3 tests)
+2. **Extend** the existing graph with plan/execute/reflect nodes
 
 ## Architecture
 
