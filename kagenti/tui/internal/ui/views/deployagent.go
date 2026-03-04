@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/kagenti/kagenti/kagenti/tui/internal/api"
+	"github.com/kagenti/kagenti/kagenti/tui/internal/helpers"
 	"github.com/kagenti/kagenti/kagenti/tui/internal/theme"
 )
 
@@ -308,63 +309,6 @@ func (v *DeployAgentView) buildForm() {
 	).WithWidth(v.width - 4)
 }
 
-// llmPresetEnvVars returns env vars for a given LLM environment preset.
-// These match the "environments" ConfigMap entries deployed by the Helm chart.
-func llmPresetEnvVars(preset, modelOverride string) []api.EnvVar {
-	secretRef := func(secretName, key string) *api.EnvVarSource {
-		return &api.EnvVarSource{
-			SecretKeyRef: &api.SecretKeyRef{Name: secretName, Key: key},
-		}
-	}
-
-	switch preset {
-	case "openai":
-		model := "gpt-4o-mini-2024-07-18"
-		if modelOverride != "" {
-			model = modelOverride
-		}
-		return []api.EnvVar{
-			{Name: "OPENAI_API_KEY", ValueFrom: secretRef("openai-secret", "apikey")},
-			{Name: "LLM_API_KEY", ValueFrom: secretRef("openai-secret", "apikey")},
-			{Name: "LLM_API_BASE", Value: "https://api.openai.com/v1"},
-			{Name: "LLM_MODEL", Value: model},
-		}
-	case "ollama":
-		model := "llama3.2:3b-instruct-fp16"
-		if modelOverride != "" {
-			model = modelOverride
-		}
-		return []api.EnvVar{
-			{Name: "LLM_API_BASE", Value: "http://host.docker.internal:11434/v1"},
-			{Name: "LLM_API_KEY", Value: "dummy"},
-			{Name: "LLM_MODEL", Value: model},
-		}
-	default:
-		return nil
-	}
-}
-
-// parseExtraEnvVars parses comma-separated KEY=VALUE pairs into env vars.
-func parseExtraEnvVars(raw string) []api.EnvVar {
-	if raw == "" {
-		return nil
-	}
-	var envVars []api.EnvVar
-	for _, pair := range strings.Split(raw, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) == 2 {
-			envVars = append(envVars, api.EnvVar{
-				Name:  strings.TrimSpace(parts[0]),
-				Value: strings.TrimSpace(parts[1]),
-			})
-		}
-	}
-	return envVars
-}
 
 func (v *DeployAgentView) deploy() tea.Cmd {
 	client := v.client
@@ -381,14 +325,14 @@ func (v *DeployAgentView) deploy() tea.Cmd {
 		}
 	}
 
-	envVars := llmPresetEnvVars(fv.llmEnv, fv.llmModel)
+	envVars := helpers.LLMPresetEnvVars(fv.llmEnv, fv.llmModel)
 	if mcpURL != "" {
 		envVars = append(envVars, api.EnvVar{Name: "MCP_URL", Value: mcpURL})
 	}
 	if fv.logLevel != "" {
 		envVars = append(envVars, api.EnvVar{Name: "LOG_LEVEL", Value: fv.logLevel})
 	}
-	envVars = append(envVars, parseExtraEnvVars(fv.extraEnvVars)...)
+	envVars = append(envVars, helpers.ParseEnvVars(fv.extraEnvVars)...)
 
 	req := &api.CreateAgentRequest{
 		Name:              fv.name,
