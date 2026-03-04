@@ -69,7 +69,10 @@ func ParseEnvVars(raw string) []api.EnvVar {
 }
 
 // OpenBrowser attempts to open a URL in the default browser.
-func OpenBrowser(url string) {
+// It is a variable so tests can replace it with a no-op.
+var OpenBrowser = openBrowserDefault
+
+func openBrowserDefault(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
