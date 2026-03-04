@@ -1,11 +1,12 @@
 # Sandbox Agent Platform — System Design
 
 > **Status:** Active Development
-> **Date:** 2026-03-01
+> **Date:** 2026-03-01 (updated 2026-03-04)
 > **PR:** #758 (feat/sandbox-agent)
-> **Clusters:** sbox (dev), sbox1 (staging), sbox42 (integration test)
-> **Session E:** Legion multi-mode delegation (in-process → shared-pvc → isolated → sidecar), session graph DAG visualization, E2E tests for sub-agent orchestration
-> **Session F:** Composable sandbox security model, 5-tier presets, kubernetes-sigs SandboxClaim integration, Landlock wiring
+> **Clusters:** sbox42, sandbox42, sandbox44 (all HyperShift, Llama 4 Scout)
+> **Model:** Llama 4 Scout 17B-16E (109B MoE) — reliable structured tool calling
+> **Tests:** 192/196 Playwright (98.0%), 277 backend unit, 63 sandbox unit
+> **Sessions:** A-K complete, L (reasoning loop), M (chat UX), N (platform runtime) planned
 
 ---
 
@@ -21,6 +22,7 @@
 8. [Test Coverage](#8-test-coverage)
 9. [Legion Multi-Mode Delegation (Session E)](#9-legion-multi-mode-delegation-session-e)
 10. [Session Graph Visualization (Session E)](#10-session-graph-visualization-session-e)
+11. [Platform-Owned Agent Runtime (Session G)](#11-platform-owned-agent-runtime-session-g)
 
 ---
 
@@ -520,7 +522,7 @@ Each tier preset enables a progressive combination of layers. Custom combos are 
 
 | Feature | Evidence / Detail |
 |---------|-------------------|
-| Multi-turn chat with tool calls | 12/12 Playwright tests passing across session isolation, variant switching, and identity suites |
+| Multi-turn chat with tool calls | 192/196 Playwright tests passing (98.0%) across 24 spec files — session isolation, variants, identity, RCA, file browser, graph, delegation, catalog (Session G) |
 | 5-tier composable sandbox model | T0 (sandbox-legion) through T4 (sandbox-legion-secctx-landlock-proxy-gvisor) — self-documenting names, wizard toggles, progressive defense-in-depth (Session F) |
 | Session isolation, persistence, identity labels | 5 Playwright tests verify no state leak between sessions, localStorage persistence across page reload |
 | Agent selector UI | SandboxAgentsPanel shows active session's agent (filtered view), click to switch agents for new sessions |
