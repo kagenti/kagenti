@@ -436,7 +436,14 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(agentOutput.first()).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Navigate to file browser for this agent ──
-    await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
+    // Use SPA navigation to avoid Keycloak re-auth redirect on page.goto()
+    await page.evaluate(
+      ({ ns, agent }) => {
+        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace/data`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      },
+      { ns: NAMESPACE, agent: AGENT_NAME },
+    );
     await page.waitForLoadState('networkidle');
 
     // Wait for tree view to render with real data from pod exec
@@ -526,7 +533,14 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(codeOutput.first()).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Navigate to file browser ──
-    await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/data`);
+    // Use SPA navigation to avoid Keycloak re-auth redirect on page.goto()
+    await page.evaluate(
+      ({ ns, agent }) => {
+        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace/data`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      },
+      { ns: NAMESPACE, agent: AGENT_NAME },
+    );
     await page.waitForLoadState('networkidle');
 
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();

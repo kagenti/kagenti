@@ -132,7 +132,7 @@ def _find_pod(
     try:
         pods = kube.core_api.list_namespaced_pod(
             namespace=namespace,
-            label_selector=f"app={agent_name}",
+            label_selector=f"app.kubernetes.io/name={agent_name}",
         )
     except ApiException as exc:
         logger.error("K8s error listing pods for %s/%s: %s", namespace, agent_name, exc)

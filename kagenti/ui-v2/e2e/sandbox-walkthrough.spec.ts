@@ -200,8 +200,9 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
       page.locator('text=/No.*sessions/i').first()
     ).toBeVisible({ timeout: 10000 });
 
-    // Clear search
-    await searchBox.clear();
+    // Clear search — use fill('') instead of clear() to avoid PatternFly
+    // TextInput interaction issues that can cause hangs
+    await searchBox.fill('');
     await page.waitForTimeout(500);
     markStep('sandbox_table_search');
 
