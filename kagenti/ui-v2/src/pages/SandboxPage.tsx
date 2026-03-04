@@ -30,6 +30,8 @@ import { SkillWhisperer } from '../components/SkillWhisperer';
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 import { DelegationCard, type DelegationState } from '../components/DelegationCard';
+import { AgentLoopCard } from '../components/AgentLoopCard';
+import type { AgentLoop } from '../types/agentLoop';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
 type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
@@ -505,6 +507,7 @@ export const SandboxPage: React.FC = () => {
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
   const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
+  const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
@@ -710,6 +713,7 @@ export const SandboxPage: React.FC = () => {
     (id: string) => {
       setContextId(id);
       setMessages([]);
+      setAgentLoops(new Map());
       setInput('');
       setStreamingContent('');
       setIsStreaming(false);
@@ -789,6 +793,26 @@ export const SandboxPage: React.FC = () => {
     }
   };
 
+  /** Update or create an AgentLoop in the loops map. */
+  const updateLoop = useCallback((loopId: string, updater: (prev: AgentLoop) => AgentLoop) => {
+    setAgentLoops((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(loopId) || {
+        id: loopId,
+        status: 'planning' as const,
+        model: '',
+        plan: [],
+        currentStep: 0,
+        totalSteps: 0,
+        iteration: 0,
+        steps: [],
+        budget: { tokensUsed: 0, tokensBudget: 0, wallClockS: 0, maxWallClockS: 0 },
+      };
+      next.set(loopId, updater(existing));
+      return next;
+    });
+  }, []);
+
   /** Attempt SSE streaming via /chat/stream, return true on success. */
   const sendStreaming = async (
     messageToSend: string,
@@ -843,6 +867,93 @@ export const SandboxPage: React.FC = () => {
               setContextId(data.session_id);
               setSearchParams({ session: data.session_id });
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
+            }
+
+            // Handle agent loop events (grouped by loop_id)
+            if (data.loop_id) {
+              const loopId = data.loop_id;
+              const eventType = data.type;
+
+              if (eventType === 'plan') {
+                updateLoop(loopId, (l) => ({
+                  ...l,
+                  status: 'planning',
+                  plan: data.steps || [],
+                  totalSteps: (data.steps || []).length,
+                  iteration: data.iteration ?? l.iteration,
+                  model: data.model || l.model,
+                }));
+              } else if (eventType === 'plan_step') {
+                updateLoop(loopId, (l) => ({
+                  ...l,
+                  status: 'executing',
+                  currentStep: data.step ?? l.currentStep,
+                  totalSteps: data.total_steps ?? l.totalSteps,
+                  model: data.model || l.model,
+                  steps: [
+                    ...l.steps.filter((s: { index: number }) => s.index !== data.step),
+                    {
+                      index: data.step,
+                      description: data.description || '',
+                      model: data.model || l.model,
+                      tokens: { prompt: 0, completion: 0 },
+                      toolCalls: [],
+                      toolResults: [],
+                      durationMs: 0,
+                      status: 'running' as const,
+                    },
+                  ],
+                }));
+              } else if (eventType === 'tool_call') {
+                updateLoop(loopId, (l) => {
+                  const stepIdx = data.step ?? l.currentStep;
+                  const steps = [...l.steps];
+                  const step = steps.find((s: { index: number }) => s.index === stepIdx);
+                  if (step) {
+                    step.toolCalls = [...step.toolCalls, ...(data.tools || [{ type: 'tool_call', name: data.name, args: data.args }])];
+                  }
+                  return { ...l, steps, model: data.model || l.model };
+                });
+              } else if (eventType === 'tool_result') {
+                updateLoop(loopId, (l) => {
+                  const stepIdx = data.step ?? l.currentStep;
+                  const steps = [...l.steps];
+                  const step = steps.find((s: { index: number }) => s.index === stepIdx);
+                  if (step) {
+                    step.toolResults = [...step.toolResults, { type: 'tool_result', name: data.name, output: data.output }];
+                    step.status = 'done';
+                  }
+                  return { ...l, steps };
+                });
+              } else if (eventType === 'reflection') {
+                updateLoop(loopId, (l) => ({
+                  ...l,
+                  status: 'reflecting',
+                  reflection: data.assessment || '',
+                  iteration: data.iteration ?? l.iteration,
+                  model: data.model || l.model,
+                }));
+              } else if (eventType === 'budget') {
+                updateLoop(loopId, (l) => ({
+                  ...l,
+                  budget: {
+                    tokensUsed: data.tokens_used ?? l.budget.tokensUsed,
+                    tokensBudget: data.tokens_budget ?? l.budget.tokensBudget,
+                    wallClockS: data.wall_clock_s ?? l.budget.wallClockS,
+                    maxWallClockS: data.max_wall_clock_s ?? l.budget.maxWallClockS,
+                  },
+                }));
+              } else if (eventType === 'llm_response') {
+                updateLoop(loopId, (l) => ({
+                  ...l,
+                  status: 'done',
+                  finalAnswer: data.content || '',
+                  model: data.model || l.model,
+                }));
+              }
+
+              // Don't process loop events through the old flat pipeline
+              continue;
             }
 
             // Handle HITL (Human-in-the-Loop) events
@@ -1174,6 +1285,11 @@ export const SandboxPage: React.FC = () => {
                   onApprove={msg.toolData?.type === 'hitl_request' ? handleHitlApprove : undefined}
                   onDeny={msg.toolData?.type === 'hitl_request' ? handleHitlDeny : undefined}
                 />
+              ))}
+
+              {/* Agent loop cards */}
+              {Array.from(agentLoops.values()).map((loop) => (
+                <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} />
               ))}
 
               {isStreaming && (
