@@ -83,20 +83,22 @@ KUBECONFIG=~/clusters/hcp/kagenti-team-<cluster>/auth/kubeconfig \
 - agent-catalog (0-1): intermittent API error
 
 ### Session Activity (2026-03-04)
-| Session | Status | Last Commit | What |
-|---------|--------|------------|------|
-| **G** | **ACTIVE** | `06b42c10` | UI fixes: model selector, FileBrowser errors, walkthrough timeout. 190/196 (96.9%) |
-| **K** | **ACTIVE** | — | P0/P1 blockers: sandbox_deploy crash, HITL wiring, nono_launcher deploy. Testing on sandbox42+44 |
-| **Coord** | **ACTIVE** | `2ce667ec` | Cross-cluster testing, create-test-users pipeline fix, passover doc |
-| A | Done | `f046c22a` | integrate DelegationCard into streaming chat |
-| B | Done | `f78171f4` | docs: all P0/P1 tasks complete |
-| C | Done (UI) | `788b8cb4` | 63/63 tests, HITL tests added. HITL backend wiring → Session K |
-| D | Done | `c34f4c29` | demo realm users + show-services --reveal |
-| E | Done | `f046c22a` | DelegationCard + graph tests (Session A+E collab) |
-| F | Done | `5423f206` | P0 fix: replace parents[4] with walk-up loop. Deploy → Session K |
-| H | Done | `b77ecfeb` | 11 tests, file browser + stats + chat links |
-| O | Idle | — | Superseded by Coordinator |
-| 42 | Idle | — | Superseded by Coordinator |
+| Session | Status | Cluster | What |
+|---------|--------|---------|------|
+| **K** | **ACTIVE** | sandbox42 + sandbox44 | P0/P1 blockers: sandbox_deploy crash, HITL wiring, nono_launcher deploy |
+| **L** | **NEW** | sbox42 | Agent reasoning loop: debug agent response, plan/reflect/reporter nodes |
+| **M** | **NEW** | sbox42 | Chat UX polish: skill invocation, loop cards, model badges |
+| **Coord** | **ACTIVE** | all 3 | Cross-cluster testing, pipeline fixes, passover doc |
+| G | **DONE** | sbox42 | 192/196 (98.0%), 50+ commits. Handed off to L + M |
+| A | Done | — | DelegationCard, streaming, session titles |
+| B | Done | — | 5 variants, DB driver, TOFU, 429 handling |
+| C | Done (UI) | — | 78/78 tests. HITL backend wiring → Session K |
+| D | Done | — | Keycloak test users, random passwords |
+| E | Done | — | Session graph page, delegation design |
+| F | Done | — | Composable security model, 63 tests. Deploy → Session K |
+| H | Done | — | File browser, 11 tests |
+
+**Clusters:** sbox42, sandbox42, sandbox44 (sbox destroyed)
 
 ## Architecture Reference
 
@@ -1023,6 +1025,120 @@ Read docs/plans/2026-03-01-multi-session-passover.md. You are Session K (P0/P1 B
 Fix the 4 open blockers in priority order. Test on sandbox42 and sandbox44.
 Do NOT touch Session G's test files — they own all *.spec.ts fixes.
 Use /tdd:hypershift for iteration.
+```
+
+---
+
+### Session N — Platform Agent Runtime (isolated HyperShift cluster)
+
+**Claude Session ID:** (to be assigned)
+**Role:** Validate "platform owns server, agent owns logic" architecture with two agents
+**Cluster:** NEW isolated HyperShift cluster (don't use sbox42/sandbox42/sandbox44)
+**Design Doc:** `docs/plans/2026-03-01-sandbox-platform-design.md` Section 11
+
+**Goal:** Deploy two agents using the platform base image pattern:
+1. **Sandbox Legion** (LangGraph) — existing agent, refactored to use platform runtime
+2. **OpenCode** — new agent, wrapped in A2A adapter
+
+Both must pass the same Playwright tests and use the same platform features
+(AuthBridge, workspace, skills, OTEL).
+
+**What this validates:**
+- Platform provides A2A server + infrastructure → agent provides just the graph/runtime
+- Security tiers (T0-T3) work identically for both agents
+- Existing tests pass without modification
+- Agent wizard can deploy either framework
+
+**Phase 1: Platform Base Image (TDD)**
+
+Create a platform base image that provides:
+```
+kagenti-agent-base:latest
+├── A2A server (a2a-sdk, Starlette, SSE)
+├── Skills loader (CLAUDE.md + .claude/skills/)
+├── Workspace manager (per-context /workspace)
+├── TOFU verification
+├── Permission checker (allow/deny/HITL)
+├── OTEL instrumentation (LangChainInstrumentor)
+├── Session DB (PostgreSQL checkpointer)
+└── Plugin interface: AGENT_MODULE env var → import build_graph()
+```
+
+The agent provides:
+```
+# For LangGraph:
+AGENT_MODULE=sandbox_agent.graph
+# build_graph(workspace, permissions, sources) → StateGraph
+
+# For OpenCode:
+AGENT_MODULE=opencode_wrapper
+# build_graph() → OpenCode HTTP proxy
+```
+
+**Phase 2: Sandbox Legion on Platform Base**
+
+Refactor current sandbox-legion to use the base image:
+- Extract graph.py + tools from agent-examples into deployments/sandbox/
+- Use platform base image as FROM in Dockerfile
+- Set AGENT_MODULE=sandbox_agent.graph
+- Run existing Playwright tests → must pass 192/196
+
+**Phase 3: OpenCode on Platform Base**
+
+Create OpenCode agent:
+- Dockerfile: platform base + `opencode serve` binary
+- A2A wrapper (~200 lines): translates OpenCode REST → A2A events
+- Set AGENT_MODULE=opencode_wrapper
+- Deploy as a new agent variant in the wizard
+- Run Playwright tests → should pass chat/session tests
+
+**Phase 4: Feature Parity Tests**
+
+For each platform feature, verify both agents work:
+| Feature | Test | Legion | OpenCode |
+|---------|------|--------|----------|
+| A2A agent card | agent-catalog.spec.ts | ✓ | ✓ |
+| Chat streaming | sandbox-sessions.spec.ts | ✓ | ✓ |
+| Tool execution | sandbox-walkthrough.spec.ts | ✓ | ✓ |
+| File browser | sandbox-file-browser.spec.ts | ✓ | ✓ |
+| Session persistence | sandbox-sessions.spec.ts | ✓ | ✓ |
+| AuthBridge | agent-chat-identity.spec.ts | ✓ | ✓ |
+| Security tiers | sandbox-variants.spec.ts | ✓ | ✓ |
+| HITL | sandbox-hitl.spec.ts | ✓ | ✓ |
+| Skills loading | agent-rca-workflow.spec.ts | ✓ | ✓ |
+
+**File Ownership:**
+- `deployments/sandbox/platform_base/` — NEW (base image Dockerfile + entrypoint)
+- `deployments/sandbox/opencode_wrapper.py` — NEW (A2A adapter for OpenCode)
+- `deployments/sandbox/Dockerfile.base` — NEW (platform base image)
+- `.github/scripts/local-setup/deploy-opencode-agent.sh` — NEW
+
+**Prerequisites:**
+- Create isolated HyperShift cluster: `.github/scripts/hypershift/create-cluster.sh platform`
+- Deploy Kagenti platform on it
+- Do NOT use sbox42/sandbox42/sandbox44 (other sessions active)
+
+**Research docs to read:**
+- `docs/plans/2026-02-26-coding-agent-variants-research.md` — Section 4.6 (OpenCode), Section 10 (Landscape)
+- `docs/plans/2026-03-01-coding-agent-variants-impl.md` — Phase 1 (OpenCode deployment plan)
+- `docs/plans/2026-03-01-sandbox-platform-design.md` — Section 11 (Platform Runtime)
+
+**Startup:**
+```bash
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+# Create isolated cluster (ask user for approval)
+# .github/scripts/hypershift/create-cluster.sh platform
+export KUBECONFIG=~/clusters/hcp/kagenti-team-platform/auth/kubeconfig
+cd .worktrees/sandbox-agent
+claude
+
+Read docs/plans/2026-03-01-multi-session-passover.md. You are Session N (Platform Agent Runtime).
+Read docs/plans/2026-03-01-sandbox-platform-design.md Section 11 for the architecture.
+Read docs/plans/2026-03-01-coding-agent-variants-impl.md for the OpenCode deployment plan.
+
+Your goal: validate the platform base image pattern with two agents (Legion + OpenCode).
+Create an isolated HyperShift cluster first. Use TDD — existing Playwright tests are
+your acceptance criteria. Do NOT use sbox42/sandbox42/sandbox44.
 ```
 
 ---

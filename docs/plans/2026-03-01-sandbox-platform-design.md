@@ -1185,3 +1185,155 @@ kagenti/kagenti/
 | **D** | 2026-02-28 | Session ownership | RBAC session filtering, visibility controls, ownership tests |
 | **E** | 2026-03-02 | Legion multi-mode delegation, session graph DAG | 4 delegation modes (in-process/shared-pvc/isolated/sidecar), delegate tool, React Flow DAG page, E2E test plan (Sections 9-10) |
 | **F** | 2026-03-01 | Composable sandbox security | 5-tier presets (T0-T4), composable layer toggles, wizard flow, kubernetes-sigs SandboxClaim integration (Section 3) |
+| **G** | 2026-03-02 | UI tests + RCA workflow | 192/196 (98%), 50 tests fixed, Llama 4 Scout, New Session popup, FileBrowser, agent_name metadata, reasoning loop design |
+| **H** | 2026-03-02 | File browser | FileBrowser component, pod exec API, storage stats, 11 tests |
+| **I** | 2026-03-03 | Skill whisperer | SkillWhisperer autocomplete dropdown, 5 tests |
+| **K** | 2026-03-04 | P0/P1 blockers | sandbox_deploy crash, HITL wiring, nono_launcher deploy |
+
+---
+
+## 11. Platform-Owned Agent Runtime (Session G)
+
+### 11.1 Architecture: Platform vs Agent Ownership
+
+The platform provides **framework-neutral infrastructure** while agents provide
+**business logic**. The A2A protocol is the composability boundary.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Platform Layer (Kagenti-owned, framework-neutral)          │
+│                                                             │
+│  ┌─────────────┐ ┌──────────────┐ ┌───────────────────┐   │
+│  │ A2A Server   │ │ AuthBridge   │ │ Composable        │   │
+│  │ (JSON-RPC,   │ │ (SPIFFE +    │ │ Security          │   │
+│  │  SSE stream, │ │  OAuth token │ │ (T0-T4 layers,    │   │
+│  │  task DB)    │ │  exchange)   │ │  Landlock, Squid,  │   │
+│  └──────────────┘ └──────────────┘ │  gVisor)           │   │
+│                                     └───────────────────┘   │
+│  ┌─────────────┐ ┌──────────────┐ ┌───────────────────┐   │
+│  │ Workspace   │ │ Skills       │ │ Observability      │   │
+│  │ Manager     │ │ Loader       │ │ (OTEL, Phoenix,    │   │
+│  │ (per-ctx    │ │ (CLAUDE.md + │ │  MLflow)           │   │
+│  │  isolation) │ │  .claude/)   │ │                    │   │
+│  └─────────────┘ └──────────────┘ └───────────────────┘   │
+│                                                             │
+│  Contract: A2A JSON-RPC 2.0 + agent card + SSE events      │
+├─────────────────────────────────────────────────────────────┤
+│  Agent Layer (user-provided, pluggable)                     │
+│                                                             │
+│  Option A: LangGraph graph          (Python, native)        │
+│  Option B: OpenCode serve           (Go binary, HTTP proxy) │
+│  Option C: Claude Agent SDK query() (Python, Anthropic)     │
+│  Option D: OpenHands controller     (Python, Docker)        │
+│  Option E: Custom HTTP service      (any language)          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 11.2 What the Platform Owns (transparent to agents)
+
+| Component | What It Does | How It's Added | Agent Sees |
+|-----------|-------------|----------------|------------|
+| **AuthBridge** | JWT validation + OAuth token exchange | Mutating webhook injects sidecars | Pre-validated requests, auto-exchanged outbound tokens |
+| **Squid Proxy** | Domain allowlist for egress | Sidecar + HTTP_PROXY env | `requests.get()` just works (or 403 if blocked) |
+| **Landlock** | Filesystem sandbox | nono_launcher wrapper | PermissionError on forbidden paths |
+| **SPIRE** | Workload identity (SPIFFE) | spiffe-helper sidecar | JWT file at /shared/jwt_svid.token |
+| **Workspace** | Per-context directory isolation | PVC mount + env var | /workspace directory |
+| **Skills** | CLAUDE.md + .claude/skills/ loading | Mounted from repo clone | System prompt content |
+| **OTEL** | Trace instrumentation | LangChainInstrumentor auto-hooks | Spans appear in Phoenix |
+| **Session DB** | Task history aggregation | PostgreSQL in namespace | Checkpoint persistence |
+
+**Key principle:** Adding AuthBridge or Squid or Landlock requires ZERO changes
+to agent code. The platform adds infrastructure layers via sidecars, init
+containers, and environment variables.
+
+### 11.3 Agent Deployment Modes
+
+When deploying an agent, the user specifies:
+1. **Source** — git repo, branch, Dockerfile (or pre-built image)
+2. **Framework** — LangGraph, OpenCode, Claude SDK, OpenHands, custom
+3. **Security tier** — T0 (none) through T4 (gVisor)
+4. **Features** — which platform features to enable
+
+```yaml
+# Example: Deploy OpenCode with T3 security + AuthBridge
+apiVersion: kagenti.io/v1alpha1
+kind: SandboxAgent
+metadata:
+  name: opencode-agent
+spec:
+  source:
+    image: ghcr.io/kagenti/opencode-agent:latest
+    # OR git: { url: github.com/org/repo, branch: main }
+  framework: opencode
+  security:
+    tier: T3                    # secctx + landlock + proxy
+    proxyDomains:
+      - github.com
+      - api.openai.com
+  features:
+    authbridge: true            # inject AuthBridge sidecars
+    persistence: true           # PostgreSQL session store
+    observability: true         # OTEL + Phoenix
+    skillsLoading: true         # mount CLAUDE.md + skills
+  model:
+    provider: llama-4-scout
+    secret: openai-secret
+```
+
+### 11.4 A2A Wrapper Pattern (for non-native agents)
+
+Agents that don't natively speak A2A need a thin wrapper (~200 lines):
+
+```python
+# opencode_a2a_wrapper.py — wraps OpenCode's HTTP API in A2A
+class OpenCodeExecutor(AgentExecutor):
+    def __init__(self):
+        self.opencode_url = "http://localhost:19876"  # opencode serve
+
+    async def execute(self, context, event_queue):
+        prompt = context.get_user_input()
+
+        # Forward to OpenCode's REST API
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", f"{self.opencode_url}/sessions",
+                json={"prompt": prompt}) as resp:
+                async for line in resp.aiter_lines():
+                    event = json.loads(line)
+                    # Translate OpenCode events → A2A events
+                    a2a_event = self._translate(event)
+                    await event_queue.enqueue_event(a2a_event)
+
+    def _translate(self, event):
+        if event["type"] == "tool_use":
+            return ToolCallEvent(name=event["tool"], args=event["input"])
+        elif event["type"] == "text":
+            return TextPart(text=event["content"])
+        ...
+```
+
+The wrapper handles: A2A protocol compliance, event translation, error mapping.
+The agent (OpenCode) handles: agentic loop, tool execution, LLM calls.
+
+### 11.5 Current State vs Target
+
+| Aspect | Current | Target |
+|--------|---------|--------|
+| Agent server | agent-examples owns A2A + graph + workspace | Platform owns A2A + workspace, agent provides graph |
+| agent_server.py | Dead prototype in deployments/sandbox/ | Evolves into platform base image entrypoint |
+| AuthBridge | Sidecar injection works but not wired to wizard | Wizard toggle + auto-injection via labels |
+| Security layers | All 5 tiers designed, T0-T3 implemented | T4 (gVisor) blocked on OpenShift |
+| Multi-framework | Only LangGraph | LangGraph + OpenCode (Phase 1) + Claude SDK (Phase 2) |
+| Skill invocation | SkillWhisperer UI exists, agent ignores /skill:name | Frontend parses /skill, sends in request body |
+| Model selection | Llama 4 Scout default, configurable per deploy | Per-session model switching, live model swap |
+
+### 11.6 Validation Plan
+
+Deploy a second agent framework (OpenCode) on the same cluster and verify:
+1. Same platform features work (AuthBridge, Squid, workspace, OTEL)
+2. Existing Playwright tests pass against the new agent
+3. A2A protocol compatibility (agent card, streaming, task states)
+4. Security tiers apply identically (T0-T3)
+
+This validates the "platform owns server, agent owns logic" architecture.
+See Session N passover for implementation details.
