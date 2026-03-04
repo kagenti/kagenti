@@ -397,54 +397,173 @@ graph LR
 
 ### 5.3 Deployment & Orchestration
 
-Agents can be deployed via two mechanisms. Both support all sandboxing layers.
-
-| Mechanism | What | When to Use |
-|-----------|------|-------------|
-| **Deployment** | Standard K8s Deployment + Service | Always-on agents, interactive chat |
-| **SandboxClaim** | kubernetes-sigs ephemeral pod with TTL | Triggered tasks (cron/webhook/alert), auto-cleanup |
+Agents can run via two mechanisms. Both support all sandboxing layers, all
+agent frameworks, and all trigger types. The choice is a **resource vs
+isolation tradeoff**.
 
 ```mermaid
 graph TB
-    subgraph "Deployment (always-on)"
-        WIZ["Wizard / API"]
-        DEP["K8s Deployment<br/>+ Service + Route"]
-        DEP2["Supports all<br/>sandboxing layers"]
+    subgraph "Deployment Model (shared pod)"
+        direction TB
+        D_WIZ["Wizard / API / Trigger"]
+        D_DEP["K8s Deployment<br/>+ Service + Route"]
+        D_SESS["Session 1<br/>/workspace/ctx-aaa"]
+        D_SESS2["Session 2<br/>/workspace/ctx-bbb"]
+        D_SESS3["Session 3<br/>/workspace/ctx-ccc"]
+        D_TTL["Session TTL<br/>(workspace cleanup)"]
     end
 
-    subgraph "SandboxClaim (ephemeral)"
-        TRIG2["Trigger<br/>(cron/webhook/alert)"]
-        SC2["SandboxClaim CRD<br/>(kubernetes-sigs)"]
-        CTRL["Controller<br/>(creates pod + cleanup)"]
-        POD["Ephemeral Pod<br/>(same image + layers)"]
-        TTL2["TTL cleanup<br/>(auto-destroy)"]
+    subgraph "SandboxClaim Model (dedicated pod)"
+        direction TB
+        SC_WIZ["Wizard / API / Trigger"]
+        SC_CRD["SandboxClaim CRD"]
+        SC_CTRL["Controller"]
+        SC_POD1["Pod 1<br/>(task A)"]
+        SC_POD2["Pod 2<br/>(task B)"]
+        SC_TTL["Pod TTL<br/>(destroy entire pod)"]
     end
 
-    WIZ --> DEP
-    WIZ -->|"managed_lifecycle=true"| SC2
-    TRIG2 --> SC2
-    SC2 --> CTRL
-    CTRL --> POD
-    POD --> TTL2
+    D_WIZ --> D_DEP
+    D_DEP --> D_SESS
+    D_DEP --> D_SESS2
+    D_DEP --> D_SESS3
+    D_SESS3 -.-> D_TTL
 
-    style DEP fill:#4CAF50,color:white
-    style SC2 fill:#FF9800,color:white
-    style CTRL fill:#607D8B,color:white
-    style POD fill:#FF9800,color:white
+    SC_WIZ --> SC_CRD
+    SC_CRD --> SC_CTRL
+    SC_CTRL --> SC_POD1
+    SC_CTRL --> SC_POD2
+    SC_POD1 -.-> SC_TTL
+    SC_POD2 -.-> SC_TTL
+
+    style D_DEP fill:#4CAF50,color:white
+    style SC_CRD fill:#FF9800,color:white
+    style SC_POD1 fill:#FF9800,color:white
+    style SC_POD2 fill:#FF9800,color:white
 ```
 
-**SandboxClaim use cases:**
-- Nightly RCA analysis triggered by cron
-- PR code review triggered by GitHub webhook
-- Incident response agent triggered by PagerDuty alert
-- CI test agent triggered by pipeline webhook
+#### Deployment Model (shared pod, multi-session)
 
-Both mechanisms use the **same container image** with the **same sandboxing
-layers**. The only difference is lifecycle management: Deployments are
-persistent, SandboxClaims are ephemeral with TTL-based garbage collection.
+One pod runs continuously and serves **multiple sessions** concurrently.
+Each session gets its own workspace subdirectory (`/workspace/{context_id}/`)
+but shares the agent process, container filesystem, and network stack.
 
-**Key:** All sandboxing layers are framework-neutral. A LangGraph agent and
-an OpenCode agent deployed with the same toggles get identical security.
+**How triggers work with Deployments:**
+Triggers (cron, webhook, alert) create a **new session** on the existing
+agent deployment via A2A API. The agent is already running — no pod startup
+delay. The session uses the agent's pre-configured sandboxing layers.
+
+**Session TTL:** Sessions within a Deployment have application-level TTL.
+The workspace manager cleans up expired session directories and DB records.
+The pod itself stays running.
+
+| Aspect | Detail |
+|--------|--------|
+| **Resource cost** | 1 pod × (500m CPU + 1Gi RAM) regardless of session count |
+| **Startup latency** | Zero — pod already running |
+| **Session isolation** | Per-context workspace directories, same process memory |
+| **Concurrent sessions** | Unlimited (bounded by pod resources) |
+| **Cleanup** | Session TTL cleans workspace dirs + DB records, pod persists |
+| **Triggers** | Trigger → A2A API call → new session on existing pod |
+| **Best for** | Interactive chat, low-latency, shared team agents, development |
+
+**Isolation gap:** Sessions share the same process. A malicious session could
+theoretically read another session's memory via LangGraph state. Filesystem
+isolation is per-directory but the process has access to all of `/workspace/`.
+
+#### SandboxClaim Model (dedicated pod, full isolation)
+
+Each task gets a **dedicated pod** with its own process, filesystem, and
+network namespace. The kubernetes-sigs `SandboxClaim` CRD manages lifecycle.
+
+**Managed lifecycle (not just ephemeral):** SandboxClaims can be:
+- **Ephemeral** (TTL-based): pod auto-destroys after configured time
+- **API-managed**: backend creates/destroys via K8s API, pod lives until
+  explicitly deleted or task completes
+- **Persistent**: pod stays until manually destroyed (like a Deployment but
+  with SandboxClaim isolation guarantees)
+
+| Aspect | Detail |
+|--------|--------|
+| **Resource cost** | N pods × (500m CPU + 1Gi RAM) for N concurrent tasks |
+| **Startup latency** | 30s–2min (pod scheduling + image pull + init containers) |
+| **Session isolation** | Full pod isolation (separate process, fs, network) |
+| **Concurrent sessions** | 1 per pod (dedicated resources) |
+| **Cleanup** | Pod TTL destroys entire pod + workspace, or API-managed |
+| **Triggers** | Trigger → SandboxClaim CRD → controller → new pod |
+| **Best for** | Untrusted code, security-sensitive tasks, batch jobs, CI |
+
+**Isolation advantage:** Each task runs in a completely separate pod. No
+shared memory, no shared filesystem, separate network namespace. Combined
+with Landlock + Squid, this provides defense-in-depth even if the agent
+process is compromised.
+
+#### Comparison Matrix
+
+| | Deployment | SandboxClaim |
+|---|:---:|:---:|
+| **Resources per session** | Shared (amortized) | Dedicated |
+| **Startup time** | 0s | 30s–2min |
+| **Process isolation** | ❌ Shared process | ✅ Separate pods |
+| **Filesystem isolation** | ⚠️ Per-directory | ✅ Per-pod |
+| **Network isolation** | ⚠️ Shared (same pod) | ✅ Separate NetworkPolicy |
+| **Trigger support** | ✅ New session via API | ✅ New pod via CRD |
+| **Session TTL** | ✅ App-level cleanup | ✅ Pod-level destruction |
+| **Interactive chat** | ✅ Low latency | ⚠️ Cold start delay |
+| **Concurrent tasks** | ✅ Many on one pod | ⚠️ One pod per task |
+| **Cost at scale** | ✅ O(1) pods | ⚠️ O(N) pods |
+| **Sandboxing layers** | ✅ All supported | ✅ All supported |
+| **AuthBridge** | ✅ Per-pod identity | ✅ Per-pod identity |
+
+#### Hybrid: pod-per-session with Deployment
+
+The wizard's **isolation mode** selector offers a middle ground:
+
+```
+Isolation Mode:
+  ● shared         → one pod, multiple sessions (Deployment model)
+  ○ pod-per-session → new pod per session (uses SandboxClaim under the hood)
+```
+
+With `pod-per-session`, the Kagenti operator creates a SandboxClaim for each
+new session. The user gets the UI experience of a Deployment (click agent,
+start chatting) with the isolation guarantees of a SandboxClaim (separate
+pod per session).
+
+**Performance tradeoff:** `pod-per-session` has a 30s–2min cold start on
+first message (pod scheduling). Subsequent messages in the same session
+are fast (pod already running). The wizard should warn about this delay.
+
+#### Trigger Flow for Both Models
+
+```mermaid
+sequenceDiagram
+    participant T as Trigger (cron/webhook)
+    participant API as Kagenti Backend
+    participant K8S as Kubernetes API
+
+    alt Deployment Model
+        T->>API: POST /trigger {type: "webhook", agent: "rca-agent"}
+        API->>API: Resolve agent → existing Deployment
+        API->>API: Create new session (context_id)
+        API->>API: POST A2A message to agent pod
+        Note over API: Session runs on existing pod
+    end
+
+    alt SandboxClaim Model
+        T->>API: POST /trigger {type: "webhook", agent: "rca-agent", sandboxclaim: true}
+        API->>K8S: Create SandboxClaim CRD
+        K8S->>K8S: Controller creates pod
+        Note over K8S: Pod starts (30s-2min)
+        API->>K8S: POST A2A message to new pod
+        Note over K8S: Task runs in dedicated pod
+        K8S->>K8S: Pod TTL → destroy pod
+    end
+```
+
+**Key:** Both mechanisms use the **same container image** with the **same
+sandboxing layers**. The choice is purely about resource consumption vs
+isolation strength. All agent frameworks work identically with both.
 
 ## 6. Full Platform Component Map
 
