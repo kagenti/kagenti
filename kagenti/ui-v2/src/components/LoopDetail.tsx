@@ -1,0 +1,249 @@
+// Copyright 2025 IBM Corp.
+// Licensed under the Apache License, Version 2.0
+
+/**
+ * LoopDetail — expandable detail section for an AgentLoopCard.
+ *
+ * Renders:
+ * - Plan section: numbered list of plan steps, current step highlighted
+ * - Step sections: header, tool calls, tool results for each completed step
+ * - Reflection section: assessment + decision (if present)
+ */
+
+import React, { useState } from 'react';
+import { Spinner } from '@patternfly/react-core';
+import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
+import type { AgentLoop, AgentLoopStep } from '../types/agentLoop';
+
+interface LoopDetailProps {
+  loop: AgentLoop;
+}
+
+// ---------------------------------------------------------------------------
+// Plan section
+// ---------------------------------------------------------------------------
+
+const PlanSection: React.FC<{ plan: string[]; currentStep: number }> = ({ plan, currentStep }) => {
+  if (plan.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 6, color: '#333' }}>
+        Plan
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 22, fontSize: '0.83em', lineHeight: 1.7 }}>
+        {plan.map((step, i) => {
+          const isCurrent = i === currentStep;
+          return (
+            <li
+              key={i}
+              style={{
+                fontWeight: isCurrent ? 600 : 400,
+                color: isCurrent
+                  ? 'var(--pf-v5-global--info-color--100)'
+                  : 'var(--pf-v5-global--Color--200)',
+              }}
+            >
+              {step}
+              {isCurrent && (
+                <Spinner size="sm" aria-label="current step" style={{ marginLeft: 6 }} />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Tool call / result rendering (matches SandboxPage ToolCallStep pattern)
+// ---------------------------------------------------------------------------
+
+const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({ call }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const label = call.name || 'unknown';
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: '3px solid var(--pf-v5-global--info-color--100)',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+        cursor: 'pointer',
+      }}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div style={{ fontWeight: 600 }}>
+        {expanded ? '\u25bc' : '\u25b6'} Tool Call: {label}
+      </div>
+      {expanded && (
+        <pre
+          style={{
+            margin: '4px 0',
+            padding: 8,
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+            color: 'var(--pf-v5-global--Color--light-100)',
+            borderRadius: 4,
+            fontSize: '0.9em',
+            overflow: 'auto',
+          }}
+        >
+          {label}({typeof call.args === 'string' ? call.args : JSON.stringify(call.args, null, 2)})
+        </pre>
+      )}
+    </div>
+  );
+};
+
+const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: '3px solid var(--pf-v5-global--success-color--100)',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+        cursor: 'pointer',
+      }}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div style={{ fontWeight: 600 }}>
+        {expanded ? '\u25bc' : '\u25b6'} Result: {result.name || 'tool'}
+      </div>
+      {expanded && (
+        <pre
+          style={{
+            margin: '4px 0',
+            padding: 8,
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+            color: 'var(--pf-v5-global--Color--light-100)',
+            borderRadius: 4,
+            fontSize: '0.9em',
+            overflow: 'auto',
+            maxHeight: 200,
+          }}
+        >
+          {result.output || '(no output)'}
+        </pre>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Step section
+// ---------------------------------------------------------------------------
+
+const StepStatusIcon: React.FC<{ status: AgentLoopStep['status'] }> = ({ status }) => {
+  if (status === 'running') {
+    return <Spinner size="sm" aria-label="running" style={{ marginLeft: 6 }} />;
+  }
+  if (status === 'done') {
+    return (
+      <CheckCircleIcon
+        style={{ color: 'var(--pf-v5-global--success-color--100)', marginLeft: 6, fontSize: '0.9em' }}
+      />
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <TimesCircleIcon
+        style={{ color: 'var(--pf-v5-global--danger-color--100)', marginLeft: 6, fontSize: '0.9em' }}
+      />
+    );
+  }
+  return null;
+};
+
+function formatStepTokens(step: AgentLoopStep): string {
+  const total = step.tokens.prompt + step.tokens.completion;
+  if (total >= 1000) return (total / 1000).toFixed(1) + 'k';
+  return String(total);
+}
+
+const StepSection: React.FC<{ step: AgentLoopStep; total: number }> = ({ step, total }) => {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      {/* Step header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          fontSize: '0.84em',
+          fontWeight: 600,
+          color: '#333',
+          marginBottom: 4,
+        }}
+      >
+        Step {step.index + 1}/{total}: {step.description}
+        <span style={{ fontWeight: 400, color: '#6a6e73', marginLeft: 8 }}>
+          {step.model} &middot; {formatStepTokens(step)} tokens
+        </span>
+        <StepStatusIcon status={step.status} />
+      </div>
+
+      {/* Tool calls */}
+      {step.toolCalls.map((tc, i) => (
+        <ToolCallBlock key={`call-${i}`} call={tc} />
+      ))}
+
+      {/* Tool results */}
+      {step.toolResults.map((tr, i) => (
+        <ToolResultBlock key={`result-${i}`} result={tr} />
+      ))}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Reflection section
+// ---------------------------------------------------------------------------
+
+const ReflectionSection: React.FC<{ reflection: string }> = ({ reflection }) => (
+  <div
+    style={{
+      marginTop: 8,
+      padding: '8px 12px',
+      borderLeft: '3px solid #d97706',
+      backgroundColor: '#fffbeb',
+      borderRadius: '0 4px 4px 0',
+      fontSize: '0.83em',
+      color: '#92400e',
+    }}
+  >
+    <div style={{ fontWeight: 600, marginBottom: 4 }}>Reflection</div>
+    <div style={{ whiteSpace: 'pre-wrap' }}>{reflection}</div>
+  </div>
+);
+
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
+
+export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--pf-v5-global--BorderColor--100)',
+        marginTop: 10,
+        paddingTop: 10,
+      }}
+    >
+      <PlanSection plan={loop.plan} currentStep={loop.currentStep} />
+
+      {loop.steps.map((step) => (
+        <StepSection key={step.index} step={step} total={loop.totalSteps} />
+      ))}
+
+      {loop.reflection && <ReflectionSection reflection={loop.reflection} />}
+    </div>
+  );
+};
