@@ -726,6 +726,15 @@ export const SandboxPage: React.FC = () => {
     [setSearchParams]
   );
 
+  /** Start a new session with the chosen agent (from the New Session modal). */
+  const handleNewSession = useCallback(
+    (agentName: string) => {
+      setSelectedAgent(agentName);
+      handleSelectSession(''); // clears contextId, URL params, messages
+    },
+    [handleSelectSession]
+  );
+
   // Persist namespace to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_NAMESPACE, namespace);
@@ -1046,6 +1055,7 @@ export const SandboxPage: React.FC = () => {
               namespace={namespace}
               activeContextId={contextId}
               onSelectSession={handleSelectSession}
+              onNewSession={handleNewSession}
               selectedAgentName={selectedAgent}
             />
           </div>

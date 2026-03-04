@@ -10,6 +10,10 @@ import {
   Switch,
   Title,
   Tooltip,
+  Modal,
+  ModalVariant,
+  FormSelect,
+  FormSelectOption,
 } from '@patternfly/react-core';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +24,7 @@ interface SessionSidebarProps {
   namespace: string;
   activeContextId?: string;
   onSelectSession: (contextId: string) => void;
+  onNewSession: (agentName: string) => void;
   selectedAgentName?: string;
 }
 
@@ -125,11 +130,21 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   namespace,
   activeContextId,
   onSelectSession,
+  onNewSession,
   selectedAgentName,
 }) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [rootOnly, setRootOnly] = useState(true);
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [newSessionAgent, setNewSessionAgent] = useState(selectedAgentName || 'sandbox-legion');
+
+  const { data: agentsData } = useQuery({
+    queryKey: ['sandbox-agents', namespace],
+    queryFn: () => sandboxService.listAgents(namespace),
+    enabled: !!namespace,
+  });
+  const agents = agentsData ?? [];
 
   const { data, isLoading } = useQuery({
     queryKey: ['sandbox-sessions', namespace, search, selectedAgentName],
@@ -315,7 +330,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         <Button
           variant="primary"
           isBlock
-          onClick={() => onSelectSession('')}
+          onClick={() => {
+            setNewSessionAgent(selectedAgentName || 'sandbox-legion');
+            setShowNewSession(true);
+          }}
           style={{ marginBottom: 4 }}
         >
           + New Session
@@ -328,6 +346,42 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
           + Import Agent
         </Button>
       </div>
+
+      <Modal
+        variant={ModalVariant.small}
+        title="New Session"
+        isOpen={showNewSession}
+        onClose={() => setShowNewSession(false)}
+        actions={[
+          <Button
+            key="start"
+            variant="primary"
+            onClick={() => {
+              onNewSession(newSessionAgent);
+              setShowNewSession(false);
+            }}
+          >
+            Start
+          </Button>,
+          <Button
+            key="cancel"
+            variant="link"
+            onClick={() => setShowNewSession(false)}
+          >
+            Cancel
+          </Button>,
+        ]}
+      >
+        <FormSelect
+          value={newSessionAgent}
+          onChange={(_e, v) => setNewSessionAgent(v)}
+          aria-label="Select agent"
+        >
+          {agents.map((a) => (
+            <FormSelectOption key={a.name} value={a.name} label={a.name} />
+          ))}
+        </FormSelect>
+      </Modal>
     </div>
   );
 };
