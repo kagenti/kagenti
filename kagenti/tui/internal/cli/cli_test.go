@@ -105,7 +105,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *CLIContext) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
 			flusher, _ := w.(http.Flusher)
-			data, _ := json.Marshal(api.ChatStreamEvent{Content: "hello world"})
+			data, _ := json.Marshal(api.ChatStreamEvent{Content: "hello world", SessionID: "sess-123"})
 			w.Write([]byte("data: " + string(data) + "\n\n"))
 			if flusher != nil {
 				flusher.Flush()
@@ -156,6 +156,30 @@ func captureStdout(t *testing.T, fn func()) string {
 	var buf bytes.Buffer
 	io.Copy(&buf, r)
 	return buf.String()
+}
+
+// captureOutput captures both stdout and stderr during fn().
+func captureOutput(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+	oldOut := os.Stdout
+	oldErr := os.Stderr
+
+	outR, outW, _ := os.Pipe()
+	errR, errW, _ := os.Pipe()
+	os.Stdout = outW
+	os.Stderr = errW
+
+	fn()
+
+	outW.Close()
+	errW.Close()
+	os.Stdout = oldOut
+	os.Stderr = oldErr
+
+	var outBuf, errBuf bytes.Buffer
+	io.Copy(&outBuf, outR)
+	io.Copy(&errBuf, errR)
+	return outBuf.String(), errBuf.String()
 }
 
 func TestAgentsListTable(t *testing.T) {
@@ -258,14 +282,17 @@ func TestChatStreaming(t *testing.T) {
 	cmd.SetArgs([]string{"my-agent", "-m", "hi"})
 	cmd.Flags().String("namespace", "team1", "")
 
-	out := captureStdout(t, func() {
+	stdout, stderr := captureOutput(t, func() {
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("chat command failed: %v", err)
 		}
 	})
 
-	if !strings.Contains(out, "hello world") {
-		t.Errorf("expected streaming output to contain 'hello world', got: %s", out)
+	if !strings.Contains(stdout, "hello world") {
+		t.Errorf("expected stdout to contain 'hello world', got: %s", stdout)
+	}
+	if !strings.Contains(stderr, "session-id: sess-123") {
+		t.Errorf("expected stderr to contain session ID, got: %s", stderr)
 	}
 }
 
