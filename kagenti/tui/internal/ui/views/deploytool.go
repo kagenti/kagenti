@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/kagenti/kagenti/kagenti/tui/internal/api"
+	"github.com/kagenti/kagenti/kagenti/tui/internal/helpers"
 	"github.com/kagenti/kagenti/kagenti/tui/internal/theme"
 )
 
@@ -244,7 +245,7 @@ func (v *DeployToolView) deploy() tea.Cmd {
 	if fv.logLevel != "" {
 		envVars = append(envVars, api.EnvVar{Name: "LOG_LEVEL", Value: fv.logLevel})
 	}
-	envVars = append(envVars, parseExtraEnvVars(fv.extraEnvVars)...)
+	envVars = append(envVars, helpers.ParseEnvVars(fv.extraEnvVars)...)
 
 	req := &api.CreateToolRequest{
 		Name:             fv.name,

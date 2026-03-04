@@ -2,14 +2,13 @@ package views
 
 import (
 	"fmt"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/kagenti/kagenti/kagenti/tui/internal/api"
 	"github.com/kagenti/kagenti/kagenti/tui/internal/config"
+	"github.com/kagenti/kagenti/kagenti/tui/internal/helpers"
 	"github.com/kagenti/kagenti/kagenti/tui/internal/theme"
 )
 
@@ -113,7 +112,7 @@ func (v LoginView) Update(msg tea.Msg) (LoginView, tea.Cmd) {
 		v.pollInterval = msg.dc.Interval
 
 		// Auto-open browser
-		openBrowser(v.verifyURL)
+		helpers.OpenBrowser(v.verifyURL)
 
 		return v, nil
 
@@ -170,20 +169,6 @@ func (v LoginView) Update(msg tea.Msg) (LoginView, tea.Cmd) {
 		}
 	}
 	return v, nil
-}
-
-// openBrowser attempts to open a URL in the default browser.
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	default:
-		return
-	}
-	_ = cmd.Start()
 }
 
 // View renders the login view.
