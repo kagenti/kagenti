@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -30,19 +31,29 @@ func newChatCmd(ctx *CLIContext) *cobra.Command {
 			// Try streaming first.
 			ch, err := ctx.Client.StreamChat(ns, agent, chatReq)
 			if err == nil {
+				var returnedSession string
 				for evt := range ch {
 					if evt.Error != "" {
 						return fmt.Errorf("stream error: %s", evt.Error)
+					}
+					if evt.SessionID != "" {
+						returnedSession = evt.SessionID
 					}
 					if evt.Content != "" {
 						fmt.Print(evt.Content)
 					}
 					if evt.Done {
 						fmt.Println()
+						if returnedSession != "" {
+							fmt.Fprintf(os.Stderr, "session-id: %s\n", returnedSession)
+						}
 						return nil
 					}
 				}
 				fmt.Println()
+				if returnedSession != "" {
+					fmt.Fprintf(os.Stderr, "session-id: %s\n", returnedSession)
+				}
 				return nil
 			}
 
@@ -52,6 +63,9 @@ func newChatCmd(ctx *CLIContext) *cobra.Command {
 				return fmt.Errorf("sending message: %w", err)
 			}
 			fmt.Println(resp.Content)
+			if resp.SessionID != "" {
+				fmt.Fprintf(os.Stderr, "session-id: %s\n", resp.SessionID)
+			}
 			return nil
 		},
 	}
