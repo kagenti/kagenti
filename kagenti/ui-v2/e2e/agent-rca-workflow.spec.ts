@@ -71,8 +71,12 @@ async function pickRcaAgent(page: Page) {
   await nav.first().click();
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
-  const e = page.locator('text=rca-agent').first();
-  if (await e.isVisible({ timeout: 5000 }).catch(() => false)) { await e.click(); await page.waitForTimeout(1000); }
+  // Click the agent entry in SandboxAgentsPanel (div[role="button"] with agent name)
+  const agentEntry = page.locator('div[role="button"]').filter({ hasText: AGENT_NAME });
+  if (await agentEntry.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+    await agentEntry.first().click();
+    await page.waitForTimeout(1000);
+  }
   console.log(`[rca] Selected ${AGENT_NAME}`);
 }
 
