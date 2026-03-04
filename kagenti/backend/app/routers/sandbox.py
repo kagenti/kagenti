@@ -1235,8 +1235,15 @@ async def _stream_sandbox_response(
                         meta["agent_name"] = agent_name
                         changed = True
                     if changed:
+                        # Update ALL task records for this context_id so
+                        # the title/owner/agent_name are consistent regardless
+                        # of which task record the sidebar query picks up.
                         await conn.execute(
-                            "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                            "UPDATE tasks SET metadata = $1::json"
+                            " WHERE context_id = $2 AND ("
+                            "  metadata IS NULL OR"
+                            "  metadata::json->>'title' IS NULL"
+                            ")",
                             json.dumps(meta),
                             session_id,
                         )
