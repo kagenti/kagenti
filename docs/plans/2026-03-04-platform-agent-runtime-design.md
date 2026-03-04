@@ -237,7 +237,7 @@ server = A2AStarletteApplication(
 uvicorn.run(server.build(), host="0.0.0.0", port=8000)
 ```
 
-## 4b. Skills Loader: Pluggable Skill Sources
+## 4a. Skills Loader: Pluggable Skill Sources
 
 The platform's Skills Loader reads skills from the workspace and injects them
 into the agent's system prompt. It supports **pluggable custom loaders** for
@@ -294,93 +294,157 @@ When a user invokes `/rca:ci #758`, the frontend parses the skill name and sends
 it in the request body. The platform loads the full skill content and prepends it
 to the system prompt before calling the agent's graph.
 
-## 5. Security Tiers with Platform Features
+## 5. Composable Sandboxing
+
+The wizard allows users to compose sandbox layers independently. Each layer
+adds a specific defense without requiring changes to agent code. Layers are
+additive — T3 includes all of T1 and T2.
+
+### 5.1 Sandboxing Layers
 
 ```mermaid
 graph TB
-    subgraph "T0: Development"
-        T0A["Agent Container"]
-        T0N["Istio Ambient mTLS"]
-        T0K["Keycloak RBAC"]
+    subgraph "Layer 1: Container Hardening (secctx)"
+        L1["non-root UID 1001<br/>drop ALL capabilities<br/>seccomp RuntimeDefault<br/>readOnlyRootFilesystem"]
     end
 
-    subgraph "T1: Hardened Container"
-        T1A["Agent Container<br/>(non-root, drop caps, seccomp)"]
-        T1N["Istio Ambient mTLS"]
-        T1K["Keycloak RBAC"]
+    subgraph "Layer 2: Filesystem Sandbox (landlock)"
+        L2["Landlock LSM enforcement<br/>RW: /workspace, /tmp<br/>RO: /app, /usr, /lib<br/>Deny: everything else"]
     end
 
-    subgraph "T2: Filesystem Sandbox"
-        T2A["Agent Container (hardened)"]
-        T2L["Landlock<br/>(FS restrictions)"]
-        T2T["TOFU<br/>(hash verification)"]
-        T2N["Istio + NetworkPolicy"]
+    subgraph "Layer 3: Network Sandbox (proxy)"
+        L3["Squid forward proxy sidecar<br/>Domain allowlist enforcement<br/>HTTP_PROXY + HTTPS_PROXY env<br/>All egress routed through Squid"]
     end
 
-    subgraph "T3: Network Sandbox"
-        T3A["Agent Container (hardened)"]
-        T3L["Landlock + TOFU"]
-        T3S["Squid Proxy<br/>(domain allowlist)"]
-        T3AB["AuthBridge<br/>(SPIFFE + OAuth)"]
-        T3N["Istio + NetworkPolicy"]
+    subgraph "Layer 4: Identity & Auth (authbridge)"
+        L4["AuthBridge Envoy sidecar<br/>SPIFFE identity (SPIRE)<br/>Inbound JWT validation<br/>Outbound OAuth token exchange"]
     end
 
-    subgraph "T4: Kernel Sandbox (planned)"
-        T4A["Agent Container (hardened)"]
-        T4ALL["All T3 features"]
-        T4G["gVisor runsc<br/>(syscall interception)"]
+    subgraph "Layer 5: Kernel Sandbox (gvisor, planned)"
+        L5["gVisor runsc RuntimeClass<br/>Syscall interception in userspace<br/>Blocked on OpenShift SELinux"]
     end
 
-    T0A -->|"add secctx"| T1A
-    T1A -->|"add landlock"| T2A
-    T2A -->|"add proxy"| T3A
-    T3A -->|"add gvisor"| T4A
+    L1 -->|"+ landlock"| L2
+    L2 -->|"+ proxy"| L3
+    L3 -->|"+ authbridge"| L4
+    L4 -->|"+ gvisor"| L5
 
-    style T0A fill:#4CAF50,color:white
-    style T1A fill:#8BC34A,color:white
-    style T2A fill:#FFC107,color:black
-    style T3A fill:#FF9800,color:white
-    style T4A fill:#F44336,color:white
-    style T3AB fill:#3F51B5,color:white
-    style T3S fill:#3F51B5,color:white
+    style L1 fill:#8BC34A,color:white
+    style L2 fill:#FFC107,color:black
+    style L3 fill:#FF9800,color:white
+    style L4 fill:#3F51B5,color:white
+    style L5 fill:#F44336,color:white
 ```
 
-**Key:** All tiers work with ANY agent framework. Adding AuthBridge or Squid
-requires ZERO changes to agent code.
+| Layer | Toggle | What It Protects Against | Agent Impact |
+|-------|--------|-------------------------|-------------|
+| **secctx** | `☑ Container Hardening` | Privilege escalation, container escape | None — standard K8s best practice |
+| **landlock** | `☑ Filesystem Sandbox` | Writing outside workspace, reading secrets | PermissionError on forbidden paths |
+| **proxy** | `☑ Network Proxy` | Data exfiltration, accessing blocked domains | HTTP 403 on blocked domains |
+| **authbridge** | `☑ AuthBridge` | Unauthorized API calls, identity spoofing | None — transparent token exchange |
+| **gvisor** | `☑ Kernel Sandbox` | Kernel exploits, syscall abuse | Planned — blocked on OpenShift |
 
-### Deployment Mechanisms
+### 5.2 Wizard Composability
 
-Agents can be deployed via two mechanisms:
+The wizard presents each layer as an independent toggle. Users can enable
+any combination. The self-documenting deployment name reflects active layers:
 
-| Mechanism | What | When to Use |
-|-----------|------|-------------|
-| **Deployment** (default) | Standard K8s Deployment + Service | Long-running agents, always-on |
-| **SandboxClaim** (optional) | kubernetes-sigs ephemeral pod | Short-lived tasks, triggered by cron/webhook/alert, auto-cleanup via TTL |
+```
+sandbox-legion                              → T0 (no hardening)
+sandbox-legion-secctx                       → L1 only
+sandbox-legion-secctx-landlock              → L1 + L2
+sandbox-legion-secctx-landlock-proxy        → L1 + L2 + L3
+sandbox-legion-secctx-proxy                 → L1 + L3 (skip landlock)
+```
 
 ```mermaid
 graph LR
+    subgraph "Wizard Security Step"
+        CB1["☑ Container Hardening<br/>(non-root, drop caps)"]
+        CB2["☐ Filesystem Sandbox<br/>(Landlock)"]
+        CB3["☐ Network Proxy<br/>(Squid allowlist)"]
+        CB4["☐ AuthBridge<br/>(SPIFFE + OAuth)"]
+        CB5["☐ Kernel Sandbox<br/>(gVisor)"]
+        ISO["Isolation Mode<br/>● shared<br/>○ pod-per-session"]
+        TTL["Session TTL<br/>(7d default)"]
+        WSZ["Workspace Size<br/>(5Gi default)"]
+    end
+
+    subgraph "Generated Pod Spec"
+        MAIN["Agent Container<br/>(with secctx if enabled)"]
+        NONO["nono_launcher<br/>(if landlock enabled)"]
+        SQUID["Squid sidecar<br/>(if proxy enabled)"]
+        ENVOY["Envoy sidecar<br/>(if authbridge enabled)"]
+        SPIFFE["spiffe-helper<br/>(if authbridge enabled)"]
+        CLREG["client-registration<br/>(if authbridge enabled)"]
+        NP["NetworkPolicy<br/>(if proxy enabled)"]
+    end
+
+    CB1 --> MAIN
+    CB2 --> NONO
+    CB3 --> SQUID
+    CB3 --> NP
+    CB4 --> ENVOY
+    CB4 --> SPIFFE
+    CB4 --> CLREG
+
+    style CB1 fill:#8BC34A,color:white
+    style CB2 fill:#FFC107,color:black
+    style CB3 fill:#FF9800,color:white
+    style CB4 fill:#3F51B5,color:white
+    style CB5 fill:#F44336,color:white
+```
+
+### 5.3 Deployment & Orchestration
+
+Agents can be deployed via two mechanisms. Both support all sandboxing layers.
+
+| Mechanism | What | When to Use |
+|-----------|------|-------------|
+| **Deployment** | Standard K8s Deployment + Service | Always-on agents, interactive chat |
+| **SandboxClaim** | kubernetes-sigs ephemeral pod with TTL | Triggered tasks (cron/webhook/alert), auto-cleanup |
+
+```mermaid
+graph TB
     subgraph "Deployment (always-on)"
-        WIZ["Wizard / API"] --> DEP["K8s Deployment"]
-        DEP --> SVC["Service"]
-        SVC --> ROUTE["OpenShift Route"]
+        WIZ["Wizard / API"]
+        DEP["K8s Deployment<br/>+ Service + Route"]
+        DEP2["Supports all<br/>sandboxing layers"]
     end
 
     subgraph "SandboxClaim (ephemeral)"
-        TRIG2["Trigger<br/>(cron/webhook/alert)"] --> SC2["SandboxClaim CRD"]
-        SC2 --> CTRL["SandboxClaim Controller"]
-        CTRL --> POD["Ephemeral Pod<br/>(TTL-based cleanup)"]
+        TRIG2["Trigger<br/>(cron/webhook/alert)"]
+        SC2["SandboxClaim CRD<br/>(kubernetes-sigs)"]
+        CTRL["Controller<br/>(creates pod + cleanup)"]
+        POD["Ephemeral Pod<br/>(same image + layers)"]
+        TTL2["TTL cleanup<br/>(auto-destroy)"]
     end
 
+    WIZ --> DEP
     WIZ -->|"managed_lifecycle=true"| SC2
+    TRIG2 --> SC2
+    SC2 --> CTRL
+    CTRL --> POD
+    POD --> TTL2
 
     style DEP fill:#4CAF50,color:white
     style SC2 fill:#FF9800,color:white
     style CTRL fill:#607D8B,color:white
+    style POD fill:#FF9800,color:white
 ```
 
-SandboxClaim enables **autonomous agent spawning**: a cron job triggers an RCA
-analysis every night, a webhook triggers a code review on PR creation, an alert
-triggers an incident response agent. The pod auto-destroys after TTL.
+**SandboxClaim use cases:**
+- Nightly RCA analysis triggered by cron
+- PR code review triggered by GitHub webhook
+- Incident response agent triggered by PagerDuty alert
+- CI test agent triggered by pipeline webhook
+
+Both mechanisms use the **same container image** with the **same sandboxing
+layers**. The only difference is lifecycle management: Deployments are
+persistent, SandboxClaims are ephemeral with TTL-based garbage collection.
+
+**Key:** All sandboxing layers are framework-neutral. A LangGraph agent and
+an OpenCode agent deployed with the same toggles get identical security.
 
 ## 6. Full Platform Component Map
 
@@ -542,32 +606,42 @@ Deploy as new variant → run Playwright tests
 
 ## 9. Agent Wizard Integration
 
-The wizard (SandboxCreatePage) gains a **Framework** selector:
+The wizard composes the full deployment from 6 steps:
 
 ```mermaid
-graph LR
-    subgraph "Wizard Step 1: Source"
-        NAME["Agent Name"]
-        REPO["Git Repository"]
-        FW["Framework Selector<br/>● LangGraph (default)<br/>○ OpenCode<br/>○ Claude Agent SDK<br/>○ Custom"]
+graph TB
+    subgraph "Step 1: Source"
+        S1["Agent Name + Git Repo<br/>Framework: LangGraph / OpenCode / Claude SDK / Custom"]
     end
 
-    subgraph "Wizard Step 2: Security"
-        TIER["Security Tier<br/>(T0-T3)"]
-        AB2["☑ AuthBridge"]
-        OTEL2["☑ Observability"]
+    subgraph "Step 2: Sandboxing"
+        S2["☑ Container Hardening (secctx)<br/>☐ Filesystem Sandbox (landlock)<br/>☐ Network Proxy (squid)<br/>☐ AuthBridge (SPIFFE + OAuth)<br/>Isolation: shared / pod-per-session<br/>Workspace: 5Gi / 10Gi / 20Gi"]
     end
 
-    subgraph "Generated Manifest"
-        DEP["Deployment<br/>image: kagenti-agent-base<br/>env: AGENT_MODULE=..."]
-        SVC["Service"]
-        SEC["SecurityContext<br/>+ sidecars"]
+    subgraph "Step 3: Identity"
+        S3["LLM API Key (existing secret or paste)<br/>GitHub PAT (optional)"]
     end
 
-    FW -->|"langgraph"| DEP
-    FW -->|"opencode"| DEP
-    TIER --> SEC
-    AB2 --> SEC
+    subgraph "Step 4: Persistence"
+        S4["☑ PostgreSQL session store<br/>Lifecycle: Deployment / SandboxClaim"]
+    end
+
+    subgraph "Step 5: Observability"
+        S5["Model: Llama 4 Scout / Mistral / GPT<br/>☑ OTEL + Phoenix + MLflow"]
+    end
+
+    subgraph "Step 6: Review + Deploy"
+        S6["Summary → Generate manifest → Deploy"]
+    end
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6
+
+    S6 -->|"Deployment"| DEP2["K8s Deployment<br/>+ Service + Route"]
+    S6 -->|"SandboxClaim"| SC3["SandboxClaim CRD<br/>+ TTL cleanup"]
+
+    style S2 fill:#FF9800,color:white
+    style DEP2 fill:#4CAF50,color:white
+    style SC3 fill:#607D8B,color:white
 ```
 
 ## 10. MAAS Model Compatibility
