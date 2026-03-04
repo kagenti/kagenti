@@ -60,7 +60,7 @@ func newDeployAgentCmd(ctx *CLIContext) *cobra.Command {
 					for _, t := range tools.Items {
 						if t.Name == mcpTool {
 							path := "/mcp"
-							if t.Labels.Protocol == "sse" {
+							if string(t.Labels.Protocol) == "sse" {
 								path = "/sse"
 							}
 							mcpURL = fmt.Sprintf("http://%s-mcp.%s.svc.cluster.local:8000%s",

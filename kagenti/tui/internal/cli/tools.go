@@ -26,7 +26,7 @@ func newToolsCmd(ctx *CLIContext) *cobra.Command {
 			for _, t := range resp.Items {
 				rows = append(rows, []string{
 					t.Name, t.Namespace, t.Status,
-					t.Labels.Protocol, t.WorkloadType,
+					string(t.Labels.Protocol), t.WorkloadType,
 				})
 			}
 			printTable(headers, rows)

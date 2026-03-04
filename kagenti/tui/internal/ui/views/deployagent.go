@@ -161,7 +161,7 @@ func (v DeployAgentView) Update(msg tea.Msg) (DeployAgentView, tea.Cmd) {
 // mcpToolURL generates the in-cluster service URL for an MCP tool.
 func mcpToolURL(tool api.ToolSummary) string {
 	path := "/mcp"
-	switch tool.Labels.Protocol {
+	switch string(tool.Labels.Protocol) {
 	case "sse":
 		path = "/sse"
 	}

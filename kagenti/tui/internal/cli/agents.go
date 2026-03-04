@@ -26,7 +26,7 @@ func newAgentsCmd(ctx *CLIContext) *cobra.Command {
 			for _, a := range resp.Items {
 				rows = append(rows, []string{
 					a.Name, a.Namespace, a.Status,
-					a.Labels.Framework, a.Labels.Protocol,
+					a.Labels.Framework, string(a.Labels.Protocol),
 				})
 			}
 			printTable(headers, rows)

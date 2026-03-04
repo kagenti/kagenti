@@ -1,11 +1,42 @@
 // Package api provides a pure HTTP client for the Kagenti backend API.
 package api
 
+import (
+	"encoding/json"
+	"strings"
+)
+
+// FlexibleString accepts both a JSON string and a JSON array of strings.
+// When unmarshaled from an array it joins elements with ", ".
+type FlexibleString string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (f *FlexibleString) UnmarshalJSON(data []byte) error {
+	// Try string first.
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = FlexibleString(s)
+		return nil
+	}
+	// Try array of strings.
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	*f = FlexibleString(strings.Join(arr, ", "))
+	return nil
+}
+
+// String returns the underlying string value.
+func (f FlexibleString) String() string {
+	return string(f)
+}
+
 // ResourceLabels holds labels for agent/tool resources.
 type ResourceLabels struct {
-	Protocol  string `json:"protocol,omitempty"`
-	Framework string `json:"framework,omitempty"`
-	Type      string `json:"type,omitempty"`
+	Protocol  FlexibleString `json:"protocol,omitempty"`
+	Framework string         `json:"framework,omitempty"`
+	Type      string         `json:"type,omitempty"`
 }
 
 // AgentSummary is a summary of an agent.

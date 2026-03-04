@@ -432,6 +432,35 @@ func TestRootCmdHelp(t *testing.T) {
 	}
 }
 
+func TestToolsListWithArrayProtocol(t *testing.T) {
+	// The backend may return protocol as a JSON array (e.g. ["a2a", "mcp"]).
+	// Verify the full list-tools path handles this without error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[{"name":"multi-proto-tool","namespace":"team1","status":"Running","labels":{"protocol":["a2a","mcp"]},"workloadType":"deployment"}]}`))
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "tok", "team1")
+	ctx := &CLIContext{Client: client, Output: "table"}
+	cmd := newToolsCmd(ctx)
+	cmd.SetArgs([]string{})
+	cmd.Flags().String("namespace", "team1", "")
+
+	out := captureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("tools list failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "multi-proto-tool") {
+		t.Errorf("expected tool name in output, got: %s", out)
+	}
+	if !strings.Contains(out, "a2a, mcp") {
+		t.Errorf("expected 'a2a, mcp' in output, got: %s", out)
+	}
+}
+
 func TestOutputHelpers(t *testing.T) {
 	// printTable
 	out := captureStdout(t, func() {
