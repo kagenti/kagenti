@@ -333,7 +333,7 @@ func TestDeployTool(t *testing.T) {
 func TestDeleteAgent(t *testing.T) {
 	_, ctx := newTestServer(t)
 	deleteCmd := newDeleteCmd(ctx)
-	deleteCmd.SetArgs([]string{"agent", "old-agent"})
+	deleteCmd.SetArgs([]string{"agent", "old-agent", "-y"})
 	deleteCmd.PersistentFlags().String("namespace", "team1", "")
 
 	out := captureStdout(t, func() {
@@ -350,7 +350,7 @@ func TestDeleteAgent(t *testing.T) {
 func TestDeleteTool(t *testing.T) {
 	_, ctx := newTestServer(t)
 	deleteCmd := newDeleteCmd(ctx)
-	deleteCmd.SetArgs([]string{"tool", "old-tool"})
+	deleteCmd.SetArgs([]string{"tool", "old-tool", "-y"})
 	deleteCmd.PersistentFlags().String("namespace", "team1", "")
 
 	out := captureStdout(t, func() {
@@ -361,6 +361,27 @@ func TestDeleteTool(t *testing.T) {
 
 	if !strings.Contains(out, "old-tool") {
 		t.Errorf("expected output to contain 'old-tool', got: %s", out)
+	}
+}
+
+func TestDeleteAbort(t *testing.T) {
+	orig := confirmDelete
+	confirmDelete = func(kind, name string) bool { return false }
+	defer func() { confirmDelete = orig }()
+
+	_, ctx := newTestServer(t)
+	deleteCmd := newDeleteCmd(ctx)
+	deleteCmd.SetArgs([]string{"agent", "keep-me"})
+	deleteCmd.PersistentFlags().String("namespace", "team1", "")
+
+	_, stderr := captureOutput(t, func() {
+		if err := deleteCmd.Execute(); err != nil {
+			t.Fatalf("delete command failed: %v", err)
+		}
+	})
+
+	if !strings.Contains(stderr, "Aborted") {
+		t.Errorf("expected 'Aborted' on stderr, got: %s", stderr)
 	}
 }
 
