@@ -1034,7 +1034,8 @@ Use /tdd:hypershift for iteration.
 **Claude Session ID:** (to be assigned)
 **Role:** Validate "platform owns server, agent owns logic" architecture with two agents
 **Cluster:** NEW isolated HyperShift cluster (don't use sbox42/sandbox42/sandbox44)
-**Design Doc:** `docs/plans/2026-03-01-sandbox-platform-design.md` Section 11
+**Design Doc:** `docs/plans/2026-03-04-platform-agent-runtime-design.md` (14 mermaid diagrams, 787 lines)
+**Also read:** `docs/plans/2026-03-01-sandbox-platform-design.md` Section 11 (architecture overview)
 
 **Goal:** Deploy two agents using the platform base image pattern:
 1. **Sandbox Legion** (LangGraph) — existing agent, refactored to use platform runtime
@@ -1118,10 +1119,11 @@ For each platform feature, verify both agents work:
 - Deploy Kagenti platform on it
 - Do NOT use sbox42/sandbox42/sandbox44 (other sessions active)
 
-**Research docs to read:**
-- `docs/plans/2026-02-26-coding-agent-variants-research.md` — Section 4.6 (OpenCode), Section 10 (Landscape)
-- `docs/plans/2026-03-01-coding-agent-variants-impl.md` — Phase 1 (OpenCode deployment plan)
-- `docs/plans/2026-03-01-sandbox-platform-design.md` — Section 11 (Platform Runtime)
+**Research docs to read (in order):**
+1. `docs/plans/2026-03-04-platform-agent-runtime-design.md` — **YOUR main design doc** (14 diagrams, composable sandboxing, A2A boundary, base image, validation plan)
+2. `docs/plans/2026-03-01-sandbox-platform-design.md` Section 11 — Architecture overview in main design doc
+3. `docs/plans/2026-02-26-coding-agent-variants-research.md` — Section 4.6 (OpenCode), Section 10 (Landscape)
+4. `docs/plans/2026-03-01-coding-agent-variants-impl.md` — Phase 1 (OpenCode deployment plan)
 
 **Startup:**
 ```bash
@@ -1133,8 +1135,8 @@ cd .worktrees/sandbox-agent
 claude
 
 Read docs/plans/2026-03-01-multi-session-passover.md. You are Session N (Platform Agent Runtime).
-Read docs/plans/2026-03-01-sandbox-platform-design.md Section 11 for the architecture.
-Read docs/plans/2026-03-01-coding-agent-variants-impl.md for the OpenCode deployment plan.
+Read docs/plans/2026-03-04-platform-agent-runtime-design.md — this is your design doc
+with 14 mermaid diagrams covering the full architecture.
 
 Your goal: validate the platform base image pattern with two agents (Legion + OpenCode).
 Create an isolated HyperShift cluster first. Use TDD — existing Playwright tests are
