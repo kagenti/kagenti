@@ -538,12 +538,15 @@ Each tier preset enables a progressive combination of layers. Custom combos are 
 | Trigger API `POST /api/v1/sandbox/trigger` (Session F) | FastAPI endpoint creates SandboxClaim resources from cron/webhook/alert events. Registered in main.py. 7+9 unit tests. |
 | 72 sandbox unit tests (Session F) | `sandbox_profile` (20), `nono_launcher` (10), `tofu` (11), `repo_manager` (10), `triggers` (7), `agent_server` (5), `sandbox_trigger` router (9) |
 
-### Critical Blockers (🚨)
+### Critical Blockers (🚨) — RESOLVED
 
-| Blocker | Impact | Root Cause | Attempted Fixes | Workaround |
-|---------|--------|------------|-----------------|------------|
-| **Istio ambient ztunnel corrupts asyncpg PostgreSQL connections** | Agent cannot persist sessions to PostgreSQL; SSE streams break with "Connection error" in UI | ztunnel's mTLS insertion corrupts asyncpg's binary protocol handshake mid-operation | `PeerAuthentication: PERMISSIVE`, `ambient.istio.io/redirection: disabled` annotation, `ssl=False` parameter, direct pod IP | Use MemorySaver (in-memory, no cross-restart persistence) or disable mesh for postgres pod |
-| **Agent serializer not included in container image** | Tool call events not structured during live streaming from rebuilt images; ToolCallStep component receives unparseable data | `event_serializer.py` exists in git but `uv sync` in Dockerfile does not install it | None — packaging issue in pyproject.toml | ConfigMap mount of both `event_serializer.py` and `agent.py` into running pods |
+| Blocker | Resolution | Session |
+|---------|-----------|---------|
+| ~~Istio asyncpg corruption~~ | Switched to psycopg driver (`postgresql+psycopg://`) | B |
+| ~~Agent serializer missing~~ | Fixed packaging, verified in image | B |
+| ~~Mistral no tool calling~~ | Switched all clusters to Llama 4 Scout (10/10 structured tool_calls) | G |
+| ~~Backend crash parents[4]~~ | Walk-up loop for _sandbox_dir | K |
+| ~~React StrictMode splice~~ | Snapshot before state updater | G |
 
 ### Partial (🔧)
 
@@ -574,16 +577,39 @@ Each tier preset enables a progressive combination of layers. Custom combos are 
 
 ## 8. Test Coverage
 
-### Playwright Tests (UI E2E)
+### Playwright Tests (UI E2E) — Updated 2026-03-04
+
+**Total: 192/196 passing (98.0%) on sbox42** (Session G)
 
 | Suite | Spec File | Tests | Status |
 |-------|-----------|:-----:|--------|
-| Session isolation | `sandbox-sessions.spec.ts` | 5 | ✅ 5/5 passing |
-| Agent variants | `sandbox-variants.spec.ts` | 4 | ✅ 4/4 passing |
-| Identity + HITL | `sandbox-chat-identity.spec.ts` | 3 | ✅ 3/3 passing |
-| Tool call rendering | `sandbox-rendering.spec.ts` | 4 | ❌ 0/4 (blocked by agent DB connection) |
+| Home page | `home.spec.ts` | 4 | ✅ 4/4 |
+| Agent catalog | `agent-catalog.spec.ts` | 12 | ✅ 12/12 |
+| Tool catalog | `tool-catalog.spec.ts` | 9 | ✅ 9/9 |
+| Agent chat | `agent-chat.spec.ts` | 3 | ✅ 3/3 |
+| Agent chat identity | `agent-chat-identity.spec.ts` | 10 | ✅ 10/10 |
+| Session isolation | `sandbox-sessions.spec.ts` | 6 | ✅ 5/6 (1 LLM-dependent) |
+| Agent variants | `sandbox-variants.spec.ts` | 4 | ✅ 4/4 |
+| Chat identity + HITL | `sandbox-chat-identity.spec.ts` | 3 | ✅ 3/3 |
+| HITL events | `sandbox-hitl.spec.ts` | 4 | ✅ 4/4 |
+| Tool call rendering | `sandbox-rendering.spec.ts` | 3 | ✅ 3/3 |
+| Session graph DAG | `sandbox-graph.spec.ts` | 10 | ✅ 10/10 |
+| Delegation cards | `sandbox-delegation.spec.ts` | 6 | ✅ 6/6 |
+| File browser | `sandbox-file-browser.spec.ts` | 10 | ✅ 7/10 (2 live LLM, 1 skip) |
+| Create wizard | `sandbox-create-walkthrough.spec.ts` | 6 | ✅ 6/6 |
+| Walkthrough | `sandbox-walkthrough.spec.ts` | 1 | ❌ 0/1 (10 min timeout) |
+| Sandbox health | `sandbox.spec.ts` | 11 | ✅ 11/11 |
+| Debug | `sandbox-debug.spec.ts` | 3 | ✅ 3/3 |
+| RCA workflow | `agent-rca-workflow.spec.ts` | 6 | ✅ 6/6 |
+| Integrations | `integrations.spec.ts` | 24 | ✅ 24/24 |
+| Sessions table | `sessions-table.spec.ts` | 20 | ✅ 20/20 |
+| Session ownership | `session-ownership.spec.ts` | 4 | ✅ 4/4 |
+| Skill whisperer | `skill-whisperer.spec.ts` | 5 | ✅ 5/5 |
+| Triggers | `triggers.spec.ts` | 7 | ✅ 7/7 |
+| Add integration | `add-integration.spec.ts` | 6 | ✅ 6/6 |
 
-**Playwright total: 12/16 passing**
+**Remaining 3 failures:** All live LLM agent interaction (agent tool execution timeout).
+Model: Llama 4 Scout 17B-16E (109B MoE). MAAS endpoint works but graph streaming has issues.
 
 ### Backend E2E (pytest)
 
