@@ -31,6 +31,8 @@ type ChatView struct {
 	streamBuf string
 	streamCh  <-chan api.ChatStreamEvent
 	err       error
+	debug     []string
+	showDebug bool
 }
 
 // NewChatView creates a new chat view.
@@ -98,6 +100,10 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 
 	case chatStreamEventMsg:
 		evt := msg.event
+		if evt.Debug != "" {
+			v.debug = append(v.debug, evt.Debug)
+			return v, v.readNextEvent()
+		}
 		if evt.Done {
 			v.streaming = false
 			v.streamCh = nil
@@ -138,6 +144,12 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 		return v, nil
 
 	case tea.KeyMsg:
+		// Ctrl+D toggles debug panel (works even while streaming)
+		if msg.Type == tea.KeyCtrlD {
+			v.showDebug = !v.showDebug
+			return v, nil
+		}
+
 		if v.streaming {
 			return v, nil // ignore input while streaming
 		}
@@ -155,6 +167,7 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 				v.messages = append(v.messages, chatMessage{role: "user", content: text})
 				v.streaming = true
 				v.streamBuf = ""
+				v.debug = nil
 				v.err = nil
 				return v, v.sendMessage(text)
 			}
@@ -285,12 +298,21 @@ func (v ChatView) View() string {
 		b.WriteString(theme.ErrorStyle.Render(fmt.Sprintf("  Error: %s", v.err.Error())) + "\n\n")
 	}
 
+	// Debug panel
+	if v.showDebug && len(v.debug) > 0 {
+		b.WriteString(theme.MutedStyle.Render("  ── debug ──") + "\n")
+		for _, d := range v.debug {
+			b.WriteString(theme.MutedStyle.Render("  │ "+d) + "\n")
+		}
+		b.WriteString(theme.MutedStyle.Render("  ─────────") + "\n\n")
+	}
+
 	// Input
 	if !v.streaming {
 		b.WriteString(theme.LabelStyle.Render("  > ") + v.input + theme.MutedStyle.Render("█") + "\n")
 	}
 
-	b.WriteString("\n" + theme.MutedStyle.Render("  Esc back  •  Enter send"))
+	b.WriteString("\n" + theme.MutedStyle.Render("  Esc back  •  Enter send  •  Ctrl+D debug"))
 
 	return b.String()
 }

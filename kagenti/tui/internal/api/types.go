@@ -117,12 +117,33 @@ type ChatStreamEvent struct {
 	Done      bool                   `json:"done,omitempty"`
 	Error     string                 `json:"error,omitempty"`
 	Event     map[string]interface{} `json:"event,omitempty"`
+	Debug     string                 `json:"-"` // internal debug trace, not from JSON
+}
+
+// SecretKeyRef references a key in a Kubernetes Secret.
+type SecretKeyRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+// ConfigMapKeyRef references a key in a Kubernetes ConfigMap.
+type ConfigMapKeyRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+// EnvVarSource selects a value from a Secret or ConfigMap.
+type EnvVarSource struct {
+	SecretKeyRef    *SecretKeyRef    `json:"secretKeyRef,omitempty"`
+	ConfigMapKeyRef *ConfigMapKeyRef `json:"configMapKeyRef,omitempty"`
 }
 
 // EnvVar is an environment variable for agent/tool creation.
+// Either Value or ValueFrom should be set, not both.
 type EnvVar struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name      string        `json:"name"`
+	Value     string        `json:"value,omitempty"`
+	ValueFrom *EnvVarSource `json:"valueFrom,omitempty"`
 }
 
 // ServicePort is a service port configuration.

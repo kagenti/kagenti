@@ -170,6 +170,9 @@ func (v ToolDetailView) View() string {
 		}
 	}
 
+	// Environment variables
+	renderEnvVars(&b, v.detail)
+
 	// Polling indicator
 	hint := "Esc back"
 	if v.polling {

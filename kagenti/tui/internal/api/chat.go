@@ -96,26 +96,43 @@ func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-cha
 	}
 
 	ch := make(chan ChatStreamEvent, 16)
+
+	// Send initial debug info about the connection
+	ch <- ChatStreamEvent{Debug: fmt.Sprintf("POST %s → HTTP %d", url, resp.StatusCode)}
+	ch <- ChatStreamEvent{Debug: fmt.Sprintf("Content-Type: %s", resp.Header.Get("Content-Type"))}
+
 	go func() {
 		defer resp.Body.Close()
 		defer close(ch)
 
 		scanner := bufio.NewScanner(resp.Body)
+		lineNum := 0
 		for scanner.Scan() {
 			line := scanner.Text()
+			lineNum++
 			if !strings.HasPrefix(line, "data: ") {
+				if strings.TrimSpace(line) != "" {
+					ch <- ChatStreamEvent{Debug: fmt.Sprintf("line %d (skipped): %s", lineNum, line)}
+				}
 				continue
 			}
 			data := line[6:]
 			if data == "[DONE]" {
+				ch <- ChatStreamEvent{Debug: "stream: [DONE]"}
 				ch <- ChatStreamEvent{Done: true}
 				return
 			}
 			var evt ChatStreamEvent
 			if err := json.Unmarshal([]byte(data), &evt); err != nil {
+				ch <- ChatStreamEvent{Debug: fmt.Sprintf("line %d (parse error): %s — raw: %s", lineNum, err, data)}
 				continue
 			}
 			ch <- evt
+		}
+		if err := scanner.Err(); err != nil {
+			ch <- ChatStreamEvent{Debug: fmt.Sprintf("scanner error: %s", err)}
+		} else {
+			ch <- ChatStreamEvent{Debug: "stream: EOF (connection closed)"}
 		}
 	}()
 

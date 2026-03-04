@@ -172,6 +172,9 @@ func (v AgentDetailView) View() string {
 		}
 	}
 
+	// Environment variables
+	renderEnvVars(&b, v.detail)
+
 	// Polling indicator
 	hint := "Esc back  •  /chat " + v.name + " to chat"
 	if v.polling {
@@ -197,6 +200,74 @@ func str(v any) string {
 		return fmt.Sprintf("%v", val)
 	default:
 		return fmt.Sprintf("%v", val)
+	}
+}
+
+// isSensitiveKey returns true if the env var name likely contains a secret.
+func isSensitiveKey(name string) bool {
+	upper := strings.ToUpper(name)
+	for _, tok := range []string{"KEY", "SECRET", "TOKEN", "PASSWORD"} {
+		if strings.Contains(upper, tok) {
+			return true
+		}
+	}
+	return false
+}
+
+// renderEnvVars writes the environment variables section from
+// spec.template.spec.containers[0].env[].
+func renderEnvVars(b *strings.Builder, detail map[string]any) {
+	spec, ok := detail["spec"].(map[string]any)
+	if !ok {
+		return
+	}
+	tmpl, ok := spec["template"].(map[string]any)
+	if !ok {
+		return
+	}
+	podSpec, ok := tmpl["spec"].(map[string]any)
+	if !ok {
+		return
+	}
+	containers, ok := podSpec["containers"].([]any)
+	if !ok || len(containers) == 0 {
+		return
+	}
+	cm, ok := containers[0].(map[string]any)
+	if !ok {
+		return
+	}
+	envList, ok := cm["env"].([]any)
+	if !ok || len(envList) == 0 {
+		return
+	}
+
+	b.WriteString("\n" + theme.SubtitleStyle.Render("  Environment") + "\n")
+	for _, e := range envList {
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := str(entry["name"])
+		if name == "" {
+			continue
+		}
+
+		var display string
+		if vf, ok := entry["valueFrom"].(map[string]any); ok {
+			if ref, ok := vf["secretKeyRef"].(map[string]any); ok {
+				display = fmt.Sprintf("<secret:%s/%s>", str(ref["name"]), str(ref["key"]))
+			} else {
+				display = "<ref>"
+			}
+		} else if isSensitiveKey(name) {
+			display = "***"
+		} else {
+			display = str(entry["value"])
+		}
+		b.WriteString(fmt.Sprintf("    %-16s %s\n",
+			theme.LabelStyle.Render(name+":"),
+			theme.MutedStyle.Render(display)))
 	}
 }
 

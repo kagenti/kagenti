@@ -26,6 +26,7 @@ type toolFormValues struct {
 	workloadType   string
 	createRoute    bool
 	spireEnabled   bool
+	logLevel       string
 	extraEnvVars   string
 }
 
@@ -144,6 +145,7 @@ func (v *DeployToolView) buildForm() {
 		deployMethod: "image",
 		workloadType: "deployment",
 		gitRevision:  "main",
+		logLevel:     "INFO",
 	}
 
 	fv := v.vals
@@ -224,7 +226,11 @@ func (v *DeployToolView) buildForm() {
 
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Env Vars").
+				Title("Log Level").
+				Description("Tool log level").
+				Value(&fv.logLevel),
+			huh.NewInput().
+				Title("Extra Env Vars").
 				Description("KEY=VALUE pairs, comma-separated (optional)").
 				Value(&fv.extraEnvVars),
 		).Title("Environment"),
@@ -234,6 +240,12 @@ func (v *DeployToolView) buildForm() {
 func (v *DeployToolView) deploy() tea.Cmd {
 	client := v.client
 	fv := v.vals
+	var envVars []api.EnvVar
+	if fv.logLevel != "" {
+		envVars = append(envVars, api.EnvVar{Name: "LOG_LEVEL", Value: fv.logLevel})
+	}
+	envVars = append(envVars, parseExtraEnvVars(fv.extraEnvVars)...)
+
 	req := &api.CreateToolRequest{
 		Name:             fv.name,
 		Namespace:        fv.namespace,
@@ -247,7 +259,7 @@ func (v *DeployToolView) deploy() tea.Cmd {
 		GitRevision:      fv.gitRevision,
 		CreateHTTPRoute:  fv.createRoute,
 		SpireEnabled:     fv.spireEnabled,
-		EnvVars:          parseEnvVars("", fv.extraEnvVars),
+		EnvVars:          envVars,
 	}
 	return func() tea.Msg {
 		resp, err := client.CreateTool(req)
