@@ -172,8 +172,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           pkceMethod: 'S256',
           enableLogging: true, // Enable Keycloak adapter logging
           flow: 'standard', // Use standard authorization code flow
-          // Use redirect_uri from config if provided
-          ...(config.redirect_uri && { redirectUri: config.redirect_uri }),
+          // Do NOT set redirectUri — let Keycloak default to window.location.href
+          // so users return to the page they were on (e.g. /sandbox/files/...).
+          // Setting redirect_uri to "/" causes deep links to redirect to root.
         }).catch((initError) => {
           console.error('Keycloak init rejected with error:', initError);
 
