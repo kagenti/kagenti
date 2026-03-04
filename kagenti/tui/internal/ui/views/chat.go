@@ -30,14 +30,17 @@ type ChatView struct {
 	streaming bool
 	streamBuf string
 	streamCh  <-chan api.ChatStreamEvent
-	err       error
-	debug     []string
-	showDebug bool
+	err          error
+	debug        []string
+	showDebug    bool
+	history      []string
+	historyIdx   int
+	historyDraft string
 }
 
 // NewChatView creates a new chat view.
 func NewChatView(client *api.Client) ChatView {
-	return ChatView{client: client}
+	return ChatView{client: client, historyIdx: -1}
 }
 
 // SetSize sets the view dimensions.
@@ -164,12 +167,38 @@ func (v ChatView) Update(msg tea.Msg) (ChatView, tea.Cmd) {
 			if v.input != "" {
 				text := v.input
 				v.input = ""
+				v.history = append(v.history, text)
+				v.historyIdx = -1
+				v.historyDraft = ""
 				v.messages = append(v.messages, chatMessage{role: "user", content: text})
 				v.streaming = true
 				v.streamBuf = ""
 				v.debug = nil
 				v.err = nil
 				return v, v.sendMessage(text)
+			}
+
+		case tea.KeyUp:
+			if len(v.history) > 0 {
+				if v.historyIdx == -1 {
+					v.historyDraft = v.input
+					v.historyIdx = len(v.history) - 1
+				} else if v.historyIdx > 0 {
+					v.historyIdx--
+				}
+				v.input = v.history[v.historyIdx]
+			}
+
+		case tea.KeyDown:
+			if v.historyIdx != -1 {
+				v.historyIdx++
+				if v.historyIdx >= len(v.history) {
+					v.input = v.historyDraft
+					v.historyIdx = -1
+					v.historyDraft = ""
+				} else {
+					v.input = v.history[v.historyIdx]
+				}
 			}
 
 		case tea.KeyBackspace:
@@ -312,7 +341,7 @@ func (v ChatView) View() string {
 		b.WriteString(theme.LabelStyle.Render("  > ") + v.input + theme.MutedStyle.Render("█") + "\n")
 	}
 
-	b.WriteString("\n" + theme.MutedStyle.Render("  Esc back  •  Enter send  •  Ctrl+D debug"))
+	b.WriteString("\n" + theme.MutedStyle.Render("  Esc back  •  Enter send  •  Up/Down history  •  Ctrl+D debug"))
 
 	return b.String()
 }
