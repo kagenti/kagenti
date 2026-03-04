@@ -192,6 +192,12 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
       name: /New Session/i,
     });
     await newSessionBtn.click();
+    // Handle New Session modal
+    const startBtn = page.getByRole('button', { name: /^Start$/ });
+    if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startBtn.click();
+      await page.waitForTimeout(500);
+    }
     await page.waitForTimeout(1000);
     await snap(page, 'new-session-blank');
 

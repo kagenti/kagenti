@@ -137,6 +137,12 @@ async function navigateToSandbox(page: Page) {
 async function startNewSession(page: Page) {
   const newSessionBtn = page.getByRole('button', { name: /New Session/i });
   await newSessionBtn.click();
+  // Handle New Session modal
+  const startBtn = page.getByRole('button', { name: /^Start$/ });
+  if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await startBtn.click();
+    await page.waitForTimeout(500);
+  }
   await page.waitForTimeout(500);
 
   // Verify chat area is empty — shows the start prompt
@@ -389,6 +395,12 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
     // ---- Switch to a different session ----
     const newSessionBtn = page.getByRole('button', { name: /New Session/i });
     await newSessionBtn.click();
+    // Handle New Session modal
+    const startBtn = page.getByRole('button', { name: /^Start$/ });
+    if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startBtn.click();
+      await page.waitForTimeout(500);
+    }
     await page.waitForTimeout(500);
 
     // ---- Assert: input is cleared after session switch ----

@@ -34,6 +34,12 @@ test('check history endpoint response', async ({ page }) => {
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
   await page.getByText('+ New Session').click();
+  // Handle New Session modal
+  const startBtn = page.getByRole('button', { name: /^Start$/ });
+  if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await startBtn.click();
+    await page.waitForTimeout(500);
+  }
   await page.waitForTimeout(500);
   
   const input = page.locator('textarea').first();

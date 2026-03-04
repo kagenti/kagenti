@@ -173,6 +173,12 @@ for (const agentName of AGENT_VARIANTS) {
       // ---- Start new session ----
       const newSessionBtn = page.getByRole('button', { name: /New Session/i });
       await newSessionBtn.click();
+      // Handle New Session modal
+      const startBtn = page.getByRole('button', { name: /^Start$/ });
+      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await startBtn.click();
+        await page.waitForTimeout(500);
+      }
       await page.waitForTimeout(500);
 
       // ---- Turn 1: Simple text response ----

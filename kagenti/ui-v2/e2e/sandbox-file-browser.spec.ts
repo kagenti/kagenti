@@ -389,6 +389,12 @@ test.describe('File Browser — Live Cluster Integration', () => {
     const newSessionBtn = page.getByRole('button', { name: /New Session/i });
     if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await newSessionBtn.click();
+      // Handle New Session modal
+      const startBtn = page.getByRole('button', { name: /^Start$/ });
+      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await startBtn.click();
+        await page.waitForTimeout(500);
+      }
       await page.waitForTimeout(500);
     }
 
@@ -498,6 +504,12 @@ test.describe('File Browser — Live Cluster Integration', () => {
     const newSessionBtn = page.getByRole('button', { name: /New Session/i });
     if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await newSessionBtn.click();
+      // Handle New Session modal
+      const startBtn = page.getByRole('button', { name: /^Start$/ });
+      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await startBtn.click();
+        await page.waitForTimeout(500);
+      }
       await page.waitForTimeout(500);
     }
 

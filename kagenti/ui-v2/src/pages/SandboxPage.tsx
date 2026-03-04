@@ -426,7 +426,9 @@ const ChatBubble: React.FC<{
             style={{
               fontSize: '0.75em',
               color: 'var(--pf-v5-global--Color--200)',
+              cursor: 'default',
             }}
+            title={msg.timestamp.toLocaleString()}
           >
             {formatMsgTime(msg.timestamp)}
           </span>
