@@ -1027,6 +1027,7 @@ class SandboxChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     agent_name: str = "sandbox-legion"
+    skill: Optional[str] = None
 
     @field_validator("agent_name")
     @classmethod
@@ -1204,6 +1205,7 @@ async def _stream_sandbox_response(
     owner: Optional[str] = None,
     namespace: Optional[str] = None,
     agent_name: Optional[str] = None,
+    skill: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator that proxies A2A SSE events from the agent."""
     owner_set = False
@@ -1250,6 +1252,10 @@ async def _stream_sandbox_response(
         except Exception:
             logger.debug("Failed to set owner on session %s", session_id)
 
+    metadata: dict = {"username": owner}
+    if skill:
+        metadata["skill"] = skill
+
     a2a_msg = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
@@ -1260,7 +1266,7 @@ async def _stream_sandbox_response(
                 "parts": [{"kind": "text", "text": message}],
                 "messageId": uuid4().hex,
                 "contextId": session_id,
-                "metadata": {"username": owner},
+                "metadata": metadata,
             },
         },
     }
@@ -1457,6 +1463,7 @@ async def chat_stream(
             owner=user.username,
             namespace=namespace,
             agent_name=request.agent_name,
+            skill=request.skill,
         ),
         media_type="text/event-stream",
         headers={

@@ -746,17 +746,20 @@ export const SandboxPage: React.FC = () => {
   const sendNonStreaming = async (
     messageToSend: string,
     headers: Record<string, string>,
+    skill?: string,
   ) => {
+    const body: Record<string, unknown> = {
+      message: messageToSend,
+      session_id: contextId || undefined,
+      agent_name: selectedAgent,
+    };
+    if (skill) body.skill = skill;
     const response = await fetch(
       `/api/v1/sandbox/${encodeURIComponent(namespace)}/chat`,
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          message: messageToSend,
-          session_id: contextId || undefined,
-          agent_name: selectedAgent,
-        }),
+        body: JSON.stringify(body),
       }
     );
 
@@ -790,16 +793,19 @@ export const SandboxPage: React.FC = () => {
   const sendStreaming = async (
     messageToSend: string,
     headers: Record<string, string>,
+    skill?: string,
   ): Promise<boolean> => {
     const streamUrl = sandboxService.getStreamUrl(namespace);
+    const body: Record<string, unknown> = {
+      message: messageToSend,
+      session_id: contextId || undefined,
+      agent_name: selectedAgent,
+    };
+    if (skill) body.skill = skill;
     const response = await fetch(streamUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        message: messageToSend,
-        session_id: contextId || undefined,
-        agent_name: selectedAgent,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -955,15 +961,22 @@ export const SandboxPage: React.FC = () => {
     if (!input.trim() || isStreaming) return;
 
     shouldAutoScroll.current = true;
+
+    // Parse /skill:name prefix from message (e.g. "/rca:ci #758" → skill="rca:ci", text="#758")
+    const trimmed = input.trim();
+    const skillMatch = trimmed.match(/^\/([\w:.-]+)\s*(.*)/s);
+    const skill = skillMatch ? skillMatch[1] : undefined;
+    const messageText = skillMatch ? (skillMatch[2] || skillMatch[1]) : trimmed;
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: input.trim(),
+      content: trimmed,
       timestamp: new Date(),
       username: currentUsername,
     };
     setMessages((prev) => [...prev, userMessage]);
-    const messageToSend = input.trim();
+    const messageToSend = messageText;
     setInput('');
     setIsStreaming(true);
     setStreamingContent('');
@@ -979,7 +992,7 @@ export const SandboxPage: React.FC = () => {
       // Try streaming first; fall back to non-streaming on failure
       let streamed = false;
       try {
-        streamed = await sendStreaming(messageToSend, headers);
+        streamed = await sendStreaming(messageToSend, headers, skill);
       } catch (streamErr) {
         // Streaming failed — check if it's a connection error
         const streamMsg = streamErr instanceof Error ? streamErr.message : '';
@@ -990,7 +1003,7 @@ export const SandboxPage: React.FC = () => {
       }
 
       if (!streamed) {
-        await sendNonStreaming(messageToSend, headers);
+        await sendNonStreaming(messageToSend, headers, skill);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to send';
