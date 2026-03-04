@@ -20,9 +20,9 @@ graph TB
     subgraph "Platform Layer (Kagenti-owned)"
         A2A["A2A Server<br/>(JSON-RPC 2.0, SSE)"]
         WS["Workspace Manager<br/>(per-context /workspace)"]
-        SK["Skills Loader<br/>(CLAUDE.md + .claude/skills/)"]
+        SK["Skills Loader<br/>(CLAUDE.md + .claude/skills/<br/>+ custom loaders e.g. superpowers)"]
         PM["Permission Checker<br/>(allow/deny/HITL)"]
-        TOFU["TOFU Verification<br/>(SHA-256 integrity)"]
+        TOFU["TOFU Verification<br/>(SHA-256 config integrity)"]
         OTEL["OTEL Instrumentation<br/>(Phoenix, MLflow)"]
         CP["Session DB<br/>(PostgreSQL checkpointer)"]
     end
@@ -33,6 +33,15 @@ graph TB
         LL["Landlock<br/>(filesystem sandbox)"]
         GV["gVisor<br/>(kernel sandbox)"]
     end
+
+    subgraph "Orchestration Layer (optional)"
+        SC["kubernetes-sigs SandboxClaim<br/>(ephemeral sandbox pods)"]
+        TRIG["Trigger Controller<br/>(cron/webhook/alert → SandboxClaim)"]
+    end
+
+    SC -->|"creates"| LG
+    SC -->|"creates"| OC
+    TRIG -->|"triggers"| SC
 
     subgraph "Agent Layer (pluggable)"
         LG["LangGraph Agent<br/>(graph.py + tools)"]
@@ -163,10 +172,10 @@ graph TB
         direction TB
         BASE["Python 3.12 + uv"]
         A2ASDK["a2a-sdk<br/>(A2A server, task store)"]
-        SKILLS["skills_loader.py<br/>(CLAUDE.md + skills)"]
+        SKILLS["skills_loader.py<br/>(CLAUDE.md + .claude/skills/<br/>+ pluggable custom loaders<br/>e.g. superpowers, org skills)"]
         WORKSPACE["workspace_manager.py<br/>(per-context dirs)"]
         PERMS["permission_checker.py<br/>(allow/deny/HITL)"]
-        TOFUV["tofu.py<br/>(hash verification)"]
+        TOFUV["tofu.py<br/>(config integrity, optional)"]
         OTELI["OTEL instrumentation<br/>(auto-hooks)"]
         ENTRY["entrypoint.py<br/>(loads AGENT_MODULE)"]
     end
@@ -228,6 +237,63 @@ server = A2AStarletteApplication(
 uvicorn.run(server.build(), host="0.0.0.0", port=8000)
 ```
 
+## 4b. Skills Loader: Pluggable Skill Sources
+
+The platform's Skills Loader reads skills from the workspace and injects them
+into the agent's system prompt. It supports **pluggable custom loaders** for
+organization-specific skill sources.
+
+```mermaid
+graph TB
+    subgraph "Skills Loader (platform-owned)"
+        direction TB
+        CL["Core Loader<br/>CLAUDE.md + .claude/skills/"]
+        SP["Superpowers Loader<br/>(brainstorming, TDD,<br/>debugging, code review)"]
+        ORG["Org Skills Loader<br/>(company-specific skills<br/>from ConfigMap or git)"]
+        MCP2["MCP Skill Discovery<br/>(skills from MCP servers<br/>via agent card)"]
+    end
+
+    subgraph "Skill Sources"
+        WS2["/workspace/CLAUDE.md"]
+        SK2["/workspace/.claude/skills/"]
+        CM["ConfigMap:<br/>org-skills"]
+        MCPS["MCP Server<br/>(tool → skill mapping)"]
+    end
+
+    subgraph "Output"
+        SYS["System Prompt<br/>(injected into LLM)"]
+        CARD["Agent Card<br/>(skills array for UI)"]
+    end
+
+    WS2 --> CL
+    SK2 --> CL
+    CM --> ORG
+    MCPS --> MCP2
+
+    CL --> SYS
+    SP --> SYS
+    ORG --> SYS
+    MCP2 --> CARD
+
+    style CL fill:#4CAF50,color:white
+    style SP fill:#FF9800,color:white
+    style ORG fill:#9C27B0,color:white
+```
+
+**How it works:**
+
+1. **Core loader** — Reads `CLAUDE.md` + `.claude/skills/` from workspace (always active)
+2. **Superpowers loader** — Loads brainstorming, TDD, debugging, code review skills
+   from a plugin directory (Session M adding custom loader support)
+3. **Org skills loader** — Loads company-specific skills from K8s ConfigMap
+   (e.g., internal coding standards, deployment procedures)
+4. **MCP skill discovery** — Reads skills from connected MCP servers' tool
+   definitions and maps them to the agent card's skills array
+
+When a user invokes `/rca:ci #758`, the frontend parses the skill name and sends
+it in the request body. The platform loads the full skill content and prepends it
+to the system prompt before calling the agent's graph.
+
 ## 5. Security Tiers with Platform Features
 
 ```mermaid
@@ -281,6 +347,40 @@ graph TB
 
 **Key:** All tiers work with ANY agent framework. Adding AuthBridge or Squid
 requires ZERO changes to agent code.
+
+### Deployment Mechanisms
+
+Agents can be deployed via two mechanisms:
+
+| Mechanism | What | When to Use |
+|-----------|------|-------------|
+| **Deployment** (default) | Standard K8s Deployment + Service | Long-running agents, always-on |
+| **SandboxClaim** (optional) | kubernetes-sigs ephemeral pod | Short-lived tasks, triggered by cron/webhook/alert, auto-cleanup via TTL |
+
+```mermaid
+graph LR
+    subgraph "Deployment (always-on)"
+        WIZ["Wizard / API"] --> DEP["K8s Deployment"]
+        DEP --> SVC["Service"]
+        SVC --> ROUTE["OpenShift Route"]
+    end
+
+    subgraph "SandboxClaim (ephemeral)"
+        TRIG2["Trigger<br/>(cron/webhook/alert)"] --> SC2["SandboxClaim CRD"]
+        SC2 --> CTRL["SandboxClaim Controller"]
+        CTRL --> POD["Ephemeral Pod<br/>(TTL-based cleanup)"]
+    end
+
+    WIZ -->|"managed_lifecycle=true"| SC2
+
+    style DEP fill:#4CAF50,color:white
+    style SC2 fill:#FF9800,color:white
+    style CTRL fill:#607D8B,color:white
+```
+
+SandboxClaim enables **autonomous agent spawning**: a cron job triggers an RCA
+analysis every night, a webhook triggers a code review on PR creation, an alert
+triggers an incident response agent. The pod auto-destroys after TTL.
 
 ## 6. Full Platform Component Map
 
