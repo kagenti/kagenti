@@ -39,6 +39,45 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleString();
+  } catch {
+    return dateStr;
+  }
+}
+
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',
+  '.zip', '.gz', '.tar', '.bz2', '.xz', '.7z', '.rar',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.exe', '.dll', '.so', '.dylib', '.o', '.a', '.pyc', '.class',
+  '.wasm', '.db', '.sqlite', '.sqlite3',
+  '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
+  '.ttf', '.otf', '.woff', '.woff2', '.eot',
+]);
+
+function isBinaryFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  const dotIdx = lower.lastIndexOf('.');
+  if (dotIdx === -1) return false;
+  return BINARY_EXTENSIONS.has(lower.slice(dotIdx));
+}
+
+function looksLikeBinaryContent(content: string): boolean {
+  // Check first 512 chars for null bytes or high ratio of non-printable chars
+  const sample = content.slice(0, 512);
+  if (sample.includes('\0')) return true;
+  let nonPrintable = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const code = sample.charCodeAt(i);
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) nonPrintable++;
+  }
+  return sample.length > 0 && nonPrintable / sample.length > 0.1;
+}
+
 // ---------------------------------------------------------------------------
 // MermaidBlock — renders a mermaid diagram from a code string
 // ---------------------------------------------------------------------------
@@ -168,7 +207,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ file, isLoading }) => 
           </SplitItem>
           <SplitItem>
             <Label isCompact color="blue">
-              {new Date(file.modified).toLocaleString()}
+              {formatDate(file.modified)}
             </Label>
           </SplitItem>
         </Split>
@@ -176,7 +215,19 @@ export const FilePreview: React.FC<FilePreviewProps> = ({ file, isLoading }) => 
 
       {/* File content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
-        {isMarkdown(file.path) ? (
+        {isBinaryFile(file.path) || looksLikeBinaryContent(file.content) ? (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: '100%',
+              color: 'var(--pf-v5-global--Color--200)',
+            }}
+          >
+            Binary file — preview not available
+          </div>
+        ) : isMarkdown(file.path) ? (
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {file.content}
           </ReactMarkdown>

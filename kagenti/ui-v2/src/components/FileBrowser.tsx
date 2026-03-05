@@ -1,7 +1,8 @@
 // Copyright 2025 IBM Corp.
 // Licensed under the Apache License, Version 2.0
 
-import React, { useState, useMemo } from 'react';
+import React, { Component, useState, useMemo } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Breadcrumb,
@@ -82,13 +83,72 @@ function pathSegments(path: string): Array<{ label: string; fullPath: string }> 
 }
 
 // ---------------------------------------------------------------------------
+// ErrorBoundary for FilePreview — catches render crashes
+// ---------------------------------------------------------------------------
+
+interface PreviewErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class PreviewErrorBoundary extends Component<
+  { children: ReactNode; onReset?: () => void },
+  PreviewErrorBoundaryState
+> {
+  constructor(props: { children: ReactNode; onReset?: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): PreviewErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('FilePreview render error:', error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps: { children: ReactNode }) {
+    // Reset error state when children change (user selects a different file)
+    if (this.state.hasError && prevProps.children !== this.props.children) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: '100%',
+            gap: '12px',
+            color: 'var(--pf-v5-global--danger-color--100)',
+          }}
+        >
+          <ExclamationCircleIcon size="xl" />
+          <span>Failed to preview this file</span>
+          <span style={{ color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>
+            {this.state.error?.message || 'Unknown render error'}
+          </span>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // FileBrowser component
 // ---------------------------------------------------------------------------
 
 export const FileBrowser: React.FC = () => {
   const { namespace, agentName } = useParams<{ namespace: string; agentName: string }>();
 
-  const [currentPath, setCurrentPath] = useState('/');
+  const [currentPath, setCurrentPath] = useState('/workspace');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   // Fetch directory listing
@@ -320,9 +380,11 @@ export const FileBrowser: React.FC = () => {
           )}
         </div>
 
-        {/* Right panel — file preview */}
+        {/* Right panel — file preview (wrapped in ErrorBoundary) */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <FilePreview file={fileContent ?? null} isLoading={isFileLoading} />
+          <PreviewErrorBoundary key={selectedFilePath}>
+            <FilePreview file={fileContent ?? null} isLoading={isFileLoading} />
+          </PreviewErrorBoundary>
         </div>
       </div>
     </PageSection>

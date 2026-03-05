@@ -99,6 +99,47 @@ const MOCK_PY_CONTENT = {
   encoding: 'utf-8',
 };
 
+const MOCK_BINARY_CONTENT = {
+  path: '/workspace/data.db',
+  content: 'SQLite format 3\x00\x10\x00\x01\x01\x00',
+  size: 8192,
+  modified: '2026-03-02T11:00:00+00:00',
+  type: 'file',
+  encoding: 'utf-8',
+};
+
+const MOCK_BAD_DATE_CONTENT = {
+  path: '/workspace/broken.txt',
+  content: 'some text content',
+  size: 17,
+  modified: 'not-a-date',
+  type: 'file',
+  encoding: 'utf-8',
+};
+
+const MOCK_DIR_WITH_EXTRAS = {
+  path: '/workspace',
+  entries: [
+    ...MOCK_DIR_LISTING.entries,
+    {
+      name: 'data.db',
+      path: '/workspace/data.db',
+      type: 'file' as const,
+      size: 8192,
+      modified: '2026-03-02T11:00:00+00:00',
+      permissions: '-rw-r--r--',
+    },
+    {
+      name: 'broken.txt',
+      path: '/workspace/broken.txt',
+      type: 'file' as const,
+      size: 17,
+      modified: 'not-a-date',
+      permissions: '-rw-r--r--',
+    },
+  ],
+};
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Set up mock routes for the sandbox file browser API */
@@ -258,6 +299,98 @@ test.describe('Sandbox File Browser', () => {
 
     // File size label should show "256 B"
     await expect(page.getByText('256 B')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('binary file shows "preview not available" instead of crashing', async ({ page }) => {
+    // Override mock to include binary file
+    await page.route('**/api/v1/sandbox/team1/files/sandbox-basic/**', async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.searchParams.get('path') || '/workspace';
+      if (path === '/workspace/data.db') {
+        await route.fulfill({ json: MOCK_BINARY_CONTENT });
+      } else {
+        await route.fulfill({ json: MOCK_DIR_WITH_EXTRAS });
+      }
+    });
+
+    await page.goto('/sandbox/files/team1/sandbox-basic');
+    await page.waitForLoadState('networkidle');
+
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
+    await expect(treeView).toBeVisible({ timeout: 10000 });
+
+    // Click the binary file
+    await page.getByText('data.db').click();
+
+    // Should show "Binary file" message, NOT crash
+    await expect(page.getByText('Binary file')).toBeVisible({ timeout: 10000 });
+
+    // The tree should still be visible (didn't crash the whole browser)
+    await expect(treeView).toBeVisible();
+  });
+
+  test('bad date in file metadata does not crash preview', async ({ page }) => {
+    // Override mock to include broken date file
+    await page.route('**/api/v1/sandbox/team1/files/sandbox-basic/**', async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.searchParams.get('path') || '/workspace';
+      if (path === '/workspace/broken.txt') {
+        await route.fulfill({ json: MOCK_BAD_DATE_CONTENT });
+      } else {
+        await route.fulfill({ json: MOCK_DIR_WITH_EXTRAS });
+      }
+    });
+
+    await page.goto('/sandbox/files/team1/sandbox-basic');
+    await page.waitForLoadState('networkidle');
+
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
+    await expect(treeView).toBeVisible({ timeout: 10000 });
+
+    // Click the file with bad date
+    await page.getByText('broken.txt').click();
+
+    // Content should render in a code block (not crash)
+    await expect(page.getByText('some text content')).toBeVisible({ timeout: 10000 });
+
+    // Tree should still be visible
+    await expect(treeView).toBeVisible();
+  });
+
+  test('preview failure does not crash the file tree', async ({ page }) => {
+    // Override mock to return content that could crash a renderer
+    await page.route('**/api/v1/sandbox/team1/files/sandbox-basic/**', async (route) => {
+      const url = new URL(route.request().url());
+      const path = url.searchParams.get('path') || '/workspace';
+      if (path === '/workspace/README.md') {
+        // Return a null content field that could crash ReactMarkdown
+        await route.fulfill({
+          json: {
+            path: '/workspace/README.md',
+            content: null,
+            size: 0,
+            modified: '2026-03-02T09:30:00+00:00',
+            type: 'file',
+            encoding: 'utf-8',
+          },
+        });
+      } else {
+        await route.fulfill({ json: MOCK_DIR_LISTING });
+      }
+    });
+
+    await page.goto('/sandbox/files/team1/sandbox-basic');
+    await page.waitForLoadState('networkidle');
+
+    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
+    await expect(treeView).toBeVisible({ timeout: 10000 });
+
+    // Click the file that will crash the preview
+    await page.getByText('README.md').click();
+    await page.waitForTimeout(2000);
+
+    // The tree should STILL be visible — ErrorBoundary catches the crash
+    await expect(treeView).toBeVisible();
   });
 
   test('end-to-end: agent writes file, file browser shows it', async ({ page }) => {
