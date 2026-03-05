@@ -22,6 +22,28 @@ type CLIContext struct {
 	Output string // "table" or "json"
 }
 
+// newClientFromConfig creates an API client from a resolved config, wiring
+// Keycloak refresh tokens and the OnTokenRefresh persistence callback.
+func newClientFromConfig(cfg *config.Config) *api.Client {
+	client := api.NewClient(cfg.URL, cfg.Token, cfg.Namespace)
+
+	if cfg.RefreshToken != "" {
+		client.SetRefreshToken(cfg.RefreshToken)
+	}
+	if cfg.KeycloakURL != "" {
+		client.SetKeycloakConfig(cfg.KeycloakURL, cfg.Realm, cfg.ClientID)
+	}
+
+	client.OnTokenRefresh = func(accessToken, refreshToken string) {
+		saved := config.Load("", "", "")
+		saved.Token = accessToken
+		saved.RefreshToken = refreshToken
+		_ = saved.Save()
+	}
+
+	return client
+}
+
 // NewRootCmd creates the root cobra command with all subcommands.
 func NewRootCmd() *cobra.Command {
 	var (
@@ -46,23 +68,7 @@ func NewRootCmd() *cobra.Command {
 			}
 
 			cfg := config.Load(flagURL, flagToken, flagNamespace)
-			client := api.NewClient(cfg.URL, cfg.Token, cfg.Namespace)
-
-			if cfg.RefreshToken != "" {
-				client.SetRefreshToken(cfg.RefreshToken)
-			}
-			if cfg.KeycloakURL != "" {
-				client.SetKeycloakConfig(cfg.KeycloakURL, cfg.Realm, cfg.ClientID)
-			}
-
-			client.OnTokenRefresh = func(accessToken, refreshToken string) {
-				saved := config.Load("", "", "")
-				saved.Token = accessToken
-				saved.RefreshToken = refreshToken
-				_ = saved.Save()
-			}
-
-			ctx.Client = client
+			ctx.Client = newClientFromConfig(cfg)
 			ctx.Config = cfg
 			ctx.Output = flagOutput
 			return nil
@@ -70,21 +76,7 @@ func NewRootCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// No subcommand → launch interactive TUI.
 			cfg := config.Load(flagURL, flagToken, flagNamespace)
-			client := api.NewClient(cfg.URL, cfg.Token, cfg.Namespace)
-
-			if cfg.RefreshToken != "" {
-				client.SetRefreshToken(cfg.RefreshToken)
-			}
-			if cfg.KeycloakURL != "" {
-				client.SetKeycloakConfig(cfg.KeycloakURL, cfg.Realm, cfg.ClientID)
-			}
-
-			client.OnTokenRefresh = func(accessToken, refreshToken string) {
-				saved := config.Load("", "", "")
-				saved.Token = accessToken
-				saved.RefreshToken = refreshToken
-				_ = saved.Save()
-			}
+			client := newClientFromConfig(cfg)
 
 			app := ui.NewApp(client)
 			p := tea.NewProgram(app, tea.WithAltScreen())
