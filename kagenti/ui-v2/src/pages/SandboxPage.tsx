@@ -1254,6 +1254,8 @@ export const SandboxPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             padding: 16,
+            overflow: 'hidden',
+            minWidth: 0,
           }}
         >
           {/* Header info bar */}
@@ -1577,8 +1579,12 @@ export const SandboxPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Markdown styling */}
+      {/* Tab layout + Markdown styling */}
       <style>{`
+        /* Make PatternFly tab content panel flex-fill inside the Tabs container */
+        .pf-v5-c-tabs { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .pf-v5-c-tab-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .pf-v5-c-tab-content > * { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .sandbox-markdown pre {
           background: var(--pf-v5-global--BackgroundColor--dark-300);
           color: var(--pf-v5-global--Color--light-100);

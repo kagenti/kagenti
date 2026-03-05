@@ -1292,6 +1292,7 @@ async def _stream_sandbox_response(
 ) -> AsyncGenerator[str, None]:
     """Async generator that proxies A2A SSE events from the agent."""
     owner_set = False
+    session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
 
     async def _set_owner_metadata():
         """Set owner on session metadata after task is created."""
@@ -1411,6 +1412,11 @@ async def _stream_sandbox_response(
 
                         # --- TaskArtifactUpdateEvent ---
                         if "artifact" in result:
+                            # Suppress artifact events in loop mode
+                            # (loop cards handle all content display)
+                            if session_has_loops:
+                                continue
+
                             artifact = result["artifact"]
                             parts = artifact.get("parts", [])
                             content = _extract_text_from_parts(parts)
@@ -1460,13 +1466,14 @@ async def _stream_sandbox_response(
                                             loop_payload["loop_event"] = parsed
                                             yield f"data: {json.dumps(loop_payload)}\n\n"
                                             has_loop_events = True
+                                            session_has_loops = True
                                             continue
                                     except (json.JSONDecodeError, TypeError):
                                         pass
 
-                            # Skip regular event if loop events were forwarded
-                            # (avoids duplicate rendering in the UI)
-                            if has_loop_events:
+                            # Skip ALL flat events once loop mode is active
+                            # (prevents duplicate flat blocks alongside AgentLoopCards)
+                            if has_loop_events or session_has_loops:
                                 continue
 
                             payload["event"] = {
