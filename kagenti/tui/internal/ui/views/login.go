@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -153,7 +154,7 @@ func (v LoginView) Update(msg tea.Msg) (LoginView, tea.Cmd) {
 				codeVerifier := v.codeVerifier
 				interval := v.pollInterval
 				return v, func() tea.Msg {
-					tr, err := client.PollDeviceToken(keycloakURL, realm, clientID, deviceCode, codeVerifier, interval)
+					tr, err := client.PollDeviceToken(context.TODO(), keycloakURL, realm, clientID, deviceCode, codeVerifier, interval)
 					if err != nil {
 						return loginCompleteMsg{err: err}
 					}

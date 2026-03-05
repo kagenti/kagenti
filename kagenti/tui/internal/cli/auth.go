@@ -44,6 +44,7 @@ func newLoginCmd(ctx *CLIContext) *cobra.Command {
 			time.Sleep(time.Duration(interval) * time.Second)
 
 			tr, err := ctx.Client.PollDeviceToken(
+				cmd.Context(),
 				authCfg.KeycloakURL, authCfg.Realm, authCfg.ClientID,
 				dc.DeviceCode, dc.CodeVerifier, dc.Interval,
 			)

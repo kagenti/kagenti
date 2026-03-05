@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -125,8 +126,9 @@ func (c *Client) RequestDeviceCode(keycloakURL, realm, clientID string) (*Device
 }
 
 // PollDeviceToken polls Keycloak's token endpoint for device code completion.
-// It blocks until the user authorizes, the code expires, or an error occurs.
-func (c *Client) PollDeviceToken(keycloakURL, realm, clientID, deviceCode, codeVerifier string, interval int) (*TokenResponse, error) {
+// It blocks until the user authorizes, the code expires, the context is
+// cancelled, or an error occurs.
+func (c *Client) PollDeviceToken(ctx context.Context, keycloakURL, realm, clientID, deviceCode, codeVerifier string, interval int) (*TokenResponse, error) {
 	tokenURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", keycloakURL, realm)
 
 	pollInterval := time.Duration(interval) * time.Second
@@ -141,7 +143,7 @@ func (c *Client) PollDeviceToken(keycloakURL, realm, clientID, deviceCode, codeV
 		form.Set("device_code", deviceCode)
 		form.Set("code_verifier", codeVerifier)
 
-		req, err := http.NewRequest("POST", tokenURL, strings.NewReader(form.Encode()))
+		req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(form.Encode()))
 		if err != nil {
 			return nil, err
 		}
@@ -165,11 +167,19 @@ func (c *Client) PollDeviceToken(keycloakURL, realm, clientID, deviceCode, codeV
 
 		switch tr.Error {
 		case "authorization_pending":
-			time.Sleep(pollInterval)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(pollInterval):
+			}
 			continue
 		case "slow_down":
 			pollInterval += 5 * time.Second
-			time.Sleep(pollInterval)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(pollInterval):
+			}
 			continue
 		case "expired_token":
 			return nil, fmt.Errorf("device code expired")
