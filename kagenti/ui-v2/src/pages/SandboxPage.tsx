@@ -1047,7 +1047,12 @@ export const SandboxPage: React.FC = () => {
     let accumulatedContent = '';
     let buffer = '';
     let seenLoopId = false; // Once any loop_id event seen, suppress flat messages
+    let msgCountBeforeStream = 0; // Track count to only remove current-turn flat messages
     const collectedMessages: Message[] = [];
+
+    // Snapshot current message count so retroactive cleanup only
+    // removes flat messages from THIS turn, not previous turns
+    setMessages((prev) => { msgCountBeforeStream = prev.length; return prev; });
 
     try {
       while (true) {
@@ -1078,10 +1083,13 @@ export const SandboxPage: React.FC = () => {
             // and the full event in data.loop_event
             if (data.loop_id) {
               if (!seenLoopId) {
-                // First loop event: retroactively remove any flat messages
-                // that were added before we knew this was a loop session
+                // First loop event: retroactively remove flat messages
+                // from THIS turn only (keep previous turns intact)
                 seenLoopId = true;
-                setMessages((prev) => prev.filter((m) => m.role === 'user'));
+                setMessages((prev) => [
+                  ...prev.slice(0, msgCountBeforeStream),
+                  ...prev.slice(msgCountBeforeStream).filter((m) => m.role === 'user'),
+                ]);
               }
               const loopId = data.loop_id;
               const le = data.loop_event || data;
