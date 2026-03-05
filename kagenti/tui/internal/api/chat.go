@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -17,8 +18,8 @@ func (c *Client) GetAgentCard(namespace, name string) (*AgentCardResponse, error
 	if ns == "" {
 		ns = c.Namespace
 	}
-	url := c.apiURL(fmt.Sprintf("/chat/%s/%s/agent-card", ns, name))
-	req, err := c.newRequest("GET", url, nil)
+	u := c.apiURL(fmt.Sprintf("/chat/%s/%s/agent-card", url.PathEscape(ns), url.PathEscape(name)))
+	req, err := c.newRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -39,8 +40,8 @@ func (c *Client) SendMessage(namespace, name string, chatReq *ChatRequest) (*Cha
 	if err != nil {
 		return nil, err
 	}
-	url := c.apiURL(fmt.Sprintf("/chat/%s/%s/send", ns, name))
-	req, err := c.newRequest("POST", url, bytes.NewReader(body))
+	u := c.apiURL(fmt.Sprintf("/chat/%s/%s/send", url.PathEscape(ns), url.PathEscape(name)))
+	req, err := c.newRequest("POST", u, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +71,10 @@ func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-cha
 	if err != nil {
 		return nil, err
 	}
-	url := c.apiURL(fmt.Sprintf("/chat/%s/%s/stream", ns, name))
+	u := c.apiURL(fmt.Sprintf("/chat/%s/%s/stream", url.PathEscape(ns), url.PathEscape(name)))
 
 	doStream := func() (*http.Response, error) {
-		req, err := c.newRequest("POST", url, bytes.NewReader(bodyBytes))
+		req, err := c.newRequest("POST", u, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, err
 		}
@@ -110,7 +111,7 @@ func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-cha
 	ch := make(chan ChatStreamEvent, 16)
 
 	// Send initial debug info about the connection
-	ch <- ChatStreamEvent{Debug: fmt.Sprintf("POST %s → HTTP %d", url, resp.StatusCode)}
+	ch <- ChatStreamEvent{Debug: fmt.Sprintf("POST %s → HTTP %d", u, resp.StatusCode)}
 	ch <- ChatStreamEvent{Debug: fmt.Sprintf("Content-Type: %s", resp.Header.Get("Content-Type"))}
 
 	go func() {

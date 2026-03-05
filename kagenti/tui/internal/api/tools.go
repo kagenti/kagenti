@@ -32,8 +32,8 @@ func (c *Client) GetTool(namespace, name string) (map[string]any, error) {
 	if ns == "" {
 		ns = c.Namespace
 	}
-	url := c.apiURL(fmt.Sprintf("/tools/%s/%s", ns, name))
-	req, err := c.newRequest("GET", url, nil)
+	u := c.apiURL(fmt.Sprintf("/tools/%s/%s", url.PathEscape(ns), url.PathEscape(name)))
+	req, err := c.newRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +50,8 @@ func (c *Client) CreateTool(tool *CreateToolRequest) (*CreateToolResponse, error
 	if err != nil {
 		return nil, err
 	}
-	url := c.apiURL("/tools")
-	req, err := c.newRequest("POST", url, bytes.NewReader(body))
+	u := c.apiURL("/tools")
+	req, err := c.newRequest("POST", u, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -68,8 +68,8 @@ func (c *Client) DeleteTool(namespace, name string) (*DeleteResponse, error) {
 	if ns == "" {
 		ns = c.Namespace
 	}
-	url := c.apiURL(fmt.Sprintf("/tools/%s/%s", ns, name))
-	req, err := c.newRequest("DELETE", url, nil)
+	u := c.apiURL(fmt.Sprintf("/tools/%s/%s", url.PathEscape(ns), url.PathEscape(name)))
+	req, err := c.newRequest("DELETE", u, nil)
 	if err != nil {
 		return nil, err
 	}
