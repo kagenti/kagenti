@@ -8,6 +8,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "1"  # Create before the Job (weight 5)
+    helm.sh/hook-delete-policy: before-hook-creation
 ---
 # ClusterRole for reading Keycloak secrets
 apiVersion: rbac.authorization.k8s.io/v1
@@ -16,6 +20,10 @@ metadata:
   name: kagenti-spiffe-idp-reader
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "1"  # Create before the Job (weight 5)
+    helm.sh/hook-delete-policy: before-hook-creation
 rules:
   # Permission to READ the Keycloak admin secret
   - apiGroups: [""]
@@ -31,6 +39,10 @@ metadata:
   namespace: {{ .Values.keycloak.namespace }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "2"  # Create after SA/ClusterRole (weight 1), before Job (weight 5)
+    helm.sh/hook-delete-policy: before-hook-creation
 subjects:
   - kind: ServiceAccount
     name: kagenti-spiffe-idp-setup
