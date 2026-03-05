@@ -1,13 +1,10 @@
 /**
  * Sandbox Session Isolation & Multi-Turn E2E Test
  *
- * Assertive tests for:
- * 1. Multi-turn conversation (6 messages) in Session A with tool call verification
- * 2. Switch to Session B, do another multi-turn (4 messages)
- * 3. Verify session isolation — Session B has no Session A content
- * 4. Switch back to Session A — verify full history is intact
- * 5. Session persistence across page reload
- * 6. Input/streaming state does not leak between sessions
+ * Three independent, self-contained tests:
+ * 1. Session isolation: create A (6 turns), create B (4 turns), verify isolation and history
+ * 2. Input/streaming state does not leak between sessions
+ * 3. Session persists across page reload
  *
  * Run: KAGENTI_UI_URL=https://... npx playwright test sandbox-sessions
  */
@@ -158,54 +155,29 @@ function getSessionIdFromUrl(page: Page): string {
   return new URL(page.url()).searchParams.get('session') || '';
 }
 
-/**
- * Count visible messages in the chat area.
- */
-async function countMessages(page: Page): Promise<number> {
-  // Both user and assistant messages have avatars (UserIcon / RobotIcon)
-  const messages = page.locator('[role="button"][tabindex], div[style*="padding: 10px 14px"]');
-  // Fallback: count elements with "You" or "Legion" header
-  const userMsgs = page.locator('span:has-text("You")').filter({
-    has: page.locator('..'),
-  });
-  const agentMsgs = page.locator('span:has-text("Legion")').filter({
-    has: page.locator('..'),
-  });
-  return (await userMsgs.count()) + (await agentMsgs.count());
-}
-
-/**
- * Get all visible message texts in order.
- */
-async function getMessageTexts(page: Page): Promise<string[]> {
-  const container = page.locator('[style*="overflow-y: auto"][style*="height"]').first();
-  const allText = await container.textContent();
-  return allText ? [allText] : [];
-}
-
 // ===========================================================================
 // TESTS
 // ===========================================================================
 
 const LIVE_URL = process.env.KAGENTI_UI_URL;
 
-test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
+// Unique markers per test run to avoid collisions
+const runId = Date.now().toString(36);
+
+test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
   test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL — live cluster with sandbox agent');
   test.setTimeout(600_000); // 10 min for the full suite
 
-  let sessionAId = '';
-  let sessionBId = '';
-
-  // Unique markers per test run to avoid collisions
-  const runId = Date.now().toString(36);
-  const SESSION_A_MARKER = `session-a-${runId}`;
-  const SESSION_B_MARKER = `session-b-${runId}`;
-
-  test('multi-turn conversation with tool calls in Session A', async ({
+  test('session isolation: create A, create B, verify isolation and history', async ({
     page,
   }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(600_000);
     screenshotIdx = 0;
+
+    const SESSION_A_MARKER = `session-a-${runId}`;
+    const SESSION_B_MARKER = `session-b-${runId}`;
+
+    // ==== PART 1: Multi-turn conversation in Session A (6 turns) ====
 
     // ---- Login & Navigate ----
     await page.goto('/');
@@ -222,7 +194,7 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
       page,
       `Say exactly: ${SESSION_A_MARKER}-turn1`
     );
-    sessionAId = getSessionIdFromUrl(page);
+    const sessionAId = getSessionIdFromUrl(page);
     expect(sessionAId).toBeTruthy();
     await snap(page, 'session-a-turn1');
 
@@ -267,22 +239,15 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await snap(page, 'session-a-turn6-summary');
 
     // ---- Verify: Session A has all 6 user messages visible ----
-    const fullContent = await page.locator('[style*="overflow-y: auto"][style*="height"]').first().textContent() || '';
-    expect(fullContent).toContain(SESSION_A_MARKER);
-    expect(fullContent).toContain('test-marker.txt');
+    const fullContentA = await page.locator('[style*="overflow-y: auto"][style*="height"]').first().textContent() || '';
+    expect(fullContentA).toContain(SESSION_A_MARKER);
+    expect(fullContentA).toContain('test-marker.txt');
 
     // Verify session ID is in URL
     expect(getSessionIdFromUrl(page)).toBe(sessionAId);
     await snap(page, 'session-a-complete');
-  });
 
-  test('isolated multi-turn conversation in Session B', async ({ page }) => {
-    test.setTimeout(300_000);
-
-    // ---- Login & Navigate ----
-    await page.goto('/');
-    await loginIfNeeded(page);
-    await navigateToSandbox(page);
+    // ==== PART 2: Isolated multi-turn conversation in Session B (4 turns) ====
 
     // ---- Start Session B ----
     await startNewSession(page);
@@ -293,7 +258,7 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
       page,
       `Say exactly: ${SESSION_B_MARKER}-turn1`
     );
-    sessionBId = getSessionIdFromUrl(page);
+    const sessionBId = getSessionIdFromUrl(page);
     expect(sessionBId).toBeTruthy();
     expect(sessionBId).not.toBe(sessionAId); // Different session
     await snap(page, 'session-b-turn1');
@@ -328,18 +293,9 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // Verify URL has Session B's ID
     expect(getSessionIdFromUrl(page)).toBe(sessionBId);
-  });
 
-  test('session A history intact after switching back', async ({ page }) => {
-    test.setTimeout(120_000);
+    // ==== PART 3: Session A history intact after switching back ====
 
-    // Skip if Session A wasn't created
-    test.skip(!sessionAId, 'Session A not created — previous test may have failed');
-
-    // ---- Login & Navigate ----
-    await page.goto('/');
-    await loginIfNeeded(page);
-    await navigateToSandbox(page);
     await page.waitForTimeout(3000); // Wait for session list to load
 
     // ---- Click Session A in sidebar ----
@@ -373,59 +329,9 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
       await page.waitForTimeout(3000);
       await snap(page, 'restored-session-a-via-url');
     }
-  });
 
-  test('input and streaming state do not leak between sessions', async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
+    // ==== PART 4: Session title appears in sidebar from first message ====
 
-    // ---- Login & Navigate ----
-    await page.goto('/');
-    await loginIfNeeded(page);
-    await navigateToSandbox(page);
-    await page.waitForTimeout(3000);
-
-    // ---- Type text in input without sending ----
-    const chatInput = page.getByPlaceholder(/Type your message/i);
-    await expect(chatInput).toBeVisible({ timeout: 10000 });
-    await chatInput.fill('THIS-TEXT-SHOULD-NOT-LEAK');
-    await snap(page, 'input-with-text');
-
-    // ---- Switch to a different session ----
-    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
-    await newSessionBtn.click();
-    // Handle New Session modal
-    const startBtn = page.getByRole('button', { name: /^Start$/ });
-    if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await startBtn.click();
-      await page.waitForTimeout(500);
-    }
-    await page.waitForTimeout(500);
-
-    // ---- Assert: input is cleared after session switch ----
-    const inputValue = await chatInput.inputValue();
-    expect(inputValue).toBe('');
-
-    // ---- Assert: chat shows empty state ----
-    await expect(
-      page.getByText(/Start a conversation/i)
-    ).toBeVisible({ timeout: 5000 });
-    await snap(page, 'new-session-clean-input');
-  });
-
-  test('session title appears in sidebar from first message', async ({
-    page,
-  }) => {
-    test.setTimeout(180_000);
-
-    // Skip if Session A wasn't created
-    test.skip(!sessionAId, 'Session A not created — previous test may have failed');
-
-    // ---- Login & Navigate ----
-    await page.goto('/');
-    await loginIfNeeded(page);
-    await navigateToSandbox(page);
     await page.waitForTimeout(3000); // Wait for session list to load
     await snap(page, 'sidebar-title-test-loaded');
 
@@ -475,21 +381,62 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
     }
 
     // Also verify: the sidebar session is clickable and loads content
-    const sessionLink = page.locator('[role="button"]').filter({
+    const sidebarLink = page.locator('[role="button"]').filter({
       hasText: new RegExp(markerPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
     });
-    if ((await sessionLink.count()) > 0) {
-      await sessionLink.first().click();
+    if ((await sidebarLink.count()) > 0) {
+      await sidebarLink.first().click();
       await page.waitForTimeout(2000);
 
       // After clicking, the session content should load
-      const chatContent = await page
+      const sidebarChatContent = await page
         .locator('[style*="overflow-y: auto"][style*="height"]')
         .first()
         .textContent() || '';
-      expect(chatContent).toContain(SESSION_A_MARKER);
+      expect(sidebarChatContent).toContain(SESSION_A_MARKER);
       await snap(page, 'sidebar-title-session-loaded');
     }
+  });
+
+  test('input and streaming state do not leak between sessions', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    // ---- Login & Navigate ----
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await navigateToSandbox(page);
+
+    // ---- Start a session so there is an active chat input ----
+    await startNewSession(page);
+
+    // ---- Type text in input without sending ----
+    const chatInput = page.getByPlaceholder(/Type your message/i);
+    await expect(chatInput).toBeVisible({ timeout: 10000 });
+    await chatInput.fill('THIS-TEXT-SHOULD-NOT-LEAK');
+    await snap(page, 'input-with-text');
+
+    // ---- Switch to a different session ----
+    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
+    await newSessionBtn.click();
+    // Handle New Session modal
+    const startBtn = page.getByRole('button', { name: /^Start$/ });
+    if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startBtn.click();
+      await page.waitForTimeout(500);
+    }
+    await page.waitForTimeout(500);
+
+    // ---- Assert: input is cleared after session switch ----
+    const inputValue = await chatInput.inputValue();
+    expect(inputValue).toBe('');
+
+    // ---- Assert: chat shows empty state ----
+    await expect(
+      page.getByText(/Start a conversation/i)
+    ).toBeVisible({ timeout: 5000 });
+    await snap(page, 'new-session-clean-input');
   });
 
   test('session persists across page reload', async ({ page }) => {
