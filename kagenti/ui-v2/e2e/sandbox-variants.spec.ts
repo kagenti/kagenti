@@ -89,10 +89,9 @@ async function navigateToSandbox(page: Page) {
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
   await page.waitForLoadState('networkidle');
+  // Wait for the sandbox page to load — chat input appears on all states
   await expect(
-    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted/i).first()
-      .or(page.getByTestId('welcome-card'))
-      .or(page.getByPlaceholder(/Type your message/i))
+    page.getByPlaceholder(/Type your message/i)
   ).toBeVisible({ timeout: 15000 });
 }
 

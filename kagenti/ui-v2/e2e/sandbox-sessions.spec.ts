@@ -122,11 +122,9 @@ async function navigateToSandbox(page: Page) {
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
   await page.waitForLoadState('networkidle');
-  // Wait for the sandbox page to load — agent label, welcome card, or chat input
+  // Wait for the sandbox page to load — chat input appears on all states
   await expect(
-    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted/i).first()
-      .or(page.getByTestId('welcome-card'))
-      .or(page.getByPlaceholder(/Type your message/i))
+    page.getByPlaceholder(/Type your message/i)
   ).toBeVisible({ timeout: 15000 });
 }
 
@@ -144,10 +142,9 @@ async function startNewSession(page: Page) {
   }
   await page.waitForTimeout(500);
 
-  // Verify chat area is empty — shows the welcome card or chat input
+  // Verify chat area is empty — welcome card visible (no messages)
   await expect(
     page.getByTestId('welcome-card')
-      .or(page.getByPlaceholder(/Type your message/i))
   ).toBeVisible({ timeout: 5000 });
 }
 
@@ -435,10 +432,9 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     const inputValue = await chatInput.inputValue();
     expect(inputValue).toBe('');
 
-    // ---- Assert: chat shows empty state (welcome card or chat input) ----
+    // ---- Assert: chat shows empty state (welcome card visible) ----
     await expect(
       page.getByTestId('welcome-card')
-        .or(page.getByPlaceholder(/Type your message/i))
     ).toBeVisible({ timeout: 5000 });
     await snap(page, 'new-session-clean-input');
   });

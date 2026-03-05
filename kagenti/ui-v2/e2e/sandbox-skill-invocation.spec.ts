@@ -90,10 +90,9 @@ async function navigateToSandboxChat(page: Page) {
   await page.waitForLoadState('networkidle');
 
   // Wait for agent panel with mocked agents
+  // Wait for the sandbox page to load — chat input appears on all states
   await expect(
-    page.getByText(/sandbox-legion/i).first()
-      .or(page.getByTestId('welcome-card'))
-      .or(page.getByPlaceholder(/Type your message/i))
+    page.getByPlaceholder(/Type your message/i)
   ).toBeVisible({ timeout: 10000 });
 
   // Select sandbox-legion

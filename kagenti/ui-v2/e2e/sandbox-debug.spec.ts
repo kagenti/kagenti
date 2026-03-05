@@ -202,8 +202,7 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
     await snap(page, 'new-session-blank');
 
     // Verify chat is empty
-    const emptyMsg = page.getByTestId('welcome-card')
-      .or(page.getByPlaceholder(/Type your message/i));
+    const emptyMsg = page.getByTestId('welcome-card');
     const isEmpty = await emptyMsg.isVisible({ timeout: 3000 }).catch(() => false);
     console.log(`[debug] New session is empty: ${isEmpty}`);
 
