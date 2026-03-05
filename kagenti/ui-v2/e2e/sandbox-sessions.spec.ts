@@ -441,7 +441,8 @@ test.describe.serial('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // Collect all sidebar item texts
     let foundTitle = false;
-    const markerPrefix = SESSION_A_MARKER.substring(0, 12);
+    // Use the full marker to avoid matching stale sessions from previous runs
+    const markerPrefix = SESSION_A_MARKER;
     for (let i = 0; i < Math.min(itemCount, 20); i++) {
       const itemText = (await sessionItems.nth(i).textContent()) || '';
       console.log(`[sessions] Sidebar item ${i}: ${itemText.substring(0, 80)}`);

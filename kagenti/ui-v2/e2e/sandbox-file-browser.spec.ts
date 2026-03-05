@@ -569,21 +569,59 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(agentOutput.first()).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Navigate to file browser for this agent ──
+    // Extract context_id from the current session URL (e.g. /sandbox/chat/team1/sandbox-basic/abc123)
+    const currentUrl = page.url();
+    const contextMatch = currentUrl.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
+    const contextId = contextMatch?.[1] || '';
+    console.log(`[file-browser] Extracted contextId: ${contextId} from URL: ${currentUrl}`);
+
+    // The workspace path depends on whether the agent uses per-context directories
+    const workspacePath = contextId
+      ? `/workspace/${contextId}/data`
+      : '/workspace/data';
+
     // Use SPA navigation to avoid Keycloak re-auth redirect on page.goto()
     await page.evaluate(
-      ({ ns, agent }) => {
-        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace/data`);
+      ({ ns, agent, path }) => {
+        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=${path}`);
         window.dispatchEvent(new PopStateEvent('popstate'));
       },
-      { ns: NAMESPACE, agent: AGENT_NAME },
+      { ns: NAMESPACE, agent: AGENT_NAME, path: workspacePath },
     );
     await page.waitForLoadState('networkidle');
 
-    // Wait for tree view to render with real data from pod exec
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
-    await expect(treeView).toBeVisible({ timeout: 30000 });
+    // Wait for tree view or "No files" message to render
+    const treeOrEmpty = page.locator('[class*="pf-v5-c-tree-view"]').first()
+      .or(page.getByText('No files in this directory'));
+    await expect(treeOrEmpty).toBeVisible({ timeout: 30000 });
 
-    // ── Step 4: Verify e2e-report.md appears in directory listing ──
+    // If no files at the context-specific path, try the workspace root
+    const hasTree = await page.locator('[class*="pf-v5-c-tree-view"]').first().isVisible().catch(() => false);
+    if (!hasTree) {
+      console.log('[file-browser] No files at context path, trying workspace root');
+      await page.evaluate(
+        ({ ns, agent }) => {
+          window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace`);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        { ns: NAMESPACE, agent: AGENT_NAME },
+      );
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
+    }
+
+    // ── Step 4: Verify e2e-report.md appears — search recursively ──
+    // The file might be in a context subdirectory; click through directories
+    let fileFound = await page.getByText('e2e-report.md').isVisible().catch(() => false);
+    if (!fileFound) {
+      // Try clicking into 'data' directory if visible
+      const dataDir = page.getByText('data');
+      if (await dataDir.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await dataDir.click();
+        await page.waitForTimeout(2000);
+        fileFound = await page.getByText('e2e-report.md').isVisible().catch(() => false);
+      }
+    }
     await expect(page.getByText('e2e-report.md')).toBeVisible({ timeout: 15000 });
 
     // ── Step 5: Click the file to preview ──
@@ -666,20 +704,55 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(codeOutput.first()).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Navigate to file browser ──
-    // Use SPA navigation to avoid Keycloak re-auth redirect on page.goto()
+    // Extract context_id from the current session URL
+    const currentUrl2 = page.url();
+    const contextMatch2 = currentUrl2.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
+    const contextId2 = contextMatch2?.[1] || '';
+    console.log(`[file-browser] Extracted contextId: ${contextId2} from URL: ${currentUrl2}`);
+
+    const workspacePath2 = contextId2
+      ? `/workspace/${contextId2}/data`
+      : '/workspace/data';
+
+    // Use SPA navigation to avoid Keycloak re-auth redirect
     await page.evaluate(
-      ({ ns, agent }) => {
-        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace/data`);
+      ({ ns, agent, path }) => {
+        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=${path}`);
         window.dispatchEvent(new PopStateEvent('popstate'));
       },
-      { ns: NAMESPACE, agent: AGENT_NAME },
+      { ns: NAMESPACE, agent: AGENT_NAME, path: workspacePath2 },
     );
     await page.waitForLoadState('networkidle');
 
-    const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
-    await expect(treeView).toBeVisible({ timeout: 30000 });
+    // Wait for tree view or empty message
+    const treeOrEmpty2 = page.locator('[class*="pf-v5-c-tree-view"]').first()
+      .or(page.getByText('No files in this directory'));
+    await expect(treeOrEmpty2).toBeVisible({ timeout: 30000 });
 
-    // ── Step 4: Verify fibonacci.py appears ──
+    // Fallback: try workspace root if context path is empty
+    const hasTree2 = await page.locator('[class*="pf-v5-c-tree-view"]').first().isVisible().catch(() => false);
+    if (!hasTree2) {
+      console.log('[file-browser] No files at context path, trying workspace root');
+      await page.evaluate(
+        ({ ns, agent }) => {
+          window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace`);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        },
+        { ns: NAMESPACE, agent: AGENT_NAME },
+      );
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
+    }
+
+    // ── Step 4: Verify fibonacci.py appears — search directories ──
+    let pyFound = await page.getByText('fibonacci.py').isVisible().catch(() => false);
+    if (!pyFound) {
+      const dataDir = page.getByText('data');
+      if (await dataDir.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await dataDir.click();
+        await page.waitForTimeout(2000);
+      }
+    }
     await expect(page.getByText('fibonacci.py')).toBeVisible({ timeout: 15000 });
 
     // ── Step 5: Click to preview ──
