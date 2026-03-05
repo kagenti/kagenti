@@ -732,7 +732,11 @@ async def approve_session(
     context_id: str,
     user: TokenData = Depends(get_required_user),
 ):
-    """Approve a pending HITL request (stub -- agent resume not yet wired)."""
+    """Approve a pending HITL request — resumes the agent graph via A2A.
+
+    No ownership check: any ROLE_OPERATOR can approve any session's HITL request.
+    This is intentional — HITL approval is a team-level action, not owner-only.
+    """
     _validate_namespace(namespace)
     logger.info(
         "User %s approved HITL request for session %s in namespace %s",
@@ -740,8 +744,7 @@ async def approve_session(
         context_id,
         namespace,
     )
-    # TODO: Resume the LangGraph graph with approval
-    return {"status": "approved", "context_id": context_id}
+    return await _resume_agent_graph(namespace, context_id, user, approved=True)
 
 
 @router.post(
@@ -753,7 +756,10 @@ async def deny_session(
     context_id: str,
     user: TokenData = Depends(get_required_user),
 ):
-    """Deny a pending HITL request (stub -- agent resume not yet wired)."""
+    """Deny a pending HITL request — resumes the agent graph with denial.
+
+    No ownership check: same rationale as approve — team-level action.
+    """
     _validate_namespace(namespace)
     logger.info(
         "User %s denied HITL request for session %s in namespace %s",
@@ -761,8 +767,85 @@ async def deny_session(
         context_id,
         namespace,
     )
-    # TODO: Resume the LangGraph graph with denial
-    return {"status": "denied", "context_id": context_id}
+    return await _resume_agent_graph(namespace, context_id, user, approved=False)
+
+
+async def _resume_agent_graph(
+    namespace: str,
+    context_id: str,
+    user: TokenData,
+    approved: bool,
+) -> dict:
+    """Resume an agent's LangGraph graph by sending an A2A message.
+
+    When an agent enters INPUT_REQUIRED state, it pauses and waits for
+    the next user message on the same contextId.  Sending a message/send
+    with the approval/denial text resumes the graph via LangGraph's
+    Command(resume=...) pattern handled inside the agent.
+    """
+    # 1. Look up agent_name from session metadata
+    pool = await get_session_pool(namespace)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    meta = _parse_json_field(row["metadata"]) or {}
+    agent_name = meta.get("agent_name")
+    if not agent_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Session has no agent_name in metadata — cannot determine target agent",
+        )
+    # Defense-in-depth: agent_name comes from DB, not user input, but validate
+    # against K8s naming rules to prevent SSRF if metadata is ever corrupted.
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, f"Invalid agent_name in session metadata: {agent_name}")
+
+    # 2. Build the A2A message to resume the graph
+    decision = "approved" if approved else "denied"
+    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    a2a_msg = {
+        "jsonrpc": "2.0",
+        "method": "message/send",
+        "id": uuid4().hex,
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": decision}],
+                "messageId": uuid4().hex,
+                "contextId": context_id,
+                "metadata": {
+                    "username": user.username,
+                    "hitl_decision": decision,
+                },
+            }
+        },
+    }
+
+    # 3. POST to the agent — this resumes the LangGraph graph
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(f"{agent_url}/", json=a2a_msg)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        logger.error("Failed to resume agent %s: %s", agent_name, e)
+        raise HTTPException(502, f"Failed to resume agent: {e}")
+
+    if "error" in data:
+        raise HTTPException(502, f"A2A error: {data['error']}")
+
+    result = data.get("result", {})
+    return {
+        "status": decision,
+        "context_id": context_id,
+        "agent_name": agent_name,
+        "task_status": result.get("status", {}),
+    }
 
 
 @router.put(
@@ -1358,6 +1441,26 @@ async def _stream_sandbox_response(
                             event_type = "status"
                             if state == "INPUT_REQUIRED":
                                 event_type = "hitl_request"
+
+                            # Forward structured loop events (loop_id)
+                            # The agent serializer puts JSON lines in the message text.
+                            # Parse each line and forward loop_id at top level so the
+                            # UI can group events into AgentLoopCards.
+                            if status_message:
+                                for msg_line in status_message.split("\n"):
+                                    msg_line = msg_line.strip()
+                                    if not msg_line:
+                                        continue
+                                    try:
+                                        parsed = json.loads(msg_line)
+                                        if isinstance(parsed, dict) and "loop_id" in parsed:
+                                            loop_payload = dict(payload)
+                                            loop_payload["loop_id"] = parsed["loop_id"]
+                                            loop_payload["loop_event"] = parsed
+                                            yield f"data: {json.dumps(loop_payload)}\n\n"
+                                            continue
+                                    except (json.JSONDecodeError, TypeError):
+                                        pass
 
                             payload["event"] = {
                                 "type": event_type,

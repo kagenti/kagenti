@@ -917,32 +917,35 @@ export const SandboxPage: React.FC = () => {
             }
 
             // Handle agent loop events (grouped by loop_id)
+            // The backend forwards loop events with loop_id at top level
+            // and the full event in data.loop_event
             if (data.loop_id) {
               const loopId = data.loop_id;
-              const eventType = data.type;
+              const le = data.loop_event || data;
+              const eventType = le.type;
 
               if (eventType === 'plan') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'planning',
-                  plan: data.steps || [],
-                  totalSteps: (data.steps || []).length,
-                  iteration: data.iteration ?? l.iteration,
-                  model: data.model || l.model,
+                  plan: le.steps || [],
+                  totalSteps: (le.steps || []).length,
+                  iteration: le.iteration ?? l.iteration,
+                  model: le.model || l.model,
                 }));
               } else if (eventType === 'plan_step') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'executing',
-                  currentStep: data.step ?? l.currentStep,
-                  totalSteps: data.total_steps ?? l.totalSteps,
-                  model: data.model || l.model,
+                  currentStep: le.step ?? l.currentStep,
+                  totalSteps: le.total_steps ?? l.totalSteps,
+                  model: le.model || l.model,
                   steps: [
-                    ...l.steps.filter((s: { index: number }) => s.index !== data.step),
+                    ...l.steps.filter((s: { index: number }) => s.index !== le.step),
                     {
-                      index: data.step,
-                      description: data.description || '',
-                      model: data.model || l.model,
+                      index: le.step,
+                      description: le.description || '',
+                      model: le.model || l.model,
                       tokens: { prompt: 0, completion: 0 },
                       toolCalls: [],
                       toolResults: [],
@@ -953,21 +956,21 @@ export const SandboxPage: React.FC = () => {
                 }));
               } else if (eventType === 'tool_call') {
                 updateLoop(loopId, (l) => {
-                  const stepIdx = data.step ?? l.currentStep;
+                  const stepIdx = le.step ?? l.currentStep;
                   const steps = [...l.steps];
                   const step = steps.find((s: { index: number }) => s.index === stepIdx);
                   if (step) {
-                    step.toolCalls = [...step.toolCalls, ...(data.tools || [{ type: 'tool_call', name: data.name, args: data.args }])];
+                    step.toolCalls = [...step.toolCalls, ...(le.tools || [{ type: 'tool_call', name: le.name, args: le.args }])];
                   }
-                  return { ...l, steps, model: data.model || l.model };
+                  return { ...l, steps, model: le.model || l.model };
                 });
               } else if (eventType === 'tool_result') {
                 updateLoop(loopId, (l) => {
-                  const stepIdx = data.step ?? l.currentStep;
+                  const stepIdx = le.step ?? l.currentStep;
                   const steps = [...l.steps];
                   const step = steps.find((s: { index: number }) => s.index === stepIdx);
                   if (step) {
-                    step.toolResults = [...step.toolResults, { type: 'tool_result', name: data.name, output: data.output }];
+                    step.toolResults = [...step.toolResults, { type: 'tool_result', name: le.name, output: le.output }];
                     step.status = 'done';
                   }
                   return { ...l, steps };
@@ -976,26 +979,26 @@ export const SandboxPage: React.FC = () => {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'reflecting',
-                  reflection: data.assessment || '',
-                  iteration: data.iteration ?? l.iteration,
-                  model: data.model || l.model,
+                  reflection: le.assessment || '',
+                  iteration: le.iteration ?? l.iteration,
+                  model: le.model || l.model,
                 }));
               } else if (eventType === 'budget') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   budget: {
-                    tokensUsed: data.tokens_used ?? l.budget.tokensUsed,
-                    tokensBudget: data.tokens_budget ?? l.budget.tokensBudget,
-                    wallClockS: data.wall_clock_s ?? l.budget.wallClockS,
-                    maxWallClockS: data.max_wall_clock_s ?? l.budget.maxWallClockS,
+                    tokensUsed: le.tokens_used ?? l.budget.tokensUsed,
+                    tokensBudget: le.tokens_budget ?? l.budget.tokensBudget,
+                    wallClockS: le.wall_clock_s ?? l.budget.wallClockS,
+                    maxWallClockS: le.max_wall_clock_s ?? l.budget.maxWallClockS,
                   },
                 }));
               } else if (eventType === 'llm_response') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'done',
-                  finalAnswer: data.content || '',
-                  model: data.model || l.model,
+                  finalAnswer: le.content || '',
+                  model: le.model || l.model,
                 }));
               }
 
