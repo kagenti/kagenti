@@ -3,6 +3,7 @@
 package helpers
 
 import (
+	"net/url"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -72,13 +73,17 @@ func ParseEnvVars(raw string) []api.EnvVar {
 // It is a variable so tests can replace it with a no-op.
 var OpenBrowser = openBrowserDefault
 
-func openBrowserDefault(url string) {
+func openBrowserDefault(rawURL string) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return
+	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("open", rawURL)
 	case "linux":
-		cmd = exec.Command("xdg-open", url)
+		cmd = exec.Command("xdg-open", rawURL)
 	default:
 		return
 	}

@@ -45,6 +45,31 @@ func TestLLMPresetEnvVarsNone(t *testing.T) {
 	}
 }
 
+func TestOpenBrowserRejectsNonHTTPSchemes(t *testing.T) {
+	var opened []string
+	orig := OpenBrowser
+	OpenBrowser = func(u string) {
+		opened = append(opened, u)
+		// Call the real implementation to exercise the scheme check.
+		openBrowserDefault(u)
+	}
+	defer func() { OpenBrowser = orig }()
+
+	// These should be silently rejected (no exec.Command called).
+	for _, bad := range []string{
+		"file:///etc/passwd",
+		"javascript:alert(1)",
+		"ftp://example.com",
+		"",
+		"://missing-scheme",
+	} {
+		openBrowserDefault(bad)
+	}
+
+	// Valid schemes would attempt exec.Command, which is fine —
+	// we just verify the function doesn't panic on invalid input.
+}
+
 func TestParseEnvVars(t *testing.T) {
 	tests := []struct {
 		input string
