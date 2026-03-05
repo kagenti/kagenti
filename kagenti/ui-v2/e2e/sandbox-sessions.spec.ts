@@ -206,7 +206,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await snap(page, 'session-a-turn2-tool-call');
 
     // Verify the chat area contains tool-related content
-    const chatContent = await page.locator('[style*="overflow-y: auto"][style*="height"]').first().textContent();
+    const chatContent = await page.getByTestId('chat-messages').textContent();
     // The response should mention files/directories (result of ls)
     expect(chatContent).toBeTruthy();
 
@@ -239,7 +239,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await snap(page, 'session-a-turn6-summary');
 
     // ---- Verify: Session A has all 6 user messages visible ----
-    const fullContentA = await page.locator('[style*="overflow-y: auto"][style*="height"]').first().textContent() || '';
+    const fullContentA = await page.getByTestId('chat-messages').textContent() || '';
     expect(fullContentA).toContain(SESSION_A_MARKER);
     expect(fullContentA).toContain('test-marker.txt');
 
@@ -279,7 +279,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // Session B workspace should NOT contain Session A's test-marker.txt
     // (separate workspace per context_id)
-    const chatB = await page.locator('[style*="overflow-y: auto"][style*="height"]').first().textContent() || '';
+    const chatB = await page.getByTestId('chat-messages').textContent() || '';
     expect(chatB).toContain(SESSION_B_MARKER);
     // Session A marker should NOT appear in Session B's chat
     expect(chatB).not.toContain(SESSION_A_MARKER);
@@ -311,7 +311,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
       await snap(page, 'restored-session-a');
 
       // ---- Assert: Session A's full history is visible ----
-      const restoredContent = await page.locator('[style*="overflow-y: auto"][style*="height"]').first().textContent() || '';
+      const restoredContent = await page.getByTestId('chat-messages').textContent() || '';
       expect(restoredContent).toContain(SESSION_A_MARKER);
       expect(restoredContent).toContain('test-marker.txt');
 
@@ -390,8 +390,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
       // After clicking, the session content should load
       const sidebarChatContent = await page
-        .locator('[style*="overflow-y: auto"][style*="height"]')
-        .first()
+        .getByTestId('chat-messages')
         .textContent() || '';
       expect(sidebarChatContent).toContain(SESSION_A_MARKER);
       await snap(page, 'sidebar-title-session-loaded');

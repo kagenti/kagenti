@@ -211,6 +211,7 @@ const ToolCallStep: React.FC<{
   if (data.type === 'tool_call') {
     return (
       <div
+        data-testid="tool-call-step"
         style={{
           margin: '4px 0',
           padding: '6px 10px',
@@ -250,6 +251,7 @@ const ToolCallStep: React.FC<{
   if (data.type === 'tool_result') {
     return (
       <div
+        data-testid="tool-result-step"
         style={{
           margin: '4px 0',
           padding: '6px 10px',
@@ -1515,6 +1517,7 @@ export const SandboxPage: React.FC = () => {
           <Card style={{ flex: 1, overflow: 'hidden' }}>
             <CardBody
               ref={scrollContainerRef}
+              data-testid="chat-messages"
               style={{
                 height: '100%',
                 overflowY: 'auto',

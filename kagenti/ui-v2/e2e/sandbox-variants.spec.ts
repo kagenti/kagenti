@@ -144,7 +144,7 @@ async function sendAndWait(
   await page.waitForTimeout(1000);
 
   // Get response content
-  const chatArea = page.locator('[style*="overflow-y: auto"][style*="height"]').first();
+  const chatArea = page.getByTestId('chat-messages');
   return (await chatArea.textContent()) || '';
 }
 
@@ -209,8 +209,7 @@ for (const agentName of AGENT_VARIANTS) {
 
       // ---- Assertions ----
       const fullContent = await page
-        .locator('[style*="overflow-y: auto"][style*="height"]')
-        .first()
+        .getByTestId('chat-messages')
         .textContent() || '';
 
       // Verify our marker appears (user message at minimum)

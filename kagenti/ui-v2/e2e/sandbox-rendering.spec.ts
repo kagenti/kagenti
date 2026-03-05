@@ -151,18 +151,14 @@ async function expandCollapsedTurns(page: Page) {
 }
 
 function getToolCallSteps(page: Page) {
-  return page
-    .locator('div[style*="border-left"]')
-    .filter({ hasText: /Tool Call:/ });
+  return page.locator('[data-testid="tool-call-step"]');
 }
 
 /**
  * Locate all "Result" expandable step blocks.
  */
 function getResultSteps(page: Page) {
-  return page
-    .locator('div[style*="border-left"]')
-    .filter({ hasText: /Result:/ });
+  return page.locator('[data-testid="tool-result-step"]');
 }
 
 /**
