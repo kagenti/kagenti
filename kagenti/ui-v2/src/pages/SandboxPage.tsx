@@ -1342,15 +1342,84 @@ export const SandboxPage: React.FC = () => {
 
               {messages.length === 0 && !isStreaming && (
                 <div
+                  data-testid="welcome-card"
                   style={{
                     flex: 1,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'var(--pf-v5-global--Color--200)',
+                    padding: 32,
                   }}
                 >
-                  Start a conversation with {selectedAgent}
+                  <div style={{ maxWidth: 480, textAlign: 'center' }}>
+                    {/* Agent avatar + name */}
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--pf-v5-global--success-color--100)',
+                        color: '#fff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 20,
+                        marginBottom: 12,
+                      }}
+                    >
+                      <RobotIcon />
+                    </div>
+                    <h3 style={{ margin: '0 0 4px', fontSize: '1.1em' }}>{selectedAgent}</h3>
+                    <p style={{ margin: '0 0 16px', fontSize: '0.85em', color: 'var(--pf-v5-global--Color--200)' }}>
+                      {(agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'} &middot; {namespace}
+                    </p>
+
+                    {/* Available tools */}
+                    {agentSkills.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)', marginBottom: 6 }}>
+                          Available tools
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                          {agentSkills.slice(0, 8).map((skill: { id?: string; name?: string }) => (
+                            <Label key={skill.id || skill.name} isCompact color="blue">
+                              {skill.name || skill.id}
+                            </Label>
+                          ))}
+                          {agentSkills.length > 8 && (
+                            <Label isCompact>+{agentSkills.length - 8} more</Label>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Example prompts */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {[
+                        'List the contents of the workspace directory',
+                        'Write a Python script that prints hello world',
+                        'What tools do you have available?',
+                      ].map((prompt) => (
+                        <button
+                          key={prompt}
+                          data-testid="example-prompt"
+                          onClick={() => setInput(prompt)}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 6,
+                            border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                            backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                            cursor: 'pointer',
+                            fontSize: '0.85em',
+                            textAlign: 'left',
+                            color: 'inherit',
+                          }}
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1366,12 +1435,13 @@ export const SandboxPage: React.FC = () => {
                 />
               ))}
 
-              {/* Agent loop cards */}
+              {/* Agent loop cards (collapsed agent turns) */}
               {Array.from(agentLoops.values()).map((loop) => (
                 <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} />
               ))}
 
-              {isStreaming && (
+              {/* Streaming indicator — only when no loop cards handle progress */}
+              {isStreaming && agentLoops.size === 0 && (
                 <div
                   style={{
                     display: 'flex',

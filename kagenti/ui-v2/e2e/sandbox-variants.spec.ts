@@ -90,7 +90,9 @@ async function navigateToSandbox(page: Page) {
   await sessionsNav.first().click();
   await page.waitForLoadState('networkidle');
   await expect(
-    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted|Start a conversation/i).first()
+    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted/i).first()
+      .or(page.getByTestId('welcome-card'))
+      .or(page.getByPlaceholder(/Type your message/i))
   ).toBeVisible({ timeout: 15000 });
 }
 

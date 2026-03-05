@@ -111,7 +111,9 @@ test.describe('Skill Whisperer', () => {
 
     // Wait for agent panel with mocked agents
     await expect(
-      page.getByText(/sandbox-legion|Start a conversation/i).first()
+      page.getByText(/sandbox-legion/i).first()
+        .or(page.getByTestId('welcome-card'))
+        .or(page.getByPlaceholder(/Type your message/i))
     ).toBeVisible({ timeout: 10000 });
 
     // Select sandbox-legion

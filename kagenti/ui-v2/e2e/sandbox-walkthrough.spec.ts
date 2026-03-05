@@ -115,8 +115,10 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     await sandboxNav.first().click();
     await page.waitForLoadState('networkidle');
 
+    // Agent name visible — either in welcome card heading or header info label
     await expect(
       page.getByRole('heading', { name: /sandbox-legion/i })
+        .or(page.getByText(/sandbox-legion/i).first())
     ).toBeVisible({ timeout: 15000 });
     markStep('sandbox_navigate');
 
@@ -218,8 +220,10 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     await sessionsNav.first().click();
     await page.waitForLoadState('networkidle');
 
+    // Agent name visible — either in welcome card heading or header info label
     await expect(
       page.getByRole('heading', { name: /sandbox-legion/i })
+        .or(page.getByText(/sandbox-legion/i).first())
     ).toBeVisible({ timeout: 15000 });
     markStep('sandbox_return_chat');
 

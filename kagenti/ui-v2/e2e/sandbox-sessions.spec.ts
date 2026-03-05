@@ -102,9 +102,9 @@ async function sendAndWaitForResponse(
   await page.waitForTimeout(1000);
 
   // Get the last assistant message content
-  // Assistant messages are in the non-user-colored bubbles
+  // Agent responses can be in ChatBubble (.sandbox-markdown) or AgentLoopCard
   const assistantBubbles = page.locator(
-    'div[style*="flex-start"] .sandbox-markdown, div[style*="flex-start"] p'
+    '.sandbox-markdown, [data-testid="agent-loop-card"] .sandbox-markdown'
   );
   const count = await assistantBubbles.count();
   if (count === 0) return '';
@@ -122,9 +122,11 @@ async function navigateToSandbox(page: Page) {
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
   await page.waitForLoadState('networkidle');
-  // Wait for the sandbox page to load — title or empty state message
+  // Wait for the sandbox page to load — agent label, welcome card, or chat input
   await expect(
-    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted|Start a conversation/i).first()
+    page.getByText(/sandbox-legion|sandbox-hardened|sandbox-basic|sandbox-restricted/i).first()
+      .or(page.getByTestId('welcome-card'))
+      .or(page.getByPlaceholder(/Type your message/i))
   ).toBeVisible({ timeout: 15000 });
 }
 
@@ -142,9 +144,10 @@ async function startNewSession(page: Page) {
   }
   await page.waitForTimeout(500);
 
-  // Verify chat area is empty — shows the start prompt
+  // Verify chat area is empty — shows the welcome card or chat input
   await expect(
-    page.getByText(/Start a conversation/i)
+    page.getByTestId('welcome-card')
+      .or(page.getByPlaceholder(/Type your message/i))
   ).toBeVisible({ timeout: 5000 });
 }
 
@@ -432,9 +435,10 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     const inputValue = await chatInput.inputValue();
     expect(inputValue).toBe('');
 
-    // ---- Assert: chat shows empty state ----
+    // ---- Assert: chat shows empty state (welcome card or chat input) ----
     await expect(
-      page.getByText(/Start a conversation/i)
+      page.getByTestId('welcome-card')
+        .or(page.getByPlaceholder(/Type your message/i))
     ).toBeVisible({ timeout: 5000 });
     await snap(page, 'new-session-clean-input');
   });

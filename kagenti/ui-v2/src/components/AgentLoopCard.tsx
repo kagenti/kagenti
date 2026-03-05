@@ -2,19 +2,19 @@
 // Licensed under the Apache License, Version 2.0
 
 /**
- * AgentLoopCard — expandable card for agent reasoning loops.
+ * AgentLoopCard — collapsed agent turn card for reasoning loops.
  *
- * Replaces flat message rendering when SSE events carry a `loop_id` field.
- *
- * Layout:
- * - Collapsed: LoopSummaryBar + final answer (always visible)
- * - Expanded:  LoopSummaryBar + LoopDetail + final answer
- * - Streaming: auto-expanded to show live progress
+ * Each agent response is ONE card:
+ * - Final answer (markdown) always visible at top
+ * - "Show reasoning" toggle expands LoopSummaryBar + LoopDetail
+ * - During streaming: expanded (live progress). After completion: collapsed.
+ * - On history reload: all collapsed.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { RobotIcon } from '@patternfly/react-icons';
 import type { AgentLoop } from '../types/agentLoop';
 import { LoopSummaryBar } from './LoopSummaryBar';
 import { LoopDetail } from './LoopDetail';
@@ -22,6 +22,9 @@ import { LoopDetail } from './LoopDetail';
 interface AgentLoopCardProps {
   loop: AgentLoop;
   isStreaming?: boolean;
+  namespace?: string;
+  agentName?: string;
+  markdownComponents?: Record<string, React.ComponentType<unknown>>;
 }
 
 /** Map loop status to a border color. */
@@ -37,42 +40,97 @@ function borderColor(status: AgentLoop['status']): string {
 
 export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming = false }) => {
   const [expanded, setExpanded] = useState(false);
+  const wasStreaming = useRef(false);
 
-  // Auto-expand during streaming so the user sees live progress
+  // Auto-expand during streaming, auto-collapse when streaming finishes
   useEffect(() => {
     if (isStreaming) {
       setExpanded(true);
+      wasStreaming.current = true;
+    } else if (wasStreaming.current) {
+      // Streaming just stopped — collapse
+      setExpanded(false);
+      wasStreaming.current = false;
     }
   }, [isStreaming]);
 
   return (
     <div
       className="agent-loop-card"
+      data-testid="agent-loop-card"
       style={{
-        border: `1px solid ${borderColor(loop.status)}`,
-        borderRadius: 8,
-        marginBottom: 8,
+        display: 'flex',
+        gap: 10,
         padding: '10px 14px',
+        marginBottom: 4,
+        borderRadius: 8,
+        border: `1px solid ${borderColor(loop.status)}`,
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
       }}
     >
-      <LoopSummaryBar
-        loop={loop}
-        expanded={expanded}
-        onToggle={() => setExpanded((prev) => !prev)}
-      />
+      {/* Avatar */}
+      <div
+        style={{
+          flexShrink: 0,
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--pf-v5-global--success-color--100)',
+          color: '#fff',
+          fontSize: 14,
+        }}
+      >
+        <RobotIcon />
+      </div>
 
-      {expanded && <LoopDetail loop={loop} />}
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Final answer — always visible */}
+        {loop.finalAnswer && (
+          <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 8 }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {loop.finalAnswer}
+            </ReactMarkdown>
+          </div>
+        )}
 
-      {loop.finalAnswer && (
+        {/* Reasoning toggle */}
         <div
-          className="sandbox-markdown"
-          style={{ fontSize: '0.92em', marginTop: 10 }}
+          onClick={() => setExpanded((prev) => !prev)}
+          data-testid="reasoning-toggle"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '2px 8px',
+            borderRadius: 4,
+            border: '1px solid var(--pf-v5-global--BorderColor--100)',
+            fontSize: '0.8em',
+            fontWeight: 500,
+            color: 'var(--pf-v5-global--Color--200)',
+            cursor: 'pointer',
+            userSelect: 'none',
+            marginBottom: expanded ? 8 : 0,
+          }}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {loop.finalAnswer}
-          </ReactMarkdown>
+          {expanded ? '\u25bc' : '\u25b6'} Reasoning
         </div>
-      )}
+
+        {/* Expanded reasoning details */}
+        {expanded && (
+          <div style={{ marginTop: 4 }}>
+            <LoopSummaryBar
+              loop={loop}
+              expanded={expanded}
+              onToggle={() => setExpanded((prev) => !prev)}
+            />
+            <LoopDetail loop={loop} />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

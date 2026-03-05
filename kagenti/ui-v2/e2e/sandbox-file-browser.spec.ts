@@ -563,15 +563,22 @@ test.describe('File Browser — Live Cluster Integration', () => {
       `Create the data directory if it does not exist. Here is the content:\n\n${mdContent}`
     );
 
-    // Wait for agent to process — either markdown response or tool call
+    // Wait for agent to process — markdown response, tool call, or loop card
     const agentOutput = page.locator('.sandbox-markdown')
+      .or(page.getByTestId('agent-loop-card'))
       .or(page.locator('text=/Tool Call:|Result:|file_write|shell/i'));
     await expect(agentOutput.first()).toBeVisible({ timeout: 180000 });
 
+    // Wait for agent to finish — input is re-enabled
+    const postChatInput = page.getByPlaceholder(/Type your message/i);
+    await expect(postChatInput).toBeEnabled({ timeout: 180000 });
+    await page.waitForTimeout(2000);
+
     // ── Step 3: Navigate to file browser for this agent ──
-    // Extract context_id from the current session URL (e.g. /sandbox/chat/team1/sandbox-basic/abc123)
+    // Extract context_id from the current session URL (e.g. /sandbox?session=abc123)
     const currentUrl = page.url();
-    const contextMatch = currentUrl.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
+    const contextMatch = currentUrl.match(/[?&]session=([a-f0-9-]+)/i)
+      || currentUrl.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
     const contextId = contextMatch?.[1] || '';
     console.log(`[file-browser] Extracted contextId: ${contextId} from URL: ${currentUrl}`);
 
@@ -698,15 +705,22 @@ test.describe('File Browser — Live Cluster Integration', () => {
       'that returns the nth Fibonacci number using iteration. Include a docstring.'
     );
 
-    // Wait for agent to finish processing (tool call or text response)
+    // Wait for agent to finish processing (tool call, text response, or loop card)
     const codeOutput = page.locator('.sandbox-markdown')
+      .or(page.getByTestId('agent-loop-card'))
       .or(page.locator('text=/Tool Call:|Result:|file_write|fibonacci/i'));
     await expect(codeOutput.first()).toBeVisible({ timeout: 180000 });
+
+    // Wait for agent to finish — input is re-enabled
+    const postChatInput2 = page.getByPlaceholder(/Type your message/i);
+    await expect(postChatInput2).toBeEnabled({ timeout: 180000 });
+    await page.waitForTimeout(2000);
 
     // ── Step 3: Navigate to file browser ──
     // Extract context_id from the current session URL
     const currentUrl2 = page.url();
-    const contextMatch2 = currentUrl2.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
+    const contextMatch2 = currentUrl2.match(/[?&]session=([a-f0-9-]+)/i)
+      || currentUrl2.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
     const contextId2 = contextMatch2?.[1] || '';
     console.log(`[file-browser] Extracted contextId: ${contextId2} from URL: ${currentUrl2}`);
 
