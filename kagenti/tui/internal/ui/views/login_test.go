@@ -259,11 +259,11 @@ func TestLoginView_TokenPersistence(t *testing.T) {
 	})
 
 	// Verify the client was updated with new tokens.
-	if client.Token != "new-access" {
-		t.Errorf("expected client token='new-access', got %q", client.Token)
+	if client.GetToken() != "new-access" {
+		t.Errorf("expected client token='new-access', got %q", client.GetToken())
 	}
-	if client.RefreshToken != "new-refresh" {
-		t.Errorf("expected client refresh token='new-refresh', got %q", client.RefreshToken)
+	if client.GetRefreshToken() != "new-refresh" {
+		t.Errorf("expected client refresh token='new-refresh', got %q", client.GetRefreshToken())
 	}
 }
 

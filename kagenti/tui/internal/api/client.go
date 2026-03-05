@@ -13,29 +13,32 @@ import (
 )
 
 // Client is the Kagenti backend HTTP client.
+// Token fields are protected by tokenMu; use GetToken/SetToken and
+// GetRefreshToken/SetRefreshToken for goroutine-safe access.
 type Client struct {
 	BaseURL    string
-	Token      string
 	Namespace  string
 	HTTPClient *http.Client
 
-	// Keycloak token refresh fields
-	RefreshToken string
-	KeycloakURL  string
-	Realm        string
-	ClientID     string
+	// Keycloak connection info (set once at startup, effectively immutable).
+	KeycloakURL string
+	Realm       string
+	ClientID    string
 
 	// OnTokenRefresh is called when a token is refreshed so callers can persist it.
 	OnTokenRefresh func(accessToken, refreshToken string)
 
-	refreshMu sync.Mutex
+	// tokenMu protects token and refreshToken.
+	tokenMu      sync.RWMutex
+	token        string
+	refreshToken string
 }
 
 // NewClient creates a new API client.
 func NewClient(baseURL, token, namespace string) *Client {
 	return &Client{
 		BaseURL:   strings.TrimRight(baseURL, "/"),
-		Token:     token,
+		token:     token,
 		Namespace: namespace,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -43,14 +46,32 @@ func NewClient(baseURL, token, namespace string) *Client {
 	}
 }
 
+// GetToken returns the current access token.
+func (c *Client) GetToken() string {
+	c.tokenMu.RLock()
+	defer c.tokenMu.RUnlock()
+	return c.token
+}
+
 // SetToken updates the auth token.
 func (c *Client) SetToken(token string) {
-	c.Token = token
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	c.token = token
+}
+
+// GetRefreshToken returns the current refresh token.
+func (c *Client) GetRefreshToken() string {
+	c.tokenMu.RLock()
+	defer c.tokenMu.RUnlock()
+	return c.refreshToken
 }
 
 // SetRefreshToken updates the refresh token.
 func (c *Client) SetRefreshToken(token string) {
-	c.RefreshToken = token
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	c.refreshToken = token
 }
 
 // SetKeycloakConfig stores the Keycloak connection info for token refresh.
@@ -76,8 +97,8 @@ func (c *Client) newRequest(method, url string, body io.Reader) (*http.Request, 
 	if err != nil {
 		return nil, err
 	}
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+	if tok := c.GetToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return req, nil
@@ -86,6 +107,10 @@ func (c *Client) newRequest(method, url string, body io.Reader) (*http.Request, 
 // do executes a request and decodes the JSON response.
 // On 401 responses, it attempts to refresh the token and retry once.
 func (c *Client) do(req *http.Request, result interface{}) error {
+	// Capture the token used for this request so we can pass it to
+	// refreshAccessToken for stale-token detection.
+	staleToken := c.GetToken()
+
 	// Read the request body so we can replay it on retry
 	var bodyBytes []byte
 	if req.Body != nil {
@@ -106,7 +131,7 @@ func (c *Client) do(req *http.Request, result interface{}) error {
 	// On 401, try to refresh the token and retry
 	if resp.StatusCode == http.StatusUnauthorized && c.canRefresh() {
 		resp.Body.Close()
-		if refreshErr := c.refreshAccessToken(); refreshErr == nil {
+		if refreshErr := c.refreshAccessToken(staleToken); refreshErr == nil {
 			// Rebuild request with new token
 			var bodyReader io.Reader
 			if bodyBytes != nil {
@@ -148,20 +173,27 @@ func (c *Client) do(req *http.Request, result interface{}) error {
 
 // canRefresh returns true if we have the info needed to refresh the token.
 func (c *Client) canRefresh() bool {
-	return c.RefreshToken != "" && c.KeycloakURL != "" && c.Realm != "" && c.ClientID != ""
+	return c.GetRefreshToken() != "" && c.KeycloakURL != "" && c.Realm != "" && c.ClientID != ""
 }
 
-// refreshAccessToken uses the refresh token to get a new access token from Keycloak.
-func (c *Client) refreshAccessToken() error {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
+// refreshAccessToken uses the refresh token to get a new access token from
+// Keycloak. staleToken is the token that triggered the 401; if the current
+// token has already been updated by another goroutine, the refresh is skipped.
+func (c *Client) refreshAccessToken(staleToken string) error {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+
+	// Another goroutine may have already refreshed the token.
+	if c.token != staleToken {
+		return nil
+	}
 
 	tokenURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", c.KeycloakURL, c.Realm)
 
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("client_id", c.ClientID)
-	form.Set("refresh_token", c.RefreshToken)
+	form.Set("refresh_token", c.refreshToken)
 
 	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -187,14 +219,14 @@ func (c *Client) refreshAccessToken() error {
 		return fmt.Errorf("token refresh returned empty access token")
 	}
 
-	c.Token = tr.AccessToken
+	c.token = tr.AccessToken
 	if tr.RefreshToken != "" {
-		c.RefreshToken = tr.RefreshToken
+		c.refreshToken = tr.RefreshToken
 	}
 
 	// Notify caller so they can persist the new tokens
 	if c.OnTokenRefresh != nil {
-		c.OnTokenRefresh(c.Token, c.RefreshToken)
+		c.OnTokenRefresh(c.token, c.refreshToken)
 	}
 
 	return nil

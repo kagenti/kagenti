@@ -366,7 +366,7 @@ func TestDeleteTool(t *testing.T) {
 
 func TestDeleteAbort(t *testing.T) {
 	orig := confirmDelete
-	confirmDelete = func(kind, name string) bool { return false }
+	confirmDelete = func(kind, name, namespace string) bool { return false }
 	defer func() { confirmDelete = orig }()
 
 	_, ctx := newTestServer(t)

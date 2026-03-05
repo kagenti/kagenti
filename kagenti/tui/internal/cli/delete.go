@@ -11,8 +11,8 @@ import (
 
 // confirmDelete prompts the user to confirm a destructive action.
 // Returns true if the user confirms or if yes is already set.
-var confirmDelete = func(kind, name string) bool {
-	fmt.Fprintf(os.Stderr, "Delete %s '%s'? [y/N]: ", kind, name)
+var confirmDelete = func(kind, name, namespace string) bool {
+	fmt.Fprintf(os.Stderr, "Delete %s '%s' in namespace '%s'? [y/N]: ", kind, name, namespace)
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
 	return strings.TrimSpace(strings.ToLower(line)) == "y"
@@ -40,12 +40,12 @@ func newDeleteAgentCmd(ctx *CLIContext) *cobra.Command {
 		Short: "Delete an agent",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ns, _ := cmd.Flags().GetString("namespace")
 			yes, _ := cmd.Flags().GetBool("yes")
-			if !yes && !confirmDelete("agent", args[0]) {
+			if !yes && !confirmDelete("agent", args[0], ns) {
 				fmt.Fprintln(os.Stderr, "Aborted.")
 				return nil
 			}
-			ns, _ := cmd.Flags().GetString("namespace")
 			resp, err := ctx.Client.DeleteAgent(ns, args[0])
 			if err != nil {
 				return fmt.Errorf("deleting agent %q: %w", args[0], err)
@@ -65,12 +65,12 @@ func newDeleteToolCmd(ctx *CLIContext) *cobra.Command {
 		Short: "Delete a tool",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ns, _ := cmd.Flags().GetString("namespace")
 			yes, _ := cmd.Flags().GetBool("yes")
-			if !yes && !confirmDelete("tool", args[0]) {
+			if !yes && !confirmDelete("tool", args[0], ns) {
 				fmt.Fprintln(os.Stderr, "Aborted.")
 				return nil
 			}
-			ns, _ := cmd.Flags().GetString("namespace")
 			resp, err := ctx.Client.DeleteTool(ns, args[0])
 			if err != nil {
 				return fmt.Errorf("deleting tool %q: %w", args[0], err)

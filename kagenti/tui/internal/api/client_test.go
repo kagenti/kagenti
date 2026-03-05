@@ -60,8 +60,8 @@ func TestDo_RefreshesTokenOn401(t *testing.T) {
 	if result["status"] != "ok" {
 		t.Errorf("expected status=ok, got %v", result)
 	}
-	if client.Token != "refreshed-token" {
-		t.Errorf("expected client token updated, got %q", client.Token)
+	if client.GetToken() != "refreshed-token" {
+		t.Errorf("expected client token updated, got %q", client.GetToken())
 	}
 	if refreshedAccess != "refreshed-token" || refreshedRefresh != "refreshed-refresh" {
 		t.Errorf("OnTokenRefresh not called correctly: access=%q refresh=%q", refreshedAccess, refreshedRefresh)

@@ -292,8 +292,8 @@ func TestApp_LogoutCommand(t *testing.T) {
 	if app.bar.User != "guest" {
 		t.Errorf("expected bar.User='guest', got %q", app.bar.User)
 	}
-	if app.client.Token != "" {
-		t.Errorf("expected empty token after logout, got %q", app.client.Token)
+	if app.client.GetToken() != "" {
+		t.Errorf("expected empty token after logout, got %q", app.client.GetToken())
 	}
 	if app.view != ViewHome {
 		t.Errorf("expected ViewHome after logout, got %d", app.view)

@@ -51,6 +51,14 @@ func (c *Client) SendMessage(namespace, name string, chatReq *ChatRequest) (*Cha
 	return &resp, nil
 }
 
+// streamClient is used for SSE connections with no overall timeout.
+var streamClient = &http.Client{
+	Timeout: 0, // no overall timeout; we use transport-level timeouts
+	Transport: &http.Transport{
+		ResponseHeaderTimeout: 30 * time.Second, // fail fast if agent never responds
+	},
+}
+
 // StreamChat opens an SSE connection and sends events to the returned channel.
 // The channel is closed when the stream ends or on error.
 func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-chan ChatStreamEvent, error) {
@@ -58,39 +66,43 @@ func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-cha
 	if ns == "" {
 		ns = c.Namespace
 	}
-	body, err := json.Marshal(chatReq)
+	bodyBytes, err := json.Marshal(chatReq)
 	if err != nil {
 		return nil, err
 	}
 	url := c.apiURL(fmt.Sprintf("/chat/%s/%s/stream", ns, name))
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
 
-	// Use a client with a generous timeout for the initial connection.
-	// Individual event reads are governed by the scanner in the goroutine.
-	streamClient := &http.Client{
-		Timeout: 0, // no overall timeout; we use transport-level timeouts
-		Transport: &http.Transport{
-			ResponseHeaderTimeout: 30 * time.Second, // fail fast if agent never responds
-		},
+	doStream := func() (*http.Response, error) {
+		req, err := c.newRequest("POST", url, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		return streamClient.Do(req)
 	}
-	resp, err := streamClient.Do(req)
+
+	staleToken := c.GetToken()
+	resp, err := doStream()
 	if err != nil {
 		return nil, fmt.Errorf("stream request failed: %w", err)
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+	// On 401, attempt a single token refresh and retry.
+	if resp.StatusCode == http.StatusUnauthorized && c.canRefresh() {
 		resp.Body.Close()
-		if len(body) > 0 {
-			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		if refreshErr := c.refreshAccessToken(staleToken); refreshErr == nil {
+			resp, err = doStream()
+			if err != nil {
+				return nil, fmt.Errorf("stream retry failed: %w", err)
+			}
+		}
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if len(respBody) > 0 {
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 		}
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
