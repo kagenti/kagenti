@@ -38,6 +38,16 @@ kagenti-tui --url http://kagenti-ui.localtest.me:8080
 
 Settings persist in `~/.config/kagenti/tui.yaml`. Resolution order: defaults → config file → env vars → CLI flags.
 
+### Security Notes
+
+After `kagenti login`, access and refresh tokens are stored in plaintext in `~/.config/kagenti/tui.yaml`. The file is created with `0600` permissions (owner read/write only), but any process running as the same user can read it. Tokens also persist across reboots and may appear in disk backups.
+
+Mitigations:
+- Run `kagenti logout` when done to revoke tokens server-side and clear them from disk.
+- Avoid using `--token` on the command line where it may be visible in shell history or process listings; prefer the `KAGENTI_TOKEN` env var or the config file.
+
+OS keychain integration is planned as a future improvement.
+
 ## Commands
 
 Type `/` to open the command prompt with autocomplete.
