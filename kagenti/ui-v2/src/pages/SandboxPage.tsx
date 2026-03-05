@@ -1346,7 +1346,7 @@ export const SandboxPage: React.FC = () => {
               }, { replace: true });
             }}
             isBox={false}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            style={{ flex: 1, minHeight: 0 }}
           >
             <Tab eventKey="chat" title={<TabTitleText>Chat</TabTitleText>}>
 
@@ -1579,12 +1579,8 @@ export const SandboxPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab layout + Markdown styling */}
+      {/* Markdown styling */}
       <style>{`
-        /* Make PatternFly tab content panel flex-fill inside the Tabs container */
-        .pf-v5-c-tabs { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .pf-v5-c-tab-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .pf-v5-c-tab-content > * { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .sandbox-markdown pre {
           background: var(--pf-v5-global--BackgroundColor--dark-300);
           color: var(--pf-v5-global--Color--light-100);
