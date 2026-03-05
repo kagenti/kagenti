@@ -496,6 +496,145 @@ const ChatBubble: React.FC<{
   );
 };
 
+/**
+ * Group messages into "turns" for collapsed rendering.
+ * A turn is: one user message + all consecutive assistant messages after it.
+ * The last text-content assistant message in a turn is the "final answer".
+ * Everything else (tool calls, intermediate messages) goes behind a toggle.
+ */
+interface Turn {
+  user?: Message;
+  assistantMessages: Message[];
+  finalAnswer: string;
+}
+
+function groupMessagesIntoTurns(messages: Message[]): Turn[] {
+  const turns: Turn[] = [];
+  let current: Turn = { assistantMessages: [], finalAnswer: '' };
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      // Start new turn
+      if (current.user || current.assistantMessages.length > 0) {
+        turns.push(current);
+      }
+      current = { user: msg, assistantMessages: [], finalAnswer: '' };
+    } else {
+      current.assistantMessages.push(msg);
+      // Track last non-empty text content as the final answer
+      if (msg.content && msg.content.trim() && !msg.toolData) {
+        current.finalAnswer = msg.content;
+      }
+    }
+  }
+  if (current.user || current.assistantMessages.length > 0) {
+    turns.push(current);
+  }
+  return turns;
+}
+
+/** Collapsed agent turn: final answer visible, intermediate steps behind toggle. */
+const CollapsedTurn: React.FC<{
+  turn: Turn;
+  namespace: string;
+  agentName: string;
+  onApprove?: () => void;
+  onDeny?: () => void;
+}> = ({ turn, namespace, agentName, onApprove, onDeny }) => {
+  const [expanded, setExpanded] = useState(false);
+  const intermediates = turn.assistantMessages.filter(
+    (m) => m.content !== turn.finalAnswer || m.toolData
+  );
+
+  return (
+    <div
+      data-testid="collapsed-turn"
+      style={{
+        display: 'flex',
+        gap: 10,
+        padding: '10px 14px',
+        marginBottom: 4,
+        borderRadius: 8,
+        border: '1px solid var(--pf-v5-global--success-color--100)',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
+      }}
+    >
+      {/* Avatar */}
+      <div
+        style={{
+          flexShrink: 0,
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--pf-v5-global--success-color--100)',
+          color: '#fff',
+          fontSize: 14,
+        }}
+      >
+        <RobotIcon />
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Final answer — always visible */}
+        {turn.finalAnswer && (
+          <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 6 }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={buildMarkdownComponents(namespace, agentName)}>
+              {linkifyFilePaths(turn.finalAnswer, namespace, agentName)}
+            </ReactMarkdown>
+          </div>
+        )}
+
+        {/* Details toggle — only if there are intermediate steps */}
+        {intermediates.length > 0 && (
+          <>
+            <div
+              onClick={() => setExpanded((prev) => !prev)}
+              data-testid="turn-details-toggle"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 4,
+                border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                fontSize: '0.8em',
+                fontWeight: 500,
+                color: 'var(--pf-v5-global--Color--200)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              {expanded ? '\u25bc' : '\u25b6'} {intermediates.length} step{intermediates.length !== 1 ? 's' : ''}
+            </div>
+
+            {expanded && (
+              <div style={{ marginTop: 8, paddingLeft: 8, borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)' }}>
+                {intermediates.map((m) => (
+                  <div key={m.id} style={{ marginBottom: 4, fontSize: '0.85em' }}>
+                    {m.toolData ? (
+                      <ToolCallStep data={m.toolData} onApprove={onApprove} onDeny={onDeny} />
+                    ) : m.content ? (
+                      <div className="sandbox-markdown" style={{ color: 'var(--pf-v5-global--Color--200)' }}>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {m.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ---------------------------------------------------------------------------
 // SandboxPage
 // ---------------------------------------------------------------------------
@@ -1461,16 +1600,37 @@ export const SandboxPage: React.FC = () => {
                   </div>
                 </div>
 
-              {messages.map((msg) => (
-                <ChatBubble
-                  key={msg.id}
-                  msg={msg}
-                  currentUsername={currentUsername}
-                  namespace={namespace}
-                  agentName={selectedAgent}
-                  onApprove={msg.toolData?.type === 'hitl_request' ? handleHitlApprove : undefined}
-                  onDeny={msg.toolData?.type === 'hitl_request' ? handleHitlDeny : undefined}
-                />
+              {/* Render messages grouped into turns for collapsed view */}
+              {groupMessagesIntoTurns(messages).map((turn, idx) => (
+                <React.Fragment key={turn.user?.id || `turn-${idx}`}>
+                  {/* User message */}
+                  {turn.user && (
+                    <ChatBubble
+                      msg={turn.user}
+                      currentUsername={currentUsername}
+                      namespace={namespace}
+                      agentName={selectedAgent}
+                    />
+                  )}
+                  {/* Agent turn — collapsed */}
+                  {turn.assistantMessages.length > 0 && (
+                    <CollapsedTurn
+                      turn={turn}
+                      namespace={namespace}
+                      agentName={selectedAgent}
+                      onApprove={
+                        turn.assistantMessages.some((m) => m.toolData?.type === 'hitl_request')
+                          ? handleHitlApprove
+                          : undefined
+                      }
+                      onDeny={
+                        turn.assistantMessages.some((m) => m.toolData?.type === 'hitl_request')
+                          ? handleHitlDeny
+                          : undefined
+                      }
+                    />
+                  )}
+                </React.Fragment>
               ))}
 
               {/* Agent loop cards (collapsed agent turns) */}
