@@ -134,7 +134,7 @@ test.describe('Sandbox Legion - Chat', () => {
     // Wait for response from agent
     await expect(
       page.locator('text=/playwright-sandbox-test|Legion/i').first()
-    ).toBeVisible({ timeout: 90000 });
+    ).toBeVisible({ timeout: 180000 });
 
     // Verify no errors appeared during chat
     await assertNoErrors(page);

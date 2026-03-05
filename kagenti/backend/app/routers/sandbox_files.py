@@ -10,6 +10,7 @@ providing a file browser experience in the UI.
 
 import logging
 import posixpath
+import re
 from typing import List, Literal, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -300,6 +301,57 @@ router = APIRouter(
     tags=["sandbox-files"],
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
+
+
+@router.get(
+    "/{namespace}/files/{agent_name}/{context_id}",
+    response_model=Union[DirectoryListing, FileContent],
+    summary="Browse files scoped to a session workspace",
+)
+async def get_context_files(
+    namespace: str,
+    agent_name: str,
+    context_id: str,
+    path: str = Query(default="/", description="Path relative to the context workspace"),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+):
+    """
+    Browse files within /workspace/{context_id}/.
+
+    The *path* parameter is relative to the context workspace root.
+    Path traversal via '..' that escapes the context workspace is rejected.
+    """
+    # Skip if context_id is a known sub-route
+    if context_id in ("list", "content"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Validate context_id (alphanumeric + hyphens + underscores only)
+    if not re.match(r"^[a-zA-Z0-9_-]+$", context_id):
+        raise HTTPException(status_code=400, detail="Invalid context_id format")
+
+    # Build absolute path within context workspace
+    context_root = f"/workspace/{context_id}"
+    if path == "/" or path == "":
+        full_path = context_root
+    else:
+        # Strip leading slash from relative path, join with context root
+        rel = path.lstrip("/")
+        full_path = posixpath.normpath(posixpath.join(context_root, rel))
+
+    # Enforce path stays within context workspace
+    if not full_path.startswith(context_root):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Path escapes context workspace: {path}",
+        )
+
+    # Reuse existing get_sandbox_files logic with the scoped path
+    return await get_sandbox_files(
+        namespace=namespace,
+        agent_name=agent_name,
+        path=full_path,
+        kube=kube,
+    )
 
 
 @router.get(

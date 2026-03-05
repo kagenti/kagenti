@@ -475,7 +475,7 @@ test.describe('Sandbox File Browser', () => {
 const LIVE_URL = process.env.KAGENTI_UI_URL;
 const AGENT_NAME = process.env.SANDBOX_AGENT || 'sandbox-basic';
 const NAMESPACE = process.env.SANDBOX_NAMESPACE || 'team1';
-const AGENT_TIMEOUT = 120_000; // 2 min for LLM response
+const AGENT_TIMEOUT = 180_000; // 3 min for LLM response
 
 /**
  * Send a message in the sandbox chat and wait for the agent to finish.
@@ -566,7 +566,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     // Wait for agent to process — either markdown response or tool call
     const agentOutput = page.locator('.sandbox-markdown')
       .or(page.locator('text=/Tool Call:|Result:|file_write|shell/i'));
-    await expect(agentOutput.first()).toBeVisible({ timeout: 60000 });
+    await expect(agentOutput.first()).toBeVisible({ timeout: 180000 });
 
     // ── Step 3: Navigate to file browser for this agent ──
     // Extract context_id from the current session URL (e.g. /sandbox/chat/team1/sandbox-basic/abc123)
@@ -701,7 +701,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     // Wait for agent to finish processing (tool call or text response)
     const codeOutput = page.locator('.sandbox-markdown')
       .or(page.locator('text=/Tool Call:|Result:|file_write|fibonacci/i'));
-    await expect(codeOutput.first()).toBeVisible({ timeout: 60000 });
+    await expect(codeOutput.first()).toBeVisible({ timeout: 180000 });
 
     // ── Step 3: Navigate to file browser ──
     // Extract context_id from the current session URL

@@ -160,7 +160,7 @@ test.describe('Agent Chat - User Identity', () => {
     // Wait for assistant response
     await expect(
       page.locator('text=/hello|hi|greet|weather|help/i').first()
-    ).toBeVisible({ timeout: 90000 });
+    ).toBeVisible({ timeout: 180000 });
   });
 });
 

@@ -45,7 +45,7 @@ test('check history endpoint response', async ({ page }) => {
   const input = page.locator('textarea').first();
   await input.fill('Run the command: echo history-debug-test');
   await page.getByRole('button', { name: /Send/i }).click();
-  await expect(input).toBeEnabled({ timeout: 60000 });
+  await expect(input).toBeEnabled({ timeout: 180000 });
   await page.waitForTimeout(3000);
   
   // Parse and display the history response

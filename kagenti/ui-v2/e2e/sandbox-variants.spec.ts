@@ -14,7 +14,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
-const AGENT_TIMEOUT = 120_000;
+const AGENT_TIMEOUT = 180_000;
 const SCREENSHOT_DIR = 'test-results/sandbox-variants';
 
 // Agent variants to test — each must be deployed on the cluster

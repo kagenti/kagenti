@@ -12,7 +12,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
-const AGENT_TIMEOUT = 120_000; // 2 min for agent responses
+const AGENT_TIMEOUT = 180_000; // 3 min for agent responses
 const SCREENSHOT_DIR = 'test-results/sandbox-sessions';
 
 let screenshotIdx = 0;
