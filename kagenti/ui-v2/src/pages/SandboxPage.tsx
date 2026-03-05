@@ -921,7 +921,12 @@ export const SandboxPage: React.FC = () => {
             // The backend forwards loop events with loop_id at top level
             // and the full event in data.loop_event
             if (data.loop_id) {
-              seenLoopId = true;
+              if (!seenLoopId) {
+                // First loop event: retroactively remove any flat messages
+                // that were added before we knew this was a loop session
+                seenLoopId = true;
+                setMessages((prev) => prev.filter((m) => m.role === 'user'));
+              }
               const loopId = data.loop_id;
               const le = data.loop_event || data;
               const eventType = le.type;
