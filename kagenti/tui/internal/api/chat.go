@@ -100,7 +100,7 @@ func (c *Client) StreamChat(namespace, name string, chatReq *ChatRequest) (<-cha
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 		resp.Body.Close()
 		if len(respBody) > 0 {
 			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))

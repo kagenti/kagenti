@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// maxResponseBody is the maximum number of bytes read from error response
+// bodies to prevent OOM from a malicious or misbehaving server.
+const maxResponseBody = 1 << 20 // 1 MB
+
 // Client is the Kagenti backend HTTP client.
 // Token fields are protected by tokenMu; use GetToken/SetToken and
 // GetRefreshToken/SetRefreshToken for goroutine-safe access.
@@ -148,7 +152,7 @@ func (c *Client) do(req *http.Request, result interface{}) error {
 			defer retryResp.Body.Close()
 
 			if retryResp.StatusCode < 200 || retryResp.StatusCode >= 300 {
-				body, _ := io.ReadAll(retryResp.Body)
+				body, _ := io.ReadAll(io.LimitReader(retryResp.Body, maxResponseBody))
 				return fmt.Errorf("HTTP %d: %s", retryResp.StatusCode, string(body))
 			}
 			if result != nil {
@@ -161,7 +165,7 @@ func (c *Client) do(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 

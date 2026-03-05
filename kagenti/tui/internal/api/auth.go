@@ -110,7 +110,7 @@ func (c *Client) RequestDeviceCode(keycloakURL, realm, clientID string) (*Device
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 		if resp.StatusCode == http.StatusBadRequest {
 			return nil, fmt.Errorf("device code request failed (HTTP 400): %s", string(body))
 		}
@@ -214,7 +214,7 @@ func (c *Client) RevokeToken(keycloakURL, realm, clientID, token string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 		return fmt.Errorf("revocation failed (HTTP %d): %s", resp.StatusCode, string(body))
 	}
 	return nil
