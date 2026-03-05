@@ -42,12 +42,17 @@ This project leverages [pre-commit](https://pre-commit.com/) to enforce consiste
 
 Installation can be done via [directions here](https://pre-commit.com/#installation) or `brew install pre-commit` on MacOS.
 
-From the project base, this will install the Git hook:
+From the project base, install both the pre-commit and commit-msg hooks:
 ```sh
-pre-commit install
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
-To run against all files manually:
+The `pre-commit` hooks run linters and formatters before each commit. The
+`commit-msg` hook automatically rewrites AI `Co-authored-by` trailers to
+`Assisted-By` so that AI tools don't inflate GitHub contributor stats (see
+[Commit Attribution Policy](../CLAUDE.md#commit-attribution-policy)).
+
+To run the pre-commit hooks against all files manually:
 ```sh
 pre-commit run --all-files
 ```

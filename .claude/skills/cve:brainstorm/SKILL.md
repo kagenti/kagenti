@@ -5,6 +5,13 @@ description: Plan responsible CVE disclosure, guide silent fixes, and BLOCK all 
 
 # CVE Brainstorm — Responsible Disclosure & Public Output Gate
 
+## When to Use
+
+- After `cve:scan` detects a confirmed HIGH/CRITICAL CVE
+- When you need to plan responsible disclosure for a vulnerability
+- When deciding whether to fix silently (dependency bump) or report formally
+- Automatically invoked by `cve:scan` when findings are detected
+
 When a CVE is detected by `cve:scan`, this skill guides responsible disclosure
 and **blocks all public output** until the vulnerability is properly handled.
 

@@ -188,3 +188,5 @@ test-results/
 
 # TUI binary
 kagenti/tui/bin/
+# Orchestration target repos (cloned, not committed)
+.repos/
