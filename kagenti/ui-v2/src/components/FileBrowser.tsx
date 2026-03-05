@@ -129,7 +129,7 @@ class PreviewErrorBoundary extends Component<
             color: 'var(--pf-v5-global--danger-color--100)',
           }}
         >
-          <ExclamationCircleIcon size="xl" />
+          <ExclamationCircleIcon style={{ fontSize: '2em' }} />
           <span>Failed to preview this file</span>
           <span style={{ color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>
             {this.state.error?.message || 'Unknown render error'}
