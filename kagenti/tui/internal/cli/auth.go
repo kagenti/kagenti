@@ -74,13 +74,21 @@ func newLogoutCmd(ctx *CLIContext) *cobra.Command {
 		Use:   "logout",
 		Short: "Clear saved authentication tokens",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg := config.Load("", "", "")
+			cfg := ctx.Config
+
+			// Revoke the refresh token server-side if we have the info.
+			if cfg.RefreshToken != "" && cfg.KeycloakURL != "" && cfg.Realm != "" && cfg.ClientID != "" {
+				if err := ctx.Client.RevokeToken(cfg.KeycloakURL, cfg.Realm, cfg.ClientID, cfg.RefreshToken); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: server-side token revocation failed: %v\n", err)
+				}
+			}
+
 			cfg.Token = ""
 			cfg.RefreshToken = ""
 			if err := cfg.Save(); err != nil {
 				return fmt.Errorf("saving config: %w", err)
 			}
-			fmt.Println("Logged out. Tokens cleared from ~/.config/kagenti/tui.yaml")
+			fmt.Fprintln(cmd.OutOrStdout(), "Logged out. Tokens cleared from ~/.config/kagenti/tui.yaml")
 			return nil
 		},
 	}

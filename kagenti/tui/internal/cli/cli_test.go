@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kagenti/kagenti/kagenti/tui/internal/api"
+	"github.com/kagenti/kagenti/kagenti/tui/internal/config"
 	"github.com/kagenti/kagenti/kagenti/tui/internal/version"
 )
 
@@ -508,5 +509,58 @@ func TestOutputHelpers(t *testing.T) {
 	})
 	if !strings.Contains(out, `"key"`) || !strings.Contains(out, `"val"`) {
 		t.Errorf("printJSON output unexpected: %s", out)
+	}
+}
+
+func TestLogoutRevokesToken(t *testing.T) {
+	var revokeCalled bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/revoke") {
+			revokeCalled = true
+			// Verify the form includes the refresh token.
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("failed to parse form: %v", err)
+			}
+			if got := r.FormValue("token"); got != "refresh-tok" {
+				t.Errorf("expected token=refresh-tok, got %q", got)
+			}
+			if got := r.FormValue("token_type_hint"); got != "refresh_token" {
+				t.Errorf("expected token_type_hint=refresh_token, got %q", got)
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "access-tok", "team1")
+	client.SetRefreshToken("refresh-tok")
+	client.SetKeycloakConfig(srv.URL, "test-realm", "test-client")
+
+	cfg := &config.Config{
+		URL:          srv.URL,
+		Token:        "access-tok",
+		RefreshToken: "refresh-tok",
+		Namespace:    "team1",
+		KeycloakURL:  srv.URL,
+		Realm:        "test-realm",
+		ClientID:     "test-client",
+	}
+	ctx := &CLIContext{Client: client, Config: cfg, Output: "table"}
+	cmd := newLogoutCmd(ctx)
+
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("logout failed: %v", err)
+	}
+	if !revokeCalled {
+		t.Error("expected revocation endpoint to be called")
+	}
+	if !strings.Contains(buf.String(), "Logged out") {
+		t.Errorf("expected logout confirmation, got: %s", buf.String())
 	}
 }

@@ -191,3 +191,31 @@ func (c *Client) PollDeviceToken(ctx context.Context, keycloakURL, realm, client
 		}
 	}
 }
+
+// RevokeToken revokes a refresh token at Keycloak's revocation endpoint.
+func (c *Client) RevokeToken(keycloakURL, realm, clientID, token string) error {
+	revokeURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/revoke", keycloakURL, realm)
+
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("token", token)
+	form.Set("token_type_hint", "refresh_token")
+
+	req, err := http.NewRequest("POST", revokeURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("revocation request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("revocation failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
