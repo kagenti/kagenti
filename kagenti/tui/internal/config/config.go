@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -43,9 +44,11 @@ func Load(flagURL, flagToken, flagNamespace string) *Config {
 		Namespace: defaultNamespace,
 	}
 
-	// Layer 1: config file
+	// Layer 1: config file (fall back to defaults on parse error)
 	if data, err := os.ReadFile(configPath()); err == nil {
-		_ = yaml.Unmarshal(data, cfg)
+		if yamlErr := yaml.Unmarshal(data, cfg); yamlErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v (using defaults)\n", configPath(), yamlErr)
+		}
 	}
 
 	// Layer 2: environment variables
