@@ -140,6 +140,16 @@ function doneEvent(sessionId: string, content?: string): string {
  * ToolCallStep renders with inline borderLeft (React converts to border-left)
  * and contains "Tool Call:" text.
  */
+async function expandCollapsedTurns(page: Page) {
+  // Click all collapsed turn toggles to reveal hidden steps
+  const toggles = page.locator('[data-testid="turn-details-toggle"]');
+  const count = await toggles.count();
+  for (let i = 0; i < count; i++) {
+    await toggles.nth(i).click();
+    await page.waitForTimeout(200);
+  }
+}
+
 function getToolCallSteps(page: Page) {
   return page
     .locator('div[style*="border-left"]')
@@ -258,6 +268,9 @@ test.describe('Sandbox Rendering — Tool Call Steps (mocked)', () => {
     await chatInput.fill('Run the command: echo hello-from-rendering-test');
     await page.getByRole('button', { name: /Send/i }).click();
     await snap(page, 'after-echo-response');
+
+    // Expand collapsed turns so tool call steps are visible
+    await expandCollapsedTurns(page);
 
     // ---- Assert: Tool Call expandable step is present ----
     const toolCallSteps = getToolCallSteps(page);

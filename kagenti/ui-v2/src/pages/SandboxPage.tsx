@@ -533,6 +533,9 @@ function groupMessagesIntoTurns(messages: Message[]): Turn[] {
   return turns;
 }
 
+/** Interactive event types that must ALWAYS be visible (not collapsed). */
+const INTERACTIVE_TYPES = new Set(['hitl_request', 'delegation_start', 'delegation_progress', 'delegation_complete']);
+
 /** Collapsed agent turn: final answer visible, intermediate steps behind toggle. */
 const CollapsedTurn: React.FC<{
   turn: Turn;
@@ -542,8 +545,13 @@ const CollapsedTurn: React.FC<{
   onDeny?: () => void;
 }> = ({ turn, namespace, agentName, onApprove, onDeny }) => {
   const [expanded, setExpanded] = useState(false);
-  const intermediates = turn.assistantMessages.filter(
-    (m) => m.content !== turn.finalAnswer || m.toolData
+
+  // Split messages: interactive (always visible) vs collapsible (behind toggle)
+  const interactive = turn.assistantMessages.filter(
+    (m) => m.toolData && INTERACTIVE_TYPES.has(m.toolData.type)
+  );
+  const collapsible = turn.assistantMessages.filter(
+    (m) => (m.content !== turn.finalAnswer || m.toolData) && !(m.toolData && INTERACTIVE_TYPES.has(m.toolData.type))
   );
 
   return (
@@ -588,8 +596,15 @@ const CollapsedTurn: React.FC<{
           </div>
         )}
 
-        {/* Details toggle — only if there are intermediate steps */}
-        {intermediates.length > 0 && (
+        {/* Interactive events — ALWAYS visible (HITL approve/deny, delegation) */}
+        {interactive.map((m) => (
+          <div key={m.id} style={{ marginBottom: 4 }}>
+            <ToolCallStep data={m.toolData!} onApprove={onApprove} onDeny={onDeny} />
+          </div>
+        ))}
+
+        {/* Collapsible steps toggle */}
+        {collapsible.length > 0 && (
           <>
             <div
               onClick={() => setExpanded((prev) => !prev)}
@@ -608,12 +623,12 @@ const CollapsedTurn: React.FC<{
                 userSelect: 'none',
               }}
             >
-              {expanded ? '\u25bc' : '\u25b6'} {intermediates.length} step{intermediates.length !== 1 ? 's' : ''}
+              {expanded ? '\u25bc' : '\u25b6'} {collapsible.length} step{collapsible.length !== 1 ? 's' : ''}
             </div>
 
             {expanded && (
-              <div style={{ marginTop: 8, paddingLeft: 8, borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)' }}>
-                {intermediates.map((m) => (
+              <div style={{ marginTop: 8, paddingLeft: 8, borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)', maxHeight: 400, overflowY: 'auto' }}>
+                {collapsible.map((m) => (
                   <div key={m.id} style={{ marginBottom: 4, fontSize: '0.85em' }}>
                     {m.toolData ? (
                       <ToolCallStep data={m.toolData} onApprove={onApprove} onDeny={onDeny} />
