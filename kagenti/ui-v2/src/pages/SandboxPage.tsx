@@ -527,7 +527,8 @@ function getInitialSession(params: URLSearchParams): string {
 
 export const SandboxPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [namespace, setNamespace] = useState(
+  // setNamespace removed — namespace is read-only during active session
+  const [namespace] = useState(
     () =>
       localStorage.getItem(STORAGE_KEY_NAMESPACE) || 'team1'
   );
