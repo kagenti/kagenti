@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 )
 
 // ListAgents lists agents in the given namespace (or client's default).
@@ -12,8 +13,9 @@ func (c *Client) ListAgents(namespace string) (*AgentListResponse, error) {
 	if ns == "" {
 		ns = c.Namespace
 	}
-	url := c.apiURL(fmt.Sprintf("/agents?namespace=%s", ns))
-	req, err := c.newRequest("GET", url, nil)
+	q := url.Values{"namespace": {ns}}
+	u := c.apiURL("/agents?" + q.Encode())
+	req, err := c.newRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
