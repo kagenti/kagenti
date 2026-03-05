@@ -4,7 +4,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -113,9 +112,9 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the version",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("kagenti", version.Version)
-			os.Exit(0)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintln(cmd.OutOrStdout(), "kagenti", version.Version)
+			return nil
 		},
 	}
 }

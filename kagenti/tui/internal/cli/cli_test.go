@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kagenti/kagenti/kagenti/tui/internal/api"
+	"github.com/kagenti/kagenti/kagenti/tui/internal/version"
 )
 
 // newTestServer returns an httptest.Server that handles the API routes used
@@ -426,11 +427,21 @@ func TestStatusJSON(t *testing.T) {
 }
 
 func TestVersionCmd(t *testing.T) {
-	// version command just prints and exits; test it doesn't error
 	cmd := newVersionCmd()
-	// We can't easily test os.Exit(0), so just verify the command exists
-	if cmd.Use != "version" {
-		t.Errorf("expected Use='version', got %q", cmd.Use)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("version command failed: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "kagenti") {
+		t.Errorf("expected output to contain 'kagenti', got %q", out)
+	}
+	if !strings.Contains(out, version.Version) {
+		t.Errorf("expected output to contain version %q, got %q", version.Version, out)
 	}
 }
 
