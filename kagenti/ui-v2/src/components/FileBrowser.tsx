@@ -370,6 +370,10 @@ export const FileBrowser: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
               <Spinner size="lg" />
             </div>
+          ) : treeData.length === 0 ? (
+            <div style={{ padding: 16, color: 'var(--pf-v5-global--Color--200)', textAlign: 'center' }}>
+              No files in this directory
+            </div>
           ) : (
             <TreeView
               data={treeData}
