@@ -224,6 +224,14 @@ function App() {
           }
         />
         <Route
+          path="/sandbox/files/:namespace/:agentName/:contextId"
+          element={
+            <ProtectedRoute>
+              <FileBrowser />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/sandbox/files/:namespace/:agentName"
           element={
             <ProtectedRoute>

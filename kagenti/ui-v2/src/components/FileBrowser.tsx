@@ -3,7 +3,7 @@
 
 import React, { Component, useState, useMemo } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -146,9 +146,16 @@ class PreviewErrorBoundary extends Component<
 // ---------------------------------------------------------------------------
 
 export const FileBrowser: React.FC = () => {
-  const { namespace, agentName } = useParams<{ namespace: string; agentName: string }>();
+  const { namespace, agentName, contextId } = useParams<{
+    namespace: string;
+    agentName: string;
+    contextId?: string;
+  }>();
+  const [searchParams] = useSearchParams();
 
-  const [currentPath, setCurrentPath] = useState('/workspace');
+  // Initial path from URL ?path= parameter, defaults to /workspace (or / for context-scoped)
+  const initialPath = searchParams.get('path') || (contextId ? '/' : '/workspace');
+  const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   // Fetch directory listing
@@ -158,8 +165,8 @@ export const FileBrowser: React.FC = () => {
     isError: isDirError,
     error: dirError,
   } = useQuery({
-    queryKey: ['sandbox-files', namespace, agentName, currentPath],
-    queryFn: () => sandboxFileService.listDirectory(namespace!, agentName!, currentPath),
+    queryKey: ['sandbox-files', namespace, agentName, contextId, currentPath],
+    queryFn: () => sandboxFileService.listDirectory(namespace!, agentName!, currentPath, contextId),
     enabled: !!namespace && !!agentName,
     retry: (failureCount, error) => {
       // Don't retry auth errors or not-found errors
@@ -177,8 +184,8 @@ export const FileBrowser: React.FC = () => {
     isError: isFileError,
     error: fileError,
   } = useQuery({
-    queryKey: ['sandbox-file-content', namespace, agentName, selectedFilePath],
-    queryFn: () => sandboxFileService.getFileContent(namespace!, agentName!, selectedFilePath!),
+    queryKey: ['sandbox-file-content', namespace, agentName, contextId, selectedFilePath],
+    queryFn: () => sandboxFileService.getFileContent(namespace!, agentName!, selectedFilePath!, contextId),
     enabled: !!namespace && !!agentName && !!selectedFilePath,
     retry: (failureCount, error) => {
       if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {

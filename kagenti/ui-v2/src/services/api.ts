@@ -955,8 +955,16 @@ export const sandboxFileService = {
   async listDirectory(
     namespace: string,
     agentName: string,
-    path: string
+    path: string,
+    contextId?: string
   ): Promise<{ entries: FileEntry[] }> {
+    // When contextId is provided, use the context-scoped endpoint
+    // which browses /workspace/{contextId}/ and path is relative to that root
+    if (contextId) {
+      return apiFetch(
+        `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/${encodeURIComponent(contextId)}?path=${encodeURIComponent(path)}`
+      );
+    }
     return apiFetch(
       `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/list?path=${encodeURIComponent(path)}`
     );
@@ -965,8 +973,14 @@ export const sandboxFileService = {
   async getFileContent(
     namespace: string,
     agentName: string,
-    filePath: string
+    filePath: string,
+    contextId?: string
   ): Promise<FileContent> {
+    if (contextId) {
+      return apiFetch(
+        `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/${encodeURIComponent(contextId)}?path=${encodeURIComponent(filePath)}`
+      );
+    }
     return apiFetch(
       `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/content?path=${encodeURIComponent(filePath)}`
     );

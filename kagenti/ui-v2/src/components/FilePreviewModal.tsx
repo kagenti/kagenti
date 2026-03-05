@@ -82,7 +82,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
   } = useQuery<FileContent>({
     queryKey: ['filePreview', namespace, agentName, contextId, filePath],
     queryFn: () =>
-      sandboxFileService.getFileContent(namespace, agentName, filePath ?? ''),
+      sandboxFileService.getFileContent(namespace, agentName, filePath ?? '', contextId),
     enabled: isOpen && !!filePath,
   });
 
