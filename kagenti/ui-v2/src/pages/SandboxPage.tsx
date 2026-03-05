@@ -4,7 +4,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   PageSection,
-  Title,
   Card,
   CardBody,
   TextArea,
@@ -14,8 +13,9 @@ import {
   Spinner,
   Alert,
   Label,
+  Tooltip,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon, FileIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,9 +28,11 @@ import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 import { SkillWhisperer } from '../components/SkillWhisperer';
 // SandboxConfig disabled — model/repo/branch not yet wired to backend
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
-import { NamespaceSelector } from '../components/NamespaceSelector';
+// NamespaceSelector removed from session view — namespace shown as read-only Label
+// import { NamespaceSelector } from '../components/NamespaceSelector';
 import { DelegationCard, type DelegationState } from '../components/DelegationCard';
 import { AgentLoopCard } from '../components/AgentLoopCard';
+import { FilePreviewModal } from '../components/FilePreviewModal';
 import type { AgentLoop } from '../types/agentLoop';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
@@ -88,6 +90,45 @@ function linkifyFilePaths(text: string, namespace: string, agentName: string): s
     /(?<!\w)(\/(?:workspace|data|repos|app|home|tmp|opt|var|srv)\/[\w./_-]+\.\w+)/g,
     (match) => `[${match}](/sandbox/files/${namespace}/${agentName}?path=${encodeURIComponent(match)})`
   );
+}
+
+/** Inline file path card that renders as a clickable Label with file preview modal. */
+const FilePathCard: React.FC<{ path: string; namespace: string; agentName: string }> = ({ path, namespace, agentName }) => {
+  const [showModal, setShowModal] = useState(false);
+  const fileName = path.split('/').pop() || path;
+
+  return (
+    <>
+      <Tooltip content="Click for details">
+        <Label isCompact icon={<FileIcon />} onClick={() => setShowModal(true)} style={{ cursor: 'pointer', margin: '0 2px' }}>
+          {fileName}
+        </Label>
+      </Tooltip>
+      <FilePreviewModal
+        filePath={path}
+        namespace={namespace}
+        agentName={agentName}
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+      />
+    </>
+  );
+};
+
+/** Build custom ReactMarkdown components that render file browser links as FilePathCard. */
+function buildMarkdownComponents(namespace: string, agentName: string) {
+  return {
+    a: ({ href, children }: any) => {
+      // If it's a file browser link, render FilePathCard
+      if (href?.startsWith('/sandbox/files/')) {
+        const pathMatch = href.match(/path=([^&]+)/);
+        const filePath = pathMatch ? decodeURIComponent(pathMatch[1]) : '';
+        return <FilePathCard path={filePath} namespace={namespace} agentName={agentName} />;
+      }
+      // Regular link
+      return <a href={href}>{children}</a>;
+    },
+  };
 }
 
 /**
@@ -441,7 +482,7 @@ const ChatBubble: React.FC<{
           <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{msg.content}</p>
         ) : (
           <div className="sandbox-markdown" style={{ fontSize: '0.92em' }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={buildMarkdownComponents(namespace, agentName)}>
               {linkifyFilePaths(msg.content, namespace, agentName)}
             </ReactMarkdown>
           </div>
@@ -1185,11 +1226,13 @@ export const SandboxPage: React.FC = () => {
               selectedAgentName={selectedAgent}
             />
           </div>
-          <SandboxAgentsPanel
-            namespace={namespace}
-            selectedAgent={selectedAgent}
-            onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
-          />
+          {!contextId && (
+            <SandboxAgentsPanel
+              namespace={namespace}
+              selectedAgent={selectedAgent}
+              onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
+            />
+          )}
         </div>
 
         <div
@@ -1200,20 +1243,25 @@ export const SandboxPage: React.FC = () => {
             padding: 16,
           }}
         >
-          {/* Header */}
-          <Split hasGutter style={{ marginBottom: 8 }}>
+          {/* Header info bar */}
+          <Split hasGutter style={{ marginBottom: 8, alignItems: 'center' }}>
             <SplitItem>
-              <Title headingLevel="h1" size="xl">
-                {selectedAgent}
-              </Title>
+              <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Agent:</span>
+              <Label isCompact color="purple">{selectedAgent}</Label>
             </SplitItem>
+            <SplitItem>
+              <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Namespace:</span>
+              <Label isCompact color="blue">{namespace}</Label>
+            </SplitItem>
+            {contextId && (
+              <SplitItem>
+                <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Session:</span>
+                <Tooltip content={contextId}>
+                  <Label isCompact color="grey">{contextId.slice(0, 8)}...</Label>
+                </Tooltip>
+              </SplitItem>
+            )}
             <SplitItem isFilled />
-            <SplitItem>
-              <NamespaceSelector
-                namespace={namespace}
-                onNamespaceChange={setNamespace}
-              />
-            </SplitItem>
             <SplitItem>
               <Button
                 variant="link"
