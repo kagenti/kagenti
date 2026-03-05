@@ -15,7 +15,7 @@ import {
   Label,
   Tooltip,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon, FileIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon, FileIcon, CogIcon, ShieldAltIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -1248,11 +1248,41 @@ export const SandboxPage: React.FC = () => {
           <Split hasGutter style={{ marginBottom: 8, alignItems: 'center' }}>
             <SplitItem>
               <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Agent:</span>
-              <Label isCompact color="purple">{selectedAgent}</Label>
+              <Tooltip content="Active sandbox agent handling this session">
+                <Label isCompact color="purple">{selectedAgent}</Label>
+              </Tooltip>
             </SplitItem>
             <SplitItem>
               <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Namespace:</span>
-              <Label isCompact color="blue">{namespace}</Label>
+              <Tooltip content="Kubernetes namespace where the agent runs">
+                <Label isCompact color="blue">{namespace}</Label>
+              </Tooltip>
+            </SplitItem>
+            <SplitItem>
+              <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Model:</span>
+              <Tooltip content="LLM model used by this agent">
+                <Label isCompact color="orange" icon={<CogIcon />}>
+                  {(agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'}
+                </Label>
+              </Tooltip>
+            </SplitItem>
+            <SplitItem>
+              <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Security:</span>
+              <Tooltip content={
+                <div>
+                  <div><strong>Active Security Features:</strong></div>
+                  <div>&#10003; SPIFFE workload identity</div>
+                  <div>&#10003; Istio mTLS (ambient mode)</div>
+                  <div>&#10003; Permission-checked shell execution</div>
+                  <div>&#10003; Path-traversal prevention</div>
+                  <div>&#10003; TOFU config integrity verification</div>
+                  <div>&#10003; Per-session workspace isolation</div>
+                </div>
+              }>
+                <Label isCompact color="green" icon={<ShieldAltIcon />}>
+                  Secured
+                </Label>
+              </Tooltip>
             </SplitItem>
             {contextId && (
               <SplitItem>
