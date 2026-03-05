@@ -890,6 +890,7 @@ export const SandboxPage: React.FC = () => {
     const decoder = new TextDecoder();
     let accumulatedContent = '';
     let buffer = '';
+    let seenLoopId = false; // Once any loop_id event seen, suppress flat messages
     const collectedMessages: Message[] = [];
 
     try {
@@ -920,6 +921,7 @@ export const SandboxPage: React.FC = () => {
             // The backend forwards loop events with loop_id at top level
             // and the full event in data.loop_event
             if (data.loop_id) {
+              seenLoopId = true;
               const loopId = data.loop_id;
               const le = data.loop_event || data;
               const eventType = le.type;
@@ -1049,7 +1051,8 @@ export const SandboxPage: React.FC = () => {
             }
 
             // Parse and immediately flush tool call/result events
-            if (data.event && data.event.message) {
+            // Skip if in loop mode — AgentLoopCard handles all rendering
+            if (!seenLoopId && data.event && data.event.message) {
               const eventText = data.event.message;
               let hadToolEvents = false;
               for (const eventLine of eventText.split('\n')) {
@@ -1065,10 +1068,6 @@ export const SandboxPage: React.FC = () => {
                   hadToolEvents = true;
                 }
               }
-              // Flush tool call events immediately so they render during streaming.
-              // Snapshot the items BEFORE passing to the updater — React StrictMode
-              // may invoke updater functions twice, so splice() inside would lose
-              // items on the second invocation.
               if (hadToolEvents) {
                 const snapshot = collectedMessages.splice(0);
                 setMessages((prev) => [...prev, ...snapshot]);
@@ -1076,7 +1075,8 @@ export const SandboxPage: React.FC = () => {
             }
 
             // Accumulate content for real-time display (final answer)
-            if (data.content) {
+            // Skip if in loop mode — AgentLoopCard shows the final answer
+            if (data.content && !seenLoopId) {
               accumulatedContent += data.content;
               setStreamingContent(accumulatedContent);
             }
@@ -1100,19 +1100,21 @@ export const SandboxPage: React.FC = () => {
     }
 
     // Finalize: add any remaining tool call messages, then the final response.
-    // Snapshot collectedMessages for the same StrictMode reason as above.
-    const finalSnapshot = collectedMessages.splice(0);
-    if (finalSnapshot.length > 0 || accumulatedContent) {
-      setMessages((prev) => [
-        ...prev,
-        ...finalSnapshot,
-        {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: accumulatedContent,
-          timestamp: new Date(),
-        },
-      ]);
+    // In loop mode, skip flat finalization — AgentLoopCard has the content.
+    if (!seenLoopId) {
+      const finalSnapshot = collectedMessages.splice(0);
+      if (finalSnapshot.length > 0 || accumulatedContent) {
+        setMessages((prev) => [
+          ...prev,
+          ...finalSnapshot,
+          {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: accumulatedContent,
+            timestamp: new Date(),
+          },
+        ]);
+      }
     }
 
     return true;
