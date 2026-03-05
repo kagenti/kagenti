@@ -201,10 +201,10 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
       page.locator('text=/No.*sessions/i').first()
     ).toBeVisible({ timeout: 10000 });
 
-    // Clear search — triple-click to select all, then delete.
+    // Clear search — use Meta+A (macOS) or Control+A, then Backspace.
     // fill('') and clear() can hang on PatternFly TextInput.
-    await searchBox.click();
-    await searchBox.press('Control+a');
+    await searchBox.focus();
+    await searchBox.press('Meta+a');
     await searchBox.press('Backspace');
     await page.waitForTimeout(500);
     markStep('sandbox_table_search');

@@ -553,7 +553,13 @@ const CollapsedTurn: React.FC<{
     (m) => m.toolData && INTERACTIVE_TYPES.has(m.toolData.type)
   );
   const collapsible = turn.assistantMessages.filter(
-    (m) => (m.content !== turn.finalAnswer || m.toolData) && !(m.toolData && INTERACTIVE_TYPES.has(m.toolData.type))
+    (m) =>
+      // Must have content or tool data to be worth showing
+      (m.content?.trim() || m.toolData) &&
+      // Not the final answer (already shown above)
+      (m.content !== turn.finalAnswer || m.toolData) &&
+      // Not interactive events (shown outside toggle)
+      !(m.toolData && INTERACTIVE_TYPES.has(m.toolData.type))
   );
 
   return (
@@ -1517,6 +1523,7 @@ export const SandboxPage: React.FC = () => {
               }, { replace: true });
             }}
             isBox={false}
+            className="sandbox-tabs"
             style={{ flex: 1, minHeight: 0 }}
           >
             <Tab eventKey="chat" title={<TabTitleText>Chat</TabTitleText>}>
@@ -1772,8 +1779,11 @@ export const SandboxPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Markdown styling */}
+      {/* Layout: make tab content fill remaining space so chat scrolls properly */}
       <style>{`
+        .sandbox-tabs { display: flex !important; flex-direction: column !important; overflow: hidden !important; }
+        .sandbox-tabs > .pf-v5-c-tabs__list { flex-shrink: 0; }
+        .sandbox-tabs > section.pf-v5-c-tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
         .sandbox-markdown pre {
           background: var(--pf-v5-global--BackgroundColor--dark-300);
           color: var(--pf-v5-global--Color--light-100);
