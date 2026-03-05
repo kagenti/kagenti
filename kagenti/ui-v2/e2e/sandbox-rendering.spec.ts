@@ -397,6 +397,9 @@ test.describe('Sandbox Rendering — Tool Call Steps (mocked)', () => {
     await page.getByRole('button', { name: /Send/i }).click();
     await snap(page, 'after-write-read-response');
 
+    // Expand collapsed turns so tool call steps are visible
+    await expandCollapsedTurns(page);
+
     // ---- Assert: At least 2 tool call steps (write + read) ----
     const toolCallSteps = getToolCallSteps(page);
     await expect(toolCallSteps.first()).toBeVisible({ timeout: 15000 });
@@ -529,6 +532,9 @@ test.describe('Sandbox Rendering — Tool Call Steps (mocked)', () => {
     }
     await page.waitForTimeout(5000);
     await snap(page, 'history-loaded');
+
+    // Expand collapsed turns so tool call steps are visible
+    await expandCollapsedTurns(page);
 
     // ---- Assert: Tool Call steps rendered from history ----
     const toolCallSteps = getToolCallSteps(page);
