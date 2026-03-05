@@ -14,6 +14,9 @@ import {
   Alert,
   Label,
   Tooltip,
+  Tabs,
+  Tab,
+  TabTitleText,
 } from '@patternfly/react-core';
 import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon, FileIcon, CogIcon, ShieldAltIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
@@ -33,6 +36,7 @@ import { SkillWhisperer } from '../components/SkillWhisperer';
 import { DelegationCard, type DelegationState } from '../components/DelegationCard';
 import { AgentLoopCard } from '../components/AgentLoopCard';
 import { FilePreviewModal } from '../components/FilePreviewModal';
+import { SessionStatsPanel } from '../components/SessionStatsPanel';
 import type { AgentLoop } from '../types/agentLoop';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
@@ -551,6 +555,7 @@ export const SandboxPage: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
   const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
 
@@ -1320,6 +1325,22 @@ export const SandboxPage: React.FC = () => {
             />
           )}
 
+          <Tabs
+            activeKey={activeTab}
+            onSelect={(_e, key) => {
+              const tab = String(key);
+              setActiveTab(tab);
+              setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', tab);
+                return next;
+              }, { replace: true });
+            }}
+            isBox={false}
+            style={{ marginBottom: 8 }}
+          >
+            <Tab eventKey="chat" title={<TabTitleText>Chat</TabTitleText>}>
+
           {/* Chat messages */}
           <Card style={{ flex: 1, overflow: 'hidden' }}>
             <CardBody
@@ -1340,88 +1361,89 @@ export const SandboxPage: React.FC = () => {
                 </div>
               )}
 
-              {messages.length === 0 && !isStreaming && (
-                <div
-                  data-testid="welcome-card"
-                  style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 32,
-                  }}
-                >
-                  <div style={{ maxWidth: 480, textAlign: 'center' }}>
-                    {/* Agent avatar + name */}
-                    <div
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--pf-v5-global--success-color--100)',
-                        color: '#fff',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 20,
-                        marginBottom: 12,
-                      }}
-                    >
-                      <RobotIcon />
-                    </div>
-                    <h3 style={{ margin: '0 0 4px', fontSize: '1.1em' }}>{selectedAgent}</h3>
-                    <p style={{ margin: '0 0 16px', fontSize: '0.85em', color: 'var(--pf-v5-global--Color--200)' }}>
-                      {(agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'} &middot; {namespace}
-                    </p>
+              {/* Welcome card — permanent first message */}
+              <div
+                data-testid="welcome-card"
+                style={{
+                  display: 'flex',
+                  alignItems: messages.length === 0 ? 'center' : 'flex-start',
+                  justifyContent: 'center',
+                  padding: messages.length === 0 ? 32 : '12px 14px',
+                  flex: messages.length === 0 ? 1 : undefined,
+                }}
+              >
+                <div style={{ maxWidth: 480, textAlign: 'center' }}>
+                  {/* Agent avatar + name */}
+                  <div
+                    style={{
+                      width: messages.length === 0 ? 48 : 32,
+                      height: messages.length === 0 ? 48 : 32,
+                      borderRadius: '50%',
+                      backgroundColor: 'var(--pf-v5-global--success-color--100)',
+                      color: '#fff',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: messages.length === 0 ? 20 : 14,
+                      marginBottom: messages.length === 0 ? 12 : 6,
+                    }}
+                  >
+                    <RobotIcon />
+                  </div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: messages.length === 0 ? '1.1em' : '0.9em' }}>{selectedAgent}</h3>
+                  <p style={{ margin: '0 0 8px', fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)' }}>
+                    {(agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'} &middot; {namespace}
+                  </p>
 
-                    {/* Available tools */}
-                    {agentSkills.length > 0 && (
-                      <div style={{ marginBottom: 16 }}>
-                        <div style={{ fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)', marginBottom: 6 }}>
-                          Available tools
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
-                          {agentSkills.slice(0, 8).map((skill: { id?: string; name?: string }) => (
-                            <Label key={skill.id || skill.name} isCompact color="blue">
-                              {skill.name || skill.id}
-                            </Label>
+                    {/* Available tools + example prompts — only when no messages */}
+                    {messages.length === 0 && !isStreaming && (
+                      <>
+                        {agentSkills.length > 0 && (
+                          <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)', marginBottom: 6 }}>
+                              Available tools
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                              {agentSkills.slice(0, 8).map((skill: { id?: string; name?: string }) => (
+                                <Label key={skill.id || skill.name} isCompact color="blue">
+                                  {skill.name || skill.id}
+                                </Label>
+                              ))}
+                              {agentSkills.length > 8 && (
+                                <Label isCompact>+{agentSkills.length - 8} more</Label>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {[
+                            'List the contents of the workspace directory',
+                            'Write a Python script that prints hello world',
+                            'What tools do you have available?',
+                          ].map((prompt) => (
+                            <button
+                              key={prompt}
+                              data-testid="example-prompt"
+                              onClick={() => setInput(prompt)}
+                              style={{
+                                padding: '8px 12px',
+                                borderRadius: 6,
+                                border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                                backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                                cursor: 'pointer',
+                                fontSize: '0.85em',
+                                textAlign: 'left',
+                                color: 'inherit',
+                              }}
+                            >
+                              {prompt}
+                            </button>
                           ))}
-                          {agentSkills.length > 8 && (
-                            <Label isCompact>+{agentSkills.length - 8} more</Label>
-                          )}
                         </div>
-                      </div>
+                      </>
                     )}
-
-                    {/* Example prompts */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {[
-                        'List the contents of the workspace directory',
-                        'Write a Python script that prints hello world',
-                        'What tools do you have available?',
-                      ].map((prompt) => (
-                        <button
-                          key={prompt}
-                          data-testid="example-prompt"
-                          onClick={() => setInput(prompt)}
-                          style={{
-                            padding: '8px 12px',
-                            borderRadius: 6,
-                            border: '1px solid var(--pf-v5-global--BorderColor--100)',
-                            backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-                            cursor: 'pointer',
-                            fontSize: '0.85em',
-                            textAlign: 'left',
-                            color: 'inherit',
-                          }}
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
-              )}
 
               {messages.map((msg) => (
                 <ChatBubble
@@ -1530,6 +1552,21 @@ export const SandboxPage: React.FC = () => {
               </Button>
             </SplitItem>
           </Split>
+
+            </Tab>
+            <Tab eventKey="stats" title={<TabTitleText>Stats</TabTitleText>}>
+              <SessionStatsPanel
+                agentLoops={agentLoops}
+                messages={messages}
+              />
+            </Tab>
+            <Tab eventKey="files" title={<TabTitleText>Files</TabTitleText>}>
+              <div style={{ padding: 16, color: 'var(--pf-v5-global--Color--200)' }}>
+                Open the file browser via the <strong>Files</strong> button in the header bar above.
+              </div>
+            </Tab>
+          </Tabs>
+
         </div>
       </div>
 
