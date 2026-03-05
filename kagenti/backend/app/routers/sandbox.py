@@ -1446,6 +1446,7 @@ async def _stream_sandbox_response(
                             # The agent serializer puts JSON lines in the message text.
                             # Parse each line and forward loop_id at top level so the
                             # UI can group events into AgentLoopCards.
+                            has_loop_events = False
                             if status_message:
                                 for msg_line in status_message.split("\n"):
                                     msg_line = msg_line.strip()
@@ -1458,9 +1459,15 @@ async def _stream_sandbox_response(
                                             loop_payload["loop_id"] = parsed["loop_id"]
                                             loop_payload["loop_event"] = parsed
                                             yield f"data: {json.dumps(loop_payload)}\n\n"
+                                            has_loop_events = True
                                             continue
                                     except (json.JSONDecodeError, TypeError):
                                         pass
+
+                            # Skip regular event if loop events were forwarded
+                            # (avoids duplicate rendering in the UI)
+                            if has_loop_events:
+                                continue
 
                             payload["event"] = {
                                 "type": event_type,

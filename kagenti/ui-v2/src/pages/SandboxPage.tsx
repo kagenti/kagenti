@@ -1216,14 +1216,18 @@ export const SandboxPage: React.FC = () => {
   return (
     <PageSection variant="light" padding={{ default: 'noPadding' }}>
       <div style={{ display: 'flex', height: 'calc(100vh - 80px)' }}>
-        {/* Left column: sessions + sandbox agents */}
+        {/* Left column: sessions + sandbox agents — sticky, doesn't scroll with main */}
         <div
           style={{
             width: 280,
+            flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
             height: '100%',
+            position: 'sticky',
+            top: 0,
             borderRight: '1px solid var(--pf-v5-global--BorderColor--100)',
+            overflowY: 'auto',
           }}
         >
           <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -1340,7 +1344,7 @@ export const SandboxPage: React.FC = () => {
               }, { replace: true });
             }}
             isBox={false}
-            style={{ marginBottom: 8 }}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
           >
             <Tab eventKey="chat" title={<TabTitleText>Chat</TabTitleText>}>
 
