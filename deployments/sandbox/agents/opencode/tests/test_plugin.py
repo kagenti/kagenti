@@ -75,9 +75,9 @@ class TestOpenCodeProcess:
     def test_initial_state(self):
         from opencode.plugin import OpenCodeProcess
 
-        proc = OpenCodeProcess(port=19876, workspace="/tmp")
+        proc = OpenCodeProcess(port=4096, workspace="/tmp")
         assert proc._started is False
-        assert proc.port == 19876
+        assert proc.port == 4096
 
     def test_custom_port(self):
         from opencode.plugin import OpenCodeProcess

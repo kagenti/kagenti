@@ -1,8 +1,10 @@
 """OpenCode agent plugin — implements the platform_base plugin contract.
 
 Wraps OpenCode's `opencode serve` headless HTTP server as an A2A agent.
-OpenCode is started as a subprocess on port 19876. A2A requests are proxied
-to it via httpx, and responses are streamed back as A2A events.
+OpenCode is started as a subprocess on port 4096 (default). A2A requests
+are proxied to its HTTP API, and responses are returned as A2A events.
+
+API: POST /session to create, POST /session/:id/message to send prompts.
 
 This module is loaded by the platform entrypoint via AGENT_MODULE=opencode.plugin.
 """
@@ -38,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-OPENCODE_PORT = int(os.environ.get("OPENCODE_PORT", "19876"))
+OPENCODE_PORT = int(os.environ.get("OPENCODE_PORT", "4096"))
 OPENCODE_URL = f"http://localhost:{OPENCODE_PORT}"
 
 
@@ -200,7 +202,7 @@ class OpenCodeExecutor(AgentExecutor):
             self._opencode.workspace = workspace_path
             await self._opencode.ensure_running()
 
-            # Send prompt to OpenCode
+            # Send prompt to OpenCode via its REST API
             user_input = context.get_user_input()
             await task_updater.update_status(
                 TaskState.working,
@@ -216,20 +218,42 @@ class OpenCodeExecutor(AgentExecutor):
                 ),
             )
 
+            # Create a session (or reuse context_id as session)
+            session_id = context_id or "default"
+
+            # POST /session/:id/message — send prompt and wait for response
             resp = await self._client.post(
-                f"{OPENCODE_URL}/sessions",
-                json={"prompt": user_input},
+                f"{OPENCODE_URL}/session/{session_id}/message",
+                json={"content": user_input},
                 timeout=300,
             )
+
+            # Fall back to POST /session for older API versions
+            if resp.status_code == 404:
+                resp = await self._client.post(
+                    f"{OPENCODE_URL}/session",
+                    json={"prompt": user_input},
+                    timeout=300,
+                )
+
             resp.raise_for_status()
             result = resp.json()
 
-            # Extract response
-            answer = result.get(
-                "response", result.get("output", "No response from OpenCode.")
+            # Extract response — OpenCode may return different shapes
+            answer = (
+                result.get("content")
+                or result.get("response")
+                or result.get("output")
+                or result.get("text")
+                or "No response from OpenCode."
             )
             if isinstance(answer, dict):
                 answer = answer.get("text", json.dumps(answer))
+            if isinstance(answer, list):
+                answer = "\n".join(
+                    str(item.get("text", item)) if isinstance(item, dict) else str(item)
+                    for item in answer
+                )
 
             parts = [TextPart(text=str(answer))]
             await task_updater.add_artifact(parts)

@@ -1,0 +1,30 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: opencode-agent
+  namespace: team1
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/Ladas/kagenti.git
+      ref: feat/platform-agent-runtime
+    contextDir: deployments/sandbox
+    sourceSecret:
+      name: github-shipwright-secret
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: agents/opencode/Dockerfile.combined
+      noCache: true
+  output:
+    to:
+      kind: ImageStreamTag
+      name: opencode-agent:v0.0.1
+  runPolicy: Serial
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: opencode-agent
+  namespace: team1

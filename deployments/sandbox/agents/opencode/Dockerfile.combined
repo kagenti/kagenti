@@ -1,0 +1,46 @@
+# Combined Dockerfile for platform base + OpenCode agent
+# For validation — combines base + agent in one image
+
+FROM python:3.12-slim-bookworm
+
+# System tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Install OpenCode CLI
+RUN npm install -g oh-my-opencode@latest
+
+WORKDIR /app
+
+# Install platform base dependencies
+COPY platform_base/requirements.txt /app/platform-requirements.txt
+RUN uv pip install --system --no-cache -r /app/platform-requirements.txt
+
+# Copy platform base modules
+COPY platform_base/ /app/platform_base/
+
+# Copy OpenCode agent wrapper
+COPY agents/opencode/ /app/opencode/
+
+# Copy config files (use Legion's for now — OpenCode doesn't need agent-specific ones)
+COPY agents/legion/settings.json /app/settings.json
+COPY agents/legion/sources.json /app/sources.json
+
+# Create workspace and set permissions for OCP arbitrary UIDs
+RUN mkdir -p /workspace && chown -R 1001:0 /app /workspace && chmod -R g+w /app /workspace
+USER 1001
+
+ENV AGENT_MODULE=opencode.plugin \
+    AGENT_NAME=opencode-agent \
+    OPENCODE_PORT=4096 \
+    PYTHONPATH=/app
+
+EXPOSE 8000 4096
+
+CMD ["python", "-m", "platform_base.entrypoint"]

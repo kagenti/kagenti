@@ -8,18 +8,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install OpenCode CLI
-RUN npm install -g opencode@latest
+# Install OpenCode CLI (npm package: oh-my-opencode)
+RUN npm install -g oh-my-opencode@latest
 
 # Copy OpenCode agent wrapper
 COPY agents/opencode/ /app/opencode/
+
+# Set permissions for OCP arbitrary UIDs
+RUN chown -R 1001:0 /app && chmod -R g+w /app
 
 USER 1001
 
 ENV AGENT_MODULE=opencode.plugin \
     AGENT_NAME=opencode-agent \
-    OPENCODE_PORT=19876
+    OPENCODE_PORT=4096
 
-EXPOSE 8000 19876
+EXPOSE 8000 4096
 
 CMD ["python", "-m", "platform_base.entrypoint"]
