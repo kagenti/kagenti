@@ -1,141 +1,125 @@
-# Session L+2 Passover
+# Session L+2 Passover — Open Items for Next Session
 
 > **Date:** 2026-03-06
-> **Previous:** Session L+1 (collapsed turns, tabs, loop_id forwarding)
-> **Cluster:** sbox42 (Llama 4 Scout, all agents rebuilt with reasoning loop)
-> **Test Score:** 186-187/195 (7 pre-existing + 1 flaky, 0 regressions)
-> **Session L+1 Cost:** $457, 4h API time, 5001 lines added, 829 removed
+> **Session:** L+2 (Claude Code)
+> **Test Score:** 193/195 (98.9%), up from 182/194 (93.8%)
+> **Cluster:** sbox42 (Llama 4 Scout)
 
-## What L+1 Delivered (21 commits)
+## What L+2 Delivered (14 commits)
 
-### Core UI Overhaul
-- **Collapsed turn rendering** for ALL sessions (history + streaming)
-  - `groupMessagesIntoTurns()` groups consecutive assistant messages between user messages
-  - `CollapsedTurn` component: final answer visible, intermediate steps behind "N steps" toggle
-  - Works for both live streaming AND reloaded history
-- **Custom tab bar** (Chat / Stats / Files) replacing PatternFly Tabs
-  - PatternFly Tabs rendered siblings, breaking flex layout
-  - Custom buttons with manual content switching give full layout control
-  - Tabs + header stay pinned while chat scrolls
-- **WelcomeCard** as permanent first message (agent name, model, example prompts)
-- **AgentLoopCard** with "Reasoning" toggle for loop-based agents
+- Embedded FileBrowser in Files tab (props-based, contextId-scoped)
+- FilePathCard rendering (backtick-aware, custom ReactMarkdown code component)
+- SessionStatsPanel rewrite (message-based stats, not just agentLoops)
+- SkillWhisperer fix (fallback skills + sandbox agent-card endpoint)
+- Agent card auth fix (`/sandbox/{ns}/agent-card/{name}` endpoint)
+- Agent badge restore from session metadata on load/switch
+- Tuple parts guard in session history parsing
+- Keycloak: created kagenti-operator/admin roles, synced passwords
+- Session polling (5s idle polling for cross-tab updates)
+- Skill forwarding fix (non-streaming `chat_send` now forwards `skill` field)
+- Duplicate message fix (content-based dedup in polling)
+- Loop finalization (mark active loops "done" on stream end)
+- Deterministic file browser tests (kubectl file write, not LLM-dependent)
+- WebSocket session updates design doc
 
-### Backend Changes
-- **loop_id forwarding** — parse JSON lines in A2A status messages, extract loop_id, forward as top-level SSE field
-- **Session-level flat suppression** — `session_has_loops` flag prevents duplicate flat blocks alongside AgentLoopCards
-- **File browser route fix** — reordered `/list` and `/content` before `/{context_id}` catch-all
+## P0 — Must Fix (Skill Loading + RCA Test)
 
-### Agent Changes
-- **Reasoning loop agent** rebuilt and deployed to all 5 sandbox variants
-  - `reasoning.py` (planner, executor, reflector, reporter)
-  - `event_serializer.py` with `loop_id` on all events
-  - `budget.py` with iteration/token/tool-call limits
-- BuildConfig `sandbox-agent` in team1 namespace
+### 1. Wire skill_pack_loader.py as init container (Session M Task 4)
 
-### Test Fixes
-- `data-testid="chat-messages"` on CardBody, `tool-call-step`/`tool-result-step` on ToolCallStep
-- `expandCollapsedTurns()` helper for rendering tests
-- Single-element selectors replacing `.or()` chains (Playwright strict mode)
-- All scroll-area CSS locators replaced with testid selectors
+**Problem:** `skill_pack_loader.py` exists at `deployments/sandbox/skill_pack_loader.py` with 11 unit tests passing, but is **never added as an init container** to agent deployments. The workspace `/workspace/.claude/skills/` stays empty.
 
-### File Browser
-- contextId route: `/sandbox/files/:ns/:agent/:contextId`
-- `sandboxFileService` calls context-scoped backend endpoint when contextId present
-- `FilePreviewModal` passes contextId to API
+**What to do:**
+- Modify `kagenti/backend/app/routers/sandbox_deploy.py` → `_build_deployment_manifest()`
+- Add init container `skill-loader` that runs `skill_pack_loader.py`
+- Create ConfigMaps for the script and `skill-packs.yaml` manifest
+- Add `skill_packs: list[str]` field to `SandboxCreateRequest`
+- See `docs/plans/2026-03-04-skill-packs-impl.md` Task 4 for full spec
 
-### Commits (oldest → newest)
+**Files:**
+- `kagenti/backend/app/routers/sandbox_deploy.py` — add init container
+- `skill-packs.yaml` — manifest already exists at repo root
+- `deployments/sandbox/skill_pack_loader.py` — script already exists
+
+### 2. Backend: pass skill content to agent system prompt
+
+**Problem:** Even when skills are loaded to `/workspace/.claude/skills/`, the agent's system prompt doesn't include them. When `skill: "rca:ci"` is in the A2A message metadata, the agent needs to:
+1. Read the skill file from `/workspace/.claude/skills/rca/ci.md` (or `rca:ci.md`)
+2. Include the skill content in the executor's system prompt
+3. Follow the skill's instructions
+
+**What to do:**
+- Modify agent's `graph.py` or `reasoning.py` to check for `skill` in message metadata
+- If skill is present, read the corresponding `.md` file from the workspace
+- Inject skill content into the planner/executor system prompt
+
+**Files:**
+- `.repos/agent-examples/.../sandbox_agent/graph.py`
+- `.repos/agent-examples/.../sandbox_agent/reasoning.py`
+
+### 3. RCA test: use `/rca:ci` skill invocation
+
+**Problem:** The RCA agent test sends a plain text message instead of `/rca:ci PR #809`.
+
+**What to do:**
+- Update `e2e/agent-rca-workflow.spec.ts` line ~130 to send `/rca:ci Analyze CI for PR #809`
+- Verify the skill prefix is parsed and forwarded (frontend already handles this)
+- Add assertion that the agent's response follows the RCA skill template
+
+## P1 — Should Fix
+
+### 4. Delegation: child sessions not visible in sidebar
+
+**Problem:** In-process delegation (`_run_in_process`) runs as a local LangGraph subgraph. No task record is created in the A2A database, so child sessions don't appear in the sidebar.
+
+**Root cause:** `parent_context_id` is passed to `make_delegate_tool` but only logged, never stored. The subgraph uses `thread_id: child_context_id` but doesn't create a DB record.
+
+**Fix:** Before running the subgraph, create a task record via the A2A TaskStore:
+```python
+task = Task(id=uuid(), contextId=child_context_id,
+            status=TaskStatus(state=TaskState.working),
+            metadata={"agent_name": variant, "parent_context_id": parent_context_id})
+await task_store.save(task)
 ```
-59b6028c feat(ui): collapsed agent turns with WelcomeCard + test fixes (Session L+1)
-3db05ee4 fix(test): use single-element selectors to avoid Playwright strict mode violations
-22489d62 fix(test): fix walkthrough strict mode violation
-6f647b0c feat(ui): wire contextId into file browser for session-scoped browsing
-6c58c9fb docs: tabbed session view design
-2e2c4ab6 feat(ui): tabbed session view with Chat/Stats/Files + permanent WelcomeCard
-75d1a144 fix(ui+backend): forward loop_id from agent SSE events for AgentLoopCard
-b2832d84 fix(backend+ui): skip duplicate events when loop_id forwarded
-32f5049c fix(backend+ui): session-level loop suppression + tab layout CSS
-50e4492d fix(backend): reorder file browser routes
-217b309d fix(ui): remove aggressive tab CSS
-07ba37a9 fix(ui): suppress flat messages in loop mode
-60d12d73 fix(ui): retroactively clear flat messages when first loop_id arrives
-6722ec57 feat(ui): collapsed turn rendering for ALL sessions (history + streaming)
-5c6aa38a fix(ui+test): don't collapse HITL/delegation, expand turns in rendering tests
-7189f87d fix(ui+test): use data-testid selectors for chat area and tool call steps
-c9b3994c fix(test): add expandCollapsedTurns to rendering tests 2 and 3
-6bfe1e00 fix(ui): retroactive cleanup only removes current turn flat messages
-ba96d4af fix(ui+test): pin tabs/header, fix step count, fix walkthrough search
-fe7ec493 fix(ui): replace PatternFly Tabs with custom tab buttons for proper scroll layout
-abdce30b docs: Session L+2 passover
-```
+Then update to `completed` when done.
 
-## Open Issues for L+2
+**Files:**
+- `.repos/agent-examples/.../sandbox_agent/subagents.py`
+- `.repos/agent-examples/.../sandbox_agent/agent.py` (pass task_store to make_delegate_tool)
 
-### P0: Files Tab — Embed FileBrowser for Current Session
+### 5. Backend: `GET /api/v1/sandbox/skill-packs` endpoint (Session M Task 3)
 
-**Current:** Files tab shows placeholder text.
-**Expected:** Embed FileBrowser component scoped to session contextId.
+**Problem:** No API endpoint to list available skill packs. The wizard UI needs this to show checkboxes.
 
-**Fix in SandboxPage.tsx:**
-```tsx
-{activeTab === 'files' && contextId && (
-  <FileBrowser contextId={contextId} namespace={namespace} agentName={selectedAgent} />
-)}
-```
-FileBrowser already supports contextId param. Backend route exists.
+**Files:**
+- `kagenti/backend/app/routers/sandbox.py` — add endpoint
+- `skill-packs.yaml` — read and return
 
-### P0: File Path Links in Chat Messages
+### 6. UI: Wizard "Skills" step (Session M Task 5)
 
-**Current:** File paths in agent responses render as plain text.
-**Expected:** Clickable FilePathCard labels → FilePreviewModal popup.
+**Problem:** The create-agent wizard has no step for selecting skill packs.
 
-**Debug:** `linkifyFilePaths()` and `buildMarkdownComponents()` exist in SandboxPage.tsx. The CollapsedTurn uses both — verify the regex matches agent output paths. May need to also handle relative paths like `data/report.md`.
+**Files:**
+- `kagenti/ui-v2/src/pages/SandboxCreatePage.tsx` — add Skills step
 
-### P1: Stats Tab — Wire Data
+### 7. Cross-tab SSE / WebSocket
 
-**Current:** Shows "No reasoning loop data yet" for all sessions.
-**For streaming:** `agentLoops` Map has data. SessionStatsPanel reads it. May need to persist across session switches.
-**For history:** Need backend endpoint `GET /chat/{ns}/sessions/{contextId}/stats`.
+**Problem:** 5s polling works but is coarse. Design doc at `docs/plans/2026-03-06-websocket-session-updates-design.md`.
 
-### P1: Skill Whisperer Not Working
+**Recommendation:** Medium-term, add long-lived SSE endpoint. Long-term, WebSocket.
 
-**Current:** `/` autocomplete doesn't appear.
-**Debug:** Check `agentSkills` from `chatService.getAgentCard()`. Agent card endpoint may not return skills array, or the SkillWhisperer component may not be rendering (check `skillWhispererDismissed` state).
+## P2 — Nice to Have
 
-### P1: Session Budget/Failure Handling
+### 8. Keycloak realm migration (master → demo)
 
-**Current:** Sessions stop without explanation when budget exceeded.
-**Expected:** Clear error message in chat when reasoning loop hits limits.
-**Fix:** Agent's `budget.py` has max_iterations=10. Reporter should send a budget-exceeded event that the UI renders as an error card.
+TODO added in `kagenti/auth/create-test-users.sh`.
 
-### P2: Step Count Accuracy
+### 9. Agent card from K8s labels
 
-"N steps" count includes empty messages. Filter improved but may still count duplicates.
+Agent card is served by running pod. Could also be constructed from K8s labels for catalog view.
 
-### P2: Graph Tab
+### 10. Walkthrough test timeout
 
-Embed SessionGraphPage (Session E) as a tab. React Flow + dagre DAG visualization.
-
-## Test Failures (Pre-existing, 7-8 total)
-
-| Test | Root Cause |
-|------|-----------|
-| agent-chat-identity (4) | Keycloak OAuth redirect timeout for dev-user/ns-admin |
-| sandbox-file-browser (2) | Live agent timing — file not found after write |
-| sandbox-walkthrough (1) | Sessions Table search box timeout |
-| agent-rca-workflow (1, flaky) | Strict mode — getByText matches 2 elements |
-
-## Key Files
-
-| File | What |
-|------|------|
-| `kagenti/ui-v2/src/pages/SandboxPage.tsx` | Main session page — tabs, messages, streaming |
-| `kagenti/ui-v2/src/components/AgentLoopCard.tsx` | Collapsed loop card with reasoning toggle |
-| `kagenti/ui-v2/src/components/SessionStatsPanel.tsx` | Stats tab content |
-| `kagenti/ui-v2/src/components/FileBrowser.tsx` | File browser with contextId support |
-| `kagenti/ui-v2/src/components/FilePreviewModal.tsx` | File preview popup |
-| `kagenti/ui-v2/src/services/api.ts` | sandboxFileService with context-scoped API |
-| `kagenti/backend/app/routers/sandbox.py` | Backend SSE proxy with loop_id forwarding |
-| `kagenti/backend/app/routers/sandbox_files.py` | File browser API (route order fixed) |
+22.9 min on Llama 4 Scout, exceeds 20-min timeout. Model-dependent.
 
 ## Startup
 
@@ -143,15 +127,7 @@ Embed SessionGraphPage (Session E) as a tab. React Flow + dagre DAG visualizatio
 cd /Users/ladas/Projects/OCTO/kagenti/kagenti
 export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
-# Read this passover doc, you are Session L+2
-# Work in .worktrees/sandbox-agent worktree
-# Implement P0 items first, then P1
-
-# Build commands:
-# UI: oc -n kagenti-system start-build kagenti-ui
-# Backend: oc -n kagenti-system start-build kagenti-backend
-# Agents: oc -n team1 start-build sandbox-agent
-# Rollout: oc -n kagenti-system rollout restart deploy/kagenti-ui deploy/kagenti-backend
-
-# Test: cd kagenti/ui-v2 && KAGENTI_UI_URL=... KEYCLOAK_PASSWORD=... npx playwright test e2e/
+# Read this passover doc
+# Priority: wire skill_pack_loader init container (P0 #1),
+# then fix agent skill loading (P0 #2), then RCA test (P0 #3)
 ```
