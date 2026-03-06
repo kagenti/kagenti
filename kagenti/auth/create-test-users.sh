@@ -105,7 +105,37 @@ log_info "Admin user already exists with keycloak-initial-admin password — ski
 create_user "dev-user"  "$DEV_PASS"   "dev-user@kagenti.local" "Dev"       "User"
 create_user "ns-admin"  "$NS_PASS"    "ns-admin@kagenti.local" "Namespace" "Admin"
 
-# ── Step 4: Store passwords in a secret for show-services.sh ──────────────
+# ── Step 4: Create and assign Kagenti roles ───────────────────────────────
+log_info "Creating Kagenti roles (idempotent)..."
+for role in kagenti-viewer kagenti-operator kagenti-admin; do
+    kubectl exec -n "$KC_NS" "$KC_POD" -- bash -c \
+        "$KCADM create roles --config /tmp/kc/kcadm.config -r $REALM -s name=$role 2>/dev/null || true"
+done
+
+assign_role() {
+    local username=$1
+    local rolename=$2
+    kubectl exec -n "$KC_NS" "$KC_POD" -- bash -c \
+        "$KCADM add-roles --config /tmp/kc/kcadm.config -r $REALM --uusername $username --rolename $rolename 2>/dev/null || true"
+}
+
+# admin: all roles
+assign_role admin kagenti-viewer
+assign_role admin kagenti-operator
+assign_role admin kagenti-admin
+
+# dev-user: viewer + operator (can chat, browse files)
+assign_role dev-user kagenti-viewer
+assign_role dev-user kagenti-operator
+
+# ns-admin: all roles (namespace admin)
+assign_role ns-admin kagenti-viewer
+assign_role ns-admin kagenti-operator
+assign_role ns-admin kagenti-admin
+
+log_success "Kagenti roles assigned"
+
+# ── Step 5: Store passwords in a secret for show-services.sh ─────────────
 log_info "Storing test user passwords in kagenti-test-users secret..."
 kubectl create secret generic kagenti-test-users -n "$KC_NS" \
     --from-literal=admin-password="$ADMIN_PASS" \
@@ -114,7 +144,7 @@ kubectl create secret generic kagenti-test-users -n "$KC_NS" \
     --dry-run=client -o yaml | kubectl apply -f -
 log_success "kagenti-test-users secret updated"
 
-# ── Step 5: Summary ──────────────────────────────────────────────────────
+# ── Step 6: Summary ──────────────────────────────────────────────────────
 log_success "Test users created in realm: $REALM"
 echo ""
 echo "  Users:"
