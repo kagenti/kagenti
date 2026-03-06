@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-legion-platform
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: sandbox-legion-platform
+    kagenti.io/framework: langgraph
+    kagenti.io/runtime: platform-base
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sandbox-legion-platform
+  template:
+    metadata:
+      labels:
+        app: sandbox-legion-platform
+        app.kubernetes.io/name: sandbox-legion-platform
+        kagenti.io/framework: langgraph
+        kagenti.io/runtime: platform-base
+    spec:
+      containers:
+      - name: agent
+        image: image-registry.openshift-image-registry.svc:5000/team1/sandbox-legion-platform:v0.0.1
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: AGENT_MODULE
+          value: legion.plugin
+        - name: AGENT_NAME
+          value: sandbox-legion-platform
+        - name: PYTHONPATH
+          value: /app
+        - name: LLM_MODEL
+          value: meta-llama/Llama-4-Scout-17B-16E-Instruct
+        - name: LLM_API_BASE
+          value: https://llama-4-scout-17b-16e-w4a16-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1
+        - name: LLM_API_KEY
+          value: 51cd949ed51d30df4c8a18e30c2da773
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: CHECKPOINT_DB_URL
+          value: postgresql+psycopg://sandbox:sandbox@postgres-sessions.team1.svc:5432/sandbox_sessions
+        - name: TASK_STORE_DB_URL
+          value: postgresql+psycopg://sandbox:sandbox@postgres-sessions.team1.svc:5432/sandbox_sessions
+        - name: WORKSPACE_ROOT
+          value: /workspace
+        - name: CONFIG_ROOT
+          value: /app
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: workspace
+        emptyDir:
+          sizeLimit: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox-legion-platform
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: sandbox-legion-platform
+spec:
+  selector:
+    app: sandbox-legion-platform
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
