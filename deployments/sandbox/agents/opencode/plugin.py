@@ -128,7 +128,7 @@ class OpenCodeProcess:
 
         logger.info("Starting opencode serve on port %d", self.port)
         self._process = subprocess.Popen(
-            ["opencode", "serve", "--port", str(self.port)],
+            ["oh-my-opencode", "serve", "--port", str(self.port)],
             cwd=self.workspace,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
