@@ -34,7 +34,7 @@ spec:
         - name: PYTHONPATH
           value: /app
         - name: LLM_MODEL
-          value: meta-llama/Llama-4-Scout-17B-16E-Instruct
+          value: llama-4-scout-17b-16e-w4a16
         - name: LLM_API_BASE
           value: https://llama-4-scout-17b-16e-w4a16-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1
         - name: LLM_API_KEY
@@ -45,9 +45,9 @@ spec:
               name: openai-secret
               key: apikey
         - name: CHECKPOINT_DB_URL
-          value: postgresql+psycopg://sandbox:sandbox@postgres-sessions.team1.svc:5432/sandbox_sessions
+          value: postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
         - name: TASK_STORE_DB_URL
-          value: postgresql+psycopg://sandbox:sandbox@postgres-sessions.team1.svc:5432/sandbox_sessions
+          value: postgresql+psycopg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
         - name: WORKSPACE_ROOT
           value: /workspace
         - name: CONFIG_ROOT
