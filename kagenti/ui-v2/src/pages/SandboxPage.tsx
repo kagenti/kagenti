@@ -14,9 +14,6 @@ import {
   Alert,
   Label,
   Tooltip,
-  Tabs,
-  Tab,
-  TabTitleText,
 } from '@patternfly/react-core';
 import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon, FileIcon, CogIcon, ShieldAltIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
@@ -1511,23 +1508,42 @@ export const SandboxPage: React.FC = () => {
             />
           )}
 
-          <Tabs
-            activeKey={activeTab}
-            onSelect={(_e, key) => {
-              const tab = String(key);
-              setActiveTab(tab);
-              setSearchParams(prev => {
-                const next = new URLSearchParams(prev);
-                next.set('tab', tab);
-                return next;
-              }, { replace: true });
-            }}
-            isBox={false}
-            className="sandbox-tabs"
-            style={{ flex: 1, minHeight: 0 }}
-          >
-            <Tab eventKey="chat" title={<TabTitleText>Chat</TabTitleText>}>
+          {/* Tab bar — stays pinned */}
+          <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--pf-v5-global--BorderColor--100)', flexShrink: 0, marginBottom: 8 }}>
+            {['chat', 'stats', 'files'].map((tab) => (
+              <button
+                key={tab}
+                role="tab"
+                onClick={() => {
+                  setActiveTab(tab);
+                  setSearchParams(prev => {
+                    const next = new URLSearchParams(prev);
+                    next.set('tab', tab);
+                    return next;
+                  }, { replace: true });
+                }}
+                style={{
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderBottom: activeTab === tab ? '3px solid var(--pf-v5-global--primary-color--100)' : '3px solid transparent',
+                  backgroundColor: 'transparent',
+                  fontWeight: activeTab === tab ? 600 : 400,
+                  color: activeTab === tab ? 'var(--pf-v5-global--primary-color--100)' : 'inherit',
+                  cursor: 'pointer',
+                  fontSize: '0.95em',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : 'Files'}
+              </button>
+            ))}
+          </div>
 
+          {/* Tab content — fills remaining space */}
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+          {activeTab === 'chat' && (
+          <>
           {/* Chat messages */}
           <Card style={{ flex: 1, overflow: 'hidden' }}>
             <CardBody
@@ -1762,28 +1778,29 @@ export const SandboxPage: React.FC = () => {
             </SplitItem>
           </Split>
 
-            </Tab>
-            <Tab eventKey="stats" title={<TabTitleText>Stats</TabTitleText>}>
+          </>
+          )}
+
+          {activeTab === 'stats' && (
               <SessionStatsPanel
                 agentLoops={agentLoops}
                 messages={messages}
               />
-            </Tab>
-            <Tab eventKey="files" title={<TabTitleText>Files</TabTitleText>}>
+          )}
+
+          {activeTab === 'files' && (
               <div style={{ padding: 16, color: 'var(--pf-v5-global--Color--200)' }}>
                 Open the file browser via the <strong>Files</strong> button in the header bar above.
               </div>
-            </Tab>
-          </Tabs>
+          )}
+
+          </div> {/* end tab content */}
 
         </div>
       </div>
 
-      {/* Layout: make tab content fill remaining space so chat scrolls properly */}
+      {/* Markdown styling */}
       <style>{`
-        .sandbox-tabs { display: flex !important; flex-direction: column !important; overflow: hidden !important; }
-        .sandbox-tabs > .pf-v5-c-tabs__list { flex-shrink: 0; }
-        .sandbox-tabs > section.pf-v5-c-tab-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
         .sandbox-markdown pre {
           background: var(--pf-v5-global--BackgroundColor--dark-300);
           color: var(--pf-v5-global--Color--light-100);
