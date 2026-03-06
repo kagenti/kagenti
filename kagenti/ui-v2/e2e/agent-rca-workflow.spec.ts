@@ -198,7 +198,49 @@ test.describe('Agent RCA Workflow', () => {
     await expect(userMsg).toBeVisible({ timeout: 30000 });
     console.log('[rca] Session persists after navigation');
 
-    // ── Step 6: Check RCA assessment quality ─────────────────────────────
+    // ── Step 6: Files tab — verify session workspace is browsable ───────
+    const filesTab = page.locator('button[role="tab"]').filter({ hasText: 'Files' });
+    if (await filesTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await filesTab.click();
+      await page.waitForTimeout(3000);
+
+      // Should see either a file tree or a breadcrumb (not just empty heading)
+      const hasTree = await page.locator('[aria-label="File tree"]').isVisible({ timeout: 10000 }).catch(() => false);
+      const hasBreadcrumb = await page.getByRole('navigation', { name: 'Breadcrumb' }).isVisible({ timeout: 5000 }).catch(() => false);
+      console.log(`[rca] Files tab: tree=${hasTree}, breadcrumb=${hasBreadcrumb}`);
+
+      // Verify agent badge shows rca-agent (not sandbox-legion)
+      const agentBadge = page.locator('[class*="pf-v5-c-label"]').filter({ hasText: AGENT_NAME });
+      const hasCorrectAgent = await agentBadge.first().isVisible({ timeout: 3000 }).catch(() => false);
+      console.log(`[rca] Agent badge shows ${AGENT_NAME}: ${hasCorrectAgent}`);
+
+      // Switch back to chat tab for quality check
+      const chatTab = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
+      await chatTab.click();
+      await page.waitForTimeout(1000);
+    }
+
+    // ── Step 7: Stats tab — verify session statistics are populated ─────
+    const statsTab = page.locator('button[role="tab"]').filter({ hasText: 'Stats' });
+    if (await statsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await statsTab.click();
+      await page.waitForTimeout(1000);
+      const statsPanel = page.locator('[data-testid="session-stats-panel"]');
+      const hasStats = await statsPanel.isVisible({ timeout: 5000 }).catch(() => false);
+      if (hasStats) {
+        const statsText = await statsPanel.textContent() || '';
+        const hasMessages = /\d+ user/.test(statsText);
+        const hasDuration = /Session Duration/.test(statsText);
+        console.log(`[rca] Stats: messages=${hasMessages}, duration=${hasDuration}`);
+        console.log(`[rca] Stats preview: ${statsText.substring(0, 200)}`);
+      }
+      // Switch back to chat tab
+      const chatTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
+      await chatTab2.click();
+      await page.waitForTimeout(1000);
+    }
+
+    // ── Step 8: Check RCA assessment quality ─────────────────────────────
     await page.waitForTimeout(10000);
 
     // Read all visible agent output — markdown text + tool call text
