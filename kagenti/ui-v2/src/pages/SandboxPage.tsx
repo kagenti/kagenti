@@ -755,16 +755,23 @@ export const SandboxPage: React.FC = () => {
     retry: 1,
   });
 
-  // Fallback tools for sandbox agents when agent card is unavailable
-  const SANDBOX_DEFAULT_SKILLS = [
-    { id: 'shell', name: 'shell', description: 'Execute a shell command in the sandbox' },
-    { id: 'file_read', name: 'file_read', description: 'Read a file from the workspace' },
-    { id: 'file_write', name: 'file_write', description: 'Write content to a file' },
-    { id: 'web_fetch', name: 'web_fetch', description: 'Fetch content from a URL' },
-    { id: 'explore', name: 'explore', description: 'Spawn a read-only sub-agent for research' },
-    { id: 'delegate', name: 'delegate', description: 'Spawn a child agent session for a task' },
+  // Built-in sandbox tools — always available for / autocomplete
+  const BUILTIN_TOOLS = [
+    { id: 'shell', name: 'Shell', description: 'Execute a shell command in the sandbox' },
+    { id: 'file_read', name: 'File Read', description: 'Read a file from the workspace' },
+    { id: 'file_write', name: 'File Write', description: 'Write content to a file' },
+    { id: 'web_fetch', name: 'Web Fetch', description: 'Fetch content from a URL' },
+    { id: 'explore', name: 'Explore', description: 'Spawn a read-only sub-agent for research' },
+    { id: 'delegate', name: 'Delegate', description: 'Spawn a child agent session for a task' },
   ];
-  const agentSkills = agentCard?.skills?.length ? agentCard.skills : SANDBOX_DEFAULT_SKILLS;
+  // Merge agent card skills (e.g., loaded from .claude/skills/) with built-in tools.
+  // Agent card skills come first, then built-in tools that aren't already listed.
+  const cardSkills = agentCard?.skills || [];
+  const cardIds = new Set(cardSkills.map((s: { id: string }) => s.id));
+  const agentSkills = [
+    ...cardSkills.filter((s: { id: string }) => !BUILTIN_TOOLS.some((t) => t.id === s.id)),
+    ...BUILTIN_TOOLS.filter((t) => !cardIds.has(t.id)),
+  ];
 
   // Reset whisperer dismiss state when input changes
   useEffect(() => {
