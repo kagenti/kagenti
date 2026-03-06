@@ -67,15 +67,15 @@ async function setupMocks(page: Page) {
       return;
     }
 
-    // Agent card with skills
-    if (url.includes('/chat/') && url.includes('/agent-card')) {
+    // Agent card with skills (sandbox endpoint: /sandbox/{ns}/agent-card/{agent})
+    if (url.includes('/agent-card')) {
       await route.fulfill({
         json: {
           name: 'sandbox-legion',
           description: 'A sandboxed coding assistant',
           version: '0.1.0',
           url: 'http://sandbox-legion:8000',
-          streaming: true,
+          capabilities: { streaming: true },
           skills: MOCK_SKILLS,
         },
       });
