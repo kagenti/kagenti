@@ -910,6 +910,48 @@ export const SandboxPage: React.FC = () => {
     }
   }, [contextId, namespace, loadInitialHistory, searchParams, setSearchParams]);
 
+  // ---------------------------------------------------------------------------
+  // Poll for new messages when session is idle (not streaming).
+  // This enables multi-tab / multi-user updates without WebSocket.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!contextId || !namespace || isStreaming) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const page = await sandboxService.getHistory(namespace, contextId, { limit: 5 });
+        if (page.messages.length === 0) return;
+
+        setMessages((prev) => {
+          // Build a set of existing message indices for deduplication
+          const existingIndices = new Set(
+            prev
+              .map((m) => {
+                const match = m.id.match(/^history-(\d+)$/);
+                return match ? Number(match[1]) : null;
+              })
+              .filter((idx): idx is number => idx !== null)
+          );
+
+          // Find genuinely new messages not already displayed
+          const newMsgs = page.messages
+            .filter((h) => h._index !== undefined && !existingIndices.has(h._index))
+            .map(toMessage);
+
+          if (newMsgs.length === 0) return prev;
+
+          // Append new messages and auto-scroll
+          shouldAutoScroll.current = true;
+          return [...prev, ...newMsgs];
+        });
+      } catch {
+        // Polling failures are non-critical — silently retry next interval
+      }
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [contextId, namespace, isStreaming]);
+
   /** Load an older page of history (triggered by scrolling to top). */
   const loadOlderHistory = useCallback(async () => {
     if (!hasMoreHistory || loadingHistory || oldestIndex === null) return;

@@ -1178,6 +1178,10 @@ async def chat_send(
     agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
     context_id = request.session_id or uuid4().hex[:36]
 
+    metadata: dict = {"username": user.username}
+    if request.skill:
+        metadata["skill"] = request.skill
+
     a2a_msg = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -1188,7 +1192,7 @@ async def chat_send(
                 "parts": [{"kind": "text", "text": request.message}],
                 "messageId": uuid4().hex,
                 "contextId": context_id,
-                "metadata": {"username": user.username},
+                "metadata": metadata,
             }
         },
     }
