@@ -1,0 +1,29 @@
+{
+  "_comment": "Agent sandbox operation settings. Operations not in allow or deny go through HITL.",
+  "context_workspace": "/workspace/${CONTEXT_ID}",
+  "permissions": {
+    "allow": [
+      "shell(grep:*)", "shell(sed:*)", "shell(awk:*)", "shell(find:*)",
+      "shell(cat:*)", "shell(head:*)", "shell(tail:*)", "shell(wc:*)",
+      "shell(sort:*)", "shell(uniq:*)", "shell(diff:*)", "shell(cut:*)",
+      "shell(tr:*)", "shell(echo:*)", "shell(printf:*)", "shell(ls:*)",
+      "shell(tree:*)", "shell(pwd:*)", "shell(mkdir:*)", "shell(cp:*)",
+      "shell(mv:*)", "shell(touch:*)",
+      "shell(python:*)", "shell(python3:*)", "shell(pip install:*)",
+      "shell(pip list:*)", "shell(sh:*)", "shell(bash:*)",
+      "shell(git clone:*)", "shell(git status:*)", "shell(git log:*)",
+      "shell(git diff:*)", "shell(git add:*)", "shell(git commit:*)",
+      "shell(git checkout:*)", "shell(git branch:*)",
+      "file(read:${WORKSPACE}/**)", "file(write:${WORKSPACE}/**)",
+      "file(delete:${WORKSPACE}/**)"
+    ],
+    "deny": [
+      "shell(rm -rf /:*)", "shell(rm -rf /*:*)", "shell(sudo:*)",
+      "shell(chmod 777:*)", "shell(curl:*)", "shell(wget:*)",
+      "shell(nc:*)", "shell(ncat:*)", "network(outbound:*)",
+      "file(read:/etc/shadow:*)", "file(write:/etc/**:*)",
+      "file(read:/proc/**:*)", "shell(mount:*)", "shell(umount:*)",
+      "shell(chroot:*)", "shell(nsenter:*)"
+    ]
+  }
+}

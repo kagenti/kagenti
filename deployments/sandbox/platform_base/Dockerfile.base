@@ -1,0 +1,29 @@
+FROM python:3.12-slim-bookworm
+
+# System tools for agent execution
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Install platform dependencies
+COPY requirements.txt .
+RUN uv pip install --system --no-cache -r requirements.txt
+
+# Copy platform base modules
+COPY platform_base/ /app/platform_base/
+
+# Create workspace and set permissions for OCP arbitrary UIDs
+RUN mkdir -p /workspace && chown -R 1001:0 /app /workspace && chmod -R g+w /app /workspace
+
+USER 1001
+
+EXPOSE 8000
+
+# Agent images FROM this base set AGENT_MODULE and add their code
+# Default entrypoint runs the platform loader
+CMD ["python", "-m", "platform_base.entrypoint"]
