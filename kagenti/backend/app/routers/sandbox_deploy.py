@@ -226,33 +226,15 @@ def _build_deployment_manifest(
     if req.read_only_root:
         security_context["readOnlyRootFilesystem"] = True
 
-    # -- Skill-loader init container (always runs for default packs) --
-    init_containers = [
-        {
-            "name": "skill-loader",
-            "image": "python:3.12-slim",
-            "command": [
-                "sh",
-                "-c",
-                "pip install pyyaml 2>/dev/null && python3 /scripts/skill_pack_loader.py --config /config/skill-packs.yaml --workspace /workspace",
-            ],
-            "volumeMounts": [
-                {"name": "workspace", "mountPath": "/workspace"},
-                {"name": "skill-config", "mountPath": "/config", "readOnly": True},
-                {"name": "skill-loader-script", "mountPath": "/scripts", "readOnly": True},
-            ],
-        }
-    ]
+    # Skills are loaded by the agent at startup via git clone (see agent.py).
+    # TODO(Session N): Once the agent base image moves to the kagenti repo,
+    # bake skill_pack_loader.py + skill-packs.yaml into the image and call
+    # the loader from agent.py's run() for verified skill loading.
+    init_containers: list[dict] = []
 
-    # Volumes — workspace is shared between init container and main container
     volumes = [
         {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
         {"name": "cache", "emptyDir": {}},
-        {"name": "skill-config", "configMap": {"name": f"{name}-skill-packs"}},
-        {
-            "name": "skill-loader-script",
-            "configMap": {"name": f"{name}-skill-loader-script", "defaultMode": 0o755},
-        },
     ]
 
     return {
@@ -445,61 +427,10 @@ async def create_sandbox(
         "app.kubernetes.io/part-of": request.name,
     }
 
-    # 1. skill-packs.yaml config — load from repo root
-    skill_packs_yaml = ""
-    _repo_root = None
-    for _p in Path(__file__).resolve().parents:
-        if (_p / "skill-packs.yaml").exists():
-            _repo_root = _p
-            break
-    if _repo_root:
-        skill_packs_yaml = (_repo_root / "skill-packs.yaml").read_text()
-    else:
-        logger.warning("skill-packs.yaml not found in repo tree, using empty config")
-        skill_packs_yaml = "version: 1\npacks: []\n"
-
-    try:
-        kube.create_configmap(
-            namespace=namespace,
-            name=f"{request.name}-skill-packs",
-            data={"skill-packs.yaml": skill_packs_yaml},
-            labels=managed_cm_labels,
-        )
-        logger.info(f"Created skill-packs ConfigMap for '{request.name}' in '{namespace}'")
-    except ApiException as e:
-        logger.error(f"Failed to create skill-packs ConfigMap: {e}")
-        return SandboxCreateResponse(
-            status="failed",
-            message=f"Failed to create skill-packs ConfigMap: {e.reason}",
-        )
-
-    # 2. skill_pack_loader.py script
-    loader_script = ""
-    if _sandbox_dir:
-        _loader_path = _sandbox_dir / "skill_pack_loader.py"
-        if _loader_path.exists():
-            loader_script = _loader_path.read_text()
-    if not loader_script:
-        logger.error("skill_pack_loader.py not found in deployments/sandbox/")
-        return SandboxCreateResponse(
-            status="failed",
-            message="skill_pack_loader.py not found — cannot deploy skill loader init container",
-        )
-
-    try:
-        kube.create_configmap(
-            namespace=namespace,
-            name=f"{request.name}-skill-loader-script",
-            data={"skill_pack_loader.py": loader_script},
-            labels=managed_cm_labels,
-        )
-        logger.info(f"Created skill-loader-script ConfigMap for '{request.name}' in '{namespace}'")
-    except ApiException as e:
-        logger.error(f"Failed to create skill-loader-script ConfigMap: {e}")
-        return SandboxCreateResponse(
-            status="failed",
-            message=f"Failed to create skill-loader-script ConfigMap: {e.reason}",
-        )
+    # Skills are loaded by the agent at startup (git clone from sources.json).
+    # No ConfigMaps or init containers needed — the agent handles skill loading.
+    # TODO(Session N): Once base image moves to kagenti repo, bake
+    # skill_pack_loader.py into the image for verified skill loading.
 
     # --- Create the Deployment ---
     try:
