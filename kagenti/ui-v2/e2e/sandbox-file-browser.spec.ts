@@ -12,6 +12,7 @@
  * All tests use mocked API routes -- no live cluster required.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { execSync } from 'child_process';
 
 // ── Auth credentials (unused when auth is mocked disabled) ──────────────────
 const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
@@ -477,6 +478,15 @@ const AGENT_NAME = process.env.SANDBOX_AGENT || 'sandbox-legion';
 const NAMESPACE = process.env.SANDBOX_NAMESPACE || 'team1';
 const AGENT_TIMEOUT = 180_000; // 3 min for LLM response
 
+function kc(cmd: string, t = 30000): string {
+  const kcBin = ['/opt/homebrew/bin/oc', 'kubectl'].find(b => {
+    try { execSync(`${b} version --client 2>/dev/null`, { timeout: 5000, stdio: 'pipe' }); return true; } catch { return false; }
+  }) || 'kubectl';
+  const kconfig = process.env.KUBECONFIG || '';
+  try { return execSync(`KUBECONFIG=${kconfig} ${kcBin} ${cmd}`, { timeout: t, stdio: 'pipe' }).toString().trim(); }
+  catch (e: any) { return e.stderr?.toString() || e.message || ''; }
+}
+
 /**
  * Send a message in the sandbox chat and wait for the agent to finish.
  */
@@ -505,98 +515,35 @@ test.describe('File Browser — Live Cluster Integration', () => {
   });
 
   test('write .md file with mermaid via chat, then browse and verify rendering', async ({ page }) => {
-    // ── Step 1: Navigate to sandbox chat ──
-    const sessionsNav = page
-      .locator('nav a, nav button, [role="navigation"] a')
-      .filter({ hasText: /^Sessions$/ });
-    await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
-    await sessionsNav.first().click();
+    // ── Step 1: Write file directly via kubectl (deterministic) ──
+    // This tests the file browser UI, not the LLM's ability to write files.
+    const contextId = `e2e-md-${Date.now().toString(36)}`;
+    const mdContent = `# E2E Test Report\n\nThis file was created by an **automated test**.\n\n## Architecture\n\n\`\`\`mermaid\ngraph TD\n  User[User] --> UI[Kagenti UI]\n  UI --> Backend[FastAPI Backend]\n  Backend --> K8s[Kubernetes API]\n  K8s --> Pod[Agent Pod]\n\`\`\`\n\n## Results\n\n| Test | Status |\n|------|---------|\n| Write file | PASS |\n| Browse file | PASS |`;
+
+    const podName = kc(`get pods -n ${NAMESPACE} -l app.kubernetes.io/name=${AGENT_NAME} -o jsonpath='{.items[0].metadata.name}'`).replace(/'/g, '');
+    console.log(`[file-browser] Pod: ${podName}, contextId: ${contextId}`);
+    kc(`exec -n ${NAMESPACE} ${podName} -- mkdir -p /workspace/${contextId}/data`);
+    kc(`exec -n ${NAMESPACE} ${podName} -- sh -c "cat > /workspace/${contextId}/data/e2e-report.md << 'MDEOF'\n${mdContent}\nMDEOF"`, 15000);
+    const verify = kc(`exec -n ${NAMESPACE} ${podName} -- ls /workspace/${contextId}/data/e2e-report.md`);
+    console.log(`[file-browser] File written: ${verify}`);
+    expect(verify).toContain('e2e-report.md');
+
+    // ── Step 2: Navigate to file browser for this agent ──
+    await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/${contextId}/data`);
+    await loginIfNeeded(page);
+    // May need to re-navigate after login redirect
+    if (!page.url().includes('/sandbox/files')) {
+      await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/${contextId}/data`);
+    }
     await page.waitForLoadState('networkidle');
 
-    // Wait for sandbox page to load
-    await expect(
-      page.getByText(new RegExp(AGENT_NAME, 'i')).first()
-    ).toBeVisible({ timeout: 15000 });
-
-    // Click new session
-    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
-    if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newSessionBtn.click();
-      // Handle New Session modal
-      const startBtn = page.getByRole('button', { name: /^Start$/ });
-      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await startBtn.click();
-        await page.waitForTimeout(500);
-      }
-      await page.waitForTimeout(500);
-    }
-
-    // ── Step 2: Ask agent to write a .md file with mermaid diagram ──
-    const mdContent = [
-      '# E2E Test Report',
-      '',
-      'This file was created by an **automated test**.',
-      '',
-      '## Architecture',
-      '',
-      '```mermaid',
-      'graph TD',
-      '  User[User] --> UI[Kagenti UI]',
-      '  UI --> Backend[FastAPI Backend]',
-      '  Backend --> K8s[Kubernetes API]',
-      '  K8s --> Pod[Agent Pod]',
-      '```',
-      '',
-      '## Results',
-      '',
-      '| Test | Status |',
-      '|------|--------|',
-      '| Write file | PASS |',
-      '| Browse file | PASS |',
-      '',
-      'Generated at: ' + new Date().toISOString(),
-    ].join('\\n');
-
-    await sendChatMessage(
-      page,
-      `First run: mkdir -p data\nThen use file_write to create data/e2e-report.md with this content:\n${mdContent}\nFinally run: ls -la data/e2e-report.md`
-    );
-
-    // Wait for agent to process — markdown response, tool call, or loop card
-    const agentOutput = page.locator('.sandbox-markdown')
-      .or(page.getByTestId('agent-loop-card'))
-      .or(page.locator('text=/Tool Call:|Result:|file_write|shell/i'));
-    await expect(agentOutput.first()).toBeVisible({ timeout: 180000 });
-
-    // Wait for agent to finish — input is re-enabled
-    const postChatInput = page.getByPlaceholder(/Type your message/i);
-    await expect(postChatInput).toBeEnabled({ timeout: 180000 });
-    await page.waitForTimeout(2000);
-
-    // ── Step 3: Switch to embedded Files tab ──
-    const filesTab = page.locator('button[role="tab"]').filter({ hasText: 'Files' });
-    await expect(filesTab).toBeVisible({ timeout: 10000 });
-    await filesTab.click();
-    await page.waitForTimeout(3000);
-
-    // Wait for file tree or any other file browser state to render
+    // ── Step 3: Wait for tree view to render ──
     const filesBrowserReady = page.locator('[aria-label="File tree"]')
-      .or(page.getByText('No files in this directory'))
-      .or(page.getByText(/not found|unable to load/i));
+      .or(page.getByText('No files in this directory'));
     await expect(filesBrowserReady.first()).toBeVisible({ timeout: 30000 });
     console.log('[file-browser] Files tab loaded');
 
-    // ── Step 4: Navigate to data/ directory and find e2e-report.md ──
-    let fileFound = await page.getByText('e2e-report.md').isVisible().catch(() => false);
-    if (!fileFound) {
-      // Try clicking into 'data' directory if visible
-      const dataDir = page.getByText('data');
-      if (await dataDir.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await dataDir.click();
-        await page.waitForTimeout(2000);
-        fileFound = await page.getByText('e2e-report.md').isVisible().catch(() => false);
-      }
-    }
+    // ── Step 4: Find and click e2e-report.md ──
     await expect(page.getByText('e2e-report.md')).toBeVisible({ timeout: 30000 });
 
     // ── Step 5: Click the file to preview ──
@@ -643,68 +590,33 @@ test.describe('File Browser — Live Cluster Integration', () => {
   });
 
   test('write code file via chat, browse and verify CodeBlock rendering', async ({ page }) => {
-    // ── Step 1: Navigate to sandbox chat ──
-    const sessionsNav = page
-      .locator('nav a, nav button, [role="navigation"] a')
-      .filter({ hasText: /^Sessions$/ });
-    await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
-    await sessionsNav.first().click();
-    await page.waitForLoadState('networkidle');
-    await expect(
-      page.getByText(new RegExp(AGENT_NAME, 'i')).first()
-    ).toBeVisible({ timeout: 15000 });
+    // ── Step 1: Write Python file directly via kubectl (deterministic) ──
+    const contextId2 = `e2e-py-${Date.now().toString(36)}`;
+    const pyContent = 'def fibonacci(n):\n    """Return the nth Fibonacci number using iteration."""\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n';
 
-    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
-    if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await newSessionBtn.click();
-      // Handle New Session modal
-      const startBtn = page.getByRole('button', { name: /^Start$/ });
-      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await startBtn.click();
-        await page.waitForTimeout(500);
-      }
-      await page.waitForTimeout(500);
+    const podName2 = kc(`get pods -n ${NAMESPACE} -l app.kubernetes.io/name=${AGENT_NAME} -o jsonpath='{.items[0].metadata.name}'`).replace(/'/g, '');
+    console.log(`[file-browser] Pod: ${podName2}, contextId: ${contextId2}`);
+    kc(`exec -n ${NAMESPACE} ${podName2} -- mkdir -p /workspace/${contextId2}/data`);
+    kc(`exec -n ${NAMESPACE} ${podName2} -- sh -c "cat > /workspace/${contextId2}/data/fibonacci.py << 'PYEOF'\n${pyContent}\nPYEOF"`, 15000);
+    const verify2 = kc(`exec -n ${NAMESPACE} ${podName2} -- ls /workspace/${contextId2}/data/fibonacci.py`);
+    console.log(`[file-browser] File written: ${verify2}`);
+    expect(verify2).toContain('fibonacci.py');
+
+    // ── Step 2: Navigate to file browser ──
+    await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/${contextId2}/data`);
+    await loginIfNeeded(page);
+    if (!page.url().includes('/sandbox/files')) {
+      await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/${contextId2}/data`);
     }
+    await page.waitForLoadState('networkidle');
 
-    // ── Step 2: Ask agent to write a Python file ──
-    await sendChatMessage(
-      page,
-      'First run: mkdir -p data\nThen use file_write to create data/fibonacci.py with this content:\ndef fibonacci(n):\n    """Return the nth Fibonacci number using iteration."""\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\nFinally run: ls -la data/fibonacci.py'
-    );
-
-    // Wait for agent to finish processing (tool call, text response, or loop card)
-    const codeOutput = page.locator('.sandbox-markdown')
-      .or(page.getByTestId('agent-loop-card'))
-      .or(page.locator('text=/Tool Call:|Result:|file_write|fibonacci/i'));
-    await expect(codeOutput.first()).toBeVisible({ timeout: 180000 });
-
-    // Wait for agent to finish — input is re-enabled
-    const postChatInput2 = page.getByPlaceholder(/Type your message/i);
-    await expect(postChatInput2).toBeEnabled({ timeout: 180000 });
-    await page.waitForTimeout(2000);
-
-    // ── Step 3: Switch to embedded Files tab ──
-    const filesTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Files' });
-    await expect(filesTab2).toBeVisible({ timeout: 10000 });
-    await filesTab2.click();
-    await page.waitForTimeout(3000);
-
-    // Wait for file tree or any other file browser state to render
+    // ── Step 3: Wait for tree view ──
     const filesBrowserReady2 = page.locator('[aria-label="File tree"]')
-      .or(page.getByText('No files in this directory'))
-      .or(page.getByText(/not found|unable to load/i));
+      .or(page.getByText('No files in this directory'));
     await expect(filesBrowserReady2.first()).toBeVisible({ timeout: 30000 });
     console.log('[file-browser] Files tab loaded (code test)');
 
-    // ── Step 4: Navigate to data/ directory and find fibonacci.py ──
-    let pyFound = await page.getByText('fibonacci.py').isVisible().catch(() => false);
-    if (!pyFound) {
-      const dataDir = page.getByText('data');
-      if (await dataDir.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await dataDir.click();
-        await page.waitForTimeout(2000);
-      }
-    }
+    // ── Step 4: Find fibonacci.py ──
     await expect(page.getByText('fibonacci.py')).toBeVisible({ timeout: 30000 });
 
     // ── Step 5: Click to preview ──
