@@ -559,7 +559,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
 
     await sendChatMessage(
       page,
-      `Use the shell tool to run: mkdir -p data && cat > data/e2e-report.md << 'ENDOFFILE'\n${mdContent}\nENDOFFILE\n\nThen verify it was written by running: ls -la data/e2e-report.md`
+      `First run: mkdir -p data\nThen use file_write to create data/e2e-report.md with this content:\n${mdContent}\nFinally run: ls -la data/e2e-report.md`
     );
 
     // Wait for agent to process — markdown response, tool call, or loop card
@@ -669,7 +669,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     // ── Step 2: Ask agent to write a Python file ──
     await sendChatMessage(
       page,
-      'Use the shell tool to run these commands:\nmkdir -p data\ncat > data/fibonacci.py << \'ENDOFFILE\'\ndef fibonacci(n):\n    """Return the nth Fibonacci number using iteration."""\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\nENDOFFILE\nls -la data/fibonacci.py'
+      'First run: mkdir -p data\nThen use file_write to create data/fibonacci.py with this content:\ndef fibonacci(n):\n    """Return the nth Fibonacci number using iteration."""\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\nFinally run: ls -la data/fibonacci.py'
     );
 
     // Wait for agent to finish processing (tool call, text response, or loop card)
