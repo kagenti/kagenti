@@ -15,13 +15,13 @@ import {
   Label,
   Tooltip,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FolderOpenIcon, FileIcon, CogIcon, ShieldAltIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FileIcon, CogIcon, ShieldAltIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { useQuery } from '@tanstack/react-query';
-import { sandboxService, chatService } from '../services/api';
+import { sandboxService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
 import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
@@ -34,6 +34,7 @@ import { DelegationCard, type DelegationState } from '../components/DelegationCa
 import { AgentLoopCard } from '../components/AgentLoopCard';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { SessionStatsPanel } from '../components/SessionStatsPanel';
+import { FileBrowser } from '../components/FileBrowser';
 import type { AgentLoop } from '../types/agentLoop';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
@@ -82,15 +83,27 @@ function isGraphDump(text: string): boolean {
   return /^(assistant|tools|__end__):\s/m.test(text.trim());
 }
 
+/** Regex matching absolute file paths in agent output. */
+const FILE_PATH_RE = /(?<!\w)(\/(?:workspace|data|repos|app|home|tmp|opt|var|srv)\/[\w./_-]+(?:\.\w+)?)/g;
+
 /**
  * Convert file paths in text to markdown links pointing to the file browser.
- * Matches absolute paths like /workspace/foo.py, /data/bar.txt, /repos/src/main.go
+ * Skips paths that are already inside backticks (those are handled by the
+ * custom `code` component in buildMarkdownComponents).
  */
 function linkifyFilePaths(text: string, namespace: string, agentName: string): string {
-  return text.replace(
-    /(?<!\w)(\/(?:workspace|data|repos|app|home|tmp|opt|var|srv)\/[\w./_-]+\.\w+)/g,
-    (match) => `[${match}](/sandbox/files/${namespace}/${agentName}?path=${encodeURIComponent(match)})`
-  );
+  // Split text by backtick-delimited sections to avoid double-processing
+  const parts = text.split(/(`[^`]+`)/g);
+  return parts
+    .map((part, i) => {
+      // Odd indices are backtick-wrapped — leave them alone
+      if (i % 2 === 1) return part;
+      // Even indices are plain text — linkify paths
+      return part.replace(FILE_PATH_RE, (match) =>
+        `[${match}](/sandbox/files/${namespace}/${agentName}?path=${encodeURIComponent(match)})`
+      );
+    })
+    .join('');
 }
 
 /** Inline file path card that renders as a clickable Label with file preview modal. */
@@ -127,7 +140,22 @@ function buildMarkdownComponents(namespace: string, agentName: string) {
         return <FilePathCard path={filePath} namespace={namespace} agentName={agentName} />;
       }
       // Regular link
-      return <a href={href}>{children}</a>;
+      return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+    },
+    // Inline code that contains a file path → render as FilePathCard
+    code: ({ children, className }: any) => {
+      // Only handle inline code (no className means no language = not a code block)
+      if (className) {
+        return <code className={className}>{children}</code>;
+      }
+      const text = String(children).trim();
+      if (FILE_PATH_RE.test(text)) {
+        // Reset lastIndex since FILE_PATH_RE is global
+        FILE_PATH_RE.lastIndex = 0;
+        return <FilePathCard path={text} namespace={namespace} agentName={agentName} />;
+      }
+      FILE_PATH_RE.lastIndex = 0;
+      return <code>{children}</code>;
     },
   };
 }
@@ -639,8 +667,8 @@ const CollapsedTurn: React.FC<{
                       <ToolCallStep data={m.toolData} onApprove={onApprove} onDeny={onDeny} />
                     ) : m.content ? (
                       <div className="sandbox-markdown" style={{ color: 'var(--pf-v5-global--Color--200)' }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {m.content}
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={buildMarkdownComponents(namespace, agentName)}>
+                          {linkifyFilePaths(m.content, namespace, agentName)}
                         </ReactMarkdown>
                       </div>
                     ) : null}
@@ -720,13 +748,23 @@ export const SandboxPage: React.FC = () => {
 
   // Fetch agent card to get skills for / autocomplete
   const { data: agentCard } = useQuery({
-    queryKey: ['agent-card', namespace, selectedAgent],
-    queryFn: () => chatService.getAgentCard(namespace, selectedAgent),
+    queryKey: ['sandbox-agent-card', namespace, selectedAgent],
+    queryFn: () => sandboxService.getAgentCard(namespace, selectedAgent),
     enabled: !!namespace && !!selectedAgent,
     staleTime: 60000,
     retry: 1,
   });
-  const agentSkills = agentCard?.skills || [];
+
+  // Fallback tools for sandbox agents when agent card is unavailable
+  const SANDBOX_DEFAULT_SKILLS = [
+    { id: 'shell', name: 'shell', description: 'Execute a shell command in the sandbox' },
+    { id: 'file_read', name: 'file_read', description: 'Read a file from the workspace' },
+    { id: 'file_write', name: 'file_write', description: 'Write content to a file' },
+    { id: 'web_fetch', name: 'web_fetch', description: 'Fetch content from a URL' },
+    { id: 'explore', name: 'explore', description: 'Spawn a read-only sub-agent for research' },
+    { id: 'delegate', name: 'delegate', description: 'Spawn a child agent session for a task' },
+  ];
+  const agentSkills = agentCard?.skills?.length ? agentCard.skills : SANDBOX_DEFAULT_SKILLS;
 
   // Reset whisperer dismiss state when input changes
   useEffect(() => {
@@ -1481,17 +1519,6 @@ export const SandboxPage: React.FC = () => {
               </SplitItem>
             )}
             <SplitItem isFilled />
-            <SplitItem>
-              <Button
-                variant="link"
-                component="a"
-                href={`/sandbox/files/${namespace}/${selectedAgent}`}
-                icon={<FolderOpenIcon />}
-                isDisabled={!selectedAgent}
-              >
-                Files
-              </Button>
-            </SplitItem>
           </Split>
 
           {/* SandboxConfig disabled — model/repo/branch not yet wired to backend.
@@ -1789,8 +1816,13 @@ export const SandboxPage: React.FC = () => {
           )}
 
           {activeTab === 'files' && (
-              <div style={{ padding: 16, color: 'var(--pf-v5-global--Color--200)' }}>
-                Open the file browser via the <strong>Files</strong> button in the header bar above.
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                <FileBrowser
+                  namespace={namespace}
+                  agentName={selectedAgent}
+                  contextId={contextId || undefined}
+                  embedded
+                />
               </div>
           )}
 

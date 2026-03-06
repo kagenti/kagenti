@@ -1101,6 +1101,29 @@ async def list_sandbox_agents(namespace: str):
     return result
 
 
+@router.get("/{namespace}/agent-card/{agent_name}")
+async def get_sandbox_agent_card(namespace: str, agent_name: str):
+    """Proxy the A2A agent card from a sandbox agent pod (port 8000)."""
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid agent name")
+    if not _K8S_NAME_RE.match(namespace):
+        raise HTTPException(400, "Invalid namespace")
+
+    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    card_url = f"{agent_url}/.well-known/agent-card.json"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(card_url)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"Agent returned {e.response.status_code}")
+    except httpx.RequestError as e:
+        logger.warning("Failed to fetch agent card from %s: %s", card_url, e)
+        raise HTTPException(503, f"Cannot reach agent {agent_name}")
+
+
 # ---------------------------------------------------------------------------
 # Chat proxy — forwards A2A messages to sandbox agents on port 8000
 # ---------------------------------------------------------------------------

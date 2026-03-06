@@ -835,6 +835,23 @@ export const sandboxService = {
     );
   },
 
+  /** Fetch the A2A agent card for a sandbox agent (proxied via sandbox router). */
+  async getAgentCard(
+    namespace: string,
+    agentName: string
+  ): Promise<{
+    name: string;
+    description?: string;
+    version?: string;
+    capabilities?: { streaming?: boolean };
+    skills?: Array<{ id: string; name: string; description?: string }>;
+    model?: string;
+  }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/agent-card/${encodeURIComponent(agentName)}`
+    );
+  },
+
   async createSandbox(
     namespace: string,
     data: {

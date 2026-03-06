@@ -145,13 +145,33 @@ class PreviewErrorBoundary extends Component<
 // FileBrowser component
 // ---------------------------------------------------------------------------
 
-export const FileBrowser: React.FC = () => {
-  const { namespace, agentName, contextId } = useParams<{
+export interface FileBrowserProps {
+  /** Namespace — if omitted, reads from route params */
+  namespace?: string;
+  /** Agent name — if omitted, reads from route params */
+  agentName?: string;
+  /** Context/session ID for session-scoped file browsing */
+  contextId?: string;
+  /** When true, renders without PageSection wrapper and adjusts height for embedding */
+  embedded?: boolean;
+}
+
+export const FileBrowser: React.FC<FileBrowserProps> = ({
+  namespace: propNamespace,
+  agentName: propAgentName,
+  contextId: propContextId,
+  embedded = false,
+}) => {
+  const routeParams = useParams<{
     namespace: string;
     agentName: string;
     contextId?: string;
   }>();
   const [searchParams] = useSearchParams();
+
+  const namespace = propNamespace || routeParams.namespace;
+  const agentName = propAgentName || routeParams.agentName;
+  const contextId = propContextId || routeParams.contextId;
 
   // Initial path from URL ?path= parameter, defaults to /workspace (or / for context-scoped)
   const initialPath = searchParams.get('path') || (contextId ? '/' : '/workspace');
@@ -221,10 +241,13 @@ export const FileBrowser: React.FC = () => {
     }
   };
 
+  const Wrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
+    embedded ? <div style={{ height: '100%' }}>{children}</div> : <PageSection>{children}</PageSection>;
+
   // No agent selected
   if (!namespace || !agentName) {
     return (
-      <PageSection>
+      <Wrapper>
         <EmptyState>
           <EmptyStateHeader
             titleText="No agent selected"
@@ -235,7 +258,7 @@ export const FileBrowser: React.FC = () => {
             Select an agent to browse its sandbox files.
           </EmptyStateBody>
         </EmptyState>
-      </PageSection>
+      </Wrapper>
     );
   }
 
@@ -247,7 +270,7 @@ export const FileBrowser: React.FC = () => {
     // 401 / 403 — authentication or authorization problem
     if (status === 401 || status === 403) {
       return (
-        <PageSection>
+        <Wrapper>
           <EmptyState>
             <EmptyStateHeader
               titleText="Authentication required"
@@ -259,7 +282,7 @@ export const FileBrowser: React.FC = () => {
               Please check your credentials and try again.
             </EmptyStateBody>
           </EmptyState>
-        </PageSection>
+        </Wrapper>
       );
     }
 
@@ -269,7 +292,7 @@ export const FileBrowser: React.FC = () => {
       const isAgentNotFound =
         /not found|no.*(pod|agent|sandbox)/i.test(message);
       return (
-        <PageSection>
+        <Wrapper>
           <EmptyState>
             <EmptyStateHeader
               titleText={isAgentNotFound ? 'Agent not found' : 'Unable to load files'}
@@ -286,13 +309,13 @@ export const FileBrowser: React.FC = () => {
                 : message}
             </EmptyStateBody>
           </EmptyState>
-        </PageSection>
+        </Wrapper>
       );
     }
 
     // Any other error (500, network failure, etc.)
     return (
-      <PageSection>
+      <Wrapper>
         <EmptyState>
           <EmptyStateHeader
             titleText="Unable to load files"
@@ -301,14 +324,18 @@ export const FileBrowser: React.FC = () => {
           />
           <EmptyStateBody>{message}</EmptyStateBody>
         </EmptyState>
-      </PageSection>
+      </Wrapper>
     );
   }
 
   const segments = pathSegments(currentPath);
+  const ContentWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
+    embedded
+      ? <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>{children}</div>
+      : <PageSection padding={{ default: 'noPadding' }}>{children}</PageSection>;
 
   return (
-    <PageSection padding={{ default: 'noPadding' }}>
+    <ContentWrapper>
       {/* Breadcrumb bar */}
       <div
         style={{
@@ -360,7 +387,9 @@ export const FileBrowser: React.FC = () => {
       <div
         style={{
           display: 'flex',
-          height: 'calc(100vh - 160px)',
+          height: embedded ? '100%' : 'calc(100vh - 160px)',
+          flex: embedded ? 1 : undefined,
+          minHeight: 0,
         }}
       >
         {/* Left panel — directory tree */}
@@ -398,7 +427,7 @@ export const FileBrowser: React.FC = () => {
           </PreviewErrorBoundary>
         </div>
       </div>
-    </PageSection>
+    </ContentWrapper>
   );
 };
 
