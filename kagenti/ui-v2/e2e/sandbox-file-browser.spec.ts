@@ -574,51 +574,21 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(postChatInput).toBeEnabled({ timeout: 180000 });
     await page.waitForTimeout(2000);
 
-    // ── Step 3: Navigate to file browser for this agent ──
-    // Extract context_id from the current session URL (e.g. /sandbox?session=abc123)
-    const currentUrl = page.url();
-    const contextMatch = currentUrl.match(/[?&]session=([a-f0-9-]+)/i)
-      || currentUrl.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
-    const contextId = contextMatch?.[1] || '';
-    console.log(`[file-browser] Extracted contextId: ${contextId} from URL: ${currentUrl}`);
+    // ── Step 3: Switch to embedded Files tab ──
+    const filesTab = page.locator('button[role="tab"]').filter({ hasText: 'Files' });
+    await expect(filesTab).toBeVisible({ timeout: 10000 });
+    await filesTab.click();
+    await page.waitForTimeout(3000);
 
-    // The workspace path depends on whether the agent uses per-context directories
-    const workspacePath = contextId
-      ? `/workspace/${contextId}/data`
-      : '/workspace/data';
+    // Wait for file tree, breadcrumb, spinner, or empty/error state
+    const filesBrowserReady = page.locator('[aria-label="File tree"]')
+      .or(page.getByRole('navigation', { name: 'Breadcrumb' }))
+      .or(page.getByText('No files in this directory'))
+      .or(page.getByText(/not found|unable to load/i));
+    await expect(filesBrowserReady).toBeVisible({ timeout: 30000 });
+    console.log('[file-browser] Files tab loaded');
 
-    // Use SPA navigation to avoid Keycloak re-auth redirect on page.goto()
-    await page.evaluate(
-      ({ ns, agent, path }) => {
-        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=${path}`);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      },
-      { ns: NAMESPACE, agent: AGENT_NAME, path: workspacePath },
-    );
-    await page.waitForLoadState('networkidle');
-
-    // Wait for tree view or "No files" message to render
-    const treeOrEmpty = page.locator('[class*="pf-v5-c-tree-view"]').first()
-      .or(page.getByText('No files in this directory'));
-    await expect(treeOrEmpty).toBeVisible({ timeout: 30000 });
-
-    // If no files at the context-specific path, try the workspace root
-    const hasTree = await page.locator('[class*="pf-v5-c-tree-view"]').first().isVisible().catch(() => false);
-    if (!hasTree) {
-      console.log('[file-browser] No files at context path, trying workspace root');
-      await page.evaluate(
-        ({ ns, agent }) => {
-          window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace`);
-          window.dispatchEvent(new PopStateEvent('popstate'));
-        },
-        { ns: NAMESPACE, agent: AGENT_NAME },
-      );
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(3000);
-    }
-
-    // ── Step 4: Verify e2e-report.md appears — search recursively ──
-    // The file might be in a context subdirectory; click through directories
+    // ── Step 4: Navigate to data/ directory and find e2e-report.md ──
     let fileFound = await page.getByText('e2e-report.md').isVisible().catch(() => false);
     if (!fileFound) {
       // Try clicking into 'data' directory if visible
@@ -716,49 +686,21 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await expect(postChatInput2).toBeEnabled({ timeout: 180000 });
     await page.waitForTimeout(2000);
 
-    // ── Step 3: Navigate to file browser ──
-    // Extract context_id from the current session URL
-    const currentUrl2 = page.url();
-    const contextMatch2 = currentUrl2.match(/[?&]session=([a-f0-9-]+)/i)
-      || currentUrl2.match(/\/sandbox\/(?:chat\/)?[^/]+\/[^/]+\/([a-f0-9]+)/);
-    const contextId2 = contextMatch2?.[1] || '';
-    console.log(`[file-browser] Extracted contextId: ${contextId2} from URL: ${currentUrl2}`);
+    // ── Step 3: Switch to embedded Files tab ──
+    const filesTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Files' });
+    await expect(filesTab2).toBeVisible({ timeout: 10000 });
+    await filesTab2.click();
+    await page.waitForTimeout(3000);
 
-    const workspacePath2 = contextId2
-      ? `/workspace/${contextId2}/data`
-      : '/workspace/data';
+    // Wait for file browser to load
+    const filesBrowserReady2 = page.locator('[aria-label="File tree"]')
+      .or(page.getByRole('navigation', { name: 'Breadcrumb' }))
+      .or(page.getByText('No files in this directory'))
+      .or(page.getByText(/not found|unable to load/i));
+    await expect(filesBrowserReady2).toBeVisible({ timeout: 30000 });
+    console.log('[file-browser] Files tab loaded (code test)');
 
-    // Use SPA navigation to avoid Keycloak re-auth redirect
-    await page.evaluate(
-      ({ ns, agent, path }) => {
-        window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=${path}`);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      },
-      { ns: NAMESPACE, agent: AGENT_NAME, path: workspacePath2 },
-    );
-    await page.waitForLoadState('networkidle');
-
-    // Wait for tree view or empty message
-    const treeOrEmpty2 = page.locator('[class*="pf-v5-c-tree-view"]').first()
-      .or(page.getByText('No files in this directory'));
-    await expect(treeOrEmpty2).toBeVisible({ timeout: 30000 });
-
-    // Fallback: try workspace root if context path is empty
-    const hasTree2 = await page.locator('[class*="pf-v5-c-tree-view"]').first().isVisible().catch(() => false);
-    if (!hasTree2) {
-      console.log('[file-browser] No files at context path, trying workspace root');
-      await page.evaluate(
-        ({ ns, agent }) => {
-          window.history.pushState({}, '', `/sandbox/files/${ns}/${agent}?path=/workspace`);
-          window.dispatchEvent(new PopStateEvent('popstate'));
-        },
-        { ns: NAMESPACE, agent: AGENT_NAME },
-      );
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(3000);
-    }
-
-    // ── Step 4: Verify fibonacci.py appears — search directories ──
+    // ── Step 4: Navigate to data/ directory and find fibonacci.py ──
     let pyFound = await page.getByText('fibonacci.py').isVisible().catch(() => false);
     if (!pyFound) {
       const dataDir = page.getByText('data');
