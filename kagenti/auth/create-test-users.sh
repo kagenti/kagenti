@@ -37,6 +37,9 @@ log_step "D" "Create test users in Keycloak"
 KC_NS="${KEYCLOAK_NAMESPACE:-keycloak}"
 KC_POD="keycloak-0"
 KCADM="/opt/keycloak/bin/kcadm.sh"
+# TODO: Upstream is moving kagenti OAuth client from master realm to demo realm.
+# Once that lands (after rebase), change default to "demo" and update the
+# kagenti-ui-oauth-secret job to use demo realm endpoints.
 REALM="${KEYCLOAK_REALM:-master}"
 
 # ── Step 1: Wait for Keycloak pod ─────────────────────────────────────────

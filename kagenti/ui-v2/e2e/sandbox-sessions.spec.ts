@@ -239,9 +239,12 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await snap(page, 'session-a-turn6-summary');
 
     // ---- Verify: Session A has all 6 user messages visible ----
-    const fullContentA = await page.getByTestId('chat-messages').textContent() || '';
-    expect(fullContentA).toContain(SESSION_A_MARKER);
-    expect(fullContentA).toContain('test-marker.txt');
+    // Use toPass() for retry — chat content may still be rendering
+    await expect(async () => {
+      const fullContentA = await page.getByTestId('chat-messages').textContent() || '';
+      expect(fullContentA).toContain(SESSION_A_MARKER);
+      expect(fullContentA).toContain('test-marker.txt');
+    }).toPass({ timeout: 30000 });
 
     // Verify session ID is in URL
     expect(getSessionIdFromUrl(page)).toBe(sessionAId);

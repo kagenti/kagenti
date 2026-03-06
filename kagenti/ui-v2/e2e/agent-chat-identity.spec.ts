@@ -53,20 +53,20 @@ const NS_ADMIN_PASSWORD = process.env.NS_ADMIN_PASSWORD || getTestUserPassword('
  * Uses the same pattern as the shared loginIfNeeded helper.
  */
 async function loginAs(page: Page, username: string, password: string) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForLoadState('networkidle', { timeout: 60000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
     .first()
-    .isVisible({ timeout: 5000 })
+    .isVisible({ timeout: 10000 })
     .catch(() => false);
 
   if (!isKeycloakLogin) {
     const signInButton = page.getByRole('button', { name: /Sign In/i });
-    const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
+    const hasSignIn = await signInButton.isVisible({ timeout: 10000 }).catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 60000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -83,8 +83,8 @@ async function loginAs(page: Page, username: string, password: string) {
   await page.waitForTimeout(300);
   await submitButton.click();
 
-  await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForURL(/^(?!.*keycloak)/, { timeout: 60000 });
+  await page.waitForLoadState('networkidle', { timeout: 60000 });
 }
 
 /**

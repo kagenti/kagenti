@@ -1145,6 +1145,83 @@ your acceptance criteria. Do NOT use sbox42/sandbox42/sandbox44.
 
 ---
 
+### Session P — Sidecar Agents (sandbox42)
+
+**Claude Session ID:** (to be assigned)
+**Role:** Design + implement sidecar agents that run alongside sandbox sessions
+**Cluster:** sandbox42
+**Session Active:** NEW
+
+**Concept:**
+Sidecar agents are optional companion agents that run alongside a user's sandbox session.
+They can read the session messages and workspace files, and push messages back into the
+session — either autonomously or with HITL approval. Think: a code reviewer watching your
+coding session and chiming in, a security scanner checking files as they're written, or
+a test runner that auto-runs tests after code changes.
+
+**First 3 Sidecar Agents to Implement:**
+1. **Loop Kicker** — detects when the main agent is stuck in a loop (repeated tool calls, same error cycling) and kicks it with a corrective message
+2. **Hallucination Observer** — monitors agent responses for hallucination signals (fabricated file paths, non-existent APIs, wrong function signatures vs actual codebase) and comments with corrections
+3. **Context Budget Guardian** — watches context window token usage, warns when it's growing sharply, points the session to what NOT to do (e.g., "stop dumping kubectl output inline, redirect to file")
+
+**Key Requirements (brainstorm these in the session):**
+1. Sidecar agents can **read** the session stream + workspace files (read-only access)
+2. Sidecar agents can **push messages** into the session (write — needs HITL or auto-approve)
+3. A new **"Sidecars" tab** in the sandbox UI:
+   - Overview of which sidecar agents are active (toggle on/off)
+   - Circled number badge on tab when a sidecar is waiting for HITL approval
+   - Expandable section per sidecar showing its chat/progress
+4. Sidecar lifecycle: start/stop independently of the main session
+5. Multiple sidecars can run simultaneously on one session
+
+**Architecture Questions (for brainstorming):**
+- How do sidecars subscribe to session events? (WebSocket? Polling tasks table? SSE fan-out?)
+- How do sidecar messages appear in the main chat? (Inline with badge? Separate thread?)
+- Where do sidecars run? (Same pod? Separate deployment? In-process?)
+- How does HITL work for sidecar → session messages? (Same approval card? Different?)
+- How does the sidecar read workspace files? (Pod exec? Shared PVC? API proxy?)
+- What's the data model? (New table? Metadata on existing tasks?)
+
+**Existing Related Work:**
+- Session E designed sub-agent delegation (in-process, shared-pvc, isolated, sidecar modes) — see `docs/plans/2026-03-01-sub-agent-delegation-design.md`
+- Session G's EventsPanel + HITL cards could be reused for sidecar approval UI
+- Session H's file browser API (`sandbox_files.py`) provides workspace file access
+- Session L's reasoning loop shows how agents stream events via SSE
+
+**File Ownership:**
+- `kagenti/ui-v2/src/components/SidecarPanel.tsx` — NEW
+- `kagenti/ui-v2/src/components/SidecarAgentCard.tsx` — NEW
+- `kagenti/backend/app/routers/sidecar.py` — NEW
+- `kagenti/ui-v2/e2e/sandbox-sidecars.spec.ts` — NEW
+- `docs/plans/2026-03-06-sidecar-agents-design.md` — NEW (brainstorming output)
+
+**IMPORTANT: This session MUST brainstorm first.**
+Use the `superpowers:brainstorming` skill before any implementation. Explore the architecture
+questions above, propose 2-3 approaches, get user approval on the design, write the design
+doc, then implement with TDD.
+
+**Startup:**
+```bash
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox42/auth/kubeconfig
+cd .worktrees/sandbox-agent
+claude
+
+Read docs/plans/2026-03-01-multi-session-passover.md. You are Session P (Sidecar Agents).
+
+Your goal: design and implement sidecar agents that run alongside sandbox sessions.
+Sidecars can read session messages + workspace, push messages (with HITL), and have
+their own tab in the UI with toggles, badges, and expandable progress views.
+
+FIRST: Use the brainstorming skill to explore the architecture. Read Session E's
+delegation design, Session H's file browser API, and Session G's EventsPanel for
+prior art. Propose 2-3 approaches, get user approval, write design doc. THEN implement.
+
+Do NOT skip brainstorming. Do NOT start coding before the design is approved.
+```
+
+---
+
 ## Priority Order
 
 1. ~~**Session B**: P0 — Fix `sandbox_deploy.py` path crash~~ → **Session K** (taking over)

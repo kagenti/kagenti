@@ -93,7 +93,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
   test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL — live cluster with sandbox-legion agent');
 
   test('full sandbox user journey', async ({ page }) => {
-    test.setTimeout(600000); // 10 min — Llama 4 Scout (109B) is slower than Mistral
+    test.setTimeout(900000); // 15 min — Llama 4 Scout (109B) is slower than Mistral
     demoStartTime = Date.now();
 
     // ------------------------------------------------------------------
@@ -171,7 +171,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     const chatArea = page.locator('.pf-v5-c-card__body').first();
     // Agent may return directory listing, tool call JSON, or thinking indicator (depends on model)
     await expect(chatArea).toContainText(/data|scripts|repos|output|shell|command|ls|Tool Call|Result|thinking/i, {
-      timeout: 180000,
+      timeout: 300000,
     });
     markStep('sandbox_chat_response');
 

@@ -23,7 +23,7 @@ import type { TaskSummary } from '../types/sandbox';
 interface SessionSidebarProps {
   namespace: string;
   activeContextId?: string;
-  onSelectSession: (contextId: string) => void;
+  onSelectSession: (contextId: string, agentName?: string) => void;
   onNewSession: (agentName: string) => void;
   selectedAgentName?: string;
 }
@@ -235,10 +235,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => onSelectSession(session.context_id)}
+                  onClick={() => onSelectSession(session.context_id, agentName(session))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter')
-                      onSelectSession(session.context_id);
+                      onSelectSession(session.context_id, agentName(session));
                   }}
                   style={{
                     padding: '6px 8px',

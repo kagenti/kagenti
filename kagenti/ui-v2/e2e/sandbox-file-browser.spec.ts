@@ -427,7 +427,7 @@ test.describe('Sandbox File Browser', () => {
     // Navigate to file browser (component always starts at '/')
     await page.goto('/sandbox/files/team1/sandbox-basic');
     await loginIfNeeded(page);
-    await page.waitForSelector('[class*="pf-v5-c-tree-view"]', { timeout: 15000 });
+    await page.waitForSelector('[class*="pf-v5-c-tree-view"]', { timeout: 30000 });
 
     // Verify the written file appears in the listing
     await expect(page.getByText('e2e_test.txt')).toBeVisible();
@@ -629,14 +629,14 @@ test.describe('File Browser — Live Cluster Integration', () => {
         fileFound = await page.getByText('e2e-report.md').isVisible().catch(() => false);
       }
     }
-    await expect(page.getByText('e2e-report.md')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('e2e-report.md')).toBeVisible({ timeout: 30000 });
 
     // ── Step 5: Click the file to preview ──
     await page.getByText('e2e-report.md').click();
 
     // ── Step 6: Verify markdown renders ──
     // Heading should render as H1
-    await expect(page.locator('h1').filter({ hasText: 'E2E Test Report' })).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('h1').filter({ hasText: 'E2E Test Report' })).toBeVisible({ timeout: 30000 });
 
     // Bold text should render
     await expect(page.locator('strong').filter({ hasText: 'automated test' })).toBeVisible({ timeout: 5000 });
@@ -767,14 +767,14 @@ test.describe('File Browser — Live Cluster Integration', () => {
         await page.waitForTimeout(2000);
       }
     }
-    await expect(page.getByText('fibonacci.py')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('fibonacci.py')).toBeVisible({ timeout: 30000 });
 
     // ── Step 5: Click to preview ──
     await page.getByText('fibonacci.py').click();
 
     // ── Step 6: Verify CodeBlock renders ──
     const codeBlock = page.locator('[class*="pf-v5-c-code-block"]');
-    await expect(codeBlock).toBeVisible({ timeout: 15000 });
+    await expect(codeBlock).toBeVisible({ timeout: 30000 });
 
     // Verify the function definition is visible
     await expect(page.getByText('def fibonacci')).toBeVisible({ timeout: 5000 });

@@ -954,8 +954,9 @@ export const SandboxPage: React.FC = () => {
   }, [messages, streamingContent]);
 
   const handleSelectSession = useCallback(
-    (id: string) => {
+    (id: string, sessionAgentName?: string) => {
       setContextId(id);
+      if (sessionAgentName) setSelectedAgent(sessionAgentName);
       setMessages([]);
       setAgentLoops(new Map());
       setInput('');
@@ -1820,7 +1821,7 @@ export const SandboxPage: React.FC = () => {
                 <FileBrowser
                   namespace={namespace}
                   agentName={selectedAgent}
-                  contextId={contextId || undefined}
+                  initialPath={contextId ? `/workspace/${contextId}` : '/workspace'}
                   embedded
                 />
               </div>

@@ -152,6 +152,8 @@ export interface FileBrowserProps {
   agentName?: string;
   /** Context/session ID for session-scoped file browsing */
   contextId?: string;
+  /** Override the initial directory path (e.g., /workspace/{contextId}) */
+  initialPath?: string;
   /** When true, renders without PageSection wrapper and adjusts height for embedding */
   embedded?: boolean;
 }
@@ -160,6 +162,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   namespace: propNamespace,
   agentName: propAgentName,
   contextId: propContextId,
+  initialPath: propInitialPath,
   embedded = false,
 }) => {
   const routeParams = useParams<{
@@ -173,8 +176,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   const agentName = propAgentName || routeParams.agentName;
   const contextId = propContextId || routeParams.contextId;
 
-  // Initial path from URL ?path= parameter, defaults to /workspace (or / for context-scoped)
-  const initialPath = searchParams.get('path') || (contextId ? '/' : '/workspace');
+  // Initial path: prop > URL ?path= param > default based on contextId
+  const initialPath = propInitialPath || searchParams.get('path') || (contextId ? '/' : '/workspace');
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
