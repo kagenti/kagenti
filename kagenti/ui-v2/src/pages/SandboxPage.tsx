@@ -919,11 +919,11 @@ export const SandboxPage: React.FC = () => {
 
     const pollInterval = setInterval(async () => {
       try {
-        const page = await sandboxService.getHistory(namespace, contextId, { limit: 5 });
-        if (page.messages.length === 0) return;
+        const histPage = await sandboxService.getHistory(namespace, contextId, { limit: 5 });
+        if (histPage.messages.length === 0) return;
 
         setMessages((prev) => {
-          // Build a set of existing message indices for deduplication
+          // Dedup by _index (history-loaded messages)
           const existingIndices = new Set(
             prev
               .map((m) => {
@@ -932,20 +932,30 @@ export const SandboxPage: React.FC = () => {
               })
               .filter((idx): idx is number => idx !== null)
           );
+          // Also dedup by content prefix (catches SSE-added messages without _index)
+          const existingContent = new Set(
+            prev.filter((m) => m.content?.trim()).map((m) => m.content.trim().slice(0, 100))
+          );
 
-          // Find genuinely new messages not already displayed
-          const newMsgs = page.messages
-            .filter((h) => h._index !== undefined && !existingIndices.has(h._index))
+          const newMsgs = histPage.messages
+            .filter((h) => {
+              if (h._index !== undefined && existingIndices.has(h._index)) return false;
+              // Content-based dedup for SSE-added messages
+              const text = (h.parts || [])
+                .map((p: Record<string, unknown>) => (typeof p.text === 'string' ? p.text : ''))
+                .filter(Boolean)
+                .join('');
+              if (text && existingContent.has(text.trim().slice(0, 100))) return false;
+              return true;
+            })
             .map(toMessage);
 
           if (newMsgs.length === 0) return prev;
-
-          // Append new messages and auto-scroll
           shouldAutoScroll.current = true;
           return [...prev, ...newMsgs];
         });
       } catch {
-        // Polling failures are non-critical — silently retry next interval
+        // Polling failures are non-critical
       }
     }, 5000);
 
@@ -1484,6 +1494,18 @@ export const SandboxPage: React.FC = () => {
     } finally {
       setIsStreaming(false);
       setStreamingContent('');
+      // Mark any active agent loops as "done" — the stream ended so
+      // no more events will arrive. This prevents loops stuck in
+      // "reasoning" / "executing" state.
+      setAgentLoops((prev) => {
+        const next = new Map(prev);
+        for (const [id, loop] of next) {
+          if (loop.status !== 'done') {
+            next.set(id, { ...loop, status: 'done' });
+          }
+        }
+        return next;
+      });
     }
   };
 
