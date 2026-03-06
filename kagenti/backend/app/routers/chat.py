@@ -82,7 +82,6 @@ def _get_agent_url(name: str, namespace: str, port: int = 8080) -> str:
 @router.get(
     "/{namespace}/{name}/agent-card",
     response_model=AgentCardResponse,
-    dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_agent_card(
     namespace: str,
