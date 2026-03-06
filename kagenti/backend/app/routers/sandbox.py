@@ -439,7 +439,9 @@ async def get_session_history(
         for msg in task_history:
             # Deduplicate: skip user messages we've already seen
             if msg.get("role") == "user":
-                text = "".join(p.get("text", "") for p in (msg.get("parts") or []))
+                text = "".join(
+                    p.get("text", "") for p in (msg.get("parts") or []) if isinstance(p, dict)
+                )
                 key = text[:200]
                 if key in seen_user_msgs:
                     continue
@@ -450,8 +452,10 @@ async def get_session_history(
         task_artifacts = _parse_json_field(row.get("artifacts")) or []
         if isinstance(task_artifacts, list):
             for art in task_artifacts:
+                if not isinstance(art, dict):
+                    continue
                 for part in art.get("parts") or []:
-                    if part.get("text"):
+                    if isinstance(part, dict) and part.get("text"):
                         all_artifact_texts.append(part["text"])
 
     # Parse graph event dumps into structured tool call data.
@@ -525,7 +529,11 @@ async def get_session_history(
             continue
 
         # Try to parse graph event dumps
-        text = "".join(p.get("text", "") for p in (msg.get("parts") or []) if p.get("text"))
+        text = "".join(
+            p.get("text", "")
+            for p in (msg.get("parts") or [])
+            if isinstance(p, dict) and p.get("text")
+        )
         if not text:
             continue
 
@@ -552,6 +560,8 @@ async def get_session_history(
     for msg in filtered:
         parts = msg.get("parts") or []
         for p in parts:
+            if not isinstance(p, dict):
+                continue
             if p.get("kind") == "data" and p.get("type") == "llm_response":
                 content = (p.get("content") or "").strip()
                 if content:
