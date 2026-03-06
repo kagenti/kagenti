@@ -488,6 +488,10 @@ async def get_context_files(
     context_root = f"/workspace/{context_id}"
     if path == "/" or path == "":
         full_path = context_root
+    elif path.startswith(context_root):
+        # Path is already absolute (e.g., from a TreeView click returning
+        # the full path from a previous directory listing) — use as-is.
+        full_path = _sanitize_path(path)
     else:
         rel = path.lstrip("/")
         full_path = posixpath.normpath(posixpath.join(context_root, rel))

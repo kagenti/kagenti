@@ -847,6 +847,20 @@ export const SandboxPage: React.FC = () => {
     async (ns: string, ctxId: string) => {
       if (!ns || !ctxId) return;
       setLoadingHistory(true);
+
+      // Fetch session metadata to restore the correct agent name.
+      // This handles page reload / URL restoration where handleSelectSession
+      // was not called, so selectedAgent would otherwise stay at the default.
+      try {
+        const sessionDetail = await sandboxService.getSession(ns, ctxId);
+        const metaAgent = (sessionDetail?.metadata as Record<string, unknown> | null)?.agent_name as string | undefined;
+        if (metaAgent) {
+          setSelectedAgent(metaAgent);
+        }
+      } catch {
+        // Non-critical — agent badge may show default but chat still works
+      }
+
       try {
         const page = await sandboxService.getHistory(ns, ctxId, {
           limit: INITIAL_HISTORY_LIMIT,
@@ -869,6 +883,11 @@ export const SandboxPage: React.FC = () => {
             });
             setMessages(filtered.slice(-INITIAL_HISTORY_LIMIT).map(toMessage));
             setHasMoreHistory(filtered.length > INITIAL_HISTORY_LIMIT);
+          }
+          // Also restore agent name from the fallback detail response
+          const metaAgent = (detail?.metadata as Record<string, unknown> | null)?.agent_name as string | undefined;
+          if (metaAgent) {
+            setSelectedAgent(metaAgent);
           }
         } catch {
           // ignore
@@ -1821,7 +1840,7 @@ export const SandboxPage: React.FC = () => {
                 <FileBrowser
                   namespace={namespace}
                   agentName={selectedAgent}
-                  initialPath={contextId ? `/workspace/${contextId}` : '/workspace'}
+                  contextId={contextId || undefined}
                   embedded
                 />
               </div>
