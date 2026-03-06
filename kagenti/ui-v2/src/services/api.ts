@@ -694,9 +694,16 @@ export const chatService = {
       examples?: string[];
     }>;
   }> {
-    return apiFetch(
-      `/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/agent-card`
-    );
+    try {
+      return await apiFetch(
+        `/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/agent-card`
+      );
+    } catch {
+      // Fallback: sandbox endpoint (direct port 8000, no AuthBridge retry)
+      return apiFetch(
+        `/sandbox/${encodeURIComponent(namespace)}/agent-card/${encodeURIComponent(name)}`
+      );
+    }
   },
 
   async sendMessage(
