@@ -580,12 +580,11 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await filesTab.click();
     await page.waitForTimeout(3000);
 
-    // Wait for file tree, breadcrumb, spinner, or empty/error state
+    // Wait for file tree or any other file browser state to render
     const filesBrowserReady = page.locator('[aria-label="File tree"]')
-      .or(page.getByRole('navigation', { name: 'Breadcrumb' }))
       .or(page.getByText('No files in this directory'))
       .or(page.getByText(/not found|unable to load/i));
-    await expect(filesBrowserReady).toBeVisible({ timeout: 30000 });
+    await expect(filesBrowserReady.first()).toBeVisible({ timeout: 30000 });
     console.log('[file-browser] Files tab loaded');
 
     // ── Step 4: Navigate to data/ directory and find e2e-report.md ──
@@ -692,12 +691,11 @@ test.describe('File Browser — Live Cluster Integration', () => {
     await filesTab2.click();
     await page.waitForTimeout(3000);
 
-    // Wait for file browser to load
+    // Wait for file tree or any other file browser state to render
     const filesBrowserReady2 = page.locator('[aria-label="File tree"]')
-      .or(page.getByRole('navigation', { name: 'Breadcrumb' }))
       .or(page.getByText('No files in this directory'))
       .or(page.getByText(/not found|unable to load/i));
-    await expect(filesBrowserReady2).toBeVisible({ timeout: 30000 });
+    await expect(filesBrowserReady2.first()).toBeVisible({ timeout: 30000 });
     console.log('[file-browser] Files tab loaded (code test)');
 
     // ── Step 4: Navigate to data/ directory and find fibonacci.py ──
