@@ -1477,6 +1477,14 @@ async def _stream_sandbox_response(
                             )
                             continue
 
+                        # Fan out event to sidecar manager
+                        try:
+                            from app.services.sidecar_manager import get_sidecar_manager
+
+                            get_sidecar_manager().fan_out_event(session_id, chunk)
+                        except Exception:
+                            pass  # Sidecar fan-out is best-effort
+
                         if "result" not in chunk:
                             continue
 

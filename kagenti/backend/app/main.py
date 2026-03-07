@@ -44,6 +44,7 @@ from app.routers import (
     sandbox_files,
     integrations,
     token_usage,
+    sidecar,
 )
 from app.services.session_db import close_all_pools
 
@@ -86,6 +87,11 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+    # Shutdown sidecar manager
+    from app.services.sidecar_manager import get_sidecar_manager
+
+    await get_sidecar_manager().shutdown()
+
     # Close session DB pools
     await close_all_pools()
 
@@ -127,6 +133,7 @@ app.include_router(sandbox_trigger.router, prefix="/api/v1")
 app.include_router(sandbox_files.router, prefix="/api/v1")
 app.include_router(integrations.router, prefix="/api/v1")
 app.include_router(token_usage.router, prefix="/api/v1")
+app.include_router(sidecar.router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
