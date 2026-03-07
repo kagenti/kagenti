@@ -922,15 +922,16 @@ export const SandboxPage: React.FC = () => {
   );
 
   // Load history on session change + sync URL if restored from localStorage
+  // Skip during streaming — the stream handler manages state while active.
   useEffect(() => {
-    if (contextId && namespace) {
+    if (contextId && namespace && !isStreaming) {
       loadInitialHistory(namespace, contextId);
       // Sync URL if session was restored from localStorage
       if (!searchParams.get('session') && contextId) {
         setSearchParams({ session: contextId }, { replace: true });
       }
     }
-  }, [contextId, namespace, loadInitialHistory, searchParams, setSearchParams]);
+  }, [contextId, namespace, isStreaming, loadInitialHistory, searchParams, setSearchParams]);
 
   // ---------------------------------------------------------------------------
   // Poll for new messages when session is idle (not streaming).
@@ -1076,9 +1077,11 @@ export const SandboxPage: React.FC = () => {
   /** Start a new session with the chosen agent (from the New Session modal). */
   const handleNewSession = useCallback(
     (agentName: string) => {
+      console.log('[agent-debug] handleNewSession called with:', agentName);
       selectedAgentRef.current = agentName; // sync ref immediately
       setSelectedAgent(agentName);
       handleSelectSession('', agentName); // pass agent directly (state update is async)
+      console.log('[agent-debug] after handleSelectSession, ref=', selectedAgentRef.current);
     },
     [handleSelectSession]
   );
@@ -1163,6 +1166,7 @@ export const SandboxPage: React.FC = () => {
   ): Promise<boolean> => {
     const streamUrl = sandboxService.getStreamUrl(namespace);
     const agentForRequest = selectedAgentRef.current;
+    console.log('[agent-debug] sendStreaming agent_name:', agentForRequest, 'state:', selectedAgent);
     const body: Record<string, unknown> = {
       message: messageToSend,
       session_id: contextId || undefined,
