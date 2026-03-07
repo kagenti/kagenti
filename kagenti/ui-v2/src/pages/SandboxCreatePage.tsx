@@ -121,11 +121,13 @@ const VARIANTS = [
   { value: 'custom', label: 'Custom' },
 ];
 
+// Models served via LiteLLM proxy — names match litellm config model_name
 const MODELS = [
-  { value: 'llama-4-scout-17b-16e-w4a16', label: 'Llama 4 Scout 109B (tool calling)' },
-  { value: 'mistral-small-24b-w8a8', label: 'Mistral Small 24B (chat only)' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (requires OpenAI key)' },
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (requires Anthropic key)' },
+  { value: 'llama-4-scout', label: 'Llama 4 Scout 109B (tool calling)' },
+  { value: 'mistral-small', label: 'Mistral Small 24B' },
+  { value: 'deepseek-r1', label: 'DeepSeek R1 14B (reasoning)' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
 ];
 
 const WORKSPACE_SIZES = [

@@ -42,14 +42,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Cluster-aware LLM defaults — set via env vars on the backend deployment
-# or via Helm values. Uses Llama 4 Scout for reliable function calling.
-# Mistral Small 24B doesn't return structured tool_calls with tool_choice=auto.
+# or via Helm values. Route through LiteLLM proxy for proper tool calling
+# support across all models (Llama 4, Mistral, GPT, etc.).
 DEFAULT_LLM_API_BASE = os.environ.get(
     "SANDBOX_LLM_API_BASE",
-    "https://llama-4-scout-17b-16e-w4a16-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1",
+    "http://litellm-proxy.kagenti-system.svc.cluster.local:4000/v1",
 )
-DEFAULT_LLM_MODEL = os.environ.get("SANDBOX_LLM_MODEL", "llama-4-scout-17b-16e-w4a16")
-DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "openai-secret")
+DEFAULT_LLM_MODEL = os.environ.get("SANDBOX_LLM_MODEL", "llama-4-scout")
+DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "litellm-proxy-secret")
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox-deploy"])
 
