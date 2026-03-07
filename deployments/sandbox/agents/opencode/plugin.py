@@ -126,12 +126,17 @@ class OpenCodeProcess:
         if self._started:
             return
 
-        logger.info("Starting opencode serve on port %d", self.port)
+        # Ensure HOME exists (OCP arbitrary UIDs may not have a writable home)
+        home = os.environ.get("HOME", "/tmp/opencode-home")
+        os.makedirs(home, exist_ok=True)
+
+        logger.info("Starting opencode serve on port %d (HOME=%s)", self.port, home)
         self._process = subprocess.Popen(
             ["opencode", "serve", "--port", str(self.port)],
             cwd=self.workspace,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={**os.environ, "HOME": home},
         )
 
         # Wait for health check

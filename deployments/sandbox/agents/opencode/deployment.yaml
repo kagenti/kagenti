@@ -54,6 +54,8 @@ spec:
           value: /workspace
         - name: CONFIG_ROOT
           value: /app
+        - name: HOME
+          value: /tmp/opencode-home
         resources:
           requests:
             memory: "512Mi"
