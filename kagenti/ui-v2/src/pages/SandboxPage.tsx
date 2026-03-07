@@ -751,6 +751,9 @@ export const SandboxPage: React.FC = () => {
     }
     return 'sandbox-legion';
   });
+  // Ref mirrors selectedAgent for use in async closures (avoids stale state)
+  const selectedAgentRef = useRef(selectedAgent);
+  useEffect(() => { selectedAgentRef.current = selectedAgent; }, [selectedAgent]);
   const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
@@ -1073,8 +1076,9 @@ export const SandboxPage: React.FC = () => {
   /** Start a new session with the chosen agent (from the New Session modal). */
   const handleNewSession = useCallback(
     (agentName: string) => {
+      selectedAgentRef.current = agentName; // sync ref immediately
       setSelectedAgent(agentName);
-      handleSelectSession(''); // clears contextId, URL params, messages
+      handleSelectSession('', agentName); // pass agent directly (state update is async)
     },
     [handleSelectSession]
   );
@@ -1093,7 +1097,7 @@ export const SandboxPage: React.FC = () => {
     const body: Record<string, unknown> = {
       message: messageToSend,
       session_id: contextId || undefined,
-      agent_name: selectedAgent,
+      agent_name: selectedAgentRef.current,
     };
     if (skill) body.skill = skill;
     const response = await fetch(
@@ -1158,10 +1162,11 @@ export const SandboxPage: React.FC = () => {
     skill?: string,
   ): Promise<boolean> => {
     const streamUrl = sandboxService.getStreamUrl(namespace);
+    const agentForRequest = selectedAgentRef.current;
     const body: Record<string, unknown> = {
       message: messageToSend,
       session_id: contextId || undefined,
-      agent_name: selectedAgent,
+      agent_name: agentForRequest,
     };
     if (skill) body.skill = skill;
     const response = await fetch(streamUrl, {
@@ -1209,9 +1214,9 @@ export const SandboxPage: React.FC = () => {
             // Track session from the streaming response
             if (data.session_id && !contextId) {
               setContextId(data.session_id);
-              setSearchParams({ session: data.session_id, agent: selectedAgent });
+              setSearchParams({ session: data.session_id, agent: agentForRequest });
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
-              localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + data.session_id, selectedAgent);
+              localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + data.session_id, agentForRequest);
             }
 
             // Handle agent loop events (grouped by loop_id)
@@ -1582,7 +1587,7 @@ export const SandboxPage: React.FC = () => {
             <SandboxAgentsPanel
               namespace={namespace}
               selectedAgent={selectedAgent}
-              onSelectAgent={(name) => setSelectedAgent(name || 'sandbox-legion')}
+              onSelectAgent={(name) => { const a = name || 'sandbox-legion'; selectedAgentRef.current = a; setSelectedAgent(a); }}
             />
           )}
         </div>
