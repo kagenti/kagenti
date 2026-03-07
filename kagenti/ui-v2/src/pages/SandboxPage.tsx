@@ -1591,7 +1591,13 @@ export const SandboxPage: React.FC = () => {
             <SandboxAgentsPanel
               namespace={namespace}
               selectedAgent={selectedAgent}
-              onSelectAgent={(name) => { const a = name || 'sandbox-legion'; selectedAgentRef.current = a; setSelectedAgent(a); }}
+              onSelectAgent={(name) => {
+                const a = name || 'sandbox-legion';
+                selectedAgentRef.current = a;
+                setSelectedAgent(a);
+                // Start a fresh session when switching agents via the panel
+                handleSelectSession('', a);
+              }}
             />
           )}
         </div>
