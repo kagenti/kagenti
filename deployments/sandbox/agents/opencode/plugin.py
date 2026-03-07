@@ -223,42 +223,103 @@ class OpenCodeExecutor(AgentExecutor):
                 ),
             )
 
-            # Create a session (or reuse context_id as session)
-            session_id = context_id or "default"
+            # OpenCode API flow:
+            # 1. POST /session → create session
+            # 2. POST /session/{id}/message → send message (async, triggers agent)
+            # 3. GET /session/{id}/message → poll for response messages
 
-            # POST /session/:id/message — send prompt and wait for response
-            resp = await self._client.post(
-                f"{OPENCODE_URL}/session/{session_id}/message",
-                json={"content": user_input},
-                timeout=300,
+            # Create a new session for each A2A context
+            import uuid
+
+            create_resp = await self._client.post(
+                f"{OPENCODE_URL}/session",
+                json={},
+                timeout=30,
+            )
+            create_resp.raise_for_status()
+            session_data = create_resp.json()
+            session_id = session_data.get("id", session_data.get("sessionID", ""))
+            logger.info("Created OpenCode session: %s", session_id)
+
+            # Get model config from env
+            provider_id = os.environ.get("OPENCODE_PROVIDER", "openai")
+            model_id = os.environ.get("LLM_MODEL", "gpt-4o")
+            msg_id = f"msg{uuid.uuid4().hex[:8]}"
+
+            # Send the message using prompt_async (non-blocking)
+            msg_resp = await self._client.post(
+                f"{OPENCODE_URL}/session/{session_id}/prompt_async",
+                json={
+                    "messageID": msg_id,
+                    "model": {
+                        "providerID": provider_id,
+                        "modelID": model_id,
+                    },
+                    "parts": [{"type": "text", "text": user_input}],
+                },
+                timeout=30,
             )
 
-            # Fall back to POST /session for older API versions
-            if resp.status_code == 404:
-                resp = await self._client.post(
-                    f"{OPENCODE_URL}/session",
-                    json={"prompt": user_input},
+            if msg_resp.status_code >= 400:
+                # Fall back to simpler message endpoint
+                msg_resp = await self._client.post(
+                    f"{OPENCODE_URL}/session/{session_id}/message",
+                    json={
+                        "messageID": msg_id,
+                        "model": {
+                            "providerID": provider_id,
+                            "modelID": model_id,
+                        },
+                    },
                     timeout=300,
                 )
 
-            resp.raise_for_status()
-            result = resp.json()
+            msg_resp.raise_for_status()
 
-            # Extract response — OpenCode may return different shapes
-            answer = (
-                result.get("content")
-                or result.get("response")
-                or result.get("output")
-                or result.get("text")
-                or "No response from OpenCode."
-            )
-            if isinstance(answer, dict):
-                answer = answer.get("text", json.dumps(answer))
-            if isinstance(answer, list):
-                answer = "\n".join(
-                    str(item.get("text", item)) if isinstance(item, dict) else str(item)
-                    for item in answer
+            # Poll for completion — check session messages
+            answer = "OpenCode processing..."
+            for poll_attempt in range(60):
+                await asyncio.sleep(5)
+                msgs_resp = await self._client.get(
+                    f"{OPENCODE_URL}/session/{session_id}/message",
+                    timeout=30,
                 )
+                if msgs_resp.status_code == 200:
+                    messages = msgs_resp.json()
+                    if isinstance(messages, list):
+                        # Find assistant messages after our user message
+                        for msg in reversed(messages):
+                            role = msg.get("role", "")
+                            if role == "assistant":
+                                parts = msg.get("parts", [])
+                                texts = []
+                                for part in parts:
+                                    if isinstance(part, dict):
+                                        t = part.get("text", part.get("content", ""))
+                                        if t:
+                                            texts.append(str(t))
+                                if texts:
+                                    answer = "\n".join(texts)
+                                    break
+                        else:
+                            continue
+                        break
+
+                # Send progress update
+                if poll_attempt % 6 == 0:
+                    await task_updater.update_status(
+                        TaskState.working,
+                        new_agent_text_message(
+                            json.dumps(
+                                {
+                                    "type": "llm_response",
+                                    "content": f"OpenCode processing... ({poll_attempt * 5}s)",
+                                }
+                            ),
+                            task_updater.context_id,
+                            task_updater.task_id,
+                        ),
+                    )
 
             parts = [TextPart(text=str(answer))]
             await task_updater.add_artifact(parts)
