@@ -1077,11 +1077,9 @@ export const SandboxPage: React.FC = () => {
   /** Start a new session with the chosen agent (from the New Session modal). */
   const handleNewSession = useCallback(
     (agentName: string) => {
-      console.log('[agent-debug] handleNewSession called with:', agentName);
       selectedAgentRef.current = agentName; // sync ref immediately
       setSelectedAgent(agentName);
       handleSelectSession('', agentName); // pass agent directly (state update is async)
-      console.log('[agent-debug] after handleSelectSession, ref=', selectedAgentRef.current);
     },
     [handleSelectSession]
   );
@@ -1166,7 +1164,6 @@ export const SandboxPage: React.FC = () => {
   ): Promise<boolean> => {
     const streamUrl = sandboxService.getStreamUrl(namespace);
     const agentForRequest = selectedAgentRef.current;
-    console.log('[agent-debug] sendStreaming agent_name:', agentForRequest, 'state:', selectedAgent);
     const body: Record<string, unknown> = {
       message: messageToSend,
       session_id: contextId || undefined,
