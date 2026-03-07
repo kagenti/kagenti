@@ -66,13 +66,23 @@ class TestLiteLLMModels:
         model_ids = [m["id"] for m in data["data"]]
         assert len(model_ids) > 0, "No models returned"
 
-    def test_expected_models_present(self, master_client):
+    def test_maas_models_present(self, master_client):
+        """MAAS models (llama, mistral, deepseek) are always expected."""
         resp = master_client.get("/v1/models")
         model_ids = [m["id"] for m in resp.json()["data"]]
         for expected in ["llama-4-scout", "mistral-small", "deepseek-r1"]:
             assert expected in model_ids, (
                 f"Expected model '{expected}' not in {model_ids}"
             )
+
+    def test_openai_models_present(self, master_client):
+        """OpenAI models present when OPENAI_API_KEY is configured."""
+        resp = master_client.get("/v1/models")
+        model_ids = [m["id"] for m in resp.json()["data"]]
+        if "gpt-4o-mini" not in model_ids:
+            pytest.skip("OpenAI models not configured (no OPENAI_API_KEY)")
+        assert "gpt-4o-mini" in model_ids
+        assert "gpt-4o" in model_ids
 
     def test_model_info(self, master_client):
         resp = master_client.get("/model/info")
@@ -177,6 +187,63 @@ class TestLiteLLMChatCompletions:
         assert len(content) + len(reasoning) > 0, (
             "Both content and reasoning_content are empty"
         )
+
+
+class TestLiteLLMOpenAI:
+    """OpenAI model tests (skipped if OpenAI not configured)."""
+
+    def _skip_if_no_openai(self, master_client):
+        resp = master_client.get("/v1/models")
+        model_ids = [m["id"] for m in resp.json()["data"]]
+        if "gpt-4o-mini" not in model_ids:
+            pytest.skip("OpenAI models not configured")
+
+    def test_chat_gpt4o_mini(self, master_client):
+        """Test chat completion with GPT-4o mini."""
+        self._skip_if_no_openai(master_client)
+        resp = master_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "Say hello in one word."}],
+                "max_tokens": 10,
+            },
+            timeout=30.0,
+        )
+        assert resp.status_code == 200, f"GPT-4o-mini chat failed: {resp.text}"
+        content = resp.json()["choices"][0]["message"]["content"]
+        assert len(content) > 0, "Empty response"
+
+    def test_chat_gpt4o(self, master_client):
+        """Test chat completion with GPT-4o."""
+        self._skip_if_no_openai(master_client)
+        resp = master_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-4o",
+                "messages": [{"role": "user", "content": "Say hello in one word."}],
+                "max_tokens": 10,
+            },
+            timeout=30.0,
+        )
+        assert resp.status_code == 200, f"GPT-4o chat failed: {resp.text}"
+        content = resp.json()["choices"][0]["message"]["content"]
+        assert len(content) > 0, "Empty response"
+
+    def test_gpt4o_mini_has_usage(self, master_client):
+        """Verify token usage tracking works for OpenAI models."""
+        self._skip_if_no_openai(master_client)
+        resp = master_client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "Say hi."}],
+                "max_tokens": 5,
+            },
+            timeout=30.0,
+        )
+        usage = resp.json()["usage"]
+        assert usage["total_tokens"] > 0, "No tokens tracked for OpenAI model"
 
 
 class TestLiteLLMVirtualKeys:

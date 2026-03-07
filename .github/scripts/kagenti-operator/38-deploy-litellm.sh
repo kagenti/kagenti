@@ -79,7 +79,37 @@ for var in MAAS_LLAMA4_API_BASE MAAS_LLAMA4_API_KEY MAAS_LLAMA4_MODEL \
         exit 1
     fi
 done
-log_success "Model credentials loaded (3 models)"
+log_success "MAAS model credentials loaded (3 models)"
+
+# ============================================================================
+# Step 1b: Load OpenAI credentials (optional)
+# ============================================================================
+# Try sources in order: env var > K8s secret (team1) > K8s secret (kagenti-system)
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+OPENAI_ENABLED=false
+
+if [ -n "$OPENAI_API_KEY" ]; then
+    log_info "OpenAI key loaded from env var"
+    OPENAI_ENABLED=true
+else
+    for ns in team1 "$NAMESPACE"; do
+        KEY=$(kubectl get secret openai-secret -n "$ns" \
+            -o jsonpath='{.data.apikey}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        if [ -n "$KEY" ]; then
+            OPENAI_API_KEY="$KEY"
+            OPENAI_ENABLED=true
+            log_info "OpenAI key loaded from openai-secret in $ns"
+            break
+        fi
+    done
+fi
+
+if [ "$OPENAI_ENABLED" = "true" ]; then
+    log_success "OpenAI credentials loaded (gpt-4o-mini, gpt-4o)"
+else
+    log_warn "No OpenAI key found — OpenAI models will not be available"
+    log_info "To enable: kubectl create secret generic openai-secret -n team1 --from-literal=apikey=sk-..."
+fi
 
 # ============================================================================
 # Step 2: Get postgres credentials from existing otel-db-secret
@@ -137,12 +167,18 @@ kubectl create secret generic litellm-proxy-secret \
     --from-literal=database-url="$DATABASE_URL" \
     --dry-run=client -o yaml | kubectl apply -f -
 
-log_info "Creating litellm-model-keys secret (MAAS API keys)..."
+log_info "Creating litellm-model-keys secret (API keys)..."
+MODEL_KEY_ARGS=(
+    --from-literal=MAAS_LLAMA4_API_KEY="$MAAS_LLAMA4_API_KEY"
+    --from-literal=MAAS_MISTRAL_API_KEY="$MAAS_MISTRAL_API_KEY"
+    --from-literal=MAAS_DEEPSEEK_API_KEY="$MAAS_DEEPSEEK_API_KEY"
+)
+if [ "$OPENAI_ENABLED" = "true" ]; then
+    MODEL_KEY_ARGS+=(--from-literal=OPENAI_API_KEY="$OPENAI_API_KEY")
+fi
 kubectl create secret generic litellm-model-keys \
     -n "$NAMESPACE" \
-    --from-literal=MAAS_LLAMA4_API_KEY="$MAAS_LLAMA4_API_KEY" \
-    --from-literal=MAAS_MISTRAL_API_KEY="$MAAS_MISTRAL_API_KEY" \
-    --from-literal=MAAS_DEEPSEEK_API_KEY="$MAAS_DEEPSEEK_API_KEY" \
+    "${MODEL_KEY_ARGS[@]}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
 log_success "Secrets created"
@@ -152,6 +188,22 @@ log_success "Secrets created"
 # ============================================================================
 
 log_info "Generating LiteLLM config..."
+
+# Build OpenAI model entries if key is available
+OPENAI_MODEL_ENTRIES=""
+if [ "$OPENAI_ENABLED" = "true" ]; then
+    OPENAI_MODEL_ENTRIES="
+      - model_name: gpt-4o-mini
+        litellm_params:
+          model: gpt-4o-mini
+          api_key: os.environ/OPENAI_API_KEY
+
+      - model_name: gpt-4o
+        litellm_params:
+          model: gpt-4o
+          api_key: os.environ/OPENAI_API_KEY"
+fi
+
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -181,6 +233,7 @@ data:
           model: openai/$MAAS_DEEPSEEK_MODEL
           api_base: $MAAS_DEEPSEEK_API_BASE
           api_key: os.environ/MAAS_DEEPSEEK_API_KEY
+${OPENAI_MODEL_ENTRIES}
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
@@ -215,14 +268,26 @@ fi
 # Step 8: Verify health and create virtual keys
 # ============================================================================
 
-log_info "Verifying LiteLLM proxy health..."
-LITELLM_POD=$(kubectl get pod -n "$NAMESPACE" -l app.kubernetes.io/name=litellm-proxy \
-    -o jsonpath='{.items[0].metadata.name}')
+log_info "Verifying LiteLLM proxy health via port-forward..."
 
-# Health check via kubectl exec (avoids needing a route)
-HEALTH=$(kubectl exec -n "$NAMESPACE" "$LITELLM_POD" -- \
-    curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health/readiness 2>/dev/null || echo "000")
+# Start temporary port-forward for health check and key generation
+LITELLM_PF_PORT=14099
+lsof -ti:${LITELLM_PF_PORT} 2>/dev/null | xargs kill 2>/dev/null || true
+sleep 1
+kubectl port-forward -n "$NAMESPACE" svc/litellm-proxy \
+    "${LITELLM_PF_PORT}:4000" &>/tmp/litellm-deploy-pf.log &
+PF_PID=$!
+trap "kill $PF_PID 2>/dev/null || true" EXIT
 
+# Wait for port-forward
+for i in $(seq 1 15); do
+    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:${LITELLM_PF_PORT}/health/readiness" 2>/dev/null | grep -q "200"; then
+        break
+    fi
+    sleep 2
+done
+
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${LITELLM_PF_PORT}/health/readiness" 2>/dev/null || echo "000")
 if [ "$HEALTH" = "200" ]; then
     log_success "LiteLLM proxy health check passed"
 else
@@ -231,16 +296,14 @@ fi
 
 # List available models
 log_info "Available models:"
-kubectl exec -n "$NAMESPACE" "$LITELLM_POD" -- \
-    curl -s http://localhost:4000/v1/models \
+curl -s "http://localhost:${LITELLM_PF_PORT}/v1/models" \
     -H "Authorization: Bearer $MASTER_KEY" 2>/dev/null | \
     python3 -c "import sys,json; data=json.load(sys.stdin); [print(f'  - {m[\"id\"]}') for m in data.get('data',[])]" 2>/dev/null || \
     log_warn "Could not list models (proxy may still be initializing)"
 
 # Create virtual key for team1 namespace
 log_info "Creating virtual API key for team1..."
-TEAM1_KEY_RESPONSE=$(kubectl exec -n "$NAMESPACE" "$LITELLM_POD" -- \
-    curl -s http://localhost:4000/key/generate \
+TEAM1_KEY_RESPONSE=$(curl -s "http://localhost:${LITELLM_PF_PORT}/key/generate" \
     -H "Authorization: Bearer $MASTER_KEY" \
     -H "Content-Type: application/json" \
     -d '{"key_alias": "team1-agents", "metadata": {"namespace": "team1"}, "max_budget": 100}' \
@@ -258,6 +321,9 @@ if [ -n "$TEAM1_VIRTUAL_KEY" ]; then
 else
     log_warn "Could not create virtual key (will retry on next deploy)"
 fi
+
+# Clean up port-forward
+kill "$PF_PID" 2>/dev/null || true
 
 log_success "LiteLLM proxy deployment complete"
 log_info "Proxy endpoint: http://litellm-proxy.${NAMESPACE}.svc:4000/v1"
