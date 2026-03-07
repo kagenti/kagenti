@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install OpenCode CLI (npm package: oh-my-opencode)
-RUN npm install -g oh-my-opencode@latest
+RUN npm install -g opencode-ai@latest
 
 # Copy OpenCode agent wrapper
 COPY agents/opencode/ /app/opencode/

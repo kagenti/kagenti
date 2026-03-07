@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir uv
 
 # Install OpenCode CLI
-RUN npm install -g oh-my-opencode@latest
+RUN npm install -g opencode-ai@latest
 
 WORKDIR /app
 
