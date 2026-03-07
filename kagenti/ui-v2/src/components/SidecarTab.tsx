@@ -222,7 +222,7 @@ export const SidecarTab: React.FC<SidecarTabProps> = ({
                   <Button
                     data-testid="sidecar-approve-btn"
                     variant="primary"
-                    isSmall
+                    size="sm"
                     onClick={() => handleApprove(obs.id)}
                   >
                     Approve
@@ -230,7 +230,7 @@ export const SidecarTab: React.FC<SidecarTabProps> = ({
                   <Button
                     data-testid="sidecar-deny-btn"
                     variant="danger"
-                    isSmall
+                    size="sm"
                     onClick={() => handleDeny(obs.id)}
                   >
                     Deny
