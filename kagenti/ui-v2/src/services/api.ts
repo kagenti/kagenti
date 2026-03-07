@@ -11,6 +11,16 @@ import type {
   Tool,
   ToolDetail,
   ApiListResponse,
+  Integration,
+  IntegrationDetail,
+  IntegrationProvider,
+  IntegrationAgentRef,
+  IntegrationWebhook,
+  IntegrationSchedule,
+  IntegrationAlert,
+  FileEntry,
+  FileContent,
+  PodStorageStats,
 } from '@/types';
 
 // API configuration
@@ -27,6 +37,18 @@ let tokenGetter: (() => Promise<string | null>) | null = null;
  */
 export function setTokenGetter(getter: () => Promise<string | null>): void {
   tokenGetter = getter;
+}
+
+/**
+ * Error class that preserves the HTTP status code from API responses.
+ */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
 }
 
 /**
@@ -64,8 +86,9 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.detail || `API error: ${response.status} ${response.statusText}`
+    throw new ApiError(
+      errorData.detail || `API error: ${response.status} ${response.statusText}`,
+      response.status
     );
   }
 
@@ -614,6 +637,44 @@ export const configService = {
 };
 
 /**
+ * Session Graph types and service (Session E)
+ */
+export interface GraphNode {
+  id: string;
+  agent: string;
+  status: 'running' | 'completed' | 'failed' | 'pending';
+  mode: 'root' | 'in-process' | 'shared-pvc' | 'isolated' | 'sidecar';
+  tier: string;
+  started_at: string | null;
+  duration_ms: number;
+  task_summary: string;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  mode: 'in-process' | 'shared-pvc' | 'isolated' | 'sidecar';
+  task: string;
+}
+
+export interface SessionGraphData {
+  root: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export const sessionGraphService = {
+  async getGraph(
+    namespace: string,
+    contextId: string
+  ): Promise<SessionGraphData> {
+    return apiFetch(
+      `/chat/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/graph`
+    );
+  },
+};
+
+/**
  * Chat service for A2A agent communication
  */
 export const chatService = {
@@ -633,9 +694,16 @@ export const chatService = {
       examples?: string[];
     }>;
   }> {
-    return apiFetch(
-      `/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/agent-card`
-    );
+    try {
+      return await apiFetch(
+        `/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/agent-card`
+      );
+    } catch {
+      // Fallback: sandbox endpoint (direct port 8000, no AuthBridge retry)
+      return apiFetch(
+        `/sandbox/${encodeURIComponent(namespace)}/agent-card/${encodeURIComponent(name)}`
+      );
+    }
   },
 
   async sendMessage(
@@ -658,5 +726,321 @@ export const chatService = {
         }),
       }
     );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Sandbox Legion session management
+// ---------------------------------------------------------------------------
+
+import type { TaskListResponse, TaskDetail, HistoryPage, SandboxAgentInfo } from '@/types/sandbox';
+
+export const sandboxService = {
+  async listSessions(
+    namespace: string,
+    params?: { limit?: number; offset?: number; search?: string; agent_name?: string }
+  ): Promise<TaskListResponse> {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.offset) qs.set('offset', String(params.offset));
+    if (params?.search) qs.set('search', params.search);
+    if (params?.agent_name) qs.set('agent_name', params.agent_name);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions${query}`);
+  },
+
+  async getSession(namespace: string, contextId: string): Promise<TaskDetail> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}`
+    );
+  },
+
+  async deleteSession(namespace: string, contextId: string): Promise<void> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  async killSession(namespace: string, contextId: string): Promise<TaskDetail> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/kill`,
+      { method: 'POST' }
+    );
+  },
+
+  async approveSession(
+    namespace: string,
+    contextId: string
+  ): Promise<{ status: string; context_id: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/approve`,
+      { method: 'POST' }
+    );
+  },
+
+  async denySession(
+    namespace: string,
+    contextId: string
+  ): Promise<{ status: string; context_id: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/deny`,
+      { method: 'POST' }
+    );
+  },
+
+  async renameSession(
+    namespace: string,
+    contextId: string,
+    title: string
+  ): Promise<{ title: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/rename`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ title }),
+      }
+    );
+  },
+
+  async setVisibility(
+    namespace: string,
+    contextId: string,
+    visibility: 'private' | 'namespace'
+  ): Promise<{ visibility: string }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/visibility`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ visibility }),
+      }
+    );
+  },
+
+  async getHistory(
+    namespace: string,
+    contextId: string,
+    params?: { limit?: number; before?: number }
+  ): Promise<HistoryPage> {
+    const qs = new URLSearchParams();
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.before !== undefined) qs.set('before', String(params.before));
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/history${query}`
+    );
+  },
+
+  /** Return the URL for the SSE streaming chat endpoint. */
+  getStreamUrl(namespace: string): string {
+    return `${API_CONFIG.baseUrl}/sandbox/${encodeURIComponent(namespace)}/chat/stream`;
+  },
+
+  async listAgents(namespace: string): Promise<SandboxAgentInfo[]> {
+    return apiFetch<SandboxAgentInfo[]>(
+      `/sandbox/${encodeURIComponent(namespace)}/agents`
+    );
+  },
+
+  /** Fetch the A2A agent card for a sandbox agent (proxied via sandbox router). */
+  async getAgentCard(
+    namespace: string,
+    agentName: string
+  ): Promise<{
+    name: string;
+    description?: string;
+    version?: string;
+    capabilities?: { streaming?: boolean };
+    skills?: Array<{ id: string; name: string; description?: string }>;
+    model?: string;
+  }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/agent-card/${encodeURIComponent(agentName)}`
+    );
+  },
+
+  async createSandbox(
+    namespace: string,
+    data: {
+      name: string;
+      repo: string;
+      branch?: string;
+      context_dir?: string;
+      dockerfile?: string;
+      variant?: string;
+      base_agent?: string;
+      model?: string;
+      namespace?: string;
+      enable_persistence?: boolean;
+      isolation_mode?: string;
+      workspace_size?: string;
+      proxy_allowlist?: string;
+      // Composable security layers
+      secctx?: boolean;
+      landlock?: boolean;
+      proxy?: boolean;
+      gvisor?: boolean;
+      proxy_domains?: string;
+      // Credentials
+      github_pat?: string;
+      llm_api_key?: string;
+      llm_key_source?: string;
+      llm_secret_name?: string;
+    }
+  ): Promise<{ status: string; message: string; agent_url?: string; security_warnings?: string[] }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/create`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+};
+
+/**
+ * Integration service for managing repository integrations
+ */
+export const integrationService = {
+  async list(namespace: string): Promise<Integration[]> {
+    const response = await apiFetch<ApiListResponse<Integration>>(
+      `/integrations?namespace=${encodeURIComponent(namespace)}`
+    );
+    return response.items;
+  },
+
+  async get(namespace: string, name: string): Promise<IntegrationDetail> {
+    return apiFetch<IntegrationDetail>(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`
+    );
+  },
+
+  async create(data: {
+    name: string;
+    namespace: string;
+    repository: {
+      url: string;
+      provider: IntegrationProvider;
+      branch: string;
+      credentialsSecret?: string;
+    };
+    agents: IntegrationAgentRef[];
+    webhooks?: IntegrationWebhook[];
+    schedules?: IntegrationSchedule[];
+    alerts?: IntegrationAlert[];
+  }): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
+    return apiFetch('/integrations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async update(
+    namespace: string,
+    name: string,
+    data: Partial<{
+      agents: IntegrationAgentRef[];
+      webhooks: IntegrationWebhook[];
+      schedules: IntegrationSchedule[];
+      alerts: IntegrationAlert[];
+    }>
+  ): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async delete(namespace: string, name: string): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  async testConnection(
+    namespace: string,
+    name: string
+  ): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/integrations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/test`,
+      { method: 'POST' }
+    );
+  },
+};
+
+/**
+ * Sandbox file service for browsing agent sandbox files
+ */
+export const sandboxFileService = {
+  async listDirectory(
+    namespace: string,
+    agentName: string,
+    path: string,
+    contextId?: string
+  ): Promise<{ entries: FileEntry[] }> {
+    // When contextId is provided, use the context-scoped endpoint
+    // which browses /workspace/{contextId}/ and path is relative to that root
+    if (contextId) {
+      return apiFetch(
+        `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/${encodeURIComponent(contextId)}?path=${encodeURIComponent(path)}`
+      );
+    }
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/list?path=${encodeURIComponent(path)}`
+    );
+  },
+
+  async getFileContent(
+    namespace: string,
+    agentName: string,
+    filePath: string,
+    contextId?: string
+  ): Promise<FileContent> {
+    if (contextId) {
+      return apiFetch(
+        `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/${encodeURIComponent(contextId)}?path=${encodeURIComponent(filePath)}`
+      );
+    }
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/files/${encodeURIComponent(agentName)}/content?path=${encodeURIComponent(filePath)}`
+    );
+  },
+
+  async getStorageStats(
+    namespace: string,
+    agentName: string
+  ): Promise<PodStorageStats> {
+    return apiFetch<PodStorageStats>(
+      `/sandbox/${encodeURIComponent(namespace)}/stats/${encodeURIComponent(agentName)}`
+    );
+  },
+};
+
+/**
+ * Sandbox trigger service for managing automated triggers
+ */
+export const triggerService = {
+  async create(data: {
+    type: 'cron' | 'webhook' | 'alert';
+    skill?: string;
+    schedule?: string;
+    event?: string;
+    repo?: string;
+    branch?: string;
+    pr_number?: number;
+    alert?: string;
+    cluster?: string;
+    severity?: string;
+    namespace?: string;
+    ttl_hours?: number;
+  }): Promise<{ sandbox_claim: string; namespace: string }> {
+    return apiFetch('/sandbox/trigger', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 };

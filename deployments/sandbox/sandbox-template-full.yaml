@@ -1,0 +1,186 @@
+# Kagenti Agent Sandbox Template — Full (Phases 1-4)
+#
+# Capabilities:
+#   C1:  Pod lifecycle via agent-sandbox controller
+#   C3:  nono Landlock (kernel-level filesystem restrictions)
+#   C5:  Squid proxy sidecar (domain allowlist)
+#   C9:  Git workspace sync (init container clones primary repo)
+#   C10: Skills loading (SkillsLoader parses CLAUDE.md + .claude/skills/)
+#   C11: Multi-LLM via litellm (LLM_MODEL env var)
+#   C16: Container hardening (read-only root, caps dropped, non-root, etc.)
+#
+# Usage:
+#   Create a SandboxClaim referencing this template.
+#   Set REPO_URL to the repo to clone. Set LLM_MODEL + LLM_API_KEY for the LLM.
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: kagenti-agent-sandbox
+  namespace: team1
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/component: agent-sandbox
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Init container: clone the primary repo into /workspace
+      initContainers:
+      - name: git-clone
+        image: alpine/git:latest
+        command:
+        - sh
+        - -c
+        - |
+          REPO="${REPO_URL:-https://github.com/kagenti/kagenti.git}"
+          BRANCH="${REPO_BRANCH:-main}"
+          echo "Cloning $REPO (branch: $BRANCH) into /workspace..."
+          git clone --depth=1 --branch="$BRANCH" "$REPO" /workspace/repo
+          echo "Clone complete: $(ls /workspace/repo | wc -l) files"
+        env:
+        - name: REPO_URL
+          value: "https://github.com/kagenti/kagenti.git"
+        - name: REPO_BRANCH
+          value: "main"
+        - name: HTTP_PROXY
+          value: "http://localhost:3128"
+        - name: HTTPS_PROXY
+          value: "http://localhost:3128"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+
+      containers:
+      # Agent container — skills-driven, LLM-powered
+      - name: agent
+        image: python:3.11-slim
+        command:
+        - sh
+        - -c
+        - |
+          echo "Installing dependencies..."
+          pip install --target=/tmp/pip-packages --quiet --no-cache-dir litellm nono-py 2>/dev/null
+          export PYTHONPATH=/tmp/pip-packages:$PYTHONPATH
+          echo "Sandbox agent ready"
+          echo "  Workspace: /workspace/repo"
+          echo "  Model: ${LLM_MODEL:-not set}"
+          echo "  Skills: $(ls /workspace/repo/.claude/skills/ 2>/dev/null | wc -l) loaded"
+          sleep 36000
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: HTTP_PROXY
+          value: "http://localhost:3128"
+        - name: HTTPS_PROXY
+          value: "http://localhost:3128"
+        - name: http_proxy
+          value: "http://localhost:3128"
+        - name: https_proxy
+          value: "http://localhost:3128"
+        - name: NO_PROXY
+          value: "localhost,127.0.0.1,.svc,.cluster.local"
+        - name: WORKSPACE_DIR
+          value: "/workspace/repo"
+        - name: LLM_MODEL
+          value: "openai/gpt-4o-mini"
+        # LLM_API_KEY should be injected via Secret
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+
+      # Squid proxy sidecar — domain allowlist
+      - name: proxy
+        image: image-registry.openshift-image-registry.svc:5000/agent-sandbox-system/sandbox-proxy:latest
+        ports:
+        - containerPort: 3128
+          protocol: TCP
+        env:
+        - name: ALLOWED_DOMAINS
+          value: ".anthropic.com,.openai.com,.pypi.org,.pythonhosted.org,.github.com,.githubusercontent.com"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: proxy-tmp
+          mountPath: /tmp
+        - name: proxy-var
+          mountPath: /var/spool/squid
+        - name: proxy-log
+          mountPath: /var/log/squid
+        - name: proxy-run
+          mountPath: /var/run/squid
+
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - name: proxy-tmp
+        emptyDir: {}
+      - name: proxy-var
+        emptyDir: {}
+      - name: proxy-log
+        emptyDir: {}
+      - name: proxy-run
+        emptyDir: {}
+
+  # NetworkPolicy
+  networkPolicy:
+    ingress: []
+    egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 5353
+    - ports:
+      - protocol: TCP
+        port: 443
+      - protocol: TCP
+        port: 80

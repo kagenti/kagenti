@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "a2a-sdk>=0.2.0",
     "mcp>=1.0.0",
+    "asyncpg>=0.30.0",
 ]
 
 [project.optional-dependencies]

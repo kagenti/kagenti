@@ -57,7 +57,7 @@ echo ""
 UI_STATUS=$(kubectl get pods -n kagenti-system -l app=kagenti-ui -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Kagenti UI:${NC}"
 echo "  Status:   $UI_STATUS"
-echo -e "  Login:    ${GREEN}Use Keycloak credentials above (admin/admin)${NC}"
+echo -e "  Login:    ${GREEN}Use Keycloak credentials above (${KEYCLOAK_USER:-admin}/${KEYCLOAK_PASS:-see secret})${NC}"
 echo "  URL:      http://kagenti-ui.${DOMAIN_NAME}:8080"
 echo "  Port-forward: kubectl port-forward -n kagenti-system svc/http-istio 8080:80"
 echo ""

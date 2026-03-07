@@ -13,12 +13,13 @@ import {
   ExclamationCircleIcon,
   CubeIcon,
   OutlinedClockIcon,
+  HandPaperIcon,
 } from '@patternfly/react-icons';
 
 export interface A2AEvent {
   id: string;
   timestamp: Date;
-  type: 'status' | 'artifact' | 'error';
+  type: 'status' | 'artifact' | 'error' | 'hitl_request';
   taskId?: string;
   state?: string;
   message?: string;
@@ -31,6 +32,8 @@ interface EventsPanelProps {
   events: A2AEvent[];
   isComplete: boolean;
   defaultExpanded?: boolean;
+  onHitlApprove?: (taskId: string) => void;
+  onHitlDeny?: (taskId: string) => void;
 }
 
 const ARTIFACT_TRUNCATE_LENGTH = 500;
@@ -39,6 +42,8 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
   events,
   isComplete,
   defaultExpanded = true,
+  onHitlApprove,
+  onHitlDeny,
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [expandedArtifacts, setExpandedArtifacts] = useState<Record<string, boolean>>({});
@@ -46,10 +51,19 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
   const prevEventsLength = useRef(events.length);
 
   // Auto-collapse when isComplete changes from false to true OR when an artifact arrives
+  // BUT never auto-collapse if there's a pending HITL request
   useEffect(() => {
+    const hasPendingHitl = events.some(e => e.type === 'hitl_request');
+    if (hasPendingHitl) {
+      // Force expand for HITL - user needs to see approval buttons
+      setIsExpanded(true);
+      prevEventsLength.current = events.length;
+      return;
+    }
+
     const hasArtifact = events.some(e => e.type === 'artifact');
     const newArtifact = events.length > prevEventsLength.current && hasArtifact;
-    
+
     if ((!prevIsComplete.current && isComplete) || newArtifact) {
       // Small delay for visual feedback before collapsing
       const timer = setTimeout(() => {
@@ -67,6 +81,9 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
   }
 
   const getEventIcon = (event: A2AEvent) => {
+    if (event.type === 'hitl_request') {
+      return <HandPaperIcon style={{ color: 'var(--pf-v5-global--warning-color--100)' }} />;
+    }
     if (event.type === 'artifact') {
       return <CubeIcon style={{ color: 'var(--pf-v5-global--palette--purple-400)' }} />;
     }
@@ -84,6 +101,13 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
   };
 
   const getEventLabel = (event: A2AEvent) => {
+    if (event.type === 'hitl_request') {
+      return (
+        <Label color="gold" isCompact>
+          Approval Required
+        </Label>
+      );
+    }
     if (event.type === 'artifact') {
       return (
         <Label color="purple" isCompact>
@@ -235,6 +259,43 @@ export const EventsPanel: React.FC<EventsPanelProps> = ({
                   {getEventDescription(event)}
                 </span>
               </div>
+              {/* HITL approval buttons */}
+              {event.type === 'hitl_request' && (
+                <div
+                  data-testid={`hitl-approval-${event.taskId}`}
+                  style={{
+                    marginTop: '8px',
+                    display: 'flex',
+                    gap: '8px',
+                    padding: '8px',
+                    backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
+                    borderRadius: '4px',
+                    border: '1px solid var(--pf-v5-global--warning-color--100)',
+                  }}
+                >
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    data-testid={`hitl-approve-${event.taskId}`}
+                    onClick={() => onHitlApprove?.(event.taskId || '')}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    data-testid={`hitl-deny-${event.taskId}`}
+                    onClick={() => onHitlDeny?.(event.taskId || '')}
+                  >
+                    Deny
+                  </Button>
+                  {event.message && (
+                    <span style={{ fontSize: '0.85em', alignSelf: 'center' }}>
+                      {event.message}
+                    </span>
+                  )}
+                </div>
+              )}
               {/* Artifact content (truncated with expand) */}
               {event.type === 'artifact' && event.artifactContent && (
                 <div style={{ marginTop: '4px' }}>

@@ -13,3 +13,4 @@ export { ImportAgentPage } from './ImportAgentPage';
 export { ImportToolPage } from './ImportToolPage';
 export { AdminPage } from './AdminPage';
 export { NotFoundPage } from './NotFoundPage';
+export { SandboxCreatePage } from './SandboxCreatePage';

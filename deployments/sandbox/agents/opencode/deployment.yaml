@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode-agent
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: opencode-agent
+    kagenti.io/framework: opencode
+    kagenti.io/runtime: platform-base
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opencode-agent
+  template:
+    metadata:
+      labels:
+        app: opencode-agent
+        app.kubernetes.io/name: opencode-agent
+        kagenti.io/framework: opencode
+        kagenti.io/runtime: platform-base
+    spec:
+      containers:
+      - name: agent
+        image: image-registry.openshift-image-registry.svc:5000/team1/opencode-agent:v0.0.1
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 4096
+          name: opencode
+        env:
+        - name: AGENT_MODULE
+          value: opencode.plugin
+        - name: AGENT_NAME
+          value: opencode-agent
+        - name: PYTHONPATH
+          value: /app
+        - name: OPENCODE_PORT
+          value: "4096"
+        - name: LLM_MODEL
+          value: llama-4-scout-17b-16e-w4a16
+        - name: LLM_API_BASE
+          value: https://llama-4-scout-17b-16e-w4a16-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1
+        - name: LLM_API_KEY
+          value: 51cd949ed51d30df4c8a18e30c2da773
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: apikey
+        - name: TASK_STORE_DB_URL
+          value: postgresql+psycopg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
+        - name: WORKSPACE_ROOT
+          value: /workspace
+        - name: CONFIG_ROOT
+          value: /app
+        - name: HOME
+          value: /tmp/opencode-home
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: workspace
+        emptyDir:
+          sizeLimit: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opencode-agent
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: opencode-agent
+spec:
+  selector:
+    app: opencode-agent
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http

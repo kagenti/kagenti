@@ -315,6 +315,88 @@ class KubernetesService:
             raise
 
     # -------------------------------------------------------------------------
+    # Secret Operations
+    # -------------------------------------------------------------------------
+
+    def create_secret(
+        self,
+        namespace: str,
+        name: str,
+        string_data: dict,
+        labels: Optional[dict] = None,
+    ) -> dict:
+        """Create an Opaque Secret with the provided string data.
+
+        If the secret already exists (409 Conflict), updates it in place.
+        """
+        metadata = kubernetes.client.V1ObjectMeta(name=name, labels=labels)
+        body = kubernetes.client.V1Secret(
+            api_version="v1",
+            kind="Secret",
+            metadata=metadata,
+            string_data=string_data,
+        )
+        try:
+            result = self.core_api.create_namespaced_secret(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            if e.status == 409:
+                # Secret already exists — patch it
+                logger.info(f"Secret '{name}' already exists in {namespace}, patching")
+                result = self.core_api.patch_namespaced_secret(
+                    name=name,
+                    namespace=namespace,
+                    body=body,
+                )
+                return result.to_dict()
+            logger.error(f"Error creating Secret {name} in {namespace}: {e}")
+            raise
+
+    # -------------------------------------------------------------------------
+    # ConfigMap Operations
+    # -------------------------------------------------------------------------
+
+    def create_configmap(
+        self,
+        namespace: str,
+        name: str,
+        data: dict,
+        labels: Optional[dict] = None,
+    ) -> dict:
+        """Create a ConfigMap with the provided data.
+
+        If the ConfigMap already exists (409 Conflict), updates it in place.
+        """
+        metadata = kubernetes.client.V1ObjectMeta(name=name, labels=labels)
+        body = kubernetes.client.V1ConfigMap(
+            api_version="v1",
+            kind="ConfigMap",
+            metadata=metadata,
+            data=data,
+        )
+        try:
+            result = self.core_api.create_namespaced_config_map(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            if e.status == 409:
+                # ConfigMap already exists — patch it
+                logger.info(f"ConfigMap '{name}' already exists in {namespace}, patching")
+                result = self.core_api.patch_namespaced_config_map(
+                    name=name,
+                    namespace=namespace,
+                    body=body,
+                )
+                return result.to_dict()
+            logger.error(f"Error creating ConfigMap {name} in {namespace}: {e}")
+            raise
+
+    # -------------------------------------------------------------------------
     # StatefulSet Operations
     # -------------------------------------------------------------------------
 

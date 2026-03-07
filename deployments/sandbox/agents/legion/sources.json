@@ -1,0 +1,32 @@
+{
+  "_comment": "Declares what this agent can access and install. Baked into agent image.",
+  "agent_type": "python-data-agent",
+  "package_managers": {
+    "pip": {
+      "enabled": true,
+      "registries": [
+        {"name": "pypi", "url": "https://pypi.org/simple/", "trusted": true}
+      ],
+      "max_install_size_mb": 500,
+      "blocked_packages": ["subprocess32", "pyautogui"]
+    },
+    "conda": {"enabled": false},
+    "npm": {"enabled": false}
+  },
+  "web_access": {
+    "enabled": true,
+    "allowed_domains": ["github.com", "api.github.com", "raw.githubusercontent.com", "pypi.org", "huggingface.co", "docs.python.org"],
+    "blocked_domains": ["*.internal", "metadata.google.internal"]
+  },
+  "git": {
+    "enabled": true,
+    "allowed_remotes": ["https://github.com/*", "https://gitlab.com/*"],
+    "max_clone_size_mb": 1000
+  },
+  "runtime": {
+    "languages": ["python3.11", "bash"],
+    "interpreters": {"python": "/usr/bin/python3", "bash": "/bin/bash"},
+    "max_execution_time_seconds": 300,
+    "max_memory_mb": 2048
+  }
+}

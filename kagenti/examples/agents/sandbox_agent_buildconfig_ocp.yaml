@@ -1,0 +1,34 @@
+# OpenShift BuildConfig for sandbox-agent image.
+# Alternative to Shipwright Build — uses Docker strategy which runs
+# each build in a fresh pod without layer caching issues.
+# All sandbox variants share this image (sandbox-agent:v0.0.1).
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: sandbox-agent
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: sandbox-agent
+    app.kubernetes.io/managed-by: kagenti-e2e
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: LangGraph
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/Ladas/agent-examples.git
+      ref: feat/sandbox-agent
+    contextDir: a2a/sandbox_agent
+    sourceSecret:
+      name: github-shipwright-secret
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      noCache: true
+  output:
+    to:
+      kind: ImageStreamTag
+      name: sandbox-agent:v0.0.1
+  triggers: []

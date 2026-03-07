@@ -1,0 +1,46 @@
+[
+  {
+    "step": "intro",
+    "time": 0
+  },
+  {
+    "step": "login",
+    "time": 10.026
+  },
+  {
+    "step": "sandbox_navigate",
+    "time": 10.092
+  },
+  {
+    "step": "sandbox_sidebar",
+    "time": 10.1
+  },
+  {
+    "step": "sandbox_config_skipped",
+    "time": 10.1
+  },
+  {
+    "step": "sandbox_chat_send",
+    "time": 10.16
+  },
+  {
+    "step": "sandbox_chat_response",
+    "time": 10.166
+  },
+  {
+    "step": "sandbox_sessions_table",
+    "time": 10.212
+  },
+  {
+    "step": "sandbox_table_search",
+    "time": 11.663
+  },
+  {
+    "step": "sandbox_return_chat",
+    "time": 11.717
+  },
+  {
+    "step": "end",
+    "time": 11.717
+  }
+]

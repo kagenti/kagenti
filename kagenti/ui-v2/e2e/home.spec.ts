@@ -7,16 +7,19 @@
  * - Basic layout elements
  */
 import { test, expect } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 test.describe('Home Page', () => {
   test('should display home page', async ({ page }) => {
     await page.goto('/');
+    await loginIfNeeded(page);
     // Home page should load without errors
     await expect(page).toHaveURL(/\//);
   });
 
   test('should have main navigation elements', async ({ page }) => {
     await page.goto('/');
+    await loginIfNeeded(page);
 
     // Check for main navigation links
     const nav = page.locator('nav').or(page.getByRole('navigation'));
@@ -25,25 +28,31 @@ test.describe('Home Page', () => {
 
   test('should navigate to agent catalog', async ({ page }) => {
     await page.goto('/');
+    await loginIfNeeded(page);
 
-    // Find and click the Agent Catalog link
-    const agentLink = page.getByRole('link', { name: /Agent/i }).first();
+    // The "View Agents" action in the QuickLinkCard is a PatternFly Button
+    // (variant="link"), which renders as <button>, not <a>.
+    const agentButton = page.getByRole('button', { name: /View Agents/i }).first();
 
-    if (await agentLink.isVisible()) {
-      await agentLink.click();
-      await expect(page).toHaveURL(/\/agents/);
+    if (await agentButton.isVisible()) {
+      await agentButton.click();
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/\/agents/, { timeout: 15000 });
     }
   });
 
   test('should navigate to tool catalog', async ({ page }) => {
     await page.goto('/');
+    await loginIfNeeded(page);
 
-    // Find and click the Tool Catalog link
-    const toolLink = page.getByRole('link', { name: /Tool/i }).first();
+    // The "View Tools" action in the QuickLinkCard is a PatternFly Button
+    // (variant="link"), which renders as <button>, not <a>.
+    const toolButton = page.getByRole('button', { name: /View Tools/i }).first();
 
-    if (await toolLink.isVisible()) {
-      await toolLink.click();
-      await expect(page).toHaveURL(/\/tools/);
+    if (await toolButton.isVisible()) {
+      await toolButton.click();
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/\/tools/, { timeout: 15000 });
     }
   });
 });
@@ -51,6 +60,7 @@ test.describe('Home Page', () => {
 test.describe('Navigation', () => {
   test('should show sidebar navigation', async ({ page }) => {
     await page.goto('/');
+    await loginIfNeeded(page);
 
     // PatternFly typically uses a page sidebar for navigation
     const sidebar = page.locator('.pf-v5-c-page__sidebar').or(
@@ -61,8 +71,10 @@ test.describe('Navigation', () => {
   });
 
   test('should have working breadcrumbs on detail pages', async ({ page }) => {
-    // Navigate to a detail page
-    await page.goto('/agents');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
 
     // Check for breadcrumbs if present
     const breadcrumbs = page.locator('.pf-v5-c-breadcrumb');

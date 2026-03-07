@@ -6,13 +6,11 @@ FROM node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec
 
 WORKDIR /app
 
-# Copy package files
-COPY ui-v2/package.json ./
-# Note: If using npm, use package-lock.json instead
-# COPY package-lock.json ./
+# Copy package files and lockfile for reproducible builds
+COPY ui-v2/package.json ui-v2/package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source code
 COPY ui-v2/ .

@@ -316,3 +316,97 @@ export interface User {
   email?: string;
   roles?: string[];
 }
+
+// Integration types
+export type IntegrationProvider = 'github' | 'gitlab' | 'bitbucket';
+
+export type IntegrationStatus = 'Connected' | 'Error' | 'Pending';
+
+export interface IntegrationWebhook {
+  name: string;
+  events: string[];
+  filters?: {
+    branches?: string[];
+    actions?: string[];
+  };
+}
+
+export interface IntegrationSchedule {
+  name: string;
+  cron: string;
+  skill: string;
+  agent: string;
+  enabled?: boolean;
+}
+
+export interface IntegrationAlert {
+  name: string;
+  source: 'prometheus' | 'pagerduty';
+  matchLabels: Record<string, string>;
+  agent: string;
+}
+
+export interface IntegrationAgentRef {
+  name: string;
+  namespace: string;
+}
+
+export interface Integration {
+  name: string;
+  namespace: string;
+  repository: {
+    url: string;
+    provider: IntegrationProvider;
+    branch: string;
+    credentialsSecret?: string;
+  };
+  agents: IntegrationAgentRef[];
+  webhooks: IntegrationWebhook[];
+  schedules: IntegrationSchedule[];
+  alerts: IntegrationAlert[];
+  status: IntegrationStatus;
+  webhookUrl?: string;
+  lastWebhookEvent?: string;
+  lastScheduleRun?: string;
+  createdAt?: string;
+}
+
+export interface IntegrationDetail extends Integration {
+  conditions?: Array<{
+    type: string;
+    status: string;
+    lastTransitionTime?: string;
+    message?: string;
+  }>;
+}
+
+// File browser types
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  modified?: string;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  size: number;
+  modified: string;
+}
+
+// Pod storage / mount stats
+export interface MountInfo {
+  filesystem: string;
+  size: string;
+  used: string;
+  available: string;
+  use_percent: string;
+  mount_point: string;
+}
+
+export interface PodStorageStats {
+  mounts: MountInfo[];
+  total_mounts: number;
+}

@@ -1,0 +1,17 @@
+# skill-packs.yaml — pinned, verified skill sources for sandbox agents
+version: 1
+
+trusted_keys:
+  - id: anthropic-bot
+    fingerprint: "SHA256:placeholder"
+    type: gpg
+
+packs:
+  - name: superpowers
+    description: "Claude Code superpowers — brainstorming, TDD, debugging, code review"
+    source: https://github.com/claude-plugins-official/superpowers
+    commit: "HEAD"
+    path: skills/
+    integrity: ""
+    signer: anthropic-bot
+    default: true
