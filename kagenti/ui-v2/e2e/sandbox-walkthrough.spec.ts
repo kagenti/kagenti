@@ -93,7 +93,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
   test.skip(!LIVE_URL, 'Requires KAGENTI_UI_URL — live cluster with sandbox-legion agent');
 
   test('full sandbox user journey', async ({ page }) => {
-    test.setTimeout(1200000); // 20 min — Llama 4 Scout can be very slow on complex tasks
+    test.setTimeout(1800000); // 30 min — agent clones skills at startup + Llama 4 Scout is slow
     demoStartTime = Date.now();
 
     // ------------------------------------------------------------------

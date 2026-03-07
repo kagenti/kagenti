@@ -1145,6 +1145,96 @@ your acceptance criteria. Do NOT use sbox42/sandbox42/sandbox44.
 
 ---
 
+### Session Q — LiteLLM Proxy Gateway (sandbox44)
+
+**Claude Session ID:** (to be assigned)
+**Role:** Deploy LiteLLM as a centralized model gateway, wire all agents through it, add per-session token tracking
+**Cluster:** sandbox44 (to be created fresh)
+**Design Doc:** `docs/plans/2026-03-07-litellm-proxy-design.md`
+**Session Active:** NEW
+
+**Architecture (approved by Coordinator brainstorm):**
+
+```
+Agents (team1)  ──▶  litellm-proxy (kagenti-system)  ──▶  MAAS / vLLM / OpenAI
+                     ├── model router (config.yaml)
+                     ├── virtual API keys per team
+                     ├── spend tracking (PostgreSQL)
+                     └── /v1/chat/completions (OpenAI-compatible)
+```
+
+**Agent change:** Only `LLM_API_BASE` env var — from direct MAAS URL to `http://litellm-proxy.kagenti-system.svc:4000/v1`. No code changes needed. Agents already use OpenAI-compatible API.
+
+**Implementation Tasks (TDD):**
+
+1. **Deploy LiteLLM proxy** in `kagenti-system`
+   - Container: `ghcr.io/berriai/litellm:main`
+   - ConfigMap from `.env.maas` model definitions (Llama 4 Scout, Mistral, DeepSeek)
+   - Service: `litellm-proxy:4000`
+   - DB: reuse `postgres-otel` or add `postgres-litellm` for spend tracking
+   - Secured by Istio Ambient mTLS (pod-to-pod)
+
+2. **Create deploy script** `.github/scripts/kagenti-operator/38-deploy-litellm.sh`
+   - Read model credentials from `.env.maas`
+   - Generate `config.yaml` ConfigMap with model aliases
+   - Create virtual API keys per namespace (team1, team2)
+   - Store proxy key in `litellm-proxy-secret`
+
+3. **Wire agents to proxy**
+   - Update `76-deploy-sandbox-agents.sh` to set `LLM_API_BASE=http://litellm-proxy.kagenti-system.svc:4000/v1`
+   - Update `74-deploy-weather-agent.sh` similarly
+   - Agents use virtual key from `litellm-proxy-secret` instead of `openai-secret`
+
+4. **Add metadata tagging** to agent LLM calls
+   - In `agent_server.py` / `graph.py`: pass `metadata={"session_id": context_id, "agent_name": name, "namespace": ns}` to completion calls
+   - This enables per-session spend queries
+
+5. **Expose stats API** in Kagenti backend
+   - `GET /api/v1/sessions/{context_id}/tokens` — proxy to LiteLLM `/spend/tags?tags=session_id:{id}`
+   - Returns: total tokens, prompt/completion split, model used, cost estimate
+   - Aggregate sub-sessions via `parent_session` tag
+
+6. **Wire into deploy pipeline**
+   - Add `38-deploy-litellm.sh` call in `hypershift-full-test.sh` after Keycloak setup, before agent deploy
+   - Models auto-registered from `.env.maas` on fresh deploy
+
+7. **Quick model switching via API**
+   - Kagenti backend proxies LiteLLM `/model/new`, `/model/delete`, `/model/info`
+   - UI model picker reads available models from this API (replaces hardcoded list)
+
+**Model Compatibility (tested 2026-03-04):**
+| Model | tool_choice=auto | Recommended |
+|-------|-----------------|-------------|
+| Llama 4 Scout 17B-16E | ✅ 10/10 | Yes — default |
+| Mistral Small 3.1 24B | ❌ 0/10 | No — text only |
+| DeepSeek R1 Qwen 14B | ❌ no tools | No |
+
+**File Ownership:**
+- `.github/scripts/kagenti-operator/38-deploy-litellm.sh` — NEW
+- `charts/kagenti/templates/litellm-*.yaml` — NEW (deployment, service, configmap)
+- `kagenti/backend/app/routers/models.py` — NEW (model management API)
+- `kagenti/backend/app/routers/token_usage.py` — NEW (spend tracking API)
+- `deployments/sandbox/agent_server.py` — MODIFY (add metadata tagging)
+- `kagenti/ui-v2/e2e/litellm-proxy.spec.ts` — NEW tests
+
+**Startup:**
+```bash
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+# First create sandbox44:
+source .env.kagenti-team && .github/scripts/hypershift/create-cluster.sh sandbox44
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox44/auth/kubeconfig
+cd .worktrees/sandbox-agent
+claude
+
+Read docs/plans/2026-03-01-multi-session-passover.md. You are Session Q (LiteLLM Proxy).
+Deploy LiteLLM as a centralized model gateway. Architecture is pre-approved (see session def).
+Start with Task 1: deploy the proxy, then wire agents, then add tagging + stats.
+Use /tdd:hypershift for iteration. Create sandbox44 cluster first if it doesn't exist.
+Model credentials are in .env.maas.
+```
+
+---
+
 ### Session P — Sidecar Agents (sandbox42)
 
 **Claude Session ID:** (to be assigned)
