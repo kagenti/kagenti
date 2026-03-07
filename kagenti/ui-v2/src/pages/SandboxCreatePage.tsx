@@ -103,7 +103,7 @@ const INITIAL_STATE: WizardState = {
   enableCheckpointing: true,
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
-  model: 'llama-4-scout-17b-16e-w4a16',
+  model: 'llama-4-scout',
 };
 
 const STEPS = [

@@ -17,8 +17,8 @@ const AGENT_NAME = 'rca-agent';
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
 
-// Wizard now defaults to cluster LLM (Mistral). Override via env if needed.
-const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'openai-secret';
+// LiteLLM proxy secret — agents route through LiteLLM for tool calling support.
+const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'litellm-proxy-secret';
 
 function getKubeconfig(): string {
   return process.env.KUBECONFIG || `${process.env.HOME}/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig`;
