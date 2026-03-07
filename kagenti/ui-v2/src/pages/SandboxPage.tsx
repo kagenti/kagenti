@@ -24,7 +24,6 @@ import { useQuery } from '@tanstack/react-query';
 import { sandboxService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { SessionSidebar } from '../components/SessionSidebar';
-import { SandboxAgentsPanel } from '../components/SandboxAgentsPanel';
 import { SkillWhisperer } from '../components/SkillWhisperer';
 // SandboxConfig disabled — model/repo/branch not yet wired to backend
 // import { SandboxConfig, SandboxConfigValues } from '../components/SandboxConfig';
@@ -250,7 +249,17 @@ const ToolCallStep: React.FC<{
       >
         <div style={{ fontWeight: 600 }}>
           {expanded ? '▼' : '▶'} Tool Call:{' '}
-          {data.tools?.map((t) => t.name).join(', ') || 'unknown'}
+          {(() => {
+            if (!data.tools || data.tools.length === 0) return 'unknown';
+            const counts = data.tools.reduce((acc, t) => {
+              const name = t.name || 'unknown';
+              acc[name] = (acc[name] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>);
+            return Object.entries(counts)
+              .map(([name, count]) => count > 1 ? `${name} (${count})` : name)
+              .join(', ');
+          })()}
         </div>
         {expanded &&
           data.tools?.map((t, i) => (
@@ -1584,19 +1593,6 @@ export const SandboxPage: React.FC = () => {
               selectedAgentName={selectedAgent}
             />
           </div>
-          {!contextId && (
-            <SandboxAgentsPanel
-              namespace={namespace}
-              selectedAgent={selectedAgent}
-              onSelectAgent={(name) => {
-                const a = name || 'sandbox-legion';
-                selectedAgentRef.current = a;
-                setSelectedAgent(a);
-                // Start a fresh session when switching agents via the panel
-                handleSelectSession('', a);
-              }}
-            />
-          )}
         </div>
 
         <div

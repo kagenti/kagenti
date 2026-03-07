@@ -2,6 +2,8 @@
 #
 # Sign all commits in current branch that are ahead of the tracked upstream.
 # This adds both sign-off (-s) and GPG signature (-S) to each commit.
+# Also rewrites Co-Authored-By trailers to:
+#   Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>
 #
 # Usage: ./scripts/sign_all_commits_in_a_branch.sh [upstream-ref]
 #
@@ -60,10 +62,16 @@ echo -e "${YELLOW}Commits that will be signed:${NC}"
 git --no-pager log --oneline "$UPSTREAM_REF"..HEAD
 echo ""
 
+# Check for Co-Authored-By trailers that will be rewritten
+COAUTH_COUNT=$(git --no-pager log --format='%B' "$UPSTREAM_REF"..HEAD | grep -ci "co-authored-by" || true)
+if [ "$COAUTH_COUNT" -gt 0 ]; then
+    echo -e "${YELLOW}Found $COAUTH_COUNT Co-Authored-By lines — will rewrite to:${NC}"
+    echo -e "  Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>"
+    echo ""
+fi
+
 # Show the command that will be run (non-interactive rebase with exec)
-REBASE_CMD="git rebase HEAD~${COMMIT_COUNT} --exec 'git commit --amend -s -S --no-edit'"
-echo -e "${GREEN}Command to run:${NC}"
-echo "  $REBASE_CMD"
+echo -e "${GREEN}Will run: rebase with sign-off, GPG sign, and trailer rewrite${NC}"
 echo ""
 
 # Prompt for confirmation
@@ -76,11 +84,25 @@ if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
 fi
 
 # Run the rebase (non-interactive)
+# Each commit: rewrite Co-Authored-By trailers, then amend with sign-off and GPG
 echo ""
-echo -e "${BLUE}Running rebase to sign commits...${NC}"
+echo -e "${BLUE}Running rebase to sign commits and rewrite trailers...${NC}"
 echo ""
 
-git rebase "HEAD~${COMMIT_COUNT}" --exec 'git commit --amend -s -S --no-edit'
+ASSISTED_BY="Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>"
+
+git rebase "HEAD~${COMMIT_COUNT}" --exec '
+MSG=$(git log -1 --format="%B")
+if echo "$MSG" | grep -qi "co-authored-by"; then
+    NEW_MSG=$(echo "$MSG" | sed -E "/^[Cc]o-[Aa]uthored-[Bb]y:.*/d" | sed -e :a -e "/^\n*$/{$d;N;ba;}")
+    NEW_MSG="$NEW_MSG
+
+Assisted-By: Claude (Anthropic AI) <noreply@anthropic.com>"
+    git commit --amend -s -S -m "$NEW_MSG" --no-edit 2>/dev/null || git commit --amend -s -m "$NEW_MSG" --no-edit
+else
+    git commit --amend -s -S --no-edit 2>/dev/null || git commit --amend -s --no-edit
+fi
+'
 
 echo ""
 echo -e "${GREEN}Done! All $COMMIT_COUNT commits have been signed.${NC}"

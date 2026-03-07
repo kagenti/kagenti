@@ -1609,6 +1609,29 @@ async def chat_stream(
     agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
     session_id = request.session_id or uuid4().hex[:36]
 
+    # Validate immutable session→agent binding
+    if request.session_id and request.agent_name:
+        try:
+            pool = await get_session_pool(namespace)
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                    request.session_id,
+                )
+                if row and row["metadata"]:
+                    meta = _parse_json_field(row["metadata"]) or {}
+                    bound_agent = meta.get("agent_name")
+                    if bound_agent and bound_agent != request.agent_name:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Session is bound to agent '{bound_agent}', cannot use '{request.agent_name}'",
+                        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            # DB errors shouldn't block the request
+            logger.warning("Failed to check session agent binding: %s", e)
+
     return StreamingResponse(
         _stream_sandbox_response(
             agent_url,

@@ -32,7 +32,15 @@ spec:
       # Agent container — all egress via proxy
       - name: agent
         image: python:3.11-slim
-        command: ["/bin/sh", "-c", "echo 'Sandbox ready'; sleep 36000"]
+        command:
+        - sh
+        - -c
+        - |
+          echo "Installing nono-py for Landlock..."
+          pip install --target=/tmp/pip-packages --quiet --no-cache-dir nono-py 2>/dev/null
+          export PYTHONPATH=/tmp/pip-packages:$PYTHONPATH
+          echo "Sandbox agent starting with Landlock enforcement"
+          exec python3 nono_launcher.py python3 agent_server.py
         ports:
         - containerPort: 8080
           protocol: TCP
