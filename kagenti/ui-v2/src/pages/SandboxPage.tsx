@@ -689,6 +689,7 @@ const CollapsedTurn: React.FC<{
 
 const STORAGE_KEY_SESSION = 'kagenti-sandbox-last-session';
 const STORAGE_KEY_NAMESPACE = 'kagenti-sandbox-last-namespace';
+const STORAGE_KEY_AGENT_PREFIX = 'kagenti-sandbox-agent:'; // keyed by session id
 
 /**
  * Determine initial session ID.
@@ -739,7 +740,17 @@ export const SandboxPage: React.FC = () => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
-  const [selectedAgent, setSelectedAgent] = useState('sandbox-legion');
+  const [selectedAgent, setSelectedAgent] = useState(() => {
+    // Restore agent from URL param first, then localStorage keyed by session
+    const urlAgent = searchParams.get('agent');
+    if (urlAgent) return urlAgent;
+    const sid = getInitialSession(searchParams);
+    if (sid) {
+      const stored = localStorage.getItem(STORAGE_KEY_AGENT_PREFIX + sid);
+      if (stored) return stored;
+    }
+    return 'sandbox-legion';
+  });
   const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
@@ -863,6 +874,7 @@ export const SandboxPage: React.FC = () => {
         const metaAgent = (sessionDetail?.metadata as Record<string, unknown> | null)?.agent_name as string | undefined;
         if (metaAgent) {
           setSelectedAgent(metaAgent);
+          localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + ctxId, metaAgent);
         }
       } catch {
         // Non-critical — agent badge may show default but chat still works
@@ -1034,7 +1046,10 @@ export const SandboxPage: React.FC = () => {
   const handleSelectSession = useCallback(
     (id: string, sessionAgentName?: string) => {
       setContextId(id);
-      if (sessionAgentName) setSelectedAgent(sessionAgentName);
+      if (sessionAgentName) {
+        setSelectedAgent(sessionAgentName);
+        if (id) localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + id, sessionAgentName);
+      }
       setMessages([]);
       setAgentLoops(new Map());
       setInput('');
@@ -1045,14 +1060,14 @@ export const SandboxPage: React.FC = () => {
       setOldestIndex(null);
       shouldAutoScroll.current = true;
       if (id) {
-        setSearchParams({ session: id });
+        setSearchParams({ session: id, agent: sessionAgentName || selectedAgent });
         localStorage.setItem(STORAGE_KEY_SESSION, id);
       } else {
         setSearchParams({});
         localStorage.removeItem(STORAGE_KEY_SESSION);
       }
     },
-    [setSearchParams]
+    [setSearchParams, selectedAgent]
   );
 
   /** Start a new session with the chosen agent (from the New Session modal). */
@@ -1194,8 +1209,9 @@ export const SandboxPage: React.FC = () => {
             // Track session from the streaming response
             if (data.session_id && !contextId) {
               setContextId(data.session_id);
-              setSearchParams({ session: data.session_id });
+              setSearchParams({ session: data.session_id, agent: selectedAgent });
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
+              localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + data.session_id, selectedAgent);
             }
 
             // Handle agent loop events (grouped by loop_id)
@@ -1206,6 +1222,9 @@ export const SandboxPage: React.FC = () => {
                 // First loop event: retroactively remove flat messages
                 // from THIS turn only (keep previous turns intact)
                 seenLoopId = true;
+                // Clear any pre-loop flat content to prevent duplicates
+                accumulatedContent = '';
+                setStreamingContent('');
                 setMessages((prev) => [
                   ...prev.slice(0, msgCountBeforeStream),
                   ...prev.slice(msgCountBeforeStream).filter((m) => m.role === 'user'),
@@ -1364,10 +1383,27 @@ export const SandboxPage: React.FC = () => {
             }
 
             // Accumulate content for real-time display (final answer)
-            // Skip if in loop mode — AgentLoopCard shows the final answer
-            if (data.content && !seenLoopId) {
-              accumulatedContent += data.content;
-              setStreamingContent(accumulatedContent);
+            if (data.content) {
+              if (!seenLoopId) {
+                // No loop active — normal flat content display
+                accumulatedContent += data.content;
+                setStreamingContent(accumulatedContent);
+              } else {
+                // Loop mode: flat content is the final answer.
+                // Use it to fill the loop's finalAnswer (prevents "stuck in reasoning").
+                accumulatedContent += data.content;
+                setAgentLoops((prev) => {
+                  const next = new Map(prev);
+                  // Find the last active loop to attach the answer to
+                  for (const [lid, loop] of [...next].reverse()) {
+                    if (!loop.finalAnswer) {
+                      next.set(lid, { ...loop, status: 'done', finalAnswer: accumulatedContent });
+                      break;
+                    }
+                  }
+                  return next;
+                });
+              }
             }
 
             // Handle errors from the backend
@@ -1418,7 +1454,6 @@ export const SandboxPage: React.FC = () => {
     const trimmed = input.trim();
     const skillMatch = trimmed.match(/^\/([\w:.-]+)\s*(.*)/s);
     const skill = skillMatch ? skillMatch[1] : undefined;
-    const messageText = skillMatch ? (skillMatch[2] || skillMatch[1]) : trimmed;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -1428,7 +1463,8 @@ export const SandboxPage: React.FC = () => {
       username: currentUsername,
     };
     setMessages((prev) => [...prev, userMessage]);
-    const messageToSend = messageText;
+    // Send full text to backend (preserve skill prefix in history)
+    const messageToSend = trimmed;
     setInput('');
     setIsStreaming(true);
     setStreamingContent('');
