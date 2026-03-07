@@ -35,6 +35,8 @@ import { FilePreviewModal } from '../components/FilePreviewModal';
 import { SessionStatsPanel } from '../components/SessionStatsPanel';
 import { LlmUsagePanel } from '../components/LlmUsagePanel';
 import { FileBrowser } from '../components/FileBrowser';
+import { SidecarTab } from '../components/SidecarTab';
+import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
@@ -778,6 +780,64 @@ export const SandboxPage: React.FC = () => {
   const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
+
+  // Sidecar agents state
+  const [sidecars, setSidecars] = useState<SidecarInfo[]>([]);
+  const SIDECAR_TYPES = [
+    { type: 'looper', name: 'Looper' },
+    { type: 'hallucination_observer', name: 'Hallucination Observer' },
+    { type: 'context_guardian', name: 'Context Guardian' },
+  ];
+
+  // Poll sidecars list when we have a contextId
+  useEffect(() => {
+    if (!contextId || !namespace) return;
+    const poll = async () => {
+      try {
+        const list = await sidecarService.list(namespace, contextId);
+        setSidecars(list);
+      } catch {
+        // Sidecar API not available — ignore
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [contextId, namespace]);
+
+  const handleSidecarToggleEnable = async (sidecarType: string, enabled: boolean) => {
+    if (!contextId || !namespace) return;
+    try {
+      if (enabled) {
+        await sidecarService.enable(namespace, contextId, sidecarType);
+      } else {
+        await sidecarService.disable(namespace, contextId, sidecarType);
+        // Switch to chat if we disabled the active tab
+        if (activeTab === `sidecar-${sidecarType}`) {
+          setActiveTab('chat');
+        }
+      }
+      // Refresh list
+      const list = await sidecarService.list(namespace, contextId);
+      setSidecars(list);
+    } catch (e) {
+      console.error('Sidecar toggle error:', e);
+    }
+  };
+
+  const handleSidecarToggleAutoApprove = async (sidecarType: string, auto: boolean) => {
+    if (!contextId || !namespace) return;
+    try {
+      await sidecarService.updateConfig(namespace, contextId, sidecarType, { auto_approve: auto });
+      const list = await sidecarService.list(namespace, contextId);
+      setSidecars(list);
+    } catch (e) {
+      console.error('Sidecar auto-approve toggle error:', e);
+    }
+  };
+
+  const enabledSidecars = sidecars.filter((s) => s.enabled);
+
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
 
@@ -1733,6 +1793,43 @@ export const SandboxPage: React.FC = () => {
                 {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : tab === 'llm-usage' ? 'LLM Usage' : 'Files'}
               </button>
             ))}
+            {/* Sidecar tabs — shown when enabled */}
+            {enabledSidecars.map((sc) => {
+              const tabId = `sidecar-${sc.sidecar_type}`;
+              const def = SIDECAR_TYPES.find((t) => t.type === sc.sidecar_type);
+              return (
+                <button
+                  key={tabId}
+                  role="tab"
+                  onClick={() => setActiveTab(tabId)}
+                  style={{
+                    padding: '8px 16px',
+                    border: 'none',
+                    borderBottom: activeTab === tabId ? '3px solid var(--pf-v5-global--primary-color--100)' : '3px solid transparent',
+                    backgroundColor: 'transparent',
+                    fontWeight: activeTab === tabId ? 600 : 400,
+                    color: activeTab === tabId ? 'var(--pf-v5-global--primary-color--100)' : 'inherit',
+                    cursor: 'pointer',
+                    fontSize: '0.95em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {def?.name || sc.sidecar_type}
+                  {sc.observation_count > 0 && (
+                    <Label color="blue" isCompact style={{ fontSize: '0.75em' }}>
+                      {sc.observation_count}
+                    </Label>
+                  )}
+                  {sc.pending_count > 0 && (
+                    <Label data-testid="sidecar-hitl-badge" color="orange" isCompact style={{ fontSize: '0.75em' }}>
+                      {sc.pending_count}
+                    </Label>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Tab content — fills remaining space */}
@@ -2001,6 +2098,27 @@ export const SandboxPage: React.FC = () => {
                 />
               </div>
           )}
+
+          {/* Sidecar tab content */}
+          {activeTab.startsWith('sidecar-') && contextId && (() => {
+            const sidecarType = activeTab.replace('sidecar-', '');
+            const sc = sidecars.find((s) => s.sidecar_type === sidecarType);
+            const def = SIDECAR_TYPES.find((t) => t.type === sidecarType);
+            return (
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                <SidecarTab
+                  namespace={namespace}
+                  contextId={contextId}
+                  sidecarType={sidecarType}
+                  displayName={def?.name || sidecarType}
+                  enabled={sc?.enabled ?? false}
+                  autoApprove={sc?.auto_approve ?? false}
+                  onToggleEnable={(enabled) => handleSidecarToggleEnable(sidecarType, enabled)}
+                  onToggleAutoApprove={(auto) => handleSidecarToggleAutoApprove(sidecarType, auto)}
+                />
+              </div>
+            );
+          })()}
 
           </div> {/* end tab content */}
 

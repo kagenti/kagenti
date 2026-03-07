@@ -1069,6 +1069,77 @@ export const tokenUsageService = {
 };
 
 /**
+ * Sidecar agent service for managing session sidecars
+ */
+export interface SidecarInfo {
+  context_id: string;
+  sidecar_type: string;
+  parent_context_id: string;
+  enabled: boolean;
+  auto_approve: boolean;
+  config: Record<string, unknown>;
+  observation_count: number;
+  pending_count: number;
+}
+
+export interface SidecarObservation {
+  id: string;
+  sidecar_type: string;
+  timestamp: number;
+  message: string;
+  severity: string;
+  requires_approval: boolean;
+}
+
+export const sidecarService = {
+  async list(namespace: string, contextId: string): Promise<SidecarInfo[]> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars`);
+  },
+
+  async enable(namespace: string, contextId: string, sidecarType: string, config?: { auto_approve?: boolean; config?: Record<string, unknown> }): Promise<SidecarInfo> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/enable`, {
+      method: 'POST',
+      body: JSON.stringify(config || {}),
+    });
+  },
+
+  async disable(namespace: string, contextId: string, sidecarType: string): Promise<{ status: string }> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/disable`, {
+      method: 'POST',
+    });
+  },
+
+  async updateConfig(namespace: string, contextId: string, sidecarType: string, config: Record<string, unknown>): Promise<SidecarInfo> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/config`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  },
+
+  async reset(namespace: string, contextId: string, sidecarType: string): Promise<{ status: string }> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/reset`, {
+      method: 'POST',
+    });
+  },
+
+  async approve(namespace: string, contextId: string, sidecarType: string, msgId: string): Promise<{ status: string }> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/approve/${encodeURIComponent(msgId)}`, {
+      method: 'POST',
+    });
+  },
+
+  async deny(namespace: string, contextId: string, sidecarType: string, msgId: string): Promise<{ status: string }> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/deny/${encodeURIComponent(msgId)}`, {
+      method: 'POST',
+    });
+  },
+
+  observationUrl(namespace: string, contextId: string, sidecarType: string): string {
+    return `/api/v1/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/sidecars/${encodeURIComponent(sidecarType)}/observations`;
+  },
+};
+
+/**
  * Sandbox trigger service for managing automated triggers
  */
 export const triggerService = {
