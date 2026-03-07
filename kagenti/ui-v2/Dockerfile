@@ -6,13 +6,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY ui-v2/package.json ./
-# Note: If using npm, use package-lock.json instead
-# COPY package-lock.json ./
+# Copy package files and lockfile for reproducible builds
+COPY ui-v2/package.json ui-v2/package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY ui-v2/ .
