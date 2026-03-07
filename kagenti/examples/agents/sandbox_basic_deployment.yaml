@@ -55,21 +55,26 @@ spec:
         - name: WORKSPACE_ROOT
           value: "/workspace"
         - name: LLM_API_BASE
-          value: "https://api.openai.com/v1"
+          value: "http://litellm-proxy.kagenti-system.svc.cluster.local:4000/v1"
         - name: LLM_API_KEY
           valueFrom:
             secretKeyRef:
-              name: openai-secret
+              name: litellm-proxy-secret
               key: apikey
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: openai-secret
+              name: litellm-proxy-secret
               key: apikey
         - name: LLM_MODEL
-          value: "gpt-4o-mini"
+          value: "llama-4-scout"
         - name: UV_CACHE_DIR
           value: "/app/.cache/uv"
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-token-secret
+              key: token
         - name: TASK_STORE_DB_URL
           value: "postgresql+psycopg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable"
         ports:

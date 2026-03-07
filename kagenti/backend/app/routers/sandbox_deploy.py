@@ -182,12 +182,14 @@ def _build_deployment_manifest(
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
     ]
 
-    # Inject GitHub PAT as GITHUB_TOKEN if a secret was created/specified
-    if github_pat_secret:
+    # Inject GitHub PAT for gh CLI and git operations.
+    # GH_TOKEN is read by the gh CLI; GITHUB_TOKEN by git credential helpers.
+    gh_secret = github_pat_secret or "github-token-secret"
+    for env_name in ("GH_TOKEN", "GITHUB_TOKEN"):
         env_vars.append(
             {
-                "name": "GITHUB_TOKEN",
-                "valueFrom": {"secretKeyRef": {"name": github_pat_secret, "key": "token"}},
+                "name": env_name,
+                "valueFrom": {"secretKeyRef": {"name": gh_secret, "key": "token"}},
             }
         )
 
