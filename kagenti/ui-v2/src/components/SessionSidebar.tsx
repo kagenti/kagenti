@@ -234,8 +234,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             );
 
             return (
+              <React.Fragment key={session.context_id}>
               <Tooltip
-                key={session.context_id}
                 position="right"
                 content={
                   <span style={{ whiteSpace: 'pre-line' }}>
@@ -354,7 +354,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 </div>
               </Tooltip>
               {/* Expanded child sessions */}
-              {childCount > 0 && expandedParents.has(session.context_id) &&
+              {childCount > 0 && expandedParents.has(session.context_id) && (
                 getChildSessions(allSessions, session.context_id).map((child) => {
                   const childState = child.status?.state ?? 'unknown';
                   const isChildActive = child.context_id === activeContextId;
@@ -419,7 +419,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                     </div>
                   );
                 })
-              }
+              )}
+              </React.Fragment>
             );
           })}
       </div>
