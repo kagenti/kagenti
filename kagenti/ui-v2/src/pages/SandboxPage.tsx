@@ -768,6 +768,7 @@ export const SandboxPage: React.FC = () => {
   useEffect(() => {
     const urlAgent = searchParams.get('agent');
     if (urlAgent && urlAgent !== selectedAgent) {
+      selectedAgentRef.current = urlAgent; // Update ref immediately (no race)
       setSelectedAgent(urlAgent);
     }
   }, [searchParams]);
