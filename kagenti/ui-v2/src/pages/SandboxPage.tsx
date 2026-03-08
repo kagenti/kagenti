@@ -783,12 +783,6 @@ export const SandboxPage: React.FC = () => {
 
   // Sidecar agents state
   const [sidecars, setSidecars] = useState<SidecarInfo[]>([]);
-  const SIDECAR_TYPES = [
-    { type: 'looper', name: 'Looper' },
-    { type: 'hallucination_observer', name: 'Hallucination Observer' },
-    { type: 'context_guardian', name: 'Context Guardian' },
-  ];
-
   // Poll sidecars list when we have a contextId
   useEffect(() => {
     if (!contextId || !namespace) return;
@@ -857,8 +851,6 @@ export const SandboxPage: React.FC = () => {
       console.error('Sidecar reset error:', e);
     }
   };
-
-  const enabledSidecars = sidecars.filter((s) => s.enabled);
 
   // SandboxConfig disabled — model/repo/branch not yet wired to backend
   // const [config, setConfig] = useState({ model: 'gpt-4o-mini', repo: '', branch: 'main' });
