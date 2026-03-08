@@ -1425,7 +1425,18 @@ async def _stream_sandbox_response(
         task rows created after the initial call. Retries on transient
         DB errors.
         """
-        if not owner or not namespace:
+        logger.info(
+            "_set_owner_metadata: agent_name=%s, owner=%s, namespace=%s, session=%s",
+            agent_name,
+            owner,
+            namespace,
+            session_id,
+        )
+        if not namespace:
+            logger.warning(
+                "_set_owner_metadata skipped: namespace is empty for session %s",
+                session_id,
+            )
             return
         for attempt in range(3):
             try:
@@ -1447,7 +1458,7 @@ async def _stream_sandbox_response(
                         m = _parse_json_field(row["metadata"]) or {}
                         merged.update({k: v for k, v in m.items() if v is not None})
                     # Set/overwrite backend-managed fields
-                    if not merged.get("owner"):
+                    if owner and not merged.get("owner"):
                         merged["owner"] = owner
                         merged["visibility"] = "private"
                     if not merged.get("title"):
@@ -1733,6 +1744,12 @@ async def _stream_sandbox_response(
         logger.error(error_msg, exc_info=True)
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
     finally:
+        logger.info(
+            "Stream finally block for session %s: %d loop events, persisted=%s",
+            session_id,
+            len(loop_events),
+            loop_events_persisted,
+        )
         # Persist loop events if not already done at [DONE].
         # The A2A protocol signals completion via final:true or by closing
         # the connection — it may never send a "[DONE]" text marker.
@@ -1758,11 +1775,22 @@ async def _stream_sandbox_response(
                             session_id,
                         )
                 loop_events_persisted = True
-            except Exception as e:
+            except Exception:
                 logger.warning(
-                    "Failed to persist loop events in finally for %s: %s",
+                    "Failed to persist loop events in finally for %s",
                     session_id,
-                    e,
+                    exc_info=True,
+                )
+        # Safeguard: also run _set_owner_metadata in finally to ensure
+        # agent_name/title are set even if the stream ends unexpectedly.
+        if not owner_set:
+            try:
+                await _set_owner_metadata()
+            except Exception:
+                logger.warning(
+                    "Failed to set owner metadata in finally for %s",
+                    session_id,
+                    exc_info=True,
                 )
 
 

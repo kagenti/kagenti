@@ -285,12 +285,16 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // Session B workspace should NOT contain Session A's test-marker.txt
     // (separate workspace per context_id)
+    // Use toPass() retry — under parallel load, chat content may still be rendering
     await page.waitForTimeout(2000);
-    const chatB = await page.getByTestId('chat-messages').textContent() || '';
-    // Check for user message text (always present) rather than agent echo (LLM-dependent)
-    expect(chatB).toContain('session-b');
-    // Session A marker should NOT appear in Session B's chat
-    expect(chatB).not.toContain(SESSION_A_MARKER);
+    await expect(async () => {
+      const chatB = await page.getByTestId('chat-messages').textContent() || '';
+      console.log(`[sessions] PART2 chatB content (${chatB.length}): ${chatB.substring(0, 200)}`);
+      // Check for user message text (always present) rather than agent echo (LLM-dependent)
+      expect(chatB).toContain('session-b');
+      // Session A marker should NOT appear in Session B's chat
+      expect(chatB).not.toContain(SESSION_A_MARKER);
+    }).toPass({ timeout: 15000 });
 
     // ---- Turn 4: Final message ----
     await sendAndWaitForResponse(
@@ -312,14 +316,21 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     if (await sessionLink.isVisible({ timeout: 10000 }).catch(() => false)) {
       await sessionLink.click();
       // Wait for URL to update with the correct session ID
-      await page.waitForURL(`**/sandbox?*session=${sessionAId}*`, { timeout: 10000 }).catch(() => {});
-      await page.waitForTimeout(5000); // Wait for history to load
+      await page.waitForURL(`**/sandbox?*session=${sessionAId}*`, { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(8000); // Wait for history to load (increased for parallel runs)
       await snap(page, 'restored-session-a');
 
       // ---- Assert: Session A's full history is visible ----
+      // Use toPass() retry — history load competes with other test traffic in parallel runs
+      await expect(async () => {
+        const restoredContent = await page.getByTestId('chat-messages').textContent() || '';
+        console.log(`[sessions] PART3 restored content (${restoredContent.length}): ${restoredContent.substring(0, 200)}`);
+        // Check for user message text (always present) rather than agent echo (LLM-dependent)
+        expect(restoredContent).toContain('session-a');
+      }).toPass({ timeout: 30000 });
+
+      // Separate checks outside toPass — these should hold once content is loaded
       const restoredContent = await page.getByTestId('chat-messages').textContent() || '';
-      // Check for user message text (always present) rather than agent echo (LLM-dependent)
-      expect(restoredContent).toContain('session-a');
       // test-marker.txt may not appear if file write wasn't fully rendered; soft check
       const hasMarkerFile = restoredContent.includes('test-marker.txt') || restoredContent.includes('marker');
       if (!hasMarkerFile) {
