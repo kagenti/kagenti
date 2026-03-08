@@ -40,6 +40,7 @@ router = APIRouter(
 class EnableRequest(BaseModel):
     auto_approve: bool = False
     config: Optional[dict] = None
+    agent_name: str = "sandbox-legion"
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -118,6 +119,8 @@ async def enable_sidecar(
         sidecar_type=st,
         auto_approve=body.auto_approve if body else False,
         config=body.config if body else None,
+        namespace=namespace,
+        agent_name=body.agent_name if body else "sandbox-legion",
     )
     return handle.to_dict()
 
@@ -173,10 +176,20 @@ async def reset_sidecar(
     if handle is None:
         raise HTTPException(status_code=404, detail="Sidecar not found")
 
-    # Type-specific reset (currently only Looper has a counter)
-    if st == SidecarType.LOOPER:
-        # Reset will be implemented via the analyzer's reset_counter
-        pass
+    # Reset by disabling and re-enabling with same config (fresh analyzer)
+    old_config = handle.config.copy()
+    old_auto = handle.auto_approve
+    ns = handle.namespace
+    agent = handle.agent_name
+    await manager.disable(context_id, st)
+    await manager.enable(
+        context_id,
+        st,
+        auto_approve=old_auto,
+        config=old_config,
+        namespace=ns,
+        agent_name=agent,
+    )
 
     return {"status": "reset", "sidecar_type": sidecar_type}
 

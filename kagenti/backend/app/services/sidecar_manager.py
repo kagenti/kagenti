@@ -62,6 +62,8 @@ class SidecarHandle:
     context_id: str = ""
     sidecar_type: SidecarType = SidecarType.LOOPER
     parent_context_id: str = ""
+    namespace: str = "team1"
+    agent_name: str = "sandbox-legion"
     enabled: bool = False
     auto_approve: bool = False
     config: dict = field(default_factory=dict)
@@ -75,6 +77,8 @@ class SidecarHandle:
             "context_id": self.context_id,
             "sidecar_type": self.sidecar_type.value,
             "parent_context_id": self.parent_context_id,
+            "namespace": self.namespace,
+            "agent_name": self.agent_name,
             "enabled": self.enabled,
             "auto_approve": self.auto_approve,
             "config": self.config,
@@ -121,6 +125,8 @@ class SidecarManager:
         sidecar_type: SidecarType,
         auto_approve: bool = False,
         config: Optional[dict] = None,
+        namespace: str = "team1",
+        agent_name: str = "sandbox-legion",
     ) -> SidecarHandle:
         """Enable a sidecar for a session. Spawns the asyncio task."""
         if parent_context_id not in self._registry:
@@ -143,6 +149,8 @@ class SidecarManager:
             context_id=context_id,
             sidecar_type=sidecar_type,
             parent_context_id=parent_context_id,
+            namespace=namespace,
+            agent_name=agent_name,
             enabled=True,
             auto_approve=auto_approve,
             config=effective_config,
@@ -329,43 +337,100 @@ class SidecarManager:
             )
 
     async def _run_looper(self, handle: SidecarHandle) -> None:
-        """Looper: periodic timer, reads parent events, detects repeated patterns."""
+        """Looper: auto-continue kicker — kicks agent when a turn completes.
+
+        Watches for session completion events. When the agent finishes a turn,
+        sends a "continue" message to keep it going. Tracks iterations and
+        stops at the configurable limit, invoking HITL. Does NOT kick when
+        the session is waiting on HITL (INPUT_REQUIRED).
+        """
         from .sidecars.looper import LooperAnalyzer
 
         analyzer = LooperAnalyzer(
-            counter_limit=handle.config.get("counter_limit", 3),
+            counter_limit=handle.config.get("counter_limit", 5),
         )
-        interval = handle.config.get("interval_seconds", 30)
+        interval = handle.config.get("interval_seconds", 10)
 
         while handle.enabled:
-            await asyncio.sleep(interval)
-
-            # Drain any queued events
-            events = []
+            # Drain queued events
             while handle.event_queue and not handle.event_queue.empty():
                 try:
-                    events.append(handle.event_queue.get_nowait())
+                    event = handle.event_queue.get_nowait()
+                    analyzer.ingest(event)
                 except asyncio.QueueEmpty:
                     break
 
-            # Analyze accumulated events
-            for event in events:
-                analyzer.ingest(event)
+            # Check if session is waiting on HITL
+            hitl_obs = analyzer.hitl_status()
+            if hitl_obs:
+                # Only emit once per HITL wait
+                if not handle.observations or handle.observations[-1].message != hitl_obs.message:
+                    handle.observations.append(hitl_obs)
 
-            observation = analyzer.check()
-            if observation:
-                handle.observations.append(observation)
-                if observation.requires_approval:
+            # Check if we should kick
+            elif analyzer.should_kick():
+                if analyzer.kick_counter >= analyzer.counter_limit:
+                    # Limit reached — emit HITL observation
+                    obs = analyzer.record_kick()
+                    handle.observations.append(obs)
                     if handle.auto_approve:
-                        # TODO: inject corrective message
-                        logger.info("Looper auto-approved intervention")
+                        # Auto-reset and keep going
+                        reset_obs = analyzer.reset_counter()
+                        handle.observations.append(reset_obs)
+                        await self._send_kick(handle)
                     else:
-                        handle.pending_interventions.append(observation)
-                        logger.info("Looper HITL: pending approval")
+                        handle.pending_interventions.append(obs)
+                        logger.info("Looper: iteration limit reached, awaiting HITL")
+                else:
+                    # Kick the agent
+                    obs = analyzer.record_kick()
+                    handle.observations.append(obs)
+                    await self._send_kick(handle)
 
-            # Re-read config (hot-reload)
-            interval = handle.config.get("interval_seconds", 30)
-            analyzer.counter_limit = handle.config.get("counter_limit", 3)
+            # Hot-reload config
+            interval = handle.config.get("interval_seconds", 10)
+            analyzer.counter_limit = handle.config.get("counter_limit", 5)
+
+            await asyncio.sleep(interval)
+
+    async def _send_kick(self, handle: SidecarHandle) -> None:
+        """Send a 'continue' message to the parent session's agent via A2A."""
+        import httpx
+        from uuid import uuid4
+
+        agent_url = f"http://{handle.agent_name}.{handle.namespace}.svc.cluster.local:8000"
+
+        a2a_msg = {
+            "jsonrpc": "2.0",
+            "method": "message/send",
+            "id": uuid4().hex,
+            "params": {
+                "message": {
+                    "role": "user",
+                    "parts": [{"kind": "text", "text": "continue"}],
+                    "messageId": uuid4().hex,
+                    "contextId": handle.parent_context_id,
+                    "metadata": {
+                        "source": "sidecar-looper",
+                        "kick_count": handle.observations[-1].message
+                        if handle.observations
+                        else "",
+                    },
+                },
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{agent_url}/", json=a2a_msg)
+                resp.raise_for_status()
+                logger.info(
+                    "Looper kicked session %s (iteration %d)",
+                    handle.parent_context_id[:12],
+                    len([o for o in handle.observations if "Kicked" in o.message]),
+                )
+        except Exception as e:
+            logger.error("Looper kick failed for session %s: %s", handle.parent_context_id[:12], e)
 
     async def _run_hallucination_observer(self, handle: SidecarHandle) -> None:
         """Hallucination Observer: SSE-driven, validates paths/APIs against workspace."""
