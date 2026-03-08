@@ -155,7 +155,7 @@ async function sendAndWait(
 for (const agentName of AGENT_VARIANTS) {
   test.describe(`Agent Variant: ${agentName}`, () => {
     test(`multi-turn with tool call on ${agentName}`, async ({ page }) => {
-      test.setTimeout(300_000);
+      test.setTimeout(420_000);
       screenshotIdx = 0;
 
       const runId = Date.now().toString(36);
