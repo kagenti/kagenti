@@ -1082,7 +1082,12 @@ export const SandboxPage: React.FC = () => {
       setOldestIndex(null);
       shouldAutoScroll.current = true;
       if (id) {
-        setSearchParams({ session: id, agent: sessionAgentName || selectedAgent });
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('session', id);
+          next.set('agent', sessionAgentName || selectedAgent);
+          return next;
+        });
         localStorage.setItem(STORAGE_KEY_SESSION, id);
       } else {
         setSearchParams({});
@@ -1233,11 +1238,14 @@ export const SandboxPage: React.FC = () => {
             // Track session from the streaming response
             if (data.session_id && !contextId) {
               setContextId(data.session_id);
-              // Use URL's current agent param (set by pickRcaAgent/useEffect),
-              // not agentForRequest which may be stale from closure capture.
-              const currentAgent = new URLSearchParams(window.location.search).get('agent') || agentForRequest;
-              setSearchParams({ session: data.session_id, agent: currentAgent });
+              // Only add session param — preserve existing agent param from URL
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('session', data.session_id);
+                return next;
+              });
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
+              const currentAgent = new URLSearchParams(window.location.search).get('agent') || agentForRequest;
               localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + data.session_id, currentAgent);
             }
 
