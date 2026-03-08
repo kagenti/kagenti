@@ -1289,35 +1289,41 @@ async def chat_send(
         except (ValueError, SyntaxError):
             pass  # keep original text
 
-    # Auto-set session title from first message (truncated to 80 chars)
+    # Auto-set session title from first message (truncated to 80 chars).
+    # Merge metadata across ALL task rows so agent-written fields
+    # (e.g. llm_request_ids) and backend fields (owner, title, agent_name)
+    # coexist on every row.
     final_context_id = result.get("contextId", context_id)
     try:
         pool = await get_session_pool(namespace)
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            rows = await conn.fetch(
+                "SELECT metadata FROM tasks WHERE context_id = $1",
                 final_context_id,
             )
-            if row:
-                meta = _parse_json_field(row["metadata"]) or {}
+            if rows:
+                merged: dict = {}
+                for row in rows:
+                    m = _parse_json_field(row["metadata"]) or {}
+                    merged.update({k: v for k, v in m.items() if v is not None})
                 changed = False
-                if not meta.get("title"):
-                    meta["title"] = request.message[:80].replace("\n", " ")
+                if not merged.get("title"):
+                    merged["title"] = request.message[:80].replace("\n", " ")
                     changed = True
-                if not meta.get("owner"):
-                    meta["owner"] = user.username
-                    meta["visibility"] = "private"
+                if not merged.get("owner"):
+                    merged["owner"] = user.username
+                    merged["visibility"] = "private"
                     changed = True
                 resolved = await _resolve_agent_name(
                     namespace, final_context_id, request.agent_name
                 )
-                if resolved and meta.get("agent_name") != resolved:
-                    meta["agent_name"] = resolved
+                if resolved and merged.get("agent_name") != resolved:
+                    merged["agent_name"] = resolved
                     changed = True
                 if changed:
                     await conn.execute(
                         "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
-                        json.dumps(meta),
+                        json.dumps(merged),
                         final_context_id,
                     )
     except Exception:
@@ -1390,7 +1396,13 @@ async def _stream_sandbox_response(
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
 
     async def _set_owner_metadata():
-        """Set owner on session metadata after task is created."""
+        """Set owner on session metadata after task is created.
+
+        Merges metadata from ALL task rows for this context_id so that
+        fields written by the agent (e.g. ``llm_request_ids``) and fields
+        written by the backend (``owner``, ``title``, ``agent_name``) end
+        up on every row.
+        """
         nonlocal owner_set
         if owner_set or not owner or not namespace:
             return
@@ -1398,36 +1410,39 @@ async def _stream_sandbox_response(
         try:
             pool = await get_session_pool(namespace)
             async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                rows = await conn.fetch(
+                    "SELECT metadata FROM tasks WHERE context_id = $1",
                     session_id,
                 )
-                if row:
-                    meta = _parse_json_field(row["metadata"]) or {}
-                    changed = False
-                    if not meta.get("owner"):
-                        meta["owner"] = owner
-                        meta["visibility"] = "private"
-                        changed = True
-                    if not meta.get("title"):
-                        meta["title"] = message[:80].replace("\n", " ")
-                        changed = True
-                    if agent_name and meta.get("agent_name") != agent_name:
-                        meta["agent_name"] = agent_name
-                        changed = True
-                    if changed:
-                        # Update ALL task records for this context_id so
-                        # the title/owner/agent_name are consistent regardless
-                        # of which task record the sidebar query picks up.
-                        await conn.execute(
-                            "UPDATE tasks SET metadata = $1::json"
-                            " WHERE context_id = $2 AND ("
-                            "  metadata IS NULL OR"
-                            "  metadata::json->>'title' IS NULL"
-                            ")",
-                            json.dumps(meta),
-                            session_id,
-                        )
+                if not rows:
+                    return
+                # Merge metadata from all rows into one dict, keeping
+                # non-None values so no field is lost.
+                merged: dict = {}
+                for row in rows:
+                    m = _parse_json_field(row["metadata"]) or {}
+                    merged.update({k: v for k, v in m.items() if v is not None})
+                # Set/overwrite backend-managed fields
+                changed = False
+                if not merged.get("owner"):
+                    merged["owner"] = owner
+                    merged["visibility"] = "private"
+                    changed = True
+                if not merged.get("title"):
+                    merged["title"] = message[:80].replace("\n", " ")
+                    changed = True
+                if agent_name and merged.get("agent_name") != agent_name:
+                    merged["agent_name"] = agent_name
+                    changed = True
+                if changed:
+                    # Update ALL task records for this context_id so
+                    # the title/owner/agent_name are consistent regardless
+                    # of which task record the sidebar query picks up.
+                    await conn.execute(
+                        "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                        json.dumps(merged),
+                        session_id,
+                    )
         except Exception:
             logger.debug("Failed to set owner on session %s", session_id)
 

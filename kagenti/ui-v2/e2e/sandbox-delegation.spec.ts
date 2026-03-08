@@ -247,6 +247,15 @@ test.describe('Sandbox Delegation — Live', () => {
     console.log(`[delegate] Child session confirmed: ${childSessionConfirmed}`);
     expect(childSessionConfirmed).toBe(true);
 
+    // ── Step 4d: Verify agent name in sidebar ────────────────────────
+    const parentEntry = page.getByTestId(`session-${parentSessionId}`);
+    if (await parentEntry.isVisible({ timeout: 5000 }).catch(() => false)) {
+      const entryText = await parentEntry.textContent() || '';
+      const hasAgentName = entryText.includes(AGENT_NAME);
+      console.log(`[delegate] Sidebar shows agent ${AGENT_NAME}: ${hasAgentName}`);
+      expect(hasAgentName).toBe(true);
+    }
+
     // ── Step 5: Verify delegated task completed ──────────────────────────
     // 5a: Check Files tab for delegate-test.txt
     let fileVisibleInTree = false;

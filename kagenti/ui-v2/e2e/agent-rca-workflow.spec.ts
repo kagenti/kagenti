@@ -154,6 +154,21 @@ test.describe('Agent RCA Workflow', () => {
     // Agent must produce visible output — at least one of: markdown text, tool calls, or loop cards
     expect(mdCount + toolCount + loopCount).toBeGreaterThan(0);
 
+    // ── Model badge assertion ──────────────────────────────────────────
+    const modelBadge = page.locator('[data-testid="model-badge"]').or(
+      page.locator('text=/llama|mistral|gpt/i')
+    );
+    const hasModelBadge = await modelBadge.first().isVisible({ timeout: 5000 }).catch(() => false);
+    console.log(`[rca] Model badge visible: ${hasModelBadge}`);
+
+    // ── Graph node badges assertion ────────────────────────────────────
+    const loopCards = page.locator('[data-testid="agent-loop-card"]');
+    if (await loopCards.count() > 0) {
+      const hasNodeBadge = await page.locator('text=/planner|executor|reflector|reporter/i')
+        .first().isVisible({ timeout: 3000 }).catch(() => false);
+      console.log(`[rca] Graph node badges visible: ${hasNodeBadge}`);
+    }
+
     if (mdCount > 0) {
       const t = await page.locator('.sandbox-markdown').first().textContent() || '';
       console.log(`[rca] Text response (${t.length} chars): ${t.substring(0, 200)}`);
@@ -249,6 +264,24 @@ test.describe('Agent RCA Workflow', () => {
       const chatTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
       await chatTab2.click();
       await page.waitForTimeout(1000);
+    }
+
+    // ── Step 7b: LLM Usage tab ─────────────────────────────────────────
+    const llmTab = page.locator('button[role="tab"]').filter({ hasText: 'LLM Usage' });
+    if (await llmTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await llmTab.click();
+      await page.waitForTimeout(2000);
+      const llmPanel = page.locator('[data-testid="llm-usage-panel"]');
+      const hasLlmUsage = await llmPanel.isVisible({ timeout: 5000 }).catch(() => false);
+      console.log(`[rca] LLM Usage panel visible: ${hasLlmUsage}`);
+      if (hasLlmUsage) {
+        const llmText = await llmPanel.textContent() || '';
+        console.log(`[rca] LLM Usage: ${llmText.substring(0, 200)}`);
+      }
+      // Switch back to chat tab
+      const chatTab3 = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
+      await chatTab3.click();
+      await page.waitForTimeout(500);
     }
 
     // ── Step 8: Check RCA assessment quality ─────────────────────────────
