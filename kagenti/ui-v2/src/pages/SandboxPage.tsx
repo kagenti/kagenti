@@ -1233,9 +1233,12 @@ export const SandboxPage: React.FC = () => {
             // Track session from the streaming response
             if (data.session_id && !contextId) {
               setContextId(data.session_id);
-              setSearchParams({ session: data.session_id, agent: agentForRequest });
+              // Use URL's current agent param (set by pickRcaAgent/useEffect),
+              // not agentForRequest which may be stale from closure capture.
+              const currentAgent = new URLSearchParams(window.location.search).get('agent') || agentForRequest;
+              setSearchParams({ session: data.session_id, agent: currentAgent });
               localStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
-              localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + data.session_id, agentForRequest);
+              localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + data.session_id, currentAgent);
             }
 
             // Handle agent loop events (grouped by loop_id)
