@@ -67,15 +67,32 @@ async function next(page: Page) {
 }
 
 async function pickRcaAgent(page: Page) {
-  // Navigate to sandbox page with agent= URL param (SandboxAgentsPanel was removed)
-  await page.goto(`/sandbox?agent=${AGENT_NAME}`);
+  // Navigate to sandbox with agent param. The SandboxPage useEffect syncs
+  // selectedAgent from ?agent= URL param.
+  const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
+  await expect(nav.first()).toBeVisible({ timeout: 10000 });
+  await nav.first().click();
   await page.waitForLoadState('networkidle');
+
+  // Set agent via URL param — SandboxPage has useEffect that syncs selectedAgent
+  await page.evaluate((agent) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('agent', agent);
+    window.history.replaceState({}, '', url.toString());
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, AGENT_NAME);
   await page.waitForTimeout(2000);
-  console.log(`[rca] Selected ${AGENT_NAME} via URL param`);
+
+  // Wait for agent badge to show rca-agent — this confirms the agent state updated
+  const agentLabel = page.locator('[class*="pf-v5-c-label"]').filter({ hasText: AGENT_NAME });
+  await expect(agentLabel.first()).toBeVisible({ timeout: 10000 });
+  console.log(`[rca] Selected ${AGENT_NAME}, badge visible, url: ${page.url()}`);
 }
 
 test.describe('Agent RCA Workflow', () => {
   test.setTimeout(600_000);
+  // No retries — each retry creates a ghost session with wrong agent
+  test.describe.configure({ retries: 0 });
 
   test.beforeAll(() => { cleanupAgent(); console.log(`[rca] Pre-check: ${kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found') ? 'clean' : 'exists'}`); });
 

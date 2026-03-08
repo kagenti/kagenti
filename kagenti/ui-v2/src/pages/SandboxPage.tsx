@@ -763,6 +763,14 @@ export const SandboxPage: React.FC = () => {
   // Ref mirrors selectedAgent for use in async closures (avoids stale state)
   const selectedAgentRef = useRef(selectedAgent);
   useEffect(() => { selectedAgentRef.current = selectedAgent; }, [selectedAgent]);
+
+  // Sync selectedAgent when URL ?agent= param changes (e.g. SPA navigation)
+  useEffect(() => {
+    const urlAgent = searchParams.get('agent');
+    if (urlAgent && urlAgent !== selectedAgent) {
+      setSelectedAgent(urlAgent);
+    }
+  }, [searchParams]);
   const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
