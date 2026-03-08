@@ -149,8 +149,10 @@ test.describe('Agent RCA Workflow', () => {
 
     const mdCount = await page.locator('.sandbox-markdown').count();
     const toolCount = await page.locator('text=/Tool Call:|Result:.*tool/i').count();
-    console.log(`[rca] Agent output: ${mdCount} markdown, ${toolCount} tool calls`);
-    expect(mdCount + toolCount).toBeGreaterThan(0);
+    const loopCount = await page.locator('[data-testid="agent-loop-card"]').count();
+    console.log(`[rca] Agent output: ${mdCount} markdown, ${toolCount} tool calls, ${loopCount} loop cards`);
+    // Agent must produce visible output — at least one of: markdown text, tool calls, or loop cards
+    expect(mdCount + toolCount + loopCount).toBeGreaterThan(0);
 
     if (mdCount > 0) {
       const t = await page.locator('.sandbox-markdown').first().textContent() || '';
@@ -218,11 +220,12 @@ test.describe('Agent RCA Workflow', () => {
       const hasTree = await page.locator('[aria-label="File tree"]').isVisible({ timeout: 10000 }).catch(() => false);
       const hasBreadcrumb = await page.getByRole('navigation', { name: 'Breadcrumb' }).isVisible({ timeout: 5000 }).catch(() => false);
       console.log(`[rca] Files tab: tree=${hasTree}, breadcrumb=${hasBreadcrumb}`);
+      expect(hasTree || hasBreadcrumb).toBe(true);
 
       // Verify agent badge shows rca-agent (not sandbox-legion)
       const agentBadge = page.locator('[class*="pf-v5-c-label"]').filter({ hasText: AGENT_NAME });
-      const hasCorrectAgent = await agentBadge.first().isVisible({ timeout: 3000 }).catch(() => false);
-      console.log(`[rca] Agent badge shows ${AGENT_NAME}: ${hasCorrectAgent}`);
+      await expect(agentBadge.first()).toBeVisible({ timeout: 5000 });
+      console.log(`[rca] Agent badge shows ${AGENT_NAME}: confirmed`);
 
       // Switch back to chat tab for quality check
       const chatTab = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
@@ -236,14 +239,12 @@ test.describe('Agent RCA Workflow', () => {
       await statsTab.click();
       await page.waitForTimeout(1000);
       const statsPanel = page.locator('[data-testid="session-stats-panel"]');
-      const hasStats = await statsPanel.isVisible({ timeout: 5000 }).catch(() => false);
-      if (hasStats) {
-        const statsText = await statsPanel.textContent() || '';
-        const hasMessages = /\d+ user/.test(statsText);
-        const hasDuration = /Session Duration/.test(statsText);
-        console.log(`[rca] Stats: messages=${hasMessages}, duration=${hasDuration}`);
-        console.log(`[rca] Stats preview: ${statsText.substring(0, 200)}`);
-      }
+      await expect(statsPanel).toBeVisible({ timeout: 5000 });
+      const statsText = await statsPanel.textContent() || '';
+      const hasMessages = /\d+ user/.test(statsText);
+      console.log(`[rca] Stats: messages=${hasMessages}`);
+      console.log(`[rca] Stats preview: ${statsText.substring(0, 200)}`);
+      expect(hasMessages).toBe(true);
       // Switch back to chat tab
       const chatTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
       await chatTab2.click();
@@ -276,8 +277,9 @@ test.describe('Agent RCA Workflow', () => {
     let found = 0;
     for (const [k, v] of Object.entries(sec)) { const m = v.test(text); if (m) found++; console.log(`[rca] "${k}": ${m ? 'FOUND' : 'MISSING'}`); }
     console.log(`[rca] Quality: ${found}/5`);
-    // Agent response quality varies — Mistral may return errors (400 bad request)
-    // or minimal tool call output. At minimum, some analysis keywords should match.
-    expect(found).toBeGreaterThanOrEqual(1);
+    // Agent response quality varies by model and prompt. Require at least
+    // 2/5 sections to ensure the agent produced meaningful analysis,
+    // not just a reflection stub or empty response.
+    expect(found).toBeGreaterThanOrEqual(2);
   });
 });
