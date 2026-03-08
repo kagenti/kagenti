@@ -151,6 +151,7 @@ test.describe('Sandbox Delegation — Live', () => {
     // ── Step 3b: Streaming finalization — no phantom content blocks ──────
     // After stream completes, count content blocks, reload, count again.
     // A phantom block would appear live but vanish on reload.
+    await page.waitForTimeout(2000); // Let URL sync settle
     const loopCardsBefore = await page
       .locator('[data-testid="agent-loop-card"]')
       .count();
@@ -160,41 +161,48 @@ test.describe('Sandbox Delegation — Live', () => {
     );
     await snap(page, 'before-reload-counts');
 
-    // Reload via SPA navigation (avoids Keycloak re-auth)
-    const currentUrl = page.url();
-    const currentSession =
-      new URL(currentUrl).searchParams.get('session') || '';
-    await page.goto('/');
-    await loginIfNeeded(page);
-    await page.evaluate((sid) => {
-      window.history.pushState({}, '', `/sandbox?session=${sid}`);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }, currentSession);
-    await page.waitForTimeout(5000);
+    // Get session ID from URL or localStorage — React Router may not sync
+    // to window.location immediately after streaming completes.
+    const parentSessionId = await page.evaluate(() => {
+      const fromUrl = new URLSearchParams(window.location.search).get('session');
+      if (fromUrl) return fromUrl;
+      return localStorage.getItem('kagenti-sandbox-last-session') || '';
+    });
+    console.log(`[delegate] Parent session: ${parentSessionId}`);
 
-    const loopCardsAfter = await page
-      .locator('[data-testid="agent-loop-card"]')
-      .count();
-    const markdownAfter = await page.locator('.sandbox-markdown').count();
-    console.log(
-      `[delegate] After reload: ${loopCardsAfter} loop cards, ${markdownAfter} markdown blocks`
-    );
-    await snap(page, 'after-reload-counts');
+    // Only run reload comparison if we have a session to navigate back to
+    if (parentSessionId) {
+      await page.goto('/');
+      await loginIfNeeded(page);
+      await page.evaluate((sid) => {
+        window.history.pushState({}, '', `/sandbox?session=${sid}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, parentSessionId);
+      await page.waitForTimeout(5000);
 
-    // Phantom block = more blocks before reload than after
-    expect(loopCardsBefore).toBeLessThanOrEqual(loopCardsAfter);
-    // No empty/phantom markdown blocks (text content should be non-empty)
-    const allMarkdown = page.locator('.sandbox-markdown');
-    for (let i = 0; i < await allMarkdown.count(); i++) {
-      const text = (await allMarkdown.nth(i).textContent()) || '';
-      expect(text.trim().length).toBeGreaterThan(0);
+      const loopCardsAfter = await page
+        .locator('[data-testid="agent-loop-card"]')
+        .count();
+      const markdownAfter = await page.locator('.sandbox-markdown').count();
+      console.log(
+        `[delegate] After reload: ${loopCardsAfter} loop cards, ${markdownAfter} markdown blocks`
+      );
+      await snap(page, 'after-reload-counts');
+
+      // Phantom block = more blocks before reload than after
+      expect(loopCardsBefore).toBeLessThanOrEqual(loopCardsAfter);
+      // No empty/phantom markdown blocks (text content should be non-empty)
+      const allMarkdown = page.locator('.sandbox-markdown');
+      for (let i = 0; i < await allMarkdown.count(); i++) {
+        const text = (await allMarkdown.nth(i).textContent()) || '';
+        expect(text.trim().length).toBeGreaterThan(0);
+      }
+      console.log('[delegate] Streaming finalization: no phantom blocks');
+    } else {
+      console.log('[delegate] No session ID found — skipping reload comparison');
     }
-    console.log('[delegate] Streaming finalization: no phantom blocks');
 
     // ── Step 4: Verify child session in SessionSidebar ───────────────────
-    const parentSessionId =
-      new URL(page.url()).searchParams.get('session') || '';
-    console.log(`[delegate] Parent session: ${parentSessionId}`);
     expect(parentSessionId).toBeTruthy();
 
     // 4a: Check sub-session count label on the parent entry
