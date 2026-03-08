@@ -184,6 +184,7 @@ node_modules/
 
 # Git worktrees for parallel development
 .worktrees/
+.claude/worktrees/
 test-results/
 
 # CVE scan results (never commit)
