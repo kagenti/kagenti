@@ -77,6 +77,7 @@ class HistoryPage(BaseModel):
     messages: List[Dict[str, Any]]
     total: int
     has_more: bool
+    loop_events: Optional[List[Dict[str, Any]]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +422,7 @@ async def get_session_history(
         # multi-turn session has N task records. Each record's history contains
         # the messages for that specific exchange. We merge them chronologically.
         rows = await conn.fetch(
-            "SELECT history, artifacts FROM tasks WHERE context_id = $1"
+            "SELECT history, artifacts, metadata FROM tasks WHERE context_id = $1"
             " ORDER BY COALESCE((status::json->>'timestamp')::text, '') ASC",
             context_id,
         )
@@ -434,6 +435,14 @@ async def get_session_history(
 
     # Collect artifacts from all tasks (each task may have a final answer)
     all_artifact_texts: List[str] = []
+
+    # Extract persisted loop events from task metadata
+    persisted_loop_events: Optional[List[Dict[str, Any]]] = None
+    for row in rows:
+        meta = _parse_json_field(row.get("metadata"))
+        if isinstance(meta, dict) and meta.get("loop_events"):
+            persisted_loop_events = meta["loop_events"]
+            break  # Use the first task's loop_events (set at [DONE])
 
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
@@ -596,7 +605,12 @@ async def get_session_history(
     for i, msg in enumerate(page):
         msg["_index"] = start_idx + i
 
-    return HistoryPage(messages=page, total=total, has_more=has_more)
+    return HistoryPage(
+        messages=page,
+        total=total,
+        has_more=has_more,
+        loop_events=persisted_loop_events,
+    )
 
 
 @router.delete(
@@ -1395,6 +1409,7 @@ async def _stream_sandbox_response(
     """Async generator that proxies A2A SSE events from the agent."""
     owner_set = False
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
+    loop_events: list[dict] = []  # Accumulated loop events for persistence
 
     async def _set_owner_metadata():
         """Set owner on session metadata after task is created.
@@ -1509,6 +1524,33 @@ async def _stream_sandbox_response(
                         if data == "[DONE]":
                             logger.info("Received [DONE] from agent")
                             await _set_owner_metadata()
+                            # Persist accumulated loop events as task metadata
+                            if loop_events and namespace:
+                                try:
+                                    pool = await get_session_pool(namespace)
+                                    async with pool.acquire() as conn:
+                                        rows = await conn.fetch(
+                                            "SELECT metadata FROM tasks WHERE context_id = $1 LIMIT 1",
+                                            session_id,
+                                        )
+                                        if rows:
+                                            meta = (
+                                                json.loads(rows[0]["metadata"])
+                                                if rows[0]["metadata"]
+                                                else {}
+                                            )
+                                            meta["loop_events"] = loop_events
+                                            await conn.execute(
+                                                "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                                                json.dumps(meta),
+                                                session_id,
+                                            )
+                                except Exception as e:
+                                    logger.warning(
+                                        "Failed to persist loop events for %s: %s",
+                                        session_id,
+                                        e,
+                                    )
                             yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                             break
 
@@ -1602,6 +1644,7 @@ async def _stream_sandbox_response(
                                             yield f"data: {json.dumps(loop_payload)}\n\n"
                                             has_loop_events = True
                                             session_has_loops = True
+                                            loop_events.append(parsed)
                                             continue
                                     except (json.JSONDecodeError, TypeError):
                                         pass

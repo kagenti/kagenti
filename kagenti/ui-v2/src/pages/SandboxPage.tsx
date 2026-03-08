@@ -946,6 +946,92 @@ export const SandboxPage: React.FC = () => {
         if (page.messages.length > 0) {
           setOldestIndex(page.messages[0]._index ?? 0);
         }
+        // Reconstruct loop cards from persisted loop events
+        const pageAny = page as unknown as Record<string, unknown>;
+        if (pageAny.loop_events) {
+          const events = pageAny.loop_events as Array<Record<string, unknown>>;
+          if (events.length > 0) {
+            const loops = new Map<string, AgentLoop>();
+            for (const le of events) {
+              const loopId = le.loop_id as string;
+              if (!loopId) continue;
+              const existing = loops.get(loopId) || {
+                id: loopId,
+                status: 'planning' as const,
+                model: '',
+                plan: [],
+                currentStep: 0,
+                totalSteps: 0,
+                iteration: 0,
+                steps: [],
+                budget: { tokensUsed: 0, tokensBudget: 0, wallClockS: 0, maxWallClockS: 0 },
+              };
+              const et = le.type as string;
+              if (et === 'planner_output' || et === 'plan') {
+                existing.plan = (le.steps as string[]) || existing.plan;
+                existing.totalSteps = existing.plan.length;
+                existing.iteration = (le.iteration as number) ?? existing.iteration;
+                existing.model = (le.model as string) || existing.model;
+                existing.steps = [...existing.steps, {
+                  index: -1 - (existing.iteration || 0),
+                  description: `Plan (iteration ${(existing.iteration || 0) + 1}): ${existing.plan.length} steps`,
+                  model: (le.model as string) || existing.model,
+                  nodeType: 'planner' as const,
+                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
+                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
+                }];
+              } else if (et === 'executor_step' || et === 'plan_step') {
+                existing.currentStep = (le.step as number) ?? existing.currentStep;
+                existing.steps = [...existing.steps, {
+                  index: (le.step as number) ?? existing.steps.length,
+                  description: (le.description as string) || '',
+                  model: (le.model as string) || existing.model,
+                  nodeType: 'executor' as const,
+                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
+                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
+                }];
+              } else if (et === 'reflector_decision' || et === 'reflection') {
+                existing.reflection = (le.assessment as string) || '';
+                existing.reflectorDecision = le.decision as 'continue' | 'replan' | 'done' | undefined;
+                existing.steps = [...existing.steps, {
+                  index: 1000 + (existing.iteration || 0),
+                  description: `Reflection [${le.decision || 'assess'}]: ${((le.assessment as string) || '').substring(0, 80)}`,
+                  model: (le.model as string) || existing.model,
+                  nodeType: 'reflector' as const,
+                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
+                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
+                }];
+              } else if (et === 'reporter_output' || et === 'llm_response') {
+                existing.status = 'done';
+                existing.finalAnswer = (le.content as string) || '';
+                existing.steps = [...existing.steps, {
+                  index: 9999,
+                  description: 'Final answer',
+                  model: (le.model as string) || existing.model,
+                  nodeType: 'reporter' as const,
+                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
+                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
+                }];
+              } else if (et === 'tool_call') {
+                const lastStep = existing.steps[existing.steps.length - 1];
+                if (lastStep) {
+                  lastStep.toolCalls = [...lastStep.toolCalls, { type: 'tool_call', name: (le.name as string) || '', args: (le.args as string) || '' }];
+                }
+              } else if (et === 'tool_result') {
+                const lastStep = existing.steps[existing.steps.length - 1];
+                if (lastStep) {
+                  lastStep.toolResults = [...lastStep.toolResults, { type: 'tool_result', name: (le.name as string) || '', output: (le.output as string) || '' }];
+                }
+              }
+              loops.set(loopId, existing);
+            }
+            // Mark all loops as done (historical)
+            for (const [, loop] of loops) {
+              if (loop.status !== 'done') loop.status = 'done';
+            }
+            setAgentLoops(loops);
+          }
+        }
       } catch {
         // Fallback: endpoint may not exist on older backends
         try {
@@ -1312,7 +1398,10 @@ export const SandboxPage: React.FC = () => {
               const le = data.loop_event || data;
               const eventType = le.type;
 
-              if (eventType === 'plan') {
+              // Handle new typed events (preferred) and legacy events (backward compat).
+              // New types: planner_output, executor_step, reflector_decision, reporter_output
+              // Legacy types: plan, plan_step, reflection, llm_response
+              if (eventType === 'planner_output' || eventType === 'plan') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'planning',
@@ -1336,7 +1425,7 @@ export const SandboxPage: React.FC = () => {
                     },
                   ],
                 }));
-              } else if (eventType === 'plan_step') {
+              } else if (eventType === 'executor_step' || eventType === 'plan_step') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'executing',
@@ -1381,11 +1470,12 @@ export const SandboxPage: React.FC = () => {
                   }
                   return { ...l, steps };
                 });
-              } else if (eventType === 'reflection') {
+              } else if (eventType === 'reflector_decision' || eventType === 'reflection') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'reflecting',
                   reflection: le.assessment || '',
+                  reflectorDecision: le.decision as 'continue' | 'replan' | 'done' | undefined,
                   iteration: le.iteration ?? l.iteration,
                   model: le.model || l.model,
                   // Add reflector step for visibility
@@ -1393,7 +1483,7 @@ export const SandboxPage: React.FC = () => {
                     ...l.steps,
                     {
                       index: 1000 + (l.iteration || 0), // High index for reflector steps
-                      description: `Reflection: ${(le.assessment || '').substring(0, 80)}`,
+                      description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
                       model: le.model || l.model,
                       nodeType: 'reflector' as const,
                       tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
@@ -1414,7 +1504,7 @@ export const SandboxPage: React.FC = () => {
                     maxWallClockS: le.max_wall_clock_s ?? l.budget.maxWallClockS,
                   },
                 }));
-              } else if (eventType === 'llm_response') {
+              } else if (eventType === 'reporter_output' || eventType === 'llm_response') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'done',

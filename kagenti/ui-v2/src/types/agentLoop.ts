@@ -9,6 +9,23 @@
  * flat chat bubbles.
  */
 
+/**
+ * Discriminated event types emitted by LangGraph nodes.
+ * Must stay in sync with ``event_schema.py`` (Python side).
+ */
+export type NodeEventType =
+  | 'planner_output'
+  | 'executor_step'
+  | 'tool_call'
+  | 'tool_result'
+  | 'reflector_decision'
+  | 'reporter_output'
+  | 'budget_update'
+  | 'hitl_request';
+
+/** @deprecated Use {@link NodeEventType} for new code. */
+export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter';
+
 export interface AgentLoop {
   id: string;                    // loop_id
   status: 'planning' | 'executing' | 'reflecting' | 'done' | 'failed';
@@ -19,6 +36,7 @@ export interface AgentLoop {
   iteration: number;
   steps: AgentLoopStep[];
   reflection?: string;
+  reflectorDecision?: 'continue' | 'replan' | 'done';
   finalAnswer?: string;
   budget: {
     tokensUsed: number;
@@ -27,8 +45,6 @@ export interface AgentLoop {
     maxWallClockS: number;
   };
 }
-
-export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter';
 
 export interface AgentLoopStep {
   index: number;
@@ -39,5 +55,8 @@ export interface AgentLoopStep {
   toolResults: Array<{ type: string; name?: string; output?: string }>;
   durationMs: number;
   status: 'pending' | 'running' | 'done' | 'failed';
+  /** Granular event type from the graph node. */
+  eventType?: NodeEventType;
+  /** @deprecated Use {@link eventType} for new code. */
   nodeType?: NodeType;
 }
