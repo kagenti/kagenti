@@ -210,14 +210,158 @@ Shell command received (e.g. "cd repos && gh api ... | jq ...")
 
 ---
 
+### 7. Session sidebar shows wrong agent name (sandbox-legion instead of rca-agent)
+
+**Problem:** Session `6fc4e43f` shows `agent=rca-agent` in URL and badge, but the left sidebar session list shows it under `sandbox-legion`. The backend `_resolve_agent_name()` routes correctly, but the A2A task store record gets the initial (wrong) `agent_name` from the first request before the backend resolution kicks in.
+
+**Root cause:** The FIRST A2A message creates the task record in the agent's DB. The agent writes `agent_name` from whatever the backend proxy sent. The backend's `_set_owner_metadata()` sets `agent_name` only if it's missing — but the A2A SDK may have already set it from the proxy headers.
+
+**Fix approach:** After `_resolve_agent_name()`, if the resolved agent differs from the request, update the existing task record's `agent_name` in the DB. Or: the backend should always write the resolved agent_name via `_set_owner_metadata()` even if one already exists (overwrite, not just fill-if-missing).
+
+**Key code:**
+- `sandbox.py:_set_owner_metadata()` line ~1399: `if agent_name and not meta.get("agent_name")` — change to `if agent_name`
+- `sandbox.py:_resolve_agent_name()` line ~1170 — already resolves correctly
+- The A2A SDK `DatabaseTaskStore` creates the task with metadata from the message — check if it sets `agent_name`
+
+---
+
+## How to Read This Doc Efficiently (Context Budget)
+
+**DO NOT read this entire file into context.** Use targeted reads:
+
+```bash
+# Quick overview — just the section headers
+grep '^##\|^###' docs/plans/2026-03-08-session-R-passover.md
+
+# P0 items for next session only (the work to do)
+sed -n '/^## P0 for Next Session/,/^## Architecture/p' docs/plans/2026-03-08-session-R-passover.md
+
+# Architecture flows (if debugging agent selection or tool calls)
+sed -n '/^## Architecture Notes/,/^## Startup/p' docs/plans/2026-03-08-session-R-passover.md
+
+# Test results table (if comparing with your runs)
+sed -n '/^### RCA Test/,/^### Sandbox/p' docs/plans/2026-03-08-session-R-passover.md
+```
+
+**Key files to read with subagents (not main context):**
+- `SandboxPage.tsx` — 1800+ lines, always use Grep to find specific functions
+- `reasoning.py` — 600+ lines, read specific node functions by line range
+- `sandbox.py` — 1700+ lines, search for endpoint names
+
+---
+
+## How to Run Tests on sbox42
+
+### Single test (RCA workflow)
+
+```bash
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
+export KEYCLOAK_PASSWORD=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.admin-password}' | base64 -d)
+export KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com
+export KEYCLOAK_USER=admin
+export CI=true
+
+# Clean rca-agent before RCA test (wizard deploys fresh)
+kubectl delete deploy rca-agent -n team1 --ignore-not-found
+kubectl delete svc rca-agent -n team1 --ignore-not-found
+
+cd .worktrees/sandbox-agent/kagenti/ui-v2
+npx playwright test e2e/agent-rca-workflow.spec.ts --reporter=list
+```
+
+### All main UI tests (loop)
+
+```bash
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
+export KEYCLOAK_PASSWORD=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.admin-password}' | base64 -d)
+export KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com
+export KEYCLOAK_USER=admin
+export CI=true
+LOG_DIR=/tmp/kagenti/session-s
+mkdir -p $LOG_DIR
+
+cd .worktrees/sandbox-agent/kagenti/ui-v2
+
+# Clean rca-agent before full suite
+kubectl delete deploy rca-agent -n team1 --ignore-not-found
+kubectl delete svc rca-agent -n team1 --ignore-not-found
+
+# Run all sandbox E2E tests sequentially, log each
+for spec in \
+  e2e/sandbox-sessions.spec.ts \
+  e2e/sandbox-walkthrough.spec.ts \
+  e2e/sandbox-variants.spec.ts \
+  e2e/agent-rca-workflow.spec.ts \
+  e2e/sandbox-delegation.spec.ts \
+; do
+  name=$(basename "$spec" .spec.ts)
+  echo "=== Running $name ==="
+  npx playwright test "$spec" --reporter=list > "$LOG_DIR/$name.log" 2>&1
+  rc=$?
+  echo "$name: EXIT=$rc"
+  # Clean rca-agent between tests that deploy it
+  if [[ "$name" == "agent-rca-workflow" ]]; then
+    kubectl delete deploy rca-agent -n team1 --ignore-not-found
+    kubectl delete svc rca-agent -n team1 --ignore-not-found
+  fi
+done
+
+echo "=== Results ==="
+for f in $LOG_DIR/*.log; do
+  name=$(basename "$f" .log)
+  result=$(tail -3 "$f" | grep -oE '[0-9]+ passed|[0-9]+ failed' | head -1)
+  echo "  $name: $result"
+done
+```
+
+### Analyze test failures (subagent pattern)
+
+```
+# Never read full test logs in main context. Use subagents:
+Agent(subagent_type='Explore'):
+  "Grep $LOG_DIR/<test-name>.log for FAIL|Error|timeout.
+   Return: which step failed, exact error, 2-3 lines context."
+```
+
+### Build → Deploy → Test cycle
+
+```bash
+# 1. Push changes
+cd .worktrees/agent-examples && git push origin feat/sandbox-agent  # agent code
+cd .worktrees/sandbox-agent && git push origin feat/sandbox-agent   # UI/backend
+
+# 2. Trigger builds
+oc start-build sandbox-agent -n team1        # agent image
+oc start-build kagenti-ui -n kagenti-system  # UI image
+oc start-build kagenti-backend -n kagenti-system  # backend image
+
+# 3. Follow builds (redirect to log files!)
+oc logs -f build/sandbox-agent-NN -n team1 > $LOG_DIR/build-agent.log 2>&1; echo "EXIT:$?"
+oc logs -f build/kagenti-ui-NN -n kagenti-system > $LOG_DIR/build-ui.log 2>&1; echo "EXIT:$?"
+
+# 4. Restart deployments (builds don't auto-restart)
+kubectl rollout restart deployment/sandbox-legion deployment/sandbox-agent \
+  deployment/sandbox-basic deployment/sandbox-hardened deployment/sandbox-restricted -n team1
+kubectl rollout restart deployment/kagenti-ui deployment/kagenti-backend -n kagenti-system
+
+# 5. Wait for rollout
+kubectl rollout status deployment/sandbox-legion -n team1 --timeout=120s
+kubectl rollout status deployment/kagenti-ui -n kagenti-system --timeout=120s
+```
+
+---
+
 ## Startup for Next Session
 
 ```bash
 cd /Users/ladas/Projects/OCTO/kagenti/kagenti
 export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
-# You are the continuation of Session R.
+# You are Session S. Read P0 section of the passover:
+# sed -n '/^## P0 for Next Session/,/^## How to Read/p' \
+#   .worktrees/sandbox-agent/docs/plans/2026-03-08-session-R-passover.md
+
 # Agent code: .worktrees/agent-examples/a2a/sandbox_agent/
 # UI/backend: .worktrees/sandbox-agent/kagenti/
-# Read this passover doc for full context.
+# Iterate on RCA test and sandbox-delegation test first.
 ```
