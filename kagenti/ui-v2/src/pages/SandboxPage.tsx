@@ -761,9 +761,11 @@ export const SandboxPage: React.FC = () => {
     }
     return 'sandbox-legion';
   });
-  // Ref mirrors selectedAgent for use in async closures (avoids stale state)
+  // Refs mirror state for use in async closures (avoids stale state)
   const selectedAgentRef = useRef(selectedAgent);
   useEffect(() => { selectedAgentRef.current = selectedAgent; }, [selectedAgent]);
+  const contextIdRef = useRef(contextId);
+  useEffect(() => { contextIdRef.current = contextId; }, [contextId]);
 
   // Sync selectedAgent when URL ?agent= param changes (e.g. SPA navigation)
   useEffect(() => {
@@ -1121,7 +1123,7 @@ export const SandboxPage: React.FC = () => {
   ) => {
     const body: Record<string, unknown> = {
       message: messageToSend,
-      session_id: contextId || undefined,
+      session_id: contextIdRef.current || undefined,
       agent_name: selectedAgentRef.current,
     };
     if (skill) body.skill = skill;
@@ -1190,7 +1192,7 @@ export const SandboxPage: React.FC = () => {
     const agentForRequest = selectedAgentRef.current;
     const body: Record<string, unknown> = {
       message: messageToSend,
-      session_id: contextId || undefined,
+      session_id: contextIdRef.current || undefined,
       agent_name: agentForRequest,
     };
     if (skill) body.skill = skill;
