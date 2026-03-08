@@ -111,29 +111,48 @@ f8d1d9b feat(sandbox): fast-path planner + tool dedup + LiteLLM metadata
 
 ## P0 for Next Session (S)
 
-### 1. Sandbox-variants test — re-run with fast-path planner
+### 1. Agent loop streaming finalization bug (CRITICAL)
+
+**Problem:** When the agent loop finishes streaming, the UI creates a duplicate/phantom content box that disappears on page reload. The stream end event isn't properly finalizing the AgentLoopCard — it either duplicates the final content or creates an extra empty block.
+
+**Where to look:**
+- `SandboxPage.tsx` — SSE stream handler, `updateLoop` callback, stream-end logic (search for `seenLoopId`, `setAgentLoops`, `finalize`)
+- `AgentLoopCard.tsx` — rendering logic when loop status transitions to "done"
+- The `loop_event` SSE data may send a final event that creates a duplicate message
+
+**How to test:** The delegation test (`sandbox-delegation.spec.ts`) is a good candidate — it forces a multi-step flow with tool calls. Add assertions that:
+1. After stream completes, count message blocks — no duplicates
+2. Reload the page, count message blocks — same count as before reload
+3. No phantom/empty content blocks visible
+
+**Repro:** Start a chat with rca-agent, send `/rca:ci ...`, wait for completion, observe extra block. Reload — block disappears.
+
+### 2. Sandbox-variants test — re-run with fast-path planner
 
 The fast-path + budget reduction should help. Re-run and iterate if still timing out.
 Consider: should the test use simpler prompts? Or should we add a "fast mode" config for the agent?
 
-### 2. LiteLLM Stats UI (Layers 2-4)
+### 3. LiteLLM Stats UI (Layers 2-4)
 
 Implementation plan in `docs/plans/2026-03-08-litellm-analytics-design.md`:
-- Backend: `token_usage.py` router
-- UI: `SessionStatsPanel` LLM Usage card
+- Backend: `token_usage.py` router proxying LiteLLM `/spend/logs`
+- UI: `SessionStatsPanel` LLM Usage card with per-model breakdown table
 - Test: verify stats appear after creating traffic
+- Agent-side metadata tagging is DONE (Layer 1) — every ChatOpenAI call tagged
 
-### 3. Graph node badges in UI
+### 4. Graph node badges in UI
 
-The user wants `[planner]`, `[executor]`, `[reflector]`, `[reporter]` labels on each step in the expanded agent loop. Check `AgentLoopCard.tsx` and the `loop_event` SSE data for node type info.
+The user wants `[planner]`, `[executor]`, `[reflector]`, `[reporter]` labels on each step in the expanded agent loop. Check `AgentLoopCard.tsx` and the `loop_event` SSE data for node type info. The passover doc P4 specifies: `[type] [loop_id] [step N]` prefix on rendered events, timestamp on hover.
 
-### 4. Delegate child session visibility
+### 5. Delegate child session visibility
 
 - `sandbox-delegation.spec.ts` is ready but untested
 - The delegate tool works (stats show delegate:1) but child sessions may not appear in sidebar
-- Check `_register_child_session` DB writes and `SessionSidebar` rootOnly filtering
+- `_register_child_session` in `subagents.py` writes `parent_context_id` to DB
+- `SessionSidebar.tsx` has `rootOnly` filter + `subSessionCount()` — should work if DB records are correct
+- Verify TASK_STORE_DB_URL is set, asyncpg connection works, child records appear
 
-### 5. Duplicate tool calls — monitor
+### 6. Duplicate tool calls — monitor
 
 The executor-level dedup is in place. Monitor via logs: `Dedup: skipped N already-executed tool call(s)`. If duplicates still occur, the dedup key `(name, repr(sorted(args)))` may need adjustment for commands with varying args.
 
