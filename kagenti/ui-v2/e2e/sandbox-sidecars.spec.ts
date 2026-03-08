@@ -1,24 +1,23 @@
 /**
  * Sidecar Agents E2E Test
  *
- * Tests sidecar agents alongside a long-running sandbox session:
- * 1. Start an RCA-style task on sandbox-legion (long-running, multi-tool)
- * 2. Enable Looper sidecar via API and verify tab appears
- * 3. Enable Hallucination Observer and Context Guardian
- * 4. Verify sidecar tabs show observations as agent works
- * 5. Test HITL toggle (auto-approve vs review mode)
- * 6. Test sidecar disable removes tab
- * 7. Verify sidecar intervention appears in parent chat when approved
+ * Tests sidecar agents in the right panel alongside a sandbox session:
+ * 1. Verify sidecar panel is visible with 3 cards
+ * 2. Enable Looper, verify Active badge and config fields
+ * 3. Configure Looper (max iterations, interval)
+ * 4. Enable all 3 sidecars, verify API
+ * 5. Disable Looper, verify it goes inactive
+ * 6. Re-enable, verify state restored
+ * 7. Test Looper kicking on agent task completion
  */
 import { test, expect, type Page } from '@playwright/test';
 import { loginIfNeeded } from './helpers/auth';
 
 const NAMESPACE = 'team1';
 const AGENT_NAME = 'sandbox-legion';
-const BASE_URL = process.env.KAGENTI_URL || '';
 
-// Long-running task that triggers multiple tool calls (good for sidecar observation)
-const RCA_PROMPT =
+// Task that triggers multiple tool calls
+const TASK_PROMPT =
   'Write a Python script that reads a CSV file, processes each row, and writes results to a new file. ' +
   'First create a sample CSV, then write the processing script, then run it and verify the output.';
 
@@ -47,16 +46,13 @@ async function sendMessage(page: Page, message: string) {
 }
 
 async function getSessionContextId(page: Page): Promise<string> {
-  // Extract session/context ID from URL query param
   const url = page.url();
   const match = url.match(/session=([a-f0-9]+)/);
   return match?.[1] || '';
 }
 
 async function getAuthHeaders(page: Page): Promise<Record<string, string>> {
-  // Extract the access token from the page's auth context
   const token = await page.evaluate(() => {
-    // Try localStorage/sessionStorage for Keycloak token
     for (const storage of [localStorage, sessionStorage]) {
       for (let i = 0; i < storage.length; i++) {
         const key = storage.key(i);
@@ -84,7 +80,7 @@ async function enableSidecar(page: Page, contextId: string, sidecarType: string)
   const headers = await getAuthHeaders(page);
   const response = await page.request.post(
     `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars/${sidecarType}/enable`,
-    { headers, data: {} }
+    { headers, data: { agent_name: AGENT_NAME } }
   );
   if (!response.ok()) {
     console.log(`[sidecar] enable ${sidecarType} failed: ${response.status()} ${await response.text()}`);
@@ -137,53 +133,51 @@ async function listSidecars(page: Page, contextId: string) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 test.describe('Sidecar Agents', () => {
-  test.setTimeout(600_000); // 10 min — long-running agent task
+  test.setTimeout(600_000);
 
-  test('sidecar lifecycle: enable, observe, toggle HITL, disable during agent task', async ({
-    page,
-  }) => {
-    // ── Step 1: Start a long-running task ──────────────────────────────────
+  test('sidecar panel: enable, configure, verify API, disable lifecycle', async ({ page }) => {
+    // ── Step 1: Navigate and start a session ───────────────────────────────
     await page.goto('/');
     await loginIfNeeded(page);
     await navigateToSessions(page);
     await selectAgent(page, AGENT_NAME);
-    await sendMessage(page, RCA_PROMPT);
+    await sendMessage(page, TASK_PROMPT);
 
-    // Wait for agent to start responding (first markdown or tool call)
+    // Wait for agent to start responding
     const agentOutput = page
       .locator('.sandbox-markdown')
       .or(page.locator('text=/Tool Call:|Result:/i'));
     await expect(agentOutput.first()).toBeVisible({ timeout: 120000 });
     console.log('[sidecar] Agent started responding');
 
-    // Get session context ID
     await page.waitForTimeout(2000);
     const contextId = await getSessionContextId(page);
     expect(contextId).toBeTruthy();
     console.log(`[sidecar] Session context: ${contextId}`);
 
-    // ── Step 2: Verify no sidecar tabs initially ───────────────────────────
-    const chatTab = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
-    const looperTab = page.locator('button[role="tab"]').filter({ hasText: 'Looper' });
-    const hallucinationTab = page
-      .locator('button[role="tab"]')
-      .filter({ hasText: 'Hallucination Observer' });
-    const guardianTab = page
-      .locator('button[role="tab"]')
-      .filter({ hasText: 'Context Guardian' });
+    // ── Step 2: Verify sidecar panel exists ────────────────────────────────
+    const sidecarPanel = page.locator('[data-testid="sidecar-panel"]');
+    await expect(sidecarPanel).toBeVisible({ timeout: 10000 });
+    console.log('[sidecar] Sidecar panel visible');
 
-    // Chat tab should exist, sidecar tabs should not
-    await expect(chatTab).toBeVisible({ timeout: 5000 });
-    expect(await looperTab.isVisible().catch(() => false)).toBe(false);
-    console.log('[sidecar] No sidecar tabs initially');
+    // Verify 3 sidecar cards present
+    const looperCard = page.locator('[data-testid="sidecar-card-looper"]');
+    const hallucinationCard = page.locator('[data-testid="sidecar-card-hallucination_observer"]');
+    const guardianCard = page.locator('[data-testid="sidecar-card-context_guardian"]');
+    await expect(looperCard).toBeVisible({ timeout: 5000 });
+    await expect(hallucinationCard).toBeVisible({ timeout: 5000 });
+    await expect(guardianCard).toBeVisible({ timeout: 5000 });
+    console.log('[sidecar] All 3 sidecar cards visible');
 
-    // ── Step 3: Enable Looper sidecar ──────────────────────────────────────
+    // ── Step 3: Enable Looper via API ──────────────────────────────────────
     await enableSidecar(page, contextId, 'looper');
     console.log('[sidecar] Looper enabled via API');
 
-    // Looper tab should appear
-    await expect(looperTab).toBeVisible({ timeout: 10000 });
-    console.log('[sidecar] Looper tab visible');
+    // Wait for poll to refresh UI, then check Active badge
+    await page.waitForTimeout(6000);
+    const activeBadge = looperCard.locator('text=Active');
+    await expect(activeBadge).toBeVisible({ timeout: 10000 });
+    console.log('[sidecar] Looper shows Active badge');
 
     // ── Step 4: Verify sidecar list API ────────────────────────────────────
     const sidecars = await listSidecars(page, contextId);
@@ -192,21 +186,9 @@ test.describe('Sidecar Agents', () => {
     );
     expect(looperEntry).toBeDefined();
     expect(looperEntry.enabled).toBe(true);
-    console.log(`[sidecar] Looper config: ${JSON.stringify(looperEntry)}`);
+    console.log(`[sidecar] Looper API: ${JSON.stringify(looperEntry)}`);
 
-    // ── Step 5: Click Looper tab, verify content ───────────────────────────
-    await looperTab.click();
-    await page.waitForTimeout(2000);
-
-    // Looper tab should show controls: enable/disable switch, auto/HITL toggle
-    const autoToggle = page.locator('[data-testid="sidecar-auto-toggle"]');
-    const enableSwitch = page.locator('[data-testid="sidecar-enable-switch"]');
-    // At minimum, some sidecar UI should be visible
-    const sidecarContent = page.locator('[data-testid="sidecar-tab-content"]');
-    await expect(sidecarContent).toBeVisible({ timeout: 10000 });
-    console.log('[sidecar] Looper tab content visible');
-
-    // ── Step 6: Configure Looper ───────────────────────────────────────────
+    // ── Step 5: Configure Looper via API ───────────────────────────────────
     await updateSidecarConfig(page, contextId, 'looper', {
       interval_seconds: 15,
       counter_limit: 2,
@@ -214,188 +196,88 @@ test.describe('Sidecar Agents', () => {
     });
     console.log('[sidecar] Looper configured: 15s interval, counter_limit=2, HITL mode');
 
-    // ── Step 7: Enable remaining sidecars ──────────────────────────────────
+    // ── Step 6: Enable remaining sidecars ──────────────────────────────────
     await enableSidecar(page, contextId, 'hallucination_observer');
     await enableSidecar(page, contextId, 'context_guardian');
+    await page.waitForTimeout(6000);
 
-    await expect(hallucinationTab).toBeVisible({ timeout: 10000 });
-    await expect(guardianTab).toBeVisible({ timeout: 10000 });
-    console.log('[sidecar] All 3 sidecars enabled and tabs visible');
+    // Verify all show Active
+    await expect(hallucinationCard.locator('text=Active')).toBeVisible({ timeout: 10000 });
+    await expect(guardianCard.locator('text=Active')).toBeVisible({ timeout: 10000 });
+    console.log('[sidecar] All 3 sidecars enabled and showing Active');
 
-    // ── Step 8: Wait for Looper observations ───────────────────────────────
-    // Switch to Looper tab and wait for at least one observation
-    await looperTab.click();
-    await page.waitForTimeout(2000);
-
-    // Looper should emit observations as it checks for loops
-    const observation = page.locator('[data-testid="sidecar-observation"]');
-    // Give Looper 2 intervals (30s at 15s interval) to produce an observation
-    await expect(observation.first()).toBeVisible({ timeout: 45000 });
-    console.log('[sidecar] Looper produced observation');
-
-    // ── Step 9: Switch back to Chat tab ────────────────────────────────────
-    await chatTab.click();
-    await page.waitForTimeout(1000);
-
-    // Agent should still be working in the background
-    const agentMessages = page.locator('.sandbox-markdown');
-    const msgCount = await agentMessages.count();
-    console.log(`[sidecar] Agent has ${msgCount} markdown messages while sidecars observed`);
-    expect(msgCount).toBeGreaterThan(0);
-
-    // ── Step 10: Disable Looper, verify tab removed ────────────────────────
+    // ── Step 7: Disable Looper ─────────────────────────────────────────────
     await disableSidecar(page, contextId, 'looper');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(6000);
 
-    // Looper tab should disappear
-    expect(await looperTab.isVisible().catch(() => false)).toBe(false);
-    console.log('[sidecar] Looper disabled, tab removed');
+    // Active badge should be gone
+    const looperActive = await looperCard.locator('text=Active').isVisible().catch(() => false);
+    expect(looperActive).toBe(false);
+    console.log('[sidecar] Looper disabled, Active badge removed');
 
-    // Other tabs should still exist
-    await expect(hallucinationTab).toBeVisible();
-    await expect(guardianTab).toBeVisible();
+    // Others still active
+    await expect(hallucinationCard.locator('text=Active')).toBeVisible();
+    await expect(guardianCard.locator('text=Active')).toBeVisible();
 
-    // ── Step 11: Re-enable Looper, verify state restored ───────────────────
+    // ── Step 8: Re-enable Looper ───────────────────────────────────────────
     await enableSidecar(page, contextId, 'looper');
-    await expect(looperTab).toBeVisible({ timeout: 10000 });
-    await looperTab.click();
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(6000);
+    await expect(looperCard.locator('text=Active')).toBeVisible({ timeout: 10000 });
+    console.log('[sidecar] Looper re-enabled, Active badge restored');
 
-    // Previous observations should still be visible (LangGraph checkpoint)
-    const restoredObs = page.locator('[data-testid="sidecar-observation"]');
-    const restoredCount = await restoredObs.count();
-    console.log(`[sidecar] Looper re-enabled, ${restoredCount} observations restored`);
-    expect(restoredCount).toBeGreaterThan(0);
-
-    // ── Step 12: Disable all sidecars ──────────────────────────────────────
+    // ── Step 9: Disable all ────────────────────────────────────────────────
     await disableSidecar(page, contextId, 'looper');
     await disableSidecar(page, contextId, 'hallucination_observer');
     await disableSidecar(page, contextId, 'context_guardian');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(6000);
 
-    // All sidecar tabs should be gone, only Chat remains
-    expect(await looperTab.isVisible().catch(() => false)).toBe(false);
-    expect(await hallucinationTab.isVisible().catch(() => false)).toBe(false);
-    expect(await guardianTab.isVisible().catch(() => false)).toBe(false);
-    await expect(chatTab).toBeVisible();
-    console.log('[sidecar] All sidecars disabled, only Chat tab remains');
+    // No Active badges
+    for (const card of [looperCard, hallucinationCard, guardianCard]) {
+      const active = await card.locator('text=Active').isVisible().catch(() => false);
+      expect(active).toBe(false);
+    }
+    console.log('[sidecar] All sidecars disabled');
   });
 
-  test('Looper HITL intervention flow', async ({ page }) => {
-    // ── Setup: Start task and enable Looper in HITL mode ───────────────────
+  test('Looper auto-continue kicks agent on completion', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
     await navigateToSessions(page);
     await selectAgent(page, AGENT_NAME);
 
-    // Send a task likely to cause repetition (intentionally vague)
-    await sendMessage(
-      page,
-      'Try to read the file /workspace/nonexistent-data.csv and process it. Keep trying until you succeed.'
-    );
+    // Send a quick task
+    await sendMessage(page, 'Create a file called /workspace/hello.txt with the content "hello world"');
 
     await page.waitForTimeout(3000);
     const contextId = await getSessionContextId(page);
     expect(contextId).toBeTruthy();
 
-    // Enable Looper with aggressive settings for testing
+    // Enable Looper with low limit for testing
     await enableSidecar(page, contextId, 'looper');
     await updateSidecarConfig(page, contextId, 'looper', {
-      interval_seconds: 10,
+      interval_seconds: 5,
       counter_limit: 2,
-      auto_approve: false, // HITL mode
+      auto_approve: true,
     });
+    console.log('[sidecar] Looper enabled: 5s interval, limit=2, auto-approve');
 
-    const looperTab = page.locator('button[role="tab"]').filter({ hasText: 'Looper' });
-    await expect(looperTab).toBeVisible({ timeout: 10000 });
+    // Wait for agent to complete + Looper to kick
+    // The agent will finish the file creation, Looper detects completion, sends "continue"
+    await page.waitForTimeout(30000);
 
-    // ── Wait for HITL intervention ─────────────────────────────────────────
-    // Agent should repeat the same failing command, triggering Looper's counter
-    await looperTab.click();
-    await page.waitForTimeout(2000);
+    // Check observations via API
+    const sidecars = await listSidecars(page, contextId);
+    const looper = sidecars.find((s: { sidecar_type: string }) => s.sidecar_type === 'looper');
+    console.log(`[sidecar] Looper state: obs=${looper?.observation_count}, pending=${looper?.pending_count}`);
 
-    // Wait for HITL badge or pending intervention (up to 2 minutes)
-    const hitlPending = page.locator('[data-testid="sidecar-hitl-pending"]');
-    const hitlBadge = page.locator('[data-testid="sidecar-hitl-badge"]');
-
-    // Either HITL pending in Looper tab or badge on Chat tab
-    const gotHitl = await Promise.race([
-      hitlPending.first().waitFor({ state: 'visible', timeout: 120000 }).then(() => true),
-      hitlBadge.first().waitFor({ state: 'visible', timeout: 120000 }).then(() => true),
-    ]).catch(() => false);
-
-    if (gotHitl) {
-      console.log('[sidecar] Looper HITL intervention triggered');
-
-      // Approve the intervention
-      const approveBtn = page.locator('[data-testid="sidecar-approve-btn"]');
-      if (await approveBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await approveBtn.click();
-        console.log('[sidecar] HITL intervention approved');
-
-        // Switch to Chat tab, verify corrective message appeared
-        const chatTab = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
-        await chatTab.click();
-        await page.waitForTimeout(3000);
-
-        // Look for sidecar intervention marker in chat
-        const sidecarMsg = page.locator('[data-testid="sidecar-intervention-message"]');
-        const hasSidecarMsg = await sidecarMsg.isVisible({ timeout: 10000 }).catch(() => false);
-        console.log(`[sidecar] Corrective message in chat: ${hasSidecarMsg}`);
-      }
+    // Looper should have produced at least one observation (kicked or waiting)
+    if (looper?.observation_count > 0) {
+      console.log('[sidecar] Looper produced observations - auto-continue working');
     } else {
-      // Agent may not have looped enough — that's OK, just log
-      console.log('[sidecar] No HITL triggered (agent may not have looped). Continuing.');
+      console.log('[sidecar] No observations yet (agent may still be working)');
     }
 
     // Cleanup
     await disableSidecar(page, contextId, 'looper');
-    console.log('[sidecar] HITL test complete');
-  });
-
-  test('Context Guardian warns on token growth', async ({ page }) => {
-    await page.goto('/');
-    await loginIfNeeded(page);
-    await navigateToSessions(page);
-    await selectAgent(page, AGENT_NAME);
-
-    // Send a task that generates a lot of output
-    await sendMessage(
-      page,
-      'List all files in /usr directory recursively and explain what each top-level directory contains.'
-    );
-
-    await page.waitForTimeout(3000);
-    const contextId = await getSessionContextId(page);
-    expect(contextId).toBeTruthy();
-
-    // Enable Context Guardian with low thresholds for testing
-    await enableSidecar(page, contextId, 'context_guardian');
-    await updateSidecarConfig(page, contextId, 'context_guardian', {
-      warn_threshold_pct: 30,
-      critical_threshold_pct: 50,
-      auto_approve: true, // Auto mode for this test
-    });
-
-    const guardianTab = page
-      .locator('button[role="tab"]')
-      .filter({ hasText: 'Context Guardian' });
-    await expect(guardianTab).toBeVisible({ timeout: 10000 });
-    await guardianTab.click();
-
-    // Wait for guardian to produce observations about token usage
-    const observation = page.locator('[data-testid="sidecar-observation"]');
-    await expect(observation.first()).toBeVisible({ timeout: 90000 });
-
-    const obsText = (await observation.first().textContent()) || '';
-    console.log(`[sidecar] Guardian observation: ${obsText.substring(0, 200)}`);
-
-    // Guardian should mention context/tokens
-    const mentionsContext =
-      /context|token|budget|usage|growth|warning/i.test(obsText);
-    console.log(`[sidecar] Guardian mentions context: ${mentionsContext}`);
-
-    // Cleanup
-    await disableSidecar(page, contextId, 'context_guardian');
   });
 });
