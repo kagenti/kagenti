@@ -35,21 +35,18 @@ async function snap(page: Page, label: string) {
  * SandboxPage has a useEffect that syncs selectedAgent from ?agent=.
  */
 async function navigateToSandboxWithAgent(page: Page, agentName: string) {
-  const sessionsNav = page
-    .locator('nav a, nav button, [role="navigation"] a')
-    .filter({ hasText: /^Sessions$/ });
-  await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
-  await sessionsNav.first().click();
+  // Navigate via full URL so React Router's searchParams are in sync.
+  // This prevents state desync between window.location and React Router
+  // which would cause setSearchParams({ session: ... }) to silently fail.
+  await page.goto(`/sandbox?agent=${encodeURIComponent(agentName)}`);
   await page.waitForLoadState('networkidle');
 
-  // Set agent via URL param
-  await page.evaluate((agent) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('agent', agent);
-    window.history.replaceState({}, '', url.toString());
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  }, agentName);
-  await page.waitForTimeout(2000);
+  // Re-login if redirected to Keycloak
+  if (page.url().includes('keycloak') || page.url().includes('auth/realms')) {
+    await loginIfNeeded(page);
+    await page.goto(`/sandbox?agent=${encodeURIComponent(agentName)}`);
+    await page.waitForLoadState('networkidle');
+  }
 
   // Confirm the agent badge renders
   const agentLabel = page
@@ -161,13 +158,16 @@ test.describe('Sandbox Delegation — Live', () => {
     );
     await snap(page, 'before-reload-counts');
 
-    // Get session ID from URL or localStorage — React Router may not sync
-    // to window.location immediately after streaming completes.
-    const parentSessionId = await page.evaluate(() => {
-      const fromUrl = new URLSearchParams(window.location.search).get('session');
-      if (fromUrl) return fromUrl;
-      return localStorage.getItem('kagenti-sandbox-last-session') || '';
-    });
+    // Wait for ?session= to appear in URL — React Router updates it after
+    // streaming completes via a useEffect. Poll for up to 10s.
+    let parentSessionId = '';
+    for (let i = 0; i < 20; i++) {
+      parentSessionId = await page.evaluate(
+        () => new URLSearchParams(window.location.search).get('session') || ''
+      );
+      if (parentSessionId) break;
+      await page.waitForTimeout(500);
+    }
     console.log(`[delegate] Parent session: ${parentSessionId}`);
 
     // Only run reload comparison if we have a session to navigate back to
