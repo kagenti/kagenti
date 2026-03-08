@@ -193,6 +193,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // ------------------------------------------------------------------
     // Step 8: Search in table
     // ------------------------------------------------------------------
+    await searchBox.click();
     await searchBox.fill('nonexistent-id-xyz');
     await page.waitForTimeout(500);
 

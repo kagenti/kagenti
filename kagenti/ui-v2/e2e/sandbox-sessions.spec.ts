@@ -301,15 +301,13 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     await page.waitForTimeout(3000); // Wait for session list to load
 
-    // ---- Click Session A in sidebar ----
-    // Find session item by looking for our marker text in tooltips or session names
-    // Sessions show the first message as title, so look for our marker
-    const sessionLink = page.locator('[role="button"]').filter({
-      hasText: new RegExp(SESSION_A_MARKER.substring(0, 20), 'i'),
-    });
+    // ---- Click Session A in sidebar using exact context ID ----
+    const sessionLink = page.getByTestId(`session-${sessionAId}`);
 
-    if ((await sessionLink.count()) > 0) {
-      await sessionLink.first().click();
+    if (await sessionLink.isVisible({ timeout: 10000 }).catch(() => false)) {
+      await sessionLink.click();
+      // Wait for URL to update with the correct session ID
+      await page.waitForURL(`**/sandbox?*session=${sessionAId}*`, { timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(3000); // Wait for history to load
       await snap(page, 'restored-session-a');
 
@@ -325,10 +323,9 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
       expect(getSessionIdFromUrl(page)).toBe(sessionAId);
     } else {
       // Alternative: navigate directly via URL
-      await page.goto(`/?session=${sessionAId}`);
+      await page.goto(`/sandbox?session=${sessionAId}`);
       await page.waitForLoadState('networkidle');
       await loginIfNeeded(page);
-      await navigateToSandbox(page);
       await page.waitForTimeout(3000);
       await snap(page, 'restored-session-a-via-url');
     }
@@ -384,11 +381,10 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     }
 
     // Also verify: the sidebar session is clickable and loads content
-    const sidebarLink = page.locator('[role="button"]').filter({
-      hasText: new RegExp(markerPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
-    });
-    if ((await sidebarLink.count()) > 0) {
-      await sidebarLink.first().click();
+    const sidebarLink = page.getByTestId(`session-${sessionAId}`);
+    if (await sidebarLink.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await sidebarLink.click();
+      await page.waitForURL(`**/sandbox?*session=${sessionAId}*`, { timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(2000);
 
       // After clicking, the session content should load

@@ -235,6 +235,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 <div
                   role="button"
                   tabIndex={0}
+                  data-testid={`session-${session.context_id}`}
+                  data-context-id={session.context_id}
                   onClick={() => onSelectSession(session.context_id, agentName(session))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter')
