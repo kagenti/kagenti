@@ -1991,7 +1991,6 @@ export const SandboxPage: React.FC = () => {
                   namespace={namespace}
                   agentName={selectedAgent}
                   contextId={contextId || undefined}
-                  initialPath={contextId ? `/workspace/${contextId}` : '/workspace'}
                   embedded
                 />
               </div>
