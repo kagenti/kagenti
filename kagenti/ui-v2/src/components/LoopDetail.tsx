@@ -13,7 +13,47 @@
 import React, { useState } from 'react';
 import { Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
-import type { AgentLoop, AgentLoopStep } from '../types/agentLoop';
+import type { AgentLoop, AgentLoopStep, NodeType } from '../types/agentLoop';
+
+// ---------------------------------------------------------------------------
+// Graph node badge
+// ---------------------------------------------------------------------------
+
+const NODE_COLORS: Record<NodeType, { bg: string; label: string }> = {
+  planner:   { bg: '#0066cc', label: 'planner' },
+  executor:  { bg: '#2e7d32', label: 'executor' },
+  reflector: { bg: '#e65100', label: 'reflector' },
+  reporter:  { bg: '#7b1fa2', label: 'reporter' },
+};
+
+/** Infer the graph node type from step content when not explicitly set. */
+function inferNodeType(step: AgentLoopStep): NodeType {
+  if (step.nodeType) return step.nodeType;
+  if (step.toolCalls.length > 0 || step.toolResults.length > 0) return 'executor';
+  return 'planner';
+}
+
+const NodeBadge: React.FC<{ nodeType: NodeType }> = ({ nodeType }) => {
+  const info = NODE_COLORS[nodeType];
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '1px 6px',
+        borderRadius: 3,
+        fontSize: '0.78em',
+        fontWeight: 600,
+        color: '#fff',
+        backgroundColor: info.bg,
+        marginRight: 6,
+        lineHeight: 1.5,
+        verticalAlign: 'middle',
+      }}
+    >
+      {info.label}
+    </span>
+  );
+};
 
 interface LoopDetailProps {
   loop: AgentLoop;
@@ -29,6 +69,7 @@ const PlanSection: React.FC<{ plan: string[]; currentStep: number }> = ({ plan, 
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 6, color: '#333' }}>
+        <NodeBadge nodeType="planner" />
         Plan
       </div>
       <ol style={{ margin: 0, paddingLeft: 22, fontSize: '0.83em', lineHeight: 1.7 }}>
@@ -181,12 +222,19 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number }> = ({ step, t
           fontWeight: 600,
           color: '#333',
           marginBottom: 4,
+          flexWrap: 'wrap',
         }}
       >
+        <NodeBadge nodeType={inferNodeType(step)} />
         Step {step.index + 1}/{total}: {step.description}
         <span style={{ fontWeight: 400, color: '#6a6e73', marginLeft: 8 }}>
           {step.model} &middot; {formatStepTokens(step)} tokens
         </span>
+        {step.tokens.prompt + step.tokens.completion > 0 && (
+          <span style={{ fontSize: '0.75em', opacity: 0.6, marginLeft: 8 }}>
+            {step.tokens.prompt}&rarr;{step.tokens.completion} tokens
+          </span>
+        )}
         <StepStatusIcon status={step.status} />
       </div>
 
@@ -219,7 +267,10 @@ const ReflectionSection: React.FC<{ reflection: string }> = ({ reflection }) => 
       color: '#92400e',
     }}
   >
-    <div style={{ fontWeight: 600, marginBottom: 4 }}>Reflection</div>
+    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+      <NodeBadge nodeType="reflector" />
+      Reflection
+    </div>
     <div style={{ whiteSpace: 'pre-wrap' }}>{reflection}</div>
   </div>
 );

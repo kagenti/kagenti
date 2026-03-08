@@ -28,6 +28,8 @@ export interface AgentLoop {
   };
 }
 
+export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter';
+
 export interface AgentLoopStep {
   index: number;
   description: string;
@@ -37,4 +39,5 @@ export interface AgentLoopStep {
   toolResults: Array<{ type: string; name?: string; output?: string }>;
   durationMs: number;
   status: 'pending' | 'running' | 'done' | 'failed';
+  nodeType?: NodeType;
 }

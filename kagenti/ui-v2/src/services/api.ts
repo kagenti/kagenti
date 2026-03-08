@@ -1163,3 +1163,12 @@ export const triggerService = {
     });
   },
 };
+
+/**
+ * Models service for fetching available LLM models from LiteLLM
+ */
+export const modelsService = {
+  async getAvailableModels(): Promise<Array<{id: string}>> {
+    return apiFetch<Array<{id: string}>>('/models');
+  },
+};

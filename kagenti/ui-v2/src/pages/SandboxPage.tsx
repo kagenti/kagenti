@@ -15,7 +15,7 @@ import {
   Label,
   Tooltip,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, CheckCircleIcon, TimesCircleIcon, FileIcon, CogIcon, ShieldAltIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, FileIcon, ShieldAltIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -30,12 +30,14 @@ import { SkillWhisperer } from '../components/SkillWhisperer';
 // NamespaceSelector removed from session view — namespace shown as read-only Label
 // import { NamespaceSelector } from '../components/NamespaceSelector';
 import { DelegationCard, type DelegationState } from '../components/DelegationCard';
+import { HitlApprovalCard } from '../components/HitlApprovalCard';
 import { AgentLoopCard } from '../components/AgentLoopCard';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { SessionStatsPanel } from '../components/SessionStatsPanel';
 import { LlmUsagePanel } from '../components/LlmUsagePanel';
 import { FileBrowser } from '../components/FileBrowser';
 import { SidecarPanel } from '../components/SidecarTab';
+import { ModelSwitcher } from '../components/ModelSwitcher';
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
 
@@ -233,7 +235,6 @@ const ToolCallStep: React.FC<{
   onDeny?: () => void;
 }> = ({ data, onApprove, onDeny }) => {
   const [expanded, setExpanded] = useState(false);
-  const [hitlActioned, setHitlActioned] = useState<'approved' | 'denied' | null>(null);
 
   if (data.type === 'tool_call') {
     return (
@@ -363,59 +364,12 @@ const ToolCallStep: React.FC<{
 
   if (data.type === 'hitl_request') {
     return (
-      <div
-        style={{
-          margin: '4px 0',
-          padding: '6px 10px',
-          borderLeft: '3px solid var(--pf-v5-global--warning-color--100)',
-          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-          borderRadius: '0 4px 4px 0',
-          fontSize: '0.85em',
-        }}
-      >
-        <div style={{ fontWeight: 600, color: 'var(--pf-v5-global--warning-color--100)' }}>
-          Approval Required
-        </div>
-        <pre style={{ margin: '4px 0', padding: 8, fontSize: '0.9em', overflow: 'auto' }}>
-          Command: {data.command}{'\n'}Reason: {data.reason}
-        </pre>
-        {hitlActioned ? (
-          <div style={{ marginTop: 8 }}>
-            <Label
-              color={hitlActioned === 'approved' ? 'green' : 'red'}
-              icon={hitlActioned === 'approved' ? <CheckCircleIcon /> : <TimesCircleIcon />}
-            >
-              {hitlActioned === 'approved' ? 'Approved' : 'Denied'}
-            </Label>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<CheckCircleIcon />}
-              style={{ backgroundColor: 'var(--pf-v5-global--success-color--100)' }}
-              onClick={() => {
-                setHitlActioned('approved');
-                onApprove?.();
-              }}
-            >
-              Approve
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              icon={<TimesCircleIcon />}
-              onClick={() => {
-                setHitlActioned('denied');
-                onDeny?.();
-              }}
-            >
-              Deny
-            </Button>
-          </div>
-        )}
-      </div>
+      <HitlApprovalCard
+        command={data.command || ''}
+        reason={data.reason || 'Agent requests approval'}
+        onApprove={onApprove}
+        onReject={onDeny}
+      />
     );
   }
 
@@ -779,6 +733,7 @@ export const SandboxPage: React.FC = () => {
   }, [searchParams]);
   const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
+  const [sessionModelOverride, setSessionModelOverride] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
 
   // Sidecar agents state
@@ -1276,6 +1231,7 @@ export const SandboxPage: React.FC = () => {
       agent_name: agentForRequest,
     };
     if (skill) body.skill = skill;
+    if (sessionModelOverride) body.model = sessionModelOverride;
     const response = await fetch(streamUrl, {
       method: 'POST',
       headers,
@@ -1729,11 +1685,11 @@ export const SandboxPage: React.FC = () => {
             </SplitItem>
             <SplitItem>
               <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Model:</span>
-              <Tooltip content="LLM model used by this agent">
-                <Label isCompact color="orange" icon={<CogIcon />}>
-                  {(agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'}
-                </Label>
-              </Tooltip>
+              <ModelSwitcher
+                currentModel={sessionModelOverride || (agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'}
+                onModelChange={setSessionModelOverride}
+                namespace={namespace}
+              />
             </SplitItem>
             <SplitItem>
               <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Security:</span>

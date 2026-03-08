@@ -76,6 +76,10 @@ export const LoopSummaryBar: React.FC<LoopSummaryBarProps> = ({ loop, expanded, 
   const tokens = formatTokens(loop);
   const duration = formatDuration(loop.budget.wallClockS);
   const sl = statusLabel(loop.status);
+  const totalTokens = loop.steps.reduce(
+    (sum, s) => sum + s.tokens.prompt + s.tokens.completion,
+    0,
+  );
 
   return (
     <div
@@ -104,6 +108,11 @@ export const LoopSummaryBar: React.FC<LoopSummaryBarProps> = ({ loop, expanded, 
       {/* Right: model badge + duration + toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <ModelBadge model={loop.model} />
+        {totalTokens > 0 && (
+          <span style={{ color: '#6a6e73', fontSize: '0.9em', fontVariantNumeric: 'tabular-nums' }}>
+            {totalTokens.toLocaleString()} tokens
+          </span>
+        )}
         <span style={{ color: '#6a6e73', fontVariantNumeric: 'tabular-nums' }}>
           {duration}
         </span>

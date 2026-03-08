@@ -1167,9 +1167,22 @@ async def _resolve_agent_name(
 ) -> str:
     """Resolve the authoritative agent name for a request.
 
-    For existing sessions, the DB-bound agent_name is authoritative — the
-    frontend's selectedAgent state is unreliable due to race conditions.
-    For new sessions (no session_id), the request value is used.
+    Agent Name Resolution Architecture
+    -----------------------------------
+    1. ``_resolve_agent_name()`` is the **single source of truth** for
+       determining which agent owns a session.
+    2. For **new sessions** (no ``session_id``): uses ``request_agent``
+       supplied by the frontend.
+    3. For **existing sessions**: reads ``agent_name`` from the DB
+       metadata, which is authoritative.  The frontend's
+       ``selectedAgent`` state is unreliable due to race conditions.
+    4. ``_set_owner_metadata()`` (streaming path) and ``chat_send()``
+       (non-streaming path) both call this function and **always
+       overwrite** the metadata ``agent_name`` with the resolved value
+       so every task record stays consistent.
+    5. ``list_sessions()`` merges ``agent_name`` across task records for
+       the sidebar, ensuring the correct name appears even when some
+       records lack metadata.
     """
     if not session_id:
         return request_agent
@@ -1295,8 +1308,11 @@ async def chat_send(
                     meta["owner"] = user.username
                     meta["visibility"] = "private"
                     changed = True
-                if request.agent_name and meta.get("agent_name") != request.agent_name:
-                    meta["agent_name"] = request.agent_name
+                resolved = await _resolve_agent_name(
+                    namespace, final_context_id, request.agent_name
+                )
+                if resolved and meta.get("agent_name") != resolved:
+                    meta["agent_name"] = resolved
                     changed = True
                 if changed:
                     await conn.execute(

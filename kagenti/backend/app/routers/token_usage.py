@@ -8,6 +8,7 @@ Proxies LiteLLM spend data and aggregates per-model token usage
 for individual sessions and session trees (parent + children).
 """
 
+import json
 import logging
 import os
 from collections import defaultdict
@@ -73,57 +74,36 @@ class SessionTreeUsage(BaseModel):  # pylint: disable=too-few-public-methods
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_spend_logs(session_id: str) -> List[Dict[str, Any]]:
-    """Fetch spend logs from LiteLLM filtered by session_id metadata."""
+async def _fetch_spend_by_request_id(request_id: str) -> List[Dict[str, Any]]:
+    """Fetch spend logs from LiteLLM for a single request_id."""
     headers: Dict[str, str] = {"Content-Type": "application/json"}
     if LITELLM_API_KEY:
         headers["Authorization"] = f"Bearer {LITELLM_API_KEY}"
 
-    params = {
-        "request_id": "",  # required by LiteLLM but can be empty
-        "api_key": "",
-        "user_id": "",
-        "start_date": "",
-        "end_date": "",
-    }
-
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            # LiteLLM /spend/logs supports metadata filtering via query params
             response = await client.get(
                 f"{LITELLM_BASE_URL}/spend/logs",
                 headers=headers,
-                params=params,
+                params={"request_id": request_id},
             )
             response.raise_for_status()
-            logs = response.json()
+            data = response.json()
         except httpx.HTTPStatusError as exc:
             logger.warning(
-                "LiteLLM /spend/logs returned %s: %s",
+                "LiteLLM /spend/logs returned %s for request_id=%s: %s",
                 exc.response.status_code,
+                request_id,
                 exc.response.text[:200],
             )
             return []
         except httpx.RequestError as exc:
-            logger.warning("LiteLLM request failed: %s", exc)
+            logger.warning("LiteLLM request failed for request_id=%s: %s", request_id, exc)
             return []
 
-    # Filter logs by session_id in spend_logs_metadata
-    filtered: List[Dict[str, Any]] = []
-    if not isinstance(logs, list):
-        logs = []
-    for log in logs:
-        meta = log.get("metadata") or {}
-        spend_meta = meta.get("spend_logs_metadata") or {}
-        tags = meta.get("tags") or []
-
-        # Match by spend_logs_metadata.session_id or tag
-        if spend_meta.get("session_id") == session_id:
-            filtered.append(log)
-        elif f"session_id:{session_id}" in tags:
-            filtered.append(log)
-
-    return filtered
+    if isinstance(data, list):
+        return data
+    return [data] if isinstance(data, dict) and data else []
 
 
 def _aggregate_by_model(logs: List[Dict[str, Any]], context_id: str) -> SessionTokenUsage:
@@ -202,14 +182,43 @@ def _merge_usages(context_id: str, usages: List[SessionTokenUsage]) -> SessionTo
 # ---------------------------------------------------------------------------
 
 
+async def _get_request_ids_from_metadata(context_id: str, namespace: str) -> List[str]:
+    """Read llm_request_ids from the session's task metadata."""
+    try:
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT metadata FROM tasks WHERE context_id = $1 LIMIT 1",
+                context_id,
+            )
+        if row and row["metadata"]:
+            meta = (
+                json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            )
+            return meta.get("llm_request_ids", [])
+    except Exception as exc:
+        logger.warning("Failed to query task metadata for context_id=%s: %s", context_id, exc)
+    return []
+
+
 @router.get(
     "/sessions/{context_id}",
     response_model=SessionTokenUsage,
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
-async def get_session_token_usage(context_id: str):
+async def get_session_token_usage(context_id: str, namespace: str = "team1"):
     """Per-model token usage for a single session."""
-    logs = await _fetch_spend_logs(context_id)
+    # 1. Get request_ids from session task metadata
+    request_ids = await _get_request_ids_from_metadata(context_id, namespace)
+
+    # 2. Fetch spend for each request_id
+    logs: List[Dict[str, Any]] = []
+    for rid in request_ids:
+        spend = await _fetch_spend_by_request_id(rid)
+        if spend:
+            logs.extend(spend)
+
+    # 3. Aggregate by model
     return _aggregate_by_model(logs, context_id)
 
 
@@ -221,7 +230,12 @@ async def get_session_token_usage(context_id: str):
 async def get_session_tree_usage(context_id: str, namespace: str = "team1"):
     """Token usage for a session including all child sessions."""
     # 1. Get own usage
-    own_logs = await _fetch_spend_logs(context_id)
+    own_request_ids = await _get_request_ids_from_metadata(context_id, namespace)
+    own_logs: List[Dict[str, Any]] = []
+    for rid in own_request_ids:
+        spend = await _fetch_spend_by_request_id(rid)
+        if spend:
+            own_logs.extend(spend)
     own_usage = _aggregate_by_model(own_logs, context_id)
 
     # 2. Find child sessions from the tasks table
@@ -241,7 +255,12 @@ async def get_session_tree_usage(context_id: str, namespace: str = "team1"):
 
     # 3. Fetch usage for each child
     for child_id in child_ids:
-        child_logs = await _fetch_spend_logs(child_id)
+        child_request_ids = await _get_request_ids_from_metadata(child_id, namespace)
+        child_logs: List[Dict[str, Any]] = []
+        for rid in child_request_ids:
+            spend = await _fetch_spend_by_request_id(rid)
+            if spend:
+                child_logs.extend(spend)
         children_usage.append(_aggregate_by_model(child_logs, child_id))
 
     # 4. Build aggregate
