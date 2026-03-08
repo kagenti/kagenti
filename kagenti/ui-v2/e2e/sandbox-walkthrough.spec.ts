@@ -199,15 +199,9 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('sandbox_table_fill');
     await page.waitForTimeout(1000);
 
-    // Clear search — click the PF clear button, or triple-click + delete
-    const clearBtn = page.locator('button[aria-label="Reset"]').or(page.locator('[class*="search-input"] button').last());
-    if (await clearBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await clearBtn.click();
-    } else {
-      // Fallback: triple-click to select all, then delete
-      await searchBox.click({ clickCount: 3 });
-      await searchBox.press('Backspace');
-    }
+    // Clear search — select all + delete (reliable across PF components)
+    await searchBox.press('Control+a');
+    await searchBox.press('Backspace');
     await page.waitForTimeout(500);
     markStep('sandbox_table_search');
 
