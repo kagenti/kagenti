@@ -67,18 +67,11 @@ async function next(page: Page) {
 }
 
 async function pickRcaAgent(page: Page) {
-  const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
-  await expect(nav.first()).toBeVisible({ timeout: 10000 });
-  await nav.first().click();
+  // Navigate to sandbox page with agent= URL param (SandboxAgentsPanel was removed)
+  await page.goto(`/sandbox?agent=${AGENT_NAME}`);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
-  // Click the agent entry in SandboxAgentsPanel (div[role="button"] with agent name)
-  const agentEntry = page.locator('div[role="button"]').filter({ hasText: AGENT_NAME });
-  if (await agentEntry.first().isVisible({ timeout: 10000 }).catch(() => false)) {
-    await agentEntry.first().click();
-    await page.waitForTimeout(1000);
-  }
-  console.log(`[rca] Selected ${AGENT_NAME}`);
+  console.log(`[rca] Selected ${AGENT_NAME} via URL param`);
 }
 
 test.describe('Agent RCA Workflow', () => {
@@ -129,7 +122,7 @@ test.describe('Agent RCA Workflow', () => {
     await expect(input).toBeVisible({ timeout: 15000 });
     await input.fill('/rca:ci Analyze the latest CI failures for kagenti/kagenti PR #758');
     await input.press('Enter');
-    await expect(page.getByText('/rca:ci')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('chat-messages').getByText('/rca:ci')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
 
     // Wait for agent response: either .sandbox-markdown (text) or tool call/result steps
@@ -175,7 +168,7 @@ test.describe('Agent RCA Workflow', () => {
     console.log(`[rca] Final URL: ${page.url()}`);
 
     // User message must be visible
-    await expect(page.getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('chat-messages').getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 30000 });
     console.log('[rca] User message visible on reload');
 
     // Agent response must render (markdown text or tool call steps)
@@ -194,7 +187,7 @@ test.describe('Agent RCA Workflow', () => {
     }, sid);
     await page.waitForTimeout(5000);
 
-    const userMsg = page.getByText('Analyze the latest CI failures');
+    const userMsg = page.getByTestId('chat-messages').getByText('Analyze the latest CI failures');
     await expect(userMsg).toBeVisible({ timeout: 30000 });
     console.log('[rca] Session persists after navigation');
 
