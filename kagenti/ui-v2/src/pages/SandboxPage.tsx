@@ -38,6 +38,7 @@ import { LlmUsagePanel } from '../components/LlmUsagePanel';
 import { FileBrowser } from '../components/FileBrowser';
 import { SidecarPanel } from '../components/SidecarTab';
 import { ModelSwitcher } from '../components/ModelSwitcher';
+import { SubSessionsPanel, useChildSessionCount } from '../components/SubSessionsPanel';
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
 
@@ -735,6 +736,9 @@ export const SandboxPage: React.FC = () => {
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [sessionModelOverride, setSessionModelOverride] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
+
+  // Child session count for sub-sessions tab badge
+  const childSessionCount = useChildSessionCount(namespace, contextId);
 
   // Sidecar agents state
   const [sidecars, setSidecars] = useState<SidecarInfo[]>([]);
@@ -1736,7 +1740,7 @@ export const SandboxPage: React.FC = () => {
 
           {/* Tab bar — stays pinned */}
           <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--pf-v5-global--BorderColor--100)', flexShrink: 0, marginBottom: 8 }}>
-            {['chat', 'stats', 'llm-usage', 'files'].map((tab) => (
+            {['chat', 'stats', 'llm-usage', 'sub-sessions', 'files'].map((tab) => (
               <button
                 key={tab}
                 role="tab"
@@ -1760,7 +1764,7 @@ export const SandboxPage: React.FC = () => {
                   textTransform: 'capitalize',
                 }}
               >
-                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : tab === 'llm-usage' ? 'LLM Usage' : 'Files'}
+                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : tab === 'llm-usage' ? 'LLM Usage' : tab === 'sub-sessions' ? `Sub-sessions${childSessionCount > 0 ? ` (${childSessionCount})` : ''}` : 'Files'}
               </button>
             ))}
             {/* Sidecar tabs removed — sidecars now in right panel */}
@@ -2019,6 +2023,17 @@ export const SandboxPage: React.FC = () => {
               <LlmUsagePanel
                 contextId={contextId}
                 isVisible={activeTab === 'llm-usage'}
+              />
+          )}
+
+          {activeTab === 'sub-sessions' && contextId && (
+              <SubSessionsPanel
+                contextId={contextId}
+                namespace={namespace}
+                onNavigateToSession={(cid, agent) => {
+                  handleSelectSession(cid, agent);
+                  setActiveTab('chat');
+                }}
               />
           )}
 

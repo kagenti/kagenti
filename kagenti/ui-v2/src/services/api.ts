@@ -896,6 +896,35 @@ export const sandboxService = {
       }
     );
   },
+
+  async getChildSessions(namespace: string, contextId: string): Promise<Array<{
+    context_id: string;
+    agent_name: string;
+    title: string;
+    state: string;
+    timestamp: string;
+  }>> {
+    const response = await apiFetch<{items: Array<Record<string, unknown>>}>(
+      `/sandbox/${encodeURIComponent(namespace)}/sessions?limit=100`
+    );
+    return (response.items || [])
+      .filter((s: Record<string, unknown>) => {
+        const meta = s.metadata as Record<string, unknown> | undefined;
+        return meta?.parent_context_id === contextId;
+      })
+      .map((s: Record<string, unknown>) => {
+        const meta = s.metadata as Record<string, unknown> | undefined;
+        const status = s.status as Record<string, unknown> | undefined;
+        const cid = (s.context_id || s.id) as string;
+        return {
+          context_id: cid,
+          agent_name: (meta?.agent_name as string) || 'unknown',
+          title: (meta?.title as string) || cid?.substring(0, 8) || 'Untitled',
+          state: (status?.state as string) || 'unknown',
+          timestamp: (status?.timestamp as string) || '',
+        };
+      });
+  },
 };
 
 /**
