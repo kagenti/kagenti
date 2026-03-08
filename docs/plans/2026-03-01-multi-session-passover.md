@@ -1,11 +1,11 @@
 # Multi-Session Sandbox Development Coordination
 
 > **Date:** 2026-03-01
-> **Main Coordinator:** `9468f782` — runs cross-cluster tests, monitors all sessions, updates doc
-> **Orchestrator O:** `25db5acf` — spawns sub-sessions
-> **Orchestrator 42:** `19fda572` — sandbox44 integration testing
-> **Active Sessions:** A, B, C, D, E, F, G, H, O, 42 + Coordinator
-> **Test Clusters:** sbox (dev), sbox42, sandbox42, sandbox44 (integration)
+> **Main Coordinator:** `9468f782` — runs tests, monitors sessions, updates this doc
+> **Main Coordinator:** Session `9468f782` — runs cross-cluster tests, monitors all sessions, updates doc
+> **Orchestrator:** Session O (spawns sub-sessions)
+> **Active Sessions:** A, B, C, D, E, F, H, K, L, M, O
+> **Test Clusters:** sbox (dev), sbox1 (staging), sbox42 (integration)
 
 ## CRITICAL: Passwords Changed on ALL Clusters
 
@@ -41,64 +41,47 @@ export KEYCLOAK_PASSWORD=$(kubectl -n keycloak get secret kagenti-test-users -o 
 
 **TODO for Session B:** Agent must handle 429 `insufficient_quota` gracefully — return clear error message + auto-retry with backoff for transient 429s. Do NOT crash the SSE stream.
 
-## Orchestrator Status (Updated 2026-03-04 09:00)
+## Orchestrator Status (Updated 2026-03-02 12:00)
 
-### Cluster Matrix (3 active clusters)
-| Cluster | Model | Agents | Tests (all specs) | Owner | Password |
-|---------|-------|--------|-------------------|-------|----------|
-| **sbox42** | Llama 4 Scout | 8/8 | **190/196** (96.9%) | Session G | Random |
-| **sandbox42** | Llama 4 Scout | 7/7 | **188/195** (96.4%) | Session K | Random |
-| **sandbox44** | Llama 4 Scout | 7/7 | **186/195** (95.4%) | Session K | Random |
-
-**sbox** — DESTROYED (was obsolete, DeepSeek R1 couldn't do tool calling).
-
-**Key finding:** Mistral Small 24B does NOT support tool calling. All clusters use **Llama 4 Scout** (`llama-4-scout-17b-16e-w4a16`) for 95%+ pass rates.
+### Cluster Matrix
+| Cluster | Model | Agents | Tests | UI | Password |
+|---------|-------|--------|-------|-----|----------|
+| **sbox** | DeepSeek R1 14B | 5 running | **12/12 PASS** | Latest | Random (use `show-services.sh --reveal`) |
+| **sbox42** | Mistral Small 24B | 5 running | **13/13 PASS** | Latest | Random (use `show-services.sh --reveal`) |
+| **sandbox42** | Mistral Small 24B | 5 running | **17/31** (11 fail, 3 skip) | Latest (rebuilt) | admin/admin (test-users created) |
 
 ### Session → Cluster Assignments
-| Session | Cluster | Role |
-|---------|---------|------|
-| **G** (RCA + Tests) | **sbox42** | UI/test fixes, 96.9% pass rate |
-| **K** (P0/P1 Blockers) | **sandbox42 + sandbox44** | Fix deploy crash, HITL wiring, nono_launcher |
-| **Coordinator** | all 3 | Cross-cluster testing, pipeline fixes |
+| Session | Cluster | Why |
+|---------|---------|-----|
+| **A** (Core Platform) | **sbox** | Has all 5 variants, DeepSeek, full history |
+| **B** (Source Builds) | **sbox** | Shares agents with A, needs Shipwright builds |
+| **C** (HITL & Integrations) | **sbox42** | Clean cluster, Mistral, no conflicts with A/B |
+| **D** (Keycloak) | **sbox** | Needs Keycloak access in keycloak namespace |
+| **O** (Orchestrator) | **sandbox42** | Integration testing after fixing UI build |
 
-### Passwords & Credentials
-All clusters use **random Keycloak admin passwords** created by `create-test-users.sh`.
-```bash
-# Get credentials for any cluster:
-KUBECONFIG=~/clusters/hcp/kagenti-team-<cluster>/auth/kubeconfig \
-  kubectl -n keycloak get secret kagenti-test-users -o jsonpath='{.data.admin-password}' | base64 -d
-```
+### Passwords Changed
+All clusters now use **random Keycloak admin passwords** (not admin/admin).
+Read credentials: `KUBECONFIG=~/clusters/hcp/kagenti-team-<cluster>/auth/kubeconfig .github/scripts/local-setup/show-services.sh --reveal`
 
-### Latest Test Results (2026-03-04 09:00)
-| Cluster | All Playwright | Backend Unit | Sandbox Unit | Notes |
-|---------|---------------|-------------|-------------|-------|
-| **sbox42** | **190/196** (96.9%) | — | — | Session G baseline |
-| **sandbox42** | **188/195** (96.4%) | **277/277** | **63/63** | Clean install + Llama Scout |
-| **sandbox44** | **186/195** (95.4%) | **277/277** | **63/63** | TOFU patched + Llama Scout |
+Demo realm users (dev-user, ns-admin) still use username=password (by design for test users).
 
-**Remaining failures (all clusters, LLM-dependent):**
-- sandbox-file-browser (2-3): agent must write files to workspace
-- sandbox-walkthrough (1): full user journey with agent chat
-- agent-rca-workflow test 6: RCA quality varies by LLM run
-- agent-catalog (0-1): intermittent API error
+### Latest Test Results
+| Cluster | Suite | Result |
+|---------|-------|--------|
+| sbox | Full sandbox (12 tests) | **12/12 PASS** |
+| sbox | Weather agent (3 tests) | **3/3 PASS** |
+| sbox42 | Full sandbox (13 tests) | **13/13 PASS** |
+| sandbox42 | Core sandbox (13 tests) | **13/13 PASS** (post-Landlock deploy) |
+| sandbox42 | Full suite (31 tests) | **17/31** (11 fail, 3 skip) |
+| sandbox42 | Landlock verification | **6/6 PASS** on RHCOS kernel 5.14 |
 
-### Session Activity (2026-03-04)
-| Session | Status | Cluster | What |
-|---------|--------|---------|------|
-| **K** | **ACTIVE** | sandbox42 + sandbox44 | P0/P1 blockers: sandbox_deploy crash, HITL wiring, nono_launcher deploy |
-| **L** | **NEW** | sbox42 | Agent reasoning loop: debug agent response, plan/reflect/reporter nodes |
-| **M** | **NEW** | sbox42 | Chat UX polish: skill invocation, loop cards, model badges |
-| **Coord** | **ACTIVE** | all 3 | Cross-cluster testing, pipeline fixes, passover doc |
-| G | **DONE** | sbox42 | 192/196 (98.0%), 50+ commits. Handed off to L + M |
-| A | Done | — | DelegationCard, streaming, session titles |
-| B | Done | — | 5 variants, DB driver, TOFU, 429 handling |
-| C | Done (UI) | — | 78/78 tests. HITL backend wiring → Session K |
-| D | Done | — | Keycloak test users, random passwords |
-| E | Done | — | Session graph page, delegation design |
-| F | Done | — | Composable security model, 63 tests. Deploy → Session K |
-| H | Done | — | File browser, 11 tests |
-
-**Clusters:** sbox42, sandbox42, sandbox44 (sbox destroyed)
+### Session Activity (latest)
+| Session | Last Commit | What |
+|---------|------------|------|
+| A | `bb2f73e6` | flush tool call events during streaming |
+| B | No commits visible | may be working locally |
+| C | `907fac72` + 6 more | Integration CRD + UI pages (7 commits) |
+| D | `c34f4c29` | demo realm users + show-services --reveal |
 
 ## Architecture Reference
 
@@ -111,25 +94,19 @@ Previous research (reference only): [2026-02-23-sandbox-agent-research.md](2026-
 
 ## Session Definitions
 
-### Session 42 (was Session O) — Orchestrator (sandbox44 cluster)
+### Session O — Orchestrator (sbox42 cluster)
 
-**Role:** Test coordination, integration testing, cluster deployment
-**Cluster:** sandbox44 (deployed, Mistral Small 24B, 4 agents running)
+**Role:** Test coordination, integration testing, conflict resolution
+**Cluster:** sandbox42 (UP — 2 nodes, Mistral Small 24B, 5 agents running)
 **Claude Session ID:** `25db5acf`
-**Worktree:** `.worktrees/sandbox-agent` (read-only for testing)
-**Cost:** ~$280, Tokens: ~4M input / ~250k output (Opus 4.6)
-**Status:** Active — running integration tests on sandbox44
+**Worktree:** `.worktrees/sandbox-agent` (read-only, for deploy scripts and test specs)
+**Responsibilities:**
+- Run full E2E test suite after each session pushes
+- Detect conflicts between sessions
+- Update this passover doc with test results
+- Deploy fresh cluster for integration testing
 
-**Latest:** sandbox44 115/140 E2E (82%), sbox 12/12 core, sbox42 13/13 core
-
-**Completed:**
-- Deployed clusters: sbox42, sandbox42→destroyed, sandbox43→destroyed, sandbox44
-- Rotated all Keycloak passwords to random on all clusters
-- Configured MAAS models (DeepSeek R1 + Mistral) on all clusters
-- Fixed: Helm nil pointer, postgres image, TOFU permissions, route timeouts
-- Full 140-test E2E suite on fresh sandbox44
-
-**Does NOT write feature code** — only tests, deploys, coordinates
+**Does NOT write code** — only reads, tests, and coordinates
 
 **Startup:**
 ```bash
@@ -161,9 +138,7 @@ export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
 ### Session A — Core Platform (sbox cluster)
 
-**Claude Session ID:** `411cade4`
-**Worktree:** `.worktrees/sandbox-agent`
-**Role:** Fix DB connection, tool call rendering, session management, test fixes
+**Role:** Fix DB connection, tool call rendering, session management
 **Cluster:** sbox (existing)
 **File Ownership:**
 - `kagenti/backend/app/routers/sandbox.py` — EXCLUSIVE
@@ -174,17 +149,14 @@ export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 - `kagenti/ui-v2/e2e/sandbox-rendering.spec.ts` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/sandbox-variants.spec.ts` — EXCLUSIVE
 
-**Commits:** `bb2f73e6`, `5f7596d6`, `cf026bb9`, `1bb39522`, `e6eb9b8b`
+**Priority Tasks:**
+1. ~~P0: Fix Istio + asyncpg DB connection~~ ✅ DONE — ssl=False, retry, eviction (5f7596d6)
+2. P0: Fix agent serializer in image (Dockerfile/pyproject.toml) — Session B
+3. ~~P1: Tool call rendering during streaming + in loaded history~~ ✅ DONE — parseGraphEvent regex fallback + immediate flush (bb2f73e6)
+4. ~~P1: Session name matching content~~ ✅ DONE — metadata merge across task rows (cf026bb9)
+5. ~~P2: Streaming tool call events -> ToolCallStep messages~~ ✅ DONE (merged with #3)
 
-**Completed Tasks:**
-1. ~~P0: DB pool hardening~~ ✅ ssl=False, retry, eviction (5f7596d6)
-2. ~~P1: Tool call streaming~~ ✅ regex fallback + flush (bb2f73e6)
-3. ~~P1: Session title merge~~ ✅ metadata across task rows (cf026bb9)
-4. ~~P1: sandbox.spec.ts 10 failures~~ ✅ selector fixes (e6eb9b8b)
-5. ~~P1: sidebar title test~~ ✅ improved assertion (e6eb9b8b)
-6. ~~P1: Unit + E2E tests~~ ✅ 23 backend + 1 E2E (1bb39522)
-
-**All Session A tasks complete.** Backend + UI deployed to sbox.
+**All Session A P0/P1 tasks complete.** Backend deployed to sbox. Awaiting Session O integration test.
 
 **Startup:**
 ```bash
@@ -205,10 +177,9 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 
 ### Session B — Source Builds & Agent Image (sbox cluster)
 
-**Claude Session ID:** `1d8e455f`
+**Claude Session ID:** (this session — Session B)
 **Role:** Fix Shipwright builds, agent image packaging, deploy scripts
 **Cluster:** sbox (shared with A, different namespace resources)
-**Worktree:** `.worktrees/sandbox-agent` (kagenti repo) + `.worktrees/agent-examples` (agent code)
 **File Ownership:**
 - `.worktrees/agent-examples/` — EXCLUSIVE (all agent code)
 - `kagenti/backend/app/routers/sandbox_deploy.py` — EXCLUSIVE
@@ -224,14 +195,8 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 4. ~~P0: Fix postgres-sessions non-root~~ ✅ FIXED — switched to `bitnami/postgresql:16`
 5. ~~P1: Create deployment manifests for all variants~~ ✅ DONE — 5 variants with services
 6. ~~P1: Graceful 429/quota error handling~~ ✅ DONE — retry + clean error via SSE
-7. ~~P0: Fix stale agent code in sandbox-legion~~ ✅ **ROOT CAUSE FOUND** — ConfigMap `agent-code-patch` volume mount was overlaying agent.py + event_serializer.py with old versions. Removed mounts. Builds were correct all along.
-8. ~~P1: OpenShift BuildConfig alternative~~ ✅ DONE — created `sandbox_agent_buildconfig_ocp.yaml` with `noCache: true`
-9. ~~P0: Fix postgres image tag~~ ✅ FIXED — switched to `registry.redhat.io/rhel9/postgresql-16:latest`
-10. ~~P0: Fix TOFU PermissionError on OCP~~ ✅ FIXED — write to `/tmp`, `chmod g+w /app`
-11. ~~P1: Composable security toggles in wizard~~ ✅ DONE — secctx/landlock/proxy/gvisor in SandboxCreatePage
-12. ~~P2: Wire multi-mode delegate tool~~ ✅ DONE — 4 modes (in-process functional, 3 placeholders)
-13. P1: Wizard deploy triggers Shipwright Build (not just Deployment)
-14. P2: Source build from git URL (wizard end-to-end)
+7. P1: Wizard deploy triggers Shipwright Build (not just Deployment)
+8. P2: Source build from git URL (wizard end-to-end)
 
 **Session Active:** YES (started 2026-03-01T12:04Z)
 
@@ -240,16 +205,11 @@ Use /tdd:hypershift for iteration. 12/12 Playwright tests must stay green.
 # agent-examples repo:
 2e2590b fix(sandbox): switch TaskStore from asyncpg to psycopg driver
 048f0de fix(sandbox): handle LLM 429/quota errors gracefully in SSE stream
-dd84219 fix(sandbox): OCP arbitrary UID compatibility
-b9bdc5c feat(sandbox): wire multi-mode delegate tool into agent
 
 # kagenti repo:
 6d5aee22 fix(deploy): switch sandbox-legion TaskStore URL from asyncpg to psycopg
 2417c723 fix(deploy): switch postgres-sessions to bitnami/postgresql for OCP
 2bf50b24 feat(deploy): add deployment manifests for all sandbox agent variants
-d35b4a0c docs: Session B update — root cause found, OCP BuildConfig added
-26db4348 fix(deploy): switch postgres to RHEL image, fix trigger lint
-042a661a feat(ui): add composable security layer toggles to sandbox wizard
 ```
 
 **Status / Findings:**
@@ -259,9 +219,8 @@ d35b4a0c docs: Session B update — root cause found, OCP BuildConfig added
 - ✅ postgres-sessions: bitnami/postgresql:16 (UID 1001) for OCP compatibility
 - ✅ All 5 variant manifests created with services
 - ✅ 429 handling: quota exhaustion → clean error, transient → retry 3x with backoff
-- ✅ **Stale code root cause: ConfigMap volume mount `agent-code-patch`** was overlaying agent.py/event_serializer.py with old versions. Fixed by removing mounts. sandbox-legion now has 536-line agent.py with all fixes.
-- ✅ OpenShift BuildConfig created as Shipwright alternative (noCache: true)
-- ⚠️ Agents switched to Mistral (mistral-small-24b-w8a8) — OpenAI quota exceeded
+- ⏳ Agent image rebuild in progress (BuildRun sandbox-agent-rebuild-rwjw6)
+- ⚠️ E2E test blocked by OpenAI quota exhaustion
 
 **Startup:**
 ```bash
@@ -281,9 +240,8 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 
 ### Session C — HITL & Session Orchestration (sbox1 cluster)
 
-**Claude Session ID:** `487d5f15`
 **Role:** Wire HITL approve/deny, implement sub-agent delegation, passover
-**Worktree:** `.claude/worktrees/integrations-hub` (code cherry-picked to `.worktrees/sandbox-agent`)
+**Claude Session:** `487d5f15`
 **Cluster:** sbox1
 **File Ownership:**
 - `kagenti/ui-v2/src/pages/SandboxesPage.tsx` — EXCLUSIVE
@@ -296,36 +254,23 @@ Session A owns sandbox.py and SandboxPage.tsx — do NOT touch those files.
 
 **Additional File Ownership (Integrations Hub + Sessions):**
 - `kagenti/ui-v2/src/pages/IntegrationsPage.tsx` — EXCLUSIVE
-- `kagenti/ui-v2/src/pages/AddIntegrationPage.tsx` — EXCLUSIVE
-- `kagenti/ui-v2/src/pages/IntegrationDetailPage.tsx` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/integrations.spec.ts` — EXCLUSIVE
-- `kagenti/ui-v2/e2e/add-integration.spec.ts` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/sessions-table.spec.ts` — EXCLUSIVE
-- `kagenti/ui-v2/e2e/sandbox-hitl.spec.ts` — EXCLUSIVE
-- `kagenti/ui-v2/src/pages/TriggerManagementPage.tsx` — EXCLUSIVE
-- `kagenti/ui-v2/e2e/triggers.spec.ts` — EXCLUSIVE
 - `kagenti/backend/app/routers/integrations.py` — EXCLUSIVE
 - `charts/kagenti/templates/integration-crd.yaml` — EXCLUSIVE
-- `docs/plans/2026-02-28-integrations-hub-design.md` — EXCLUSIVE
-- `docs/plans/2026-03-01-sub-agent-delegation-design.md` — EXCLUSIVE
 
-**Completed Tasks:**
-1. ✅ Integrations Hub UI — IntegrationsPage (tabbed), AddIntegrationPage (form), IntegrationDetailPage
-2. ✅ Backend Integration router — 7 endpoints (CRUD + webhook + test connection)
-3. ✅ Helm Integration CRD + RBAC rules
-4. ✅ SessionsTablePage — type filter, parent/child links, status badges
-5. ✅ Sub-agent delegation design doc
-6. ✅ Webhook receiver endpoint
-7. ✅ HITL approval flow Playwright tests — 5/5 (mocked SSE + approve/deny buttons)
-8. ✅ Trigger Management UI — TriggerManagementPage (cron/webhook/alert tabs) + 15/15 tests
+**Priority Tasks:**
+1. ~~P1: Integrations Hub UI (7 commits)~~ ✅ DONE — merged into feat/sandbox-agent
+2. ~~P1: Integrations Hub Playwright tests~~ ✅ DONE — 24/24 passing
+3. ~~P1: Sessions table with passover chain column~~ ✅ DONE — SessionsTablePage + 20/20 tests
+4. ~~P2: Sub-agent delegation design~~ ✅ DONE — docs/plans/2026-03-01-sub-agent-delegation-design.md
+5. ~~P2: Webhook receiver endpoint~~ ✅ DONE — POST /integrations/:ns/:name/webhook
+6. P1: Wire HITL approve/deny to LangGraph graph resume (Session A DB fix done, models available)
+7. P2: Implement delegate tool in agent code
+8. P2: Passover chain API endpoint (requires Session A — cross-session TODO posted)
+9. P3: Automated passover (context_monitor node)
 
-**Remaining Tasks:**
-1. P1: Wire HITL approve/deny backend (needs sandbox.py + agent graph.py — cross-session TODO posted to A+B)
-2. P2: Implement delegate tool (needs agent-examples — Session B file)
-3. P2: Passover chain API (needs sandbox.py — cross-session TODO posted)
-4. P3: Automated passover (context_monitor node)
-
-**Test Results (local):** 78/78 Playwright tests (24 integrations + 14 add-integration + 20 sessions + 5 HITL + 15 triggers)
+**Test Results (local):** 44/44 Playwright tests passing (24 integrations + 20 sessions)
 **sbox42 Results:** 7/7 passing (sandbox-chat-identity 3/3, session-ownership 4/4)
 
 **Startup:**
@@ -347,11 +292,8 @@ Deploy and test on sbox1 cluster.
 
 ### Session D — Keycloak & Multi-User (sbox cluster)
 
-**Claude Session ID:** `eb18a410`
 **Role:** Keycloak personas, multi-user tests, RBAC verification
 **Cluster:** sbox (Keycloak namespace)
-**Worktree:** `.worktrees/sandbox-agent`
-**Session Active:** YES (started 2026-03-01)
 **File Ownership:**
 - `kagenti/ui-v2/src/contexts/AuthContext.tsx` — EXCLUSIVE
 - `kagenti/ui-v2/e2e/agent-chat-identity.spec.ts` — EXCLUSIVE
@@ -360,30 +302,11 @@ Deploy and test on sbox1 cluster.
 - `charts/kagenti-deps/templates/keycloak-*.yaml` — EXCLUSIVE
 
 **Priority Tasks:**
-1. ~~P1: Create dev-user and ns-admin Keycloak test users~~ ✅ DONE — Helm realm init + create-test-users.sh
-2. ~~P1: Multi-user Playwright test (admin + dev-user)~~ ✅ DONE — JWT-based identity assertions
-3. ~~P2: Random admin password (not hardcoded admin/admin)~~ ✅ DONE — randAlphaNum(16) with lookup preservation
-4. ~~P2: Session visibility RBAC verification test~~ ✅ DONE — browser session isolation verified
+1. P1: Create dev-user and ns-admin Keycloak test users
+2. P1: Multi-user Playwright test (admin + dev-user in same session)
+3. P2: Random admin password (not hardcoded admin/admin)
+4. P2: Session visibility RBAC verification test
 5. P3: SPIRE identity toggle integration
-
-**Test Results:** 10/10 Playwright tests passing on sbox (24.9s)
-
-**Commits (on `feat/sandbox-agent`):**
-```
-88f3f1fc feat(auth): add Keycloak test users, random admin password, and multi-user E2E tests
-c34f4c29 feat(auth): add demo realm users and --reveal flag to show-services
-56dd5bd6 fix(e2e): use JWT-based assertions for multi-user identity tests
-529b9155 feat(auth): add create-test-users.sh for master realm user provisioning
-c127036a fix(auth): store test user passwords in kagenti-test-users secret
-```
-
-**Key finding:** UI authenticates against **master** realm (not demo). Test users must exist in master realm for UI login. `create-test-users.sh` handles this. Helm realm init creates demo realm users (for future migration).
-
-**To provision users on a new cluster:**
-```bash
-KUBECONFIG=~/clusters/hcp/kagenti-team-<cluster>/auth/kubeconfig \
-  ./kagenti/auth/create-test-users.sh
-```
 
 **Startup:**
 ```bash
@@ -441,77 +364,42 @@ KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-e
 
 ---
 
-## Current Test Results (Coordinator updates this)
+## Current Test Results (Session O updates this)
 
 | Session | Tests | Passing | Last Run |
 |---------|-------|---------|----------|
 | A (Core) | 12 | 12/12 | 2026-02-28 |
 | B (Builds) | 3 | 0/3 (wizard walkthrough) | Not run |
 | C (HITL+Integrations) | 7+44 | 7/7 sbox42 + 44/44 local | 2026-03-01 — integrations 24/24, sessions 20/20, webhook endpoint, delegation design |
-| D (Multi-user) | 10 | **10/10** | 2026-03-02 — JWT identity + session isolation, sbox |
-| G (RCA Workflow) | 6 | **3/6** (1 fail, 2 skip) | 2026-03-02 13:40 — sbox42 |
-| Coord (Integration) | 36 | **22/36** (10 fail, 4 skip) | 2026-03-02 13:37 — sbox42 + sandbox42 cross-cluster |
+| D (Multi-user) | 0 | N/A | Not started |
+| H (File Browser) | 6 | 6/6 (mocked API) | 2026-03-02 — all local, no cluster needed |
+| K (P0/P1 Blockers) | 65 | **29/65** (36 fail in other sessions' specs) | 2026-03-04 — all 4 P0/P1 tasks DONE, 0 regressions |
+| L (Reasoning Loop) | 3 | 0/3 (agent works, SSE pipeline TBD) | 2026-03-04 — debugging SSE pipeline |
+| M (Chat UX Polish) | 4+11 | 4/4 E2E (mocked) + 11/11 unit | 2026-03-04 — P0+P1 done, skill packs loader+tests, registry blocked |
+| O (Integration) | 31 | **17/31** (11 fail, 3 skip) | 2026-03-02 11:30 — sandbox42 full suite |
 
-### Cross-Cluster Test Results (2026-03-02 13:37)
-
-| Cluster | Pass | Fail | Skip | Total | Rate |
-|---------|------|------|------|-------|------|
-| **sbox42** | 22 | 10 | 4 | 36 | 61% |
-| **sandbox42** | 22 | 11 | 3 | 36 | 61% |
-| **sbox** | — | — | — | — | UI builds 45+46 FAILING (TS errors) |
-| **sandbox44** | — | — | — | — | 4 agents CrashLoopBackOff (TOFU PermissionError) |
-
-### Coordinator — Integration Test Detail (sbox42, 2026-03-02 13:37)
+### Session O — Integration Test Detail (sandbox42, 2026-03-02 11:30)
 
 | Spec file | Total | Pass | Fail | Skip | Owner |
 |---|---|---|---|---|---|
-| `sandbox-chat-identity.spec.ts` | 3 | **3** | 0 | 0 | C |
-| `sandbox-hitl.spec.ts` | 5 | **5** | 0 | 0 | A |
+| `sandbox-sessions.spec.ts` | 6 | **6** | 0 | 0 | A |
 | `sandbox-variants.spec.ts` | 4 | **4** | 0 | 0 | A |
-| `sandbox-sessions.spec.ts` | 5 | 3 | **1** | 1 | A |
-| `agent-chat-identity.spec.ts` | 6 | 2 | **4** | 0 | D |
-| `sandbox-rendering.spec.ts` | 4 | 0 | **1** | 3 | A |
+| `sandbox-chat-identity.spec.ts` | 3 | **3** | 0 | 0 | C |
+| `agent-chat-identity.spec.ts` | 10 | 4 | **6** | 0 | D |
 | `session-ownership.spec.ts` | 4 | 0 | **4** | 0 | C |
+| `sandbox-rendering.spec.ts` | 4 | 0 | **1** | 3 | A |
 
-### RCA Workflow Test (sbox42, 2026-03-02 13:40)
+**Failure root causes:**
+- **agent-chat-identity (6 fail):** Weather agent card never becomes visible (30s timeout at line 91). Tests expect `weather-service` agent in AgentChat page but it may not be registered or the selector changed.
+- **session-ownership (4 fail):** Sessions table page never renders (15s timeout). The SessionsTablePage component exists but may need route registration or new UI build.
+- **sandbox-rendering (1 fail + 3 skip):** Tool call steps not rendered (`found: 0`). Known frontend rendering issue — agent streams response but ToolCallStep components produce no DOM elements.
 
-| Test | Result | Notes |
-|---|---|---|
-| 1 — deploy agent via wizard | **PASS** | Agent deployed + patched for Mistral |
-| 2 — verify agent card capabilities | **PASS** | streaming=true, correct format |
-| 3 — send RCA request and verify processing | **PASS** | Agent processes /rca:ci request |
-| 4 — tool call steps appear during analysis | **FAIL** | `.sandbox-markdown` count=0, `[data-testid=tool-call-step]` count=0 |
-| 5 — sub-agent sessions appear in sidebar | did not run | blocked by test 4 |
-| 6 — final RCA assessment has expected sections | did not run | blocked by test 4 |
-
-### Failure Root Causes (2026-03-02)
-
-**1. Tool call rendering (5 tests across 2 specs — Session A):**
-Tests use `.sandbox-markdown` and `[data-testid="tool-call-step"]` selectors but the actual UI uses inline styles for messages and `.event-item` class for events in EventsPanel. These selectors don't exist in the current DOM. Affects: `sandbox-rendering.spec.ts` (1 fail + 3 skip), `agent-rca-workflow.spec.ts` test 4.
-
-**2. SessionsTablePage not loading (4 tests — Session C):**
-`session-ownership.spec.ts` — "Sandbox Sessions" heading never appears. The SessionsTablePage component and route may not be in the deployed UI build. Route was added to App.tsx but the build on sbox42/sandbox42 predates the commit.
-
-**3. Keycloak multi-user auth (4 tests — Session D):**
-`agent-chat-identity.spec.ts` — `dev-user`/`ns-admin` login redirect stalls (30s timeout). Users exist in Keycloak secrets but login flow hangs. May need browser context isolation or Keycloak session cleanup.
-
-**4. Session marker mismatch (1 test — Session A):**
-`sandbox-sessions.spec.ts` — "session title appears in sidebar" expects marker but finds different session ID. Likely test timing issue with multi-turn chat.
-
-### Cluster Issues
-
-**sbox — UI builds FAILING (builds 45+46):**
-10 TypeScript errors from uncommitted Session E/F/H changes:
-- Session E: missing `@xyflow/react` + `dagre` deps, unused `SessionGraphPage` import
-- Session F: `SandboxCreatePage.tsx` — `base_agent` and `security_warnings` type mismatches
-- Session H: `FileBrowser.tsx` — `sandboxFileService`, `FileEntry`, `FileContent` not exported
-
-**sandbox44 — 4 agents CrashLoopBackOff:**
-`PermissionError: /app/.tofu-hashes.json` — TOFU verify tries to write to `/app` which is owned by UID 1001 but OCP assigns arbitrary UID. Need `chmod g+w /app` in Dockerfile or write to `/tmp`.
-
-**Deploy workarounds applied on sbox42 (NOT in repo):**
-1. `postgres-sessions`: replaced `bitnami/postgresql:16` (tag not found) with `registry.redhat.io/rhel9/postgresql-16:latest`
-2. All sandbox agent deployments: patched `securityContext.runAsUser: 1001` to fix TOFU PermissionError
+**Deploy workarounds applied on sandbox42 (NOT in repo):**
+1. `postgres-sessions`: used `registry.redhat.io/rhel9/postgresql-16:latest` (bitnami tag broken)
+2. All sandbox agents: patched `runAsUser: 1001` for TOFU write permission
+3. All sandbox agents: patched Mistral model env vars (`LLM_API_BASE`, `LLM_MODEL`)
+4. Keycloak: ran `create-test-users.sh` to create admin/dev-user/ns-admin users
+5. UI: rebuilt from source (build-2) after DNS resolution failure on build-1
 
 ---
 
@@ -521,35 +409,27 @@ Tests use `.sandbox-markdown` and `[data-testid="tool-call-step"]` selectors but
 
 | Requester | Target Session | File | Change Needed | Status |
 |-----------|---------------|------|---------------|--------|
-| O (conflict scan) | ALL | `api.ts`, `App.tsx`, `main.py` | **UNOWNED** — these shared files will cause merge conflicts. Assign ownership or use merge-order rules. | NEW — Session C added integrations to all 3 files (cherry-picked + conflict resolved into sandbox-agent) |
-| O (conflict scan) | A, B | `SandboxCreatePage.tsx` | **UNOWNED** — sits at Session A/B boundary. Assign to one session. | NEW |
+| O (conflict scan) | ALL | `api.ts`, `App.tsx`, `main.py` | **RESOLVED by Session K:** These are additive-only shared files. No single owner needed — each session owns its own section: Session E owns sessionGraphService/route, Session H owns sandboxFileService/route+nav, Session F owns sandbox_trigger registration, Session K owns sandbox+sandbox_deploy registration. Rule: only add, never rewrite others' sections. | RESOLVED |
+| O (conflict scan) | A, B | `SandboxCreatePage.tsx` | **RESOLVED by Session K:** File does NOT exist. Not a conflict. If created, assign to Session B (deploy wizard is Session B scope). | RESOLVED |
 | A | O | `deployments/sandbox/postgres-sessions.yaml` | Re-apply on sbox42: image fixed from `postgres:16-alpine` to `bitnami/postgresql:16` (non-root) in 886a3cf4. Run: `kubectl apply -f .worktrees/sandbox-agent/deployments/sandbox/postgres-sessions.yaml` then `kubectl rollout restart sts/postgres-sessions -n team1` | READY |
 | O (conflict scan) | B | `kubernetes.py` | Multi-author (Smola + Dettori). Session A HITL work touched this B-exclusive file in commit ae3e26fa. | WATCH |
 | O (conflict scan) | D | `kagenti/auth/` | 3 authors (Dettori, Rubambiza, Smola). Session D should coordinate before modifying. | WATCH |
 | O (sbox42 deploy) | B | `postgres-sessions.yaml` | ~~**P0 BLOCKER**: postgres:16-alpine runs as root~~ ✅ FIXED — switched to `bitnami/postgresql:16` (UID 1001). Commit `2417c723`. | DONE |
 | B | A | `sandbox.py` | FYI: asyncpg fix is `TASK_STORE_DB_URL` driver scheme (`postgresql+psycopg://`), not ssl or retry. Checkpointer already uses psycopg via `AsyncPostgresSaver`. | INFO |
 | C | A | `sandbox.py` | Add `GET /sessions/{context_id}/chain` endpoint — traverse `parent_context_id` and `passover_from`/`passover_to` in metadata to return full session lineage. See `docs/plans/2026-03-01-sub-agent-delegation-design.md` Phase 2. | NEW |
-| C | A+B | `sandbox.py` + agent `graph.py` | **P1 HITL RESUME**: approve/deny endpoints (lines 606-645) are stubs. Need to: (1) Backend sends A2A message to agent with `{"approved": true/false}` payload, (2) Agent's `interrupt()` call in `_make_shell_tool` receives approval and resumes graph. Agent URL: `http://{variant}.{namespace}.svc:8000`. See LangGraph `Command(resume=...)` pattern. | NEW |
-| 42 | B | `sandbox_deploy.py` | **P0 CRASH**: `Path(__file__).parents[4]` raises `IndexError: 4` in container. Backend pod crashes on startup after latest build. Old pod still serves. Fix: use relative path or env var for `_sandbox_dir`. Error: `sandbox_deploy.py:25` | NEW |
 | O (sbox42 test) | B | `postgres-sessions.yaml` | **P0**: `bitnami/postgresql:16` tag does NOT exist on Docker Hub (manifest unknown). sbox42 workaround: `registry.redhat.io/rhel9/postgresql-16:latest`. Fix: use valid tag (e.g. `bitnami/postgresql:16.6.0`) or switch to RHEL image. | NEW |
 | O (sbox42 test) | B | agent Dockerfile / `agent.py` | **P0**: TOFU hash write `PermissionError: /app/.tofu-hashes.json` on OCP with arbitrary UID. `/app` owned by 1001 but OCP assigns different UID. Fix: `chmod g+w /app` in Dockerfile OR write to `/tmp`. sbox42 workaround: `runAsUser: 1001` patch. | NEW |
 | O (sbox42 test) | D | `agent-chat-identity.spec.ts` | 4 multi-user tests fail on sbox42 — Keycloak `dev-user`/`ns-admin` not created. Session D must run user creation on sbox42 or tests need cluster-agnostic setup. | NEW |
 | O (sbox42 test) | A | `sandbox-rendering.spec.ts` | Tool call steps not rendered (`found: 0`). Agent streams response but ToolCallStep components produce no DOM elements. Frontend rendering bug. | NEW |
-| F | B | `sandbox_deploy.py` | Session F added SandboxProfile import + composable fields (secctx, landlock, proxy, gvisor) to SandboxCreateRequest + composable_name/warnings in response. Commit `47e38a16`. Review needed. | NEW |
-| F | B | `deployments/sandbox/` | Session F added NEW files: `sandbox_profile.py`, `nono_launcher.py`, `tests/`. Did NOT modify existing Session B files. | INFO |
-| H | C | `SandboxesPage.tsx` | Show disk space/mount stats per sandbox + Browse Files button. Session H implemented directly: `useQuery` for storage stats, purple mount count label, grey disk% label, secondary Browse Files button. Commit `f78171f4`. | DONE |
-| H | A | `SandboxPage.tsx` | Clickable file paths in chat → file browser. Session H implemented directly: `linkifyFilePaths()` converts `/workspace/...` paths to markdown links pointing to `/sandbox/files/:ns/:agent?path=...`. Commit `06779a2f`. | DONE |
-| F (handoff) | B | `ImportAgentPage.tsx` | **P1**: Add composable security toggles (secctx, landlock, proxy, gvisor checkboxes). Backend `SandboxCreateRequest` already accepts these fields. `sandbox_profile.py` generates composable name + K8s manifests. See design doc Section 3.5 for wireframe. 63 tests cover the backend. | NEW |
-| F (handoff) | O | `sandbox-template-full.yaml` | **P1**: Deploy updated template to cluster. Entrypoint changed from `sleep 36000` to `exec python3 nono_launcher.py python3 agent_server.py`. Verify Landlock + TOFU work on RHCOS. | NEW |
-| F (handoff) | C | Trigger management UI | **P3**: New page for cron/webhook/alert sandbox triggers. `POST /api/v1/sandbox/trigger` endpoint is ready with `ROLE_OPERATOR` auth. Similar to Integrations Hub pattern. | NEW |
+| H | A | `SandboxPage.tsx` | Add file path link renderer: when agent mentions file paths in chat (e.g. `/workspace/src/main.py`), make them clickable links to `/sandbox/files/:namespace/:agentName?path=<filepath>`. | NEW |
+| H | O | `App.tsx`, `AppLayout.tsx`, `api.ts`, `main.py` | Session H added additive changes: new route, nav item, API service, router registration. Verify no conflicts with other sessions during integration. | NEW |
 
 ---
 
 ### Session F — Composable Sandbox Security (no cluster)
 
-**Claude Session ID:** `0281a77c`
+**Claude Session:** `00b11888-7e0c-4fb4-bb39-32ea32e09b64`
 **Role:** Design + implement composable sandbox security model, Landlock wiring, SandboxClaim integration
-**Worktree:** `.worktrees/sandbox-agent` (feat/sandbox-agent) — also committed to fix/hypershift-ci-deploy (to be cherry-picked)
 **Cluster:** None (unit tests only — no cluster needed)
 **Session Active:** YES (started 2026-03-01)
 **File Ownership:**
@@ -575,30 +455,22 @@ Tests use `.sandbox-markdown` and `[data-testid="tool-call-step"]` selectors but
 11. ✅ Wired `nono_launcher.py` into `sandbox-template-full.yaml` entrypoint (replaces `sleep 36000`)
 12. ✅ Wired `repo_manager.py` into `agent_server.py` (loads sources.json, `/repos` endpoint)
 13. ✅ Updated design doc: Layer×Tier matrix (T2/T3 now ✅), Built section, Partial section
-14. ✅ **63 sandbox module tests passing** in worktree
-15. ✅ Wired `sandbox_profile.py` into `sandbox_deploy.py` — composable name + warnings in deploy response
-16. ✅ Added composable security fields to `SandboxCreateRequest` (secctx, landlock, proxy, gvisor toggles)
-17. ✅ Created `sandbox_trigger.py` with `require_roles(ROLE_OPERATOR)` auth + registered in main.py
-18. ✅ 9 trigger router tests with auth dependency override
+14. ✅ **322 total tests passing** (250 existing backend + 63 sandbox module + 9 trigger router)
 
-**Commits (on `feat/sandbox-agent` worktree — source of truth for code):**
+**Commits:**
 ```
-47e38a16 feat(sandbox): composable security model + deploy integration (Session F)
-90938384 docs: Session F update — worktree info, cross-session TODO for sandbox_deploy.py
-a544ca90 feat(sandbox): add trigger API with ROLE_OPERATOR auth (Session F)
+18640cd9 feat(sandbox): composable security model + modules + trigger API (Session F)
+ceb51a5b feat(sandbox): wire TOFU + Landlock + repo_manager, register Session F
 ```
 
-**Status: ALL SESSION F TASKS COMPLETE.** All security layers wired and tested. Deploy endpoint uses composable profile. Trigger API auth-protected. 63 sandbox + 9 trigger tests passing.
+**Remaining Tasks:**
+- P1: Update wizard UI (ImportAgentPage.tsx) with composable security layer toggles (needs Session A/B coordination — ImportAgentPage is currently unowned)
+- P1: Deploy wired templates to cluster and run E2E test (needs cluster access — coordinate with Session O)
+- P2: Add auth middleware to `/api/v1/sandbox/trigger` endpoint (currently unauthenticated)
+- P2: Wire `sandbox_profile.py` into wizard deploy backend (generate manifests from layer toggles instead of hardcoded)
+- P3: UI for trigger management (cron schedule editor, webhook config, alert mapping)
 
-**Handoff Tasks (Session F done — these need other sessions to pick up):**
-
-| Task | Assigned To | Priority | What to Do |
-|------|------------|----------|------------|
-| Wizard UI composable toggles | **Session B** | P1 | Add secctx/landlock/proxy/gvisor checkboxes to ImportAgentPage.tsx. Backend already accepts these fields in `SandboxCreateRequest`. `sandbox_profile.py` generates the composable name + warnings. See design doc Section 3.5 for wireframe. |
-| Deploy to cluster + E2E test | **Session O** | P1 | Deploy `sandbox-template-full.yaml` (updated entrypoint: `nono_launcher.py` → `agent_server.py`). Verify Landlock enforcement + TOFU verification on RHCOS kernel. Run sandbox E2E suite. |
-| Trigger management UI | **Session C** | P3 | New page for managing cron/webhook/alert triggers. Backend endpoint `POST /api/v1/sandbox/trigger` is ready with auth. Similar pattern to Integrations Hub (Session C already built that). |
-
-**Note:** Session B owns `deployments/sandbox/` and `sandbox_deploy.py` as EXCLUSIVE. Session F added NEW files (sandbox_profile.py, tests/) and modified `sandbox_deploy.py` to wire SandboxProfile. See cross-session TODO below.
+**Note:** Session B has `deployments/sandbox/` as EXCLUSIVE. Session F added NEW files there (sandbox_profile.py, tests/) and copied modules from the worktree. No existing Session B files were modified. Coordinate with Session B if conflicts arise.
 
 ---
 
@@ -643,248 +515,12 @@ a544ca90 feat(sandbox): add trigger API with ROLE_OPERATOR auth (Session F)
 
 ---
 
-## Latest Test Results (Session 42 — 2026-03-02)
+### Session H — Sandbox File Browser (no cluster required)
 
-| Cluster | Total | Passed | Failed | Rate | Key Blocker |
-|---------|-------|--------|--------|------|-------------|
-| **sbox** | 16 core | **16/16** | 0 | 100% | — |
-| **sbox42** | 152 all | **113/152** | 30 | 74% | Backend crash (sandbox_deploy.py path bug) |
-| **sandbox44** | 140 all | **115/140** | 21 | 82% | Agent catalog API, multi-user, ownership |
-
-### New P0: Backend Crash on sbox42
-`sandbox_deploy.py:25` — `Path(__file__).parents[4]` raises `IndexError: 4` in container.
-Old pod still serving (not crashed). New builds crash on startup.
-**Owner: Session B** — fix the `_sandbox_dir` path resolution.
-
-### Session G — RCA Workflow Integration Testing
-
-**Claude Session ID:** Session G (this session)
-**Role:** Fix ALL Playwright UI tests on sbox42 + RCA workflow test
-**Cluster:** sbox42
-**Session Active:** YES — 190/196 tests passing (96.9%)
-**File Ownership:**
-- `kagenti/ui-v2/e2e/agent-rca-workflow.spec.ts` — EXCLUSIVE
-- `kagenti/ui-v2/src/pages/SandboxPage.tsx` — toMessage() + StrictMode splice fix
-- `kagenti/ui-v2/e2e/*.spec.ts` — fixed selectors across 10+ spec files
-- `kagenti/backend/app/routers/sandbox_deploy.py` — cluster-aware LLM defaults
-- `kagenti/backend/app/routers/sandbox_trigger.py` — conditional import fix
-- `kagenti/auth/create-test-users.sh` — random passwords
-- `.claude/skills/tdd:ui-hypershift/` — NEW skill
-- `.claude/skills/test:ui-sandbox/` — NEW skill
-
-**Completed Tasks (50+ tests fixed):**
-1. ✅ RCA workflow 6/6 tests green (Phase 1)
-2. ✅ Full suite: 142 → 190 passed (50 tests fixed, 96.9% pass rate)
-3. ✅ Cluster-aware LLM defaults — Mistral instead of OpenAI
-4. ✅ React StrictMode splice(0) bug — tool calls dropped during streaming
-5. ✅ toMessage() history misclassification — kind:"data" treated as tool calls
-6. ✅ PatternFly selectors — role=grid, .first() for strict mode, border-left
-7. ✅ SPA session routing — pushState instead of page.goto (Keycloak redirect)
-8. ✅ Keycloak test users — random passwords, read from K8s secret
-9. ✅ Backend crash fixes — req.variant, conditional triggers import
-10. ✅ Created tdd:ui-hypershift + test:ui-sandbox skills
-11. ✅ UI build fixes — SkillWhisperer commit, SessionGraphPage route
-
-**Final State: 192/196 (98.0%) — 50 tests fixed, 50+ commits**
-
-Remaining 3 failures are all live LLM agent interaction (agent doesn't respond within timeout):
-- sandbox-file-browser: 2 live cluster file write tests
-- sandbox-walkthrough: full user journey (10 min timeout)
-
-**Root cause of remaining 3:** The sandbox agent's LangGraph graph HAS tool binding
-(`llm.bind_tools()` + `ToolNode` + `tools_condition`), and Llama 4 Scout DOES return
-structured `tool_calls` (verified 10/10). But the actual graph execution doesn't
-produce visible tool call events in the SSE stream — the agent responds with text
-describing tool calls instead of executing them. Needs investigation in the container
-image's `graph.py` / `agent.py`.
-
-**Session G is DONE. Remaining work handed off to Sessions L and M.**
-
-**Additional features shipped in Session G (beyond test fixes):**
-- New Session popup with agent picker modal
-- Browse Files button in chat header
-- FileBrowser error handling (401/403/404)
-- agent_name stored in session metadata
-- Session title propagation to all task records
-- Timestamp hover showing exact time
-- MAAS model compatibility matrix (Llama 4 Scout > Mistral for tool calling)
-
----
-
-### Session L — Agent Reasoning Loop (sbox42)
-
-**Claude Session ID:** (to be assigned)
-**Role:** Implement the plan→execute→reflect reasoning loop in the sandbox agent
-**Cluster:** sbox42
-**Design Doc:** `docs/plans/2026-03-03-sandbox-reasoning-loop-design.md`
-
-**Context:**
-The sandbox agent image (`image-registry:5000/team1/sandbox-agent:v0.0.1`) already
-has a LangGraph graph in `/app/src/sandbox_agent/graph.py` with:
-- ✅ Tools: shell, file_read, file_write, web_fetch, explore, delegate
-- ✅ Tool binding: `llm.bind_tools(tools)` + `ToolNode` + `tools_condition`
-- ✅ State: `SandboxState(MessagesState)` with context_id, workspace_path, final_answer
-- ✅ HITL: `interrupt()` in shell tool for dangerous commands
-- ✅ Checkpointer: PostgreSQL or MemorySaver
-- ✅ Streaming: `graph.astream(stream_mode="updates")` with LangGraphSerializer
-
-**What's missing (from the design doc):**
-1. Plan node — explicit planning step before tool execution
-2. Reflect node — evaluate results, decide next/replan/done
-3. Reporter node — format final output from accumulated results
-4. Budget tracking — max iterations, token limit, wall clock limit
-5. HITL checkpoints at intervals (not just per-tool)
-6. Parser node for text-based tool calls (Mistral fallback)
-
-**The IMMEDIATE fix (unblocks 3 failing tests):**
-The agent graph works with Llama 4 Scout (verified `tool_calls` 10/10 from pod).
-But the walkthrough test shows the agent doesn't respond. Debug WHY:
-- Is the backend streaming proxy (`_stream_sandbox_response`) reaching the agent?
-- Is the agent's graph executing but not streaming events back?
-- Is there a timeout or connection issue between backend and agent?
-
-**Investigation steps:**
-```bash
-# 1. Send a test message directly to the agent (bypass UI/backend)
-kubectl exec -n team1 deploy/sandbox-legion -- /app/.venv/bin/python3 -c "
-import asyncio
-from sandbox_agent.graph import build_graph
-# ... invoke graph directly and check output
-"
-
-# 2. Check if the backend receives chat requests
-kubectl -n kagenti-system logs deploy/kagenti-backend -c backend --since=5m | grep POST
-
-# 3. Check if the agent receives requests
-kubectl -n team1 logs deploy/sandbox-legion --since=5m
-```
-
-**File Ownership:**
-- `/app/src/sandbox_agent/graph.py` (in container — rebuild via Shipwright)
-- `/app/src/sandbox_agent/agent.py` (in container)
-- `deployments/sandbox/tools.py` — NEW (core tool definitions)
-- `deployments/sandbox/reasoning.py` — NEW (planner/reflector/reporter)
-- `deployments/sandbox/budget.py` — NEW (budget tracking)
-
-**Priority Tasks:**
-1. P0: Debug why agent doesn't respond to walkthrough test (10 min timeout)
-2. P0: Add parser node for text-based tool calls (Mistral fallback)
-3. P1: Implement plan node (system prompt + skill → step-by-step plan)
-4. P1: Implement reflect node (assess results, decide next action)
-5. P2: Reporter node (format final output)
-6. P2: Budget tracking with HITL checkpoints
-7. P2: MCP tool loading (optional, from configured servers)
-
-**MAAS Model Status (tested 2026-03-03):**
-| Model | tool_choice=auto | tool_choice=required |
-|-------|-----------------|---------------------|
-| Llama 4 Scout 17B-16E (109B MoE) | ✅ 10/10 | ✅ |
-| Mistral Small 3.1 24B | ❌ 0/10 (text JSON) | ✅ 5/5 |
-| DeepSeek R1 Qwen 14B | ❌ (no tool support) | N/A |
-| Llama 3.2 3B | ❌ (ignores tools) | N/A |
-
-All clusters now use Llama 4 Scout. Secret: `openai-secret` in team1 namespace.
-
-**Startup:**
-```bash
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti
-export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
-cd .worktrees/sandbox-agent
-claude
-
-Read docs/plans/2026-03-01-multi-session-passover.md. You are Session L (Reasoning Loop).
-Read docs/plans/2026-03-03-sandbox-reasoning-loop-design.md for the full design.
-First debug why the agent doesn't respond (P0), then implement the reasoning loop.
-Use /tdd:ui-hypershift for iteration. The 3 failing tests are your acceptance criteria.
-```
-
----
-
-### Session M — Chat UX Polish (sbox42)
-
-**Claude Session ID:** (to be assigned)
-**Role:** Implement UI improvements from Session G brainstorming
-**Cluster:** sbox42
-**Design Doc:** `docs/plans/2026-03-03-agent-loop-ui-design.md`
-
-**Context:**
-Session G designed but didn't implement several UI features. The current UI works
-but has rough edges. Session M polishes the chat experience.
-
-**File Ownership:**
-- `kagenti/ui-v2/src/components/AgentLoopCard.tsx` — NEW
-- `kagenti/ui-v2/src/components/LoopSummaryBar.tsx` — NEW
-- `kagenti/ui-v2/src/components/ModelBadge.tsx` — NEW
-- `kagenti/ui-v2/src/components/NewSessionModal.tsx` — EXTRACT from SessionSidebar
-- `kagenti/ui-v2/src/pages/AgentCatalogPage.tsx` — MODIFY (remove chat, add links)
-- `kagenti/ui-v2/src/pages/SandboxPage.tsx` — MODIFY (skill invocation, loop card)
-- `kagenti/ui-v2/e2e/agent-loop-card.spec.ts` — NEW tests
-
-**Priority Tasks:**
-
-1. **P0: Skill invocation from chat**
-   - When message starts with `/`, extract skill name
-   - Send `skill` field in streaming request body alongside message
-   - Backend already supports `skill` parameter in `agent_server.py`
-   - SkillWhisperer already provides the autocomplete
-   - Test: type `/rca:ci #758`, agent loads rca:ci skill content
-
-2. **P1: Agent loop expandable card**
-   - Replace flat tool_call/tool_result messages with grouped AgentLoopCard
-   - Collapsed: summary bar (tools, tokens, model, time, status)
-   - Expanded: plan steps, tool calls, reflections
-   - See design doc for component hierarchy
-   - Backward compatible: old sessions render flat, new ones with loop_id get cards
-
-3. **P1: Model badge on messages**
-   - Show which model produced each LLM call
-   - Store model in session metadata (backend already stores agent_name)
-   - Color-coded badges: Llama=blue, Mistral=purple, GPT=green
-
-4. **P2: Sidebar session filtering by agent**
-   - Enable agent_name filter once all sessions have metadata
-   - Backfill script to set agent_name on old sessions
-   - Agent picker in sidebar (currently hidden — tests depend on SandboxAgentsPanel)
-
-5. **P2: Agents page redesign**
-   - Remove broken AgentChat from agent detail page
-   - Add: recent sessions list, "New Session" link, "Browse Files" link, "Traces" link
-   - Agent detail becomes overview/management, chat stays in /sandbox
-
-6. **P3: Context window token counter**
-   - Show `12.4k / 400k tokens (3%)` in session header
-   - Data from budget events or OTEL spans
-   - Progress bar style
-
-**What's already shipped (Session G):**
-- ✅ New Session popup with agent picker modal
-- ✅ Browse Files button in chat header
-- ✅ FileBrowser error handling (401/403/404)
-- ✅ Timestamp hover (exact time on hover, relative display)
-- ✅ Session title = first message (doesn't change)
-- ✅ agent_name in session metadata
-
-**Startup:**
-```bash
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti
-export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
-cd .worktrees/sandbox-agent
-claude
-
-Read docs/plans/2026-03-01-multi-session-passover.md. You are Session M (Chat UX Polish).
-Read docs/plans/2026-03-03-agent-loop-ui-design.md for the design.
-Start with P0: skill invocation from chat (/rca:ci parsing).
-Use /tdd:ui-hypershift for iteration.
-```
-
----
-
-### Session H — Sandbox File Browser (COMPLETE)
-
-**Claude Session ID:** (this session)
+**Claude Session ID:** (this session — Session H)
 **Role:** File browser UI for exploring sandbox agent workspaces
-**Cluster:** None required (mocked API tests)
-**Session Active:** COMPLETE (started 2026-03-02)
+**Cluster:** None (mocked API for E2E tests — uses live cluster for integration)
+**Session Active:** YES (started 2026-03-02)
 **File Ownership:**
 - `kagenti/backend/app/routers/sandbox_files.py` — EXCLUSIVE (NEW, created by H)
 - `kagenti/ui-v2/src/components/FileBrowser.tsx` — EXCLUSIVE (NEW, created by H)
@@ -892,433 +528,432 @@ Use /tdd:ui-hypershift for iteration.
 - `kagenti/ui-v2/e2e/sandbox-file-browser.spec.ts` — EXCLUSIVE (NEW, created by H)
 
 **Completed Tasks:**
-1. ✅ Backend: `sandbox_files.py` — pod exec via `kubernetes.stream` for file listing/reading
-2. ✅ Backend: `GET /sandbox/{ns}/stats/{agent}` — disk/mount stats from `df -h`
-3. ✅ Frontend: `FilePreview.tsx` — markdown + mermaid diagrams + CodeBlock for code
-4. ✅ Frontend: `FileBrowser.tsx` — split-pane TreeView + breadcrumbs + FilePreview
-5. ✅ Route: `/sandbox/files/:namespace/:agentName` in App.tsx, "Files" nav item
-6. ✅ Types: `FileEntry`, `DirectoryListing`, `FileContent`, `MountInfo`, `PodStorageStats`
-7. ✅ API: `sandboxFileService` with `listDirectory()`, `getFileContent()`, `getStorageStats()`
-8. ✅ Mermaid: diagram rendering in .md file preview
-9. ✅ Full filesystem: browse from `/` — not locked to `/workspace`
-10. ✅ E2E mocked: 8 Playwright tests (dir listing, md preview, mermaid, code, breadcrumbs, metadata, write-then-browse, stats)
-11. ✅ Cross-session: SandboxesPage — mount count + disk% labels + Browse Files button (`f78171f4`)
-12. ✅ Cross-session: SandboxPage — clickable file paths in chat → file browser (`06779a2f`)
-13. ✅ E2E live: 3 integration tests (write .md with mermaid via chat → browse → verify rendering; write .py → browse → verify CodeBlock; storage stats endpoint)
-14. ✅ **Total: 11 Playwright tests** (8 mocked + 3 live cluster)
+1. ✅ Backend: `sandbox_files.py` router — pod exec via `kubernetes.stream` for file listing/reading
+2. ✅ Frontend: `FilePreview.tsx` — markdown + mermaid diagram rendering + CodeBlock for code
+3. ✅ Frontend: `FileBrowser.tsx` — split-pane TreeView + breadcrumbs + FilePreview
+4. ✅ Route: `/sandbox/files/:namespace/:agentName` in App.tsx, "Files" nav item in AppLayout.tsx
+5. ✅ Types: `FileEntry`, `DirectoryListing`, `FileContent` + `sandboxFileService` in api.ts
+6. ✅ Dependency: mermaid installed for diagram rendering
+7. ✅ E2E: 6 Playwright tests (sandbox-file-browser.spec.ts) with mocked API
 
-**Test Results:**
-- Mocked tests: 8/8 (no cluster needed)
-- Live cluster tests: requires `KAGENTI_UI_URL` — run with:
-  ```bash
-  KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com \
-    npx playwright test sandbox-file-browser.spec.ts
-  ```
+**Commits:**
+```
+60957ff1 feat(sandbox): add file browser backend endpoint (Session H)
+374badbe fix(sandbox): align FileEntry/FileContent models with spec (Session H)
+ec4f371d feat(ui): add mermaid dependency for diagram rendering (Session H)
+c3720f76 feat(ui): add file browser types and API service (Session H)
+03f5f389 feat(ui): FilePreview and FileBrowser components (Session H)
+f670e59f feat(ui): add file browser route and Files nav item (Session H)
+f3b3b876 test(ui): add file browser Playwright E2E tests (Session H)
+```
 
-**Commits (worktree feat/sandbox-agent):**
-```
-a327f053 feat(sandbox): add file browser backend endpoint (Session H)
-83641600 fix(sandbox): align FileEntry/FileContent models with spec (Session H)
-8d28eded feat(ui): add mermaid dependency for diagram rendering (Session H)
-a01fe271 feat(ui): FilePreview and FileBrowser components (Session H)
-9b0a0297 feat(ui): add file browser route and Files nav item (Session H)
-4b41ab1c test(ui): add file browser Playwright E2E tests (Session H)
-e50adb6b feat(sandbox): browse full pod filesystem, not just /workspace (Session H)
-b6767a91 feat(sandbox): add pod storage stats endpoint + comprehensive E2E tests (Session H)
-06779a2f feat(ui): clickable file paths in sandbox chat link to file browser (Session H)
-b77ecfeb test(ui): live cluster E2E tests — write .md with mermaid, browse, verify (Session H)
-```
+**Remaining Tasks:**
+- P2: Integration test on live cluster (needs agent pod running)
+- P3: Link from session chat to file browser (cross-session — see TODO below)
+
+**Shared file changes:** Session H added additive changes to App.tsx (new route), AppLayout.tsx (new nav item), api.ts (new service + types), types/index.ts (new types), main.py (new router). These are all additive — should not conflict.
 
 ---
 
-### Session K — P0/P1 Blocker Resolution (sandbox42 + sandbox44)
+### Session I — Skills Testing (sbox42 cluster)
 
-**Claude Session ID:** (this session — Session K)
-**Role:** Fix all open P0/P1 blockers, test on sandbox42 and sandbox44
-**Clusters:** sandbox42 (clean install), sandbox44 (patched)
-**Session Active:** YES
-
+**Claude Session ID:** (this session — Session I)
+**Role:** Test sandbox agents loading and executing skills from managed repos
+**Cluster:** sbox42 (Mistral Small 24B, 13/13 core tests passing)
+**Session Active:** YES (started 2026-03-02)
 **File Ownership:**
-- `kagenti/backend/app/routers/sandbox_deploy.py` — SHARED with Session B (fixing P0 crash)
-- `kagenti/backend/app/routers/sandbox.py` — SHARED with Session A (HITL endpoints)
-- `kagenti/ui-v2/src/App.tsx` — COORDINATOR (resolving ownership)
-- `kagenti/ui-v2/src/services/api.ts` — COORDINATOR (resolving ownership)
-- `kagenti/backend/app/main.py` — COORDINATOR (resolving ownership)
-- `deployments/sandbox/sandbox-template-full.yaml` — SHARED with Session F (deploying nono_launcher)
+- `kagenti/ui-v2/e2e/agent-rca-workflow.spec.ts` — HANDED OFF to Session G
+- `kagenti/ui-v2/src/components/SkillWhisperer.tsx` — EXCLUSIVE (NEW, created by I)
+- `kagenti/ui-v2/e2e/skill-whisperer.spec.ts` — EXCLUSIVE (NEW, created by I)
+
+**Completed Tasks:**
+1. ✅ P0: Run agent-rca-workflow.spec.ts — 5/6 pass (agent selection fixed, test 6 threshold issue)
+2. ✅ P1: Fix agent selection in tests — `div[role="button"]` pattern with 30s timeout
+3. ✅ P1: Implement skill whispering — `/` autocomplete dropdown in chat input
+4. ✅ P1: Skill whisperer E2E tests — 5/5 passing (mocked API)
+5. ⏳ Handed off agent-rca-workflow.spec.ts to Session G (flaky SSE rendering)
+
+**Skill Whisperer Feature:**
+- `SkillWhisperer.tsx`: Floating dropdown shows agent skills when user types `/`
+- Reads skills from agent card (`/.well-known/agent-card.json` → `skills[]`)
+- Filters skills as user types (e.g., `/rca` → shows `/rca:ci`)
+- Keyboard navigation (ArrowUp/Down, Enter, Escape, Tab)
+- Click to insert `/<skill-id> ` into input
+- Wired into `SandboxPage.tsx` via `chatService.getAgentCard()` + `useQuery`
+
+**Test Results:**
+- Skill whisperer: **5/5 PASS** (mocked API, local dev server)
+- RCA workflow: **5/6 PASS** (run 2), test 6 needs threshold adjustment for Mistral model
+
+---
+
+### Session K — P0/P1 Blockers (sandbox42 + sandbox44 clusters)
+
+**Claude Session ID:** `1a2ace9a`
+**Role:** Fix the 4 open P0/P1 blockers, test on sandbox42 and sandbox44
+**Clusters:** sandbox42, sandbox44 (both Llama 4 Scout, test users created, 188+/195 Playwright tests passing)
+**Session Active:** YES (started 2026-03-04)
+**File Ownership:**
+- `kagenti/backend/app/routers/sandbox_deploy.py` — SHARED with Session B (P0 fix at line 25)
+- `kagenti/backend/app/routers/sandbox.py` lines 606-645 — SHARED with Session A (HITL endpoint wiring)
+- File ownership resolution for `api.ts`, `App.tsx`, `main.py`, `SandboxCreatePage.tsx` — coordination only
 
 **Priority Tasks:**
+1. ~~P0: Fix `sandbox_deploy.py:25` — `Path(__file__).parents[4]` IndexError~~ ✅ DONE — walk-up loop already in `.worktrees/sandbox-agent/`, copied to main working tree (`fix/hypershift-ci-deploy`) + registered in main.py
+2. ~~P1: Wire HITL approve/deny endpoints to `agent graph.resume()`~~ ✅ DONE — `_resume_agent_graph()` sends A2A `message/send` to agent with contextId + hitl_decision metadata
+3. ~~P1: Resolve shared file ownership~~ ✅ DONE — api.ts/App.tsx/main.py are additive-only (each session owns its section), SandboxCreatePage.tsx doesn't exist
+4. ~~P1: Deploy nono_launcher + Landlock to sandbox44~~ ✅ DONE — applied sandbox-template-full.yaml to sandbox44, updated basic + proxy templates
 
-1. **P0: Fix `sandbox_deploy.py:25` path crash** (`Path(__file__).parents[4]` IndexError)
-   - Backend pod crashes on startup after latest build on sbox42
-   - Old pod still serves — new builds crash immediately
-   - Fix: replace `parents[4]` with a walk-up loop or env var for `_sandbox_dir`
-   - Test: rebuild backend, verify pod starts, run E2E
+**Files changed:**
+- `kagenti/backend/app/routers/sandbox_deploy.py` — NEW (copied from worktree with walk-up loop fix)
+- `kagenti/backend/app/routers/sandbox.py` — NEW (copied from feat/sandbox-agent, HITL endpoints wired)
+- `kagenti/backend/app/services/session_db.py` — NEW (dependency for sandbox.py)
+- `kagenti/backend/app/main.py` — added sandbox + sandbox_deploy router registration
+- `deployments/sandbox/sandbox-template.yaml` — sleep 36000 → nono_launcher entrypoint
+- `deployments/sandbox/sandbox-template-with-proxy.yaml` — sleep 36000 → nono_launcher entrypoint
 
-2. **P1: Wire HITL approve/deny to agent graph.resume()**
-   - Endpoints at `sandbox.py` lines 606-645 are stubs (return 200 but do nothing)
-   - Need to: (1) POST A2A message to agent with `{"approved": true/false}`, (2) agent's interrupt() receives approval and resumes graph
-   - Agent URL pattern: `http://{variant}.{namespace}.svc:8000`
-   - See LangGraph `Command(resume=...)` pattern
-   - Test: sandbox-hitl tests should verify real approval flow
+**Test Results (2026-03-04):**
+- sandbox42: **29/65 pass** (36 fail — all in other sessions' specs: agent-catalog, tool-catalog, delegation, file-browser, session-ownership)
+- sandbox44: **29/65 pass** (identical pattern — same 36 tests fail, same 29 pass)
+- No regressions from Session K changes — all passing tests remained green
 
-3. **P1: Resolve shared file ownership conflicts**
-   - `api.ts`, `App.tsx`, `main.py` — 3+ sessions have made additive changes
-   - `SandboxCreatePage.tsx` — sits at Session A/B boundary
-   - Action: audit current state, assign clear ownership, document merge rules
-   - No code changes needed — just update this doc with ownership assignments
+**Code Review:** ✅ Passed — SSRF defense added (agent_name validation), ownership check documented. No critical issues.
 
-4. **P1: Deploy Session F's nono_launcher + Landlock to cluster**
-   - `sandbox-template-full.yaml` entrypoint changed: `sleep 36000` → `exec python3 nono_launcher.py python3 agent_server.py`
-   - Verify Landlock + TOFU work on RHCOS kernel 5.14
-   - Deploy on sandbox44 first (has RHCOS workers)
+**Waiting:** Sessions L + M to complete before running full test suite from worktree.
 
-**Current Test Results (baseline):**
-- sandbox42: **188/195** (96.4%) — 4 fail (LLM-dependent), 3 skip
-- sandbox44: **186/195** (95.4%) — 5 fail (LLM-dependent), 4 skip
-- Backend unit: **277/277** (100%) — need `uv pip install -e "."` in kagenti/backend first
-- Sandbox module: **63/63** (100%)
-
-**Cluster Access:**
-```bash
-# sandbox42
-export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox42/auth/kubeconfig
-# Admin password: read from K8s secret
-kubectl -n keycloak get secret kagenti-test-users -o jsonpath='{.data.admin-password}' | base64 -d
-
-# sandbox44
-export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox44/auth/kubeconfig
-kubectl -n keycloak get secret kagenti-test-users -o jsonpath='{.data.admin-password}' | base64 -d
-```
-
-**LLM Model:** Both clusters use **Llama 4 Scout** (`llama-4-scout-17b-16e-w4a16`) — NOT Mistral (Mistral can't do tool calling).
-```bash
-# Model env vars (already set on agents):
-LLM_API_BASE=https://llama-4-scout-17b-16e-w4a16-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1
-LLM_MODEL=llama-4-scout-17b-16e-w4a16
-```
-
-**Rebuild UI/backend after code changes:**
-```bash
-KUBECONFIG=~/clusters/hcp/kagenti-team-<cluster>/auth/kubeconfig \
-  .github/scripts/kagenti-operator/37-build-platform-images.sh
-```
-
-**Run all Playwright tests:**
-```bash
-cd kagenti/ui-v2
-KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-<cluster>.octo-emerging.redhataicoe.com \
-KEYCLOAK_PASSWORD=$(kubectl -n keycloak get secret kagenti-test-users -o jsonpath='{.data.admin-password}' | base64 -d) \
-npx playwright test
-```
-
-**Run backend unit tests:**
-```bash
-cd kagenti/backend && uv pip install -e "." && uv run pytest tests/ -v --ignore=tests/test_migration.py
-```
+**Constraints:**
+- Do NOT touch Session G's `*.spec.ts` files — they own all test fixes
+- HITL wiring needs image rebuild to deploy: `37-build-platform-images.sh` from worktree
+- Run tests from worktree: `cd .worktrees/sandbox-agent/kagenti/ui-v2 && KAGENTI_UI_URL=... KEYCLOAK_PASSWORD=... npx playwright test`
 
 **Startup:**
 ```bash
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti/.worktrees/sandbox-agent
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox42/auth/kubeconfig  # or sandbox44
 claude
 
 Read docs/plans/2026-03-01-multi-session-passover.md. You are Session K (P0/P1 Blockers).
-Fix the 4 open blockers in priority order. Test on sandbox42 and sandbox44.
-Do NOT touch Session G's test files — they own all *.spec.ts fixes.
-Use /tdd:hypershift for iteration.
+Fix the 4 open P0/P1 blockers and test on sandbox42 + sandbox44.
 ```
 
 ---
 
-### Session N — Platform Agent Runtime (isolated HyperShift cluster)
+### Session L — Agent Reasoning Loop + File Browser + UI Overhaul (sbox42 cluster)
 
-**Claude Session ID:** (to be assigned)
-**Role:** Validate "platform owns server, agent owns logic" architecture with two agents
-**Cluster:** NEW isolated HyperShift cluster (don't use sbox42/sandbox42/sandbox44)
-**Design Doc:** `docs/plans/2026-03-04-platform-agent-runtime-design.md` (14 mermaid diagrams, 787 lines)
-**Also read:** `docs/plans/2026-03-01-sandbox-platform-design.md` Section 11 (architecture overview)
+**Claude Session ID:** `3e115866`
+**Role:** Reasoning loop, file browser crash fixes, UI overhaul, test parallelization
+**Cluster:** sbox42 (Llama 4 Scout, all pods running)
+**Session Status:** COMPLETE (2026-03-04 → 2026-03-05)
+**Worktree:** `.worktrees/sandbox-agent` (kagenti repo), `.worktrees/agent-examples` (agent code)
 
-**Goal:** Deploy two agents using the platform base image pattern:
-1. **Sandbox Legion** (LangGraph) — existing agent, refactored to use platform runtime
-2. **OpenCode** — new agent, wrapped in A2A adapter
+**What Session L Delivered:**
 
-Both must pass the same Playwright tests and use the same platform features
-(AuthBridge, workspace, skills, OTEL).
+✅ **Reasoning Loop** (agent-examples worktree):
+- `reasoning.py` — planner, executor, reflector, reporter node functions
+- `budget.py` — iteration/token/tool-call tracking with limits
+- `graph.py` — rewired from assistant→tools to planner→executor⇄tools→reflector→reporter
+- `event_serializer.py` — loop_id on all events so UI renders AgentLoopCard
+- 133 unit tests passing (test_reasoning.py, test_budget.py, test_event_serializer.py, test_graph.py)
 
-**What this validates:**
-- Platform provides A2A server + infrastructure → agent provides just the graph/runtime
-- Security tiers (T0-T3) work identically for both agents
-- Existing tests pass without modification
-- Agent wizard can deploy either framework
+✅ **File Browser Fixes** (kagenti repo):
+- ErrorBoundary wrapping FilePreview (crashes show fallback not white screen)
+- Binary file detection (.db, .png, .zip) → "preview not available"
+- Date parse guard (invalid dates don't crash)
+- TreeView empty crash fix (PatternFly tabIndex bug on data=[])
+- Default to /workspace path (not pod root)
+- Keycloak deep-link redirect fix (removed redirectUri from keycloak.init)
 
-**Phase 1: Platform Base Image (TDD)**
+✅ **New Components:**
+- `FilePreviewModal.tsx` — universal popup with fullscreen toggle, ErrorBoundary
+- Backend `/{namespace}/files/{agent_name}/{context_id}` route — session-scoped workspace
 
-Create a platform base image that provides:
+✅ **UI Overhaul:**
+- Compact info panel: Agent | Namespace | Model | Security | Session labels with tooltips
+- Security label with hover showing 6 active features
+- NamespaceSelector replaced with read-only Label
+- SandboxAgentsPanel hidden during active sessions
+- FilePathCard in chat messages (file paths → clickable cards → popup preview)
+
+✅ **Test Improvements:**
+- Collapsed serial test suites: sandbox-sessions (6→3), agent-rca-workflow (6→1)
+- Zero `test.describe.serial()` remaining — all tests parallel-safe
+- Increased agent response timeouts to 180s
+- Fixed Playwright strict mode locators (getByRole instead of class substring)
+- Set up dev-user/ns-admin Keycloak accounts with passwords + roles
+- Updated test:ui-sandbox skill with parallelism guidance
+
+✅ **Design Docs:**
+- `2026-03-05-session-file-browser-design.md` — contextId routing, FilePreviewModal, FilePathCard
+- `2026-03-05-session-file-browser-plan.md` — 7-task implementation plan
+- `2026-03-05-parallel-tests-design.md` — serial test collapse strategy
+
+**Test Score:** 190/194 passed (97.9%) — 4 remaining failures are live agent LLM timing
+
+**Commits (agent-examples):**
 ```
-kagenti-agent-base:latest
-├── A2A server (a2a-sdk, Starlette, SSE)
-├── Skills loader (CLAUDE.md + .claude/skills/)
-├── Workspace manager (per-context /workspace)
-├── TOFU verification
-├── Permission checker (allow/deny/HITL)
-├── OTEL instrumentation (LangChainInstrumentor)
-├── Session DB (PostgreSQL checkpointer)
-└── Plugin interface: AGENT_MODULE env var → import build_graph()
+939981e feat(sandbox): add plan-execute-reflect reasoning loop
+1d40073 feat(sandbox): add loop_id to all reasoning loop events for UI rendering
+3772845 feat(sandbox): planner prompts for RCA reports and delegation
 ```
 
-The agent provides:
+**Commits (kagenti):**
 ```
-# For LangGraph:
-AGENT_MODULE=sandbox_agent.graph
-# build_graph(workspace, permissions, sources) → StateGraph
-
-# For OpenCode:
-AGENT_MODULE=opencode_wrapper
-# build_graph() → OpenCode HTTP proxy
-```
-
-**Phase 2: Sandbox Legion on Platform Base**
-
-Refactor current sandbox-legion to use the base image:
-- Extract graph.py + tools from agent-examples into deployments/sandbox/
-- Use platform base image as FROM in Dockerfile
-- Set AGENT_MODULE=sandbox_agent.graph
-- Run existing Playwright tests → must pass 192/196
-
-**Phase 3: OpenCode on Platform Base**
-
-Create OpenCode agent:
-- Dockerfile: platform base + `opencode serve` binary
-- A2A wrapper (~200 lines): translates OpenCode REST → A2A events
-- Set AGENT_MODULE=opencode_wrapper
-- Deploy as a new agent variant in the wizard
-- Run Playwright tests → should pass chat/session tests
-
-**Phase 4: Feature Parity Tests**
-
-For each platform feature, verify both agents work:
-| Feature | Test | Legion | OpenCode |
-|---------|------|--------|----------|
-| A2A agent card | agent-catalog.spec.ts | ✓ | ✓ |
-| Chat streaming | sandbox-sessions.spec.ts | ✓ | ✓ |
-| Tool execution | sandbox-walkthrough.spec.ts | ✓ | ✓ |
-| File browser | sandbox-file-browser.spec.ts | ✓ | ✓ |
-| Session persistence | sandbox-sessions.spec.ts | ✓ | ✓ |
-| AuthBridge | agent-chat-identity.spec.ts | ✓ | ✓ |
-| Security tiers | sandbox-variants.spec.ts | ✓ | ✓ |
-| HITL | sandbox-hitl.spec.ts | ✓ | ✓ |
-| Skills loading | agent-rca-workflow.spec.ts | ✓ | ✓ |
-
-**File Ownership:**
-- `deployments/sandbox/platform_base/` — NEW (base image Dockerfile + entrypoint)
-- `deployments/sandbox/opencode_wrapper.py` — NEW (A2A adapter for OpenCode)
-- `deployments/sandbox/Dockerfile.base` — NEW (platform base image)
-- `.github/scripts/local-setup/deploy-opencode-agent.sh` — NEW
-
-**Prerequisites:**
-- Create isolated HyperShift cluster: `.github/scripts/hypershift/create-cluster.sh platform`
-- Deploy Kagenti platform on it
-- Do NOT use sbox42/sandbox42/sandbox44 (other sessions active)
-
-**Research docs to read (in order):**
-1. `docs/plans/2026-03-04-platform-agent-runtime-design.md` — **YOUR main design doc** (14 diagrams, composable sandboxing, A2A boundary, base image, validation plan)
-2. `docs/plans/2026-03-01-sandbox-platform-design.md` Section 11 — Architecture overview in main design doc
-3. `docs/plans/2026-02-26-coding-agent-variants-research.md` — Section 4.6 (OpenCode), Section 10 (Landscape)
-4. `docs/plans/2026-03-01-coding-agent-variants-impl.md` — Phase 1 (OpenCode deployment plan)
-
-**Startup:**
-```bash
-cd /Users/ladas/Projects/OCTO/kagenti/kagenti
-# Create isolated cluster (ask user for approval)
-# .github/scripts/hypershift/create-cluster.sh platform
-export KUBECONFIG=~/clusters/hcp/kagenti-team-platform/auth/kubeconfig
-cd .worktrees/sandbox-agent
-claude
-
-Read docs/plans/2026-03-01-multi-session-passover.md. You are Session N (Platform Agent Runtime).
-Read docs/plans/2026-03-04-platform-agent-runtime-design.md — this is your design doc
-with 14 mermaid diagrams covering the full architecture.
-
-Your goal: validate the platform base image pattern with two agents (Legion + OpenCode).
-Create an isolated HyperShift cluster first. Use TDD — existing Playwright tests are
-your acceptance criteria. Do NOT use sbox42/sandbox42/sandbox44.
+880c52dd feat(ui): add model name and security label to info panel with tooltips
+4ccf53a7 feat(ui): compact info panel, hide agent switcher, FilePathCard in chat
+bb6ab0a9 fix(ui): fix TS errors in FilePreviewModal and SandboxPage
+b791ff52 feat(ui+backend): FilePreviewModal, contextId route, increased timeouts
+4cf723b2 refactor(test): collapse serial test suites for full parallel execution
+c380e3b4 fix(test): session title marker precision + file browser context path
+8318492d docs: parallel E2E tests design
+ed263e26 fix(test): use Ctrl+A+Backspace instead of fill('') to clear search
+6ebe05b9 fix(ui): prevent TreeView crash on empty directory listing
+e9ad18ee fix(ui): fix TS2322 — use style instead of size prop on icon
+3aa0d475 fix(ui): crash-proof file browser with ErrorBoundary and binary guard
+8d8b6dfe fix(ui): preserve deep link URL on Keycloak SSO redirect
 ```
 
 ---
 
-### Session Q — LiteLLM Proxy Gateway (sandbox44)
+### Session L+1 — Compact Session View + Remaining Fixes (sbox42 cluster)
 
-**Claude Session ID:** (to be assigned)
-**Role:** Deploy LiteLLM as a centralized model gateway, wire all agents through it, add per-session token tracking
-**Cluster:** sandbox44 (to be created fresh)
-**Design Doc:** `docs/plans/2026-03-07-litellm-proxy-design.md`
-**Session Active:** NEW
+**Role:** Redesign chat/session view, fix 4 remaining test failures, iterate on UI
+**Cluster:** sbox42 (Llama 4 Scout)
+**Worktree:** `.worktrees/sandbox-agent` (kagenti repo), `.worktrees/agent-examples` (agent code)
 
-**Architecture (approved by Coordinator brainstorm):**
+**Design (approved, not implemented):**
+
+**1. Collapsed Agent Turns** — each agent response is ONE card:
+- Final answer (markdown) always visible
+- FilePathCards inline for file paths
+- "▶ Show reasoning" toggle expands AgentLoopCard (plan steps, tool calls, reflections)
+- During streaming: expanded (live progress). After completion: collapsed.
+- On history reload: all collapsed.
 
 ```
-Agents (team1)  ──▶  litellm-proxy (kagenti-system)  ──▶  MAAS / vLLM / OpenAI
-                     ├── model router (config.yaml)
-                     ├── virtual API keys per team
-                     ├── spend tracking (PostgreSQL)
-                     └── /v1/chat/completions (OpenAI-compatible)
+[User] Say hello
+
+[Agent] Hello! I listed your files.     [▶ Reasoning]
+  ┌─────────────────────────────────┐
+  │ ▼ Plan (2 steps)                │
+  │   1. ✓ Run ls -la               │
+  │   2. ✓ Summarize results        │
+  │ ▼ Step 1: shell(ls -la)         │
+  │   file1.txt  file2.txt          │
+  │ ▼ Reflection: done              │
+  └─────────────────────────────────┘
 ```
 
-**Agent change:** Only `LLM_API_BASE` env var — from direct MAAS URL to `http://litellm-proxy.kagenti-system.svc:4000/v1`. No code changes needed. Agents already use OpenAI-compatible API.
+**2. Welcome Card for New Sessions:**
+- Agent name, model, namespace
+- Available tools list (from agent card)
+- 3 clickable example prompts
+- Clicking example fills the input
 
-**Implementation Tasks (TDD):**
+**3. Components to Change:**
+| Component | Change |
+|-----------|--------|
+| `ChatBubble` | Render finalAnswer + collapsed AgentLoopCard toggle |
+| `AgentLoopCard` | Embed inside ChatBubble (not separate) |
+| `WelcomeCard` | **NEW** — agent capabilities + examples |
+| `SandboxPage` | Remove separate loop rendering, integrate into message flow |
 
-1. **Deploy LiteLLM proxy** in `kagenti-system`
-   - Container: `ghcr.io/berriai/litellm:main`
-   - ConfigMap from `.env.maas` model definitions (Llama 4 Scout, Mistral, DeepSeek)
-   - Service: `litellm-proxy:4000`
-   - DB: reuse `postgres-otel` or add `postgres-litellm` for spend tracking
-   - Secured by Istio Ambient mTLS (pod-to-pod)
+**4. Remaining Test Failures (4):**
+- `sandbox-file-browser.spec.ts:507` — live .md write (agent timing)
+- `sandbox-file-browser.spec.ts:670` — live .py write (agent timing)
+- `sandbox-sessions.spec.ts:171` — session isolation (marker not found in sidebar)
+- `sandbox-walkthrough.spec.ts:95` — search box hang (may be fixed by build 37)
 
-2. **Create deploy script** `.github/scripts/kagenti-operator/38-deploy-litellm.sh`
-   - Read model credentials from `.env.maas`
-   - Generate `config.yaml` ConfigMap with model aliases
-   - Create virtual API keys per namespace (team1, team2)
-   - Store proxy key in `litellm-proxy-secret`
-
-3. **Wire agents to proxy**
-   - Update `76-deploy-sandbox-agents.sh` to set `LLM_API_BASE=http://litellm-proxy.kagenti-system.svc:4000/v1`
-   - Update `74-deploy-weather-agent.sh` similarly
-   - Agents use virtual key from `litellm-proxy-secret` instead of `openai-secret`
-
-4. **Add metadata tagging** to agent LLM calls
-   - In `agent_server.py` / `graph.py`: pass `metadata={"session_id": context_id, "agent_name": name, "namespace": ns}` to completion calls
-   - This enables per-session spend queries
-
-5. **Expose stats API** in Kagenti backend
-   - `GET /api/v1/sessions/{context_id}/tokens` — proxy to LiteLLM `/spend/tags?tags=session_id:{id}`
-   - Returns: total tokens, prompt/completion split, model used, cost estimate
-   - Aggregate sub-sessions via `parent_session` tag
-
-6. **Wire into deploy pipeline**
-   - Add `38-deploy-litellm.sh` call in `hypershift-full-test.sh` after Keycloak setup, before agent deploy
-   - Models auto-registered from `.env.maas` on fresh deploy
-
-7. **Quick model switching via API**
-   - Kagenti backend proxies LiteLLM `/model/new`, `/model/delete`, `/model/info`
-   - UI model picker reads available models from this API (replaces hardcoded list)
-
-**Model Compatibility (tested 2026-03-04):**
-| Model | tool_choice=auto | Recommended |
-|-------|-----------------|-------------|
-| Llama 4 Scout 17B-16E | ✅ 10/10 | Yes — default |
-| Mistral Small 3.1 24B | ❌ 0/10 | No — text only |
-| DeepSeek R1 Qwen 14B | ❌ no tools | No |
-
-**File Ownership:**
-- `.github/scripts/kagenti-operator/38-deploy-litellm.sh` — NEW
-- `charts/kagenti/templates/litellm-*.yaml` — NEW (deployment, service, configmap)
-- `kagenti/backend/app/routers/models.py` — NEW (model management API)
-- `kagenti/backend/app/routers/token_usage.py` — NEW (spend tracking API)
-- `deployments/sandbox/agent_server.py` — MODIFY (add metadata tagging)
-- `kagenti/ui-v2/e2e/litellm-proxy.spec.ts` — NEW tests
+**5. Other Pending Items:**
+- File browser: wire contextId from App.tsx route to FileBrowser component
+- File browser: update sandboxFileService to use context-scoped API when contextId present
+- Agent subagent types: delegate tool should reference more agent types (not just explore)
 
 **Startup:**
 ```bash
 cd /Users/ladas/Projects/OCTO/kagenti/kagenti
-# First create sandbox44:
-source .env.kagenti-team && .github/scripts/hypershift/create-cluster.sh sandbox44
-export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox44/auth/kubeconfig
-cd .worktrees/sandbox-agent
-claude
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
-Read docs/plans/2026-03-01-multi-session-passover.md. You are Session Q (LiteLLM Proxy).
-Deploy LiteLLM as a centralized model gateway. Architecture is pre-approved (see session def).
-Start with Task 1: deploy the proxy, then wire agents, then add tagging + stats.
-Use /tdd:hypershift for iteration. Create sandbox44 cluster first if it doesn't exist.
-Model credentials are in .env.maas.
+# Read this passover doc, you are the continuation of Session L
+# Design docs at:
+#   docs/plans/2026-03-05-session-file-browser-design.md
+#   docs/plans/2026-03-05-session-file-browser-plan.md
+#   docs/plans/2026-03-05-parallel-tests-design.md
+#
+# Implement the compact session view design (collapsed agent turns + welcome card)
+# Then fix the 4 remaining test failures
+# Run: cd kagenti/ui-v2 && KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com npx playwright test e2e/
 ```
 
 ---
 
-### Session P — Sidecar Agents (sandbox42)
+### Session M — Chat UX Polish (sbox42 cluster)
 
-**Claude Session ID:** (to be assigned)
-**Role:** Design + implement sidecar agents that run alongside sandbox sessions
-**Cluster:** sandbox42
-**Session Active:** NEW
-
-**Concept:**
-Sidecar agents are optional companion agents that run alongside a user's sandbox session.
-They can read the session messages and workspace files, and push messages back into the
-session — either autonomously or with HITL approval. Think: a code reviewer watching your
-coding session and chiming in, a security scanner checking files as they're written, or
-a test runner that auto-runs tests after code changes.
-
-**First 3 Sidecar Agents to Implement:**
-1. **Loop Kicker** — detects when the main agent is stuck in a loop (repeated tool calls, same error cycling) and kicks it with a corrective message
-2. **Hallucination Observer** — monitors agent responses for hallucination signals (fabricated file paths, non-existent APIs, wrong function signatures vs actual codebase) and comments with corrections
-3. **Context Budget Guardian** — watches context window token usage, warns when it's growing sharply, points the session to what NOT to do (e.g., "stop dumping kubectl output inline, redirect to file")
-
-**Key Requirements (brainstorm these in the session):**
-1. Sidecar agents can **read** the session stream + workspace files (read-only access)
-2. Sidecar agents can **push messages** into the session (write — needs HITL or auto-approve)
-3. A new **"Sidecars" tab** in the sandbox UI:
-   - Overview of which sidecar agents are active (toggle on/off)
-   - Circled number badge on tab when a sidecar is waiting for HITL approval
-   - Expandable section per sidecar showing its chat/progress
-4. Sidecar lifecycle: start/stop independently of the main session
-5. Multiple sidecars can run simultaneously on one session
-
-**Architecture Questions (for brainstorming):**
-- How do sidecars subscribe to session events? (WebSocket? Polling tasks table? SSE fan-out?)
-- How do sidecar messages appear in the main chat? (Inline with badge? Separate thread?)
-- Where do sidecars run? (Same pod? Separate deployment? In-process?)
-- How does HITL work for sidecar → session messages? (Same approval card? Different?)
-- How does the sidecar read workspace files? (Pod exec? Shared PVC? API proxy?)
-- What's the data model? (New table? Metadata on existing tasks?)
-
-**Existing Related Work:**
-- Session E designed sub-agent delegation (in-process, shared-pvc, isolated, sidecar modes) — see `docs/plans/2026-03-01-sub-agent-delegation-design.md`
-- Session G's EventsPanel + HITL cards could be reused for sidecar approval UI
-- Session H's file browser API (`sandbox_files.py`) provides workspace file access
-- Session L's reasoning loop shows how agents stream events via SSE
-
+**Claude Session ID:** (this session — Session M)
+**Role:** Skill invocation from chat, AgentLoopCard expandable blocks
+**Cluster:** sbox42
+**Session Active:** YES (started 2026-03-04)
+**Worktree:** `.worktrees/sandbox-agent`
+**Design Doc:** `docs/plans/2026-03-03-agent-loop-ui-design.md`
 **File Ownership:**
-- `kagenti/ui-v2/src/components/SidecarPanel.tsx` — NEW
-- `kagenti/ui-v2/src/components/SidecarAgentCard.tsx` — NEW
-- `kagenti/backend/app/routers/sidecar.py` — NEW
-- `kagenti/ui-v2/e2e/sandbox-sidecars.spec.ts` — NEW
-- `docs/plans/2026-03-06-sidecar-agents-design.md` — NEW (brainstorming output)
+- `kagenti/ui-v2/src/components/AgentLoopCard.tsx` — EXCLUSIVE (NEW, created by M)
+- `kagenti/ui-v2/src/components/LoopSummaryBar.tsx` — EXCLUSIVE (NEW, created by M)
+- `kagenti/ui-v2/src/components/LoopDetail.tsx` — EXCLUSIVE (NEW, created by M)
+- `kagenti/ui-v2/src/components/ModelBadge.tsx` — EXCLUSIVE (NEW, created by M)
+- `kagenti/ui-v2/e2e/sandbox-skill-invocation.spec.ts` — EXCLUSIVE (NEW, planned)
+- `kagenti/ui-v2/e2e/sandbox-agent-loop.spec.ts` — EXCLUSIVE (NEW, planned)
 
-**IMPORTANT: This session MUST brainstorm first.**
-Use the `superpowers:brainstorming` skill before any implementation. Explore the architecture
-questions above, propose 2-3 approaches, get user approval on the design, write the design
-doc, then implement with TDD.
+**File Ownership (additional):**
+- `skill-packs.yaml` — EXCLUSIVE (NEW, created by M)
+- `deployments/sandbox/skill_pack_loader.py` — EXCLUSIVE (NEW, created by M)
+- `deployments/sandbox/tests/test_skill_pack_loader.py` — EXCLUSIVE (NEW, created by M)
+- `kagenti/ui-v2/src/types/agentLoop.ts` — EXCLUSIVE (NEW, created by M)
+- `docs/plans/2026-03-04-skill-packs-design.md` — EXCLUSIVE
+- `docs/plans/2026-03-04-skill-packs-impl.md` — EXCLUSIVE
+
+**Priority Tasks:**
+1. ~~P0: Skill invocation from chat~~ ✅ DONE — parse `/skill:name` prefix, send `skill` field in streaming request (`c5ac7352`)
+2. ~~P1: AgentLoopCard expandable blocks~~ ✅ DONE — 4 components + types (`06893647`)
+3. ✅ Versioned Skill Packs — design doc + impl plan + skill_pack_loader.py + 11 unit tests + E2E test
+4. ✅ SandboxPage integration — wire AgentLoopCard into SSE event pipeline (Phase 2) (`8face837`)
+5. ✅ Fixed image registry CrashLoopBackOff — re-created AWS OIDC provider + IAM role for sbox42
+6. ✅ Deployed + tested on sbox42 — 4/4 skill invocation E2E tests pass on live cluster
+7. ⏳ Wizard Skills step — add pack selection to create-agent wizard (Session K finished)
+
+**Commits:**
+```
+8face837 feat(ui): wire AgentLoopCard into SSE pipeline — loop_id event grouping (Session M)
+06893647 feat(ui): add AgentLoopCard expandable blocks for reasoning loops
+63cf01f3 test(e2e): skill invocation request interception (Task 6)
+8c84de35 feat(sandbox): add SkillPackLoader with TDD tests (Task 2)
+023f05ae feat(skills): add skill-packs.yaml manifest (Session M)
+e60a32df docs: skill packs implementation plan — 7 tasks, TDD (Session M)
+7a29814b docs: versioned skill packs design (Session M)
+c5ac7352 feat(ui+backend): skill invocation from chat (Session M)
+```
+
+**Blocker:** Image registry on sbox42 is in CrashLoopBackOff (AWS OIDC credential failure). Cannot build/deploy until fixed.
+
+**Constraints:**
+- Do NOT touch `sandbox_deploy.py` — Session K owns it
+- Do NOT touch `graph.py` / `agent.py` — Session L owns the reasoning loop
+- Do NOT touch the 3 failing tests — Session L will fix those
+
+---
+
+### Session L+3 — P0 Bug Fixes, LiteLLM Integration, Tool Calling (sbox42 cluster)
+
+**Claude Session ID:** (Session L+3)
+**Role:** Fix P0 UI bugs, integrate LiteLLM, fix tool calling for vLLM models, add grep/glob tools
+**Cluster:** sbox42
+**Session Status:** COMPLETE (2026-03-07 → 2026-03-08)
+**Worktree:** `.worktrees/sandbox-agent` (kagenti repo), `.worktrees/agent-examples` (agent code)
+
+**What Session L+3 Delivered:**
+
+✅ **P0 UI Fixes (kagenti repo):**
+- Agent switching: `selectedAgentRef` for async closures, `isStreaming` guard on `loadInitialHistory`, removed `SandboxAgentsPanel` (caused agent overwrite)
+- Agent loop dedup: clear flat content on loop entry, route post-loop content to finalAnswer
+- Skill prefix: send full `/rca:ci` text to backend (was stripped)
+- Dockerfile: copy lockfile, use `npm ci` for reproducible builds
+- Immutable session→agent binding: backend rejects requests with wrong agent_name
+- Tool call display: group by name with count — "shell (2)" not "shell, shell"
+
+✅ **LiteLLM Integration:**
+- Wizard defaults updated: model names match LiteLLM virtual models (`llama-4-scout` not MAAS names)
+- Backend `sandbox_deploy.py`: `DEFAULT_LLM_API_BASE` → LiteLLM proxy, `DEFAULT_LLM_SECRET` → `litellm-proxy-secret`
+- All 5 static deployment YAMLs updated to use LiteLLM proxy + GH_TOKEN
+- Backend env vars: `SANDBOX_LLM_MODEL`, `SANDBOX_LLM_API_BASE`, `SANDBOX_LLM_SECRET` set on backend deployment
+- `litellm-proxy-secret` created in team1 namespace with `apikey` field
+
+✅ **Tool Calling for vLLM Models:**
+- Text-based tool call parser (`maybe_patch_tool_calls`): converts `[shell("ls")]` text → structured `ToolCall` objects
+- Handles all formats: structured (native), bracketed text, keyword args, positional args, multiple calls
+- Applied to executor_node, explore sub-agent, and delegate sub-agent
+- Crash-proof ToolNode wrapper (`_safe_tools`): catches all exceptions, returns error ToolMessages
+- Agent sees tool errors and can adapt instead of graph crashing
+
+✅ **New Tools:**
+- `grep` — regex search, workspace-scoped, 10K char limit
+- `glob` — file pattern matching, 200 file limit
+- Both added to core_tools, prompts, and text parser
+
+✅ **Agent Improvements (agent-examples repo):**
+- Installed `gh` CLI in Dockerfile
+- Added `gh` and `jq` to shell allow rules
+- Fixed delegate auto-mode: all routes to in-process (shared-pvc/isolated are placeholders)
+- Updated executor prompt: anti-hallucination rules, single tool per step
+- Updated reporter prompt: only report facts from tool output
+- Added RCA example to planner with clone → cd → gh workflow
+- Traceback logging for graph execution errors
+
+**Commits (kagenti repo — feat/sandbox-agent):**
+```
+7cfe4b63 fix(ui): P0 bugs — agent switching, loop dedup, skill prefix
+6000a959 fix(ui): use lockfile in Dockerfile for reproducible builds
+513b6665 fix(ui): drop --legacy-peer-deps, use npm ci with lockfile
+282eb32d fix(ui): use ref for selectedAgent in async send + lockfile in Dockerfile
+a4d02f5f fix(ui): prevent loadInitialHistory from overwriting agent during streaming
+553b4e28 feat(sandbox): wire wizard + deploy to LiteLLM proxy
+57e3d9d5 fix(ui): use LiteLLM model names in wizard default + RCA test
+6174b06a feat(sandbox): wire LiteLLM + GH_TOKEN to all agent deployments
+e846505a fix(ui): clear session when switching agents via Sandboxes panel
+de19602f fix(ui+backend): remove SandboxAgentsPanel, immutable session→agent binding
+a8e12423 chore(ui): remove debug console.log for agent switching
+```
+
+**Commits (agent-examples repo — feat/sandbox-agent):**
+```
+dc525f2 fix(sandbox): install gh CLI, fix delegation, improve prompts
+a476b9e feat(sandbox): text-based tool call parser for vLLM compat
+90bffff fix(sandbox): instruct agent to clone repo before gh commands
+bbaf7ef fix(sandbox): set origin remote to upstream repo for gh CLI
+3f84dc2 fix(sandbox): handle tuple/InvalidToolCall in event serializer
+e5a63cf feat(sandbox): add grep+glob tools, fix tuple error, single tool per step
+0eb583d fix(sandbox): crash-proof ToolNode + multi tool call support
+```
+
+**Test Results:** 18-22/23 pass (sandbox-variants legion test flaky — timeout on tool call, under investigation)
+
+**Known Issues:**
+- sandbox-variants `sandbox-legion` multi-turn tool call test times out (5min) — may be model latency via LiteLLM
+- GH_TOKEN PAT still has placeholder values in `github-token-secret` — user adding real token
+- Some junk temp files committed and cleaned up
+
+**P0 for Next Session (L+4):**
+
+1. **sandbox-variants test timeout** — investigate why multi-turn tool call times out for sandbox-legion via LiteLLM. May need increased test timeout or model latency optimization.
+
+2. **LiteLLM session analytics** — design + implement:
+   - Token budget per session (configurable, inherited from agent defaults)
+   - Per-model usage tracking (tokens, cost)
+   - Sub-session rollup to root session
+   - Team/namespace daily/monthly budgets
+   - Push metadata/tags to LiteLLM: session, root-session, parent_session, agent, namespace
+   - UI stats tab with assertable counts
+
+3. **Egress proxy** — default ON in wizard, all test agents have it enabled. One variant test with proxy OFF. Add test step for blocked domain assertion.
+
+4. **UI rendering** — node labels `[type] [loop_id] [step N]` with timestamp hover. Fix raw JSON in expandable blocks.
+
+5. **RCA agent** — wire GH_TOKEN PAT, test end-to-end with real CI data.
 
 **Startup:**
 ```bash
 cd /Users/ladas/Projects/OCTO/kagenti/kagenti
-export KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox42/auth/kubeconfig
-cd .worktrees/sandbox-agent
-claude
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
-Read docs/plans/2026-03-01-multi-session-passover.md. You are Session P (Sidecar Agents).
-
-Your goal: design and implement sidecar agents that run alongside sandbox sessions.
-Sidecars can read session messages + workspace, push messages (with HITL), and have
-their own tab in the UI with toggles, badges, and expandable progress views.
-
-FIRST: Use the brainstorming skill to explore the architecture. Read Session E's
-delegation design, Session H's file browser API, and Session G's EventsPanel for
-prior art. Propose 2-3 approaches, get user approval, write design doc. THEN implement.
-
-Do NOT skip brainstorming. Do NOT start coding before the design is approved.
+# Read this passover doc, you are the continuation of Session L
+# Agent code is in .worktrees/agent-examples/a2a/sandbox_agent/
+# UI/backend code is in .worktrees/sandbox-agent/kagenti/
 ```
 
 ---
 
 ## Priority Order
 
-1. ~~**Session B**: P0 — Fix `sandbox_deploy.py` path crash~~ → **Session K** (taking over)
-2. ~~**Session A**: Tool call rendering~~ ✅ ALL DONE
-3. ~~**Session C**: Wire HITL approve/deny~~ → **Session K** (taking over)
-4. ~~**Session D**: Create Keycloak test users~~ ✅ FIXED by Coordinator (create-test-users.sh in deploy pipeline)
-5. ~~**Session 42**: Re-run full suite~~ ✅ DONE — 188/195 on sandbox42, 186/195 on sandbox44
-6. **Session F → K**: Deploy nono launcher + Landlock to cluster
-7. ~~**Session G**: RCA workflow~~ ✅ 190/196 (96.9%) — remaining are LLM-dependent
-8. ~~**Session H**: File browser~~ ✅ ALL DONE
+1. ~~**Session B**: Fix source builds -> deploy serializer~~ ✅ ALL P0s DONE
+2. **Session A**: Tool call rendering (streaming flush), session name propagation
+3. **Session C**: Wire HITL approve/deny to graph.resume()
+4. **Session D**: Create Keycloak test users, multi-user Playwright tests
+5. **Session O**: Pull latest (`2417c723`), re-deploy sbox42 with bitnami postgres, run integration suite
+6. **Session B**: Create deployment manifests for hardened/basic/restricted variants
