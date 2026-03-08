@@ -16,9 +16,8 @@
  * Run: KAGENTI_UI_URL=https://... npx playwright test sandbox-variants
  */
 import { test, expect, type Page } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
-const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
-const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 const AGENT_TIMEOUT = 180_000;
 const SCREENSHOT_DIR = 'test-results/sandbox-variants';
 
@@ -40,88 +39,26 @@ async function snap(page: Page, label: string) {
   });
 }
 
-async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
-
-  const isKeycloakLogin = await page
-    .locator('#kc-form-login, input[name="username"]')
-    .first()
-    .isVisible({ timeout: 5000 })
-    .catch(() => false);
-
-  if (!isKeycloakLogin) {
-    const signInButton = page.getByRole('button', { name: /Sign In/i });
-    const hasSignIn = await signInButton
-      .isVisible({ timeout: 5000 })
-      .catch(() => false);
-    if (!hasSignIn) return;
-    await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
-  }
-
-  const usernameField = page.locator('input[name="username"]').first();
-  const passwordField = page.locator('input[name="password"]').first();
-  const submitButton = page
-    .locator('#kc-login, button[type="submit"], input[type="submit"]')
-    .first();
-
-  await usernameField.waitFor({ state: 'visible', timeout: 10000 });
-  await usernameField.fill(KEYCLOAK_USER);
-  await passwordField.waitFor({ state: 'visible', timeout: 5000 });
-  await passwordField.click();
-  await passwordField.pressSequentially(KEYCLOAK_PASSWORD, { delay: 20 });
-  await page.waitForTimeout(300);
-  await submitButton.click();
-
-  await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
-
-  if (page.url().includes('VERIFY_PROFILE')) {
-    const verifySubmit = page.locator(
-      'input[type="submit"], button[type="submit"]'
-    );
-    if (await verifySubmit.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await verifySubmit.click();
-      await page.waitForURL(/^(?!.*keycloak)/, { timeout: 15000 });
-    }
-  }
-}
-
-async function navigateToSandbox(page: Page) {
-  const sessionsNav = page
-    .locator('nav a, nav button, [role="navigation"] a')
-    .filter({ hasText: /^Sessions$/ });
-  await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
-  await sessionsNav.first().click();
-  await page.waitForLoadState('networkidle');
-  // Wait for the sandbox page to load — chat input appears on all states
-  await expect(
-    page.getByPlaceholder(/Type your message/i)
-  ).toBeVisible({ timeout: 15000 });
-}
-
 /**
- * Select an agent variant by clicking it in the Sandboxes panel.
- * The panel may be below the fold — scroll into view first.
+ * Navigate to sandbox with a specific agent via URL param.
+ * Handles Keycloak login redirect if needed.
  */
-async function selectAgent(page: Page, agentName: string) {
-  // The Sandboxes/Sandbox panel title (changes based on whether an agent is selected)
-  const sandboxesTitle = page.locator('h4').filter({ hasText: /Sandbox/i });
+async function navigateToSandboxWithAgent(page: Page, agentName: string) {
+  await page.goto(`/sandbox?agent=${encodeURIComponent(agentName)}`);
+  await page.waitForLoadState('networkidle');
 
-  // Scroll the sidebar to make the Sandboxes panel visible
-  await sandboxesTitle.scrollIntoViewIfNeeded();
-  await expect(sandboxesTitle).toBeVisible({ timeout: 15000 });
+  // Re-login if redirected to Keycloak
+  if (page.url().includes('keycloak') || page.url().includes('auth/realms')) {
+    await loginIfNeeded(page);
+    await page.goto(`/sandbox?agent=${encodeURIComponent(agentName)}`);
+    await page.waitForLoadState('networkidle');
+  }
 
-  // All agents are always listed — find by text match within agent entries
-  // Agent entries contain the name + session count
-  const agentEntry = page.locator(`div[role="button"]`).filter({
-    hasText: agentName,
-  }).filter({
-    hasText: /session/i,
-  });
-  await expect(agentEntry.first()).toBeVisible({ timeout: 25000 });
-  await agentEntry.first().click();
-  await page.waitForTimeout(500);
+  // Confirm the agent badge renders
+  const agentLabel = page
+    .locator('[class*="pf-v5-c-label"]')
+    .filter({ hasText: agentName });
+  await expect(agentLabel.first()).toBeVisible({ timeout: 10000 });
 }
 
 /**
@@ -167,26 +104,11 @@ for (const agentName of AGENT_VARIANTS) {
       const runId = Date.now().toString(36);
       const marker = `hello-${agentName}-${runId}`;
 
-      // ---- Login & Navigate ----
+      // ---- Login & Select agent via URL ----
       await page.goto('/');
       await loginIfNeeded(page);
-      await navigateToSandbox(page);
-      await snap(page, `${agentName}-loaded`);
-
-      // ---- Select the agent variant ----
-      await selectAgent(page, agentName);
+      await navigateToSandboxWithAgent(page, agentName);
       await snap(page, `${agentName}-selected`);
-
-      // ---- Start new session ----
-      const newSessionBtn = page.getByRole('button', { name: /New Session/i });
-      await newSessionBtn.click();
-      // Handle New Session modal
-      const startBtn = page.getByRole('button', { name: /^Start$/ });
-      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await startBtn.click();
-        await page.waitForTimeout(500);
-      }
-      await page.waitForTimeout(500);
 
       // ---- Turn 1: Simple text response (single-step plan → fast path) ----
       await sendAndWait(page, `Say exactly: ${marker}`);
