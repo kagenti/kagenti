@@ -975,45 +975,48 @@ export const SandboxPage: React.FC = () => {
                 budget: { tokensUsed: 0, tokensBudget: 0, wallClockS: 0, maxWallClockS: 0 },
               };
               const et = le.type as string;
-              if (et === 'planner_output' || et === 'plan') {
+              // Skip legacy event types — new types carry the same data
+              if (['plan', 'plan_step', 'reflection', 'llm_response'].includes(et)) continue;
+
+              if (et === 'planner_output') {
                 existing.plan = (le.steps as string[]) || existing.plan;
                 existing.totalSteps = existing.plan.length;
                 existing.iteration = (le.iteration as number) ?? existing.iteration;
                 existing.model = (le.model as string) || existing.model;
                 existing.steps = [...existing.steps, {
-                  index: -1 - (existing.iteration || 0),
+                  index: existing.steps.length,
                   description: `Plan (iteration ${(existing.iteration || 0) + 1}): ${existing.plan.length} steps`,
                   model: (le.model as string) || existing.model,
                   nodeType: 'planner' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
-              } else if (et === 'executor_step' || et === 'plan_step') {
+              } else if (et === 'executor_step') {
                 existing.currentStep = (le.step as number) ?? existing.currentStep;
                 existing.steps = [...existing.steps, {
-                  index: (le.step as number) ?? existing.steps.length,
+                  index: existing.steps.length,
                   description: (le.description as string) || '',
                   model: (le.model as string) || existing.model,
                   nodeType: 'executor' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
-              } else if (et === 'reflector_decision' || et === 'reflection') {
+              } else if (et === 'reflector_decision') {
                 existing.reflection = (le.assessment as string) || '';
                 existing.reflectorDecision = le.decision as 'continue' | 'replan' | 'done' | undefined;
                 existing.steps = [...existing.steps, {
-                  index: 1000 + (existing.iteration || 0),
+                  index: existing.steps.length,
                   description: `Reflection [${le.decision || 'assess'}]: ${((le.assessment as string) || '').substring(0, 80)}`,
                   model: (le.model as string) || existing.model,
                   nodeType: 'reflector' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
-              } else if (et === 'reporter_output' || et === 'llm_response') {
+              } else if (et === 'reporter_output') {
                 existing.status = 'done';
                 existing.finalAnswer = (le.content as string) || '';
                 existing.steps = [...existing.steps, {
-                  index: 9999,
+                  index: existing.steps.length,
                   description: 'Final answer',
                   model: (le.model as string) || existing.model,
                   nodeType: 'reporter' as const,
@@ -1413,10 +1416,17 @@ export const SandboxPage: React.FC = () => {
               const le = data.loop_event || data;
               const eventType = le.type;
 
-              // Handle new typed events (preferred) and legacy events (backward compat).
-              // New types: planner_output, executor_step, reflector_decision, reporter_output
-              // Legacy types: plan, plan_step, reflection, llm_response
-              if (eventType === 'planner_output' || eventType === 'plan') {
+              // Handle typed events. The serializer emits both new types
+              // (planner_output, executor_step, etc.) and legacy types
+              // (plan, plan_step, etc.) for backward compat. Skip legacy
+              // types to avoid duplicate steps.
+              const LEGACY_TYPES = new Set(['plan', 'plan_step', 'reflection', 'llm_response']);
+              if (LEGACY_TYPES.has(eventType)) {
+                // Skip legacy events — the new-type handler already processed this
+                continue;
+              }
+
+              if (eventType === 'planner_output') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'planning',
@@ -1428,7 +1438,7 @@ export const SandboxPage: React.FC = () => {
                   steps: [
                     ...l.steps,
                     {
-                      index: -1 - (l.iteration || 0), // Negative index for planner steps
+                      index: l.steps.length, // Sequential index
                       description: `Plan (iteration ${(le.iteration ?? l.iteration ?? 0) + 1}): ${(le.steps || []).length} steps`,
                       model: le.model || l.model,
                       nodeType: 'planner' as const,
@@ -1440,7 +1450,7 @@ export const SandboxPage: React.FC = () => {
                     },
                   ],
                 }));
-              } else if (eventType === 'executor_step' || eventType === 'plan_step') {
+              } else if (eventType === 'executor_step') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'executing',
@@ -1485,7 +1495,7 @@ export const SandboxPage: React.FC = () => {
                   }
                   return { ...l, steps };
                 });
-              } else if (eventType === 'reflector_decision' || eventType === 'reflection') {
+              } else if (eventType === 'reflector_decision') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'reflecting',
@@ -1497,7 +1507,7 @@ export const SandboxPage: React.FC = () => {
                   steps: [
                     ...l.steps,
                     {
-                      index: 1000 + (l.iteration || 0), // High index for reflector steps
+                      index: l.steps.length, // Sequential index
                       description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
                       model: le.model || l.model,
                       nodeType: 'reflector' as const,
@@ -1519,7 +1529,7 @@ export const SandboxPage: React.FC = () => {
                     maxWallClockS: le.max_wall_clock_s ?? l.budget.maxWallClockS,
                   },
                 }));
-              } else if (eventType === 'reporter_output' || eventType === 'llm_response') {
+              } else if (eventType === 'reporter_output') {
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'done',
@@ -1529,7 +1539,7 @@ export const SandboxPage: React.FC = () => {
                   steps: [
                     ...l.steps,
                     {
-                      index: 9999,
+                      index: l.steps.length, // Sequential index
                       description: 'Final answer',
                       model: le.model || l.model,
                       nodeType: 'reporter' as const,
