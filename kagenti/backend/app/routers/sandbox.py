@@ -1200,7 +1200,7 @@ async def _resolve_agent_name(
        records lack metadata.
     """
     if not session_id:
-        return request_agent
+        return request_agent or "sandbox-legion"
 
     try:
         pool = await get_session_pool(namespace)
@@ -1454,6 +1454,11 @@ async def _stream_sandbox_response(
                         merged["title"] = message[:80].replace("\n", " ")
                     if agent_name:
                         merged["agent_name"] = agent_name
+                    else:
+                        logger.warning(
+                            "_set_owner_metadata called with empty agent_name for session %s",
+                            session_id,
+                        )
                     # Always update ALL task records for consistency
                     result = await conn.execute(
                         "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",

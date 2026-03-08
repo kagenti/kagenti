@@ -1267,7 +1267,7 @@ export const SandboxPage: React.FC = () => {
     const body: Record<string, unknown> = {
       message: messageToSend,
       session_id: contextIdRef.current || undefined,
-      agent_name: selectedAgentRef.current,
+      agent_name: selectedAgentRef.current || 'sandbox-legion',
     };
     if (skill) body.skill = skill;
     const response = await fetch(
@@ -1332,7 +1332,7 @@ export const SandboxPage: React.FC = () => {
     skill?: string,
   ): Promise<boolean> => {
     const streamUrl = sandboxService.getStreamUrl(namespace);
-    const agentForRequest = selectedAgentRef.current;
+    const agentForRequest = selectedAgentRef.current || 'sandbox-legion';
     const body: Record<string, unknown> = {
       message: messageToSend,
       session_id: contextIdRef.current || undefined,

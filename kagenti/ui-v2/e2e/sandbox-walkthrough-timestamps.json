@@ -5,42 +5,42 @@
   },
   {
     "step": "login",
-    "time": 7.251
+    "time": 6.757
   },
   {
     "step": "sandbox_navigate",
-    "time": 7.304
+    "time": 6.812
   },
   {
     "step": "sandbox_sidebar",
-    "time": 7.311
+    "time": 6.818
   },
   {
     "step": "sandbox_config_skipped",
-    "time": 7.311
+    "time": 6.818
   },
   {
     "step": "sandbox_chat_send",
-    "time": 7.372
+    "time": 6.881
   },
   {
     "step": "sandbox_chat_response",
-    "time": 7.374
+    "time": 6.884
   },
   {
     "step": "sandbox_sessions_table",
-    "time": 7.415
+    "time": 6.921
   },
   {
-    "step": "sandbox_table_search",
-    "time": 8.165
+    "step": "sandbox_table_search_skipped",
+    "time": 10.659
   },
   {
     "step": "sandbox_return_chat",
-    "time": 8.201
+    "time": 10.686
   },
   {
     "step": "end",
-    "time": 8.201
+    "time": 10.686
   }
 ]

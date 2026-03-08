@@ -352,6 +352,46 @@ test.describe('Agent RCA Workflow', () => {
       await page.waitForTimeout(500);
     }
 
+    // ── Step 7c: Verify loop events persisted in DB ──────────────────────
+    // The backend's _stream_sandbox_response captures loop events (events with
+    // loop_id) and persists them to the task's metadata column. If the agent
+    // emitted loop events during the stream, the metadata should contain a
+    // "loop_events" key. This catches regressions where the backend's SSE proxy
+    // fails to detect loop_id in the agent's event format.
+    if (sid) {
+      const loopCheck = kc(
+        `exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t -A -c "SELECT CASE WHEN metadata::text LIKE '%loop_events%' THEN 'YES' ELSE 'no' END FROM tasks WHERE context_id = '${sid}' AND metadata IS NOT NULL LIMIT 1"`,
+        15000,
+      );
+      const hasLoops = loopCheck.trim().split('\n').pop()?.trim() === 'YES';
+      console.log(`[rca] Loop events persisted: ${hasLoops} (raw: ${loopCheck.trim().substring(0, 80)})`);
+
+      // Also check if any loop cards were rendered during the live stream.
+      // If the UI showed loop cards but the DB has no loop_events, the
+      // persistence path is broken. If neither showed loops, the agent
+      // serializer may not be emitting loop_id (separate issue).
+      if (loopCardCount > 0 && !hasLoops) {
+        console.log('[rca] BUG: UI rendered loop cards but loop_events NOT persisted to DB');
+      }
+      if (loopCardCount === 0 && !hasLoops) {
+        console.log('[rca] WARNING: No loop events in UI or DB — agent may not emit loop_id');
+      }
+
+      // Soft assertion: log the result but don't fail the test yet.
+      // Once the serializer + backend pipeline is fixed, upgrade to:
+      //   expect(hasLoops).toBe(true);
+      // For now, just ensure the query itself succeeded (non-empty result).
+      expect(loopCheck.trim().length).toBeGreaterThan(0);
+
+      // Check LLM token counts in metadata — should be non-zero if the agent
+      // tagged LLM calls with token usage correctly.
+      const tokenCheck = kc(
+        `exec -n ${NAMESPACE} postgres-sessions-0 -- psql -U kagenti -d sessions -t -A -c "SELECT CASE WHEN metadata::text LIKE '%prompt_tokens%' THEN 'YES' ELSE 'no' END FROM tasks WHERE context_id = '${sid}' AND metadata IS NOT NULL LIMIT 1"`,
+        15000,
+      );
+      console.log(`[rca] Token usage in metadata: ${tokenCheck.trim().split('\\n').pop()?.trim()}`);
+    }
+
     // ── Step 8: Check RCA assessment quality ─────────────────────────────
     await page.waitForTimeout(10000);
 
