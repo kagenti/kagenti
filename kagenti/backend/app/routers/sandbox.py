@@ -9,6 +9,7 @@ PostgreSQL databases. Session data is managed by the A2A SDK's DatabaseTaskStore
 (table: 'tasks') — the backend only reads from it for UI purposes.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -1402,49 +1403,62 @@ async def _stream_sandbox_response(
         fields written by the agent (e.g. ``llm_request_ids``) and fields
         written by the backend (``owner``, ``title``, ``agent_name``) end
         up on every row.
+
+        Called on every SSE event batch (not just the first) to handle
+        task rows created after the initial call. Retries on transient
+        DB errors.
         """
-        nonlocal owner_set
-        if owner_set or not owner or not namespace:
+        if not owner or not namespace:
             return
-        owner_set = True
-        try:
-            pool = await get_session_pool(namespace)
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT metadata FROM tasks WHERE context_id = $1",
-                    session_id,
-                )
-                if not rows:
-                    return
-                # Merge metadata from all rows into one dict, keeping
-                # non-None values so no field is lost.
-                merged: dict = {}
-                for row in rows:
-                    m = _parse_json_field(row["metadata"]) or {}
-                    merged.update({k: v for k, v in m.items() if v is not None})
-                # Set/overwrite backend-managed fields
-                changed = False
-                if not merged.get("owner"):
-                    merged["owner"] = owner
-                    merged["visibility"] = "private"
-                    changed = True
-                if not merged.get("title"):
-                    merged["title"] = message[:80].replace("\n", " ")
-                    changed = True
-                if agent_name and merged.get("agent_name") != agent_name:
-                    merged["agent_name"] = agent_name
-                    changed = True
-                if changed:
-                    # Update ALL task records for this context_id so
-                    # the title/owner/agent_name are consistent regardless
-                    # of which task record the sidebar query picks up.
-                    await conn.execute(
+        for attempt in range(3):
+            try:
+                pool = await get_session_pool(namespace)
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT metadata FROM tasks WHERE context_id = $1",
+                        session_id,
+                    )
+                    if not rows:
+                        if attempt < 2:
+                            await asyncio.sleep(0.5 * (attempt + 1))
+                            continue
+                        return
+                    # Merge metadata from all rows into one dict, keeping
+                    # non-None values so no field is lost.
+                    merged: dict = {}
+                    for row in rows:
+                        m = _parse_json_field(row["metadata"]) or {}
+                        merged.update({k: v for k, v in m.items() if v is not None})
+                    # Set/overwrite backend-managed fields
+                    if not merged.get("owner"):
+                        merged["owner"] = owner
+                        merged["visibility"] = "private"
+                    if not merged.get("title"):
+                        merged["title"] = message[:80].replace("\n", " ")
+                    if agent_name:
+                        merged["agent_name"] = agent_name
+                    # Always update ALL task records for consistency
+                    result = await conn.execute(
                         "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
                         json.dumps(merged),
                         session_id,
                     )
-        except Exception:
-            logger.debug("Failed to set owner on session %s", session_id)
+                    affected = int(str(result).split()[-1]) if result else 0
+                    if affected == 0:
+                        logger.warning(
+                            "Metadata update matched 0 rows for session %s",
+                            session_id,
+                        )
+                break  # Success
+            except Exception:
+                logger.warning(
+                    "Failed to set owner on session %s (attempt %d/3)",
+                    session_id,
+                    attempt + 1,
+                    exc_info=True,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(0.5 * (attempt + 1))
 
     metadata: dict = {"username": owner}
     if skill:
@@ -1524,9 +1538,12 @@ async def _stream_sandbox_response(
                         if owner:
                             payload["username"] = owner
 
-                        # Set owner after first event (task exists in DB)
+                        # Set owner after first event (task exists in DB).
+                        # Runs once per stream; the [DONE] handler runs it again
+                        # to catch task rows created mid-stream.
                         if not owner_set:
                             await _set_owner_metadata()
+                            owner_set = True
 
                         # --- TaskArtifactUpdateEvent ---
                         if "artifact" in result:
