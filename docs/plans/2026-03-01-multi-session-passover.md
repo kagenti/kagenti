@@ -949,6 +949,177 @@ export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
 
 ---
 
+### Session R — Tool Calling Stability + LiteLLM Analytics + Egress Proxy (sbox42 cluster)
+
+**Claude Session ID:** (register your session ID here when you start)
+**Role:** Make tool calling reliable, add LiteLLM session analytics, enable egress proxy by default
+**Cluster:** sbox42 (Llama 4 Scout via LiteLLM proxy)
+**Session Status:** NOT STARTED
+**Worktree:** `.worktrees/sandbox-agent` (kagenti repo), `.worktrees/agent-examples` (agent code)
+
+**IMPORTANT — Read Before Starting:**
+
+Session L+3 made significant progress but left several issues. Read this section carefully to avoid repeating mistakes.
+
+#### Architecture Context
+
+The sandbox agent has TWO repos:
+- **kagenti repo** (`.worktrees/sandbox-agent/`): UI (`kagenti/ui-v2/`), backend (`kagenti/backend/`), deployment YAMLs (`kagenti/examples/agents/`)
+- **agent-examples repo** (`.worktrees/agent-examples/`): Agent code (`a2a/sandbox_agent/src/sandbox_agent/`), Dockerfile, settings.json
+
+The agent image is built from the agent-examples repo via BuildConfig `sandbox-agent` in namespace `team1`. The UI/backend are built from the kagenti repo via BuildConfigs in `kagenti-system`.
+
+**Build → Deploy → Test cycle:**
+```bash
+# 1. Push changes to the right repo
+cd .worktrees/agent-examples && git push origin feat/sandbox-agent   # agent code
+cd .worktrees/sandbox-agent && git push origin feat/sandbox-agent    # UI/backend
+
+# 2. Trigger builds
+KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
+oc start-build sandbox-agent -n team1 --follow         # agent
+oc start-build kagenti-ui -n kagenti-system --follow    # UI
+oc start-build kagenti-backend -n kagenti-system --follow  # backend
+
+# 3. Restart deployments (builds don't auto-restart)
+kubectl rollout restart deployment/sandbox-legion deployment/sandbox-agent \
+  deployment/sandbox-basic deployment/sandbox-hardened deployment/sandbox-restricted -n team1
+kubectl rollout restart deployment/kagenti-ui deployment/kagenti-backend -n kagenti-system
+
+# 4. Delete rca-agent before tests (it's re-created by the wizard test)
+kubectl delete deploy rca-agent -n team1 --ignore-not-found
+kubectl delete svc rca-agent -n team1 --ignore-not-found
+
+# 5. Run tests
+cd .worktrees/sandbox-agent/kagenti/ui-v2
+KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com \
+KEYCLOAK_USER=admin \
+KEYCLOAK_PASSWORD=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.admin-password}' | base64 -d) \
+CI=true npx playwright test e2e/agent-rca-workflow.spec.ts --reporter=list
+```
+
+#### What Session L+3 Built (and what's broken)
+
+**Text-based tool call parser** (`reasoning.py:maybe_patch_tool_calls`):
+- Llama 4 Scout via RHOAI MaaS does NOT return structured `tool_calls` in the OpenAI response format
+- The model generates text like `[shell(command="ls")]` instead
+- LangGraph's `tools_condition` sees no `tool_calls` → skips ToolNode → tools never execute
+- The parser converts text patterns → proper `ToolCall` dicts so `tools_condition` routes to ToolNode
+- **Issue:** When the model generates 2+ tool calls in one response (e.g. `[shell("clone"), shell("ls")]`), the ToolNode sometimes crashes with `'tuple' object has no attribute 'get'`. Session L+3 added a crash-proof wrapper (`_safe_tools`) that returns error ToolMessages instead of crashing.
+- **TODO:** Investigate WHY multiple text-parsed tool_calls cause the ToolNode to crash. The format passes unit test but fails at graph runtime. May be a LangGraph internal issue with the message state after ToolNode runs multiple tools.
+
+**Agent switching bug** (SandboxPage.tsx):
+- `selectedAgent` state was stale in async closures → wrong agent sent to backend
+- Session L+3 added: `selectedAgentRef` (sync ref), `isStreaming` guard, removed `SandboxAgentsPanel`, immutable session→agent on backend
+- **Still broken in some flows** — the user reports it still switches to `sandbox-legion`. Check browser cache (Ctrl+Shift+R). The backend immutable binding should catch this now (returns 400).
+
+**LiteLLM proxy:**
+- All agents patched to use `http://litellm-proxy.kagenti-system.svc.cluster.local:4000/v1`
+- LiteLLM key: `litellm-proxy-secret` in both `kagenti-system` and `team1` namespaces
+- Models available: `llama-4-scout`, `mistral-small`, `deepseek-r1`, `gpt-4o-mini`, `gpt-4o`
+- Wizard defaults updated to use LiteLLM model names
+
+**GH_TOKEN:**
+- `gh` CLI is installed in the agent image
+- `github-token-secret` exists in team1 but has PLACEHOLDER values — user is adding real PAT
+- Agent deploy code (`sandbox_deploy.py`) always injects `GH_TOKEN` + `GITHUB_TOKEN` from `github-token-secret`
+- `gh` requires auth even for public repos — won't work until PAT is set
+
+#### Priority Tasks (in order)
+
+**P0: Make RCA test work end-to-end with real tool execution**
+
+Iterate on `e2e/agent-rca-workflow.spec.ts` until:
+1. The test deploys rca-agent via wizard (already works)
+2. The agent actually executes shell commands (tool call parser works but flaky)
+3. Tool errors are visible in the chat (crash-proof wrapper returns errors)
+4. The RCA report contains REAL data (not fabricated)
+5. Test quality assertion passes 5/5
+
+Key files:
+- Parser: `.worktrees/agent-examples/a2a/sandbox_agent/src/sandbox_agent/reasoning.py` (lines 90-156)
+- Graph: `.worktrees/agent-examples/a2a/sandbox_agent/src/sandbox_agent/graph.py` (`_safe_tools` wrapper)
+- Serializer: `.worktrees/agent-examples/a2a/sandbox_agent/src/sandbox_agent/event_serializer.py` (`_safe_tc`)
+- Test: `.worktrees/sandbox-agent/kagenti/ui-v2/e2e/agent-rca-workflow.spec.ts`
+
+**P1: Fix sandbox-variants test timeout**
+
+`sandbox-variants.spec.ts` — `multi-turn with tool call on sandbox-legion` times out at 5min. This worked before LiteLLM. Investigate:
+- Is LiteLLM adding latency?
+- Is the tool call parser + plan-execute-reflect loop taking too many iterations?
+- Test the same request directly via API to isolate UI vs agent issue
+
+**P2: LiteLLM session analytics**
+
+Design + implement token usage tracking:
+- Push metadata tags to LiteLLM: `session_id`, `root_session_id`, `parent_session_id`, `agent_name`, `namespace`
+- Query LiteLLM `/spend/logs` endpoint for usage per session
+- Budget system: per-session default, per-agent daily/monthly, per-namespace limits
+- UI stats tab: show per-model token usage, tool call counts, sub-session rollup
+- Add a Playwright test that creates predictable traffic (multi-turn + tool calls) and asserts exact stats
+
+**P3: Egress proxy default-on**
+
+- Import wizard: enable Squid proxy by default
+- All test agents: proxy enabled
+- Keep one variant (sandbox-basic?) with proxy OFF for testing
+- Add test step: ask agent to fetch a blocked domain, assert error message in chat
+
+**P4: UI rendering improvements**
+
+- Node labels: `[type] [loop_id] [step N]` prefix on rendered events, timestamp on hover
+- Fix raw JSON rendering in expandable blocks
+- Tool call display already fixed to "shell (2)" — verify it works
+
+#### Mistakes to Avoid
+
+1. **Don't edit files in the main repo** — all code changes go in `.worktrees/sandbox-agent/` (kagenti) or `.worktrees/agent-examples/` (agent). The main repo is on a different branch.
+
+2. **Always restart deployments after builds** — builds don't trigger auto-rollout. You MUST `kubectl rollout restart` after each build.
+
+3. **Delete rca-agent before running the RCA test** — the test deploys a fresh agent via the wizard. If an old one exists with wrong config (old model name, old secret), the test will use it.
+
+4. **Browser cache** — the user may see old UI. Ask them to hard-refresh (Ctrl+Shift+R).
+
+5. **Redirect large command output** — follow CLAUDE.md context budget rules. Never dump kubectl logs, test output, or build logs into the conversation.
+
+6. **Test with the right env vars** — `KAGENTI_UI_URL`, `KEYCLOAK_USER`, `KEYCLOAK_PASSWORD` must be set. Use the test runner script pattern.
+
+7. **The agent image is in agent-examples repo** — don't look for the Dockerfile or agent code in the kagenti repo.
+
+8. **Register your session ID** — update this section with your Claude session ID so future sessions can reference you.
+
+**Startup:**
+```bash
+cd /Users/ladas/Projects/OCTO/kagenti/kagenti
+export KUBECONFIG=~/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig
+
+# You are Session R. Register your session ID in this passover doc.
+# Read docs/plans/2026-03-01-multi-session-passover.md (Session L+3 and Session R sections)
+
+# First: iterate on the RCA test until tool calling works reliably
+# Then: fix sandbox-variants timeout
+# Then: LiteLLM analytics
+# Then: egress proxy
+
+# Agent code repo:
+cd .worktrees/agent-examples/a2a/sandbox_agent/
+# Key files: src/sandbox_agent/reasoning.py, graph.py, event_serializer.py, agent.py
+
+# UI/backend repo:
+cd .worktrees/sandbox-agent/kagenti/
+# Key files: ui-v2/src/pages/SandboxPage.tsx, backend/app/routers/sandbox.py, sandbox_deploy.py
+
+# Run RCA test:
+cd .worktrees/sandbox-agent/kagenti/ui-v2
+KAGENTI_UI_URL=https://kagenti-ui-kagenti-system.apps.kagenti-team-sbox42.octo-emerging.redhataicoe.com \
+KEYCLOAK_USER=admin \
+KEYCLOAK_PASSWORD=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.admin-password}' | base64 -d) \
+CI=true npx playwright test e2e/agent-rca-workflow.spec.ts --reporter=list
+```
+
+---
+
 ## Priority Order
 
 1. ~~**Session B**: Fix source builds -> deploy serializer~~ ✅ ALL P0s DONE
