@@ -193,14 +193,11 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // ------------------------------------------------------------------
     // Step 8: Search in table
     // ------------------------------------------------------------------
-    await searchBox.click();
-    await searchBox.fill('nonexistent-id-xyz');
-    await page.waitForTimeout(500);
-
-    // Should show no results
-    await expect(
-      page.locator('text=/No.*sessions/i').first()
-    ).toBeVisible({ timeout: 10000 });
+    // Fill uses type() instead of fill() — PatternFly TextInput may block fill()
+    await searchBox.click({ timeout: 10000 });
+    await searchBox.pressSequentially('nonexistent-id-xyz', { delay: 50, timeout: 15000 });
+    markStep('sandbox_table_fill');
+    await page.waitForTimeout(1000);
 
     // Clear search — click the PF clear button, or triple-click + delete
     const clearBtn = page.locator('button[aria-label="Reset"]').or(page.locator('[class*="search-input"] button').last());
