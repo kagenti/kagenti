@@ -263,7 +263,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                       ? 'var(--pf-v5-global--active-color--100)'
                       : 'transparent',
                     color: isActive
-                      ? '#fff'
+                      ? 'var(--pf-v5-global--Color--light-100)'
                       : 'var(--pf-v5-global--Color--100)',
                   }}
                 >
@@ -380,8 +380,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                           ? 'var(--pf-v5-global--active-color--100)'
                           : 'transparent',
                         color: isChildActive
-                          ? '#fff'
-                          : 'var(--pf-v5-global--Color--200)',
+                          ? 'var(--pf-v5-global--Color--light-100)'
+                          : 'var(--pf-v5-global--Color--100)',
                         fontSize: '0.85em',
                         borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)',
                         marginLeft: 8,

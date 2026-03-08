@@ -68,7 +68,7 @@ const PlanSection: React.FC<{ plan: string[]; currentStep: number }> = ({ plan, 
 
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 6, color: '#333' }}>
+      <div style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 6, color: 'var(--pf-v5-global--Color--100)' }}>
         <NodeBadge nodeType="planner" />
         Plan
       </div>
@@ -220,14 +220,14 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number }> = ({ step, t
           alignItems: 'center',
           fontSize: '0.84em',
           fontWeight: 600,
-          color: '#333',
+          color: 'var(--pf-v5-global--Color--100)',
           marginBottom: 4,
           flexWrap: 'wrap',
         }}
       >
         <NodeBadge nodeType={inferNodeType(step)} />
         Step {step.index + 1}/{total}: {step.description}
-        <span style={{ fontWeight: 400, color: '#6a6e73', marginLeft: 8 }}>
+        <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}>
           {step.model} &middot; {formatStepTokens(step)} tokens
         </span>
         {step.tokens.prompt + step.tokens.completion > 0 && (
@@ -264,7 +264,7 @@ const ReflectionSection: React.FC<{ reflection: string }> = ({ reflection }) => 
       backgroundColor: '#fffbeb',
       borderRadius: '0 4px 4px 0',
       fontSize: '0.83em',
-      color: '#92400e',
+      color: 'var(--pf-v5-global--warning-color--200)',
     }}
   >
     <div style={{ fontWeight: 600, marginBottom: 4 }}>
