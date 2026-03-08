@@ -33,6 +33,7 @@ import { DelegationCard, type DelegationState } from '../components/DelegationCa
 import { AgentLoopCard } from '../components/AgentLoopCard';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { SessionStatsPanel } from '../components/SessionStatsPanel';
+import { LlmUsagePanel } from '../components/LlmUsagePanel';
 import { FileBrowser } from '../components/FileBrowser';
 import type { AgentLoop } from '../types/agentLoop';
 
@@ -1430,13 +1431,18 @@ export const SandboxPage: React.FC = () => {
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
                   // Find the last active loop to attach the answer to
+                  let found = false;
                   for (const [lid, loop] of [...next].reverse()) {
                     if (!loop.finalAnswer) {
                       next.set(lid, { ...loop, status: 'done', finalAnswer: accumulatedContent });
+                      found = true;
                       break;
                     }
                   }
-                  return next;
+                  // Only return new map if we actually updated a loop;
+                  // returning prev avoids phantom re-renders when all
+                  // loops already have a finalAnswer.
+                  return found ? next : prev;
                 });
               }
             }
@@ -1692,7 +1698,7 @@ export const SandboxPage: React.FC = () => {
 
           {/* Tab bar — stays pinned */}
           <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--pf-v5-global--BorderColor--100)', flexShrink: 0, marginBottom: 8 }}>
-            {['chat', 'stats', 'files'].map((tab) => (
+            {['chat', 'stats', 'llm-usage', 'files'].map((tab) => (
               <button
                 key={tab}
                 role="tab"
@@ -1716,7 +1722,7 @@ export const SandboxPage: React.FC = () => {
                   textTransform: 'capitalize',
                 }}
               >
-                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : 'Files'}
+                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : tab === 'llm-usage' ? 'LLM Usage' : 'Files'}
               </button>
             ))}
           </div>
@@ -1967,6 +1973,13 @@ export const SandboxPage: React.FC = () => {
               <SessionStatsPanel
                 agentLoops={agentLoops}
                 messages={messages}
+              />
+          )}
+
+          {activeTab === 'llm-usage' && contextId && (
+              <LlmUsagePanel
+                contextId={contextId}
+                isVisible={activeTab === 'llm-usage'}
               />
           )}
 

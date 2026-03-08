@@ -148,6 +148,49 @@ test.describe('Sandbox Delegation — Live', () => {
     // At least one indicator of the delegation should be in the chat
     expect(toolCallVisible || toolResultVisible).toBe(true);
 
+    // ── Step 3b: Streaming finalization — no phantom content blocks ──────
+    // After stream completes, count content blocks, reload, count again.
+    // A phantom block would appear live but vanish on reload.
+    const loopCardsBefore = await page
+      .locator('[data-testid="agent-loop-card"]')
+      .count();
+    const markdownBefore = await page.locator('.sandbox-markdown').count();
+    console.log(
+      `[delegate] Before reload: ${loopCardsBefore} loop cards, ${markdownBefore} markdown blocks`
+    );
+    await snap(page, 'before-reload-counts');
+
+    // Reload via SPA navigation (avoids Keycloak re-auth)
+    const currentUrl = page.url();
+    const currentSession =
+      new URL(currentUrl).searchParams.get('session') || '';
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.evaluate((sid) => {
+      window.history.pushState({}, '', `/sandbox?session=${sid}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, currentSession);
+    await page.waitForTimeout(5000);
+
+    const loopCardsAfter = await page
+      .locator('[data-testid="agent-loop-card"]')
+      .count();
+    const markdownAfter = await page.locator('.sandbox-markdown').count();
+    console.log(
+      `[delegate] After reload: ${loopCardsAfter} loop cards, ${markdownAfter} markdown blocks`
+    );
+    await snap(page, 'after-reload-counts');
+
+    // Phantom block = more blocks before reload than after
+    expect(loopCardsBefore).toBeLessThanOrEqual(loopCardsAfter);
+    // No empty/phantom markdown blocks (text content should be non-empty)
+    const allMarkdown = page.locator('.sandbox-markdown');
+    for (let i = 0; i < await allMarkdown.count(); i++) {
+      const text = (await allMarkdown.nth(i).textContent()) || '';
+      expect(text.trim().length).toBeGreaterThan(0);
+    }
+    console.log('[delegate] Streaming finalization: no phantom blocks');
+
     // ── Step 4: Verify child session in SessionSidebar ───────────────────
     const parentSessionId =
       new URL(page.url()).searchParams.get('session') || '';

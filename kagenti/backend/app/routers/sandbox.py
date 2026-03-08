@@ -239,7 +239,7 @@ async def list_sessions(
                 if donor:
                     if s.metadata is None:
                         s.metadata = {}
-                    for key in ("title", "owner", "visibility"):
+                    for key in ("title", "owner", "visibility", "agent_name"):
                         if key not in s.metadata and key in donor:
                             s.metadata[key] = donor[key]
 
@@ -1295,7 +1295,7 @@ async def chat_send(
                     meta["owner"] = user.username
                     meta["visibility"] = "private"
                     changed = True
-                if not meta.get("agent_name") and request.agent_name:
+                if request.agent_name and meta.get("agent_name") != request.agent_name:
                     meta["agent_name"] = request.agent_name
                     changed = True
                 if changed:
@@ -1396,7 +1396,7 @@ async def _stream_sandbox_response(
                     if not meta.get("title"):
                         meta["title"] = message[:80].replace("\n", " ")
                         changed = True
-                    if agent_name and not meta.get("agent_name"):
+                    if agent_name and meta.get("agent_name") != agent_name:
                         meta["agent_name"] = agent_name
                         changed = True
                     if changed:

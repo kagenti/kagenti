@@ -1020,6 +1020,54 @@ export const sandboxFileService = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// LiteLLM Token Usage analytics
+// ---------------------------------------------------------------------------
+
+export interface ModelUsage {
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  num_calls: number;
+  cost: number;
+}
+
+export interface SessionTokenUsage {
+  context_id: string;
+  models: ModelUsage[];
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_calls: number;
+  total_cost: number;
+}
+
+export interface SessionTreeUsage {
+  context_id: string;
+  own_usage: SessionTokenUsage;
+  children: SessionTokenUsage[];
+  aggregate: SessionTokenUsage;
+}
+
+export const tokenUsageService = {
+  async getSessionTokenUsage(contextId: string): Promise<SessionTokenUsage> {
+    return apiFetch<SessionTokenUsage>(
+      `/token-usage/sessions/${encodeURIComponent(contextId)}`
+    );
+  },
+
+  async getSessionTreeUsage(
+    contextId: string,
+    namespace?: string
+  ): Promise<SessionTreeUsage> {
+    const qs = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return apiFetch<SessionTreeUsage>(
+      `/token-usage/sessions/${encodeURIComponent(contextId)}/tree${qs}`
+    );
+  },
+};
+
 /**
  * Sandbox trigger service for managing automated triggers
  */

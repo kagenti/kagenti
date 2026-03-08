@@ -43,6 +43,7 @@ from app.routers import (
     sandbox_trigger,
     sandbox_files,
     integrations,
+    token_usage,
 )
 from app.services.session_db import close_all_pools
 
@@ -125,6 +126,7 @@ app.include_router(sandbox_deploy.router, prefix="/api/v1")
 app.include_router(sandbox_trigger.router, prefix="/api/v1")
 app.include_router(sandbox_files.router, prefix="/api/v1")
 app.include_router(integrations.router, prefix="/api/v1")
+app.include_router(token_usage.router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
