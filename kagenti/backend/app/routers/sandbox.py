@@ -1224,7 +1224,8 @@ async def _resolve_agent_name(
     except Exception as e:
         logger.warning("Failed to resolve agent from DB: %s", e)
 
-    return request_agent
+    # Never return empty — fall back to default agent
+    return request_agent or "sandbox-legion"
 
 
 @router.post(
