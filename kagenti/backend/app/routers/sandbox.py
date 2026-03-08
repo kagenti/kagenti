@@ -1160,6 +1160,45 @@ def _validate_namespace(namespace: str) -> str:
     return namespace
 
 
+async def _resolve_agent_name(
+    namespace: str,
+    session_id: str | None,
+    request_agent: str,
+) -> str:
+    """Resolve the authoritative agent name for a request.
+
+    For existing sessions, the DB-bound agent_name is authoritative — the
+    frontend's selectedAgent state is unreliable due to race conditions.
+    For new sessions (no session_id), the request value is used.
+    """
+    if not session_id:
+        return request_agent
+
+    try:
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                session_id,
+            )
+            if row and row["metadata"]:
+                meta = _parse_json_field(row["metadata"]) or {}
+                bound_agent = meta.get("agent_name")
+                if bound_agent:
+                    if bound_agent != request_agent:
+                        logger.info(
+                            "Resolved agent from DB: %s (request had %s) for session %s",
+                            bound_agent,
+                            request_agent,
+                            session_id[:12],
+                        )
+                    return bound_agent
+    except Exception as e:
+        logger.warning("Failed to resolve agent from DB: %s", e)
+
+    return request_agent
+
+
 @router.post(
     "/{namespace}/chat",
     dependencies=[Depends(require_roles(ROLE_OPERATOR))],
@@ -1175,8 +1214,11 @@ async def chat_send(
     Returns the complete response (no SSE streaming).
     """
     _validate_namespace(namespace)
-    agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
     context_id = request.session_id or uuid4().hex[:36]
+
+    # Resolve agent name: for existing sessions, use DB-bound agent
+    agent_name = await _resolve_agent_name(namespace, request.session_id, request.agent_name)
+    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
 
     metadata: dict = {"username": user.username}
     if request.skill:
@@ -1606,31 +1648,12 @@ async def chat_stream(
     can surface the failure gracefully.
     """
     _validate_namespace(namespace)
-    agent_url = f"http://{request.agent_name}.{namespace}.svc.cluster.local:8000"
     session_id = request.session_id or uuid4().hex[:36]
 
-    # Validate immutable session→agent binding
-    if request.session_id and request.agent_name:
-        try:
-            pool = await get_session_pool(namespace)
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
-                    request.session_id,
-                )
-                if row and row["metadata"]:
-                    meta = _parse_json_field(row["metadata"]) or {}
-                    bound_agent = meta.get("agent_name")
-                    if bound_agent and bound_agent != request.agent_name:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Session is bound to agent '{bound_agent}', cannot use '{request.agent_name}'",
-                        )
-        except HTTPException:
-            raise
-        except Exception as e:
-            # DB errors shouldn't block the request
-            logger.warning("Failed to check session agent binding: %s", e)
+    # Resolve agent name: for existing sessions, use the DB-bound agent
+    # (authoritative). For new sessions, trust the request.
+    agent_name = await _resolve_agent_name(namespace, request.session_id, request.agent_name)
+    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
 
     return StreamingResponse(
         _stream_sandbox_response(
@@ -1639,7 +1662,7 @@ async def chat_stream(
             session_id,
             owner=user.username,
             namespace=namespace,
-            agent_name=request.agent_name,
+            agent_name=agent_name,
             skill=request.skill,
         ),
         media_type="text/event-stream",
