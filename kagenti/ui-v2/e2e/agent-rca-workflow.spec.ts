@@ -161,12 +161,36 @@ test.describe('Agent RCA Workflow', () => {
     const hasModelBadge = await modelBadge.first().isVisible({ timeout: 5000 }).catch(() => false);
     console.log(`[rca] Model badge visible: ${hasModelBadge}`);
 
-    // ── Graph node badges assertion ────────────────────────────────────
+    // ── Graph node badges + loop iteration assertion ──────────────────
     const loopCards = page.locator('[data-testid="agent-loop-card"]');
-    if (await loopCards.count() > 0) {
-      const hasNodeBadge = await page.locator('text=/planner|executor|reflector|reporter/i')
-        .first().isVisible({ timeout: 3000 }).catch(() => false);
-      console.log(`[rca] Graph node badges visible: ${hasNodeBadge}`);
+    const loopCardCount = await loopCards.count();
+    if (loopCardCount > 0) {
+      // Expand the first loop card to see steps
+      const toggleBtn = loopCards.first().locator('[data-testid="reasoning-toggle"]');
+      if (await toggleBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await toggleBtn.click();
+        await page.waitForTimeout(1000);
+
+        // Check for node badges (planner/executor/reflector/reporter)
+        const hasNodeBadge = await loopCards.first()
+          .locator('text=/planner|executor|reflector|reporter/i')
+          .first().isVisible({ timeout: 3000 }).catch(() => false);
+        console.log(`[rca] Graph node badges visible: ${hasNodeBadge}`);
+
+        // Check loop iterated: should have at least 1 step with content
+        const stepElements = loopCards.first().locator('text=/Step \\d|step \\d/i');
+        const stepCount = await stepElements.count();
+        console.log(`[rca] Loop steps visible: ${stepCount}`);
+
+        // Verify loop ran at least 1 iteration (planner created a plan, executor ran it)
+        const loopText = await loopCards.first().textContent() || '';
+        const hasIteration = /step|plan|execut|reflect|tool|shell|explore/i.test(loopText);
+        console.log(`[rca] Loop iteration evidence: ${hasIteration} (${loopText.length} chars)`);
+        expect(hasIteration).toBe(true);
+
+        // Collapse it back
+        await toggleBtn.click();
+      }
     }
 
     if (mdCount > 0) {
