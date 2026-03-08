@@ -53,17 +53,54 @@ async function getSessionContextId(page: Page): Promise<string> {
   return match?.[1] || '';
 }
 
+async function getAuthHeaders(page: Page): Promise<Record<string, string>> {
+  // Extract the access token from the page's auth context
+  const token = await page.evaluate(() => {
+    // Try localStorage/sessionStorage for Keycloak token
+    for (const storage of [localStorage, sessionStorage]) {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && (key.includes('token') || key.includes('kc-'))) {
+          try {
+            const val = JSON.parse(storage.getItem(key) || '');
+            if (val?.access_token) return val.access_token;
+            if (val?.token) return val.token;
+          } catch {
+            const val = storage.getItem(key) || '';
+            if (val.startsWith('eyJ')) return val;
+          }
+        }
+      }
+    }
+    return '';
+  });
+  if (token) {
+    return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  }
+  return { 'Content-Type': 'application/json' };
+}
+
 async function enableSidecar(page: Page, contextId: string, sidecarType: string) {
+  const headers = await getAuthHeaders(page);
   const response = await page.request.post(
-    `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars/${sidecarType}/enable`
+    `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars/${sidecarType}/enable`,
+    { headers, data: {} }
   );
+  if (!response.ok()) {
+    console.log(`[sidecar] enable ${sidecarType} failed: ${response.status()} ${await response.text()}`);
+  }
   expect(response.ok()).toBe(true);
 }
 
 async function disableSidecar(page: Page, contextId: string, sidecarType: string) {
+  const headers = await getAuthHeaders(page);
   const response = await page.request.post(
-    `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars/${sidecarType}/disable`
+    `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars/${sidecarType}/disable`,
+    { headers }
   );
+  if (!response.ok()) {
+    console.log(`[sidecar] disable ${sidecarType} failed: ${response.status()} ${await response.text()}`);
+  }
   expect(response.ok()).toBe(true);
 }
 
@@ -73,17 +110,26 @@ async function updateSidecarConfig(
   sidecarType: string,
   config: Record<string, unknown>
 ) {
+  const headers = await getAuthHeaders(page);
   const response = await page.request.put(
     `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars/${sidecarType}/config`,
-    { data: config }
+    { headers, data: config }
   );
+  if (!response.ok()) {
+    console.log(`[sidecar] config ${sidecarType} failed: ${response.status()} ${await response.text()}`);
+  }
   expect(response.ok()).toBe(true);
 }
 
 async function listSidecars(page: Page, contextId: string) {
+  const headers = await getAuthHeaders(page);
   const response = await page.request.get(
-    `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars`
+    `/api/v1/sandbox/${NAMESPACE}/sessions/${contextId}/sidecars`,
+    { headers }
   );
+  if (!response.ok()) {
+    console.log(`[sidecar] list failed: ${response.status()} ${await response.text()}`);
+  }
   expect(response.ok()).toBe(true);
   return response.json();
 }
