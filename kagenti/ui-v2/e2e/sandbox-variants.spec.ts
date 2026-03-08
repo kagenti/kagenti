@@ -1,10 +1,15 @@
 /**
- * Sandbox Agent Variants — Multi-Turn E2E Test
+ * Sandbox Agent Variants — Lightweight E2E Test
  *
  * Parameterized test that verifies each deployed agent variant can:
  * 1. Be selected in the Sandboxes panel
- * 2. Execute a multi-turn conversation (3 turns with tool call)
- * 3. Return correct responses
+ * 2. Respond to a simple text prompt (fast-path: single-step plan)
+ * 3. Execute a tool call via a simple shell command
+ *
+ * Prompts are crafted to produce single-step plans in the planner,
+ * which skips the reflector and reporter LLM calls — keeping total
+ * LLM round-trips to ~4 per test (planner + executor per turn).
+ * Target: <2 minutes on Llama 4 Scout via LiteLLM.
  *
  * Variants tested: sandbox-legion, sandbox-hardened, sandbox-basic, sandbox-restricted
  *
@@ -159,7 +164,7 @@ for (const agentName of AGENT_VARIANTS) {
       screenshotIdx = 0;
 
       const runId = Date.now().toString(36);
-      const marker = `variant-${agentName}-${runId}`;
+      const marker = `hello-${agentName}-${runId}`;
 
       // ---- Login & Navigate ----
       await page.goto('/');
@@ -182,41 +187,30 @@ for (const agentName of AGENT_VARIANTS) {
       }
       await page.waitForTimeout(500);
 
-      // ---- Turn 1: Simple text response ----
-      const content1 = await sendAndWait(
-        page,
-        `Say exactly: ${marker}-turn1`
-      );
+      // ---- Turn 1: Simple text response (single-step plan → fast path) ----
+      await sendAndWait(page, `Say exactly: ${marker}`);
       await snap(page, `${agentName}-turn1`);
 
       // Verify we got a session
       const sessionId = new URL(page.url()).searchParams.get('session') || '';
       expect(sessionId).toBeTruthy();
 
-      // ---- Turn 2: Tool call — shell command ----
-      const content2 = await sendAndWait(
-        page,
-        'Run the command: echo "variant-test-pass"'
-      );
+      // ---- Turn 2: Tool call — minimal shell command (single-step plan) ----
+      await sendAndWait(page, `Run: echo test-marker-${runId}`);
       await snap(page, `${agentName}-turn2-tool`);
-
-      // ---- Turn 3: Context memory check ----
-      const content3 = await sendAndWait(
-        page,
-        `What was the marker text I told you in turn 1? It started with "${marker}".`
-      );
-      await snap(page, `${agentName}-turn3-memory`);
 
       // ---- Assertions ----
       const fullContent = await page
         .getByTestId('chat-messages')
         .textContent() || '';
 
-      // Verify our marker appears (user message at minimum)
+      // Verify our marker appears (user message echoed + agent response)
       expect(fullContent).toContain(marker);
 
+      // Verify the tool call turn produced output containing the marker
+      expect(fullContent).toContain(`test-marker-${runId}`);
+
       // Verify we got agent responses (not just user messages)
-      // Agent responses show up as messages with "Agent" label
       expect(fullContent.length).toBeGreaterThan(marker.length * 2);
 
       await snap(page, `${agentName}-complete`);

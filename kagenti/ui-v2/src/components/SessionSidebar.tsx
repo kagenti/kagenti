@@ -109,6 +109,17 @@ function subSessionCount(
   }).length;
 }
 
+/** Get child sessions for a given parent context_id. */
+function getChildSessions(
+  sessions: TaskSummary[],
+  parentContextId: string
+): TaskSummary[] {
+  return sessions.filter((s) => {
+    const meta = s.metadata as Record<string, unknown> | null;
+    return meta?.parent_context_id === parentContextId;
+  });
+}
+
 /** Build a plain-text tooltip string for session hover preview. */
 function sessionTooltip(task: TaskSummary, childCount: number): string {
   const state = task.status?.state ?? 'unknown';
@@ -138,6 +149,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [rootOnly, setRootOnly] = useState(true);
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionAgent, setNewSessionAgent] = useState(selectedAgentName || 'sandbox-legion');
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
   const { data: agentsData } = useQuery({
     queryKey: ['sandbox-agents', namespace],
@@ -297,20 +309,117 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                       {stateLabel(state)}
                     </Label>
                   </div>
-                  {/* Row 3: sub-session indicator */}
+                  {/* Row 3: sub-session indicator (clickable to expand) */}
                   {childCount > 0 && (
                     <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedParents((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(session.context_id)) {
+                            next.delete(session.context_id);
+                          } else {
+                            next.add(session.context_id);
+                          }
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.stopPropagation();
+                          setExpandedParents((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(session.context_id)) {
+                              next.delete(session.context_id);
+                            } else {
+                              next.add(session.context_id);
+                            }
+                            return next;
+                          });
+                        }
+                      }}
                       style={{
                         fontSize: '0.75em',
                         opacity: 0.6,
                         marginTop: 2,
+                        cursor: 'pointer',
                       }}
                     >
+                      {expandedParents.has(session.context_id) ? '\u25BE' : '\u25B8'}{' '}
                       {childCount} sub-session{childCount > 1 ? 's' : ''}
                     </div>
                   )}
                 </div>
               </Tooltip>
+              {/* Expanded child sessions */}
+              {childCount > 0 && expandedParents.has(session.context_id) &&
+                getChildSessions(allSessions, session.context_id).map((child) => {
+                  const childState = child.status?.state ?? 'unknown';
+                  const isChildActive = child.context_id === activeContextId;
+                  return (
+                    <div
+                      key={child.context_id}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`session-${child.context_id}`}
+                      data-context-id={child.context_id}
+                      data-parent-context-id={session.context_id}
+                      onClick={() => onSelectSession(child.context_id, agentName(child))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter')
+                          onSelectSession(child.context_id, agentName(child));
+                      }}
+                      style={{
+                        padding: '4px 8px 4px 20px',
+                        marginBottom: 1,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        backgroundColor: isChildActive
+                          ? 'var(--pf-v5-global--active-color--100)'
+                          : 'transparent',
+                        color: isChildActive
+                          ? '#fff'
+                          : 'var(--pf-v5-global--Color--200)',
+                        fontSize: '0.85em',
+                        borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)',
+                        marginLeft: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {sessionName(child)}
+                        </span>
+                        <Label
+                          color={stateColor(childState)}
+                          isCompact
+                          style={{ fontSize: '0.7em' }}
+                        >
+                          {stateLabel(childState)}
+                        </Label>
+                      </div>
+                      <div style={{ fontSize: '0.8em', opacity: 0.7 }}>
+                        {agentName(child)}
+                      </div>
+                    </div>
+                  );
+                })
+              }
             );
           })}
       </div>

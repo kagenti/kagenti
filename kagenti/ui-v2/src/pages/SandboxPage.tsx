@@ -1070,6 +1070,7 @@ export const SandboxPage: React.FC = () => {
 
   const handleSelectSession = useCallback(
     (id: string, sessionAgentName?: string) => {
+      const sameSession = id === contextId;
       setContextId(id);
       if (sessionAgentName) {
         setSelectedAgent(sessionAgentName);
@@ -1096,8 +1097,13 @@ export const SandboxPage: React.FC = () => {
         setSearchParams({});
         localStorage.removeItem(STORAGE_KEY_SESSION);
       }
+      // When re-selecting the same session, the useEffect keyed on contextId
+      // won't fire because the value hasn't changed. Reload history explicitly.
+      if (sameSession && id && namespace) {
+        loadInitialHistory(namespace, id);
+      }
     },
-    [setSearchParams, selectedAgent]
+    [setSearchParams, selectedAgent, contextId, namespace, loadInitialHistory]
   );
 
   /** Start a new session with the chosen agent (from the New Session modal). */

@@ -187,6 +187,12 @@ spec:
                   name: kagenti-ui-oauth-secret
                   key: SCOPE
                   optional: true
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-proxy-secret
+                  key: master-key
+                  optional: true
           resources:
             {{- toYaml .Values.ui.backend.resources | nindent 12 }}
           livenessProbe:
