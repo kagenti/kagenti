@@ -137,7 +137,7 @@ test.describe('Agent RCA Workflow', () => {
     await pickRcaAgent(page);
     const input = page.locator('textarea[aria-label="Message input"]');
     await expect(input).toBeVisible({ timeout: 15000 });
-    await input.fill('/rca:ci Analyze the latest CI failures for kagenti/kagenti PR #758');
+    await input.fill('/rca:ci Analyze the latest CI failures for kagenti/kagenti PR #860');
     await input.press('Enter');
     await expect(page.getByTestId('chat-messages').getByText('/rca:ci')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
