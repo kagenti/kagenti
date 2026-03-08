@@ -28,10 +28,10 @@ interface SessionSidebarProps {
   selectedAgentName?: string;
 }
 
-/** Extract agent name from metadata or fall back to "sandbox-legion". */
+/** Extract agent name from metadata, or empty string if not set. */
 function agentName(task: TaskSummary): string {
   const meta = task.metadata as Record<string, unknown> | null;
-  return (meta?.agent_name as string) || 'sandbox-legion';
+  return (meta?.agent_name as string) || '';
 }
 
 /** Extract display name: custom title, PR/issue ref, or context ID prefix. */

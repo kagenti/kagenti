@@ -1408,6 +1408,7 @@ async def _stream_sandbox_response(
 ) -> AsyncGenerator[str, None]:
     """Async generator that proxies A2A SSE events from the agent."""
     owner_set = False
+    loop_events_persisted = False  # Guard against double-write of loop events
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
     loop_events: list[dict] = []  # Accumulated loop events for persistence
 
@@ -1525,7 +1526,7 @@ async def _stream_sandbox_response(
                             logger.info("Received [DONE] from agent")
                             await _set_owner_metadata()
                             # Persist accumulated loop events as task metadata
-                            if loop_events and namespace:
+                            if loop_events and namespace and not loop_events_persisted:
                                 try:
                                     pool = await get_session_pool(namespace)
                                     async with pool.acquire() as conn:
@@ -1545,6 +1546,7 @@ async def _stream_sandbox_response(
                                                 json.dumps(meta),
                                                 session_id,
                                             )
+                                    loop_events_persisted = True
                                 except Exception as e:
                                     logger.warning(
                                         "Failed to persist loop events for %s: %s",
@@ -1724,6 +1726,38 @@ async def _stream_sandbox_response(
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg, exc_info=True)
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+    finally:
+        # Persist loop events if not already done at [DONE].
+        # The A2A protocol signals completion via final:true or by closing
+        # the connection — it may never send a "[DONE]" text marker.
+        if loop_events and namespace and not loop_events_persisted:
+            logger.info(
+                "Persisting %d loop events in finally for session %s",
+                len(loop_events),
+                session_id,
+            )
+            try:
+                pool = await get_session_pool(namespace)
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT metadata FROM tasks WHERE context_id = $1 LIMIT 1",
+                        session_id,
+                    )
+                    if rows:
+                        meta = json.loads(rows[0]["metadata"]) if rows[0]["metadata"] else {}
+                        meta["loop_events"] = loop_events
+                        await conn.execute(
+                            "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                            json.dumps(meta),
+                            session_id,
+                        )
+                loop_events_persisted = True
+            except Exception as e:
+                logger.warning(
+                    "Failed to persist loop events in finally for %s: %s",
+                    session_id,
+                    e,
+                )
 
 
 @router.post(

@@ -932,6 +932,14 @@ export const SandboxPage: React.FC = () => {
         if (metaAgent) {
           setSelectedAgent(metaAgent);
           localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + ctxId, metaAgent);
+        } else {
+          // Metadata is empty (race condition on new sessions). Fall back to:
+          // 1. localStorage for this session, 2. URL ?agent= param,
+          // 3. current selectedAgent (keep as-is), 4. 'sandbox-legion'
+          const storedAgent = localStorage.getItem(STORAGE_KEY_AGENT_PREFIX + ctxId);
+          const urlAgent = new URLSearchParams(window.location.search).get('agent');
+          const fallback = storedAgent || urlAgent || selectedAgentRef.current || 'sandbox-legion';
+          setSelectedAgent(fallback);
         }
       } catch {
         // Non-critical — agent badge may show default but chat still works
@@ -1191,6 +1199,9 @@ export const SandboxPage: React.FC = () => {
     (id: string, sessionAgentName?: string) => {
       const sameSession = id === contextId;
       setContextId(id);
+      // Only update selectedAgent when sessionAgentName is a non-empty string.
+      // When metadata is missing (race condition), preserve the current agent
+      // so subsequent messages don't get routed to the wrong agent.
       if (sessionAgentName) {
         setSelectedAgent(sessionAgentName);
         if (id) localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + id, sessionAgentName);
@@ -1205,10 +1216,14 @@ export const SandboxPage: React.FC = () => {
       setOldestIndex(null);
       shouldAutoScroll.current = true;
       if (id) {
+        // Resolve the agent for the URL: prefer session agent, then localStorage, then current
+        const agentForUrl = sessionAgentName
+          || localStorage.getItem(STORAGE_KEY_AGENT_PREFIX + id)
+          || selectedAgent;
         setSearchParams((prev) => {
           const next = new URLSearchParams(prev);
           next.set('session', id);
-          next.set('agent', sessionAgentName || selectedAgent);
+          next.set('agent', agentForUrl);
           return next;
         });
         localStorage.setItem(STORAGE_KEY_SESSION, id);
