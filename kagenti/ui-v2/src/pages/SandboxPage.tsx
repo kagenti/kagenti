@@ -1320,6 +1320,21 @@ export const SandboxPage: React.FC = () => {
                   totalSteps: (le.steps || []).length,
                   iteration: le.iteration ?? l.iteration,
                   model: le.model || l.model,
+                  // Add planner step for visibility in loop detail
+                  steps: [
+                    ...l.steps,
+                    {
+                      index: -1 - (l.iteration || 0), // Negative index for planner steps
+                      description: `Plan (iteration ${(le.iteration ?? l.iteration ?? 0) + 1}): ${(le.steps || []).length} steps`,
+                      model: le.model || l.model,
+                      nodeType: 'planner' as const,
+                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+                      toolCalls: [],
+                      toolResults: [],
+                      durationMs: 0,
+                      status: 'done' as const,
+                    },
+                  ],
                 }));
               } else if (eventType === 'plan_step') {
                 updateLoop(loopId, (l) => ({
@@ -1334,7 +1349,8 @@ export const SandboxPage: React.FC = () => {
                       index: le.step,
                       description: le.description || '',
                       model: le.model || l.model,
-                      tokens: { prompt: 0, completion: 0 },
+                      nodeType: 'executor' as const,
+                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
                       toolCalls: [],
                       toolResults: [],
                       durationMs: 0,
@@ -1349,6 +1365,7 @@ export const SandboxPage: React.FC = () => {
                   const step = steps.find((s: { index: number }) => s.index === stepIdx);
                   if (step) {
                     step.toolCalls = [...step.toolCalls, ...(le.tools || [{ type: 'tool_call', name: le.name, args: le.args }])];
+                    step.nodeType = 'executor';
                   }
                   return { ...l, steps, model: le.model || l.model };
                 });
@@ -1360,6 +1377,7 @@ export const SandboxPage: React.FC = () => {
                   if (step) {
                     step.toolResults = [...step.toolResults, { type: 'tool_result', name: le.name, output: le.output }];
                     step.status = 'done';
+                    step.nodeType = 'executor';
                   }
                   return { ...l, steps };
                 });
@@ -1370,6 +1388,21 @@ export const SandboxPage: React.FC = () => {
                   reflection: le.assessment || '',
                   iteration: le.iteration ?? l.iteration,
                   model: le.model || l.model,
+                  // Add reflector step for visibility
+                  steps: [
+                    ...l.steps,
+                    {
+                      index: 1000 + (l.iteration || 0), // High index for reflector steps
+                      description: `Reflection: ${(le.assessment || '').substring(0, 80)}`,
+                      model: le.model || l.model,
+                      nodeType: 'reflector' as const,
+                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+                      toolCalls: [],
+                      toolResults: [],
+                      durationMs: 0,
+                      status: 'done' as const,
+                    },
+                  ],
                 }));
               } else if (eventType === 'budget') {
                 updateLoop(loopId, (l) => ({
@@ -1387,6 +1420,21 @@ export const SandboxPage: React.FC = () => {
                   status: 'done',
                   finalAnswer: le.content || '',
                   model: le.model || l.model,
+                  // Add reporter step for visibility
+                  steps: [
+                    ...l.steps,
+                    {
+                      index: 9999,
+                      description: 'Final answer',
+                      model: le.model || l.model,
+                      nodeType: 'reporter' as const,
+                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+                      toolCalls: [],
+                      toolResults: [],
+                      durationMs: 0,
+                      status: 'done' as const,
+                    },
+                  ],
                 }));
               }
 
