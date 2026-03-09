@@ -56,6 +56,7 @@ export interface HistoryPage {
   messages: HistoryMessage[];
   total: number;
   has_more: boolean;
+  loop_events?: Array<Record<string, unknown>>;
 }
 
 export interface SandboxAgentInfo {

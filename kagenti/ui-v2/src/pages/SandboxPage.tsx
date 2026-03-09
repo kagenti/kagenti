@@ -964,15 +964,15 @@ export const SandboxPage: React.FC = () => {
         const page = await sandboxService.getHistory(ns, ctxId, {
           limit: INITIAL_HISTORY_LIMIT,
         });
+        console.log(`[history] Loaded: ${page.messages.length} messages, loop_events=${page.loop_events?.length ?? 'none'}, total=${page.total}`);
         setMessages(page.messages.map(toMessage));
         setHasMoreHistory(page.has_more);
         if (page.messages.length > 0) {
           setOldestIndex(page.messages[0]._index ?? 0);
         }
         // Reconstruct loop cards from persisted loop events
-        const pageAny = page as unknown as Record<string, unknown>;
-        if (pageAny.loop_events) {
-          const events = pageAny.loop_events as Array<Record<string, unknown>>;
+        if (page.loop_events) {
+          const events = page.loop_events;
           if (events.length > 0) {
             // When loop events are available, filter out flat assistant messages
             // to prevent duplicate rendering (loop cards handle all agent content).
