@@ -1,7 +1,7 @@
 // Copyright 2025 IBM Corp.
 // Licensed under the Apache License, Version 2.0
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Button,
   Switch,
@@ -9,12 +9,17 @@ import {
   Spinner,
   Tooltip,
   TextInput,
+  Progress,
+  ProgressMeasureLocation,
+  ProgressVariant,
 } from '@patternfly/react-core';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
-  SyncIcon,
+  SyncAltIcon,
+  EyeIcon,
+  ChartBarIcon,
   OutlinedQuestionCircleIcon,
 } from '@patternfly/react-icons';
 import { sidecarService, type SidecarObservation } from '../services/api';
@@ -33,13 +38,16 @@ interface ConfigField {
 
 interface SidecarMeta {
   name: string;
+  shortName: string;
   description: string;
   configFields: ConfigField[];
+  icon: React.ReactNode;
 }
 
 const SIDECAR_META: Record<string, SidecarMeta> = {
   looper: {
     name: 'Looper',
+    shortName: 'Looper',
     description:
       'Auto-continue kicker. When the agent finishes a turn, Looper sends a "continue" message to keep it working. ' +
       'Tracks iterations and stops at the limit so the agent does not run forever.',
@@ -59,16 +67,20 @@ const SIDECAR_META: Record<string, SidecarMeta> = {
         defaultValue: 10,
       },
     ],
+    icon: <SyncAltIcon style={{ color: 'var(--pf-v5-global--info-color--100)' }} />,
   },
   hallucination_observer: {
     name: 'Hallucination Observer',
+    shortName: 'Hallucination',
     description:
       'Watches tool outputs for fabricated file paths and "No such file" errors. ' +
       'Alerts you when the agent references files that do not exist in the workspace.',
     configFields: [],
+    icon: <EyeIcon style={{ color: 'var(--pf-v5-global--warning-color--100)' }} />,
   },
   context_guardian: {
     name: 'Context Guardian',
+    shortName: 'Context',
     description:
       'Tracks how much context the agent is consuming. Warns when token usage crosses thresholds ' +
       'so you can intervene before the context window fills up.',
@@ -88,6 +100,7 @@ const SIDECAR_META: Record<string, SidecarMeta> = {
         defaultValue: 80,
       },
     ],
+    icon: <ChartBarIcon style={{ color: 'var(--pf-v5-global--palette--purple-400, #6753ac)' }} />,
   },
 };
 
@@ -109,6 +122,22 @@ const HelpTip: React.FC<{ text: string }> = ({ text }) => (
 );
 
 // ---------------------------------------------------------------------------
+// Parse current iteration from observations for Looper
+// ---------------------------------------------------------------------------
+
+function parseLooperIteration(observations: SidecarObservation[]): number {
+  // Walk backwards to find the latest "Iteration X/Y" message
+  for (let i = observations.length - 1; i >= 0; i--) {
+    const msg = observations[i].message;
+    const match = msg.match(/Iteration\s+(\d+)/i);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
 // SidecarCard — one card per sidecar in the right panel
 // ---------------------------------------------------------------------------
 
@@ -121,6 +150,8 @@ interface SidecarCardProps {
   config: Record<string, unknown>;
   observationCount: number;
   pendingCount: number;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
   onToggleEnable: (enabled: boolean) => void;
   onToggleAutoApprove: (auto: boolean) => void;
   onConfigChange: (key: string, value: unknown) => void;
@@ -136,20 +167,23 @@ export const SidecarCard: React.FC<SidecarCardProps> = ({
   config,
   observationCount,
   pendingCount,
+  isExpanded,
+  onToggleExpand,
   onToggleEnable,
   onToggleAutoApprove,
   onConfigChange,
   onReset,
 }) => {
-  const [expanded, setExpanded] = useState(enabled);
   const [observations, setObservations] = useState<SidecarObservation[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const meta = SIDECAR_META[sidecarType] || {
     name: sidecarType,
+    shortName: sidecarType,
     description: 'Sidecar agent',
     configFields: [],
+    icon: <SyncAltIcon />,
   };
 
   // SSE observation stream
@@ -200,62 +234,181 @@ export const SidecarCard: React.FC<SidecarCardProps> = ({
     setObservations((prev) => prev.filter((o) => o.id !== obsId));
   };
 
+  // Looper iteration tracking
+  const counterLimit = (config.counter_limit as number) ?? 5;
+  const currentIteration = useMemo(() => parseLooperIteration(observations), [observations]);
+  const iterationPct = counterLimit > 0 ? Math.round((currentIteration / counterLimit) * 100) : 0;
+
+  // ---- Compact metric for the collapsed row ----
+  const compactMetric = () => {
+    if (sidecarType === 'looper' && enabled) {
+      return (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: '0.8em',
+            fontFamily: 'monospace',
+            color: 'var(--pf-v5-global--Color--100)',
+          }}
+        >
+          <span>{currentIteration}/{counterLimit}</span>
+          <span
+            style={{
+              display: 'inline-block',
+              width: 32,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: 'var(--pf-v5-global--BorderColor--100)',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
+          >
+            <span
+              style={{
+                display: 'block',
+                height: '100%',
+                width: `${iterationPct}%`,
+                borderRadius: 3,
+                backgroundColor: 'var(--pf-v5-global--success-color--100)',
+                transition: 'width 0.3s ease',
+              }}
+            />
+          </span>
+        </span>
+      );
+    }
+
+    // For non-looper sidecars, show observation count
+    return (
+      <span
+        style={{
+          fontSize: '0.8em',
+          fontFamily: 'monospace',
+          color: 'var(--pf-v5-global--Color--200)',
+        }}
+      >
+        {observationCount} obs
+      </span>
+    );
+  };
+
+  // ---- Status dot ----
+  const statusDot = (
+    <span
+      style={{
+        display: 'inline-block',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        backgroundColor: enabled
+          ? 'var(--pf-v5-global--success-color--100)'
+          : 'var(--pf-v5-global--Color--200)',
+        flexShrink: 0,
+      }}
+    />
+  );
+
   return (
     <div
       data-testid={`sidecar-card-${sidecarType}`}
       style={{
         border: '1px solid var(--pf-v5-global--BorderColor--100)',
         borderRadius: 6,
-        marginBottom: 8,
+        marginBottom: 4,
         backgroundColor: enabled
           ? 'var(--pf-v5-global--BackgroundColor--100)'
           : 'var(--pf-v5-global--BackgroundColor--200)',
+        transition: 'background-color 0.15s ease',
       }}
     >
-      {/* Header — always visible */}
+      {/* Compact row — always visible */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '8px 12px',
+          padding: '6px 8px',
           cursor: 'pointer',
+          borderRadius: isExpanded ? '6px 6px 0 0' : 6,
+          transition: 'background-color 0.1s ease',
         }}
-        onClick={() => setExpanded(!expanded)}
+        onClick={onToggleExpand}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.backgroundColor =
+            'var(--pf-v5-global--BackgroundColor--200)';
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent';
+        }}
       >
-        <span style={{ fontSize: '0.8em' }}>{expanded ? '▼' : '▶'}</span>
-        <span style={{ fontWeight: 600, fontSize: '0.9em', flex: 1 }}>{meta.name}</span>
-        {enabled && (
-          <Label color="green" isCompact icon={<SyncIcon />}>
-            Active
-          </Label>
-        )}
-        {observationCount > 0 && (
-          <Label color="blue" isCompact>
-            {observationCount}
-          </Label>
-        )}
+        {/* Icon */}
+        <span style={{ fontSize: '0.95em', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+          {meta.icon}
+        </span>
+
+        {/* Name */}
+        <span style={{ fontWeight: 600, fontSize: '0.85em', flex: 1, whiteSpace: 'nowrap' }}>
+          {meta.shortName}
+        </span>
+
+        {/* Metric */}
+        {compactMetric()}
+
+        {/* Status dot */}
+        <Tooltip content={enabled ? 'Active' : 'Disabled'}>
+          <span style={{ display: 'flex', alignItems: 'center' }}>{statusDot}</span>
+        </Tooltip>
+
+        {/* Pending badge */}
         {pendingCount > 0 && (
           <Label data-testid="sidecar-hitl-badge" color="orange" isCompact>
-            {pendingCount} pending
+            {pendingCount}
           </Label>
         )}
+
+        {/* Expand arrow */}
+        <span
+          style={{
+            fontSize: '0.75em',
+            color: 'var(--pf-v5-global--Color--200)',
+            flexShrink: 0,
+            transition: 'transform 0.15s ease',
+            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        >
+          &#9656;
+        </span>
       </div>
 
       {/* Expanded body */}
-      {expanded && (
-        <div style={{ padding: '0 12px 12px' }}>
+      {isExpanded && (
+        <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
           {/* Description */}
           <p
             style={{
               fontSize: '0.8em',
               color: 'var(--pf-v5-global--Color--200)',
-              margin: '0 0 8px',
+              margin: '8px 0 8px',
               lineHeight: 1.4,
             }}
           >
             {meta.description}
           </p>
+
+          {/* Looper progress (expanded view) */}
+          {sidecarType === 'looper' && enabled && currentIteration > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <Progress
+                value={iterationPct}
+                title={`Iteration ${currentIteration} of ${counterLimit} (${iterationPct}%)`}
+                measureLocation={ProgressMeasureLocation.outside}
+                variant={iterationPct >= 80 ? ProgressVariant.warning : undefined}
+                style={{ fontSize: '0.8em' }}
+              />
+            </div>
+          )}
 
           {/* Controls */}
           <div
@@ -456,6 +609,12 @@ export const SidecarPanel: React.FC<SidecarPanelProps> = ({
   onConfigChange,
   onReset,
 }) => {
+  const [expandedSidecar, setExpandedSidecar] = useState<string | null>(null);
+
+  const handleToggleExpand = (type: string) => {
+    setExpandedSidecar((prev) => (prev === type ? null : type));
+  };
+
   return (
     <div
       data-testid="sidecar-panel"
@@ -492,6 +651,8 @@ export const SidecarPanel: React.FC<SidecarPanelProps> = ({
             config={(sc?.config as Record<string, unknown>) ?? {}}
             observationCount={sc?.observation_count ?? 0}
             pendingCount={sc?.pending_count ?? 0}
+            isExpanded={expandedSidecar === type}
+            onToggleExpand={() => handleToggleExpand(type)}
             onToggleEnable={(enabled) => onToggleEnable(type, enabled)}
             onToggleAutoApprove={(auto) => onToggleAutoApprove(type, auto)}
             onConfigChange={(key, val) => onConfigChange(type, key, val)}
