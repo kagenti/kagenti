@@ -317,30 +317,6 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
 };
 
 // ---------------------------------------------------------------------------
-// Reflection section
-// ---------------------------------------------------------------------------
-
-const ReflectionSection: React.FC<{ reflection: string }> = ({ reflection }) => (
-  <div
-    style={{
-      marginTop: 8,
-      padding: '8px 12px',
-      borderLeft: '3px solid #d97706',
-      backgroundColor: '#fffbeb',
-      borderRadius: '0 4px 4px 0',
-      fontSize: '0.83em',
-      color: 'var(--pf-v5-global--warning-color--200)',
-    }}
-  >
-    <div style={{ fontWeight: 600, marginBottom: 4 }}>
-      <NodeBadge nodeType="reflector" />
-      Reflection
-    </div>
-    <div style={{ whiteSpace: 'pre-wrap' }}>{reflection}</div>
-  </div>
-);
-
-// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -358,8 +334,6 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
       {loop.steps.map((step) => (
         <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} />
       ))}
-
-      {loop.reflection && <ReflectionSection reflection={loop.reflection} />}
     </div>
   );
 };

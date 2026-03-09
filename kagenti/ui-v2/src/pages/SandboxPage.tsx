@@ -512,8 +512,9 @@ interface Turn {
 }
 
 function groupMessagesIntoTurns(messages: Message[]): Turn[] {
-  // Sort by timestamp to ensure correct ordering
-  const sorted = [...messages].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  // Messages are already in chronological order from the backend.
+  // Don't re-sort — history messages all have the same timestamp (Date.now() at load time).
+  const sorted = messages;
   const turns: Turn[] = [];
   let current: Turn = { assistantMessages: [], finalAnswer: '' };
 
@@ -1031,12 +1032,14 @@ export const SandboxPage: React.FC = () => {
                 if (newDesc || !existingStep || !existingStep.description?.trim()) {
                   existing.steps = [...existing.steps.filter((s: { index: number }) => s.index !== stepIndex), {
                     index: stepIndex,
-                    description: (le.description as string) || '',
+                    description: (le.description as string) || existingStep?.description || '',
                     model: (le.model as string) || existing.model,
-                    reasoning: (le.reasoning as string) || undefined,
+                    reasoning: (le.reasoning as string) || existingStep?.reasoning || undefined,
                     nodeType: 'executor' as const,
-                    tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
-                    toolCalls: [], toolResults: [], durationMs: 0, status: 'running' as const,
+                    tokens: { prompt: (le.prompt_tokens as number) || existingStep?.tokens?.prompt || 0, completion: (le.completion_tokens as number) || existingStep?.tokens?.completion || 0 },
+                    // Merge tool data from existing step (tool_call/tool_result events may have arrived first)
+                    toolCalls: existingStep?.toolCalls || [], toolResults: existingStep?.toolResults || [],
+                    durationMs: 0, status: existingStep?.status || ('running' as const),
                   }];
                 }
               } else if (et === 'reflector_decision') {
@@ -1563,13 +1566,14 @@ export const SandboxPage: React.FC = () => {
                       ...l.steps.filter((s: { index: number }) => s.index !== le.step),
                       {
                         index: le.step,
-                        description: le.description || '',
+                        description: le.description || existingStep?.description || '',
                         model: le.model || l.model,
-                        reasoning: (le.reasoning as string) || undefined,
+                        reasoning: (le.reasoning as string) || existingStep?.reasoning || undefined,
                         nodeType: 'executor' as const,
-                        tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-                        toolCalls: [],
-                        toolResults: [],
+                        tokens: { prompt: le.prompt_tokens || existingStep?.tokens?.prompt || 0, completion: le.completion_tokens || existingStep?.tokens?.completion || 0 },
+                        // Merge tool data from existing step
+                        toolCalls: existingStep?.toolCalls || [],
+                        toolResults: existingStep?.toolResults || [],
                         durationMs: 0,
                         status: 'running' as const,
                       },
