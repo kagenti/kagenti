@@ -1795,11 +1795,14 @@ async def _stream_sandbox_response(
                         session_id,
                     )
                     if rows:
-                        # Merge metadata from all rows
+                        # Merge metadata from all rows, EXCLUDING loop_events
+                        # (each task keeps its own loop_events from its streaming response)
                         merged: dict = {}
                         for row in rows:
                             m = _parse_json_field(row["metadata"]) or {}
-                            merged.update({k: v for k, v in m.items() if v is not None})
+                            merged.update(
+                                {k: v for k, v in m.items() if v is not None and k != "loop_events"}
+                            )
                         # Set owner metadata fields
                         if owner and not merged.get("owner"):
                             merged["owner"] = owner
