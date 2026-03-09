@@ -2170,7 +2170,7 @@ export const SandboxPage: React.FC = () => {
                         />
                       )}
                       {/* Agent turn — collapsed (only when no loop cards handle the content) */}
-                      {turn.assistantMessages.length > 0 && (
+                      {turn.assistantMessages.length > 0 && !hasLoopCards && (
                         <CollapsedTurn
                           turn={turn}
                           namespace={namespace}
@@ -2192,7 +2192,7 @@ export const SandboxPage: React.FC = () => {
                         <AgentLoopCard
                           key={loopArray[idx].id}
                           loop={loopArray[idx]}
-                          isStreaming={false}
+                          isStreaming={isStreaming && idx === loopArray.length - 1}
                         />
                       )}
                     </React.Fragment>,
