@@ -55,18 +55,36 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
+    /* Auth setup — logs in once and saves storage state for all tests */
+    {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        /* Use authenticated state from setup project */
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
     },
     // Uncomment to test on additional browsers
     // {
     //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
+    //   use: {
+    //     ...devices['Desktop Firefox'],
+    //     storageState: 'playwright/.auth/user.json',
+    //   },
+    //   dependencies: ['setup'],
     // },
     // {
     //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
+    //   use: {
+    //     ...devices['Desktop Safari'],
+    //     storageState: 'playwright/.auth/user.json',
+    //   },
+    //   dependencies: ['setup'],
     // },
   ],
 

@@ -121,6 +121,14 @@ jobs:
           name: e2e-test-results
           path: test-results/
 
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+        with:
+          name: playwright-report
+          path: kagenti/ui-v2/playwright-report/
+          retention-days: 30
+
       - name: Collect logs on failure
         if: failure()
         run: bash .github/scripts/common/99-collect-logs.sh

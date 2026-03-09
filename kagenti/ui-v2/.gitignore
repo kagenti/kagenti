@@ -35,4 +35,5 @@ npm-debug.log*
 # Playwright
 playwright-report/
 playwright/.cache/
+playwright/.auth/
 test-results/

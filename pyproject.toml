@@ -26,6 +26,7 @@ dependencies = [
 test = [
     # Testing framework
     "pytest>=7.4.0",
+    "pytest-cov>=6.0.0",
     "pytest-timeout>=2.1.0",
     "pytest-xdist>=3.3.0",  # For parallel test execution
     "pytest-asyncio>=0.21.0",  # For async test support
@@ -52,6 +53,18 @@ test = [
     # MLflow for observability tests
     "mlflow>=3.9.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["kagenti/tests"]
+timeout = 300
+
+[tool.coverage.run]
+source = ["kagenti"]
+omit = ["kagenti/tests/*", "kagenti/examples/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 0
 
 [tool.setuptools]
 # Explicitly include only the kagenti package, exclude charts and deployments
