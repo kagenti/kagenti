@@ -68,15 +68,21 @@ def get_keycloak_token() -> str:
     kc_host = "keycloak-keycloak." + ".".join(parts[1:])
     kc_url = f"https://{kc_host}"
 
-    # Try common realm names
-    for realm in ["kagenti", "master"]:
+    # Try realm + client combinations
+    combos = [
+        ("master", "admin-cli"),
+        ("master", "kagenti-ui"),
+        ("kagenti", "kagenti-ui"),
+        ("kagenti", "admin-cli"),
+    ]
+    for realm, client_id in combos:
         token_url = f"{kc_url}/realms/{realm}/protocol/openid-connect/token"
         try:
             resp = httpx.post(
                 token_url,
                 data={
                     "grant_type": "password",
-                    "client_id": "kagenti-ui",
+                    "client_id": client_id,
                     "username": KC_USER,
                     "password": KC_PASSWORD,
                 },

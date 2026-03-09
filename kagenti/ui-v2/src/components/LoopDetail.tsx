@@ -63,31 +63,37 @@ interface LoopDetailProps {
 // Plan section
 // ---------------------------------------------------------------------------
 
-const PlanSection: React.FC<{ plan: string[]; currentStep: number }> = ({ plan, currentStep }) => {
+const PlanSection: React.FC<{ plan: string[]; currentStep: number; loopDone: boolean }> = ({ plan, currentStep, loopDone }) => {
   if (plan.length === 0) return null;
 
   return (
     <div style={{ marginBottom: 12 }}>
       <div style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 6, color: 'var(--pf-v5-global--Color--100)' }}>
         <NodeBadge nodeType="planner" />
-        Plan
+        Plan ({plan.length} step{plan.length !== 1 ? 's' : ''})
       </div>
       <ol style={{ margin: 0, paddingLeft: 22, fontSize: '0.83em', lineHeight: 1.7 }}>
         {plan.map((step, i) => {
           const isCurrent = i === currentStep;
+          const isDone = loopDone || i < currentStep;
           return (
             <li
               key={i}
               style={{
-                fontWeight: isCurrent ? 600 : 400,
-                color: isCurrent
-                  ? 'var(--pf-v5-global--info-color--100)'
-                  : 'var(--pf-v5-global--Color--200)',
+                fontWeight: isCurrent && !loopDone ? 600 : 400,
+                color: isDone
+                  ? 'var(--pf-v5-global--success-color--100)'
+                  : isCurrent
+                    ? 'var(--pf-v5-global--info-color--100)'
+                    : 'var(--pf-v5-global--Color--200)',
               }}
             >
               {step}
-              {isCurrent && (
+              {isCurrent && !loopDone && (
                 <Spinner size="sm" aria-label="current step" style={{ marginLeft: 6 }} />
+              )}
+              {isDone && (
+                <CheckCircleIcon style={{ color: 'var(--pf-v5-global--success-color--100)', marginLeft: 6, fontSize: '0.85em' }} />
               )}
             </li>
           );
@@ -332,7 +338,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
         paddingTop: 10,
       }}
     >
-      <PlanSection plan={loop.plan} currentStep={loop.currentStep} />
+      <PlanSection plan={loop.plan} currentStep={loop.currentStep} loopDone={loop.status === 'done'} />
 
       {loop.steps.map((step) => (
         <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} />

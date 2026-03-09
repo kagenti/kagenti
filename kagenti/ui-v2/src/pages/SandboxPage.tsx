@@ -1012,9 +1012,12 @@ export const SandboxPage: React.FC = () => {
                 existing.totalSteps = existing.plan.length;
                 existing.iteration = (le.iteration as number) ?? existing.iteration;
                 existing.model = (le.model as string) || existing.model;
+                // Build plan content for expandable reasoning block
+                const planContent = (le.content as string) || existing.plan.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n');
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
                   description: `Plan (iteration ${((le.iteration as number) ?? existing.iteration ?? 0) + 1}): ${existing.plan.length} steps`,
+                  reasoning: planContent || undefined,
                   model: (le.model as string) || existing.model,
                   nodeType: 'planner' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
@@ -1051,6 +1054,7 @@ export const SandboxPage: React.FC = () => {
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
                   description: `Reflection [${le.decision || 'assess'}]: ${((le.assessment as string) || '').substring(0, 80)}`,
+                  reasoning: (le.assessment as string) || undefined,
                   model: (le.model as string) || existing.model,
                   nodeType: 'reflector' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
@@ -1532,6 +1536,7 @@ export const SandboxPage: React.FC = () => {
                     {
                       index: l.steps.length, // Sequential index
                       description: `Plan (iteration ${(le.iteration ?? l.iteration ?? 0) + 1}): ${(le.steps || []).length} steps`,
+                      reasoning: le.content || (le.steps || []).map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || undefined,
                       model: le.model || l.model,
                       nodeType: 'planner' as const,
                       tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
