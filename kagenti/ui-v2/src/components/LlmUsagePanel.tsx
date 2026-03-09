@@ -37,6 +37,7 @@ export const LlmUsagePanel: React.FC<LlmUsagePanelProps> = ({
     if (!isVisible || !contextId) return;
 
     let cancelled = false;
+    setUsage(null); // Clear stale data immediately to prevent blip
     setLoading(true);
     setError(null);
 

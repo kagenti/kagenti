@@ -302,32 +302,39 @@ test.describe('Agent RCA Workflow', () => {
       await page.waitForTimeout(1000);
     }
 
-    // ── Step 7: Stats tab — verify session statistics are populated ─────
+    // ── Step 7: Stats tab — assertive verification of session statistics ─
     const statsTab = page.locator('button[role="tab"]').filter({ hasText: 'Stats' });
     if (await statsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
       await statsTab.click();
       await page.waitForTimeout(1000);
       const statsPanel = page.locator('[data-testid="session-stats-panel"]');
       await expect(statsPanel).toBeVisible({ timeout: 5000 });
-      const statsText = await statsPanel.textContent() || '';
-      const hasMessages = /\d+ user/.test(statsText);
-      console.log(`[rca] Stats: messages=${hasMessages}`);
-      console.log(`[rca] Stats preview: ${statsText.substring(0, 200)}`);
-      expect(hasMessages).toBe(true);
 
-      // Check tool call count — the agent should have made at least 1 tool call
-      const toolCallMatch = statsText.match(/Tool Calls\s*(\d+)/);
-      if (toolCallMatch) {
-        const toolCalls = parseInt(toolCallMatch[1]);
-        console.log(`[rca] Stats: ${toolCalls} tool calls`);
-        // Soft assertion — log but only assert if tool calls are reported
-        if (toolCalls > 0) {
-          expect(toolCalls).toBeGreaterThanOrEqual(1);
-          console.log(`[rca] Tool call count verified: ${toolCalls}`);
-        }
-      } else {
-        console.log('[rca] Stats: tool call count not found in stats panel');
+      // ── Message counts ──
+      const userCount = Number(await page.locator('[data-testid="stats-user-msg-count"]').textContent() || '0');
+      const assistantCount = Number(await page.locator('[data-testid="stats-assistant-msg-count"]').textContent() || '0');
+      expect(userCount).toBeGreaterThanOrEqual(1);
+      expect(assistantCount).toBeGreaterThanOrEqual(1);
+      console.log(`[rca] Stats: ${userCount} user / ${assistantCount} assistant messages`);
+
+      // ── Token usage totals must be self-consistent ──
+      const totalTokensEl = page.locator('[data-testid="stats-total-tokens"]');
+      if (await totalTokensEl.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const parseNum = (s: string) => Number(s.replace(/,/g, ''));
+        const promptTokens = parseNum(await page.locator('[data-testid="stats-total-prompt"]').textContent() || '0');
+        const completionTokens = parseNum(await page.locator('[data-testid="stats-total-completion"]').textContent() || '0');
+        const totalTokens = parseNum(await totalTokensEl.textContent() || '0');
+
+        expect(totalTokens).toBe(promptTokens + completionTokens);
+        expect(promptTokens).toBeGreaterThan(0);
+        expect(completionTokens).toBeGreaterThan(0);
+        console.log(`[rca] Tokens: ${promptTokens} prompt + ${completionTokens} completion = ${totalTokens} total ✓`);
       }
+
+      // ── Tool calls ──
+      const toolCalls = Number(await page.locator('[data-testid="stats-tool-calls"]').textContent() || '0');
+      console.log(`[rca] Stats: ${toolCalls} tool calls`);
+
       // Switch back to chat tab
       const chatTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
       await chatTab2.click();

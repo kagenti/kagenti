@@ -146,13 +146,13 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
             <tbody>
               <tr>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>Messages</td>
-                <td style={{ ...tdStyle, textAlign: 'right' }}>
-                  {userMsgCount} user / {assistantMsgCount} assistant
+                <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-messages">
+                  <span data-testid="stats-user-msg-count">{userMsgCount}</span> user / <span data-testid="stats-assistant-msg-count">{assistantMsgCount}</span> assistant
                 </td>
               </tr>
               <tr>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>Tool Calls</td>
-                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-tool-calls">
                   {toolRows.reduce((s, r) => s + r.calls, 0)}
                 </td>
               </tr>
@@ -165,7 +165,7 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
               {loops.length > 0 && (
                 <tr>
                   <td style={{ ...tdStyle, fontWeight: 600 }}>Reasoning Loops</td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>{loops.length}</td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-loop-count">{loops.length}</td>
                 </tr>
               )}
             </tbody>
@@ -198,15 +198,15 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
                     <td style={{ ...tdStyle, textAlign: 'right' }}>{r.total.toLocaleString()}</td>
                   </tr>
                 ))}
-                <tr style={{ fontWeight: 600 }}>
+                <tr style={{ fontWeight: 600 }} data-testid="stats-token-totals">
                   <td style={tdStyle}>Total</td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-total-prompt">
                     {totalPrompt.toLocaleString()}
                   </td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-total-completion">
                     {totalCompletion.toLocaleString()}
                   </td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-total-tokens">
                     {totalTokens.toLocaleString()}
                   </td>
                 </tr>

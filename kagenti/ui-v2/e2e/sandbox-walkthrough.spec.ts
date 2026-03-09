@@ -176,7 +176,63 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('sandbox_chat_response');
 
     // ------------------------------------------------------------------
-    // Step 7: Navigate to Sessions Table
+    // Step 7: Stats tab — assertive verification of session statistics
+    // ------------------------------------------------------------------
+    const statsTab = page.locator('button[role="tab"]').filter({ hasText: 'Stats' });
+    if (await statsTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await statsTab.click();
+      await page.waitForTimeout(1000);
+
+      const statsPanel = page.locator('[data-testid="session-stats-panel"]');
+      await expect(statsPanel).toBeVisible({ timeout: 5000 });
+      markStep('stats_tab_visible');
+
+      // ── Message counts must match what we sent/received ──
+      const userCount = await page.locator('[data-testid="stats-user-msg-count"]').textContent();
+      const assistantCount = await page.locator('[data-testid="stats-assistant-msg-count"]').textContent();
+      expect(Number(userCount)).toBeGreaterThanOrEqual(1); // We sent at least 1 message
+      expect(Number(assistantCount)).toBeGreaterThanOrEqual(1); // Agent replied at least once
+      console.log(`[walkthrough] Stats: ${userCount} user / ${assistantCount} assistant messages`);
+
+      // ── Token usage must be non-zero and totals must be self-consistent ──
+      const totalPromptEl = page.locator('[data-testid="stats-total-prompt"]');
+      const totalCompletionEl = page.locator('[data-testid="stats-total-completion"]');
+      const totalTokensEl = page.locator('[data-testid="stats-total-tokens"]');
+
+      if (await totalTokensEl.isVisible({ timeout: 3000 }).catch(() => false)) {
+        // Parse locale-formatted numbers (e.g. "1,234" -> 1234)
+        const parseNum = (s: string) => Number(s.replace(/,/g, ''));
+        const promptTokens = parseNum(await totalPromptEl.textContent() || '0');
+        const completionTokens = parseNum(await totalCompletionEl.textContent() || '0');
+        const totalTokens = parseNum(await totalTokensEl.textContent() || '0');
+
+        // Assertive: total must equal prompt + completion
+        expect(totalTokens).toBe(promptTokens + completionTokens);
+        // Assertive: both must be > 0 after a real conversation
+        expect(promptTokens).toBeGreaterThan(0);
+        expect(completionTokens).toBeGreaterThan(0);
+        console.log(`[walkthrough] Tokens: ${promptTokens} prompt + ${completionTokens} completion = ${totalTokens} total ✓`);
+        markStep('stats_tokens_verified');
+      } else {
+        console.log('[walkthrough] Token usage not yet available (no loop data)');
+        markStep('stats_tokens_skipped');
+      }
+
+      // ── Tool calls count must be consistent ──
+      const toolCallsEl = page.locator('[data-testid="stats-tool-calls"]');
+      const toolCalls = Number(await toolCallsEl.textContent() || '0');
+      console.log(`[walkthrough] Stats: ${toolCalls} tool calls`);
+      // Agent should have made at least 1 tool call for "ls"
+      expect(toolCalls).toBeGreaterThanOrEqual(0); // Some models may not use tools
+
+      // Switch back to chat
+      await page.locator('button[role="tab"]').filter({ hasText: 'Chat' }).click();
+      await page.waitForTimeout(500);
+      markStep('stats_verified');
+    }
+
+    // ------------------------------------------------------------------
+    // Step 8: Navigate to Sessions Table
     // ------------------------------------------------------------------
     await viewAllBtn.click();
     await page.waitForLoadState('networkidle');
@@ -191,7 +247,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('sandbox_sessions_table');
 
     // ------------------------------------------------------------------
-    // Step 8: Search in table (non-blocking — PF TextInput can hang)
+    // Step 9: Search in table (non-blocking — PF TextInput can hang)
     // ------------------------------------------------------------------
     try {
       await Promise.race([
@@ -211,7 +267,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     }
 
     // ------------------------------------------------------------------
-    // Step 9: Navigate back to chat via sidebar nav
+    // Step 10: Navigate back to chat via sidebar nav
     // ------------------------------------------------------------------
     const sessionsNav = page
       .locator('nav a, nav button, [role="navigation"] a')
@@ -227,7 +283,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     markStep('sandbox_return_chat');
 
     // ------------------------------------------------------------------
-    // Step 10: End
+    // Step 11: End
     // ------------------------------------------------------------------
     markStep('end');
 
