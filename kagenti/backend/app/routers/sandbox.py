@@ -1541,6 +1541,18 @@ async def _stream_sandbox_response(
 
                         if data == "[DONE]":
                             logger.info("Received [DONE] from agent")
+                            # Fan out done signal to sidecar manager so
+                            # the looper detects stream completion
+                            try:
+                                from app.services.sidecar_manager import get_sidecar_manager
+
+                                get_sidecar_manager().fan_out_event(
+                                    session_id,
+                                    {"done": True, "session_id": session_id},
+                                )
+                            except Exception:
+                                pass  # best-effort
+
                             await _set_owner_metadata()
                             # Persist accumulated loop events as task metadata
                             if loop_events and namespace and not loop_events_persisted:

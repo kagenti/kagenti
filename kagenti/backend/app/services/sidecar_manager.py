@@ -337,12 +337,12 @@ class SidecarManager:
             )
 
     async def _run_looper(self, handle: SidecarHandle) -> None:
-        """Looper: auto-continue kicker — kicks agent when a turn completes.
+        """Looper: auto-continue agent when a turn completes.
 
         Watches for session completion events. When the agent finishes a turn,
         sends a "continue" message to keep it going. Tracks iterations and
-        stops at the configurable limit, invoking HITL. Does NOT kick when
-        the session is waiting on HITL (INPUT_REQUIRED).
+        stops at the configurable limit, invoking HITL. Does NOT auto-continue
+        when the session is waiting on HITL (INPUT_REQUIRED).
         """
         from .sidecars.looper import LooperAnalyzer
 
@@ -367,25 +367,25 @@ class SidecarManager:
                 if not handle.observations or handle.observations[-1].message != hitl_obs.message:
                     handle.observations.append(hitl_obs)
 
-            # Check if we should kick
-            elif analyzer.should_kick():
-                if analyzer.kick_counter >= analyzer.counter_limit:
+            # Check if we should auto-continue
+            elif analyzer.should_continue():
+                if analyzer.continue_counter >= analyzer.counter_limit:
                     # Limit reached — emit HITL observation
-                    obs = analyzer.record_kick()
+                    obs = analyzer.emit_limit_reached()
                     handle.observations.append(obs)
                     if handle.auto_approve:
                         # Auto-reset and keep going
                         reset_obs = analyzer.reset_counter()
                         handle.observations.append(reset_obs)
-                        await self._send_kick(handle)
+                        await self._send_continue(handle)
                     else:
                         handle.pending_interventions.append(obs)
                         logger.info("Looper: iteration limit reached, awaiting HITL")
                 else:
-                    # Kick the agent
-                    obs = analyzer.record_kick()
+                    # Auto-continue the agent
+                    obs = analyzer.record_continue()
                     handle.observations.append(obs)
-                    await self._send_kick(handle)
+                    await self._send_continue(handle)
 
             # Hot-reload config
             interval = handle.config.get("interval_seconds", 10)
@@ -393,12 +393,21 @@ class SidecarManager:
 
             await asyncio.sleep(interval)
 
-    async def _send_kick(self, handle: SidecarHandle) -> None:
-        """Send a 'continue' message to the parent session's agent via A2A."""
+    async def _send_continue(self, handle: SidecarHandle) -> None:
+        """Send a 'continue' message by creating a child session via A2A.
+
+        Creates a new session (child) with ``parent_context_id`` set to the
+        parent session's context_id.  This keeps iterations visible in the
+        sub-sessions tab and avoids polluting the parent's context window.
+        """
         import httpx
         from uuid import uuid4
 
         agent_url = f"http://{handle.agent_name}.{handle.namespace}.svc.cluster.local:8000"
+
+        # Generate a new context_id for the child session
+        child_context_id = uuid4().hex[:36]
+        iteration_count = len([o for o in handle.observations if "Auto-continued" in o.message])
 
         a2a_msg = {
             "jsonrpc": "2.0",
@@ -409,12 +418,11 @@ class SidecarManager:
                     "role": "user",
                     "parts": [{"kind": "text", "text": "continue"}],
                     "messageId": uuid4().hex,
-                    "contextId": handle.parent_context_id,
+                    "contextId": child_context_id,
                     "metadata": {
                         "source": "sidecar-looper",
-                        "kick_count": handle.observations[-1].message
-                        if handle.observations
-                        else "",
+                        "parent_context_id": handle.parent_context_id,
+                        "iteration_count": iteration_count,
                     },
                 },
             },
@@ -425,12 +433,82 @@ class SidecarManager:
                 resp = await client.post(f"{agent_url}/", json=a2a_msg)
                 resp.raise_for_status()
                 logger.info(
-                    "Looper kicked session %s (iteration %d)",
+                    "Looper auto-continued session %s -> child %s (iteration %d)",
                     handle.parent_context_id[:12],
-                    len([o for o in handle.observations if "Kicked" in o.message]),
+                    child_context_id[:12],
+                    iteration_count,
+                )
+
+                # Write parent_context_id into the child session's metadata
+                # so it appears in the sub-sessions tab
+                await self._set_child_metadata(
+                    handle.namespace,
+                    child_context_id,
+                    handle.parent_context_id,
+                    iteration_count,
                 )
         except Exception as e:
-            logger.error("Looper kick failed for session %s: %s", handle.parent_context_id[:12], e)
+            logger.error(
+                "Looper auto-continue failed for session %s: %s", handle.parent_context_id[:12], e
+            )
+
+    async def _set_child_metadata(
+        self,
+        namespace: str,
+        child_context_id: str,
+        parent_context_id: str,
+        iteration_count: int,
+    ) -> None:
+        """Write parent_context_id into the child session's task metadata.
+
+        Retries a few times because the task row may not exist yet when the
+        A2A message/send returns synchronously.
+        """
+        import json
+
+        try:
+            from app.routers.sandbox import get_session_pool
+        except ImportError:
+            logger.warning("Cannot import get_session_pool for child metadata write")
+            return
+
+        for attempt in range(5):
+            try:
+                pool = await get_session_pool(namespace)
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT metadata FROM tasks WHERE context_id = $1 LIMIT 1",
+                        child_context_id,
+                    )
+                    if not rows:
+                        # Task row not yet created — wait and retry
+                        await asyncio.sleep(1.0 * (attempt + 1))
+                        continue
+
+                    meta = json.loads(rows[0]["metadata"]) if rows[0]["metadata"] else {}
+                    meta["parent_context_id"] = parent_context_id
+                    meta["source"] = "sidecar-looper"
+                    meta["title"] = f"Looper iteration {iteration_count}"
+                    await conn.execute(
+                        "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
+                        json.dumps(meta),
+                        child_context_id,
+                    )
+                    logger.info(
+                        "Set parent_context_id on child session %s -> parent %s",
+                        child_context_id[:12],
+                        parent_context_id[:12],
+                    )
+                    return
+            except Exception:
+                logger.warning(
+                    "Failed to set child metadata (attempt %d/5) for %s",
+                    attempt + 1,
+                    child_context_id[:12],
+                    exc_info=True,
+                )
+                if attempt < 4:
+                    await asyncio.sleep(1.0 * (attempt + 1))
 
     async def _run_hallucination_observer(self, handle: SidecarHandle) -> None:
         """Hallucination Observer: SSE-driven, validates paths/APIs against workspace."""

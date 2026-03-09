@@ -8,7 +8,7 @@
  * 4. Enable all 3 sidecars, verify API
  * 5. Disable Looper, verify it goes inactive
  * 6. Re-enable, verify state restored
- * 7. Test Looper kicking on agent task completion
+ * 7. Test Looper auto-continuing on agent task completion
  */
 import { test, expect, type Page } from '@playwright/test';
 import { loginIfNeeded } from './helpers/auth';
@@ -261,7 +261,7 @@ test.describe('Sidecar Agents', () => {
     });
     console.log('[sidecar] Looper enabled: 5s interval, limit=2, auto-approve');
 
-    // Wait for agent to complete + Looper to kick
+    // Wait for agent to complete + Looper to auto-continue
     // The agent will finish the file creation, Looper detects completion, sends "continue"
     await page.waitForTimeout(30000);
 
@@ -270,7 +270,7 @@ test.describe('Sidecar Agents', () => {
     const looper = sidecars.find((s: { sidecar_type: string }) => s.sidecar_type === 'looper');
     console.log(`[sidecar] Looper state: obs=${looper?.observation_count}, pending=${looper?.pending_count}`);
 
-    // Looper should have produced at least one observation (kicked or waiting)
+    // Looper should have produced at least one observation (auto-continued or waiting)
     if (looper?.observation_count > 0) {
       console.log('[sidecar] Looper produced observations - auto-continue working');
     } else {

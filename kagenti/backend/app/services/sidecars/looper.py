@@ -12,10 +12,13 @@ invoking HITL for the user to decide whether to continue.
 The Looper does NOT resume when the session is waiting on HITL (INPUT_REQUIRED).
 """
 
+import logging
 import time
 from typing import Optional
 
 from app.services.sidecar_manager import SidecarObservation
+
+logger = logging.getLogger(__name__)
 
 
 class LooperAnalyzer:
@@ -23,7 +26,7 @@ class LooperAnalyzer:
 
     def __init__(self, counter_limit: int = 5) -> None:
         self.counter_limit = counter_limit
-        self.kick_counter = 0
+        self.continue_counter = 0
         self._observation_count = 0
         self._session_done = False
         self._waiting_hitl = False
@@ -33,6 +36,7 @@ class LooperAnalyzer:
         """Process an SSE event to track session state."""
         # Check top-level done signal
         if event.get("done"):
+            logger.debug("Looper: received done signal")
             self._session_done = True
             return
 
@@ -47,42 +51,61 @@ class LooperAnalyzer:
 
         if state:
             self._last_state = state
+            logger.debug(
+                "Looper: state transition -> %s (iteration=%d/%d)",
+                state,
+                self.continue_counter,
+                self.counter_limit,
+            )
 
         # Detect HITL / INPUT_REQUIRED
         event_type = event_data.get("type", "")
         if event_type == "hitl_request" or state == "INPUT_REQUIRED":
             self._waiting_hitl = True
             self._session_done = False
+            logger.info("Looper: session entered HITL/INPUT_REQUIRED, pausing")
 
         # Detect completion
         if state in ("COMPLETED", "FAILED"):
             self._session_done = True
             self._waiting_hitl = False
+            logger.info(
+                "Looper: session %s detected (iteration=%d/%d)",
+                state,
+                self.continue_counter,
+                self.counter_limit,
+            )
 
-    def should_kick(self) -> bool:
+    def should_continue(self) -> bool:
         """Check if the agent should be auto-continued."""
-        # Don't kick if waiting on HITL
+        # Don't auto-continue if waiting on HITL
         if self._waiting_hitl:
             return False
-        # Kick if session completed (turn ended) and we haven't hit the limit
-        if self._session_done and self.kick_counter < self.counter_limit:
+        # Auto-continue if session completed (turn ended)
+        if self._session_done:
+            logger.debug(
+                "Looper: should_continue check — done=%s, iteration=%d/%d",
+                self._session_done,
+                self.continue_counter,
+                self.counter_limit,
+            )
             return True
         return False
 
-    def record_kick(self) -> SidecarObservation:
+    def record_continue(self) -> SidecarObservation:
         """Record that auto-continue was sent. Returns an observation for the UI."""
-        self.kick_counter += 1
+        self.continue_counter += 1
         self._session_done = False  # Reset — wait for next completion
         self._observation_count += 1
         now = time.time()
 
-        if self.kick_counter >= self.counter_limit:
+        if self.continue_counter >= self.counter_limit:
             return SidecarObservation(
                 id=f"looper-{self._observation_count}-{int(now)}",
                 sidecar_type="looper",
                 timestamp=now,
                 message=(
-                    f"Iteration limit reached: {self.kick_counter}/{self.counter_limit}. "
+                    f"Iteration limit reached: {self.continue_counter}/{self.counter_limit}. "
                     f"Paused — reset to continue."
                 ),
                 severity="critical",
@@ -93,7 +116,9 @@ class LooperAnalyzer:
             id=f"looper-{self._observation_count}-{int(now)}",
             sidecar_type="looper",
             timestamp=now,
-            message=(f"Auto-continued agent. Iteration {self.kick_counter}/{self.counter_limit}."),
+            message=(
+                f"Auto-continued agent. Iteration {self.continue_counter}/{self.counter_limit}."
+            ),
             severity="info",
         )
 
@@ -109,14 +134,35 @@ class LooperAnalyzer:
             timestamp=now,
             message=(
                 f"Session waiting on HITL approval. Looper paused. "
-                f"Iterations so far: {self.kick_counter}/{self.counter_limit}."
+                f"Iterations so far: {self.continue_counter}/{self.counter_limit}."
             ),
             severity="info",
         )
 
+    def emit_limit_reached(self) -> SidecarObservation:
+        """Emit observation when iteration limit is reached (without incrementing counter)."""
+        self._observation_count += 1
+        now = time.time()
+        logger.info(
+            "Looper: limit reached %d/%d — pausing",
+            self.continue_counter,
+            self.counter_limit,
+        )
+        return SidecarObservation(
+            id=f"looper-{self._observation_count}-{int(now)}",
+            sidecar_type="looper",
+            timestamp=now,
+            message=(
+                f"Iteration limit reached: {self.continue_counter}/{self.counter_limit}. "
+                f"Paused — approve to reset and continue."
+            ),
+            severity="critical",
+            requires_approval=True,
+        )
+
     def reset_counter(self) -> SidecarObservation:
         """Reset the iteration counter. Called via API or HITL approval."""
-        self.kick_counter = 0
+        self.continue_counter = 0
         self._session_done = False
         self._observation_count += 1
         now = time.time()

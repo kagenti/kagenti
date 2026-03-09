@@ -23,6 +23,7 @@ import {
   OutlinedQuestionCircleIcon,
 } from '@patternfly/react-icons';
 import { sidecarService, type SidecarObservation } from '../services/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 // ---------------------------------------------------------------------------
 // Sidecar descriptions and config metadata
@@ -49,13 +50,13 @@ const SIDECAR_META: Record<string, SidecarMeta> = {
     name: 'Looper',
     shortName: 'Looper',
     description:
-      'Auto-continue kicker. When the agent finishes a turn, Looper sends a "continue" message to keep it working. ' +
+      'Auto-continue agent. When the agent finishes a turn, Looper sends a "continue" message to keep it working. ' +
       'Tracks iterations and stops at the limit so the agent does not run forever.',
     configFields: [
       {
         key: 'counter_limit',
         label: 'Max iterations',
-        help: 'How many times Looper will kick the agent before stopping and asking you to decide.',
+        help: 'How many times Looper will auto-continue the agent before stopping and asking you to decide.',
         type: 'number',
         defaultValue: 5,
       },
@@ -175,8 +176,9 @@ export const SidecarCard: React.FC<SidecarCardProps> = ({
   onReset,
 }) => {
   const [observations, setObservations] = useState<SidecarObservation[]>([]);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { getToken } = useAuth();
 
   const meta = SIDECAR_META[sidecarType] || {
     name: sidecarType,
@@ -186,34 +188,84 @@ export const SidecarCard: React.FC<SidecarCardProps> = ({
     icon: <SyncAltIcon />,
   };
 
-  // SSE observation stream
+  // SSE observation stream via fetch + ReadableStream (supports auth headers)
   useEffect(() => {
     if (!enabled || !contextId) {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
       }
       return;
     }
 
-    const url = sidecarService.observationUrl(namespace, contextId, sidecarType);
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    es.onmessage = (event) => {
+    const connectSSE = async () => {
       try {
-        const obs: SidecarObservation = JSON.parse(event.data);
-        setObservations((prev) => [...prev, obs]);
-      } catch {
-        // ignore
+        const token = await getToken();
+        const headers: Record<string, string> = {
+          'Accept': 'text/event-stream',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const url = sidecarService.observationUrl(namespace, contextId, sidecarType);
+        const response = await fetch(url, {
+          headers,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          console.error(`Sidecar SSE error: ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) return;
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // Keep the last incomplete line in the buffer
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (!data || data === '[DONE]') continue;
+              try {
+                const obs: SidecarObservation = JSON.parse(data);
+                setObservations((prev) => [...prev, obs]);
+              } catch {
+                // ignore malformed data
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // Expected on cleanup
+          return;
+        }
+        console.error('Sidecar SSE connection error:', err);
       }
     };
 
+    connectSSE();
+
     return () => {
-      es.close();
-      eventSourceRef.current = null;
+      controller.abort();
+      abortRef.current = null;
     };
-  }, [enabled, contextId, namespace, sidecarType]);
+  }, [enabled, contextId, namespace, sidecarType, getToken]);
 
   // Auto-scroll
   useEffect(() => {
@@ -635,7 +687,7 @@ export const SidecarPanel: React.FC<SidecarPanelProps> = ({
         }}
       >
         Sidecar Agents
-        <HelpTip text="Sidecar agents run alongside your session. They observe what the agent is doing and can intervene — kick it to continue, detect hallucinations, or warn about context usage." />
+        <HelpTip text="Sidecar agents run alongside your session. They observe what the agent is doing and can intervene — auto-continue it, detect hallucinations, or warn about context usage." />
       </div>
 
       {SIDECAR_ORDER.map((type) => {

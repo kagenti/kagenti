@@ -979,31 +979,44 @@ export const SandboxPage: React.FC = () => {
               if (['plan', 'plan_step', 'reflection', 'llm_response'].includes(et)) continue;
 
               if (et === 'planner_output') {
+                existing.status = 'planning';
                 existing.plan = (le.steps as string[]) || existing.plan;
                 existing.totalSteps = existing.plan.length;
                 existing.iteration = (le.iteration as number) ?? existing.iteration;
                 existing.model = (le.model as string) || existing.model;
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
-                  description: `Plan (iteration ${(existing.iteration || 0) + 1}): ${existing.plan.length} steps`,
+                  description: `Plan (iteration ${((le.iteration as number) ?? existing.iteration ?? 0) + 1}): ${existing.plan.length} steps`,
                   model: (le.model as string) || existing.model,
                   nodeType: 'planner' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
               } else if (et === 'executor_step') {
+                existing.status = 'executing';
                 existing.currentStep = (le.step as number) ?? existing.currentStep;
-                existing.steps = [...existing.steps, {
-                  index: existing.steps.length,
-                  description: (le.description as string) || '',
-                  model: (le.model as string) || existing.model,
-                  nodeType: 'executor' as const,
-                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
-                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
-                }];
+                existing.totalSteps = (le.total_steps as number) ?? existing.totalSteps;
+                existing.model = (le.model as string) || existing.model;
+                const stepIndex = le.step as number;
+                const newDesc = ((le.description as string) || '').trim();
+                const existingStep = existing.steps.find((s: { index: number }) => s.index === stepIndex);
+                // Only update step if new description is non-empty or no existing step has content
+                if (newDesc || !existingStep || !existingStep.description?.trim()) {
+                  existing.steps = [...existing.steps.filter((s: { index: number }) => s.index !== stepIndex), {
+                    index: stepIndex,
+                    description: (le.description as string) || '',
+                    model: (le.model as string) || existing.model,
+                    nodeType: 'executor' as const,
+                    tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
+                    toolCalls: [], toolResults: [], durationMs: 0, status: 'running' as const,
+                  }];
+                }
               } else if (et === 'reflector_decision') {
+                existing.status = 'reflecting';
                 existing.reflection = (le.assessment as string) || '';
                 existing.reflectorDecision = le.decision as 'continue' | 'replan' | 'done' | undefined;
+                existing.iteration = (le.iteration as number) ?? existing.iteration;
+                existing.model = (le.model as string) || existing.model;
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
                   description: `Reflection [${le.decision || 'assess'}]: ${((le.assessment as string) || '').substring(0, 80)}`,
@@ -1019,6 +1032,7 @@ export const SandboxPage: React.FC = () => {
                 const reporterContent = (le.content as string) || '';
                 const isLeakedDecision = /^(continue|replan|done|hitl)\s*$/i.test(reporterContent.trim());
                 existing.finalAnswer = isLeakedDecision ? '' : reporterContent;
+                existing.model = (le.model as string) || existing.model;
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
                   description: isLeakedDecision ? 'Final answer (no content)' : 'Final answer',
@@ -1028,32 +1042,51 @@ export const SandboxPage: React.FC = () => {
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
               } else if (et === 'tool_call') {
-                // If no step exists yet, create an implicit executor step
-                if (existing.steps.length === 0) {
+                const stepIdx = (le.step as number) ?? existing.currentStep;
+                const step = existing.steps.find((s: { index: number }) => s.index === stepIdx);
+                if (step) {
+                  step.toolCalls = [...step.toolCalls, ...((le.tools as Array<{ type: string; name?: string; args?: unknown; tools?: unknown[] }>) || [{ type: 'tool_call', name: (le.name as string) || 'unknown', args: (le.args as string) || '' }])];
+                  step.nodeType = 'executor';
+                } else {
+                  // No matching step — create an implicit executor step
                   existing.steps.push({
-                    index: 0,
+                    index: stepIdx,
                     description: 'Tool execution',
                     model: (le.model as string) || existing.model,
                     nodeType: 'executor' as const,
                     tokens: { prompt: 0, completion: 0 },
-                    toolCalls: [], toolResults: [], durationMs: 0, status: 'running' as const,
+                    toolCalls: (le.tools as Array<{ type: string; name?: string; args?: unknown; tools?: unknown[] }>) || [{ type: 'tool_call', name: (le.name as string) || 'unknown', args: (le.args as string) || '' }],
+                    toolResults: [], durationMs: 0, status: 'running' as const,
                   });
                 }
-                const lastStep = existing.steps[existing.steps.length - 1];
-                lastStep.toolCalls = [...lastStep.toolCalls, { type: 'tool_call', name: (le.name as string) || 'unknown', args: (le.args as string) || '' }];
+                existing.model = (le.model as string) || existing.model;
               } else if (et === 'tool_result') {
-                if (existing.steps.length === 0) {
+                const stepIdx = (le.step as number) ?? existing.currentStep;
+                const step = existing.steps.find((s: { index: number }) => s.index === stepIdx);
+                if (step) {
+                  step.toolResults = [...step.toolResults, { type: 'tool_result', name: (le.name as string) || 'unknown', output: (le.output as string) || '' }];
+                  step.status = 'done';
+                  step.nodeType = 'executor';
+                } else {
+                  // No matching step — create an implicit executor step
                   existing.steps.push({
-                    index: 0,
+                    index: stepIdx,
                     description: 'Tool execution',
-                    model: existing.model,
+                    model: (le.model as string) || existing.model,
                     nodeType: 'executor' as const,
                     tokens: { prompt: 0, completion: 0 },
-                    toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
+                    toolCalls: [],
+                    toolResults: [{ type: 'tool_result', name: (le.name as string) || 'unknown', output: (le.output as string) || '' }],
+                    durationMs: 0, status: 'done' as const,
                   });
                 }
-                const lastStep = existing.steps[existing.steps.length - 1];
-                lastStep.toolResults = [...lastStep.toolResults, { type: 'tool_result', name: (le.name as string) || 'unknown', output: (le.output as string) || '' }];
+              } else if (et === 'budget') {
+                existing.budget = {
+                  tokensUsed: (le.tokens_used as number) ?? existing.budget.tokensUsed,
+                  tokensBudget: (le.tokens_budget as number) ?? existing.budget.tokensBudget,
+                  wallClockS: (le.wall_clock_s as number) ?? existing.budget.wallClockS,
+                  maxWallClockS: (le.max_wall_clock_s as number) ?? existing.budget.maxWallClockS,
+                };
               }
               loops.set(loopId, existing);
             }
@@ -1472,27 +1505,41 @@ export const SandboxPage: React.FC = () => {
                   ],
                 }));
               } else if (eventType === 'executor_step') {
-                updateLoop(loopId, (l) => ({
-                  ...l,
-                  status: 'executing',
-                  currentStep: le.step ?? l.currentStep,
-                  totalSteps: le.total_steps ?? l.totalSteps,
-                  model: le.model || l.model,
-                  steps: [
-                    ...l.steps.filter((s: { index: number }) => s.index !== le.step),
-                    {
-                      index: le.step,
-                      description: le.description || '',
+                updateLoop(loopId, (l) => {
+                  const newDesc = ((le.description as string) || '').trim();
+                  const existingStep = l.steps.find((s: { index: number }) => s.index === le.step);
+                  // If incoming event has empty description and existing step has content, keep existing
+                  if (!newDesc && existingStep && existingStep.description?.trim()) {
+                    return {
+                      ...l,
+                      status: 'executing',
+                      currentStep: le.step ?? l.currentStep,
+                      totalSteps: le.total_steps ?? l.totalSteps,
                       model: le.model || l.model,
-                      nodeType: 'executor' as const,
-                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-                      toolCalls: [],
-                      toolResults: [],
-                      durationMs: 0,
-                      status: 'running' as const,
-                    },
-                  ],
-                }));
+                    };
+                  }
+                  return {
+                    ...l,
+                    status: 'executing',
+                    currentStep: le.step ?? l.currentStep,
+                    totalSteps: le.total_steps ?? l.totalSteps,
+                    model: le.model || l.model,
+                    steps: [
+                      ...l.steps.filter((s: { index: number }) => s.index !== le.step),
+                      {
+                        index: le.step,
+                        description: le.description || '',
+                        model: le.model || l.model,
+                        nodeType: 'executor' as const,
+                        tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+                        toolCalls: [],
+                        toolResults: [],
+                        durationMs: 0,
+                        status: 'running' as const,
+                      },
+                    ],
+                  };
+                });
               } else if (eventType === 'tool_call') {
                 updateLoop(loopId, (l) => {
                   const stepIdx = le.step ?? l.currentStep;
