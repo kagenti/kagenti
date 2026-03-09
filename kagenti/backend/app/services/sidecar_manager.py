@@ -250,7 +250,9 @@ class SidecarManager:
                 if not row or not row["metadata"]:
                     return
 
-                meta = json.loads(row["metadata"])
+                meta = json.loads(row["metadata"]) if row["metadata"] else None
+                if not isinstance(meta, dict):
+                    return
                 sidecar_state = meta.get("sidecar_state")
                 if not sidecar_state:
                     return
