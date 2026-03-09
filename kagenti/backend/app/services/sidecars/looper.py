@@ -2,14 +2,14 @@
 # Licensed under the Apache License, Version 2.0
 
 """
-Looper Sidecar — auto-continue kicker for sandbox agent sessions.
+Looper Sidecar — auto-continue for sandbox agent sessions.
 
 When an agent completes a turn but the task isn't finished, the Looper
-sends a "continue" message to kick the agent back into action. It tracks
-the number of iterations (kicks) and stops when the configurable limit
-is reached, invoking HITL for the user to decide whether to continue.
+sends a "continue" message to resume the agent. It tracks the number
+of iterations and pauses when the configurable limit is reached,
+invoking HITL for the user to decide whether to continue.
 
-The Looper does NOT kick when the session is waiting on HITL (INPUT_REQUIRED).
+The Looper does NOT resume when the session is waiting on HITL (INPUT_REQUIRED).
 """
 
 import time
@@ -19,7 +19,7 @@ from app.services.sidecar_manager import SidecarObservation
 
 
 class LooperAnalyzer:
-    """Monitors session events and decides when to kick the agent to continue."""
+    """Monitors session events and decides when to auto-continue the agent."""
 
     def __init__(self, counter_limit: int = 5) -> None:
         self.counter_limit = counter_limit
@@ -60,7 +60,7 @@ class LooperAnalyzer:
             self._waiting_hitl = False
 
     def should_kick(self) -> bool:
-        """Check if the agent should be kicked to continue."""
+        """Check if the agent should be auto-continued."""
         # Don't kick if waiting on HITL
         if self._waiting_hitl:
             return False
@@ -70,7 +70,7 @@ class LooperAnalyzer:
         return False
 
     def record_kick(self) -> SidecarObservation:
-        """Record that a kick was sent. Returns an observation for the UI."""
+        """Record that auto-continue was sent. Returns an observation for the UI."""
         self.kick_counter += 1
         self._session_done = False  # Reset — wait for next completion
         self._observation_count += 1
@@ -83,7 +83,7 @@ class LooperAnalyzer:
                 timestamp=now,
                 message=(
                     f"Iteration limit reached: {self.kick_counter}/{self.counter_limit}. "
-                    f"Agent stopped. Reset counter to continue."
+                    f"Paused — reset to continue."
                 ),
                 severity="critical",
                 requires_approval=True,
@@ -93,14 +93,12 @@ class LooperAnalyzer:
             id=f"looper-{self._observation_count}-{int(now)}",
             sidecar_type="looper",
             timestamp=now,
-            message=(
-                f"Kicked agent to continue. Iteration {self.kick_counter}/{self.counter_limit}."
-            ),
+            message=(f"Auto-continued agent. Iteration {self.kick_counter}/{self.counter_limit}."),
             severity="info",
         )
 
     def hitl_status(self) -> Optional[SidecarObservation]:
-        """Emit observation when session is waiting on HITL (no kick)."""
+        """Emit observation when session is waiting on HITL (paused)."""
         if not self._waiting_hitl:
             return None
         self._observation_count += 1
@@ -117,7 +115,7 @@ class LooperAnalyzer:
         )
 
     def reset_counter(self) -> SidecarObservation:
-        """Reset the kick counter. Called via API or HITL approval."""
+        """Reset the iteration counter. Called via API or HITL approval."""
         self.kick_counter = 0
         self._session_done = False
         self._observation_count += 1
@@ -126,6 +124,6 @@ class LooperAnalyzer:
             id=f"looper-{self._observation_count}-{int(now)}",
             sidecar_type="looper",
             timestamp=now,
-            message="Counter reset. Looper will continue kicking on next completion.",
+            message="Counter reset. Looper will auto-continue on next completion.",
             severity="info",
         )

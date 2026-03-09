@@ -239,7 +239,7 @@ test.describe('Sidecar Agents', () => {
     console.log('[sidecar] All sidecars disabled');
   });
 
-  test('Looper auto-continue kicks agent on completion', async ({ page }) => {
+  test('Looper auto-continues agent on completion', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
     await navigateToSessions(page);
