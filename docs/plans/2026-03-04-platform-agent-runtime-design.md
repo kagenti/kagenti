@@ -790,3 +790,113 @@ Session N is complete when:
 4. Both agents work with AuthBridge (if deployed on T3)
 5. Feature parity matrix shows identical platform feature coverage
 6. Documentation updated with deployment instructions
+
+## 12. Current State (Session S)
+
+> **Date:** 2026-03-09
+> **Sessions:** G (design) → N (implementation) → S (event pipeline + UI) → T (next)
+> **Cluster:** sbox42 (Llama 4 Scout via LiteLLM proxy)
+> **Worktree:** `.worktrees/sandbox-agent`
+
+### Event Pipeline
+
+The agent event pipeline is now fully typed end-to-end:
+
+```
+Agent graph node
+  → event_schema.py (typed dataclass: PlannerOutput, ExecutorStep, ReflectorDecision, ReporterOutput, BudgetUpdate)
+    → event_serializer.py (SSE JSON with distinct event type per node)
+      → backend SSE proxy (captures events + forwards to client)
+        → frontend SSE handler (SandboxPage.tsx)
+          → AgentLoop state reducer
+            → AgentLoopCard render
+```
+
+Each graph node emits its own event type (`planner_output`, `executor_step`,
+`reflector_decision`, `reporter_output`, `budget_update`). Legacy event types
+(`llm_response` for all nodes) are still emitted for backward compatibility
+but the frontend deduplicates when typed events are present.
+
+**Backend persistence:** Loop events are persisted to task metadata via an
+atomic write in a `finally` block. The history endpoint returns `loop_events`
+from metadata alongside message history.
+
+**Frontend reconstruction:** On session reload, the frontend iterates through
+persisted `loop_events` and reconstructs `AgentLoop` objects using the same
+state reducer as the live SSE handler.
+
+See: [Sandbox Reasoning Loop Design](2026-03-03-sandbox-reasoning-loop-design.md) (Session S Updates section)
+
+### Chat Architecture
+
+| Mechanism | Status | Details |
+|-----------|--------|---------|
+| **Polling** | Implemented (current) | 5-second interval via `setInterval` in SandboxPage; polls `getHistory(namespace, contextId, { limit: 5 })`; deduplicates by `_index` |
+| **SSE streaming** | Implemented (per-request) | Active during `/chat/stream` requests; delivers tool_call, tool_result, plan, reflection events in real-time |
+| **WebSocket** | Designed, not implemented | Proposed for multi-user session updates and delegation callbacks |
+| **loop_events in metadata** | Implemented | Persisted for history reconstruction; enables loop cards on reload |
+
+The polling mechanism runs only when `contextId` is set and `isStreaming` is
+false. For the WebSocket proposal and SSE session endpoint alternative, see:
+[WebSocket / SSE Session Updates Design](2026-03-06-websocket-session-updates-design.md)
+
+### Sidecar Agents
+
+Three sidecar agents run as in-process `asyncio.Task` instances alongside
+sandbox sessions:
+
+| Sidecar | Purpose | Status |
+|---------|---------|--------|
+| **Looper** | Auto-continue kicker — sends "continue" on turn completion, respects counter limit and HITL | UI compact panel done; auto-continue broken (SSE auth issue, `fan_out_event` not triggering) |
+| **Hallucination Observer** | Validates file paths and imports against workspace | Backend analyzer implemented, SSE-driven |
+| **Context Guardian** | Tracks token trajectory, warns at thresholds | Backend analyzer implemented, SSE-driven |
+
+**UI:** Compact accordion panel with per-sidecar tabs, enable/disable toggles,
+auto-approve/HITL switches, and observation streams. Looper shows iteration
+progress as `2/5` with mini progress bar.
+
+**Known issues:**
+- Looper auto-continue is broken — SSE auth and `fan_out_event` not triggering
+  the looper's event queue
+- A2A message injection (corrective messages into parent session) is stubbed
+- Heartbeat observations needed for test verification
+
+See: [Sidecar Agents Design](../../../docs/plans/2026-03-06-sidecar-agents-design.md)
+
+### Test Coverage
+
+**Core tests: 10/10 green** (1.3m with 4 parallel workers):
+
+| Test File | Tests | Time |
+|-----------|-------|------|
+| sandbox-sessions | 3/3 | 1.2m |
+| sandbox-walkthrough | 1/1 | 8-12s |
+| sandbox-variants | 4/4 | 17-20s each |
+| agent-rca-workflow | 1/1 | 1.4-1.7m |
+| sandbox-delegation | 1/1 | 30-37s |
+
+**Additional tests:**
+- Loop consistency test (`agent-loop-consistency.spec.ts`) — validates
+  streaming vs historical reconstruction; currently fails (by design, P0 for Session T)
+- Resilience test — validates recovery from agent errors
+- 69 serializer unit tests (`event_schema.py` + `event_serializer.py`)
+
+### Remaining Work (Session T P0)
+
+| Item | Priority | Description |
+|------|----------|-------------|
+| Historical ≠ streaming | P0 | Loop cards render differently on reload vs live streaming; frontend `loadInitialHistory` reconstruction breaks on step 5 of the root cause chain |
+| Looper fix | P0 | SSE auth + `fan_out_event` not triggering looper; auto-continue non-functional |
+| Sub-sessions | P1 | `SubSessionsPanel.tsx` renders delegate child sessions; needs integration testing |
+| "continue" leak | P1 | Budget-forced termination leaks reflector's "continue" decision string into reporter output; needs message stripping before reporter invocation |
+| Agent name vicious cycle | P1 | `_set_owner_metadata` race with A2A SDK task creation; frontend defaults to `sandbox-legion` when agent_name missing |
+
+### Cross-References
+
+| Document | Content |
+|----------|---------|
+| [Agent Loop UI Design](2026-03-03-agent-loop-ui-design.md) | AgentLoopCard, LoopSummaryBar, node badges, HITL approval card |
+| [Sandbox Reasoning Loop Design](2026-03-03-sandbox-reasoning-loop-design.md) | Graph nodes, event types, budget, HITL checkpoints |
+| [WebSocket Session Updates Design](2026-03-06-websocket-session-updates-design.md) | Polling baseline, WebSocket proposal, SSE alternative |
+| [LiteLLM Analytics Design](2026-03-08-litellm-analytics-design.md) | Token usage panels, model routing, cost tracking |
+| [Session T Passover](2026-03-09-session-T-passover.md) | Next session priorities, debug approach for historical view |
