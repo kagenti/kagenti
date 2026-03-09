@@ -431,7 +431,6 @@ async def get_session_history(
 
     # Merge history from all task records (ordered by task creation time)
     raw_history: list = []
-    seen_user_msgs: set = set()  # Deduplicate user messages across tasks
 
     # Collect artifacts from all tasks (each task may have a final answer)
     all_artifact_texts: List[str] = []
@@ -469,15 +468,10 @@ async def get_session_history(
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
         for msg in task_history:
-            # Deduplicate: skip user messages we've already seen
-            if msg.get("role") == "user":
-                text = "".join(
-                    p.get("text", "") for p in (msg.get("parts") or []) if isinstance(p, dict)
-                )
-                key = text[:200]
-                if key in seen_user_msgs:
-                    continue
-                seen_user_msgs.add(key)
+            # No message dedup — preserve all messages in chronological order.
+            # The A2A SDK creates one task per exchange, so each task's history
+            # contains unique messages. Deduplicating by content would drop
+            # intentionally repeated user messages.
             raw_history.append(msg)
 
         # Accumulate artifacts from ALL task records
