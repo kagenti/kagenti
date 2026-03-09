@@ -1,0 +1,26 @@
+name: Add Issues and PRs to Kagenti Prioritization Project
+
+on:
+  issues:
+    types: [opened]
+
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  add-to-project:
+    name: Add to Kagenti Project Board
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Add issue or PR to Kagenti Project
+        continue-on-error: true # To prevent duplicate additions
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: https://github.com/orgs/kagenti/projects/<PROJECT_NUMBER>
+          github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
