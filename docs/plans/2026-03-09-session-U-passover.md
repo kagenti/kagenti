@@ -80,7 +80,13 @@
 
 **Problem:** Budget (100 iter, 10 tools/step, 1M tokens) is hardcoded as defaults. Should be configurable per agent (env vars) and overridable per session (UI/API).
 
-### 6. Multi-Turn Loop Events — Per-Task Isolation
+### 6. Sidecar State Not Persisted
+
+**Problem:** Sidecar handles (enabled/disabled, config, observations) are stored in-memory in `SidecarManager._handles`. Backend restart loses all state. UI shows no sidecars after restart.
+
+**Fix:** Persist sidecar state in session metadata or a separate DB table. On startup, restore handles for active sessions.
+
+### 7. Multi-Turn Loop Events — Per-Task Isolation
 
 **Problem:** The metadata merge in `finally` block was copying loop_events across tasks. Fixed by excluding `loop_events` from merge, but older sessions still have duplicated data.
 
