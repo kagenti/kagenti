@@ -55,6 +55,8 @@ export interface AgentLoopStep {
   toolResults: Array<{ type: string; name?: string; output?: string }>;
   durationMs: number;
   status: 'pending' | 'running' | 'done' | 'failed';
+  /** LLM reasoning / chain-of-thought text (optional, model-dependent). */
+  reasoning?: string;
   /** Granular event type from the graph node. */
   eventType?: NodeEventType;
   /** @deprecated Use {@link eventType} for new code. */

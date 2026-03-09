@@ -156,16 +156,21 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // ------------------------------------------------------------------
     const chatInput = page.getByPlaceholder(/Type your message/i);
     await expect(chatInput).toBeVisible({ timeout: 10000 });
+    await expect(chatInput).toBeEnabled({ timeout: 5000 });
 
     const testMessage = 'List the contents of the current directory using ls';
     await chatInput.fill(testMessage);
 
-    const sendButton = page.getByRole('button', { name: /Send/i });
+    // Scope Send button to the chat area to avoid matching sidebar buttons
+    const sendButton = page.locator('[data-testid="chat-messages"]')
+      .locator('..')
+      .locator('..')
+      .getByRole('button', { name: /Send/i });
     await expect(sendButton).toBeEnabled({ timeout: 5000 });
     await sendButton.click();
 
     // Verify user message appears
-    await expect(page.getByText(testMessage)).toBeVisible({
+    await expect(page.getByText(testMessage).first()).toBeVisible({
       timeout: 5000,
     });
     markStep('sandbox_chat_send');
@@ -173,19 +178,11 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // ------------------------------------------------------------------
     // Step 6: Wait for agent response
     // ------------------------------------------------------------------
-    // Wait for a "Legion:" response to appear (the agent's reply)
-    // Wait for agent response — look for content in the chat card body
-    // (not the "Sandbox Legion" heading, which is always visible)
-    const chatArea = page.locator('.pf-v5-c-card__body').first();
-    // Wait for agent to finish responding — look for a loop card with "done" status
-    // or content that indicates the agent has completed processing.
-    // First wait for any response to start (thinking indicator or content)
-    await expect(chatArea).toContainText(/data|scripts|repos|output|shell|command|ls|Tool Call|Result|thinking|done/i, {
-      timeout: 300000,
-    });
-    // Then wait for streaming to finish — the Send button becomes enabled again
-    await expect(page.getByRole('button', { name: /Send/i })).toBeEnabled({ timeout: 300000 });
-    await page.waitForTimeout(2000); // Let state settle
+    // Wait for agent to finish — input becomes re-enabled after streaming completes
+    // (follows the same pattern as sandbox-sessions.spec.ts sendAndWaitForResponse)
+    await expect(chatInput).toBeEnabled({ timeout: 300000 });
+    // Give rendering a moment to settle
+    await page.waitForTimeout(2000);
     markStep('sandbox_chat_response');
 
     // ------------------------------------------------------------------

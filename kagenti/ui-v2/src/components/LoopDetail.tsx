@@ -98,6 +98,51 @@ const PlanSection: React.FC<{ plan: string[]; currentStep: number }> = ({ plan, 
 };
 
 // ---------------------------------------------------------------------------
+// Reasoning block (expandable, like ToolCallBlock)
+// ---------------------------------------------------------------------------
+
+const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: '3px solid #7c3aed',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+        cursor: 'pointer',
+      }}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div style={{ fontWeight: 600 }}>
+        {expanded ? '\u25bc' : '\u25b6'} Reasoning
+      </div>
+      {expanded && (
+        <pre
+          style={{
+            margin: '4px 0',
+            padding: 8,
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+            color: 'var(--pf-v5-global--Color--light-100)',
+            borderRadius: 4,
+            fontSize: '0.9em',
+            overflow: 'auto',
+            maxHeight: 300,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {reasoning}
+        </pre>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Tool call / result rendering (matches SandboxPage ToolCallStep pattern)
 // ---------------------------------------------------------------------------
 
@@ -210,7 +255,9 @@ function formatStepTokens(step: AgentLoopStep): string {
   return String(total);
 }
 
-const StepSection: React.FC<{ step: AgentLoopStep; total: number }> = ({ step, total }) => {
+const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: string }> = ({ step, total, loopModel }) => {
+  const showModelBadge = step.model && step.model !== loopModel;
+
   return (
     <div style={{ marginBottom: 10 }}>
       {/* Step header */}
@@ -227,16 +274,34 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number }> = ({ step, t
       >
         <NodeBadge nodeType={inferNodeType(step)} />
         Step {step.index + 1}/{total}: {step.description}
-        <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}>
-          {step.model} &middot; {formatStepTokens(step)} tokens
-        </span>
+        {showModelBadge && (
+          <span
+            style={{
+              display: 'inline-block',
+              padding: '1px 5px',
+              borderRadius: 3,
+              fontSize: '0.75em',
+              fontWeight: 500,
+              color: 'var(--pf-v5-global--Color--200)',
+              backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+              border: '1px solid var(--pf-v5-global--BorderColor--100)',
+              marginLeft: 6,
+              verticalAlign: 'middle',
+            }}
+          >
+            {step.model}
+          </span>
+        )}
         {step.tokens.prompt + step.tokens.completion > 0 && (
-          <span style={{ fontSize: '0.75em', opacity: 0.6, marginLeft: 8 }}>
-            {step.tokens.prompt}&rarr;{step.tokens.completion} tokens
+          <span style={{ fontWeight: 400, fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}>
+            {step.tokens.prompt}&rarr;{step.tokens.completion} ({formatStepTokens(step)})
           </span>
         )}
         <StepStatusIcon status={step.status} />
       </div>
+
+      {/* Reasoning (expandable) */}
+      {step.reasoning && <ReasoningBlock reasoning={step.reasoning} />}
 
       {/* Tool calls */}
       {step.toolCalls.map((tc, i) => (
@@ -291,7 +356,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
       <PlanSection plan={loop.plan} currentStep={loop.currentStep} />
 
       {loop.steps.map((step) => (
-        <StepSection key={step.index} step={step} total={loop.totalSteps} />
+        <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} />
       ))}
 
       {loop.reflection && <ReflectionSection reflection={loop.reflection} />}
