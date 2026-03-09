@@ -1,4 +1,4 @@
-import React, { useState, Component, type ErrorInfo, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useState, Component, type ErrorInfo, type ReactNode } from 'react';
 import { Modal, ModalVariant, Button, Spinner, Tooltip } from '@patternfly/react-core';
 import { ExpandIcon, CompressIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -74,6 +74,38 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
   onClose,
 }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // When in fullscreen, Esc exits fullscreen first; otherwise close the modal.
+  const handleClose = useCallback(() => {
+    if (isFullScreen) {
+      setIsFullScreen(false);
+    } else {
+      onClose();
+    }
+  }, [isFullScreen, onClose]);
+
+  // Reset fullscreen state when the modal is closed externally.
+  useEffect(() => {
+    if (!isOpen) {
+      setIsFullScreen(false);
+    }
+  }, [isOpen]);
+
+  // Listen for Escape key to exit fullscreen before closing.
+  useEffect(() => {
+    if (!isOpen || !isFullScreen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setIsFullScreen(false);
+      }
+    };
+
+    // Use capture phase so we intercept before PatternFly's modal handler.
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [isOpen, isFullScreen]);
 
   const {
     data: fileContent,
@@ -153,7 +185,8 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
       variant={ModalVariant.large}
       title={fileName}
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleClose}
+      onEscapePress={handleClose}
       actions={[headerActions]}
       style={isFullScreen ? fullscreenStyles : undefined}
     >
