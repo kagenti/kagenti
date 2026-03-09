@@ -1542,11 +1542,13 @@ async def _stream_sandbox_response(
                 response.raise_for_status()
                 logger.info("Connected to agent, status=%d", response.status_code)
 
+                line_count = 0
                 async for line in response.aiter_lines():
                     if not line:
                         continue
-
-                    logger.debug("Agent SSE line: %s", line[:300])
+                    line_count += 1
+                    if line_count <= 5 or "loop_id" in line:
+                        logger.info("Agent SSE [%d]: %s", line_count, line[:200])
 
                     if line.startswith("data: "):
                         data = line[6:]
