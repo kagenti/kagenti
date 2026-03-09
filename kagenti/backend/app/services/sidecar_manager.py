@@ -351,6 +351,16 @@ class SidecarManager:
         )
         interval = handle.config.get("interval_seconds", 10)
 
+        logger.info(
+            "Looper started: parent_context_id=%s namespace=%s agent=%s "
+            "interval=%ds counter_limit=%d",
+            handle.parent_context_id[:12],
+            handle.namespace,
+            handle.agent_name,
+            interval,
+            analyzer.counter_limit,
+        )
+
         while handle.enabled:
             # Each iteration: read the current session state from the DB.
             # This is the primary detection mechanism — the looper doesn't
@@ -395,6 +405,18 @@ class SidecarManager:
                     handle.observations.append(obs)
                     await self._send_continue(handle)
 
+            # Log iteration summary
+            logger.debug(
+                "Looper iteration: observations=%d pending=%d "
+                "session_done=%s counter=%d/%d last_polled=%r",
+                len(handle.observations),
+                len(handle.pending_interventions),
+                analyzer._session_done,
+                analyzer.continue_counter,
+                analyzer.counter_limit,
+                analyzer._last_polled_state,
+            )
+
             # Hot-reload config
             interval = handle.config.get("interval_seconds", 10)
             analyzer.counter_limit = handle.config.get("counter_limit", 5)
@@ -426,9 +448,24 @@ class SidecarManager:
             if rows:
                 status = json.loads(rows[0]["status"]) if rows[0]["status"] else {}
                 state = status.get("state", "")
+                logger.debug(
+                    "Looper poll: context_id=%s namespace=%s state=%r "
+                    "last_polled=%r session_done=%s",
+                    handle.parent_context_id[:12],
+                    handle.namespace,
+                    state,
+                    analyzer._last_polled_state,
+                    analyzer._session_done,
+                )
                 if state:
                     # Feed state to analyzer — it handles dedup internally
                     analyzer.ingest({"result": {"status": {"state": state}}})
+            else:
+                logger.debug(
+                    "Looper poll: no rows for context_id=%s namespace=%s",
+                    handle.parent_context_id[:12],
+                    handle.namespace,
+                )
 
     async def _send_continue(self, handle: SidecarHandle) -> None:
         """Send a 'continue' message by creating a child session via A2A.

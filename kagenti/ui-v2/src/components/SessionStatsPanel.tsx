@@ -46,7 +46,11 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
   const flatAssistantCount = messages.filter(
     (m) => m.role === 'assistant' && m.content?.trim() && !m.toolData
   ).length;
-  const loopAnswerCount = loops.filter((l) => l.finalAnswer?.trim()).length;
+  // Count loops that completed (status 'done') as assistant responses,
+  // even if finalAnswer was filtered/empty (e.g. leaked decision token).
+  const loopAnswerCount = loops.filter(
+    (l) => l.status === 'done' || l.finalAnswer?.trim()
+  ).length;
   const assistantMsgCount = flatAssistantCount + loopAnswerCount;
 
   // ── Tool calls from messages (fallback when no loop data) ──

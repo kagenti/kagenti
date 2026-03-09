@@ -157,10 +157,16 @@ test.describe('Agent Loop Consistency — Streaming vs Historical', () => {
     await navigateToSandbox(page, AGENT_NAME);
 
     // Start a fresh session via "+ New Session" if available
-    const newSessionBtn = page.getByText('+ New Session');
+    const newSessionBtn = page.getByRole('button', { name: /New Session/i });
     if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
       await newSessionBtn.click();
-      await page.waitForTimeout(1000);
+      // Handle New Session modal — click "Start" to confirm
+      const startBtn = page.getByRole('button', { name: /^Start$/ });
+      if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await startBtn.click();
+        await page.waitForTimeout(500);
+      }
+      await page.waitForTimeout(500);
     }
 
     // 2. Send a message that triggers tool calls (agent loop)

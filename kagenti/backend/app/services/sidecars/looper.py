@@ -102,7 +102,13 @@ class LooperAnalyzer:
         """Record that auto-continue was sent. Returns an observation for the UI."""
         self.continue_counter += 1
         self._session_done = False  # Reset — wait for next completion
+        self._last_polled_state = ""  # Reset dedup so next COMPLETED is detected
         self._observation_count += 1
+        logger.debug(
+            "Looper: record_continue — counter=%d/%d, reset _last_polled_state",
+            self.continue_counter,
+            self.counter_limit,
+        )
         now = time.time()
 
         if self.continue_counter >= self.counter_limit:
@@ -170,7 +176,9 @@ class LooperAnalyzer:
         """Reset the iteration counter. Called via API or HITL approval."""
         self.continue_counter = 0
         self._session_done = False
+        self._last_polled_state = ""  # Reset dedup so next COMPLETED is detected
         self._observation_count += 1
+        logger.debug("Looper: reset_counter — dedup state cleared")
         now = time.time()
         return SidecarObservation(
             id=f"looper-{self._observation_count}-{int(now)}",

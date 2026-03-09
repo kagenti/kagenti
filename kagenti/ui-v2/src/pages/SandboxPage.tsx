@@ -1109,10 +1109,16 @@ export const SandboxPage: React.FC = () => {
               }
               loops.set(loopId, existing);
             }
-            // Mark all loops as done (historical)
-            for (const [, loop] of loops) {
-              if (loop.status !== 'done') loop.status = 'done';
+            // Mark all loops as done (historical) and sort steps by index
+            for (const [lid, loop] of loops) {
+              if (loop.status !== 'done') {
+                console.warn(`[history] Loop ${lid} had status="${loop.status}", forcing to "done"`);
+                loop.status = 'done';
+              }
+              // Sort steps by index for correct rendering order
+              loop.steps.sort((a, b) => a.index - b.index);
             }
+            console.log(`[history] Reconstructed ${loops.size} loop(s):`, Array.from(loops.entries()).map(([lid, l]) => ({ id: lid, status: l.status, steps: l.steps.length, finalAnswer: !!l.finalAnswer })));
             setAgentLoops(loops);
           }
         }
@@ -2133,43 +2139,66 @@ export const SandboxPage: React.FC = () => {
                   </div>
                 </div>
 
-              {/* Render messages grouped into turns for collapsed view */}
-              {groupMessagesIntoTurns(messages).map((turn, idx) => (
-                <React.Fragment key={turn.user?.id || `turn-${idx}`}>
-                  {/* User message */}
-                  {turn.user && (
-                    <ChatBubble
-                      msg={turn.user}
-                      currentUsername={currentUsername}
-                      namespace={namespace}
-                      agentName={selectedAgent}
-                    />
-                  )}
-                  {/* Agent turn — collapsed */}
-                  {turn.assistantMessages.length > 0 && (
-                    <CollapsedTurn
-                      turn={turn}
-                      namespace={namespace}
-                      agentName={selectedAgent}
-                      onApprove={
-                        turn.assistantMessages.some((m) => m.toolData?.type === 'hitl_request')
-                          ? handleHitlApprove
-                          : undefined
-                      }
-                      onDeny={
-                        turn.assistantMessages.some((m) => m.toolData?.type === 'hitl_request')
-                          ? handleHitlDeny
-                          : undefined
-                      }
-                    />
-                  )}
-                </React.Fragment>
-              ))}
+              {/* Render messages grouped into turns, with loop cards interleaved */}
+              {(() => {
+                const turns = groupMessagesIntoTurns(messages);
+                const loopArray = Array.from(agentLoops.values());
+                const hasLoopCards = loopArray.length > 0;
+                const elements: React.ReactNode[] = [];
 
-              {/* Agent loop cards (collapsed agent turns) */}
-              {Array.from(agentLoops.values()).map((loop) => (
-                <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} />
-              ))}
+                // Render each turn, pairing with the corresponding loop card by position
+                turns.forEach((turn, idx) => {
+                  elements.push(
+                    <React.Fragment key={turn.user?.id || `turn-${idx}`}>
+                      {/* User message */}
+                      {turn.user && (
+                        <ChatBubble
+                          msg={turn.user}
+                          currentUsername={currentUsername}
+                          namespace={namespace}
+                          agentName={selectedAgent}
+                        />
+                      )}
+                      {/* Agent turn — collapsed (only when no loop cards handle the content) */}
+                      {turn.assistantMessages.length > 0 && (
+                        <CollapsedTurn
+                          turn={turn}
+                          namespace={namespace}
+                          agentName={selectedAgent}
+                          onApprove={
+                            turn.assistantMessages.some((m) => m.toolData?.type === 'hitl_request')
+                              ? handleHitlApprove
+                              : undefined
+                          }
+                          onDeny={
+                            turn.assistantMessages.some((m) => m.toolData?.type === 'hitl_request')
+                              ? handleHitlDeny
+                              : undefined
+                          }
+                        />
+                      )}
+                      {/* Loop card for this turn (paired by position) */}
+                      {hasLoopCards && idx < loopArray.length && (
+                        <AgentLoopCard
+                          key={loopArray[idx].id}
+                          loop={loopArray[idx]}
+                          isStreaming={false}
+                        />
+                      )}
+                    </React.Fragment>,
+                  );
+                });
+
+                // Render any remaining loop cards that exceed the number of turns
+                // (e.g. during live streaming when the loop is the latest item)
+                loopArray.slice(turns.length).forEach((loop) => {
+                  elements.push(
+                    <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} />,
+                  );
+                });
+
+                return elements;
+              })()}
 
               {/* Streaming indicator — only when no loop cards handle progress */}
               {isStreaming && agentLoops.size === 0 && (

@@ -142,7 +142,13 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // Step 4: Start a fresh session
     // ------------------------------------------------------------------
     await newSessionBtn.click();
-    await page.waitForTimeout(1000);
+    // Handle New Session modal — click "Start" to confirm
+    const startBtn = page.getByRole('button', { name: /^Start$/ });
+    if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startBtn.click();
+      await page.waitForTimeout(500);
+    }
+    await page.waitForTimeout(500);
     markStep('sandbox_new_session');
 
     // ------------------------------------------------------------------
