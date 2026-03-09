@@ -470,7 +470,7 @@ const ChatBubble: React.FC<{
               color: 'var(--pf-v5-global--Color--200)',
               cursor: 'default',
             }}
-            title={msg.timestamp.toLocaleString()}
+            title={msg.timestamp.toISOString()}
           >
             {formatMsgTime(msg.timestamp)}
           </span>
@@ -504,10 +504,12 @@ interface Turn {
 }
 
 function groupMessagesIntoTurns(messages: Message[]): Turn[] {
+  // Sort by timestamp to ensure correct ordering
+  const sorted = [...messages].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   const turns: Turn[] = [];
   let current: Turn = { assistantMessages: [], finalAnswer: '' };
 
-  for (const msg of messages) {
+  for (const msg of sorted) {
     if (msg.role === 'user') {
       // Start new turn
       if (current.user || current.assistantMessages.length > 0) {
@@ -594,7 +596,7 @@ const CollapsedTurn: React.FC<{
             <span style={{ fontWeight: 600, fontSize: '0.9em' }}>{agentName || 'Agent'}</span>
             <span
               style={{ fontSize: '0.75em', color: 'var(--pf-v5-global--Color--200)', cursor: 'default' }}
-              title={turn.assistantMessages[0].timestamp.toLocaleString()}
+              title={turn.assistantMessages[0].timestamp.toISOString()}
             >
               {formatMsgTime(turn.assistantMessages[0].timestamp)}
             </span>
@@ -972,6 +974,10 @@ export const SandboxPage: React.FC = () => {
         if (pageAny.loop_events) {
           const events = pageAny.loop_events as Array<Record<string, unknown>>;
           if (events.length > 0) {
+            // When loop events are available, filter out flat assistant messages
+            // to prevent duplicate rendering (loop cards handle all agent content).
+            // Keep only user messages in the messages array.
+            setMessages((prev) => prev.filter((m) => m.role === 'user'));
             const loops = new Map<string, AgentLoop>();
             for (const le of events) {
               const loopId = le.loop_id as string;
