@@ -305,7 +305,9 @@ test.describe('Sidecar Agents', () => {
     expect(contextId).toBeTruthy();
     console.log(`[sidecar] Session context: ${contextId}`);
 
-    // ── Step 2: Enable Looper with low limit for testing ───────────────────
+    // ── Step 2: Enable Looper — it checks session state at startup ─────────
+    // The looper queries the DB on startup. If the session already completed
+    // before the looper was enabled, it detects this and auto-continues.
     await enableSidecar(page, contextId, 'looper');
     await updateSidecarConfig(page, contextId, 'looper', {
       interval_seconds: 5,

@@ -351,6 +351,14 @@ class SidecarManager:
         )
         interval = handle.config.get("interval_seconds", 10)
 
+        # Check if the session already completed before the looper was enabled.
+        # This handles the case where the user enables the looper after the
+        # agent finishes a turn — the [DONE] event was already sent and missed.
+        try:
+            await self._check_session_completed(handle, analyzer)
+        except Exception:
+            logger.debug("Looper: initial session state check failed (non-critical)")
+
         while handle.enabled:
             # Drain queued events
             while handle.event_queue and not handle.event_queue.empty():
@@ -392,6 +400,36 @@ class SidecarManager:
             analyzer.counter_limit = handle.config.get("counter_limit", 5)
 
             await asyncio.sleep(interval)
+
+    async def _check_session_completed(
+        self, handle: SidecarHandle, analyzer: "LooperAnalyzer"
+    ) -> None:
+        """Check if the session already completed before looper was enabled."""
+        import json
+
+        try:
+            from app.routers.sandbox import get_session_pool
+        except ImportError:
+            return
+
+        pool = await get_session_pool(handle.namespace)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT status FROM tasks WHERE context_id = $1"
+                " ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC"
+                " LIMIT 1",
+                handle.parent_context_id,
+            )
+            if rows:
+                status = json.loads(rows[0]["status"]) if rows[0]["status"] else {}
+                state = status.get("state", "")
+                if state in ("COMPLETED", "FAILED"):
+                    logger.info(
+                        "Looper: session %s already %s at startup — will auto-continue",
+                        handle.parent_context_id[:12],
+                        state,
+                    )
+                    analyzer.ingest({"done": True, "session_id": handle.parent_context_id})
 
     async def _send_continue(self, handle: SidecarHandle) -> None:
         """Send a 'continue' message by creating a child session via A2A.
