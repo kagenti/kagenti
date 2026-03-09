@@ -436,13 +436,24 @@ async def get_session_history(
     # Collect artifacts from all tasks (each task may have a final answer)
     all_artifact_texts: List[str] = []
 
-    # Extract persisted loop events from task metadata
+    # Extract persisted loop events from ALL task rows.
+    # Multi-turn sessions have one task per turn, each with its own loop_events.
+    # Aggregate them all and deduplicate by (loop_id, type, step) to handle
+    # metadata merge artifacts.
     persisted_loop_events: Optional[List[Dict[str, Any]]] = None
+    all_loop_events: List[Dict[str, Any]] = []
+    seen_event_keys: set = set()
     for row in rows:
         meta = _parse_json_field(row.get("metadata"))
         if isinstance(meta, dict) and meta.get("loop_events"):
-            persisted_loop_events = meta["loop_events"]
-            break  # Use the first task's loop_events (set at [DONE])
+            for evt in meta["loop_events"]:
+                # Dedup key: (loop_id, type, step) — handles duplicated metadata
+                key = (evt.get("loop_id", ""), evt.get("type", ""), evt.get("step", ""))
+                if key not in seen_event_keys:
+                    seen_event_keys.add(key)
+                    all_loop_events.append(evt)
+    if all_loop_events:
+        persisted_loop_events = all_loop_events
 
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
