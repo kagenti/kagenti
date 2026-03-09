@@ -1663,7 +1663,17 @@ async def _stream_sandbox_response(
                                             yield f"data: {json.dumps(loop_payload)}\n\n"
                                             has_loop_events = True
                                             session_has_loops = True
-                                            loop_events.append(parsed)
+                                            # Only persist new-type events, skip legacy
+                                            # (plan, plan_step, reflection, llm_response)
+                                            evt_type = parsed.get("type", "")
+                                            _LEGACY = {
+                                                "plan",
+                                                "plan_step",
+                                                "reflection",
+                                                "llm_response",
+                                            }
+                                            if evt_type not in _LEGACY:
+                                                loop_events.append(parsed)
                                             continue
                                     except (json.JSONDecodeError, TypeError):
                                         pass
