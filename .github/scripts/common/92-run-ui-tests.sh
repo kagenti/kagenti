@@ -61,6 +61,10 @@ if [ -f "e2e/sandbox.spec.ts" ]; then
     TEST_SPECS="$TEST_SPECS sandbox"
     log_info "Sandbox tests detected — including sandbox.spec.ts"
 fi
+if [ -f "e2e/sandbox-sidecars.spec.ts" ]; then
+    TEST_SPECS="$TEST_SPECS sandbox-sidecars"
+    log_info "Sidecar tests detected — including sandbox-sidecars.spec.ts"
+fi
 
 # Run Playwright tests
 log_info "Running Playwright E2E tests: $TEST_SPECS"

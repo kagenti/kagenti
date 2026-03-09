@@ -102,7 +102,7 @@ const PlanSection: React.FC<{ plan: string[]; currentStep: number }> = ({ plan, 
 // ---------------------------------------------------------------------------
 
 const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div
@@ -147,7 +147,7 @@ const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
 // ---------------------------------------------------------------------------
 
 const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({ call }) => {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const label = call.name || 'unknown';
   return (
@@ -186,7 +186,7 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({
 };
 
 const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div
@@ -273,7 +273,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         }}
       >
         <NodeBadge nodeType={inferNodeType(step)} />
-        Step {step.index + 1}/{total}: {step.description}
+        Step {step.index + 1}{total > 0 ? `/${total}` : ''}: {step.description}
         {showModelBadge && (
           <span
             style={{
@@ -294,7 +294,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         )}
         {step.tokens.prompt + step.tokens.completion > 0 && (
           <span style={{ fontWeight: 400, fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}>
-            {step.tokens.prompt}&rarr;{step.tokens.completion} ({formatStepTokens(step)})
+            &middot; {formatStepTokens(step)} tokens
           </span>
         )}
         <StepStatusIcon status={step.status} />

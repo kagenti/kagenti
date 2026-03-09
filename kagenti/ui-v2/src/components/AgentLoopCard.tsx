@@ -116,7 +116,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
             marginBottom: expanded ? 8 : 0,
           }}
         >
-          {expanded ? '\u25bc' : '\u25b6'} Reasoning
+          {expanded ? '\u25bc' : '\u25b6'} {loop.steps.length} step{loop.steps.length !== 1 ? 's' : ''}
         </div>
 
         {/* Expanded reasoning details */}

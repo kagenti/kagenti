@@ -27,7 +27,11 @@ function countTools(loop: AgentLoop): number {
 
 /** Sum all tokens across every step and format as "1.2k" or raw number. */
 function formatTokens(loop: AgentLoop): string {
-  const total = loop.budget.tokensUsed;
+  // Prefer budget.tokensUsed, fall back to summing step tokens
+  let total = loop.budget.tokensUsed;
+  if (!total) {
+    total = loop.steps.reduce((sum, s) => sum + s.tokens.prompt + s.tokens.completion, 0);
+  }
   if (total >= 1000) return (total / 1000).toFixed(1) + 'k';
   return String(total);
 }

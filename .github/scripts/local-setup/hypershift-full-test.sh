@@ -928,6 +928,22 @@ fi
 if [ "$RUN_INSTALL" = "true" ]; then
     log_phase "PHASE 2: Install Kagenti Platform"
 
+    # Auto-detect Helm v3 when v4 is the default
+    if command -v helm >/dev/null 2>&1; then
+        helm_major=$(helm version --short 2>/dev/null | grep -oE '^v([0-9]+)' | tr -d 'v')
+        if [ "$helm_major" = "4" ]; then
+            # Look for helm@3 from Homebrew
+            HELM3_PATH="/opt/homebrew/opt/helm@3/bin"
+            if [ -x "$HELM3_PATH/helm" ]; then
+                export PATH="$HELM3_PATH:$PATH"
+                log_info "Helm v4 detected — using Helm v3 from $HELM3_PATH ($(helm version --short 2>/dev/null))"
+            else
+                log_error "Helm v4 detected but helm@3 not found. Install with: brew install helm@3"
+                exit 1
+            fi
+        fi
+    fi
+
     if [ "$CLEAN_KAGENTI" = "true" ]; then
         log_step "Uninstalling Kagenti (--clean-kagenti)..."
         ./deployments/ansible/cleanup-install.sh || true
