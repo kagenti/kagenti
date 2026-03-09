@@ -1671,6 +1671,23 @@ async def _stream_sandbox_response(
                             continue
 
                         result = chunk["result"]
+
+                        # Capture stream_task_id from ANY A2A event as early as possible.
+                        # TaskStatusUpdateEvent has "taskId", initial Task has "id".
+                        if stream_task_id is None:
+                            a2a_task_id = (
+                                result.get("taskId") or result.get("task_id") or result.get("id")
+                            )
+                            if a2a_task_id and a2a_task_id != chunk.get("id"):
+                                # Exclude JSON-RPC request id (chunk["id"])
+                                stream_task_id = a2a_task_id
+                                logger.info(
+                                    "Captured stream_task_id=%s for session %s (kind=%s)",
+                                    stream_task_id,
+                                    session_id,
+                                    result.get("kind", "?"),
+                                )
+
                         payload: dict = {"session_id": session_id}
                         if owner:
                             payload["username"] = owner
@@ -1706,14 +1723,6 @@ async def _stream_sandbox_response(
 
                         # --- TaskStatusUpdateEvent ---
                         elif "status" in result and "taskId" in result:
-                            # Capture A2A taskId for per-task row targeting
-                            if stream_task_id is None and result.get("taskId"):
-                                stream_task_id = result["taskId"]
-                                logger.info(
-                                    "Captured stream_task_id=%s from A2A event for session %s",
-                                    stream_task_id,
-                                    session_id,
-                                )
                             status = result["status"]
                             is_final = result.get("final", False)
                             state = status.get("state", "UNKNOWN")
@@ -1805,14 +1814,6 @@ async def _stream_sandbox_response(
 
                         # --- Task object (initial response) ---
                         elif "id" in result and "status" in result:
-                            # Capture A2A taskId from initial task object
-                            if stream_task_id is None and result.get("id"):
-                                stream_task_id = result["id"]
-                                logger.info(
-                                    "Captured stream_task_id=%s from initial task for session %s",
-                                    stream_task_id,
-                                    session_id,
-                                )
                             task_status = result["status"]
                             state = task_status.get("state", "UNKNOWN")
 
