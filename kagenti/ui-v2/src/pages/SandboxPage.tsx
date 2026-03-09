@@ -84,9 +84,17 @@ function formatMsgTime(d: Date): string {
   return `${h}:${m}:${s}.${ms}`;
 }
 
-/** Detect and filter out LangGraph intermediate status dumps from history. */
+/** Detect and filter out LangGraph intermediate status dumps and JSON loop events from history. */
 function isGraphDump(text: string): boolean {
-  return /^(assistant|tools|__end__):\s/m.test(text.trim());
+  const t = text.trim();
+  // Old-style graph dumps: "assistant: {...}", "tools: {...}", "__end__: {...}"
+  if (/^(assistant|tools|__end__):\s/m.test(t)) return true;
+  // New-style JSON loop events stored as message text
+  try {
+    const parsed = JSON.parse(t);
+    if (parsed && typeof parsed === 'object' && parsed.type && parsed.loop_id) return true;
+  } catch { /* not JSON */ }
+  return false;
 }
 
 /** Regex matching absolute file paths in agent output. */
