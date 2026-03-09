@@ -4,8 +4,64 @@
 > **Previous Session:** T (passover at docs/plans/2026-03-09-session-T-passover.md)
 > **Cluster:** sbox42 (Llama 4 Scout via LiteLLM proxy)
 > **Worktrees:** `.worktrees/sandbox-agent` (kagenti), `.worktrees/agent-examples` (agent code)
-> **Cost:** ~$326, ~10.5h wall time
+> **Cost:** ~$370, ~12h wall time
 > **Test baseline:** 12/13 tests pass (sidecar auto-continue known failure)
+
+## CRITICAL FOR SESSION V — START HERE
+
+The A2A task/metadata integration has fundamental issues that cause cascading bugs.
+**Brainstorm and fix these FIRST before any other work.**
+
+### Problem: Metadata Duplication Across Tasks (ROOT CAUSE of most UI bugs)
+
+The A2A SDK creates one immutable task per message exchange. A 6-turn session has 6 task rows.
+The backend's `finally` block in `_stream_sandbox_response()` merges metadata from ALL tasks
+and writes to the "latest" task. Despite excluding `loop_events` from the merge, the write
+still overwrites the latest task's metadata with a merged superset. Result:
+
+- All 6 tasks end up with the SAME loop_events (from the last turn)
+- History endpoint deduplicates → shows only 1 loop card for 6 user messages
+- User messages appear without responses because loop cards can't pair correctly
+
+**Evidence:** Session `d7b5c79a` — 6 tasks, ALL have `loops={'b8a897e5'}` (Task 4's loop_id).
+Tasks 0-3 lost their own loop_events.
+
+**Fix approach:** Stop merging metadata across tasks entirely. Each streaming response should
+write metadata ONLY to ITS OWN task row (by task_id, not by context_id). The history endpoint
+should read loop_events per-task and render one loop card per task.
+
+**Key code:**
+- `_stream_sandbox_response()` finally block: `.worktrees/sandbox-agent/kagenti/backend/app/routers/sandbox.py` ~line 1790
+- History endpoint loop_events aggregation: same file ~line 439
+- Frontend interleaving: `.worktrees/sandbox-agent/kagenti/ui-v2/src/pages/SandboxPage.tsx` ~line 2152
+
+### Problem: Planner Loops Without Progress
+
+Even with stall detection (3 consecutive no-tool-call iterations → force done), the agent
+still loops excessively because:
+
+1. Reflector says "replan" but `current_step + 1 >= len(plan)` used to override to `done` (FIXED in latest)
+2. Executor writes text instead of calling tools (Llama 4 Scout ignores `tool_choice="any"`)
+3. Planner recreates the same plan on replan because it doesn't see enough context about what failed
+
+**Evidence:** Session `8a6d778a` — 52 messages, only 2 tool_results, 25+ planner→executor→reflector loops.
+Session `d7b5c79a` Task 1 — 22 messages for a simple `ls` command.
+
+**Latest fixes (in build-43, verify deployed):**
+- Stall detection in reflector: `.worktrees/agent-examples/a2a/sandbox_agent/src/sandbox_agent/reasoning.py` ~line 590
+- Tool call history passed to planner on replan: same file ~line 398
+- Replan always returns to planner (not reporter): same file ~line 649
+- `tool_choice="any"` forcing tool API: `.worktrees/agent-examples/a2a/sandbox_agent/src/sandbox_agent/graph.py` ~line 525
+
+### Problem: Plan Gets Overwritten in UI
+
+The planner step in the UI shows only the LAST iteration's plan, not the original.
+Each replan creates a new planner_output event that overwrites `loop.plan`.
+The UI should preserve the original plan and show replans as separate entries.
+
+**Key code:**
+- SSE handler planner_output: `.worktrees/sandbox-agent/kagenti/ui-v2/src/pages/SandboxPage.tsx` ~line 1524
+- History reconstruction: same file ~line 1009
 
 ---
 
