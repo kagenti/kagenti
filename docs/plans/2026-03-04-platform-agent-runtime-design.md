@@ -1,10 +1,8 @@
-# Platform-Owned Agent Runtime — Design & Implementation Plan
+# Platform-Owned Agent Runtime — Design & Architecture
 
-> **Date:** 2026-03-04
-> **Author:** Session G (design), Session N (implementation)
-> **Status:** Ready for Implementation
+> **Date:** 2026-03-04 (design), 2026-03-09 (current)
+> **Status:** Implemented (core), In Progress (sidecars, historical consistency)
 > **PR:** #758 (feat/sandbox-agent)
-> **Cluster:** Isolated HyperShift (to be created)
 
 ## 1. Vision
 
@@ -246,16 +244,17 @@ uvicorn.run(server.build(), host="0.0.0.0", port=8000)
 
 The platform's Skills Loader reads skills from the workspace and injects them
 into the agent's system prompt. It supports **pluggable custom loaders** for
-organization-specific skill sources.
+organization-specific skill sources, though only the Core Loader is currently
+implemented.
 
 ```mermaid
 graph TB
     subgraph "Skills Loader (platform-owned)"
         direction TB
-        CL["Core Loader<br/>CLAUDE.md + .claude/skills/"]
-        SP["Superpowers Loader<br/>(brainstorming, TDD,<br/>debugging, code review)"]
-        ORG["Org Skills Loader<br/>(company-specific skills<br/>from ConfigMap or git)"]
-        MCP2["MCP Skill Discovery<br/>(skills from MCP servers<br/>via agent card)"]
+        CL["Core Loader<br/>CLAUDE.md + .claude/skills/<br/>(Implemented)"]
+        SP["Superpowers Loader<br/>(brainstorming, TDD,<br/>debugging, code review)<br/>(Planned)"]
+        ORG["Org Skills Loader<br/>(company-specific skills<br/>from ConfigMap or git)<br/>(Planned)"]
+        MCP2["MCP Skill Discovery<br/>(skills from MCP servers<br/>via agent card)<br/>(Planned)"]
     end
 
     subgraph "Skill Sources"
@@ -272,28 +271,33 @@ graph TB
 
     WS2 --> CL
     SK2 --> CL
-    CM --> ORG
-    MCPS --> MCP2
+    CM -.-> ORG
+    MCPS -.-> MCP2
 
     CL --> SYS
-    SP --> SYS
-    ORG --> SYS
-    MCP2 --> CARD
+    SP -.-> SYS
+    ORG -.-> SYS
+    MCP2 -.-> CARD
 
     style CL fill:#4CAF50,color:white
-    style SP fill:#FF9800,color:white
-    style ORG fill:#9C27B0,color:white
+    style SP fill:#9E9E9E,color:white
+    style ORG fill:#9E9E9E,color:white
+    style MCP2 fill:#9E9E9E,color:white
 ```
 
-**How it works:**
+**Implementation status:**
 
-1. **Core loader** — Reads `CLAUDE.md` + `.claude/skills/` from workspace (always active)
-2. **Superpowers loader** — Loads brainstorming, TDD, debugging, code review skills
-   from a plugin directory (Session M adding custom loader support)
-3. **Org skills loader** — Loads company-specific skills from K8s ConfigMap
-   (e.g., internal coding standards, deployment procedures)
-4. **MCP skill discovery** — Reads skills from connected MCP servers' tool
-   definitions and maps them to the agent card's skills array
+1. **Core Loader** (Implemented) -- Reads `CLAUDE.md` + `.claude/skills/` from workspace.
+   The `SkillsLoader` class in `deployments/sandbox/skills_loader.py` parses
+   skill directories containing `SKILL.md` files, builds a system prompt with
+   a skills index, and supports per-skill prompt injection via
+   `build_full_prompt_with_skill()`.
+2. **Superpowers Loader** (Planned) -- Loads brainstorming, TDD, debugging, code
+   review skills from a plugin directory. Custom loader interface not yet defined.
+3. **Org Skills Loader** (Planned) -- Loads company-specific skills from K8s ConfigMap
+   (e.g., internal coding standards, deployment procedures).
+4. **MCP Skill Discovery** (Planned) -- Reads skills from connected MCP servers' tool
+   definitions and maps them to the agent card's skills array.
 
 When a user invokes `/rca:ci #758`, the frontend parses the skill name and sends
 it in the request body. The platform loads the full skill content and prepends it
@@ -301,9 +305,9 @@ to the system prompt before calling the agent's graph.
 
 ## 5. Composable Sandboxing
 
-The wizard allows users to compose sandbox layers independently. Each layer
-adds a specific defense without requiring changes to agent code. Layers are
-additive — T3 includes all of T1 and T2.
+The deployment API allows users to compose sandbox layers independently. Each
+layer adds a specific defense without requiring changes to agent code. Layers are
+additive -- T3 includes all of T1 and T2.
 
 ### 5.1 Sandboxing Layers
 
@@ -343,61 +347,23 @@ graph TB
 
 | Layer | Toggle | What It Protects Against | Agent Impact |
 |-------|--------|-------------------------|-------------|
-| **secctx** | `☑ Container Hardening` | Privilege escalation, container escape | None — standard K8s best practice |
-| **landlock** | `☑ Filesystem Sandbox` | Writing outside workspace, reading secrets | PermissionError on forbidden paths |
-| **proxy** | `☑ Network Proxy` | Data exfiltration, accessing blocked domains | HTTP 403 on blocked domains |
-| **authbridge** | `☑ AuthBridge` | Unauthorized API calls, identity spoofing | None — transparent token exchange |
-| **gvisor** | `☑ Kernel Sandbox` | Kernel exploits, syscall abuse | Planned — blocked on OpenShift |
+| **secctx** | `secctx: true` | Privilege escalation, container escape | None -- standard K8s best practice |
+| **landlock** | `landlock: true` | Writing outside workspace, reading secrets | PermissionError on forbidden paths |
+| **proxy** | `proxy: true` | Data exfiltration, accessing blocked domains | HTTP 403 on blocked domains |
+| **authbridge** | (planned) | Unauthorized API calls, identity spoofing | None -- transparent token exchange |
+| **gvisor** | (planned) | Kernel exploits, syscall abuse | Blocked on OpenShift SELinux |
 
-### 5.2 Wizard Composability
+### 5.2 Layer Composability
 
-The wizard presents each layer as an independent toggle. Users can enable
+Each layer is an independent toggle in the deployment API. Users can enable
 any combination. The self-documenting deployment name reflects active layers:
 
 ```
-sandbox-legion                              → T0 (no hardening)
-sandbox-legion-secctx                       → L1 only
-sandbox-legion-secctx-landlock              → L1 + L2
-sandbox-legion-secctx-landlock-proxy        → L1 + L2 + L3
-sandbox-legion-secctx-proxy                 → L1 + L3 (skip landlock)
-```
-
-```mermaid
-graph LR
-    subgraph "Wizard Security Step"
-        CB1["☑ Container Hardening<br/>(non-root, drop caps)"]
-        CB2["☐ Filesystem Sandbox<br/>(Landlock)"]
-        CB3["☐ Network Proxy<br/>(Squid allowlist)"]
-        CB4["☐ AuthBridge<br/>(SPIFFE + OAuth)"]
-        CB5["☐ Kernel Sandbox<br/>(gVisor)"]
-        ISO["Isolation Mode<br/>● shared<br/>○ pod-per-session"]
-        TTL["Session TTL<br/>(7d default)"]
-        WSZ["Workspace Size<br/>(5Gi default)"]
-    end
-
-    subgraph "Generated Pod Spec"
-        MAIN["Agent Container<br/>(with secctx if enabled)"]
-        NONO["nono_launcher<br/>(if landlock enabled)"]
-        SQUID["Squid sidecar<br/>(if proxy enabled)"]
-        ENVOY["Envoy sidecar<br/>(if authbridge enabled)"]
-        SPIFFE["spiffe-helper<br/>(if authbridge enabled)"]
-        CLREG["client-registration<br/>(if authbridge enabled)"]
-        NP["NetworkPolicy<br/>(if proxy enabled)"]
-    end
-
-    CB1 --> MAIN
-    CB2 --> NONO
-    CB3 --> SQUID
-    CB3 --> NP
-    CB4 --> ENVOY
-    CB4 --> SPIFFE
-    CB4 --> CLREG
-
-    style CB1 fill:#8BC34A,color:white
-    style CB2 fill:#FFC107,color:black
-    style CB3 fill:#FF9800,color:white
-    style CB4 fill:#3F51B5,color:white
-    style CB5 fill:#F44336,color:white
+sandbox-legion                              -> T0 (no hardening)
+sandbox-legion-secctx                       -> L1 only
+sandbox-legion-secctx-landlock              -> L1 + L2
+sandbox-legion-secctx-landlock-proxy        -> L1 + L2 + L3
+sandbox-legion-secctx-proxy                 -> L1 + L3 (skip landlock)
 ```
 
 ### 5.3 Deployment & Orchestration
@@ -410,7 +376,7 @@ isolation tradeoff**.
 graph TB
     subgraph "Deployment Model (shared pod)"
         direction TB
-        D_WIZ["Wizard / API / Trigger"]
+        D_WIZ["API / Trigger"]
         D_DEP["K8s Deployment<br/>+ Service + Route"]
         D_SESS["Session 1<br/>/workspace/ctx-aaa"]
         D_SESS2["Session 2<br/>/workspace/ctx-bbb"]
@@ -420,7 +386,7 @@ graph TB
 
     subgraph "SandboxClaim Model (dedicated pod)"
         direction TB
-        SC_WIZ["Wizard / API / Trigger"]
+        SC_WIZ["API / Trigger"]
         SC_CRD["SandboxClaim CRD"]
         SC_CTRL["Controller"]
         SC_POD1["Pod 1<br/>(task A)"]
@@ -455,7 +421,7 @@ but shares the agent process, container filesystem, and network stack.
 
 **How triggers work with Deployments:**
 Triggers (cron, webhook, alert) create a **new session** on the existing
-agent deployment via A2A API. The agent is already running — no pod startup
+agent deployment via A2A API. The agent is already running -- no pod startup
 delay. The session uses the agent's pre-configured sandboxing layers.
 
 **Session TTL:** Sessions within a Deployment have application-level TTL.
@@ -464,12 +430,12 @@ The pod itself stays running.
 
 | Aspect | Detail |
 |--------|--------|
-| **Resource cost** | 1 pod × (500m CPU + 1Gi RAM) regardless of session count |
-| **Startup latency** | Zero — pod already running |
+| **Resource cost** | 1 pod x (500m CPU + 1Gi RAM) regardless of session count |
+| **Startup latency** | Zero -- pod already running |
 | **Session isolation** | Per-context workspace directories, same process memory |
 | **Concurrent sessions** | Unlimited (bounded by pod resources) |
 | **Cleanup** | Session TTL cleans workspace dirs + DB records, pod persists |
-| **Triggers** | Trigger → A2A API call → new session on existing pod |
+| **Triggers** | Trigger -> A2A API call -> new session on existing pod |
 | **Best for** | Interactive chat, low-latency, shared team agents, development |
 
 **Isolation gap:** Sessions share the same process. A malicious session could
@@ -490,44 +456,39 @@ network namespace. The kubernetes-sigs `SandboxClaim` CRD manages lifecycle.
 
 | Aspect | Detail |
 |--------|--------|
-| **Resource cost** | N pods × (500m CPU + 1Gi RAM) for N concurrent tasks |
-| **Startup latency** | 30s–2min (pod scheduling + image pull + init containers) |
+| **Resource cost** | N pods x (500m CPU + 1Gi RAM) for N concurrent tasks |
+| **Startup latency** | 30s-2min (pod scheduling + image pull + init containers) |
 | **Session isolation** | Full pod isolation (separate process, fs, network) |
 | **Concurrent sessions** | 1 per pod (dedicated resources) |
 | **Cleanup** | Pod TTL destroys entire pod + workspace, or API-managed |
-| **Triggers** | Trigger → SandboxClaim CRD → controller → new pod |
+| **Triggers** | Trigger -> SandboxClaim CRD -> controller -> new pod |
 | **Best for** | Untrusted code, security-sensitive tasks, batch jobs, CI |
-
-**Isolation advantage:** Each task runs in a completely separate pod. No
-shared memory, no shared filesystem, separate network namespace. Combined
-with Landlock + Squid, this provides defense-in-depth even if the agent
-process is compromised.
 
 #### Comparison Matrix
 
 | | Deployment | SandboxClaim |
 |---|:---:|:---:|
 | **Resources per session** | Shared (amortized) | Dedicated |
-| **Startup time** | 0s | 30s–2min |
-| **Process isolation** | ❌ Shared process | ✅ Separate pods |
-| **Filesystem isolation** | ⚠️ Per-directory | ✅ Per-pod |
-| **Network isolation** | ⚠️ Shared (same pod) | ✅ Separate NetworkPolicy |
-| **Trigger support** | ✅ New session via API | ✅ New pod via CRD |
-| **Session TTL** | ✅ App-level cleanup | ✅ Pod-level destruction |
-| **Interactive chat** | ✅ Low latency | ⚠️ Cold start delay |
-| **Concurrent tasks** | ✅ Many on one pod | ⚠️ One pod per task |
-| **Cost at scale** | ✅ O(1) pods | ⚠️ O(N) pods |
-| **Sandboxing layers** | ✅ All supported | ✅ All supported |
-| **AuthBridge** | ✅ Per-pod identity | ✅ Per-pod identity |
+| **Startup time** | 0s | 30s-2min |
+| **Process isolation** | Shared process | Separate pods |
+| **Filesystem isolation** | Per-directory | Per-pod |
+| **Network isolation** | Shared (same pod) | Separate NetworkPolicy |
+| **Trigger support** | New session via API | New pod via CRD |
+| **Session TTL** | App-level cleanup | Pod-level destruction |
+| **Interactive chat** | Low latency | Cold start delay |
+| **Concurrent tasks** | Many on one pod | One pod per task |
+| **Cost at scale** | O(1) pods | O(N) pods |
+| **Sandboxing layers** | All supported | All supported |
+| **AuthBridge** | Per-pod identity | Per-pod identity |
 
 #### Hybrid: pod-per-session with Deployment
 
-The wizard's **isolation mode** selector offers a middle ground:
+The **isolation mode** selector offers a middle ground:
 
 ```
 Isolation Mode:
-  ● shared         → one pod, multiple sessions (Deployment model)
-  ○ pod-per-session → new pod per session (uses SandboxClaim under the hood)
+  shared         -> one pod, multiple sessions (Deployment model)
+  pod-per-session -> new pod per session (uses SandboxClaim under the hood)
 ```
 
 With `pod-per-session`, the Kagenti operator creates a SandboxClaim for each
@@ -535,9 +496,9 @@ new session. The user gets the UI experience of a Deployment (click agent,
 start chatting) with the isolation guarantees of a SandboxClaim (separate
 pod per session).
 
-**Performance tradeoff:** `pod-per-session` has a 30s–2min cold start on
+**Performance tradeoff:** `pod-per-session` has a 30s-2min cold start on
 first message (pod scheduling). Subsequent messages in the same session
-are fast (pod already running). The wizard should warn about this delay.
+are fast (pod already running).
 
 #### Trigger Flow for Both Models
 
@@ -549,7 +510,7 @@ sequenceDiagram
 
     alt Deployment Model
         T->>API: POST /trigger {type: "webhook", agent: "rca-agent"}
-        API->>API: Resolve agent → existing Deployment
+        API->>API: Resolve agent -> existing Deployment
         API->>API: Create new session (context_id)
         API->>API: POST A2A message to agent pod
         Note over API: Session runs on existing pod
@@ -562,7 +523,7 @@ sequenceDiagram
         Note over K8S: Pod starts (30s-2min)
         API->>K8S: POST A2A message to new pod
         Note over K8S: Task runs in dedicated pod
-        K8S->>K8S: Pod TTL → destroy pod
+        K8S->>K8S: Pod TTL -> destroy pod
     end
 ```
 
@@ -583,15 +544,27 @@ graph TB
             FB["FileBrowser<br/>(pod filesystem)"]
             SG["SessionGraph<br/>(DAG visualization)"]
             ALC["AgentLoopCard<br/>(expandable reasoning)"]
+            HITLC["HitlApprovalCard<br/>(approve/deny actions)"]
+            SUBP["SubSessionsPanel<br/>(child session nav)"]
+            MSUI["ModelSwitcher<br/>(per-session cog popover)"]
         end
 
         subgraph "Backend Layer"
             API["FastAPI Backend"]
             CHAT["Chat Proxy<br/>(SSE streaming)"]
             SESS["Session API<br/>(history aggregation)"]
-            DEPLOY["Deploy API<br/>(wizard manifests)"]
+            DEPLOY["Deploy API<br/>(manifest builder)"]
             FILES["Files API<br/>(pod exec)"]
             TRIG["Trigger API<br/>(cron/webhook)"]
+            TOKAPI["Token Usage API<br/>(LiteLLM spend proxy)"]
+            MODAPI["Models API<br/>(LiteLLM model list, cached)"]
+        end
+
+        subgraph "Sidecar Agents (in-process)"
+            SMGR["SidecarManager<br/>(lifecycle, event queues)"]
+            LOOP["Looper<br/>(auto-continue kicker)"]
+            HALL["Hallucination Observer<br/>(fake path detection)"]
+            CGUARD["Context Guardian<br/>(token usage monitoring)"]
         end
 
         subgraph "Gateway Layer"
@@ -608,6 +581,7 @@ graph TB
             PHX["Phoenix<br/>(LLM observability)"]
             OTELC["OTEL Collector<br/>(trace pipeline)"]
             MLF["MLflow<br/>(experiment tracking)"]
+            LITE["LiteLLM Proxy<br/>(model routing, spend tracking)"]
         end
 
         subgraph "Operator Layer"
@@ -631,16 +605,24 @@ graph TB
     API --> DEPLOY
     API --> FILES
     API --> TRIG
+    API --> TOKAPI
+    API --> MODAPI
 
     CHAT -->|"A2A"| SL
     CHAT -->|"A2A"| OCA
     CHAT -->|"A2A"| WS
+    CHAT -->|"events"| SMGR
+    SMGR --> LOOP
+    SMGR --> HALL
+    SMGR --> CGUARD
     MCPGW -->|"MCP"| WS
     WH -->|"inject sidecars"| SL
     WH -->|"inject sidecars"| OCA
     OP -->|"manage CRDs"| SL
     OTELC --> PHX
     OTELC --> MLF
+    TOKAPI --> LITE
+    MODAPI --> LITE
 
     style UI fill:#2196F3,color:white
     style API fill:#4CAF50,color:white
@@ -650,6 +632,8 @@ graph TB
     style OCA fill:#FF9800,color:white
     style OP fill:#607D8B,color:white
     style WH fill:#3F51B5,color:white
+    style SMGR fill:#00897B,color:white
+    style LITE fill:#E91E63,color:white
 ```
 
 ## 7. A2A Wrapper Pattern for Non-Native Agents
@@ -699,7 +683,7 @@ Changes:
   - Create Dockerfile.legion (FROM kagenti-agent-base)
   - Set AGENT_MODULE=sandbox_agent.graph
   - Build + deploy on isolated cluster
-  - Run existing 192 Playwright tests → must pass
+  - Run existing 192 Playwright tests -> must pass
 ```
 
 ### Phase 3: OpenCode on Platform Base
@@ -708,65 +692,48 @@ Changes:
 Files to create:
   deployments/sandbox/opencode/
   ├── Dockerfile.opencode      # FROM base + opencode binary
-  ├── opencode_wrapper.py      # A2A ↔ OpenCode HTTP adapter
+  ├── opencode_wrapper.py      # A2A <-> OpenCode HTTP adapter
   └── test_wrapper.py          # Unit tests
 
-Deploy as new variant → run Playwright tests
+Deploy as new variant -> run Playwright tests
 ```
 
 ### Phase 4: Feature Parity Matrix
 
 | Feature | Test File | Legion | OpenCode |
 |---------|-----------|:------:|:--------:|
-| A2A agent card | agent-catalog.spec.ts | ✓ | ✓ |
-| Chat streaming | sandbox-sessions.spec.ts | ✓ | ✓ |
-| Tool execution | sandbox-walkthrough.spec.ts | ✓ | ✓ |
-| File browser | sandbox-file-browser.spec.ts | ✓ | ✓ |
-| Session persist | sandbox-sessions.spec.ts | ✓ | ✓ |
-| HITL approval | sandbox-hitl.spec.ts | ✓ | ✓ |
-| Security tiers | sandbox-variants.spec.ts | ✓ | ✓ |
-| Skills loading | agent-rca-workflow.spec.ts | ✓ | ✓ |
-| Multi-user auth | agent-chat-identity.spec.ts | ✓ | ✓ |
+| A2A agent card | agent-catalog.spec.ts | Yes | Yes |
+| Chat streaming | sandbox-sessions.spec.ts | Yes | Yes |
+| Tool execution | sandbox-walkthrough.spec.ts | Yes | Yes |
+| File browser | sandbox-file-browser.spec.ts | Yes | Yes |
+| Session persist | sandbox-sessions.spec.ts | Yes | Yes |
+| HITL approval | sandbox-hitl.spec.ts | Yes | Yes |
+| Security tiers | sandbox-variants.spec.ts | Yes | Yes |
+| Skills loading | agent-rca-workflow.spec.ts | Yes | Yes |
+| Multi-user auth | agent-chat-identity.spec.ts | Yes | Yes |
 
-## 9. Agent Wizard Integration
+## 9. Agent Deployment API
 
-The wizard composes the full deployment from 6 steps:
+The deployment API (`sandbox_deploy.py`) is an API-driven Kubernetes manifest
+builder. Rather than a step-by-step UI wizard, it exposes a single
+`POST /sandbox/{namespace}/deploy` endpoint that accepts a `SandboxCreateRequest`
+body and generates the full Deployment + Service + Route manifests.
 
-```mermaid
-graph TB
-    subgraph "Step 1: Source"
-        S1["Agent Name + Git Repo<br/>Framework: LangGraph / OpenCode / Claude SDK / Custom"]
-    end
+The request body captures all configuration dimensions:
 
-    subgraph "Step 2: Sandboxing"
-        S2["☑ Container Hardening (secctx)<br/>☐ Filesystem Sandbox (landlock)<br/>☐ Network Proxy (squid)<br/>☐ AuthBridge (SPIFFE + OAuth)<br/>Isolation: shared / pod-per-session<br/>Workspace: 5Gi / 10Gi / 20Gi"]
-    end
+| Field Group | Fields | Purpose |
+|-------------|--------|---------|
+| **Source** | `name`, `repo`, `branch`, `context_dir`, `base_agent` | Agent identity and git source |
+| **Security** | `secctx`, `landlock`, `proxy`, `gvisor`, `proxy_domains` | Composable sandbox layers (boolean toggles) |
+| **Model** | `model`, `llm_api_key`, `llm_key_source`, `llm_secret_name` | LLM provider configuration |
+| **Lifecycle** | `isolation_mode` (shared/pod-per-session), `managed_lifecycle`, `ttl_hours` | Deployment vs SandboxClaim |
+| **Persistence** | `enable_persistence`, `workspace_size` | PostgreSQL session store and PVC size |
+| **Skills** | `skill_packs` | Skill pack names from skill-packs.yaml |
 
-    subgraph "Step 3: Identity"
-        S3["LLM API Key (existing secret or paste)<br/>GitHub PAT (optional)"]
-    end
-
-    subgraph "Step 4: Persistence"
-        S4["☑ PostgreSQL session store<br/>Lifecycle: Deployment / SandboxClaim"]
-    end
-
-    subgraph "Step 5: Observability"
-        S5["Model: Llama 4 Scout / Mistral / GPT<br/>☑ OTEL + Phoenix + MLflow"]
-    end
-
-    subgraph "Step 6: Review + Deploy"
-        S6["Summary → Generate manifest → Deploy"]
-    end
-
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6
-
-    S6 -->|"Deployment"| DEP2["K8s Deployment<br/>+ Service + Route"]
-    S6 -->|"SandboxClaim"| SC3["SandboxClaim CRD<br/>+ TTL cleanup"]
-
-    style S2 fill:#FF9800,color:white
-    style DEP2 fill:#4CAF50,color:white
-    style SC3 fill:#607D8B,color:white
-```
+The `SandboxProfile` class (from `deployments/sandbox/sandbox_profile.py`)
+translates security toggles into Kubernetes pod spec patches. The deployment
+name is self-documenting and reflects active layers
+(e.g., `sandbox-legion-secctx-landlock-proxy`).
 
 ## 10. MAAS Model Compatibility
 
@@ -774,129 +741,348 @@ Tested 2026-03-03 on Red Hat AI Services:
 
 | Model | tool_choice=auto | Recommended For |
 |-------|:----------------:|-----------------|
-| **Llama 4 Scout 17B-16E** (109B MoE) | ✅ 10/10 | Tool-calling agents (default) |
-| Mistral Small 3.1 24B | ❌ 0/10 | Chat-only (no structured tool_calls with auto) |
-| DeepSeek R1 Qwen 14B | ❌ | Reasoning tasks (no tool support) |
-| Llama 3.2 3B | ❌ | Too small for function calling |
+| **Llama 4 Scout 17B-16E** (109B MoE) | 10/10 | Tool-calling agents (default) |
+| Mistral Small 3.1 24B | 0/10 | Chat-only (no structured tool_calls with auto) |
+| DeepSeek R1 Qwen 14B | No | Reasoning tasks (no tool support) |
+| Llama 3.2 3B | No | Too small for function calling |
 
-All clusters use **Llama 4 Scout** for sandbox agents.
+All clusters use **Llama 4 Scout** for sandbox agents, routed through
+LiteLLM proxy.
 
-## 11. Success Criteria
+## 11. Streaming and Chat Architecture
 
-Session N is complete when:
+The platform uses a hybrid streaming architecture: real-time SSE during active
+requests, with polling fallback for idle sessions.
+
+### SSE Streaming (active requests)
+
+The `POST /chat/stream` endpoint opens a request-scoped SSE connection that
+remains active for the duration of the agent's A2A response. The backend SSE
+proxy (`_proxy_agent_sse` in `sandbox.py`) performs several transformations:
+
+1. **Parses JSON lines** from the agent's raw SSE stream
+2. **Detects `loop_id`** fields and wraps events in `loop_event` envelopes
+3. **Forwards events** to the frontend in real-time
+4. **Captures loop events** for persistence (new-type events only, excluding
+   legacy `llm_response` duplicates)
+
+The SSE connection closes when the agent completes or errors. There is no
+persistent SSE connection per session.
+
+### Polling Fallback (idle sessions)
+
+A 5-second `setInterval` in `SandboxPage.tsx` polls
+`GET /sessions/{id}/history` with `limit: 5` when:
+- A `contextId` is set (session is active)
+- `isStreaming` is false (no active SSE connection)
+
+Polling deduplicates messages by their `_index` field.
+
+### Historical Load
+
+`GET /sessions/{id}/history` supports pagination via `limit` and `offset`
+parameters. It returns message history from the tasks table alongside
+`loop_events` from task metadata, enabling full frontend reconstruction
+of AgentLoopCard components on session reload.
+
+### Loop Event Persistence
+
+Loop events are persisted to task metadata in a `finally` block within the
+SSE proxy generator. This atomic write ensures events are saved even if the
+stream is interrupted. The persistence combines agent name metadata and
+loop events into a single DB update to avoid race conditions.
+
+### Frontend Reconstruction
+
+On session reload, the frontend iterates persisted `loop_events` from the
+history response and reconstructs `AgentLoop` objects using the same state
+reducer as the live SSE handler. This enables AgentLoopCard rendering for
+historical sessions.
+
+### Future: WebSocket Upgrade
+
+A WebSocket design exists for multi-user session updates and delegation
+callbacks. See [WebSocket / SSE Session Updates Design](2026-03-06-websocket-session-updates-design.md).
+
+## 12. Event Pipeline
+
+The agent event pipeline provides typed, structured events from graph nodes
+through to the frontend.
+
+### Pipeline stages
+
+```
+Agent graph node (planner, executor, reflector, reporter)
+  -> event_serializer.py (LangGraphSerializer)
+    -> Backend SSE proxy (sandbox.py: _proxy_agent_sse)
+      -> Frontend SSE handler (SandboxPage.tsx)
+        -> AgentLoop state reducer
+          -> AgentLoopCard render
+```
+
+### Event types
+
+The `LangGraphSerializer` emits distinct event types per graph node:
+
+| Graph Node | Event Type(s) | Content |
+|------------|---------------|---------|
+| `planner` | `plan` | Plan steps array, iteration number, reasoning text |
+| `executor` | `plan_step`, `tool_call`, `tool_result` | Step index, tool invocations, tool outputs |
+| `reflector` | `reflection` | Done flag, current step, assessment text |
+| `reporter` | `llm_response` (with `loop_id`) | Final answer text |
+| (any node) | `budget_update` | Token usage, wall clock time |
+| (HITL) | `hitl_request` | Command needing approval, reason |
+
+### Legacy compatibility
+
+Legacy event types (`llm_response` for all nodes) are still emitted for backward
+compatibility. The frontend deduplicates: when typed events with `loop_id` are
+present, flat events are suppressed entirely via the `session_has_loops` flag
+in the SSE proxy.
+
+### Backend SSE proxy behavior
+
+The proxy in `sandbox.py` performs line-by-line JSON parsing of the agent's
+status messages. For each parsed event:
+- If it contains a `loop_id`, it wraps the event in a `loop_event` envelope
+- New-type events (non-legacy) are accumulated in a `loop_events` list
+- Legacy types (`llm_response`, `tool_call`, `tool_result` without `loop_id`)
+  are passed through only if no loop events have been seen in the session
+
+### Persistence
+
+Only new-type events are persisted to task metadata. The `loop_events` list
+is written via an atomic `UPDATE tasks SET metadata = ...` in the SSE proxy's
+`finally` block, merged with existing metadata (agent name, visibility) to
+prevent overwrites.
+
+## 13. Sidecar Agents
+
+Sidecar agents are **in-process asyncio tasks** (not separate Kubernetes pods)
+that run alongside sandbox sessions. They observe parent session events and
+can intervene when problems are detected.
+
+### Architecture
+
+The `SidecarManager` (singleton in `kagenti/backend/app/services/sidecar_manager.py`)
+manages sidecar lifecycle:
+
+- **Registry:** `Dict[parent_context_id, Dict[SidecarType, SidecarHandle]]`
+- **Event queues:** Per-session `asyncio.Queue` (maxsize 1000), filled by `fan_out_event()`
+- **Lifecycle:** `enable()` spawns an `asyncio.Task`, `disable()` cancels it, `cleanup_session()` tears down all sidecars for a session
+
+### Sidecar types
+
+| Sidecar | Analyzer | Behavior |
+|---------|----------|----------|
+| **Looper** | `LooperAnalyzer` | Auto-continue kicker. Drains event queue, checks if agent turn completed, sends "continue" via A2A. Respects configurable counter limit; when limit reached, emits HITL observation or auto-resets (if `auto_approve` is true). |
+| **Hallucination Observer** | `HallucinationAnalyzer` | SSE-driven. Validates file paths and API references in agent output against the workspace filesystem. Emits observations when suspect paths are detected. |
+| **Context Guardian** | `ContextGuardianAnalyzer` | SSE-driven. Tracks token usage trajectory against configurable thresholds (`warn_threshold_pct`, `critical_threshold_pct`). Emits warning/critical observations and can trigger HITL approval for intervention. |
+
+### Looper auto-continue mechanism
+
+When the looper decides to auto-continue, it creates a **child session** via
+A2A `message/send` with a new `context_id` and `parent_context_id` in metadata.
+This keeps iterations visible in the sub-sessions panel without polluting the
+parent session's context. The looper retries metadata writes (up to 5 attempts)
+because the task row may not exist immediately after the A2A call.
+
+### REST API
+
+The sidecar REST API (`/sandbox/{namespace}/sessions/{context_id}/sidecars/...`)
+provides endpoints for:
+- `GET .../sidecars` -- list all sidecars for a session
+- `POST .../sidecars/{type}/enable` -- spawn sidecar task
+- `POST .../sidecars/{type}/disable` -- cancel sidecar task
+- `PUT .../sidecars/{type}/config` -- hot-reload config
+- `POST .../sidecars/{type}/reset` -- disable + re-enable (fresh analyzer)
+- `GET .../sidecars/{type}/observations` -- SSE stream of observations
+- `POST .../sidecars/{type}/approve/{msg_id}` -- approve HITL intervention
+- `POST .../sidecars/{type}/deny/{msg_id}` -- deny HITL intervention
+
+### UI
+
+Compact accordion panel with per-sidecar tabs, enable/disable toggles,
+auto-approve/HITL switches, and observation streams. The looper shows
+iteration progress as `2/5` with a mini progress bar.
+
+### Known issues
+
+- Looper auto-continue is non-functional: SSE observations endpoint returns
+  401 (auth not forwarded to sidecar SSE endpoint), and `fan_out_event` is
+  not reliably triggering the looper's event queue
+- A2A message injection (corrective messages into parent session) is stubbed
+  (`approve_intervention` logs but does not inject)
+- Heartbeat observations needed for test verification
+
+## 14. Agent Loop UI
+
+The agent loop UI renders structured reasoning events as expandable cards
+instead of flat chat bubbles.
+
+### AgentLoopCard
+
+Each agent response renders as a single `AgentLoopCard`:
+- **Final answer** (markdown) always visible at top
+- **"Show reasoning" toggle** expands `LoopSummaryBar` + `LoopDetail`
+- During streaming: auto-expanded (live progress). After completion: auto-collapsed.
+- On history reload: all collapsed.
+
+### LoopSummaryBar
+
+Single-row summary displaying:
+- Status icon (spinner during execution, check/cross on completion)
+- Tool count, token count (formatted as "1.2k"), status text
+- `ModelBadge` showing the LLM model used
+- Duration in seconds
+- Expand/collapse toggle
+
+### Node type styling
+
+Steps within the `LoopDetail` carry visual badges by event type:
+
+| Event Type | Node | Color |
+|------------|------|-------|
+| `planner_output` | Planner | Blue |
+| `executor_step` | Executor | Green |
+| `reflector_decision` | Reflector | Orange |
+| `reporter_output` | Reporter | Purple |
+
+### Per-step token display
+
+Each `AgentLoopStep` carries `tokens: { prompt, completion }` for per-step
+token accounting. The `LoopSummaryBar` sums tokens across all steps and
+displays the total alongside a `ModelBadge`.
+
+### HITL approval
+
+When the agent emits a `hitl_request` event, the `HitlApprovalCard` component
+renders an interactive card with the command needing approval, the reason, and
+Approve/Deny buttons. Once actioned, buttons are replaced with a status label.
+
+## 15. Session Management
+
+### Agent name resolution
+
+`_resolve_agent_name()` in `sandbox.py` is the **single source of truth** for
+determining which agent owns a session. For new sessions (no existing
+`session_id`), it uses the `request_agent` field. For existing sessions, it
+queries the tasks table for the DB-bound agent name, ensuring sessions remain
+pinned to their original agent even if the request specifies a different one.
+
+### Metadata merge
+
+Session metadata is written atomically via a JSON merge pattern: the SSE proxy's
+`finally` block reads existing metadata, merges in new fields (`agent_name`,
+`visibility`, `loop_events`), and writes back in a single `UPDATE`. This prevents
+race conditions between `_set_owner_metadata()` and loop event persistence.
+
+### Sub-sessions
+
+Delegation and looper auto-continue create child sessions with
+`parent_context_id` in their task metadata. The `SubSessionsPanel` component
+queries for child sessions via `getChildSessions(namespace, contextId)` and
+renders them with status badges (green=completed, blue=working, red=failed).
+Clicking a child session navigates to it.
+
+## 16. LiteLLM Integration
+
+LiteLLM proxy serves as the model routing layer for all sandbox agents.
+
+### Model proxy
+
+`GET /api/v1/models` (in `models.py`) proxies the LiteLLM `/models` endpoint
+with a 5-minute in-memory cache. Returns an OpenAI-compatible list of available
+model IDs.
+
+### Token usage
+
+`GET /api/v1/token-usage/sessions/{id}` (in `token_usage.py`) queries LiteLLM's
+`/spend/logs` endpoint by `request_id`. Request IDs are stored in session task
+metadata as `llm_request_ids`. The endpoint aggregates spend per model and
+returns prompt/completion token counts and cost.
+
+`GET /api/v1/token-usage/sessions/{id}/tree` extends this to session trees:
+it queries child sessions (by `parent_context_id` in metadata) and merges
+their usage into an aggregate.
+
+### Model switcher
+
+The `ModelSwitcher` component renders as a cog icon popover in the session
+header. It fetches available models from the models API, displays them in a
+`Select` dropdown, and fires `onModelChange` to apply a per-session model
+override.
+
+### Helm configuration
+
+The backend reads `LITELLM_API_KEY` from a Kubernetes secret:
+```yaml
+- name: LITELLM_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: litellm-proxy-secret
+      key: master-key
+      optional: true
+```
+
+`LITELLM_BASE_URL` defaults to `http://litellm-proxy.kagenti-system.svc:4000`.
+
+## 17. Testing Architecture
+
+### E2E test suites
+
+The platform has 10 core E2E tests across 5 suites, executed in parallel with
+4 Playwright workers (~1.5 minutes total):
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `sandbox-sessions.spec.ts` | 3 | Session isolation, state leak prevention, persistence across reload |
+| `sandbox-walkthrough.spec.ts` | 1 | Full user journey (create, chat, tools, file browser) |
+| `sandbox-variants.spec.ts` | 4 | Multi-turn with tool calls across all 4 agent variants (legion, hardened, basic, restricted) |
+| `agent-rca-workflow.spec.ts` | 1 | RCA agent end-to-end with skill invocation and loop verification |
+| `sandbox-delegation.spec.ts` | 1 | Delegate tool spawns child session, renders in sidebar |
+
+### Additional test suites
+
+| Test File | Purpose | Status |
+|-----------|---------|--------|
+| `agent-loop-consistency.spec.ts` | Validates streaming vs historical reconstruction match | In progress (known divergence on step 5 of root cause chain) |
+| `agent-resilience.spec.ts` | Validates recovery after agent pod restart mid-request | Implemented |
+| `sandbox-sidecars.spec.ts` | Sidecar agent lifecycle and observations | Implemented |
+| `sandbox-hitl.spec.ts` | HITL approval workflow | Implemented |
+
+### Unit tests
+
+94 unit tests across the `deployments/sandbox/` directory cover sandbox profile
+generation, skill pack loading, repo management, agent server, triggers, nono
+launcher, TOFU verification, and entrypoint loading.
+
+### PatternFly testing workarounds
+
+Two patterns address PatternFly component limitations in Playwright:
+- **`pressSequentially`** for `TextInput`: PatternFly's controlled inputs
+  require character-by-character input instead of `fill()` to trigger
+  React's change handlers correctly
+- **`Promise.race`** for hangs: Some PatternFly interactions (particularly
+  dropdowns and popovers) can cause Playwright to hang waiting for
+  navigation; `Promise.race` with a timeout prevents test deadlocks
+
+## 18. Success Criteria
+
+The platform agent runtime is complete when:
 1. Platform base image builds and passes unit tests
-2. Sandbox Legion deploys FROM base and passes 192/196 Playwright tests
+2. Sandbox Legion deploys FROM base and passes Playwright tests
 3. OpenCode deploys FROM base and passes core chat/session tests
 4. Both agents work with AuthBridge (if deployed on T3)
 5. Feature parity matrix shows identical platform feature coverage
 6. Documentation updated with deployment instructions
 
-## 12. Current State (Session S)
-
-> **Date:** 2026-03-09
-> **Sessions:** G (design) → N (implementation) → S (event pipeline + UI) → T (next)
-> **Cluster:** sbox42 (Llama 4 Scout via LiteLLM proxy)
-> **Worktree:** `.worktrees/sandbox-agent`
-
-### Event Pipeline
-
-The agent event pipeline is now fully typed end-to-end:
-
-```
-Agent graph node
-  → event_schema.py (typed dataclass: PlannerOutput, ExecutorStep, ReflectorDecision, ReporterOutput, BudgetUpdate)
-    → event_serializer.py (SSE JSON with distinct event type per node)
-      → backend SSE proxy (captures events + forwards to client)
-        → frontend SSE handler (SandboxPage.tsx)
-          → AgentLoop state reducer
-            → AgentLoopCard render
-```
-
-Each graph node emits its own event type (`planner_output`, `executor_step`,
-`reflector_decision`, `reporter_output`, `budget_update`). Legacy event types
-(`llm_response` for all nodes) are still emitted for backward compatibility
-but the frontend deduplicates when typed events are present.
-
-**Backend persistence:** Loop events are persisted to task metadata via an
-atomic write in a `finally` block. The history endpoint returns `loop_events`
-from metadata alongside message history.
-
-**Frontend reconstruction:** On session reload, the frontend iterates through
-persisted `loop_events` and reconstructs `AgentLoop` objects using the same
-state reducer as the live SSE handler.
-
-See: [Sandbox Reasoning Loop Design](2026-03-03-sandbox-reasoning-loop-design.md) (Session S Updates section)
-
-### Chat Architecture
-
-| Mechanism | Status | Details |
-|-----------|--------|---------|
-| **Polling** | Implemented (current) | 5-second interval via `setInterval` in SandboxPage; polls `getHistory(namespace, contextId, { limit: 5 })`; deduplicates by `_index` |
-| **SSE streaming** | Implemented (per-request) | Active during `/chat/stream` requests; delivers tool_call, tool_result, plan, reflection events in real-time |
-| **WebSocket** | Designed, not implemented | Proposed for multi-user session updates and delegation callbacks |
-| **loop_events in metadata** | Implemented | Persisted for history reconstruction; enables loop cards on reload |
-
-The polling mechanism runs only when `contextId` is set and `isStreaming` is
-false. For the WebSocket proposal and SSE session endpoint alternative, see:
-[WebSocket / SSE Session Updates Design](2026-03-06-websocket-session-updates-design.md)
-
-### Sidecar Agents
-
-Three sidecar agents run as in-process `asyncio.Task` instances alongside
-sandbox sessions:
-
-| Sidecar | Purpose | Status |
-|---------|---------|--------|
-| **Looper** | Auto-continue kicker — sends "continue" on turn completion, respects counter limit and HITL | UI compact panel done; auto-continue broken (SSE auth issue, `fan_out_event` not triggering) |
-| **Hallucination Observer** | Validates file paths and imports against workspace | Backend analyzer implemented, SSE-driven |
-| **Context Guardian** | Tracks token trajectory, warns at thresholds | Backend analyzer implemented, SSE-driven |
-
-**UI:** Compact accordion panel with per-sidecar tabs, enable/disable toggles,
-auto-approve/HITL switches, and observation streams. Looper shows iteration
-progress as `2/5` with mini progress bar.
-
-**Known issues:**
-- Looper auto-continue is broken — SSE auth and `fan_out_event` not triggering
-  the looper's event queue
-- A2A message injection (corrective messages into parent session) is stubbed
-- Heartbeat observations needed for test verification
-
-See: [Sidecar Agents Design](../../../docs/plans/2026-03-06-sidecar-agents-design.md)
-
-### Test Coverage
-
-**Core tests: 10/10 green** (1.3m with 4 parallel workers):
-
-| Test File | Tests | Time |
-|-----------|-------|------|
-| sandbox-sessions | 3/3 | 1.2m |
-| sandbox-walkthrough | 1/1 | 8-12s |
-| sandbox-variants | 4/4 | 17-20s each |
-| agent-rca-workflow | 1/1 | 1.4-1.7m |
-| sandbox-delegation | 1/1 | 30-37s |
-
-**Additional tests:**
-- Loop consistency test (`agent-loop-consistency.spec.ts`) — validates
-  streaming vs historical reconstruction; currently fails (by design, P0 for Session T)
-- Resilience test — validates recovery from agent errors
-- 69 serializer unit tests (`event_schema.py` + `event_serializer.py`)
-
-### Remaining Work (Session T P0)
-
-| Item | Priority | Description |
-|------|----------|-------------|
-| Historical ≠ streaming | P0 | Loop cards render differently on reload vs live streaming; frontend `loadInitialHistory` reconstruction breaks on step 5 of the root cause chain |
-| Looper fix | P0 | SSE auth + `fan_out_event` not triggering looper; auto-continue non-functional |
-| Sub-sessions | P1 | `SubSessionsPanel.tsx` renders delegate child sessions; needs integration testing |
-| "continue" leak | P1 | Budget-forced termination leaks reflector's "continue" decision string into reporter output; needs message stripping before reporter invocation |
-| Agent name vicious cycle | P1 | `_set_owner_metadata` race with A2A SDK task creation; frontend defaults to `sandbox-legion` when agent_name missing |
-
-### Cross-References
+## 19. Cross-References
 
 | Document | Content |
 |----------|---------|
 | [Agent Loop UI Design](2026-03-03-agent-loop-ui-design.md) | AgentLoopCard, LoopSummaryBar, node badges, HITL approval card |
 | [Sandbox Reasoning Loop Design](2026-03-03-sandbox-reasoning-loop-design.md) | Graph nodes, event types, budget, HITL checkpoints |
 | [WebSocket Session Updates Design](2026-03-06-websocket-session-updates-design.md) | Polling baseline, WebSocket proposal, SSE alternative |
+| [Sidecar Agents Design](2026-03-06-sidecar-agents-design.md) | Sidecar architecture, analyzer patterns, UI accordion |
 | [LiteLLM Analytics Design](2026-03-08-litellm-analytics-design.md) | Token usage panels, model routing, cost tracking |
-| [Session T Passover](2026-03-09-session-T-passover.md) | Next session priorities, debug approach for historical view |
