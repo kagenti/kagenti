@@ -300,8 +300,11 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         <StepStatusIcon status={step.status} />
       </div>
 
-      {/* Reasoning (expandable) */}
+      {/* Reasoning / description content (expandable for all node types) */}
       {step.reasoning && <ReasoningBlock reasoning={step.reasoning} />}
+      {!step.reasoning && step.description && step.description.length > 60 && (
+        <ReasoningBlock reasoning={step.description} />
+      )}
 
       {/* Tool calls */}
       {step.toolCalls.map((tc, i) => (
