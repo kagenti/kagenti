@@ -1503,6 +1503,7 @@ export const SandboxPage: React.FC = () => {
               const loopId = data.loop_id;
               const le = data.loop_event || data;
               const eventType = le.type;
+              console.log(`[sse] loop_event: type=${eventType} loop=${loopId?.substring(0, 8)} step=${le.step ?? ''} tools=${le.tools?.length ?? 0}`);
 
               // Handle typed events. The serializer emits both new types
               // (planner_output, executor_step, etc.) and legacy types
@@ -1641,9 +1642,9 @@ export const SandboxPage: React.FC = () => {
                   status: 'done',
                   finalAnswer: isLeaked ? '' : rContent,
                   model: le.model || l.model,
-                  // Add reporter step for visibility
+                  // Mark all running steps as done + add reporter step
                   steps: [
-                    ...l.steps,
+                    ...l.steps.map((s) => s.status === 'running' ? { ...s, status: 'done' as const } : s),
                     {
                       index: l.steps.length, // Sequential index
                       description: isLeaked ? 'Final answer (no content)' : 'Final answer',
