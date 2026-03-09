@@ -1760,45 +1760,47 @@ async def _stream_sandbox_response(
             len(loop_events),
             loop_events_persisted,
         )
-        # Persist loop events if not already done at [DONE].
-        # The A2A protocol signals completion via final:true or by closing
-        # the connection — it may never send a "[DONE]" text marker.
-        if loop_events and namespace and not loop_events_persisted:
-            logger.info(
-                "Persisting %d loop events in finally for session %s",
-                len(loop_events),
-                session_id,
-            )
+        # Persist loop events AND set owner metadata in a single DB operation
+        # to avoid race conditions where _set_owner_metadata overwrites loop_events.
+        if namespace:
             try:
                 pool = await get_session_pool(namespace)
                 async with pool.acquire() as conn:
                     rows = await conn.fetch(
-                        "SELECT metadata FROM tasks WHERE context_id = $1 LIMIT 1",
+                        "SELECT metadata FROM tasks WHERE context_id = $1",
                         session_id,
                     )
                     if rows:
-                        meta = json.loads(rows[0]["metadata"]) if rows[0]["metadata"] else {}
-                        meta["loop_events"] = loop_events
+                        # Merge metadata from all rows
+                        merged: dict = {}
+                        for row in rows:
+                            m = _parse_json_field(row["metadata"]) or {}
+                            merged.update({k: v for k, v in m.items() if v is not None})
+                        # Set owner metadata fields
+                        if owner and not merged.get("owner"):
+                            merged["owner"] = owner
+                            merged["visibility"] = "private"
+                        if not merged.get("title") and message:
+                            merged["title"] = message[:80].replace("\n", " ")
+                        if agent_name:
+                            merged["agent_name"] = agent_name
+                        # Add loop events
+                        if loop_events and not loop_events_persisted:
+                            merged["loop_events"] = loop_events
+                            logger.info(
+                                "Persisting %d loop events in finally for session %s",
+                                len(loop_events),
+                                session_id,
+                            )
+                        # Single atomic write
                         await conn.execute(
                             "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
-                            json.dumps(meta),
+                            json.dumps(merged),
                             session_id,
                         )
-                loop_events_persisted = True
             except Exception:
                 logger.warning(
-                    "Failed to persist loop events in finally for %s",
-                    session_id,
-                    exc_info=True,
-                )
-        # Safeguard: also run _set_owner_metadata in finally to ensure
-        # agent_name/title are set even if the stream ends unexpectedly.
-        if not owner_set:
-            try:
-                await _set_owner_metadata()
-            except Exception:
-                logger.warning(
-                    "Failed to set owner metadata in finally for %s",
+                    "Failed to persist metadata in finally for %s",
                     session_id,
                     exc_info=True,
                 )
