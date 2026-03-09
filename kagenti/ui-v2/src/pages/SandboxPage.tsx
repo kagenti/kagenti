@@ -996,6 +996,7 @@ export const SandboxPage: React.FC = () => {
                 status: 'planning' as const,
                 model: '',
                 plan: [],
+                replans: [],
                 currentStep: 0,
                 totalSteps: 0,
                 iteration: 0,
@@ -1007,19 +1008,27 @@ export const SandboxPage: React.FC = () => {
               if (['plan', 'plan_step', 'reflection', 'llm_response'].includes(et)) continue;
 
               if (et === 'planner_output') {
+                const incomingSteps = (le.steps as string[]) || [];
+                const isReplan = existing.plan.length > 0;
+                const iterNum = (le.iteration as number) ?? existing.iteration ?? 0;
+                const stepLabel = isReplan ? 'Replan' : 'Plan';
+                const nodeTypeVal = isReplan ? 'replanner' as const : 'planner' as const;
                 existing.status = 'planning';
-                existing.plan = (le.steps as string[]) || existing.plan;
-                existing.totalSteps = existing.plan.length;
-                existing.iteration = (le.iteration as number) ?? existing.iteration;
+                if (!isReplan) {
+                  existing.plan = incomingSteps;
+                  existing.totalSteps = incomingSteps.length;
+                } else {
+                  existing.replans = [...(existing.replans || []), { iteration: iterNum, steps: incomingSteps, model: (le.model as string) || existing.model, content: le.content as string | undefined }];
+                }
+                existing.iteration = iterNum;
                 existing.model = (le.model as string) || existing.model;
-                // Build plan content for expandable reasoning block
-                const planContent = (le.content as string) || existing.plan.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n');
+                const planContent = (le.content as string) || incomingSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n');
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
-                  description: `Plan (iteration ${((le.iteration as number) ?? existing.iteration ?? 0) + 1}): ${existing.plan.length} steps`,
+                  description: `${stepLabel} (iteration ${iterNum + 1}): ${incomingSteps.length} steps`,
                   reasoning: planContent || undefined,
                   model: (le.model as string) || existing.model,
-                  nodeType: 'planner' as const,
+                  nodeType: nodeTypeVal,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
@@ -1409,6 +1418,7 @@ export const SandboxPage: React.FC = () => {
         status: 'planning' as const,
         model: '',
         plan: [],
+        replans: [],
         currentStep: 0,
         totalSteps: 0,
         iteration: 0,
@@ -1523,30 +1533,40 @@ export const SandboxPage: React.FC = () => {
               }
 
               if (eventType === 'planner_output') {
-                updateLoop(loopId, (l) => ({
-                  ...l,
-                  status: 'planning',
-                  plan: le.steps || [],
-                  totalSteps: (le.steps || []).length,
-                  iteration: le.iteration ?? l.iteration,
-                  model: le.model || l.model,
-                  // Add planner step for visibility in loop detail
-                  steps: [
-                    ...l.steps,
-                    {
-                      index: l.steps.length, // Sequential index
-                      description: `Plan (iteration ${(le.iteration ?? l.iteration ?? 0) + 1}): ${(le.steps || []).length} steps`,
-                      reasoning: le.content || (le.steps || []).map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || undefined,
-                      model: le.model || l.model,
-                      nodeType: 'planner' as const,
-                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-                      toolCalls: [],
-                      toolResults: [],
-                      durationMs: 0,
-                      status: 'done' as const,
-                    },
-                  ],
-                }));
+                updateLoop(loopId, (l) => {
+                  const incomingSteps = le.steps || [];
+                  const isReplan = l.plan.length > 0;
+                  const iterNum = le.iteration ?? l.iteration ?? 0;
+                  const stepLabel = isReplan ? 'Replan' : 'Plan';
+                  const nodeTypeVal = isReplan ? 'replanner' as const : 'planner' as const;
+                  const planContent = le.content || incomingSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || undefined;
+                  return {
+                    ...l,
+                    status: 'planning',
+                    plan: isReplan ? l.plan : incomingSteps,
+                    replans: isReplan
+                      ? [...l.replans, { iteration: iterNum, steps: incomingSteps, model: le.model || l.model, content: le.content }]
+                      : l.replans,
+                    totalSteps: isReplan ? l.totalSteps : incomingSteps.length,
+                    iteration: iterNum,
+                    model: le.model || l.model,
+                    steps: [
+                      ...l.steps,
+                      {
+                        index: l.steps.length,
+                        description: `${stepLabel} (iteration ${iterNum + 1}): ${incomingSteps.length} steps`,
+                        reasoning: planContent,
+                        model: le.model || l.model,
+                        nodeType: nodeTypeVal,
+                        tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+                        toolCalls: [],
+                        toolResults: [],
+                        durationMs: 0,
+                        status: 'done' as const,
+                      },
+                    ],
+                  };
+                });
               } else if (eventType === 'executor_step') {
                 updateLoop(loopId, (l) => {
                   const newDesc = ((le.description as string) || '').trim();

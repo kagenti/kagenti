@@ -24,13 +24,14 @@ export type NodeEventType =
   | 'hitl_request';
 
 /** @deprecated Use {@link NodeEventType} for new code. */
-export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter';
+export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter' | 'replanner';
 
 export interface AgentLoop {
   id: string;                    // loop_id
   status: 'planning' | 'executing' | 'reflecting' | 'done' | 'failed';
   model: string;
   plan: string[];
+  replans: Array<{ iteration: number; steps: string[]; model: string; content?: string }>;
   currentStep: number;
   totalSteps: number;
   iteration: number;

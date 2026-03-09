@@ -13,6 +13,7 @@ checkpointed state for persistence across restarts.
 """
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -87,6 +88,81 @@ class SidecarHandle:
             "created_at": self.created_at,
         }
 
+    def to_persistable(self) -> dict:
+        """Serialize sidecar state for DB persistence (excludes asyncio objects)."""
+        return {
+            "context_id": self.context_id,
+            "sidecar_type": self.sidecar_type.value,
+            "parent_context_id": self.parent_context_id,
+            "namespace": self.namespace,
+            "agent_name": self.agent_name,
+            "enabled": self.enabled,
+            "auto_approve": self.auto_approve,
+            "config": self.config,
+            "observations": [
+                {
+                    "id": o.id,
+                    "sidecar_type": o.sidecar_type,
+                    "timestamp": o.timestamp,
+                    "message": o.message,
+                    "severity": o.severity,
+                    "requires_approval": o.requires_approval,
+                }
+                for o in self.observations
+            ],
+            "pending_interventions": [
+                {
+                    "id": o.id,
+                    "sidecar_type": o.sidecar_type,
+                    "timestamp": o.timestamp,
+                    "message": o.message,
+                    "severity": o.severity,
+                    "requires_approval": o.requires_approval,
+                }
+                for o in self.pending_interventions
+            ],
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_persisted(cls, data: dict) -> "SidecarHandle":
+        """Restore a SidecarHandle from persisted state (no asyncio task)."""
+        handle = cls(
+            context_id=data.get("context_id", ""),
+            sidecar_type=SidecarType(data["sidecar_type"]),
+            parent_context_id=data.get("parent_context_id", ""),
+            namespace=data.get("namespace", "team1"),
+            agent_name=data.get("agent_name", "sandbox-legion"),
+            enabled=data.get("enabled", False),
+            auto_approve=data.get("auto_approve", False),
+            config=data.get("config", {}),
+            created_at=data.get("created_at", time.time()),
+        )
+        # Restore observations
+        for o in data.get("observations", []):
+            handle.observations.append(
+                SidecarObservation(
+                    id=o["id"],
+                    sidecar_type=o["sidecar_type"],
+                    timestamp=o["timestamp"],
+                    message=o["message"],
+                    severity=o.get("severity", "info"),
+                    requires_approval=o.get("requires_approval", False),
+                )
+            )
+        for o in data.get("pending_interventions", []):
+            handle.pending_interventions.append(
+                SidecarObservation(
+                    id=o["id"],
+                    sidecar_type=o["sidecar_type"],
+                    timestamp=o["timestamp"],
+                    message=o["message"],
+                    severity=o.get("severity", "info"),
+                    requires_approval=o.get("requires_approval", False),
+                )
+            )
+        return handle
+
 
 class SidecarManager:
     """
@@ -105,6 +181,110 @@ class SidecarManager:
         if parent_context_id not in self._session_queues:
             self._session_queues[parent_context_id] = asyncio.Queue(maxsize=1000)
         return self._session_queues[parent_context_id]
+
+    async def _persist_sidecar_state(self, parent_context_id: str) -> None:
+        """Persist all sidecar handles for a session into the session's task metadata.
+
+        Writes a ``sidecar_state`` key into the latest task row's metadata
+        so that sidecar handles survive backend restarts.
+        """
+        session_sidecars = self._registry.get(parent_context_id, {})
+        if not session_sidecars:
+            return
+
+        # Determine namespace from any handle
+        namespace = next(iter(session_sidecars.values())).namespace
+
+        state_to_persist = {
+            st.value: handle.to_persistable() for st, handle in session_sidecars.items()
+        }
+
+        try:
+            from app.services.session_db import get_session_pool
+
+            pool = await get_session_pool(namespace)
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                    parent_context_id,
+                )
+                if row:
+                    meta = json.loads(row["metadata"]) if row["metadata"] else {}
+                    meta["sidecar_state"] = state_to_persist
+                    await conn.execute(
+                        "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                        json.dumps(meta),
+                        row["id"],
+                    )
+                    logger.debug(
+                        "Persisted sidecar state for session %s (%d sidecars)",
+                        parent_context_id[:12],
+                        len(state_to_persist),
+                    )
+        except Exception:
+            logger.warning(
+                "Failed to persist sidecar state for session %s",
+                parent_context_id[:12],
+                exc_info=True,
+            )
+
+    async def _restore_sidecars_for_session(self, parent_context_id: str, namespace: str) -> None:
+        """Restore sidecar handles from session metadata (on first access after restart).
+
+        Reads ``sidecar_state`` from the latest task row's metadata and
+        re-creates SidecarHandle objects (without spawning asyncio tasks —
+        those are only spawned on explicit ``enable()``).
+        """
+        if parent_context_id in self._registry:
+            return  # Already loaded
+
+        try:
+            from app.services.session_db import get_session_pool
+
+            pool = await get_session_pool(namespace)
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                    parent_context_id,
+                )
+                if not row or not row["metadata"]:
+                    return
+
+                meta = json.loads(row["metadata"])
+                sidecar_state = meta.get("sidecar_state")
+                if not sidecar_state:
+                    return
+
+                self._registry[parent_context_id] = {}
+                for _type_str, handle_data in sidecar_state.items():
+                    try:
+                        handle = SidecarHandle.from_persisted(handle_data)
+                        stype = SidecarType(handle_data["sidecar_type"])
+                        # Don't auto-spawn tasks — user must re-enable
+                        handle.enabled = False
+                        handle.task = None
+                        self._registry[parent_context_id][stype] = handle
+                    except (ValueError, KeyError) as e:
+                        logger.warning(
+                            "Failed to restore sidecar %s for session %s: %s",
+                            _type_str,
+                            parent_context_id[:12],
+                            e,
+                        )
+
+                restored_count = len(self._registry[parent_context_id])
+                if restored_count:
+                    logger.info(
+                        "Restored %d sidecars from DB for session %s",
+                        restored_count,
+                        parent_context_id[:12],
+                    )
+        except Exception:
+            logger.warning(
+                "Failed to restore sidecars for session %s",
+                parent_context_id[:12],
+                exc_info=True,
+            )
 
     def fan_out_event(self, parent_context_id: str, event: dict) -> None:
         """Called by SSE proxy to fan out an event to all sidecars for a session."""
@@ -129,6 +309,9 @@ class SidecarManager:
         agent_name: str = "sandbox-legion",
     ) -> SidecarHandle:
         """Enable a sidecar for a session. Spawns the asyncio task."""
+        # Restore any persisted state from DB on first access
+        await self._restore_sidecars_for_session(parent_context_id, namespace)
+
         if parent_context_id not in self._registry:
             self._registry[parent_context_id] = {}
 
@@ -175,6 +358,7 @@ class SidecarManager:
             sidecar_type.value,
             parent_context_id[:12],
         )
+        await self._persist_sidecar_state(parent_context_id)
         return handle
 
     async def disable(
@@ -202,6 +386,7 @@ class SidecarManager:
             sidecar_type.value,
             parent_context_id[:12],
         )
+        await self._persist_sidecar_state(parent_context_id)
 
     async def update_config(
         self,
@@ -225,6 +410,7 @@ class SidecarManager:
             parent_context_id[:12],
             config,
         )
+        await self._persist_sidecar_state(parent_context_id)
         return handle
 
     def list_sidecars(self, parent_context_id: str) -> list[dict]:
@@ -299,6 +485,9 @@ class SidecarManager:
     async def cleanup_session(self, parent_context_id: str) -> None:
         """Clean up all sidecars for a session (on session end)."""
         session_sidecars = self._registry.get(parent_context_id, {})
+        # Persist final state before cleanup (preserves observations)
+        if session_sidecars:
+            await self._persist_sidecar_state(parent_context_id)
         for sidecar_type in list(session_sidecars.keys()):
             await self.disable(parent_context_id, sidecar_type)
 

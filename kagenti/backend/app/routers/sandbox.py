@@ -1424,25 +1424,29 @@ async def _stream_sandbox_response(
     loop_events_persisted = False  # Guard against double-write of loop events
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
     loop_events: list[dict] = []  # Accumulated loop events for persistence
+    stream_task_id: Optional[str] = None  # DB id of the task row created by THIS stream
 
     async def _set_owner_metadata():
-        """Set owner on session metadata after task is created.
+        """Set owner on THIS stream's task row only.
 
-        Merges metadata from ALL task rows for this context_id so that
-        fields written by the agent (e.g. ``llm_request_ids``) and fields
-        written by the backend (``owner``, ``title``, ``agent_name``) end
-        up on every row.
+        Reads only the current task row's metadata (identified by
+        ``stream_task_id``) and writes backend-managed fields (owner,
+        title, agent_name) to that single row. Does NOT merge metadata
+        across task rows — each task keeps its own metadata to prevent
+        cross-pollination of loop_events and other per-turn data.
 
         Called on every SSE event batch (not just the first) to handle
         task rows created after the initial call. Retries on transient
         DB errors.
         """
+        nonlocal stream_task_id
         logger.info(
-            "_set_owner_metadata: agent_name=%s, owner=%s, namespace=%s, session=%s",
+            "_set_owner_metadata: agent_name=%s, owner=%s, namespace=%s, session=%s, task_id=%s",
             agent_name,
             owner,
             namespace,
             session_id,
+            stream_task_id,
         )
         if not namespace:
             logger.warning(
@@ -1454,44 +1458,53 @@ async def _stream_sandbox_response(
             try:
                 pool = await get_session_pool(namespace)
                 async with pool.acquire() as conn:
-                    rows = await conn.fetch(
-                        "SELECT metadata FROM tasks WHERE context_id = $1",
-                        session_id,
-                    )
-                    if not rows:
-                        if attempt < 2:
-                            await asyncio.sleep(0.5 * (attempt + 1))
-                            continue
-                        return
-                    # Merge metadata from all rows into one dict, keeping
-                    # non-None values so no field is lost.
-                    merged: dict = {}
-                    for row in rows:
-                        m = _parse_json_field(row["metadata"]) or {}
-                        merged.update({k: v for k, v in m.items() if v is not None})
-                    # Set/overwrite backend-managed fields
-                    if owner and not merged.get("owner"):
-                        merged["owner"] = owner
-                        merged["visibility"] = "private"
-                    if not merged.get("title"):
-                        merged["title"] = message[:80].replace("\n", " ")
+                    # Find the task row for THIS stream (latest by id)
+                    if stream_task_id is None:
+                        row = await conn.fetchrow(
+                            "SELECT id, metadata FROM tasks WHERE context_id = $1"
+                            " ORDER BY id DESC LIMIT 1",
+                            session_id,
+                        )
+                        if row is None:
+                            if attempt < 2:
+                                await asyncio.sleep(0.5 * (attempt + 1))
+                                continue
+                            return
+                        stream_task_id = row["id"]
+                        meta = _parse_json_field(row["metadata"]) or {}
+                    else:
+                        row = await conn.fetchrow(
+                            "SELECT metadata FROM tasks WHERE id = $1",
+                            stream_task_id,
+                        )
+                        if row is None:
+                            return
+                        meta = _parse_json_field(row["metadata"]) or {}
+
+                    # Set/overwrite backend-managed fields on this row only
+                    if owner and not meta.get("owner"):
+                        meta["owner"] = owner
+                        meta["visibility"] = "private"
+                    if not meta.get("title"):
+                        meta["title"] = message[:80].replace("\n", " ")
                     if agent_name:
-                        merged["agent_name"] = agent_name
+                        meta["agent_name"] = agent_name
                     else:
                         logger.warning(
                             "_set_owner_metadata called with empty agent_name for session %s",
                             session_id,
                         )
-                    # Always update ALL task records for consistency
+                    # Update only THIS task row
                     result = await conn.execute(
-                        "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
-                        json.dumps(merged),
-                        session_id,
+                        "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                        json.dumps(meta),
+                        stream_task_id,
                     )
                     affected = int(str(result).split()[-1]) if result else 0
                     if affected == 0:
                         logger.warning(
-                            "Metadata update matched 0 rows for session %s",
+                            "Metadata update matched 0 rows for task %s session %s",
+                            stream_task_id,
                             session_id,
                         )
                 break  # Success
@@ -1531,6 +1544,10 @@ async def _stream_sandbox_response(
         "Accept": "text/event-stream",
     }
 
+    # SSE keepalive interval (seconds). Prevents nginx proxy_read_timeout
+    # (default 300s) from killing long-running agent connections.
+    _KEEPALIVE_INTERVAL = 15
+
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
             async with client.stream(
@@ -1543,7 +1560,26 @@ async def _stream_sandbox_response(
                 logger.info("Connected to agent, status=%d", response.status_code)
 
                 line_count = 0
-                async for line in response.aiter_lines():
+                line_iter = response.aiter_lines().__aiter__()
+                stream_exhausted = False
+
+                while not stream_exhausted:
+                    # Race between next SSE line and keepalive timeout.
+                    # If no data arrives within _KEEPALIVE_INTERVAL, send a ping
+                    # to keep the nginx->browser connection alive.
+                    try:
+                        line = await asyncio.wait_for(
+                            line_iter.__anext__(),
+                            timeout=_KEEPALIVE_INTERVAL,
+                        )
+                    except asyncio.TimeoutError:
+                        # No data from agent — send keepalive ping to browser
+                        yield f"data: {json.dumps({'ping': True})}\n\n"
+                        continue
+                    except StopAsyncIteration:
+                        stream_exhausted = True
+                        break
+
                     if not line:
                         continue
                     line_count += 1
@@ -1569,27 +1605,36 @@ async def _stream_sandbox_response(
                                 pass  # best-effort
 
                             await _set_owner_metadata()
-                            # Persist accumulated loop events as task metadata
+                            # Persist accumulated loop events to THIS task row only
                             if loop_events and namespace and not loop_events_persisted:
                                 try:
                                     pool = await get_session_pool(namespace)
                                     async with pool.acquire() as conn:
-                                        rows = await conn.fetch(
-                                            "SELECT metadata FROM tasks WHERE context_id = $1 LIMIT 1",
-                                            session_id,
-                                        )
-                                        if rows:
-                                            meta = (
-                                                json.loads(rows[0]["metadata"])
-                                                if rows[0]["metadata"]
-                                                else {}
-                                            )
-                                            meta["loop_events"] = loop_events
-                                            await conn.execute(
-                                                "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
-                                                json.dumps(meta),
+                                        # Use stream_task_id to target this stream's row
+                                        task_db_id = stream_task_id
+                                        if task_db_id is None:
+                                            task_db_id = await conn.fetchval(
+                                                "SELECT id FROM tasks WHERE context_id = $1"
+                                                " ORDER BY id DESC LIMIT 1",
                                                 session_id,
                                             )
+                                        if task_db_id is not None:
+                                            row = await conn.fetchrow(
+                                                "SELECT metadata FROM tasks WHERE id = $1",
+                                                task_db_id,
+                                            )
+                                            if row:
+                                                meta = (
+                                                    json.loads(row["metadata"])
+                                                    if row["metadata"]
+                                                    else {}
+                                                )
+                                                meta["loop_events"] = loop_events
+                                                await conn.execute(
+                                                    "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                                                    json.dumps(meta),
+                                                    task_db_id,
+                                                )
                                     loop_events_persisted = True
                                 except Exception as e:
                                     logger.warning(
@@ -1782,60 +1827,53 @@ async def _stream_sandbox_response(
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
     finally:
         logger.info(
-            "Stream finally block for session %s: %d loop events, persisted=%s",
+            "Stream finally block for session %s: %d loop events, persisted=%s, task_id=%s",
             session_id,
             len(loop_events),
             loop_events_persisted,
+            stream_task_id,
         )
-        # Persist loop events AND set owner metadata in a single DB operation
-        # to avoid race conditions where _set_owner_metadata overwrites loop_events.
+        # Persist loop events AND set owner metadata on THIS stream's task row only.
+        # No cross-task metadata merging — each task keeps its own metadata.
         if namespace:
             try:
                 pool = await get_session_pool(namespace)
                 async with pool.acquire() as conn:
-                    rows = await conn.fetch(
-                        "SELECT metadata FROM tasks WHERE context_id = $1",
-                        session_id,
-                    )
-                    if rows:
-                        # Merge metadata from all rows, EXCLUDING loop_events
-                        # (each task keeps its own loop_events from its streaming response)
-                        merged: dict = {}
-                        for row in rows:
-                            m = _parse_json_field(row["metadata"]) or {}
-                            merged.update(
-                                {k: v for k, v in m.items() if v is not None and k != "loop_events"}
-                            )
-                        # Set owner metadata fields
-                        if owner and not merged.get("owner"):
-                            merged["owner"] = owner
-                            merged["visibility"] = "private"
-                        if not merged.get("title") and message:
-                            merged["title"] = message[:80].replace("\n", " ")
-                        if agent_name:
-                            merged["agent_name"] = agent_name
-                        # Add loop events
-                        if loop_events and not loop_events_persisted:
-                            merged["loop_events"] = loop_events
-                            logger.info(
-                                "Persisting %d loop events in finally for session %s",
-                                len(loop_events),
-                                session_id,
-                            )
-                        # Write to the LATEST task row only (not all rows).
-                        # Each turn creates a new task; overwriting all rows
-                        # would duplicate loop_events across every task.
-                        latest = await conn.fetchval(
-                            "SELECT id FROM tasks WHERE context_id = $1"
-                            " ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC"
-                            " LIMIT 1",
+                    # Target this stream's task row (or fall back to latest)
+                    task_db_id = stream_task_id
+                    if task_db_id is None:
+                        task_db_id = await conn.fetchval(
+                            "SELECT id FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
                             session_id,
                         )
-                        if latest:
+                    if task_db_id is not None:
+                        row = await conn.fetchrow(
+                            "SELECT metadata FROM tasks WHERE id = $1",
+                            task_db_id,
+                        )
+                        if row:
+                            meta = _parse_json_field(row["metadata"]) or {}
+                            # Set owner metadata fields on this row
+                            if owner and not meta.get("owner"):
+                                meta["owner"] = owner
+                                meta["visibility"] = "private"
+                            if not meta.get("title") and message:
+                                meta["title"] = message[:80].replace("\n", " ")
+                            if agent_name:
+                                meta["agent_name"] = agent_name
+                            # Add loop events if not already persisted
+                            if loop_events and not loop_events_persisted:
+                                meta["loop_events"] = loop_events
+                                logger.info(
+                                    "Persisting %d loop events in finally for session %s task %s",
+                                    len(loop_events),
+                                    session_id,
+                                    task_db_id,
+                                )
                             await conn.execute(
                                 "UPDATE tasks SET metadata = $1::json WHERE id = $2",
-                                json.dumps(merged),
-                                latest,
+                                json.dumps(meta),
+                                task_db_id,
                             )
             except Exception:
                 logger.warning(
@@ -1843,6 +1881,99 @@ async def _stream_sandbox_response(
                     session_id,
                     exc_info=True,
                 )
+
+            # Fallback: if no loop_events were captured during SSE streaming
+            # (e.g. nginx dropped the connection after timeout), try to recover
+            # them from the agent's A2A task store via the tasks/get API.
+            if not loop_events and not loop_events_persisted and session_has_loops:
+                try:
+                    await _recover_loop_events_from_agent(
+                        agent_url, session_id, namespace, stream_task_id
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to recover loop events from agent for %s",
+                        session_id,
+                        exc_info=True,
+                    )
+
+
+async def _recover_loop_events_from_agent(
+    agent_url: str,
+    session_id: str,
+    namespace: str,
+    task_db_id: Optional[int],
+) -> None:
+    """Fallback: read the final task from the agent's A2A task store and
+    extract loop_events from the task history.
+
+    This handles the case where nginx dropped the SSE connection (e.g.
+    proxy_read_timeout) before the agent finished, causing loop events
+    to be lost from the SSE stream. The agent's task store still has the
+    complete history.
+    """
+    a2a_request = {
+        "jsonrpc": "2.0",
+        "id": str(uuid4()),
+        "method": "tasks/get",
+        "params": {"id": session_id},
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(agent_url, json=a2a_request)
+        if resp.status_code != 200:
+            logger.debug("Agent tasks/get returned %d for %s", resp.status_code, session_id)
+            return
+
+        data = resp.json()
+        result = data.get("result", {})
+        history = result.get("history", [])
+
+    # Extract loop events from history messages
+    recovered_events: list[dict] = []
+    for msg in history:
+        for part in msg.get("parts", []):
+            text = part.get("text", "")
+            for line in text.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    parsed = json.loads(line)
+                    if isinstance(parsed, dict) and "loop_id" in parsed:
+                        recovered_events.append(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+    if not recovered_events:
+        logger.debug("No loop events recovered from agent for %s", session_id)
+        return
+
+    logger.info(
+        "Recovered %d loop events from agent task store for session %s",
+        len(recovered_events),
+        session_id,
+    )
+
+    # Write recovered events to this stream's task row
+    pool = await get_session_pool(namespace)
+    async with pool.acquire() as conn:
+        if task_db_id is None:
+            task_db_id = await conn.fetchval(
+                "SELECT id FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                session_id,
+            )
+        if task_db_id is not None:
+            row = await conn.fetchrow("SELECT metadata FROM tasks WHERE id = $1", task_db_id)
+            if row:
+                meta = _parse_json_field(row["metadata"]) or {}
+                if not meta.get("loop_events"):
+                    meta["loop_events"] = recovered_events
+                    await conn.execute(
+                        "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                        json.dumps(meta),
+                        task_db_id,
+                    )
 
 
 @router.post(

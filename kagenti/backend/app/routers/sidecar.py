@@ -98,6 +98,8 @@ async def list_sidecars(
     context_id: str,
     manager: SidecarManager = Depends(get_sidecar_manager),
 ):
+    # Restore persisted state on first access after restart
+    await manager._restore_sidecars_for_session(context_id, namespace)
     return manager.list_sidecars(context_id)
 
 
@@ -172,6 +174,8 @@ async def reset_sidecar(
     manager: SidecarManager = Depends(get_sidecar_manager),
 ):
     st = _parse_sidecar_type(sidecar_type)
+    # Restore persisted state on first access after restart
+    await manager._restore_sidecars_for_session(context_id, namespace)
     handle = manager.get_handle(context_id, st)
     if handle is None:
         raise HTTPException(status_code=404, detail="Sidecar not found")
@@ -205,6 +209,8 @@ async def stream_observations(
     manager: SidecarManager = Depends(get_sidecar_manager),
 ):
     st = _parse_sidecar_type(sidecar_type)
+    # Restore persisted state on first access after restart
+    await manager._restore_sidecars_for_session(context_id, namespace)
 
     async def event_generator():
         last_count = 0

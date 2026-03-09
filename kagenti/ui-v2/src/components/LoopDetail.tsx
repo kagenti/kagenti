@@ -20,10 +20,11 @@ import type { AgentLoop, AgentLoopStep, NodeType } from '../types/agentLoop';
 // ---------------------------------------------------------------------------
 
 const NODE_COLORS: Record<NodeType, { bg: string; label: string }> = {
-  planner:   { bg: '#0066cc', label: 'planner' },
-  executor:  { bg: '#2e7d32', label: 'executor' },
-  reflector: { bg: '#e65100', label: 'reflector' },
-  reporter:  { bg: '#7b1fa2', label: 'reporter' },
+  planner:    { bg: '#0066cc', label: 'planner' },
+  replanner:  { bg: '#0055aa', label: 'replanner' },
+  executor:   { bg: '#2e7d32', label: 'executor' },
+  reflector:  { bg: '#e65100', label: 'reflector' },
+  reporter:   { bg: '#7b1fa2', label: 'reporter' },
 };
 
 /** Infer the graph node type from step content when not explicitly set. */
@@ -326,6 +327,39 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
 };
 
 // ---------------------------------------------------------------------------
+// Replan section (expandable, shows revised plans after reflector triggers replan)
+// ---------------------------------------------------------------------------
+
+const ReplanSection: React.FC<{ replans: AgentLoop['replans'] }> = ({ replans }) => {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  if (!replans || replans.length === 0) return null;
+
+  return (
+    <>
+      {replans.map((rp, idx) => (
+        <div key={idx} style={{ marginBottom: 8 }}>
+          <div
+            style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 4, color: 'var(--pf-v5-global--Color--100)', cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+          >
+            <NodeBadge nodeType="replanner" />
+            {expandedIdx === idx ? '\u25BC' : '\u25B6'} Replan (iteration {rp.iteration + 1}): {rp.steps.length} step{rp.steps.length !== 1 ? 's' : ''}
+          </div>
+          {expandedIdx === idx && (
+            <ol style={{ margin: 0, paddingLeft: 22, fontSize: '0.83em', lineHeight: 1.7 }}>
+              {rp.steps.map((step, i) => (
+                <li key={i} style={{ color: 'var(--pf-v5-global--Color--200)' }}>{step}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+      ))}
+    </>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -339,6 +373,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
       }}
     >
       <PlanSection plan={loop.plan} currentStep={loop.currentStep} loopDone={loop.status === 'done'} />
+      <ReplanSection replans={loop.replans} />
 
       {loop.steps.map((step) => (
         <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} />
