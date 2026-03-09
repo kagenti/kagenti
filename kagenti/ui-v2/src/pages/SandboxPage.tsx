@@ -75,12 +75,13 @@ interface Message {
 /** Number of history messages to show initially; rest behind "Load earlier". */
 const INITIAL_HISTORY_LIMIT = 30;
 
-/** Format timestamp for display. */
+/** Format timestamp for display — HH:mm:ss.mmm for precise ordering. */
 function formatMsgTime(d: Date): string {
-  return d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${h}:${m}:${s}.${ms}`;
 }
 
 /** Detect and filter out LangGraph intermediate status dumps from history. */
@@ -587,6 +588,18 @@ const CollapsedTurn: React.FC<{
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Timestamp header */}
+        {turn.assistantMessages.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontWeight: 600, fontSize: '0.9em' }}>{agentName || 'Agent'}</span>
+            <span
+              style={{ fontSize: '0.75em', color: 'var(--pf-v5-global--Color--200)', cursor: 'default' }}
+              title={turn.assistantMessages[0].timestamp.toLocaleString()}
+            >
+              {formatMsgTime(turn.assistantMessages[0].timestamp)}
+            </span>
+          </div>
+        )}
         {/* Final answer — always visible */}
         {turn.finalAnswer && (
           <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 6 }}>

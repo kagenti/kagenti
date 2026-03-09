@@ -41,9 +41,13 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
 
   // ── Message Stats (always available) ──
   const userMsgCount = messages.filter((m) => m.role === 'user').length;
-  const assistantMsgCount = messages.filter(
+  // Count assistant responses from both flat messages AND agent loops
+  // (loop mode skips adding to messages array — content is in agentLoops)
+  const flatAssistantCount = messages.filter(
     (m) => m.role === 'assistant' && m.content?.trim() && !m.toolData
   ).length;
+  const loopAnswerCount = loops.filter((l) => l.finalAnswer?.trim()).length;
+  const assistantMsgCount = flatAssistantCount + loopAnswerCount;
 
   // ── Tool calls from messages (fallback when no loop data) ──
   const msgToolMap = new Map<string, { calls: number; results: number }>();
