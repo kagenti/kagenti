@@ -1014,25 +1014,46 @@ export const SandboxPage: React.FC = () => {
                 }];
               } else if (et === 'reporter_output') {
                 existing.status = 'done';
-                existing.finalAnswer = (le.content as string) || '';
+                // Filter out bare "continue"/"replan"/"done" — these are reflector
+                // decisions that leaked to reporter when budget forced termination
+                const reporterContent = (le.content as string) || '';
+                const isLeakedDecision = /^(continue|replan|done|hitl)\s*$/i.test(reporterContent.trim());
+                existing.finalAnswer = isLeakedDecision ? '' : reporterContent;
                 existing.steps = [...existing.steps, {
                   index: existing.steps.length,
-                  description: 'Final answer',
+                  description: isLeakedDecision ? 'Final answer (no content)' : 'Final answer',
                   model: (le.model as string) || existing.model,
                   nodeType: 'reporter' as const,
                   tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
                   toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
                 }];
               } else if (et === 'tool_call') {
-                const lastStep = existing.steps[existing.steps.length - 1];
-                if (lastStep) {
-                  lastStep.toolCalls = [...lastStep.toolCalls, { type: 'tool_call', name: (le.name as string) || '', args: (le.args as string) || '' }];
+                // If no step exists yet, create an implicit executor step
+                if (existing.steps.length === 0) {
+                  existing.steps.push({
+                    index: 0,
+                    description: 'Tool execution',
+                    model: (le.model as string) || existing.model,
+                    nodeType: 'executor' as const,
+                    tokens: { prompt: 0, completion: 0 },
+                    toolCalls: [], toolResults: [], durationMs: 0, status: 'running' as const,
+                  });
                 }
+                const lastStep = existing.steps[existing.steps.length - 1];
+                lastStep.toolCalls = [...lastStep.toolCalls, { type: 'tool_call', name: (le.name as string) || 'unknown', args: (le.args as string) || '' }];
               } else if (et === 'tool_result') {
-                const lastStep = existing.steps[existing.steps.length - 1];
-                if (lastStep) {
-                  lastStep.toolResults = [...lastStep.toolResults, { type: 'tool_result', name: (le.name as string) || '', output: (le.output as string) || '' }];
+                if (existing.steps.length === 0) {
+                  existing.steps.push({
+                    index: 0,
+                    description: 'Tool execution',
+                    model: existing.model,
+                    nodeType: 'executor' as const,
+                    tokens: { prompt: 0, completion: 0 },
+                    toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
+                  });
                 }
+                const lastStep = existing.steps[existing.steps.length - 1];
+                lastStep.toolResults = [...lastStep.toolResults, { type: 'tool_result', name: (le.name as string) || 'unknown', output: (le.output as string) || '' }];
               }
               loops.set(loopId, existing);
             }
@@ -1478,7 +1499,7 @@ export const SandboxPage: React.FC = () => {
                   const steps = [...l.steps];
                   const step = steps.find((s: { index: number }) => s.index === stepIdx);
                   if (step) {
-                    step.toolCalls = [...step.toolCalls, ...(le.tools || [{ type: 'tool_call', name: le.name, args: le.args }])];
+                    step.toolCalls = [...step.toolCalls, ...(le.tools || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '' }])];
                     step.nodeType = 'executor';
                   }
                   return { ...l, steps, model: le.model || l.model };
@@ -1530,17 +1551,20 @@ export const SandboxPage: React.FC = () => {
                   },
                 }));
               } else if (eventType === 'reporter_output') {
+                // Filter leaked reflector decisions ("continue"/"replan"/"done")
+                const rContent = le.content || '';
+                const isLeaked = /^(continue|replan|done|hitl)\s*$/i.test(String(rContent).trim());
                 updateLoop(loopId, (l) => ({
                   ...l,
                   status: 'done',
-                  finalAnswer: le.content || '',
+                  finalAnswer: isLeaked ? '' : rContent,
                   model: le.model || l.model,
                   // Add reporter step for visibility
                   steps: [
                     ...l.steps,
                     {
                       index: l.steps.length, // Sequential index
-                      description: 'Final answer',
+                      description: isLeaked ? 'Final answer (no content)' : 'Final answer',
                       model: le.model || l.model,
                       nodeType: 'reporter' as const,
                       tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },

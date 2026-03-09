@@ -157,7 +157,7 @@ const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }
       onClick={() => setExpanded(!expanded)}
     >
       <div style={{ fontWeight: 600 }}>
-        {expanded ? '\u25bc' : '\u25b6'} Result: {result.name || 'tool'}
+        {expanded ? '\u25bc' : '\u25b6'} Result: {result.name || 'unknown'}
       </div>
       {expanded && (
         <pre
