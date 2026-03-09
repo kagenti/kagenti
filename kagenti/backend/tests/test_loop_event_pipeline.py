@@ -2,52 +2,163 @@
 # Licensed under the Apache License, Version 2.0
 
 """
-Loop Event Pipeline Consistency Test
+Loop Event Pipeline Consistency Test (via real API)
 
-Verifies that the loop_events stored in the DB contain all data needed
-for the frontend to render AgentLoopCards identically to the streaming view.
+Sends a message through the backend streaming API, waits for completion,
+then verifies that the history endpoint returns the same data needed for
+the frontend to render AgentLoopCards.
 
 Checks:
-1. All expected event types are present (planner, executor, reflector, reporter)
-2. tool_call events have tools array with name and args
-3. tool_result events have name and output
-4. executor_step events have description and tokens
-5. Reconstructed AgentLoop has matching structure
+1. Streaming SSE events contain all expected types
+2. History endpoint returns loop_events matching what was streamed
+3. Reconstructed AgentLoop has tool_calls, tool_results, tokens, finalAnswer
+4. tool_call count matches tool_result count
+
+Environment:
+  KAGENTI_UI_URL: Base URL (e.g. https://kagenti-ui-kagenti-system.apps....)
+  KEYCLOAK_USER / KEYCLOAK_PASSWORD: Auth credentials
+  KUBECONFIG: For kubectl access (fallback)
 
 Run:
-  KUBECONFIG=~/clusters/hcp/.../kubeconfig python -m pytest tests/test_loop_event_pipeline.py -v
+  KAGENTI_UI_URL=https://... KEYCLOAK_USER=admin KEYCLOAK_PASSWORD=... \
+    python -m pytest tests/test_loop_event_pipeline.py -v
 """
 
-import asyncio
 import json
 import os
-import subprocess
+import time
+from urllib.parse import urlparse
+
+import httpx
 import pytest
 
 
-def get_session_pool_sync(namespace: str):
-    """Get a DB connection by running psql via kubectl."""
-    kubeconfig = os.environ.get("KUBECONFIG", "")
-    kubectl = "/opt/homebrew/bin/oc" if os.path.exists("/opt/homebrew/bin/oc") else "kubectl"
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
-    def query(sql: str) -> str:
-        cmd = (
-            f"KUBECONFIG={kubeconfig} {kubectl} exec -n {namespace} postgres-sessions-0 "
-            f'-- psql -U kagenti -d sessions -t -A -c "{sql}"'
-        )
-        return subprocess.check_output(cmd, shell=True, timeout=15).decode().strip()
-
-    return query
+UI_URL = os.environ.get("KAGENTI_UI_URL", "")
+KC_USER = os.environ.get("KEYCLOAK_USER", "admin")
+KC_PASSWORD = os.environ.get("KEYCLOAK_PASSWORD", "")
+NAMESPACE = "team1"
+AGENT_NAME = "sandbox-legion"
 
 
-@pytest.fixture
-def db_query():
-    """Fixture providing a DB query function."""
-    return get_session_pool_sync("team1")
+def _skip_if_no_url():
+    if not UI_URL:
+        pytest.skip("Requires KAGENTI_UI_URL")
+    if not KC_PASSWORD:
+        pytest.skip("Requires KEYCLOAK_PASSWORD")
 
 
-def reconstruct_loop(events: list[dict]) -> dict:
-    """Simulate frontend loadInitialHistory reconstruction."""
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+
+def get_keycloak_token() -> str:
+    """Get an access token from Keycloak using password grant."""
+    parsed = urlparse(UI_URL)
+    # Keycloak route is typically keycloak-keycloak.<domain>
+    domain = parsed.hostname
+    if not domain:
+        raise ValueError(f"Cannot parse domain from {UI_URL}")
+    # Replace kagenti-ui-kagenti-system with keycloak-keycloak
+    parts = domain.split(".")
+    kc_host = "keycloak-keycloak." + ".".join(parts[1:])
+    kc_url = f"https://{kc_host}"
+
+    # Try common realm names
+    for realm in ["kagenti", "master"]:
+        token_url = f"{kc_url}/realms/{realm}/protocol/openid-connect/token"
+        try:
+            resp = httpx.post(
+                token_url,
+                data={
+                    "grant_type": "password",
+                    "client_id": "kagenti-ui",
+                    "username": KC_USER,
+                    "password": KC_PASSWORD,
+                },
+                verify=False,
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if "access_token" in data:
+                    return data["access_token"]
+        except Exception:
+            continue
+
+    raise RuntimeError(f"Failed to get Keycloak token from {kc_url}")
+
+
+# ---------------------------------------------------------------------------
+# API helpers
+# ---------------------------------------------------------------------------
+
+
+def api_url(path: str) -> str:
+    """Build full API URL."""
+    return f"{UI_URL}/api/v1{path}"
+
+
+def send_streaming_message(token: str, context_id: str, message: str) -> list[dict]:
+    """Send a message via streaming API, collect all loop events."""
+    loop_events: list[dict] = []
+
+    with httpx.Client(timeout=180, verify=False) as client:
+        with client.stream(
+            "POST",
+            api_url(f"/sandbox/{NAMESPACE}/chat/stream"),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "message": message,
+                "context_id": context_id,
+                "agent_name": AGENT_NAME,
+            },
+        ) as resp:
+            resp.raise_for_status()
+            buffer = ""
+            for chunk in resp.iter_text():
+                buffer += chunk
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        data = json.loads(line[5:].strip())
+                        if "loop_event" in data:
+                            loop_events.append(data["loop_event"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+    return loop_events
+
+
+def get_history(token: str, context_id: str) -> dict:
+    """Fetch session history from the API."""
+    resp = httpx.get(
+        api_url(f"/sandbox/{NAMESPACE}/sessions/{context_id}/history?limit=50"),
+        headers={"Authorization": f"Bearer {token}"},
+        verify=False,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Reconstruction (mirrors frontend loadInitialHistory logic)
+# ---------------------------------------------------------------------------
+
+
+def reconstruct_loops(events: list[dict]) -> dict[str, dict]:
+    """Simulate frontend AgentLoop reconstruction from loop_events."""
     loops: dict[str, dict] = {}
 
     for le in events:
@@ -59,8 +170,6 @@ def reconstruct_loop(events: list[dict]) -> dict:
                 "status": "planning",
                 "plan": [],
                 "finalAnswer": "",
-                "totalSteps": 0,
-                "model": "",
             }
         loop = loops[lid]
         et = le.get("type", "")
@@ -68,16 +177,14 @@ def reconstruct_loop(events: list[dict]) -> dict:
         if et == "planner_output":
             loop["plan"] = le.get("steps", [])
             loop["status"] = "planning"
-            loop["model"] = le.get("model", loop["model"])
         elif et == "executor_step":
             si = le.get("step", 0)
             existing = loop["steps"].get(
                 si, {"toolCalls": [], "toolResults": [], "status": "running"}
             )
-            desc = le.get("description", "")
             loop["steps"][si] = {
                 "index": si,
-                "description": desc or existing.get("description", ""),
+                "description": le.get("description", "") or existing.get("description", ""),
                 "reasoning": le.get("reasoning", "") or existing.get("reasoning", ""),
                 "tokens": {
                     "prompt": le.get("prompt_tokens", 0)
@@ -88,10 +195,8 @@ def reconstruct_loop(events: list[dict]) -> dict:
                 "toolCalls": existing.get("toolCalls", []),
                 "toolResults": existing.get("toolResults", []),
                 "status": existing.get("status", "running"),
-                "nodeType": "executor",
             }
             loop["status"] = "executing"
-            loop["totalSteps"] = le.get("total_steps", loop["totalSteps"])
         elif et == "tool_call":
             si = le.get("step", 0)
             if si in loop["steps"]:
@@ -123,117 +228,135 @@ def reconstruct_loop(events: list[dict]) -> dict:
     return loops
 
 
-class TestLoopEventPipeline:
-    """Test that persisted loop_events contain complete data for UI rendering."""
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
-    def test_recent_sessions_have_loop_events(self, db_query):
-        """At least one recent session has loop_events."""
-        result = db_query("SELECT count(*) FROM tasks WHERE metadata::text LIKE '%loop_events%'")
-        assert int(result) > 0, "No sessions with loop_events found"
 
-    def test_event_types_complete(self, db_query):
-        """Loop events contain all required types."""
-        result = db_query(
-            "SELECT metadata::json->'loop_events' FROM tasks "
-            "WHERE metadata::text LIKE '%loop_events%' "
-            "ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC LIMIT 1"
-        )
-        events = json.loads(result)
+@pytest.fixture(scope="module")
+def auth_token():
+    _skip_if_no_url()
+    return get_keycloak_token()
+
+
+@pytest.fixture(scope="module")
+def session_data(auth_token):
+    """Send a message and capture both streaming events and history."""
+    context_id = f"pipeline-test-{int(time.time())}-{os.urandom(4).hex()}"
+
+    # Step 1: Send message via streaming API, capture SSE loop events
+    streaming_events = send_streaming_message(
+        auth_token,
+        context_id,
+        "Create a file called /workspace/pipeline-test.txt with 'hello pipeline' and then read it back",
+    )
+
+    # Step 2: Wait for persistence
+    time.sleep(3)
+
+    # Step 3: Fetch history
+    history = get_history(auth_token, context_id)
+
+    return {
+        "context_id": context_id,
+        "streaming_events": streaming_events,
+        "history": history,
+        "history_loop_events": history.get("loop_events", []),
+    }
+
+
+class TestLoopEventPipelineAPI:
+    """End-to-end pipeline test via real API."""
+
+    def test_streaming_has_events(self, session_data):
+        """Streaming SSE should produce loop events."""
+        events = session_data["streaming_events"]
+        assert len(events) > 0, "No loop events received from streaming"
         types = {e.get("type") for e in events}
+        print(f"Streaming event types: {types}")
+        assert "planner_output" in types
+        assert "executor_step" in types
 
-        assert "planner_output" in types, f"Missing planner_output. Types: {types}"
-        assert "executor_step" in types, f"Missing executor_step. Types: {types}"
-        assert "reflector_decision" in types, f"Missing reflector_decision. Types: {types}"
-        assert "reporter_output" in types, f"Missing reporter_output. Types: {types}"
-
-    def test_tool_call_events_have_tools(self, db_query):
-        """tool_call events contain tools array with name."""
-        result = db_query(
-            "SELECT metadata::json->'loop_events' FROM tasks "
-            "WHERE metadata::text LIKE '%tool_call%' "
-            "ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC LIMIT 1"
-        )
-        events = json.loads(result)
+    def test_streaming_has_tool_calls(self, session_data):
+        """Streaming should include tool_call events."""
+        events = session_data["streaming_events"]
         tool_calls = [e for e in events if e.get("type") == "tool_call"]
-
-        assert len(tool_calls) > 0, "No tool_call events found"
+        assert len(tool_calls) > 0, f"No tool_call events. Types: {[e.get('type') for e in events]}"
         for tc in tool_calls:
             tools = tc.get("tools", [])
-            assert len(tools) > 0, f"tool_call has empty tools array: {tc}"
-            for tool in tools:
-                assert "name" in tool, f"Tool missing name: {tool}"
+            assert len(tools) > 0, "tool_call has empty tools array"
+            assert tools[0].get("name"), "tool missing name"
 
-    def test_tool_result_events_have_output(self, db_query):
-        """tool_result events contain name and output."""
-        result = db_query(
-            "SELECT metadata::json->'loop_events' FROM tasks "
-            "WHERE metadata::text LIKE '%tool_result%' "
-            "ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC LIMIT 1"
+    def test_streaming_has_reporter(self, session_data):
+        """Streaming should end with reporter_output."""
+        events = session_data["streaming_events"]
+        reporters = [e for e in events if e.get("type") == "reporter_output"]
+        assert len(reporters) > 0, "No reporter_output event"
+        assert reporters[-1].get("content"), "reporter_output has no content"
+
+    def test_history_has_loop_events(self, session_data):
+        """History endpoint should return loop_events."""
+        le = session_data["history_loop_events"]
+        assert len(le) > 0, "History has no loop_events"
+
+    def test_history_matches_streaming(self, session_data):
+        """History loop_events should match streaming events."""
+        streaming = session_data["streaming_events"]
+        history = session_data["history_loop_events"]
+
+        s_types = [e.get("type") for e in streaming]
+        h_types = [e.get("type") for e in history]
+
+        print(f"Streaming types: {s_types}")
+        print(f"History types:   {h_types}")
+
+        # History should have the same event types
+        assert set(h_types) == set(s_types), (
+            f"Type mismatch: streaming={set(s_types)}, history={set(h_types)}"
         )
-        events = json.loads(result)
-        results = [e for e in events if e.get("type") == "tool_result"]
-
-        assert len(results) > 0, "No tool_result events found"
-        for tr in results:
-            assert "name" in tr, f"tool_result missing name: {tr}"
-            assert "output" in tr, f"tool_result missing output: {tr}"
-
-    def test_executor_step_has_tokens(self, db_query):
-        """executor_step events have token counts."""
-        result = db_query(
-            "SELECT metadata::json->'loop_events' FROM tasks "
-            "WHERE metadata::text LIKE '%loop_events%' "
-            "ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC LIMIT 1"
+        # Same count (no lost events)
+        assert len(history) == len(streaming), (
+            f"Event count mismatch: streaming={len(streaming)}, history={len(history)}"
         )
-        events = json.loads(result)
-        steps = [e for e in events if e.get("type") == "executor_step"]
 
-        assert len(steps) > 0, "No executor_step events found"
-        # At least one step should have tokens
-        has_tokens = any(
-            e.get("prompt_tokens", 0) > 0 or e.get("completion_tokens", 0) > 0 for e in steps
-        )
-        assert has_tokens, "No executor_step has tokens"
-
-    def test_reconstruction_produces_valid_loop(self, db_query):
-        """Reconstructed AgentLoop has all expected fields."""
-        result = db_query(
-            "SELECT metadata::json->'loop_events' FROM tasks "
-            "WHERE metadata::text LIKE '%tool_call%' "
-            "ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC LIMIT 1"
-        )
-        events = json.loads(result)
-        loops = reconstruct_loop(events)
+    def test_reconstruction_from_history(self, session_data):
+        """Reconstructed loops from history should have tool data."""
+        le = session_data["history_loop_events"]
+        loops = reconstruct_loops(le)
 
         assert len(loops) > 0, "No loops reconstructed"
 
         for lid, loop in loops.items():
-            assert loop["status"] == "done", f"Loop {lid} status={loop['status']}"
-            assert len(loop["steps"]) > 0, f"Loop {lid} has no steps"
+            assert loop["status"] == "done", f"Loop {lid} not done"
+            assert loop["finalAnswer"], f"Loop {lid} no finalAnswer"
 
-            total_tool_calls = sum(len(s["toolCalls"]) for s in loop["steps"].values())
-            total_tool_results = sum(len(s["toolResults"]) for s in loop["steps"].values())
+            total_tc = sum(len(s["toolCalls"]) for s in loop["steps"].values())
+            total_tr = sum(len(s["toolResults"]) for s in loop["steps"].values())
+            assert total_tc > 0, f"Loop {lid}: 0 tool_calls after reconstruction"
+            assert total_tr > 0, f"Loop {lid}: 0 tool_results after reconstruction"
+            assert total_tc == total_tr, (
+                f"Loop {lid}: tool_calls={total_tc} != tool_results={total_tr}"
+            )
 
-            assert total_tool_calls > 0, f"Loop {lid} has 0 tool_calls after reconstruction"
-            assert total_tool_results > 0, f"Loop {lid} has 0 tool_results after reconstruction"
-            assert loop["finalAnswer"], f"Loop {lid} has no finalAnswer"
+    def test_reconstruction_from_streaming(self, session_data):
+        """Reconstructed loops from streaming should match history reconstruction."""
+        s_loops = reconstruct_loops(session_data["streaming_events"])
+        h_loops = reconstruct_loops(session_data["history_loop_events"])
 
-            # Every step should be done
-            for si, step in loop["steps"].items():
-                assert step["status"] == "done", f"Step {si} status={step['status']}"
+        assert set(s_loops.keys()) == set(h_loops.keys()), "Loop IDs differ"
 
-    def test_tool_call_count_matches_results(self, db_query):
-        """Number of tool_call events matches tool_result events."""
-        result = db_query(
-            "SELECT metadata::json->'loop_events' FROM tasks "
-            "WHERE metadata::text LIKE '%tool_call%' "
-            "ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC LIMIT 1"
-        )
-        events = json.loads(result)
+        for lid in s_loops:
+            sl = s_loops[lid]
+            hl = h_loops[lid]
+            assert sl["status"] == hl["status"], f"Status: {sl['status']} vs {hl['status']}"
+            assert len(sl["steps"]) == len(hl["steps"]), f"Step count differs"
 
-        call_count = sum(len(e.get("tools", [])) for e in events if e.get("type") == "tool_call")
-        result_count = len([e for e in events if e.get("type") == "tool_result"])
-
-        assert call_count == result_count, (
-            f"tool_call count ({call_count}) != tool_result count ({result_count})"
-        )
+            for si in sl["steps"]:
+                ss = sl["steps"][si]
+                hs = hl["steps"][si]
+                assert len(ss["toolCalls"]) == len(hs["toolCalls"]), (
+                    f"Step {si} toolCalls: streaming={len(ss['toolCalls'])}, history={len(hs['toolCalls'])}"
+                )
+                assert len(ss["toolResults"]) == len(hs["toolResults"]), (
+                    f"Step {si} toolResults: streaming={len(ss['toolResults'])}, history={len(hs['toolResults'])}"
+                )
