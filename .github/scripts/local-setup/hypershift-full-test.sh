@@ -936,7 +936,7 @@ if [ "$RUN_INSTALL" = "true" ]; then
             HELM3_PATH="/opt/homebrew/opt/helm@3/bin"
             if [ -x "$HELM3_PATH/helm" ]; then
                 export PATH="$HELM3_PATH:$PATH"
-                log_info "Helm v4 detected — using Helm v3 from $HELM3_PATH ($(helm version --short 2>/dev/null))"
+                log_step "Helm v4 detected — using Helm v3 from $HELM3_PATH ($(helm version --short 2>/dev/null))"
             else
                 log_error "Helm v4 detected but helm@3 not found. Install with: brew install helm@3"
                 exit 1
