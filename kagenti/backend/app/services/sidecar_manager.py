@@ -351,16 +351,16 @@ class SidecarManager:
         )
         interval = handle.config.get("interval_seconds", 10)
 
-        # Check if the session already completed before the looper was enabled.
-        # This handles the case where the user enables the looper after the
-        # agent finishes a turn — the [DONE] event was already sent and missed.
-        try:
-            await self._check_session_completed(handle, analyzer)
-        except Exception:
-            logger.debug("Looper: initial session state check failed (non-critical)")
-
         while handle.enabled:
-            # Drain queued events
+            # Each iteration: read the current session state from the DB.
+            # This is the primary detection mechanism — the looper doesn't
+            # depend on SSE events. It polls the DB on a timer.
+            try:
+                await self._poll_session_state(handle, analyzer)
+            except Exception:
+                logger.debug("Looper: session state poll failed (will retry)")
+
+            # Also drain any queued SSE events (supplementary — fast path)
             while handle.event_queue and not handle.event_queue.empty():
                 try:
                     event = handle.event_queue.get_nowait()
@@ -401,10 +401,13 @@ class SidecarManager:
 
             await asyncio.sleep(interval)
 
-    async def _check_session_completed(
-        self, handle: SidecarHandle, analyzer: "LooperAnalyzer"
-    ) -> None:
-        """Check if the session already completed before looper was enabled."""
+    async def _poll_session_state(self, handle: SidecarHandle, analyzer: "LooperAnalyzer") -> None:
+        """Read the latest session state from the DB and feed it to the analyzer.
+
+        This runs every poll iteration. The analyzer tracks state internally
+        and only triggers auto-continue when a COMPLETED/FAILED transition
+        is detected (idempotent — repeated polls of the same state are no-ops).
+        """
         import json
 
         try:
@@ -423,13 +426,9 @@ class SidecarManager:
             if rows:
                 status = json.loads(rows[0]["status"]) if rows[0]["status"] else {}
                 state = status.get("state", "")
-                if state in ("COMPLETED", "FAILED"):
-                    logger.info(
-                        "Looper: session %s already %s at startup — will auto-continue",
-                        handle.parent_context_id[:12],
-                        state,
-                    )
-                    analyzer.ingest({"done": True, "session_id": handle.parent_context_id})
+                if state:
+                    # Feed state to analyzer — it handles dedup internally
+                    analyzer.ingest({"result": {"status": {"state": state}}})
 
     async def _send_continue(self, handle: SidecarHandle) -> None:
         """Send a 'continue' message by creating a child session via A2A.

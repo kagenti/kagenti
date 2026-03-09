@@ -31,6 +31,7 @@ class LooperAnalyzer:
         self._session_done = False
         self._waiting_hitl = False
         self._last_state: str = ""
+        self._last_polled_state: str = ""  # Dedup: only trigger on state changes
 
     def ingest(self, event: dict) -> None:
         """Process an SSE event to track session state."""
@@ -65,16 +66,21 @@ class LooperAnalyzer:
             self._session_done = False
             logger.info("Looper: session entered HITL/INPUT_REQUIRED, pausing")
 
-        # Detect completion
-        if state in ("COMPLETED", "FAILED"):
+        # Detect completion — only trigger on state CHANGE to avoid
+        # re-triggering when DB poll returns the same COMPLETED state.
+        if state in ("COMPLETED", "FAILED") and state != self._last_polled_state:
             self._session_done = True
             self._waiting_hitl = False
+            self._last_polled_state = state
             logger.info(
                 "Looper: session %s detected (iteration=%d/%d)",
                 state,
                 self.continue_counter,
                 self.counter_limit,
             )
+        elif state and state not in ("COMPLETED", "FAILED"):
+            # Non-terminal state — reset polled state tracker
+            self._last_polled_state = state
 
     def should_continue(self) -> bool:
         """Check if the agent should be auto-continued."""
