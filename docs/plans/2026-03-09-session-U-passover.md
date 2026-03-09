@@ -47,18 +47,53 @@
 
 ## Remaining Issues (P0 for Session V)
 
-### 1. RCA Agent — Flaky (A2A SDK CancelledError)
+### 1. RCA Agent — Flaky (A2A SDK CancelledError) — ROOT CAUSE FOUND
 
-**Problem:** The A2A SDK's event queue gets `CancelledError` during long-running multi-iteration agents, dropping SSE events. The agent continues processing (our fix) but the backend receives fewer events → incomplete loop_events.
+**Problem:** The A2A SDK's event queue gets `CancelledError` during long-running multi-iteration agents, dropping SSE events. The agent continues processing (our fix) but the backend receives fewer events → incomplete loop_events → old format in UI.
 
-**Root cause:** `CancelledError in span a2a.server.events.event_queue.EventQueue.dequeue_event` — the SDK's internal consumer gets cancelled before forwarding all events to the HTTP response.
+**Root cause chain:**
+1. Nginx proxy has `proxy_read_timeout 300s` (5 min)
+2. Backend streams SSE to browser but doesn't send keepalive pings to nginx
+3. For slow agents (RCA with Llama 4 Scout), nginx drops the backend→browser connection after 5 min
+4. Browser disconnects → backend's httpx stream to agent closes
+5. Agent's A2A SDK event consumer gets `CancelledError`
+6. Events produced after CancelledError are dropped from SSE (but agent continues processing)
 
-**Workaround:** Agent catches CancelledError and continues. Events still saved to task store. Backend could read final task history as fallback when SSE stream is incomplete.
+**Evidence:**
+```
+nginx.conf: proxy_read_timeout 300s;
+Agent logs: CancelledError in span a2a.server.events.event_queue.EventQueue.dequeue_event
+Backend logs: only 2 SSE data lines received for RCA (should be 10+)
+```
 
-**Fix options:**
-- Upstream A2A SDK fix (event queue resilience)
-- Backend fallback: after SSE stream ends, read task history from agent's task store and extract loop events from there
-- Use `message/send` (synchronous) instead of streaming for long tasks
+**Fix (Session V):**
+1. **Backend SSE keepalive**: Send `data: {"ping": true}` every 15s to nginx to prevent timeout
+2. **Increase nginx timeout**: `proxy_read_timeout 600s` or more
+3. **Backend fallback**: After SSE stream ends with incomplete events, read task history from agent's A2A task store via `message/send` and extract loop_events from the final task
+4. **Agent-side**: Already fixed — catches CancelledError and continues processing
+
+**How to implement backend keepalive:**
+In `_stream_sandbox_response()`, run a background task that sends ping data to the SSE response every 15s:
+```python
+async def _keepalive():
+    while True:
+        await asyncio.sleep(15)
+        yield "data: {\"ping\": true}\n\n"
+```
+
+**How to implement fallback:**
+After `finally` block, if `loop_events` is empty but session is completed:
+```python
+# Read final task from agent's task store
+resp = await client.post(agent_url, json={"method": "tasks/get", "params": {"id": task_id}})
+task = resp.json()["result"]
+# Extract loop_events from task history
+for msg in task["history"]:
+    for part in msg["parts"]:
+        parsed = json.loads(part["text"])
+        if parsed.get("loop_id"):
+            loop_events.append(parsed)
+```
 
 ### 2. Sidecar Auto-Continue — Design Issue
 
@@ -70,7 +105,21 @@
 
 **Problem:** `/files/{agent_name}/{context_id}` returns 404 for sandbox-basic but works for rca-agent. May be a workspace path resolution issue per agent deployment.
 
-### 4. Executor Still Writes Text Instead of Tool Calls (Sometimes)
+### 4. Reflector Loops Without Progress — Needs Stall Detection
+
+**Problem:** Session `8a6d778a` shows 52 messages — the agent called tools in iterations 1-2, then looped 25+ times (planner→executor→reflector) without any tool calls or new output. The reflector keeps saying "replan" without detecting that nothing changed.
+
+**Evidence:** 52 history messages, only 2 tool_results at messages 3 and 8, then 40+ planner/executor/reflector cycles with zero tool calls.
+
+**Fix:** Add stall detection to the reflector:
+- Track tool_call count per iteration
+- If last 3 iterations had 0 tool calls → force `done`
+- Or: compare executor output across iterations — if identical, force `done`
+- Consider reducing default budget back to a reasonable number (20?) with stall detection
+
+**Code location:** `reasoning.py` reflector_node — needs access to iteration history
+
+### 5. Executor Still Writes Text Instead of Tool Calls (Sometimes)
 
 **Problem:** Despite `tool_choice="any"`, Llama 4 Scout occasionally writes text descriptions instead of using function calling API. The `parse_text_tool_calls()` catches some patterns (Llama format, legacy format) but not all.
 
