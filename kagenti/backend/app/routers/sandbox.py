@@ -1925,10 +1925,11 @@ async def _stream_sandbox_response(
                     exc_info=True,
                 )
 
-            # Fallback: if no loop_events were captured during SSE streaming
-            # (e.g. nginx dropped the connection after timeout), try to recover
-            # them from the agent's A2A task store via the tasks/get API.
-            if not loop_events and not loop_events_persisted and session_has_loops:
+            # Fallback: if the loop didn't complete (no reporter_output),
+            # the stream was likely cut short (nginx timeout, client disconnect).
+            # Try to recover the full event set from the agent's A2A task store.
+            has_reporter = any(e.get("type") == "reporter_output" for e in loop_events)
+            if session_has_loops and not has_reporter and not loop_events_persisted:
                 try:
                     await _recover_loop_events_from_agent(
                         agent_url, session_id, namespace, stream_task_id
