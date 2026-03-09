@@ -227,3 +227,123 @@ kagenti/ui-v2/src/
 
 Old sessions (without loop_id) continue to render as flat messages.
 New sessions (with loop_id) get the grouped expandable view.
+
+---
+
+## Session S Updates
+
+> **Date:** 2026-03-09
+> **Author:** Session S
+> **See also:** [Sandbox Reasoning Loop Design](2026-03-03-sandbox-reasoning-loop-design.md) for event pipeline and agent internals
+
+### Node Type Badges
+
+Each step in the expanded `LoopDetail` now shows a colored badge indicating
+which graph node produced it. Rendered by the `NodeBadge` component:
+
+| Badge | Color | Node |
+|-------|-------|------|
+| `[planner]` | Blue | Plan creation/update |
+| `[executor]` | Green | Tool execution step |
+| `[reflector]` | Orange | Reflection/decision |
+| `[reporter]` | Purple | Final report generation |
+
+Badges appear at the start of each step header in the expanded view, providing
+visual grouping of the reasoning phases.
+
+### Token Display
+
+Token usage is now visible at two levels:
+
+- **Per-step:** Each step header shows `prompt→completion tokens` (e.g., `1,200→300 tok`).
+  Values come from the `usage_metadata` extracted by each graph node.
+- **Summary bar:** Total tokens displayed next to the `ModelBadge` component,
+  aggregated from all steps in the loop.
+
+### Event Pipeline
+
+The full event flow from agent to rendered UI:
+
+```
+Agent graph node
+  → event_schema.py (typed dataclass)
+    → serializer (SSE JSON with event type)
+      → backend SSE endpoint (passthrough)
+        → frontend SSE handler (SandboxPage.tsx)
+          → AgentLoop state reducer
+            → AgentLoopCard render
+```
+
+Each node emits a distinct event type (`planner_output`, `executor_step`,
+`reflector_decision`, `reporter_output`, `budget_update`). Legacy types
+(`llm_response` reused for all nodes) are still emitted for backward
+compatibility but the frontend SSE handler deduplicates: when a typed event
+is received, any legacy event with the same `loop_id` and content is skipped.
+
+### Historical Reconstruction
+
+Agent loop events are persisted for history reload:
+
+1. **Persistence:** The `loop_events` list is stored in task metadata via an
+   atomic write in a `finally` block, ensuring events are saved even on error.
+
+2. **History endpoint:** The backend history endpoint returns the `loop_events`
+   array from task metadata alongside the existing message history.
+
+3. **Frontend reconstruction:** On session reload, the frontend iterates through
+   `loop_events` and reconstructs `AgentLoop` objects using the same state
+   reducer that the SSE handler uses. This ensures historical and live views
+   produce identical UI state.
+
+### Known Issue: Streaming vs Historical Consistency
+
+A consistency test validates that the `AgentLoop` objects produced by the SSE
+streaming handler match those reconstructed from persisted `loop_events`. Any
+mismatch indicates a bug in either the serializer or the reconstruction logic.
+
+The reconstruction loop and the SSE handler **must** produce identical
+`AgentLoop` objects. Divergence causes visual inconsistencies between live
+sessions and reloaded history (e.g., missing steps, wrong token counts, or
+status stuck on "executing").
+
+### Model Switcher
+
+A cog icon in the session header opens a popover with a model dropdown. The
+selected model is stored as `sessionModelOverride` state in `SandboxPage.tsx`.
+When set, the override is sent with each chat request to the backend, which
+proxies available models from the LiteLLM `/models` endpoint.
+
+The model list is fetched once on session load and cached. The current model
+is displayed in the `ModelBadge` component in the summary bar.
+
+### HITL Approval Card
+
+`HitlApprovalCard.tsx` replaces the raw text rendering of HITL checkpoint
+events. It displays:
+
+- Progress summary (e.g., "Completed 3/5 plan steps")
+- Budget consumption (tokens, iterations, wall clock)
+- **Approve** button — resumes the graph
+- **Deny** button — routes to reporter with partial results
+
+The card appears inline in the chat flow and disables its buttons once a
+decision is made (or after the 5-minute auto-continue timeout).
+
+### Sub-sessions Tab
+
+`SubSessionsPanel.tsx` renders a tab showing child sessions created by the
+`delegate` tool (Legion variant). Each child session row shows:
+
+- Task description
+- Status (running / done / failed)
+- Model used
+- Token count
+
+Rows are clickable and navigate to the child session's chat view.
+
+### Compact Sidecar Panel
+
+For sidecar deployment mode, the agent loop renders as an accordion with
+compact rows instead of the full `AgentLoopCard`. The `Looper` component
+shows iteration progress as `2/5` with a mini progress bar, providing
+at-a-glance status without consuming full chat panel width.

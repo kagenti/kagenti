@@ -266,3 +266,139 @@ llama4-secret     → Llama 4 Scout key (backup)
 6. `agent.py` — Update A2A executor to stream graph events
 7. Tests — Verify 3 failing tests pass
 8. MCP integration — Optional tool loading from MCP servers
+
+---
+
+## Session S Updates
+
+> **Date:** 2026-03-09
+> **Author:** Session S
+> **See also:** [Agent Loop UI Design](2026-03-03-agent-loop-ui-design.md) for rendering details
+
+### Typed Event Schema
+
+Session S introduced `event_schema.py` with typed dataclasses for every event
+the agent emits. Each node produces a distinct event type rather than reusing
+`llm_response` for everything:
+
+```python
+@dataclass
+class PlannerOutput:
+    steps: list[str]
+    iteration: int
+
+@dataclass
+class ExecutorStep:
+    step_index: int
+    description: str
+    tool_calls: list[ToolCall]
+    tool_results: list[ToolResult]
+
+@dataclass
+class ToolCall:
+    name: str
+    args: dict
+
+@dataclass
+class ToolResult:
+    name: str
+    output: str
+
+@dataclass
+class ReflectorDecision:
+    assessment: str
+    decision: str          # "continue" | "replan" | "done" | "hitl"
+    iteration: int
+
+@dataclass
+class ReporterOutput:
+    content: str
+
+@dataclass
+class BudgetUpdate:
+    tokens_used: int
+    tokens_budget: int
+    iterations: int
+    max_iterations: int
+    wall_clock_s: float
+    max_wall_clock_s: float
+```
+
+### Event Serializer Refactor
+
+Each graph node now emits its own event type through the serializer:
+
+| Node | Event type emitted |
+|------|--------------------|
+| planner | `planner_output` |
+| executor | `executor_step` |
+| reflector | `reflector_decision` |
+| reporter | `reporter_output` |
+| (budget check) | `budget_update` |
+
+Legacy event types (`llm_response` for all nodes) are still emitted for backward
+compatibility but the frontend and backend SSE handler skip them when the new
+typed events are present. This allows old UI versions to degrade gracefully.
+
+### LangGraph recursion_limit
+
+The LangGraph default `recursion_limit` of 25 caused silent graph termination
+when the executor inner loop consumed too many recursive steps. Session S raised
+this to **50** in the graph config:
+
+```python
+config = {"recursion_limit": 50}
+result = await graph.ainvoke(state, config=config)
+```
+
+This prevents premature termination while still providing a safety bound.
+
+### Token Tracking
+
+Each node now extracts `usage_metadata` from LLM responses:
+
+```python
+response = await llm.ainvoke(messages)
+usage = response.usage_metadata  # {prompt_tokens, completion_tokens, total_tokens}
+```
+
+Token counts are included in every SSE event and accumulated in graph state for
+budget enforcement. The frontend uses per-step token counts for the step headers
+and aggregates them for the summary bar.
+
+### request_id Capture
+
+The agent captures the LiteLLM `request_id` from each completion response and
+stores it in task metadata as `llm_request_ids` (an append-only list):
+
+```python
+request_id = response.response_metadata.get("request_id")
+if request_id:
+    task_metadata["llm_request_ids"].append(request_id)
+```
+
+This enables end-to-end tracing from UI event back to the LLM provider request.
+
+### Budget Update
+
+Session S tightened the budget defaults:
+
+| Parameter | Old value | New value | Reason |
+|-----------|-----------|-----------|--------|
+| `max_outer_iterations` | 10 | **6** | Prevents runaway loops; reflector forces `done` when exceeded |
+
+When the reflector detects `iteration >= max_iterations`, it sets
+`decision = "done"` regardless of task completion status and the reporter
+generates a partial report with results gathered so far.
+
+### Known Issue: "continue" as Final Answer
+
+When the budget forces termination, the reflector's decision string (e.g.,
+`"continue"`) can leak into the reporter's input, causing the final answer to
+contain the literal word "continue" instead of a synthesized report. This happens
+because the reflector emits its decision to the message history before the
+budget check overrides it to `"done"`. The reporter then sees both the decision
+message and the override.
+
+**Workaround:** Not yet resolved. Requires the budget-forced `done` path to
+strip or replace the reflector's last message before invoking the reporter.
