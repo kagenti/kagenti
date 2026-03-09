@@ -41,6 +41,7 @@ import { ModelSwitcher } from '../components/ModelSwitcher';
 import { SubSessionsPanel, useChildSessionCount } from '../components/SubSessionsPanel';
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
+import { applyLoopEvent, buildAgentLoops, createDefaultAgentLoop, LEGACY_TYPES, type LoopEvent } from '../utils/loopBuilder';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
 type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
@@ -981,168 +982,16 @@ export const SandboxPage: React.FC = () => {
         }
         // Reconstruct loop cards from persisted loop events
         if (page.loop_events) {
-          const events = page.loop_events;
+          const events = page.loop_events as unknown as LoopEvent[];
           if (events.length > 0) {
             // When loop events are available, filter out flat assistant messages
             // to prevent duplicate rendering (loop cards handle all agent content).
             // Keep only user messages in the messages array.
             setMessages((prev) => prev.filter((m) => m.role === 'user'));
-            const loops = new Map<string, AgentLoop>();
-            for (const le of events) {
-              const loopId = le.loop_id as string;
-              if (!loopId) continue;
-              const existing = loops.get(loopId) || {
-                id: loopId,
-                status: 'planning' as const,
-                model: '',
-                plan: [],
-                replans: [],
-                currentStep: 0,
-                totalSteps: 0,
-                iteration: 0,
-                steps: [],
-                budget: { tokensUsed: 0, tokensBudget: 0, wallClockS: 0, maxWallClockS: 0 },
-              };
-              const et = le.type as string;
-              // Skip legacy event types — new types carry the same data
-              if (['plan', 'plan_step', 'reflection', 'llm_response'].includes(et)) continue;
 
-              if (et === 'planner_output') {
-                const incomingSteps = (le.steps as string[]) || [];
-                const isReplan = existing.plan.length > 0;
-                const iterNum = (le.iteration as number) ?? existing.iteration ?? 0;
-                const stepLabel = isReplan ? 'Replan' : 'Plan';
-                const nodeTypeVal = isReplan ? 'replanner' as const : 'planner' as const;
-                existing.status = 'planning';
-                if (!isReplan) {
-                  existing.plan = incomingSteps;
-                  existing.totalSteps = incomingSteps.length;
-                } else {
-                  existing.replans = [...(existing.replans || []), { iteration: iterNum, steps: incomingSteps, model: (le.model as string) || existing.model, content: le.content as string | undefined }];
-                }
-                existing.iteration = iterNum;
-                existing.model = (le.model as string) || existing.model;
-                const planContent = (le.content as string) || incomingSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n');
-                existing.steps = [...existing.steps, {
-                  index: existing.steps.length,
-                  description: `${stepLabel} (iteration ${iterNum + 1}): ${incomingSteps.length} steps`,
-                  reasoning: planContent || undefined,
-                  model: (le.model as string) || existing.model,
-                  nodeType: nodeTypeVal,
-                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
-                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
-                }];
-              } else if (et === 'executor_step') {
-                existing.status = 'executing';
-                existing.currentStep = (le.step as number) ?? existing.currentStep;
-                existing.totalSteps = (le.total_steps as number) ?? existing.totalSteps;
-                existing.model = (le.model as string) || existing.model;
-                const stepIndex = le.step as number;
-                const newDesc = ((le.description as string) || '').trim();
-                const existingStep = existing.steps.find((s: { index: number }) => s.index === stepIndex);
-                // Only update step if new description is non-empty or no existing step has content
-                if (newDesc || !existingStep || !existingStep.description?.trim()) {
-                  existing.steps = [...existing.steps.filter((s: { index: number }) => s.index !== stepIndex), {
-                    index: stepIndex,
-                    description: (le.description as string) || existingStep?.description || '',
-                    model: (le.model as string) || existing.model,
-                    reasoning: (le.reasoning as string) || existingStep?.reasoning || undefined,
-                    nodeType: 'executor' as const,
-                    tokens: { prompt: (le.prompt_tokens as number) || existingStep?.tokens?.prompt || 0, completion: (le.completion_tokens as number) || existingStep?.tokens?.completion || 0 },
-                    // Merge tool data from existing step (tool_call/tool_result events may have arrived first)
-                    toolCalls: existingStep?.toolCalls || [], toolResults: existingStep?.toolResults || [],
-                    durationMs: 0, status: existingStep?.status || ('running' as const),
-                  }];
-                }
-              } else if (et === 'reflector_decision') {
-                existing.status = 'reflecting';
-                existing.reflection = (le.assessment as string) || '';
-                existing.reflectorDecision = le.decision as 'continue' | 'replan' | 'done' | undefined;
-                existing.iteration = (le.iteration as number) ?? existing.iteration;
-                existing.model = (le.model as string) || existing.model;
-                existing.steps = [...existing.steps, {
-                  index: existing.steps.length,
-                  description: `Reflection [${le.decision || 'assess'}]: ${((le.assessment as string) || '').substring(0, 80)}`,
-                  reasoning: (le.assessment as string) || undefined,
-                  model: (le.model as string) || existing.model,
-                  nodeType: 'reflector' as const,
-                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
-                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
-                }];
-              } else if (et === 'reporter_output') {
-                existing.status = 'done';
-                // Filter out bare "continue"/"replan"/"done" — these are reflector
-                // decisions that leaked to reporter when budget forced termination
-                const reporterContent = (le.content as string) || '';
-                const isLeakedDecision = /^(continue|replan|done|hitl)\s*$/i.test(reporterContent.trim());
-                existing.finalAnswer = isLeakedDecision ? '' : reporterContent;
-                existing.model = (le.model as string) || existing.model;
-                existing.steps = [...existing.steps, {
-                  index: existing.steps.length,
-                  description: isLeakedDecision ? 'Final answer (no content)' : 'Final answer',
-                  model: (le.model as string) || existing.model,
-                  nodeType: 'reporter' as const,
-                  tokens: { prompt: (le.prompt_tokens as number) || 0, completion: (le.completion_tokens as number) || 0 },
-                  toolCalls: [], toolResults: [], durationMs: 0, status: 'done' as const,
-                }];
-              } else if (et === 'tool_call') {
-                const stepIdx = (le.step as number) ?? existing.currentStep;
-                const step = existing.steps.find((s: { index: number }) => s.index === stepIdx);
-                if (step) {
-                  step.toolCalls = [...step.toolCalls, ...((le.tools as Array<{ type: string; name?: string; args?: unknown; tools?: unknown[] }>) || [{ type: 'tool_call', name: (le.name as string) || 'unknown', args: (le.args as string) || '' }])];
-                  step.nodeType = 'executor';
-                } else {
-                  // No matching step — create an implicit executor step
-                  existing.steps.push({
-                    index: stepIdx,
-                    description: 'Tool execution',
-                    model: (le.model as string) || existing.model,
-                    nodeType: 'executor' as const,
-                    tokens: { prompt: 0, completion: 0 },
-                    toolCalls: (le.tools as Array<{ type: string; name?: string; args?: unknown; tools?: unknown[] }>) || [{ type: 'tool_call', name: (le.name as string) || 'unknown', args: (le.args as string) || '' }],
-                    toolResults: [], durationMs: 0, status: 'running' as const,
-                  });
-                }
-                existing.model = (le.model as string) || existing.model;
-              } else if (et === 'tool_result') {
-                const stepIdx = (le.step as number) ?? existing.currentStep;
-                const step = existing.steps.find((s: { index: number }) => s.index === stepIdx);
-                if (step) {
-                  step.toolResults = [...step.toolResults, { type: 'tool_result', name: (le.name as string) || 'unknown', output: (le.output as string) || '' }];
-                  step.status = 'done';
-                  step.nodeType = 'executor';
-                } else {
-                  // No matching step — create an implicit executor step
-                  existing.steps.push({
-                    index: stepIdx,
-                    description: 'Tool execution',
-                    model: (le.model as string) || existing.model,
-                    nodeType: 'executor' as const,
-                    tokens: { prompt: 0, completion: 0 },
-                    toolCalls: [],
-                    toolResults: [{ type: 'tool_result', name: (le.name as string) || 'unknown', output: (le.output as string) || '' }],
-                    durationMs: 0, status: 'done' as const,
-                  });
-                }
-              } else if (et === 'budget') {
-                existing.budget = {
-                  tokensUsed: (le.tokens_used as number) ?? existing.budget.tokensUsed,
-                  tokensBudget: (le.tokens_budget as number) ?? existing.budget.tokensBudget,
-                  wallClockS: (le.wall_clock_s as number) ?? existing.budget.wallClockS,
-                  maxWallClockS: (le.max_wall_clock_s as number) ?? existing.budget.maxWallClockS,
-                };
-              }
-              loops.set(loopId, existing);
-            }
-            // Mark all loops as done (historical) and sort steps by index
-            for (const [lid, loop] of loops) {
-              if (loop.status !== 'done') {
-                console.warn(`[history] Loop ${lid} had status="${loop.status}", forcing to "done"`);
-                loop.status = 'done';
-              }
-              // Sort steps by index for correct rendering order
-              loop.steps.sort((a, b) => a.index - b.index);
-            }
+            console.log(`[history] LOOP_REBUILD events=${events.length} types=${events.map((e) => e.type).slice(0, 10)}`);
+
+            const loops = buildAgentLoops(events);
             console.log(`[history] Reconstructed ${loops.size} loop(s):`, Array.from(loops.entries()).map(([lid, l]) => ({ id: lid, status: l.status, steps: l.steps.length, finalAnswer: !!l.finalAnswer })));
             setAgentLoops(loops);
           }
@@ -1413,18 +1262,7 @@ export const SandboxPage: React.FC = () => {
   const updateLoop = useCallback((loopId: string, updater: (prev: AgentLoop) => AgentLoop) => {
     setAgentLoops((prev) => {
       const next = new Map(prev);
-      const existing = next.get(loopId) || {
-        id: loopId,
-        status: 'planning' as const,
-        model: '',
-        plan: [],
-        replans: [],
-        currentStep: 0,
-        totalSteps: 0,
-        iteration: 0,
-        steps: [],
-        budget: { tokensUsed: 0, tokensBudget: 0, wallClockS: 0, maxWallClockS: 0 },
-      };
+      const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
       next.set(loopId, updater(existing));
       return next;
     });
@@ -1520,174 +1358,15 @@ export const SandboxPage: React.FC = () => {
               const loopId = data.loop_id;
               const le = data.loop_event || data;
               const eventType = le.type;
-              console.log(`[sse] loop_event: type=${eventType} loop=${loopId?.substring(0, 8)} step=${le.step ?? ''} tools=${le.tools?.length ?? 0}`);
+              console.log(`[sse] LOOP_RECV loop=${loopId?.substring(0, 8)} type=${eventType} step=${le.step ?? ''} tools=${le.tools?.length ?? 0}`);
 
-              // Handle typed events. The serializer emits both new types
-              // (planner_output, executor_step, etc.) and legacy types
-              // (plan, plan_step, etc.) for backward compat. Skip legacy
-              // types to avoid duplicate steps.
-              const LEGACY_TYPES = new Set(['plan', 'plan_step', 'reflection', 'llm_response']);
+              // Skip legacy events — the new-type handler already processed this
               if (LEGACY_TYPES.has(eventType)) {
-                // Skip legacy events — the new-type handler already processed this
                 continue;
               }
 
-              if (eventType === 'planner_output') {
-                updateLoop(loopId, (l) => {
-                  const incomingSteps = le.steps || [];
-                  const isReplan = l.plan.length > 0;
-                  const iterNum = le.iteration ?? l.iteration ?? 0;
-                  const stepLabel = isReplan ? 'Replan' : 'Plan';
-                  const nodeTypeVal = isReplan ? 'replanner' as const : 'planner' as const;
-                  const planContent = le.content || incomingSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || undefined;
-                  return {
-                    ...l,
-                    status: 'planning',
-                    plan: isReplan ? l.plan : incomingSteps,
-                    replans: isReplan
-                      ? [...l.replans, { iteration: iterNum, steps: incomingSteps, model: le.model || l.model, content: le.content }]
-                      : l.replans,
-                    totalSteps: isReplan ? l.totalSteps : incomingSteps.length,
-                    iteration: iterNum,
-                    model: le.model || l.model,
-                    steps: [
-                      ...l.steps,
-                      {
-                        index: l.steps.length,
-                        description: `${stepLabel} (iteration ${iterNum + 1}): ${incomingSteps.length} steps`,
-                        reasoning: planContent,
-                        model: le.model || l.model,
-                        nodeType: nodeTypeVal,
-                        tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-                        toolCalls: [],
-                        toolResults: [],
-                        durationMs: 0,
-                        status: 'done' as const,
-                      },
-                    ],
-                  };
-                });
-              } else if (eventType === 'executor_step') {
-                updateLoop(loopId, (l) => {
-                  const newDesc = ((le.description as string) || '').trim();
-                  const existingStep = l.steps.find((s: { index: number }) => s.index === le.step);
-                  // If incoming event has empty description and existing step has content, keep existing
-                  if (!newDesc && existingStep && existingStep.description?.trim()) {
-                    return {
-                      ...l,
-                      status: 'executing',
-                      currentStep: le.step ?? l.currentStep,
-                      totalSteps: le.total_steps ?? l.totalSteps,
-                      model: le.model || l.model,
-                    };
-                  }
-                  return {
-                    ...l,
-                    status: 'executing',
-                    currentStep: le.step ?? l.currentStep,
-                    totalSteps: le.total_steps ?? l.totalSteps,
-                    model: le.model || l.model,
-                    steps: [
-                      ...l.steps.filter((s: { index: number }) => s.index !== le.step),
-                      {
-                        index: le.step,
-                        description: le.description || existingStep?.description || '',
-                        model: le.model || l.model,
-                        reasoning: (le.reasoning as string) || existingStep?.reasoning || undefined,
-                        nodeType: 'executor' as const,
-                        tokens: { prompt: le.prompt_tokens || existingStep?.tokens?.prompt || 0, completion: le.completion_tokens || existingStep?.tokens?.completion || 0 },
-                        // Merge tool data from existing step
-                        toolCalls: existingStep?.toolCalls || [],
-                        toolResults: existingStep?.toolResults || [],
-                        durationMs: 0,
-                        status: 'running' as const,
-                      },
-                    ],
-                  };
-                });
-              } else if (eventType === 'tool_call') {
-                updateLoop(loopId, (l) => {
-                  const stepIdx = le.step ?? l.currentStep;
-                  const steps = [...l.steps];
-                  const step = steps.find((s: { index: number }) => s.index === stepIdx);
-                  if (step) {
-                    step.toolCalls = [...step.toolCalls, ...(le.tools || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '' }])];
-                    step.nodeType = 'executor';
-                  }
-                  return { ...l, steps, model: le.model || l.model };
-                });
-              } else if (eventType === 'tool_result') {
-                updateLoop(loopId, (l) => {
-                  const stepIdx = le.step ?? l.currentStep;
-                  const steps = [...l.steps];
-                  const step = steps.find((s: { index: number }) => s.index === stepIdx);
-                  if (step) {
-                    step.toolResults = [...step.toolResults, { type: 'tool_result', name: le.name, output: le.output }];
-                    step.status = 'done';
-                    step.nodeType = 'executor';
-                  }
-                  return { ...l, steps };
-                });
-              } else if (eventType === 'reflector_decision') {
-                updateLoop(loopId, (l) => ({
-                  ...l,
-                  status: 'reflecting',
-                  reflection: le.assessment || '',
-                  reflectorDecision: le.decision as 'continue' | 'replan' | 'done' | undefined,
-                  iteration: le.iteration ?? l.iteration,
-                  model: le.model || l.model,
-                  // Add reflector step for visibility
-                  steps: [
-                    ...l.steps,
-                    {
-                      index: l.steps.length, // Sequential index
-                      description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
-                      model: le.model || l.model,
-                      nodeType: 'reflector' as const,
-                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-                      toolCalls: [],
-                      toolResults: [],
-                      durationMs: 0,
-                      status: 'done' as const,
-                    },
-                  ],
-                }));
-              } else if (eventType === 'budget') {
-                updateLoop(loopId, (l) => ({
-                  ...l,
-                  budget: {
-                    tokensUsed: le.tokens_used ?? l.budget.tokensUsed,
-                    tokensBudget: le.tokens_budget ?? l.budget.tokensBudget,
-                    wallClockS: le.wall_clock_s ?? l.budget.wallClockS,
-                    maxWallClockS: le.max_wall_clock_s ?? l.budget.maxWallClockS,
-                  },
-                }));
-              } else if (eventType === 'reporter_output') {
-                // Filter leaked reflector decisions ("continue"/"replan"/"done")
-                const rContent = le.content || '';
-                const isLeaked = /^(continue|replan|done|hitl)\s*$/i.test(String(rContent).trim());
-                updateLoop(loopId, (l) => ({
-                  ...l,
-                  status: 'done',
-                  finalAnswer: isLeaked ? '' : rContent,
-                  model: le.model || l.model,
-                  // Mark all running steps as done + add reporter step
-                  steps: [
-                    ...l.steps.map((s) => s.status === 'running' ? { ...s, status: 'done' as const } : s),
-                    {
-                      index: l.steps.length, // Sequential index
-                      description: isLeaked ? 'Final answer (no content)' : 'Final answer',
-                      model: le.model || l.model,
-                      nodeType: 'reporter' as const,
-                      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-                      toolCalls: [],
-                      toolResults: [],
-                      durationMs: 0,
-                      status: 'done' as const,
-                    },
-                  ],
-                }));
-              }
+              // Apply event using shared builder
+              updateLoop(loopId, (prev) => applyLoopEvent(prev, le));
 
               // Don't process loop events through the old flat pipeline
               continue;

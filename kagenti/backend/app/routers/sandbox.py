@@ -444,10 +444,12 @@ async def get_session_history(
     persisted_loop_events: Optional[List[Dict[str, Any]]] = None
     all_loop_events: List[Dict[str, Any]] = []
     seen_event_json: set = set()
+    total_raw_count = 0
     for row in rows:
         meta = _parse_json_field(row.get("metadata"))
         if isinstance(meta, dict) and meta.get("loop_events"):
             for evt in meta["loop_events"]:
+                total_raw_count += 1
                 # Dedup by full JSON to handle exact duplicates from old metadata merge
                 evt_json = json.dumps(evt, sort_keys=True)
                 if evt_json not in seen_event_json:
@@ -455,6 +457,14 @@ async def get_session_history(
                     all_loop_events.append(evt)
     if all_loop_events:
         persisted_loop_events = all_loop_events
+        logger.info(
+            "HISTORY session=%s tasks=%d total_events=%d unique=%d types=%s",
+            context_id,
+            len(rows),
+            total_raw_count,
+            len(all_loop_events),
+            [e.get("type") for e in all_loop_events[:10]],
+        )
 
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
@@ -1720,6 +1730,7 @@ async def _stream_sandbox_response(
                             # The agent serializer puts JSON lines in the message text.
                             # Parse each line and forward loop_id at top level so the
                             # UI can group events into AgentLoopCards.
+                            _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
                             has_loop_events = False
                             if status_message:
                                 for msg_line in status_message.split("\n"):
@@ -1729,23 +1740,35 @@ async def _stream_sandbox_response(
                                     try:
                                         parsed = json.loads(msg_line)
                                         if isinstance(parsed, dict) and "loop_id" in parsed:
+                                            evt_type = parsed.get("type", "")
+
+                                            # Skip legacy types entirely — don't forward, don't persist
+                                            if evt_type in _LEGACY:
+                                                logger.debug(
+                                                    "LEGACY_SKIP session=%s type=%s",
+                                                    session_id,
+                                                    evt_type,
+                                                )
+                                                continue
+
+                                            # Forward to frontend
                                             loop_payload = dict(payload)
                                             loop_payload["loop_id"] = parsed["loop_id"]
                                             loop_payload["loop_event"] = parsed
                                             yield f"data: {json.dumps(loop_payload)}\n\n"
+
+                                            # Log forwarding
+                                            logger.info(
+                                                "LOOP_FWD session=%s loop=%s type=%s step=%s",
+                                                session_id,
+                                                parsed["loop_id"][:8],
+                                                evt_type,
+                                                parsed.get("step", ""),
+                                            )
+
                                             has_loop_events = True
                                             session_has_loops = True
-                                            # Only persist new-type events, skip legacy
-                                            # (plan, plan_step, reflection, llm_response)
-                                            evt_type = parsed.get("type", "")
-                                            _LEGACY = {
-                                                "plan",
-                                                "plan_step",
-                                                "reflection",
-                                                "llm_response",
-                                            }
-                                            if evt_type not in _LEGACY:
-                                                loop_events.append(parsed)
+                                            loop_events.append(parsed)
                                             continue
                                     except (json.JSONDecodeError, TypeError):
                                         pass
@@ -1754,6 +1777,15 @@ async def _stream_sandbox_response(
                             # (prevents duplicate flat blocks alongside AgentLoopCards)
                             if has_loop_events or session_has_loops:
                                 continue
+
+                            # Log flat event forwarding (no loop_id detected)
+                            if status_message:
+                                logger.info(
+                                    "FLAT_FWD session=%s content_len=%d first_80=%s",
+                                    session_id,
+                                    len(status_message),
+                                    status_message[:80].replace("\n", "\\n"),
+                                )
 
                             payload["event"] = {
                                 "type": event_type,
