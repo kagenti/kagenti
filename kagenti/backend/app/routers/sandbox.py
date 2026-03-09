@@ -1547,8 +1547,9 @@ async def _stream_sandbox_response(
                     if not line:
                         continue
                     line_count += 1
-                    if line_count <= 5 or "loop_id" in line:
-                        logger.info("Agent SSE [%d]: %s", line_count, line[:200])
+                    # Log all data lines (not pings) for debugging
+                    if line.startswith("data:") or line_count <= 3:
+                        logger.info("Agent SSE [%d]: %s", line_count, line[:300])
 
                     if line.startswith("data: "):
                         data = line[6:]
