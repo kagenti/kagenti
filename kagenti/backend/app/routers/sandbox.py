@@ -438,19 +438,20 @@ async def get_session_history(
 
     # Extract persisted loop events from ALL task rows.
     # Multi-turn sessions have one task per turn, each with its own loop_events.
-    # Aggregate them all and deduplicate by (loop_id, type, step) to handle
-    # metadata merge artifacts.
+    # Aggregate and deduplicate: the finally block used to write the same events
+    # to ALL task rows (now fixed to write only to the latest). For backward
+    # compat with existing data, deduplicate by full event content hash.
     persisted_loop_events: Optional[List[Dict[str, Any]]] = None
     all_loop_events: List[Dict[str, Any]] = []
-    seen_event_keys: set = set()
+    seen_event_json: set = set()
     for row in rows:
         meta = _parse_json_field(row.get("metadata"))
         if isinstance(meta, dict) and meta.get("loop_events"):
             for evt in meta["loop_events"]:
-                # Dedup key: (loop_id, type, step) — handles duplicated metadata
-                key = (evt.get("loop_id", ""), evt.get("type", ""), evt.get("step", ""))
-                if key not in seen_event_keys:
-                    seen_event_keys.add(key)
+                # Dedup by full JSON to handle exact duplicates from old metadata merge
+                evt_json = json.dumps(evt, sort_keys=True)
+                if evt_json not in seen_event_json:
+                    seen_event_json.add(evt_json)
                     all_loop_events.append(evt)
     if all_loop_events:
         persisted_loop_events = all_loop_events
@@ -1815,12 +1816,21 @@ async def _stream_sandbox_response(
                                 len(loop_events),
                                 session_id,
                             )
-                        # Single atomic write
-                        await conn.execute(
-                            "UPDATE tasks SET metadata = $1::json WHERE context_id = $2",
-                            json.dumps(merged),
+                        # Write to the LATEST task row only (not all rows).
+                        # Each turn creates a new task; overwriting all rows
+                        # would duplicate loop_events across every task.
+                        latest = await conn.fetchval(
+                            "SELECT id FROM tasks WHERE context_id = $1"
+                            " ORDER BY COALESCE((status::json->>'timestamp')::text, '') DESC"
+                            " LIMIT 1",
                             session_id,
                         )
+                        if latest:
+                            await conn.execute(
+                                "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                                json.dumps(merged),
+                                latest,
+                            )
             except Exception:
                 logger.warning(
                     "Failed to persist metadata in finally for %s",
