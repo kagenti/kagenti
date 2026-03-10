@@ -136,8 +136,13 @@ The reconfigure feature compiles and has all endpoints but wasn't deployed/teste
 ### 6. Agent Ends After Few Steps
 The agent sometimes ends after 1-2 steps despite having more plan steps. May be related to how the executor handles the transition from tool results back to reasoning. Need to verify the graph topology fix resolved this.
 
-### 7. Budget Controls in UI
-Add a button/panel (in session detail or wizard) to view and change the agent budget (max iterations, max tokens, wall clock limit). Currently only configurable via `SANDBOX_*` env vars.
+### 7. Budget Controls in Wizard + Session Detail
+Add a "Budget" step to the wizard showing all configurable limits with defaults:
+- `SANDBOX_MAX_ITERATIONS` (100), `SANDBOX_MAX_TOKENS` (1M)
+- `SANDBOX_LLM_TIMEOUT` (300s), `SANDBOX_LLM_MAX_RETRIES` (3)
+- `SANDBOX_MAX_TOOL_CALLS_PER_STEP` (10), `SANDBOX_HITL_INTERVAL` (50)
+These are passed as env vars to the agent pod. The test can skip this step (defaults are fine).
+Also show live budget consumption in the session Stats tab.
 
 ### 8. Agent Redeploy E2E Test
 New Playwright test that:
