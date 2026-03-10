@@ -117,3 +117,19 @@ If only 1: the A2A event structure is not carrying the serialized JSON lines thr
 | 9 | **Per-session UID isolation** | fsGroup is stopgap, need per-session UIDs |
 | 10 | **LLM usage panel** | OTEL/Phoenix trace export broken |
 | 11 | **Subsessions panel** | Show "No sub-sessions" instead of empty |
+| 12 | **Reflector prompt says "continue"** | Should say "execute" to match route name |
+| 13 | **Loop failure reason not shown** | Failed agent loops should show the error reason next to the failure icon |
+| 14 | **Agent writes outside workspace** | `mkdir ../../output` fails — skills/prompts reference paths outside `/workspace` |
+
+## Checking Logs After Tests
+
+```bash
+# Agent logs (reasoning, tool calls, errors)
+kubectl logs deploy/rca-agent -n team1 --tail=100 | grep -E "Reflector|executor|SERIALIZE|A2A_EMIT|error|warning" | head -20
+
+# Backend SSE pipeline (event forwarding, persistence)
+kubectl logs deploy/kagenti-backend -n kagenti-system -c backend --tail=200 | grep -E "SSE_PARSE|LOOP_FWD|Agent SSE|Finally|recover"
+
+# DB state (persisted events)
+kubectl exec -n team1 postgres-sessions-0 -- psql -U kagenti -d sessions -c "SELECT context_id, (metadata::json->>'loop_events')::text IS NOT NULL as has_loops, jsonb_array_length(COALESCE((metadata::jsonb->'loop_events'), '[]'::jsonb)) as event_count FROM tasks ORDER BY id DESC LIMIT 5"
+```
