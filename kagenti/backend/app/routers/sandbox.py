@@ -99,6 +99,19 @@ def _row_to_summary(row: dict) -> TaskSummary:
     data = dict(row)
     data["status"] = _parse_json_field(data.get("status"))
     data["metadata"] = _parse_json_field(data.get("metadata"))
+
+    # Fix stale "working" status for sessions that completed but the
+    # A2A SDK didn't update (e.g. client disconnect during streaming).
+    status = data.get("status") or {}
+    meta = data.get("metadata") or {}
+    if isinstance(status, dict) and status.get("state") == "working":
+        loop_events = meta.get("loop_events", []) if isinstance(meta, dict) else []
+        has_reporter = any(
+            e.get("type") == "reporter_output" for e in loop_events if isinstance(e, dict)
+        )
+        if has_reporter:
+            status["state"] = "completed"
+
     return TaskSummary(**data)
 
 
