@@ -1608,25 +1608,18 @@ export const SandboxPage: React.FC = () => {
       sendingRef.current = false;
       setIsStreaming(false);
       setStreamingContent('');
-      // Don't force-mark loops as "done" — the agent may still be running
-      // if the SSE connection dropped. Instead, reload history to get the
-      // actual final state from the DB (including loop events the stream missed).
-      if (contextIdRef.current && namespace) {
-        try {
-          await loadInitialHistory(namespace, contextIdRef.current);
-        } catch {
-          // History reload failed — mark loops as done as last resort
-          setAgentLoops((prev) => {
-            const next = new Map(prev);
-            for (const [id, loop] of next) {
-              if (loop.status !== 'done') {
-                next.set(id, { ...loop, status: 'done' });
-              }
-            }
-            return next;
-          });
+      // Mark active agent loops as "done" — the stream ended.
+      // Keep the SSE-built loop data (don't reload from DB, because
+      // loop_events may not be persisted yet — the DB often has stale data).
+      setAgentLoops((prev) => {
+        const next = new Map(prev);
+        for (const [id, loop] of next) {
+          if (loop.status !== 'done') {
+            next.set(id, { ...loop, status: 'done' });
+          }
         }
-      }
+        return next;
+      });
     }
   };
 
