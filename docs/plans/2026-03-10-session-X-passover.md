@@ -121,8 +121,17 @@ Backend SANDBOX_SKILL_REPOS env var
 ### 1. RCA Quality 3/5
 "Root Cause" and "Fix" sections still missing. Likely Llama 4 Scout prompt following. The reporter prompt may need stronger formatting instructions.
 
-### 2. loop_events Not Persisting to DB
-Every session shows this bug. The `finally` block in `sandbox.py` sometimes fails. Need to investigate the async race condition.
+### 2. loop_events Not Persisting to DB — ROOT CAUSE FOUND
+Only the `router` event has `loop_id` in the SSE stream. Planner/executor/reflector/reporter events are NOT emitted with `loop_id` — they arrive as flat A2A task updates. The backend's `LOOP_FWD` logging confirms: only 1 event per session (type=router).
+
+**Root cause**: The agent's event serializer (`event_serializer.py`) emits the `router` event with `loop_id` but subsequent graph nodes (planner_output, executor_step, etc.) are either:
+- Not serialized with `loop_id` at all
+- Emitted as A2A `TaskArtifactUpdate` instead of SSE loop events
+- Lost in the LangGraph `astream_events` → A2A conversion
+
+**Fix**: Ensure `event_serializer.py` emits ALL node events with `loop_id` in the SSE stream. The `loop_id` must be consistent across all events in a single graph execution.
+
+**Impact**: Without this fix, session reload shows empty loops because the DB has only 1 event (router). The SSE stream itself works (UI renders correctly during streaming) but the data is lost for persistence.
 
 ### 3. Per-Session UID Isolation
 Currently all sessions share UID 1001 on the PVC. Need per-session UID mapping (from passover W item #5).
