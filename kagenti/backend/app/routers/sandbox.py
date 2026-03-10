@@ -1981,8 +1981,20 @@ async def _stream_sandbox_response(
             # the stream was likely cut short (nginx timeout, client disconnect).
             # Try to recover the full event set from the agent's A2A task store.
             has_reporter = any(e.get("type") == "reporter_output" for e in loop_events)
+            logger.info(
+                "Recovery check: session_has_loops=%s has_reporter=%s persisted=%s events=%d",
+                session_has_loops,
+                has_reporter,
+                loop_events_persisted,
+                len(loop_events),
+            )
             if session_has_loops and not has_reporter and not loop_events_persisted:
                 try:
+                    logger.info(
+                        "Triggering recovery for session %s (agent_url=%s)",
+                        session_id,
+                        agent_url,
+                    )
                     await _recover_loop_events_from_agent(
                         agent_url, session_id, namespace, stream_task_id
                     )
@@ -1999,15 +2011,23 @@ async def _recover_loop_events_from_agent(
     session_id: str,
     namespace: str,
     task_db_id: Optional[int],
+    max_retries: int = 10,
 ) -> None:
-    """Fallback: read the final task from the agent's A2A task store and
-    extract loop_events from the task history.
+    """Fallback: poll the agent's A2A task store until the task completes,
+    then extract loop_events from the task history.
 
     This handles the case where nginx dropped the SSE connection (e.g.
     proxy_read_timeout) before the agent finished, causing loop events
     to be lost from the SSE stream. The agent's task store still has the
     complete history.
+
+    Polls with exponential backoff (5s, 10s, 20s, ...) up to max_retries
+    attempts, waiting for the task to reach COMPLETED or FAILED state.
     """
+    import asyncio
+
+    _TERMINAL_STATES = {"completed", "failed", "canceled"}
+
     a2a_request = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
@@ -2015,34 +2035,66 @@ async def _recover_loop_events_from_agent(
         "params": {"id": session_id},
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(agent_url, json=a2a_request)
-        if resp.status_code != 200:
-            logger.debug("Agent tasks/get returned %d for %s", resp.status_code, session_id)
-            return
-
-        data = resp.json()
-        result = data.get("result", {})
-        history = result.get("history", [])
-
-    # Extract loop events from history messages
     recovered_events: list[dict] = []
-    for msg in history:
-        for part in msg.get("parts", []):
-            text = part.get("text", "")
-            for line in text.split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    parsed = json.loads(line)
-                    if isinstance(parsed, dict) and "loop_id" in parsed:
-                        recovered_events.append(parsed)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+    delay = 5.0  # start with 5 seconds
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for attempt in range(1, max_retries + 1):
+            resp = await client.post(agent_url, json=a2a_request)
+            if resp.status_code != 200:
+                logger.debug(
+                    "Recovery attempt %d/%d: tasks/get returned %d for %s",
+                    attempt,
+                    max_retries,
+                    resp.status_code,
+                    session_id,
+                )
+                break
+
+            data = resp.json()
+            result = data.get("result", {})
+            task_state = result.get("status", {}).get("state", "").lower()
+            history = result.get("history", [])
+
+            logger.info(
+                "Recovery attempt %d/%d: session=%s state=%s history_msgs=%d",
+                attempt,
+                max_retries,
+                session_id,
+                task_state,
+                len(history),
+            )
+
+            if task_state in _TERMINAL_STATES:
+                # Task finished — extract events from history
+                for msg in history:
+                    for part in msg.get("parts", []):
+                        text = part.get("text", "")
+                        for line in text.split("\n"):
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                parsed = json.loads(line)
+                                if isinstance(parsed, dict) and "loop_id" in parsed:
+                                    recovered_events.append(parsed)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                break
+
+            # Task still running — wait with exponential backoff
+            if attempt < max_retries:
+                logger.info(
+                    "Recovery: agent still processing, waiting %.0fs (attempt %d/%d)",
+                    delay,
+                    attempt,
+                    max_retries,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60.0)  # cap at 60s
 
     if not recovered_events:
-        logger.debug("No loop events recovered from agent for %s", session_id)
+        logger.info("No loop events recovered from agent for %s", session_id)
         return
 
     logger.info(
@@ -2051,7 +2103,8 @@ async def _recover_loop_events_from_agent(
         session_id,
     )
 
-    # Write recovered events to this stream's task row
+    # Write recovered events to this stream's task row, replacing any
+    # partial set (e.g. just the router event persisted by the finally block)
     pool = await get_session_pool(namespace)
     async with pool.acquire() as conn:
         if task_db_id is None:
@@ -2063,12 +2116,20 @@ async def _recover_loop_events_from_agent(
             row = await conn.fetchrow("SELECT metadata FROM tasks WHERE id = $1", task_db_id)
             if row:
                 meta = _parse_json_field(row["metadata"]) or {}
-                if not meta.get("loop_events"):
+                existing = meta.get("loop_events", [])
+                # Replace if recovered set is larger (more complete)
+                if len(recovered_events) > len(existing):
                     meta["loop_events"] = recovered_events
                     await conn.execute(
                         "UPDATE tasks SET metadata = $1::json WHERE id = $2",
                         json.dumps(meta),
                         task_db_id,
+                    )
+                    logger.info(
+                        "Recovery: replaced %d events with %d recovered events for session %s",
+                        len(existing),
+                        len(recovered_events),
+                        session_id,
                     )
 
 
