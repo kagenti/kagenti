@@ -1500,28 +1500,27 @@ async def _stream_sandbox_response(
             try:
                 pool = await get_session_pool(namespace)
                 async with pool.acquire() as conn:
-                    # Find the task row for THIS stream (latest by id)
+                    # Use stream_task_id captured from A2A event — no fallback
                     if stream_task_id is None:
-                        row = await conn.fetchrow(
-                            "SELECT id, metadata FROM tasks WHERE context_id = $1"
-                            " ORDER BY id DESC LIMIT 1",
+                        if attempt < 2:
+                            await asyncio.sleep(0.5 * (attempt + 1))
+                            continue
+                        logger.warning(
+                            "_set_owner_metadata: stream_task_id still None after retries for session %s",
                             session_id,
                         )
-                        if row is None:
-                            if attempt < 2:
-                                await asyncio.sleep(0.5 * (attempt + 1))
-                                continue
-                            return
-                        stream_task_id = row["id"]
-                        meta = _parse_json_field(row["metadata"]) or {}
-                    else:
-                        row = await conn.fetchrow(
-                            "SELECT metadata FROM tasks WHERE id = $1",
-                            stream_task_id,
-                        )
-                        if row is None:
-                            return
-                        meta = _parse_json_field(row["metadata"]) or {}
+                        return
+
+                    row = await conn.fetchrow(
+                        "SELECT metadata FROM tasks WHERE id = $1",
+                        stream_task_id,
+                    )
+                    if row is None:
+                        if attempt < 2:
+                            await asyncio.sleep(0.5 * (attempt + 1))
+                            continue
+                        return
+                    meta = _parse_json_field(row["metadata"]) or {}
 
                     # Set/overwrite backend-managed fields on this row only
                     if owner and not meta.get("owner"):
@@ -1920,11 +1919,13 @@ async def _stream_sandbox_response(
             try:
                 pool = await get_session_pool(namespace)
                 async with pool.acquire() as conn:
-                    # Target this stream's task row (or fall back to latest)
+                    # Target this stream's task row — no fallback to avoid
+                    # writing to wrong task in multi-turn sessions
                     task_db_id = stream_task_id
                     if task_db_id is None:
-                        task_db_id = await conn.fetchval(
-                            "SELECT id FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+                        logger.warning(
+                            "stream_task_id is None in finally for session %s — "
+                            "cannot persist metadata (A2A taskId was never captured)",
                             session_id,
                         )
                     if task_db_id is not None:
