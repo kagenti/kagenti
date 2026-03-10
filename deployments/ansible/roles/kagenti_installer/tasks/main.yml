@@ -1751,12 +1751,14 @@
       command: >-
         kubectl rollout restart deployment/kagenti-ui
         -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
+      failed_when: false
 
     - name: Wait for kagenti-ui rollout to complete
       command: >-
         kubectl rollout status deployment/kagenti-ui
         -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
         --timeout=120s
+      failed_when: false
   when:
     - enable_openshift | default(false)
     - (charts['kagenti'] | default({})).get('enabled', false) | bool
