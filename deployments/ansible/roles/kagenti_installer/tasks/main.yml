@@ -1550,8 +1550,7 @@
       release_namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
       state: present
       create_namespace: false
-      wait: true
-      timeout: "{{ helm_wait_timeout }}s"
+      wait: false
       values: >-
         {{ (((charts['kagenti'] | default({})).get('values')) | default({}))
           | combine({'ui': {'frontend': {'tag': kagenti_latest_tag}, 'backend': {'tag': kagenti_latest_tag}}}, recursive=True)
@@ -1568,6 +1567,30 @@
     delay: 30
     register: kagenti_helm_result
     until: kagenti_helm_result is succeeded
+
+  # Wait for the operator to become ready (it creates backend, UI, and other resources).
+  # With wait: false on helm install, the chart resources are being created asynchronously.
+  - name: Wait for kagenti-controller-manager deployment
+    command: >-
+      kubectl rollout status deployment/kagenti-controller-manager
+      -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
+      --timeout=300s
+    retries: 3
+    delay: 10
+    register: operator_rollout
+    until: operator_rollout.rc == 0
+    failed_when: false
+
+  - name: Wait for kagenti-ui deployment
+    command: >-
+      kubectl rollout status deployment/kagenti-ui
+      -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
+      --timeout=300s
+    retries: 3
+    delay: 10
+    register: ui_rollout
+    until: ui_rollout.rc == 0
+    failed_when: false
 
   # TODO: Move github-clone-step fixes to kagenti-operator.
   # The kagenti-operator creates the github-clone-step ConfigMap for Tekton pipelines.
