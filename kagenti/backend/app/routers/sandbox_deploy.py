@@ -73,6 +73,7 @@ class SandboxCreateRequest(BaseModel):
     enable_persistence: bool = True
     isolation_mode: str = "shared"  # shared or pod-per-session
     workspace_size: str = "5Gi"
+    workspace_storage: str = "emptydir"  # "emptydir" or "pvc"
     # Composable security layers (Session F)
     secctx: bool = True
     landlock: bool = False
@@ -276,15 +277,17 @@ def _build_deployment_manifest(
 
     init_containers: list[dict] = []
 
-    # Workspace: try PVC for persistence across restarts, fall back to emptyDir.
-    # PVC creation may fail (403) if the backend SA lacks permissions.
+    # Workspace volume: "pvc" for persistence, "emptydir" for ephemeral.
+    # No fallback — deploy exactly what was selected or fail.
     workspace_pvc_name = f"{name}-workspace"
-    # Default to emptyDir; switched to PVC in create_sandbox() if PVC creation succeeds.
-    _use_pvc = False  # Set to True in create_sandbox() after PVC is created
-    volumes = [
-        {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
-        {"name": "cache", "emptyDir": {}},
-    ]
+    if req.workspace_storage == "pvc":
+        workspace_vol = {
+            "name": "workspace",
+            "persistentVolumeClaim": {"claimName": workspace_pvc_name},
+        }
+    else:
+        workspace_vol = {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}}
+    volumes = [workspace_vol, {"name": "cache", "emptyDir": {}}]
 
     # -- Per-agent egress proxy (separate pod) -----------------------------
     # Each agent gets its own egress-proxy Deployment + Service with a
@@ -570,41 +573,42 @@ async def create_sandbox(
     # TODO(Session N): Once base image moves to kagenti repo, bake
     # skill_pack_loader.py into the image for verified skill loading.
 
-    # --- Create workspace PVC (persistent across pod restarts) ---
-    workspace_pvc_name = f"{request.name}-workspace"
-    pvc_ok = False
-    try:
-        pvc_body = {
-            "apiVersion": "v1",
-            "kind": "PersistentVolumeClaim",
-            "metadata": {
-                "name": workspace_pvc_name,
-                "namespace": namespace,
-                "labels": managed_cm_labels,
-            },
-            "spec": {
-                "accessModes": ["ReadWriteOnce"],
-                "resources": {
-                    "requests": {"storage": request.workspace_size},
+    # --- Create workspace PVC if selected (no fallback — fail if it can't be created) ---
+    if request.workspace_storage == "pvc":
+        workspace_pvc_name = f"{request.name}-workspace"
+        try:
+            pvc_body = {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "name": workspace_pvc_name,
+                    "namespace": namespace,
+                    "labels": managed_cm_labels,
                 },
-            },
-        }
-        kube.core_api.create_namespaced_persistent_volume_claim(namespace=namespace, body=pvc_body)
-        pvc_ok = True
-        logger.info("Created workspace PVC '%s' (%s)", workspace_pvc_name, request.workspace_size)
-    except ApiException as e:
-        if e.status == 409:
-            pvc_ok = True
-            logger.info("Workspace PVC '%s' already exists", workspace_pvc_name)
-        else:
-            logger.warning("Failed to create workspace PVC: %s — using emptyDir", e)
-
-    # Switch deployment to PVC if creation succeeded
-    if pvc_ok:
-        deployment_manifest["spec"]["template"]["spec"]["volumes"][0] = {
-            "name": "workspace",
-            "persistentVolumeClaim": {"claimName": workspace_pvc_name},
-        }
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {
+                        "requests": {"storage": request.workspace_size},
+                    },
+                },
+            }
+            kube.core_api.create_namespaced_persistent_volume_claim(
+                namespace=namespace, body=pvc_body
+            )
+            logger.info(
+                "Created workspace PVC '%s' (%s)",
+                workspace_pvc_name,
+                request.workspace_size,
+            )
+        except ApiException as e:
+            if e.status == 409:
+                logger.info("Workspace PVC '%s' already exists", workspace_pvc_name)
+            else:
+                logger.error("Failed to create workspace PVC: %s", e)
+                return SandboxCreateResponse(
+                    status="failed",
+                    message=f"Failed to create workspace PVC: {e.reason}",
+                )
 
     # --- Create Squid proxy ConfigMap (always — deny-all if no domains) ---
     squid_conf = _build_squid_conf(request)
