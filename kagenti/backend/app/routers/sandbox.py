@@ -1903,10 +1903,10 @@ async def _stream_sandbox_response(
         error_msg = f"Agent error: {e.response.status_code}"
         logger.error("%s: %s", error_msg, e.response.text[:500])
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
-    except httpx.RequestError as e:
+    except (httpx.RequestError, httpx.ReadError, httpx.RemoteProtocolError) as e:
         error_msg = f"Connection error: {str(e)}"
-        logger.error(error_msg)
-        yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+        logger.warning("%s — will poll for completion in finally block", error_msg)
+        yield f"data: {json.dumps({'error': error_msg, 'retry': True, 'session_id': session_id})}\n\n"
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg, exc_info=True)
