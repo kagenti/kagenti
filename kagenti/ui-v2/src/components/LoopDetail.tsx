@@ -234,17 +234,18 @@ function toolOutputPreview(output: string | undefined): string {
   return hasError ? `\u274c ${first}` : first;
 }
 
-const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({ call }) => {
+const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number]; hasResult?: boolean; resultError?: boolean }> = ({ call, hasResult, resultError }) => {
   const [expanded, setExpanded] = useState(false);
 
   const label = call.name || 'unknown';
   const preview = toolArgsPreview(call.args);
+  const pending = hasResult === false;
   return (
     <div
       style={{
         margin: '4px 0',
         padding: '6px 10px',
-        borderLeft: '3px solid var(--pf-v5-global--info-color--100)',
+        borderLeft: `3px solid ${resultError ? 'var(--pf-v5-global--danger-color--100)' : pending ? 'var(--pf-v5-global--warning-color--100)' : 'var(--pf-v5-global--info-color--100)'}`,
         backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
         borderRadius: '0 4px 4px 0',
         fontSize: '0.85em',
@@ -252,8 +253,11 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({
       }}
       onClick={() => setExpanded(!expanded)}
     >
-      <div style={{ fontWeight: 600 }}>
+      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
         {expanded ? '\u25bc' : '\u25b6'} Tool Call: {label}
+        {pending && <Spinner size="sm" aria-label="running" style={{ marginLeft: 6 }} />}
+        {hasResult && !resultError && <CheckCircleIcon style={{ color: 'var(--pf-v5-global--success-color--100)', marginLeft: 6, fontSize: '0.9em' }} />}
+        {resultError && <TimesCircleIcon style={{ color: 'var(--pf-v5-global--danger-color--100)', marginLeft: 6, fontSize: '0.9em' }} />}
         {!expanded && preview && (
           <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
             {preview}{preview.length >= 80 ? '...' : ''}
@@ -412,12 +416,13 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
 
       {/* Tool calls paired with results — call followed by its result */}
       {step.toolCalls.map((tc, i) => {
-        // Match result by index or by name
         const matchedResult = step.toolResults[i] ||
           step.toolResults.find((tr) => tr.name === tc.name && !step.toolCalls.slice(0, i).some((prev) => prev.name === tr.name));
+        const hasResult = !!matchedResult;
+        const resultError = hasResult && /error|fail|denied|stderr/i.test(matchedResult?.output || '');
         return (
           <div key={`tool-pair-${i}`} style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
-            <ToolCallBlock call={tc} />
+            <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
             {matchedResult && <ToolResultBlock result={matchedResult} />}
           </div>
         );
