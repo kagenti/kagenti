@@ -95,10 +95,25 @@ kubectl logs deploy/kagenti-backend -n kagenti-system -c backend --tail=200 | gr
 Expected: multiple `SSE_PARSE` and `LOOP_FWD` lines per session (one per graph node event).
 If only 1: the A2A event structure is not carrying the serialized JSON lines through to the backend's SSE stream.
 
-### Possible causes
-1. A2A `TaskStatusUpdateEvent` message format changed — `status_message` extraction misses the JSON lines
-2. The `parts` extraction in `_extract_text_from_parts` drops the serialized loop events
-3. The agent's `task_updater.update_status()` wraps the message differently than expected
+### Confirmed diagnosis (Session X debugging)
+The backend SSE connection to the agent closes after receiving only the `router` event. The agent's LLM calls take 30+ seconds (Llama 4 Scout via LiteLLM), and during that time only keepalive pings are sent. The planner/executor/reflector events are produced after the LLM responds but by then the backend's SSE stream may have ended (client navigated, nginx timeout, or test progression).
+
+**The `_recover_loop_events_from_agent` fallback function exists** (sandbox.py line 1984) but the logs show it's NOT running. Check:
+1. Is `session_has_loops` True? (Should be — router event has loop_id)
+2. Is `has_reporter` False? (Should be — no reporter event in 1 loop_event)
+3. Is `loop_events_persisted` False? (Should be — never set to True)
+
+Add logging to the finally block to diagnose why recovery isn't triggering:
+```python
+logger.info("Recovery check: session_has_loops=%s has_reporter=%s persisted=%s events=%d",
+    session_has_loops, has_reporter, loop_events_persisted, len(loop_events))
+```
+
+### Agent-side fix deployed (build 74)
+Background event drain + re-persist via `task_updater.update_status()`. But this doesn't work because the A2A response stream is closed — `update_status` has nowhere to push events.
+
+### The real fix needed
+After the SSE stream ends, the backend should **poll the agent's A2A task endpoint** with retries (up to 10, exponential backoff) until the task reaches COMPLETED/FAILED. Then extract loop_events from the task history. The `_recover_loop_events_from_agent` function does this but isn't being called.
 
 ---
 
