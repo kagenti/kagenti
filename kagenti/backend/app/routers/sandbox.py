@@ -1919,92 +1919,105 @@ async def _stream_sandbox_response(
             loop_events_persisted,
             stream_task_id,
         )
-        # Persist loop events AND set owner metadata on THIS stream's task row only.
-        # No cross-task metadata merging — each task keeps its own metadata.
-        if namespace:
-            try:
-                pool = await get_session_pool(namespace)
-                async with pool.acquire() as conn:
-                    # Target this stream's task row — no fallback to avoid
-                    # writing to wrong task in multi-turn sessions
-                    task_db_id = stream_task_id
-                    if task_db_id is None:
-                        logger.warning(
-                            "stream_task_id is None in finally for session %s — "
-                            "cannot persist metadata (A2A taskId was never captured)",
-                            session_id,
-                        )
-                    if task_db_id is not None:
-                        row = await conn.fetchrow(
-                            "SELECT metadata FROM tasks WHERE id = $1",
-                            task_db_id,
-                        )
-                        logger.info(
-                            "Finally: task %s row_found=%s loop_events=%d persisted=%s",
-                            task_db_id[:12] if task_db_id else "?",
-                            row is not None,
-                            len(loop_events),
-                            loop_events_persisted,
-                        )
-                        if row:
-                            meta = _parse_json_field(row["metadata"]) or {}
-                            # Set owner metadata fields on this row
-                            if owner and not meta.get("owner"):
-                                meta["owner"] = owner
-                                meta["visibility"] = "private"
-                            if not meta.get("title") and message:
-                                meta["title"] = message[:80].replace("\n", " ")
-                            if agent_name:
-                                meta["agent_name"] = agent_name
-                            # Add loop events if not already persisted
-                            if loop_events and not loop_events_persisted:
-                                meta["loop_events"] = loop_events
-                                logger.info(
-                                    "Persisting %d loop events in finally for session %s task %s",
-                                    len(loop_events),
-                                    session_id,
-                                    task_db_id,
-                                )
-                            await conn.execute(
-                                "UPDATE tasks SET metadata = $1::json WHERE id = $2",
-                                json.dumps(meta),
-                                task_db_id,
-                            )
-            except Exception:
-                logger.warning(
-                    "Failed to persist metadata in finally for %s",
-                    session_id,
-                    exc_info=True,
-                )
-
-            # Fallback: if the loop didn't complete (no reporter_output),
-            # the stream was likely cut short (nginx timeout, client disconnect).
-            # Try to recover the full event set from the agent's A2A task store.
-            #
-            # IMPORTANT: Fire recovery as a background task. The async generator's
-            # finally block can be interrupted by GeneratorExit (client disconnect)
-            # which is a BaseException and not caught by except Exception.
-            # Running recovery inline would be skipped if GeneratorExit fires
-            # during the persistence await above.
+        # IMPORTANT: All DB writes and recovery MUST run as background tasks.
+        # This finally block runs in an async generator that can be interrupted
+        # by GeneratorExit (a BaseException) when the client disconnects.
+        # GeneratorExit kills any `await` in progress and is NOT caught by
+        # `except Exception`. Background tasks are immune to this.
+        if namespace and not loop_events_persisted:
             has_reporter = any(e.get("type") == "reporter_output" for e in loop_events)
             logger.info(
-                "Recovery check: session_has_loops=%s has_reporter=%s persisted=%s events=%d",
-                session_has_loops,
+                "Spawning background persist+recovery: session=%s task=%s "
+                "events=%d has_reporter=%s session_has_loops=%s",
+                session_id,
+                stream_task_id,
+                len(loop_events),
                 has_reporter,
-                loop_events_persisted,
+                session_has_loops,
+            )
+            asyncio.create_task(
+                _persist_and_recover(
+                    namespace=namespace,
+                    session_id=session_id,
+                    task_db_id=stream_task_id,
+                    loop_events=list(loop_events),  # snapshot
+                    owner=owner,
+                    message=message,
+                    agent_name=agent_name,
+                    session_has_loops=session_has_loops,
+                    has_reporter=has_reporter,
+                    agent_url=agent_url,
+                )
+            )
+
+
+async def _persist_and_recover(
+    namespace: str,
+    session_id: str,
+    task_db_id: Optional[str],
+    loop_events: list[dict],
+    owner: Optional[str],
+    message: Optional[str],
+    agent_name: Optional[str],
+    session_has_loops: bool,
+    has_reporter: bool,
+    agent_url: str,
+) -> None:
+    """Background task: persist metadata + loop events, then recover if needed.
+
+    Runs as a standalone coroutine (not a generator), so it is immune to
+    GeneratorExit that would kill the finally block of the SSE generator.
+    """
+    try:
+        if task_db_id is None:
+            logger.warning(
+                "stream_task_id is None for session %s — cannot persist metadata",
+                session_id,
+            )
+            return
+
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT metadata FROM tasks WHERE id = $1", task_db_id)
+            logger.info(
+                "BG persist: task %s row_found=%s loop_events=%d",
+                task_db_id[:12] if task_db_id else "?",
+                row is not None,
                 len(loop_events),
             )
-            if session_has_loops and not has_reporter and not loop_events_persisted:
-                logger.info(
-                    "Spawning background recovery for session %s (agent_url=%s)",
-                    session_id,
-                    agent_url,
-                )
-                asyncio.create_task(
-                    _recover_loop_events_from_agent(
-                        agent_url, session_id, namespace, stream_task_id
+            if row:
+                meta = _parse_json_field(row["metadata"]) or {}
+                if owner and not meta.get("owner"):
+                    meta["owner"] = owner
+                    meta["visibility"] = "private"
+                if not meta.get("title") and message:
+                    meta["title"] = message[:80].replace("\n", " ")
+                if agent_name:
+                    meta["agent_name"] = agent_name
+                if loop_events:
+                    meta["loop_events"] = loop_events
+                    logger.info(
+                        "BG persist: writing %d loop events for session %s",
+                        len(loop_events),
+                        session_id,
                     )
+                await conn.execute(
+                    "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                    json.dumps(meta),
+                    task_db_id,
                 )
+                logger.info("BG persist: UPDATE completed for session %s", session_id)
+
+        # Recovery: if loop didn't complete, poll agent for remaining events
+        if session_has_loops and not has_reporter:
+            logger.info("BG persist: triggering recovery for session %s", session_id)
+            await _recover_loop_events_from_agent(agent_url, session_id, namespace, task_db_id)
+    except Exception:
+        logger.warning(
+            "BG persist+recover failed for session %s",
+            session_id,
+            exc_info=True,
+        )
 
 
 async def _recover_loop_events_from_agent(
