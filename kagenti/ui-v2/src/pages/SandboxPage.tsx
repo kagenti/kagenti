@@ -730,6 +730,10 @@ export const SandboxPage: React.FC = () => {
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [oldestIndex, setOldestIndex] = useState<number | null>(null);
+  // Synchronous guard against double-send (React StrictMode double-invokes
+  // effects/callbacks, and async setState batching means two rapid calls
+  // can both see isStreaming===false before either sets it to true).
+  const sendingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -1511,7 +1515,8 @@ export const SandboxPage: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim() || isStreaming || sendingRef.current) return;
+    sendingRef.current = true;
 
     shouldAutoScroll.current = true;
 
@@ -1600,6 +1605,7 @@ export const SandboxPage: React.FC = () => {
         ]);
       }
     } finally {
+      sendingRef.current = false;
       setIsStreaming(false);
       setStreamingContent('');
       // Mark any active agent loops as "done" — the stream ended so

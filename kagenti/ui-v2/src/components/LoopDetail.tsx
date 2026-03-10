@@ -226,11 +226,38 @@ function toolArgsPreview(args: unknown): string {
   return s.replace(/[\n\r]+/g, ' ').substring(0, 80);
 }
 
+/**
+ * Determine whether a tool result represents a failure.
+ *
+ * Many successful commands (git, curl, wget) write progress/info to stderr,
+ * so the presence of "STDERR:" alone does NOT indicate failure.
+ *
+ * Strategy:
+ * 1. If an explicit exit code is found (e.g. "exit code: 0"), use that.
+ * 2. If no exit code, look for real error indicators (but NOT "stderr" by itself).
+ * 3. Default to success (not failed) — let the content speak for itself.
+ */
+function isToolResultError(output: string | undefined): boolean {
+  if (!output) return false;
+
+  // Check for explicit exit code patterns (case-insensitive)
+  const exitCodeMatch = output.match(/exit[\s_-]*code[:\s]+(\d+)/i)
+    || output.match(/exited[\s]+with[\s]+(\d+)/i)
+    || output.match(/return[\s_-]*code[:\s]+(\d+)/i);
+  if (exitCodeMatch) {
+    return exitCodeMatch[1] !== '0';
+  }
+
+  // No exit code found — check for real error indicators
+  // Exclude "stderr" as a keyword; many successful commands use stderr for progress
+  return /\b(error|fail(ed|ure)?|denied|permission denied|not found|traceback|exception)\b/i.test(output);
+}
+
 /** One-line preview of tool output */
 function toolOutputPreview(output: string | undefined): string {
   if (!output) return '(no output)';
   const first = output.split('\n')[0].substring(0, 80);
-  const hasError = /error|fail|denied|stderr/i.test(first);
+  const hasError = isToolResultError(output);
   return hasError ? `\u274c ${first}` : first;
 }
 
@@ -287,7 +314,7 @@ const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }
   const [expanded, setExpanded] = useState(false);
 
   const preview = toolOutputPreview(result.output);
-  const hasError = /error|fail|denied|stderr/i.test(result.output || '');
+  const hasError = isToolResultError(result.output);
   return (
     <div
       style={{
@@ -415,20 +442,36 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
       )}
 
       {/* Tool calls paired with results — call followed by its result */}
-      {step.toolCalls.map((tc, i) => {
-        const matchedResult = step.toolResults[i] ||
-          step.toolResults.find((tr) => tr.name === tc.name && !step.toolCalls.slice(0, i).some((prev) => prev.name === tr.name));
-        const hasResult = !!matchedResult;
-        const resultError = hasResult && /error|fail|denied|stderr/i.test(matchedResult?.output || '');
-        return (
-          <div key={`tool-pair-${i}`} style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
-            <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
-            {matchedResult && <ToolResultBlock result={matchedResult} />}
-          </div>
-        );
-      })}
+      {(() => {
+        // Track which results have been consumed so each result is used at most once
+        const usedResults = new Set<number>();
+        return step.toolCalls.map((tc, i) => {
+          // Try positional match first, then name-based match
+          let matchedResult = step.toolResults[i] && !usedResults.has(i) ? step.toolResults[i] : undefined;
+          let matchedIdx = matchedResult ? i : -1;
+          if (!matchedResult) {
+            matchedIdx = step.toolResults.findIndex(
+              (tr, idx) => !usedResults.has(idx) && tr.name === tc.name,
+            );
+            matchedResult = matchedIdx >= 0 ? step.toolResults[matchedIdx] : undefined;
+          }
+          if (matchedResult && matchedIdx >= 0) usedResults.add(matchedIdx);
+
+          // A tool call is "pending" only if there's no matched result AND
+          // the step is still running. Once the step is done/failed (e.g. node
+          // transition happened), treat unmatched calls as complete too.
+          const hasResult = !!matchedResult || step.status === 'done' || step.status === 'failed';
+          const resultError = !!matchedResult && isToolResultError(matchedResult?.output);
+          return (
+            <div key={`tool-pair-${i}`} style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
+              <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
+              {matchedResult && <ToolResultBlock result={matchedResult} />}
+            </div>
+          );
+        });
+      })()}
       {/* Orphan results (no matching call) */}
-      {step.toolResults.slice(step.toolCalls.length).map((tr, i) => (
+      {step.toolResults.filter((_tr, idx) => idx >= step.toolCalls.length).map((tr, i) => (
         <ToolResultBlock key={`orphan-result-${i}`} result={tr} />
       ))}
     </div>

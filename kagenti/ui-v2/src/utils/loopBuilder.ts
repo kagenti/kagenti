@@ -103,6 +103,11 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     const stepLabel = isReplan ? 'Replan' : 'Plan';
     const nodeTypeVal = isReplan ? 'replanner' as const : 'planner' as const;
     const planContent = le.content || incomingSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || undefined;
+    // Finalize all running steps — a planner/replanner event means the
+    // previous node is done and any pending tool calls should resolve.
+    const finalizedSteps = loop.steps.map((s) =>
+      s.status === 'running' ? { ...s, status: 'done' as const } : s,
+    );
     return {
       ...loop,
       status: 'planning',
@@ -114,7 +119,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       iteration: iterNum,
       model: le.model || loop.model,
       steps: [
-        ...loop.steps,
+        ...finalizedSteps,
         {
           index: loop.steps.length,
           description: `${stepLabel} (iteration ${iterNum + 1}): ${incomingSteps.length} steps`,
@@ -199,10 +204,32 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   if (eventType === 'tool_result') {
     const stepIdx = le.step ?? loop.currentStep;
     const steps = [...loop.steps];
-    const step = steps.find((s) => s.index === stepIdx);
+    const resultName = le.name || 'unknown';
+
+    // Helper: does a step have unmatched tool calls for this result name?
+    const hasPendingCall = (s: AgentLoopStep) => {
+      const callCount = s.toolCalls.filter((tc) => tc.name === resultName).length;
+      const resultCount = s.toolResults.filter((tr) => tr.name === resultName).length;
+      return callCount > resultCount;
+    };
+
+    // Try to find the step by index first
+    let step = steps.find((s) => s.index === stepIdx);
+
+    // If the target step has no pending tool call for this result, search
+    // other steps — the result may have arrived after a node transition
+    // moved currentStep forward, so it belongs to an earlier step.
+    if (!step || !hasPendingCall(step)) {
+      const betterStep = steps.find((s) => s.index !== stepIdx && hasPendingCall(s));
+      if (betterStep) step = betterStep;
+    }
+
     if (step) {
-      step.toolResults = [...step.toolResults, { type: 'tool_result', name: le.name || 'unknown', output: le.output || '' }];
-      step.status = 'done';
+      step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '' }];
+      // Mark step as done only when all tool calls have results
+      if (step.toolResults.length >= step.toolCalls.length) {
+        step.status = 'done';
+      }
       step.nodeType = 'executor';
     } else {
       // No matching step — create an implicit executor step
@@ -213,7 +240,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         nodeType: 'executor' as const,
         tokens: { prompt: 0, completion: 0 },
         toolCalls: [],
-        toolResults: [{ type: 'tool_result', name: le.name || 'unknown', output: le.output || '' }],
+        toolResults: [{ type: 'tool_result', name: resultName, output: le.output || '' }],
         durationMs: 0,
         status: 'done' as const,
       });
@@ -222,6 +249,11 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   }
 
   if (eventType === 'reflector_decision') {
+    // Finalize all running executor steps — the node transition means
+    // any pending tool calls from the previous node are complete.
+    const finalizedSteps = loop.steps.map((s) =>
+      s.status === 'running' ? { ...s, status: 'done' as const } : s,
+    );
     return {
       ...loop,
       status: 'reflecting',
@@ -230,7 +262,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       iteration: le.iteration ?? loop.iteration,
       model: le.model || loop.model,
       steps: [
-        ...loop.steps,
+        ...finalizedSteps,
         {
           index: loop.steps.length,
           description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
@@ -316,6 +348,13 @@ export function buildAgentLoops(events: LoopEvent[]): Map<string, AgentLoop> {
       loop.status = 'failed';
       if (!loop.finalAnswer) {
         loop.finalAnswer = 'Agent loop was interrupted before completion.';
+      }
+    }
+    // Finalize any steps still marked as running/pending — in a completed or
+    // failed loop there should be no spinning indicators.
+    for (const step of loop.steps) {
+      if (step.status === 'running' || step.status === 'pending') {
+        step.status = loop.status === 'done' ? 'done' : 'failed';
       }
     }
     loop.steps.sort((a: AgentLoopStep, b: AgentLoopStep) => a.index - b.index);
