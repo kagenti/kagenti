@@ -83,6 +83,20 @@ keycloak:
           type: PathPrefix
           value: /
 
+# ------------------------------------------------------------------
+#  SPIFFE Identity Provider Setup Job Configuration
+#  (Only runs when SPIRE is enabled)
+# ------------------------------------------------------------------
+spiffeIdp:
+  # SPIFFE IdP setup job configuration
+  # NOTE: Job is NOT included in Helm chart to avoid race conditions
+  # - Ansible installer creates job automatically after patching SPIRE ConfigMap
+  # - Standalone Helm users must create job manually (see docs)
+  image:
+    repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
+    tag: latest
+    pullPolicy: IfNotPresent
+
 
 # ------------------------------------------------------------------
 #  Istio Configuration

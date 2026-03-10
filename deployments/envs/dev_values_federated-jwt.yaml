@@ -16,6 +16,10 @@
 # ============================================================================
 
 charts:
+  # Fix SPIRE namespace (changed from 'spire-server' to 'zero-trust-workload-identity-manager' in kagenti-deps)
+  spire:
+    server_namespace: zero-trust-workload-identity-manager
+
   kagenti:
     values:
       # Enable JWT-SVID authentication instead of client-secret
