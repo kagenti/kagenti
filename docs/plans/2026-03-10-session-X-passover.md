@@ -154,6 +154,32 @@ When the agent loop is running, any new messages sent should be **queued** (not 
 - After cancel or completion, queued messages are sent in order
 - This prevents the double-send issue and gives users control over long-running loops
 
+### 10. LLM Usage Panel Broken
+`[rca] LLM Usage panel visible: false` — the LlmUsagePanel reads from OTEL/Phoenix traces. Likely the OTEL collector or Phoenix isn't receiving traces after redeployments. Check OTEL endpoint config and Phoenix connectivity.
+
+### 11. Subsessions Panel Shows Nothing
+The SubSessionsPanel only shows data when the agent uses the `delegate` tool to spawn child sessions. For RCA tasks without delegation, this is expected. Consider showing "No sub-sessions" message instead of empty panel.
+
+### 12. Visualizations Tab (Design: [2026-03-10-visualizations-design.md](2026-03-10-visualizations-design.md))
+New tab in session detail showing agent loop visualizations. See linked design doc for details.
+
+---
+
+## Testing Strategy
+
+### RCA Test Iterations
+We iterate on 2 RCA test variants:
+- **emptydir** — fast startup, no PVC wait, ephemeral workspace
+- **PVC** — persistent workspace, survives restarts, ~60s provision
+
+Both variants use the same `agent-rca-workflow.spec.ts` test. The agent name is parameterized via `AGENT_NAME` constant.
+
+### UI Test Skill
+Use `tdd:ui-hypershift` skill for the full cycle: edit → push → build → rollout → test. Key levels:
+- **Level 0**: Test-only change (no build)
+- **Level 4**: Agent code change (rebuild sandbox-agent)
+- **Level 5**: Full redeploy (all 3 images)
+
 ---
 
 ## Key Files
