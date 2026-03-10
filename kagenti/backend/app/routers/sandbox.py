@@ -1933,6 +1933,13 @@ async def _stream_sandbox_response(
                             "SELECT metadata FROM tasks WHERE id = $1",
                             task_db_id,
                         )
+                        logger.info(
+                            "Finally: task %s row_found=%s loop_events=%d persisted=%s",
+                            task_db_id[:12] if task_db_id else "?",
+                            row is not None,
+                            len(loop_events),
+                            loop_events_persisted,
+                        )
                         if row:
                             meta = _parse_json_field(row["metadata"]) or {}
                             # Set owner metadata fields on this row
