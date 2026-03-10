@@ -467,11 +467,36 @@ async def get_session_history(
 
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
+
+        # If this task has no persisted loop_events but its history contains
+        # JSON lines with loop_id (agent messages from a cut-short stream),
+        # extract them so the UI can show an incomplete loop card.
+        row_meta = _parse_json_field(row.get("metadata"))
+        has_persisted = isinstance(row_meta, dict) and bool(row_meta.get("loop_events"))
+        if not has_persisted:
+            for msg in task_history:
+                if msg.get("role") != "agent":
+                    continue
+                for part in msg.get("parts") or []:
+                    text = part.get("text", "") if isinstance(part, dict) else ""
+                    for line in text.split("\n"):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            parsed = json.loads(line)
+                            if isinstance(parsed, dict) and "loop_id" in parsed:
+                                evt_type = parsed.get("type", "")
+                                _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
+                                if evt_type not in _LEGACY:
+                                    evt_json = json.dumps(parsed, sort_keys=True)
+                                    if evt_json not in seen_event_json:
+                                        seen_event_json.add(evt_json)
+                                        all_loop_events.append(parsed)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
         for msg in task_history:
-            # No message dedup — preserve all messages in chronological order.
-            # The A2A SDK creates one task per exchange, so each task's history
-            # contains unique messages. Deduplicating by content would drop
-            # intentionally repeated user messages.
             raw_history.append(msg)
 
         # Accumulate artifacts from ALL task records

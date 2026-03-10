@@ -299,11 +299,17 @@ export function buildAgentLoops(events: LoopEvent[]): Map<string, AgentLoop> {
     const prev = loops.get(loopId) || createDefaultAgentLoop(loopId);
     loops.set(loopId, applyLoopEvent(prev, evt));
   }
-  // Mark all as done (historical data is always complete) and sort steps
-  for (const [lid, loop] of loops) {
-    if (loop.status !== 'done') {
-      console.warn(`[loopBuilder] Loop ${lid} had status="${loop.status}", forcing to "done"`);
+  // Mark loops as done or failed based on whether they completed
+  for (const [, loop] of loops) {
+    const hasReporter = loop.steps.some((s) => s.nodeType === 'reporter');
+    if (hasReporter) {
       loop.status = 'done';
+    } else {
+      // Loop didn't complete — stream was likely interrupted
+      loop.status = 'failed';
+      if (!loop.finalAnswer) {
+        loop.finalAnswer = 'Agent loop was interrupted before completion.';
+      }
     }
     loop.steps.sort((a: AgentLoopStep, b: AgentLoopStep) => a.index - b.index);
   }
