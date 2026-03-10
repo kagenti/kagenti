@@ -1580,11 +1580,21 @@
   - name: Wait for kagenti-operator to create github-clone-step ConfigMap
     command: kubectl get configmap github-clone-step -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
     register: github_clone_step_check
-    retries: 30
-    delay: 5
+    retries: 60
+    delay: 10
     until: github_clone_step_check.rc == 0
     changed_when: false
+    failed_when: false
     when: enable_openshift | default(false)
+
+  - name: Skip github-clone-step patch if ConfigMap not found (operator may not be deployed)
+    debug:
+      msg: "github-clone-step ConfigMap not found after retries — skipping patch (non-critical for sandbox agents)"
+    when:
+      - enable_openshift | default(false)
+      - github_clone_step_check is defined
+      - github_clone_step_check.rc is defined
+      - github_clone_step_check.rc != 0
 
   - name: Patch github-clone-step ConfigMap for OpenShift and Istio ambient mode
     kubernetes.core.k8s:
@@ -1631,7 +1641,11 @@
             workspaces:
               - name: source
       merge_type: merge
-    when: enable_openshift | default(false)
+    when:
+      - enable_openshift | default(false)
+      - github_clone_step_check is defined
+      - github_clone_step_check.rc is defined
+      - github_clone_step_check.rc == 0
 
   when:
   - (charts['kagenti'] | default({})).get('enabled', false) | bool
