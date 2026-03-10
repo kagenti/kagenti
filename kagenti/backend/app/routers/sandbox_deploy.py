@@ -365,6 +365,9 @@ def _build_deployment_manifest(
                     },
                 },
                 "spec": {
+                    # fsGroup ensures PVC volumes are group-writable by the
+                    # agent container (EBS ext4 root is owned by root:root).
+                    "securityContext": {"fsGroup": 1001},
                     "initContainers": init_containers,
                     "containers": [
                         {
