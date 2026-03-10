@@ -133,6 +133,31 @@ class SandboxCreateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _build_squid_conf(req: SandboxCreateRequest) -> str:
+    """Build squid.conf content from the request's proxy domain list.
+
+    When domains are specified, only those are allowed.
+    When empty, all egress is denied (secure default).
+    """
+    proxy_domains = req.proxy_domains or req.proxy_allowlist or ""
+    domain_lines = ""
+    for domain in proxy_domains.split(","):
+        d = domain.strip()
+        if d:
+            domain_lines += f"acl allowed_domains dstdomain .{d}\n"
+
+    if domain_lines:
+        return (
+            "http_port 3128\n"
+            f"{domain_lines}"
+            "http_access allow allowed_domains\n"
+            "http_access deny all\n"
+            "cache deny all\n"
+            "access_log none\n"
+        )
+    return "http_port 3128\nhttp_access deny all\ncache deny all\naccess_log none\n"
+
+
 def _build_deployment_manifest(
     req: SandboxCreateRequest,
     llm_secret: Optional[str] = None,
@@ -229,15 +254,49 @@ def _build_deployment_manifest(
         security_context["readOnlyRootFilesystem"] = True
 
     # Skills are loaded by the agent at startup via git clone (see agent.py).
-    # TODO(Session N): Once the agent base image moves to the kagenti repo,
-    # bake skill_pack_loader.py + skill-packs.yaml into the image and call
-    # the loader from agent.py's run() for verified skill loading.
     init_containers: list[dict] = []
+    sidecar_containers: list[dict] = []
 
     volumes = [
         {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
         {"name": "cache", "emptyDir": {}},
     ]
+
+    # -- Squid egress proxy sidecar (always deployed) ----------------------
+    # Domain filtering is configured via ConfigMap created in create_sandbox().
+    # When no domains are set, all egress is blocked (secure default).
+    volumes.append(
+        {
+            "name": "squid-config",
+            "configMap": {"name": f"{name}-squid-config"},
+        }
+    )
+    sidecar_containers.append(
+        {
+            "name": "squid-proxy",
+            "image": "ubuntu/squid:latest",
+            "ports": [{"containerPort": 3128}],
+            "resources": {
+                "requests": {"cpu": "10m", "memory": "32Mi"},
+                "limits": {"cpu": "100m", "memory": "128Mi"},
+            },
+            "securityContext": {
+                "allowPrivilegeEscalation": False,
+                "seccompProfile": {"type": "RuntimeDefault"},
+            },
+            "volumeMounts": [
+                {
+                    "name": "squid-config",
+                    "mountPath": "/etc/squid/squid.conf",
+                    "subPath": "squid.conf",
+                },
+            ],
+        }
+    )
+    # Route agent's outbound traffic through the Squid sidecar (localhost:3128)
+    env_vars.append({"name": "HTTP_PROXY", "value": "http://localhost:3128"})
+    env_vars.append({"name": "HTTPS_PROXY", "value": "http://localhost:3128"})
+    env_vars.append({"name": "NO_PROXY", "value": "localhost,127.0.0.1,.svc,.svc.cluster.local"})
 
     return {
         "apiVersion": "apps/v1",
@@ -296,8 +355,9 @@ def _build_deployment_manifest(
                                 {"name": "workspace", "mountPath": "/workspace"},
                                 {"name": "cache", "mountPath": "/app/.cache"},
                             ],
-                        }
-                    ],
+                        },
+                    ]
+                    + sidecar_containers,
                     "volumes": volumes,
                 },
             },
@@ -433,6 +493,23 @@ async def create_sandbox(
     # No ConfigMaps or init containers needed — the agent handles skill loading.
     # TODO(Session N): Once base image moves to kagenti repo, bake
     # skill_pack_loader.py into the image for verified skill loading.
+
+    # --- Create Squid proxy ConfigMap (always — deny-all if no domains) ---
+    squid_conf = _build_squid_conf(request)
+    try:
+        kube.create_configmap(
+            namespace=namespace,
+            name=f"{request.name}-squid-config",
+            data={"squid.conf": squid_conf},
+            labels=managed_cm_labels,
+        )
+        logger.info(
+            "Created Squid ConfigMap '%s-squid-config' (domains: %s)",
+            request.name,
+            request.proxy_domains or request.proxy_allowlist or "DENY ALL",
+        )
+    except Exception as e:
+        logger.warning("Failed to create/update Squid ConfigMap: %s", e)
 
     # --- Create the Deployment ---
     try:
