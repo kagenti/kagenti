@@ -230,9 +230,13 @@ def _build_deployment_manifest(
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
     ]
 
-    # Skill repos — configurable via backend env var SANDBOX_SKILL_REPOS.
-    # Default: kagenti/kagenti public repo (main branch).
-    skill_repos = os.environ.get("SANDBOX_SKILL_REPOS", "")
+    # Skill repos — pass through from backend env or derive from source repo.
+    # Skills live in the kagenti repo (.claude/skills/), not agent-examples.
+    # When deploying from a kagenti fork/branch, use that for skills too.
+    skill_repos = os.environ.get("SANDBOX_SKILL_REPOS")
+    if not skill_repos and req.repo and "kagenti" in req.repo and "agent-examples" not in req.repo:
+        # Source repo IS kagenti — use same branch for skills
+        skill_repos = f"{req.repo}@{req.branch}#.claude/skills"
     if skill_repos:
         env_vars.append({"name": "SKILL_REPOS", "value": skill_repos})
 
