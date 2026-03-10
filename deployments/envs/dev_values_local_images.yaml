@@ -1,0 +1,67 @@
+# ============================================================================
+# dev_values_local_images.yaml
+# ============================================================================
+# Local image overrides for testing with :local tags
+#
+# USAGE: Add this as an additional overlay for local testing:
+#   run-install.sh --env dev \
+#     --env-file deployments/envs/dev_values_federated-jwt.yaml \
+#     --env-file deployments/envs/dev_values_local_images.yaml
+#
+# ⚠️  DO NOT USE IN PRODUCTION - This file is for local testing only!
+#
+# This file overrides image tags to use :local and pullPolicy to Never,
+# allowing testing with locally-built images loaded into Kind cluster.
+# ============================================================================
+
+# Override cluster creation for manual Kind cluster setup
+create_kind_cluster: false
+kind_cluster_name: kagenti-dev
+
+charts:
+  # kagenti-deps chart overrides
+  kagenti-deps:
+    values:
+      # Override SPIFFE IdP setup image
+      # Ansible creates job automatically after set_key_use patch (no race condition)
+      spiffeIdp:
+        image:
+          repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
+          tag: local
+          pullPolicy: Never
+
+  # kagenti chart overrides
+  kagenti:
+    values:
+      # Override AuthBridge sidecar images
+      authBridge:
+        images:
+          clientRegistration:
+            tag: local
+            pullPolicy: Never
+          envoyProxy:
+            tag: local
+            pullPolicy: Never
+          proxyInit:
+            tag: local
+            pullPolicy: Never
+
+      # Override webhook image
+      components:
+        platformWebhook:
+          image:
+            repository: ghcr.io/kagenti/kagenti-extensions/kagenti-webhook
+            tag: local
+            pullPolicy: Never
+        # Disable mcpGateway component (avoid mcp-system namespace issue)
+        mcpGateway:
+          enabled: false
+
+  # Disable mcp-gateway (not needed for testing, has ghcr.io access issues)
+  # Skip helm dependency update for kagenti (dependencies already exist as tarballs)
+  mcpGateway:
+    enabled: false
+  kagentiDeps:
+    dependency_update: false
+  kagenti:
+    dependency_update: false
