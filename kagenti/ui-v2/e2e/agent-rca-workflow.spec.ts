@@ -312,8 +312,10 @@ test.describe('Agent RCA Workflow', () => {
       const statsPanel = page.locator('[data-testid="session-stats-panel"]');
       await expect(statsPanel).toBeVisible({ timeout: 5000 });
 
-      // ── Message counts ──
-      const userCount = Number(await page.locator('[data-testid="stats-user-msg-count"]').textContent() || '0');
+      // ── Message counts (wait for history to load after SPA nav) ──
+      const userCountEl = page.locator('[data-testid="stats-user-msg-count"]');
+      await expect(userCountEl).not.toHaveText('0', { timeout: 15000 });
+      const userCount = Number(await userCountEl.textContent() || '0');
       const assistantCount = Number(await page.locator('[data-testid="stats-assistant-msg-count"]').textContent() || '0');
       expect(userCount).toBeGreaterThanOrEqual(1);
       expect(assistantCount).toBeGreaterThanOrEqual(1);
