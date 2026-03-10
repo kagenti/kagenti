@@ -256,8 +256,8 @@ test.describe('Agent RCA Workflow', () => {
     await page.waitForTimeout(5000);
     console.log(`[rca] Final URL: ${page.url()}`);
 
-    // User message must be visible
-    await expect(page.getByTestId('chat-messages').getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 30000 });
+    // User message must be visible (use .first() — double-send may produce 2 copies)
+    await expect(page.getByTestId('chat-messages').getByText('Analyze the latest CI failures').first()).toBeVisible({ timeout: 30000 });
     console.log('[rca] User message visible on reload');
 
     // Agent response must render (loop cards, markdown text, or tool call steps)
@@ -277,7 +277,7 @@ test.describe('Agent RCA Workflow', () => {
     }, sid);
     await page.waitForTimeout(5000);
 
-    const userMsg = page.getByTestId('chat-messages').getByText('Analyze the latest CI failures');
+    const userMsg = page.getByTestId('chat-messages').getByText('Analyze the latest CI failures').first();
     await expect(userMsg).toBeVisible({ timeout: 30000 });
     console.log('[rca] Session persists after navigation');
 
