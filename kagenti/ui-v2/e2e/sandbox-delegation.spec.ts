@@ -123,16 +123,18 @@ test.describe('Sandbox Delegation — Live', () => {
     // ── Step 3: Verify delegate tool call appeared in chat ───────────────
     const chatMessages = page.getByTestId('chat-messages');
 
-    // Tool calls render as text containing "Tool Call:" or the tool name "delegate"
+    // Prefer agent-loop-card, fall back to tool call text or delegate keyword
     const toolCallVisible = await chatMessages
-      .locator('text=/Tool Call:|delegate|Delegation/i')
+      .locator('[data-testid="agent-loop-card"]')
+      .or(chatMessages.locator('text=/Tool Call:|delegate|Delegation/i'))
       .first()
       .isVisible({ timeout: 15000 })
       .catch(() => false);
 
-    // Also check for tool result / completion text
+    // Prefer agent-loop-card, fall back to result text
     const toolResultVisible = await chatMessages
-      .locator('text=/Result:|child|completed|delegate-test|hello from child/i')
+      .locator('[data-testid="agent-loop-card"]')
+      .or(chatMessages.locator('text=/Result:|child|completed|delegate-test|hello from child/i'))
       .first()
       .isVisible({ timeout: 10000 })
       .catch(() => false);

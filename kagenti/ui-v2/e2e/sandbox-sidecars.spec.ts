@@ -166,9 +166,10 @@ test.describe('Sidecar Agents', () => {
     await selectAgent(page, AGENT_NAME);
     await sendMessage(page, TASK_PROMPT);
 
-    // Wait for agent to start responding
+    // Wait for agent to start responding: prefer agent-loop-card, fall back to old format
     const agentOutput = page
-      .locator('.sandbox-markdown')
+      .locator('[data-testid="agent-loop-card"]')
+      .or(page.locator('.sandbox-markdown'))
       .or(page.locator('text=/Tool Call:|Result:/i'));
     await expect(agentOutput.first()).toBeVisible({ timeout: 120000 });
     console.log('[sidecar] Agent started responding');

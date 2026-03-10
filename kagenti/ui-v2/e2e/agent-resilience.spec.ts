@@ -285,7 +285,8 @@ test.describe('Agent Resilience — Loop Recovery', () => {
     // The recovery message should be answered — agent output contains the phrase
     // or at minimum, the chat grew (agent is responsive post-restart)
     const agentOutput = page
-      .locator('.sandbox-markdown')
+      .locator('[data-testid="agent-loop-card"]')
+      .or(page.locator('.sandbox-markdown'))
       .or(page.locator('text=/recovered-after-restart/i'));
     const hasAgentOutput = await agentOutput
       .first()

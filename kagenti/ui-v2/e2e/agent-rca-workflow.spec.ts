@@ -142,9 +142,10 @@ test.describe('Agent RCA Workflow', () => {
     await expect(page.getByTestId('chat-messages').getByText('/rca:ci')).toBeVisible({ timeout: 15000 });
     console.log('[rca] User message visible');
 
-    // Wait for agent response: either .sandbox-markdown (text) or tool call/result steps
-    // Tool calls render as divs with "Tool Call:" or "Result:" text, not <details>
-    const agentOutput = page.locator('.sandbox-markdown').or(page.locator('text=/Tool Call:|Result:/i'));
+    // Wait for agent response: prefer agent-loop-card, fall back to markdown or tool call text
+    const agentOutput = page.locator('[data-testid="agent-loop-card"]')
+      .or(page.locator('.sandbox-markdown'))
+      .or(page.locator('text=/Tool Call:|Result:/i'));
     await expect(agentOutput.first()).toBeVisible({ timeout: 180000 }); // 3 min for LLM
 
     const mdCount = await page.locator('.sandbox-markdown').count();
@@ -259,11 +260,12 @@ test.describe('Agent RCA Workflow', () => {
     await expect(page.getByTestId('chat-messages').getByText('Analyze the latest CI failures')).toBeVisible({ timeout: 30000 });
     console.log('[rca] User message visible on reload');
 
-    // Agent response must render (markdown text or tool call steps)
+    // Agent response must render (loop cards, markdown text, or tool call steps)
+    const loopCountReload = await page.locator('[data-testid="agent-loop-card"]').count();
     const mdCountReload = await page.locator('.sandbox-markdown').count();
     const toolCountReload = await page.locator('text=/Tool Call:|Result:.*tool/i').count();
-    console.log(`[rca] On reload: ${mdCountReload} markdown, ${toolCountReload} tool calls`);
-    expect(mdCountReload + toolCountReload).toBeGreaterThanOrEqual(1);
+    console.log(`[rca] On reload: ${loopCountReload} loop cards, ${mdCountReload} markdown, ${toolCountReload} tool calls`);
+    expect(loopCountReload + mdCountReload + toolCountReload).toBeGreaterThanOrEqual(1);
 
     // ── Step 5: Verify session persists across navigation ────────────────
     const sid = sessionUrl.match(/session=([a-f0-9]+)/)?.[1] || '';

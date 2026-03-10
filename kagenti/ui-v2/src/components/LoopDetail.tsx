@@ -109,7 +109,7 @@ const PlanSection: React.FC<{ plan: string[]; currentStep: number; loopDone: boo
 // ---------------------------------------------------------------------------
 
 const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div
@@ -154,7 +154,7 @@ const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
 // ---------------------------------------------------------------------------
 
 const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({ call }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const label = call.name || 'unknown';
   return (
@@ -193,7 +193,7 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({
 };
 
 const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div

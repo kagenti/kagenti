@@ -89,13 +89,20 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Final answer — always visible */}
-        {loop.finalAnswer && (
-          <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 8 }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {loop.finalAnswer}
-            </ReactMarkdown>
-          </div>
-        )}
+        {loop.finalAnswer && (() => {
+          const filtered = loop.finalAnswer
+            .split('\n')
+            .filter((line) => !(line.includes('Step completed') && line.includes('all requested tool calls')))
+            .join('\n')
+            .trim();
+          return filtered ? (
+            <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 8 }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {filtered}
+              </ReactMarkdown>
+            </div>
+          ) : null;
+        })()}
 
         {/* Reasoning toggle */}
         <div
