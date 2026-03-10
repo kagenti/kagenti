@@ -230,6 +230,12 @@ def _build_deployment_manifest(
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
     ]
 
+    # Skill repos — configurable via backend env var SANDBOX_SKILL_REPOS.
+    # Default: kagenti/kagenti public repo (main branch).
+    skill_repos = os.environ.get("SANDBOX_SKILL_REPOS", "")
+    if skill_repos:
+        env_vars.append({"name": "SKILL_REPOS", "value": skill_repos})
+
     # Inject GitHub PAT for gh CLI and git operations.
     # GH_TOKEN is read by the gh CLI; GITHUB_TOKEN by git credential helpers.
     gh_secret = github_pat_secret or "github-token-secret"
