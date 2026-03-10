@@ -276,15 +276,13 @@ def _build_deployment_manifest(
 
     init_containers: list[dict] = []
 
-    # Workspace uses a PVC so files survive pod restarts.
-    # The PVC is created in create_sandbox() and deleted when the session
-    # is deleted (or TTL expires via WorkspaceManager.cleanup_expired).
+    # Workspace: try PVC for persistence across restarts, fall back to emptyDir.
+    # PVC creation may fail (403) if the backend SA lacks permissions.
     workspace_pvc_name = f"{name}-workspace"
+    # Default to emptyDir; switched to PVC in create_sandbox() if PVC creation succeeds.
+    _use_pvc = False  # Set to True in create_sandbox() after PVC is created
     volumes = [
-        {
-            "name": "workspace",
-            "persistentVolumeClaim": {"claimName": workspace_pvc_name},
-        },
+        {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
         {"name": "cache", "emptyDir": {}},
     ]
 
@@ -574,6 +572,7 @@ async def create_sandbox(
 
     # --- Create workspace PVC (persistent across pod restarts) ---
     workspace_pvc_name = f"{request.name}-workspace"
+    pvc_ok = False
     try:
         pvc_body = {
             "apiVersion": "v1",
@@ -591,12 +590,21 @@ async def create_sandbox(
             },
         }
         kube.core_api.create_namespaced_persistent_volume_claim(namespace=namespace, body=pvc_body)
+        pvc_ok = True
         logger.info("Created workspace PVC '%s' (%s)", workspace_pvc_name, request.workspace_size)
     except ApiException as e:
         if e.status == 409:
+            pvc_ok = True
             logger.info("Workspace PVC '%s' already exists", workspace_pvc_name)
         else:
-            logger.warning("Failed to create workspace PVC: %s", e)
+            logger.warning("Failed to create workspace PVC: %s — using emptyDir", e)
+
+    # Switch deployment to PVC if creation succeeded
+    if pvc_ok:
+        deployment_manifest["spec"]["template"]["spec"]["volumes"][0] = {
+            "name": "workspace",
+            "persistentVolumeClaim": {"claimName": workspace_pvc_name},
+        }
 
     # --- Create Squid proxy ConfigMap (always — deny-all if no domains) ---
     squid_conf = _build_squid_conf(request)
