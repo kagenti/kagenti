@@ -136,6 +136,24 @@ The reconfigure feature compiles and has all endpoints but wasn't deployed/teste
 ### 6. Agent Ends After Few Steps
 The agent sometimes ends after 1-2 steps despite having more plan steps. May be related to how the executor handles the transition from tool results back to reasoning. Need to verify the graph topology fix resolved this.
 
+### 7. Budget Controls in UI
+Add a button/panel (in session detail or wizard) to view and change the agent budget (max iterations, max tokens, wall clock limit). Currently only configurable via `SANDBOX_*` env vars.
+
+### 8. Agent Redeploy E2E Test
+New Playwright test that:
+1. Deploys agent via wizard with specific security/config settings
+2. Changes settings via reconfigure modal (e.g., toggle proxy, change model)
+3. Asserts agent reaches Ready state on the agents page
+4. Continues a session — verifies the agent remembers previous context
+5. Tests workspace persistence (file created in session history is still readable after redeploy)
+
+### 9. Message Queue + Cancel Button
+When the agent loop is running, any new messages sent should be **queued** (not sent immediately). The UI should show:
+- A **cancel button** on the agent loop card (top right) to abort the running loop
+- Queued messages shown as pending below the active loop
+- After cancel or completion, queued messages are sent in order
+- This prevents the double-send issue and gives users control over long-running loops
+
 ---
 
 ## Key Files
