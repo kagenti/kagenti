@@ -13,7 +13,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { loginIfNeeded } from './helpers/auth';
 import { execSync } from 'child_process';
 
-const AGENT_NAME = 'rca-agent';
+const AGENT_NAME = process.env.RCA_AGENT_NAME || 'rca-agent';
+const SKIP_DEPLOY = process.env.RCA_SKIP_DEPLOY === '1';  // Skip cleanup+deploy when agent is pre-deployed
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
 
@@ -94,33 +95,48 @@ test.describe('Agent RCA Workflow', () => {
   // No retries — each retry creates a ghost session with wrong agent
   test.describe.configure({ retries: 0 });
 
-  test.beforeAll(() => { cleanupAgent(); console.log(`[rca] Pre-check: ${kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found') ? 'clean' : 'exists'}`); });
+  test.beforeAll(() => {
+    if (SKIP_DEPLOY) {
+      console.log(`[rca] SKIP_DEPLOY=1 — using pre-deployed ${AGENT_NAME}`);
+    } else {
+      cleanupAgent();
+    }
+    console.log(`[rca] Pre-check: ${kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found') ? 'clean' : 'exists'}`);
+  });
 
   test('RCA agent end-to-end: deploy, verify, send request, check persistence and quality', async ({ page }) => {
-    // ── Step 1: Deploy agent via wizard ──────────────────────────────────
-    await page.goto('/'); await loginIfNeeded(page); await goToWizard(page);
-    await page.locator('#agent-name').fill(AGENT_NAME);
-    await page.locator('#repo-url').fill(REPO_URL);
-    await next(page); await next(page);
-    const si = page.locator('#llm-secret-name');
-    if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
-    await next(page); await next(page); await next(page);
-    await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
-    await page.getByRole('button', { name: /Deploy Agent/i }).click();
+    if (!SKIP_DEPLOY) {
+      // ── Step 1: Deploy agent via wizard ──────────────────────────────────
+      await page.goto('/'); await loginIfNeeded(page); await goToWizard(page);
+      await page.locator('#agent-name').fill(AGENT_NAME);
+      await page.locator('#repo-url').fill(REPO_URL);
+      await next(page); await next(page);
+      const si = page.locator('#llm-secret-name');
+      if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
+      await next(page); await next(page); await next(page);
+      await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
+      await page.getByRole('button', { name: /Deploy Agent/i }).click();
 
-    let ok = false;
-    for (let i = 0; i < 12; i++) { if (!kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found')) { ok = true; break; } await page.waitForTimeout(5000); }
-    expect(ok).toBe(true);
+      let ok = false;
+      for (let i = 0; i < 12; i++) { if (!kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found')) { ok = true; break; } await page.waitForTimeout(5000); }
+      expect(ok).toBe(true);
 
-    // TODO(installer): Fix TOFU PermissionError — Dockerfile should chmod g+w /app
-    const p = { spec: { template: { spec: { securityContext: { runAsUser: 1001 } } } } };
-    kc(`patch deploy ${AGENT_NAME} -n ${NAMESPACE} -p '${JSON.stringify(p)}'`);
-    console.log('[rca] Patched runAsUser for TOFU');
+      // TODO(installer): Fix TOFU PermissionError — Dockerfile should chmod g+w /app
+      const p = { spec: { template: { spec: { securityContext: { runAsUser: 1001 } } } } };
+      kc(`patch deploy ${AGENT_NAME} -n ${NAMESPACE} -p '${JSON.stringify(p)}'`);
+      console.log('[rca] Patched runAsUser for TOFU');
 
-    let ready = false;
-    for (let i = 0; i < 36; i++) { if (kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1') { ready = true; break; } await page.waitForTimeout(5000); }
-    expect(ready).toBe(true);
-    console.log('[rca] Agent deployed and ready');
+      let ready = false;
+      for (let i = 0; i < 36; i++) { if (kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1') { ready = true; break; } await page.waitForTimeout(5000); }
+      expect(ready).toBe(true);
+      console.log('[rca] Agent deployed and ready');
+    } else {
+      // SKIP_DEPLOY: verify pre-deployed agent is ready
+      await page.goto('/'); await loginIfNeeded(page);
+      const ready = kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1';
+      expect(ready).toBe(true);
+      console.log(`[rca] Pre-deployed ${AGENT_NAME} is ready`);
+    }
 
     // ── Step 2: Verify agent card ────────────────────────────────────────
     let card = '';
