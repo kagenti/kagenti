@@ -12,8 +12,8 @@ Deploy and manage Kagenti operator, agents, and tools on Kubernetes clusters.
 **Deploy/build commands produce large output.** Always redirect to files:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/deploy/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-deploy}"
+mkdir -p "$LOG_DIR"
 
 # Pattern: redirect build/deploy output
 command > $LOG_DIR/<name>.log 2>&1; echo "EXIT:$?"
@@ -173,14 +173,15 @@ kubectl get crd | grep kagenti
 # All components
 kubectl get components -A
 
-# Agent builds
-kubectl get agentbuilds -A
+# Shipwright builds
+kubectl get builds -A
+kubectl get buildruns -A
 
 # Deployments
 kubectl get deployments -n team1
 ```
 
-### Check Tekton Pipelines
+### Check Shipwright/Tekton Pipelines
 
 ```bash
 # Pipeline runs

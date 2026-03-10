@@ -13,8 +13,8 @@ Check the current CI status for a PR and create task items for any failures.
 `gh run view --log-failed` and artifact downloads MUST redirect:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/ci/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-ci}"
+mkdir -p "$LOG_DIR"
 
 # Small output OK inline:
 gh pr checks <PR-number>

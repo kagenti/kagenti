@@ -10,8 +10,8 @@ description: Debug Helm chart issues - template rendering, value overrides, hook
 **Helm template output can be hundreds of lines.** Always redirect to files:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/helm/${WORKTREE:-$(basename $(git rev-parse --show-toplevel))}
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-helm}"
+mkdir -p "$LOG_DIR"
 
 # Redirect helm template output
 helm template kagenti charts/kagenti -n kagenti-system > $LOG_DIR/rendered.yaml 2>&1 && echo "OK" || echo "FAIL"

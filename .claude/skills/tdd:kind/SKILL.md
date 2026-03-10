@@ -40,8 +40,11 @@ flowchart TD
     GUARD -->|Cluster exists, mine| REUSE["Reuse existing cluster"]:::k8s
     GUARD -->|Cluster exists, not mine| STOP([Stop - another session owns it])
 
-    CREATE --> ITER
-    REUSE --> ITER
+    CREATE --> CVEGATE["CVE Gate: cve:scan"]:::cve
+    REUSE --> CVEGATE
+    CVEGATE -->|Clean| ITER
+    CVEGATE -->|CVE found| CVE_HOLD["cve:brainstorm"]:::cve
+    CVE_HOLD -->|Resolved| ITER
 
     ITER{"Iteration level?"}
     ITER -->|Level 1| L1["Test only (fastest)"]:::test
@@ -70,9 +73,23 @@ flowchart TD
     classDef hypershift fill:#3F51B5,stroke:#333,color:white
     classDef ci fill:#2196F3,stroke:#333,color:white
     classDef test fill:#9C27B0,stroke:#333,color:white
+    classDef cve fill:#D32F2F,stroke:#333,color:white
 ```
 
 > Follow this diagram as the workflow.
+
+## CVE Gate (Pre-Deploy)
+
+**MANDATORY before deploying to Kind cluster.**
+
+Invoke `cve:scan` on the working tree before the first deployment:
+
+1. If `cve:scan` returns clean → proceed to iteration selection
+2. If `cve:scan` finds HIGH/CRITICAL CVEs → `cve:brainstorm` activates a CVE hold
+   - Silent fixes (dependency bumps) are allowed
+   - Deployment proceeds only after hold is resolved
+
+This gate runs once per session, not on every iteration.
 
 ## Key Principle
 
@@ -84,8 +101,8 @@ flowchart TD
 
 ```bash
 # Session-scoped log directory — use worktree name to avoid collisions
-export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+mkdir -p "$LOG_DIR"
 ```
 
 ### Log Analysis Rule
@@ -255,3 +272,5 @@ This is optional but recommended for tracking development effort.
 - `test:review` - Review test quality
 - `git:commit` - Commit format
 - `session:post` - Post session analytics to PR
+- `cve:scan` - CVE scanning gate (pre-deploy)
+- `cve:brainstorm` - CVE disclosure planning (if CVEs found)

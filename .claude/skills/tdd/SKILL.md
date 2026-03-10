@@ -320,8 +320,8 @@ and being re-read on every subsequent turn.
 
 ```bash
 # Session-scoped log directory — ALWAYS set before running commands
-export LOG_DIR=/tmp/kagenti/tdd/$WORKTREE   # or $(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**
@@ -342,10 +342,11 @@ All three flows eventually enter this loop:
 3. test:review — verify test quality (no silent skips, assertive)
 4. test:run-kind or test:run-hypershift — execute tests (output to $LOG_DIR)
 5. Track progress — compare test results with previous run
-6. git:commit — commit with proper format
-7. git:rebase — rebase onto upstream/main
-8. Push → ci:monitoring — wait for CI results
-9. CI passes? → Handle reviews (Flow 2 Step 4). CI fails? → Back to step 1.
+6. cve:scan — scan for CVEs before pushing (BLOCKS if found)
+7. git:commit — commit with proper format
+8. git:rebase — rebase onto upstream/main
+9. Push → ci:monitoring — wait for CI results
+10. CI passes? → Handle reviews (Flow 2 Step 4). CI fails? → Back to step 1.
 ```
 
 ## Commit Policy
@@ -394,5 +395,6 @@ Commit 3: 11 pass, 2 fail ← good, +1 passing
 - `git:commit` - Commit with proper format
 - `git:rebase` - Rebase before pushing
 - `git:worktree` - Create isolated worktrees
-- `git:commit` - Commit format and conventions
 - `repo:pr` - PR creation conventions
+- `cve:scan` - CVE scanning gate
+- `cve:brainstorm` - CVE disclosure planning

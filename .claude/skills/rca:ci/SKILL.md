@@ -14,8 +14,9 @@ can dump thousands of lines into context. ALL CI log analysis MUST happen in sub
 
 ```bash
 # Session-scoped log directory
-export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+# Works in both Claude Code (local) and sandbox agent (container)
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**
@@ -175,6 +176,28 @@ grep -i "oom\|memory\|evict\|limit" logs/*.txt
 [How to prevent recurrence]
 ```
 
+### CVE Check Before Publishing Findings
+
+**Before posting RCA findings to any public destination** (issue comment, PR comment, etc.):
+
+If the root cause involves a dependency bug, unexpected behavior, or version issue:
+
+1. Invoke `cve:scan` to check if this is a known CVE
+2. If a CVE is found → invoke `cve:brainstorm` **BEFORE** documenting findings publicly
+3. Rewrite RCA documentation to use neutral language (no CVE IDs, no vulnerability descriptions)
+4. Report the CVE through proper channels (see `cve:brainstorm`)
+
+Example neutral RCA wording:
+```
+Root Cause: Incompatibility with <package> <version>.
+Fix: Bump to <version> which resolves the behavior.
+```
+
+NOT:
+```
+Root Cause: CVE-2026-XXXXX in <package> allows remote code execution.
+```
+
 ## Escalation to rca:hypershift
 
 Escalate when:
@@ -201,3 +224,5 @@ rca:ci inconclusive? → Create cluster → rca:hypershift
 - `rca:hypershift` - RCA with live cluster access
 - `tdd:ci` - Fix iteration after RCA
 - `superpowers:systematic-debugging` - General debugging approach
+- `cve:scan` - CVE scanning (check if root cause is a known CVE)
+- `cve:brainstorm` - Disclosure planning (if CVE found during RCA)

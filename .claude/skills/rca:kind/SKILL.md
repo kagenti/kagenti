@@ -12,8 +12,8 @@ Root cause analysis workflow for failures on local Kind clusters.
 **All diagnostic commands MUST redirect output to files.**
 
 ```bash
-export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**
@@ -112,6 +112,16 @@ After fixing, re-run the specific failing test:
 uv run pytest kagenti/tests/e2e/ -v -k "test_name" > $LOG_DIR/retest.log 2>&1; echo "EXIT:$?"
 ```
 
+### CVE Check Before Publishing Findings
+
+**Before posting RCA findings to any public destination:**
+
+If the root cause involves a dependency bug or version issue:
+
+1. Invoke `cve:scan` to check if this is a known CVE
+2. If a CVE is found → invoke `cve:brainstorm` BEFORE documenting publicly
+3. Use neutral language in all public documentation
+
 ## Kind-Specific Issues
 
 | Issue | Cause | Fix |
@@ -135,3 +145,5 @@ If the issue can't be reproduced locally, escalate:
 - `kind:cluster` - Create/destroy Kind clusters
 - `k8s:pods` - Debug pod issues
 - `kagenti:ui-debug` - Debug UI issues (502, API, proxy)
+- `cve:scan` - CVE scanning (check if root cause is a known CVE)
+- `cve:brainstorm` - Disclosure planning (if CVE found during RCA)

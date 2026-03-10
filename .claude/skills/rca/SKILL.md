@@ -37,8 +37,8 @@ the main conversation context.
 
 ```bash
 # Session-scoped log directory
-export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**
@@ -109,6 +109,15 @@ After RCA is complete, switch to TDD for fix iteration: ◄──┘┘ │
 > Before routing to `rca:kind`, run `kind get clusters` — if a cluster exists from another session,
 > route to `rca:ci` instead or ask the user.
 
+## CVE Awareness
+
+All RCA variants include a CVE check before publishing findings. If the root
+cause involves a dependency issue, `cve:scan` runs automatically to check for
+known CVEs. If found, `cve:brainstorm` blocks public disclosure until the CVE
+is properly reported through the project's security channels.
+
+See `cve:scan` and `cve:brainstorm` for details.
+
 ## Related Skills
 
 - `tdd:ci` - Fix iteration after RCA (CI-driven)
@@ -116,3 +125,5 @@ After RCA is complete, switch to TDD for fix iteration: ◄──┘┘ │
 - `tdd:kind` - Fix iteration on Kind
 - `k8s:logs` - Query and analyze component logs
 - `k8s:pods` - Debug pod issues
+- `cve:scan` - CVE scanning gate
+- `cve:brainstorm` - CVE disclosure planning
