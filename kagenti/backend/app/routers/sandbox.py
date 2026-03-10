@@ -467,17 +467,6 @@ async def get_session_history(
                 if evt_json not in seen_event_json:
                     seen_event_json.add(evt_json)
                     all_loop_events.append(evt)
-    if all_loop_events:
-        persisted_loop_events = all_loop_events
-        logger.info(
-            "HISTORY session=%s tasks=%d total_events=%d unique=%d types=%s",
-            context_id,
-            len(rows),
-            total_raw_count,
-            len(all_loop_events),
-            [e.get("type") for e in all_loop_events[:10]],
-        )
-
     for row in rows:
         task_history = _parse_json_field(row["history"]) or []
 
@@ -521,6 +510,18 @@ async def get_session_history(
                 for part in art.get("parts") or []:
                     if isinstance(part, dict) and part.get("text"):
                         all_artifact_texts.append(part["text"])
+
+    # Set persisted_loop_events AFTER both extraction passes (metadata + history text)
+    if all_loop_events:
+        persisted_loop_events = all_loop_events
+        logger.info(
+            "HISTORY session=%s tasks=%d total_events=%d unique=%d types=%s",
+            context_id,
+            len(rows),
+            total_raw_count,
+            len(all_loop_events),
+            [e.get("type") for e in all_loop_events[:10]],
+        )
 
     # Parse graph event dumps into structured tool call data.
     # Raw history contains: user messages + graph events like:
