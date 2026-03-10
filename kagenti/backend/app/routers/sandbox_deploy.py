@@ -322,6 +322,9 @@ def _build_deployment_manifest(
         },
         "spec": {
             "replicas": 1,
+            # Recreate strategy: old pod stops before new starts.
+            # Required for RWO PVC — can't mount on two pods simultaneously.
+            "strategy": {"type": "Recreate"},
             "selector": {
                 "matchLabels": {
                     "kagenti.io/type": "agent",
