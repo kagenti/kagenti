@@ -74,9 +74,7 @@ class SandboxCreateRequest(BaseModel):
     enable_persistence: bool = True
     isolation_mode: str = "shared"  # shared or pod-per-session
     workspace_size: str = "5Gi"
-    workspace_storage: str = (
-        "emptydir"  # "emptydir" (default) or "pvc" (needs working storage provisioner)
-    )
+    workspace_storage: str = "pvc"  # "pvc" (default, persistent) or "emptydir" (ephemeral)
     # Composable security layers (Session F)
     secctx: bool = True
     landlock: bool = False
