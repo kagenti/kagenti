@@ -1468,10 +1468,10 @@ git commit -s -m "feat: implement full pipeline and self-test mode"
 
 **Files:**
 - Create: `.claude/skills/session/SKILL.md`
-- Create: `.claude/skills/session:post/SKILL.md`
-- Create: `.claude/skills/session:summary/SKILL.md`
-- Create: `.claude/skills/session:extract/SKILL.md`
-- Create: `.claude/skills/session:dashboard/SKILL.md`
+- Create: `.claude/skills/session-post/SKILL.md`
+- Create: `.claude/skills/session-summary/SKILL.md`
+- Create: `.claude/skills/session-extract/SKILL.md`
+- Create: `.claude/skills/session-dashboard/SKILL.md`
 
 **Step 1: Create router skill**
 
@@ -1518,7 +1518,7 @@ Create each sub-skill SKILL.md with instructions for invoking `session-analytics
 **Step 3: Commit**
 
 ```bash
-git add .claude/skills/session/ .claude/skills/session:post/ .claude/skills/session:summary/ .claude/skills/session:extract/ .claude/skills/session:dashboard/
+git add .claude/skills/session/ .claude/skills/session-post/ .claude/skills/session-summary/ .claude/skills/session-extract/ .claude/skills/session-dashboard/
 git commit -s -m "feat: create session/ skill files for analytics"
 ```
 
@@ -1565,9 +1565,9 @@ git commit -s -m "docs: add session analytics to skills README"
 ### Task 11: Integration hooks in TDD/RCA skills
 
 **Files:**
-- Modify: `.claude/skills/tdd:ci/SKILL.md` (add session:post note at Phase 8)
-- Modify: `.claude/skills/tdd:hypershift/SKILL.md` (add session:post note)
-- Modify: `.claude/skills/tdd:kind/SKILL.md` (add session:post note)
+- Modify: `.claude/skills/tdd-ci/SKILL.md` (add session:post note at Phase 8)
+- Modify: `.claude/skills/tdd-hypershift/SKILL.md` (add session:post note)
+- Modify: `.claude/skills/tdd-kind/SKILL.md` (add session:post note)
 
 **Step 1: Add session reporting to TDD completion**
 
@@ -1588,7 +1588,7 @@ This is optional but recommended for tracking development effort.
 **Step 2: Commit**
 
 ```bash
-git add .claude/skills/tdd:ci/SKILL.md .claude/skills/tdd:hypershift/SKILL.md .claude/skills/tdd:kind/SKILL.md
+git add .claude/skills/tdd-ci/SKILL.md .claude/skills/tdd-hypershift/SKILL.md .claude/skills/tdd-kind/SKILL.md
 git commit -s -m "feat: add session:post integration hooks to TDD skills"
 ```
 

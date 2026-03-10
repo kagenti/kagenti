@@ -107,7 +107,7 @@ done
 
 ```bash
 # Find chained commands in sandbox skills (potential auto-approve issues)
-grep -n ' && ' .claude/skills/k8s:*/SKILL.md .claude/skills/kagenti:*/SKILL.md .claude/skills/kind:*/SKILL.md .claude/skills/local:*/SKILL.md .claude/skills/tdd:*/SKILL.md .claude/skills/rca:*/SKILL.md
+grep -n ' && ' .claude/skills/k8s-*/SKILL.md .claude/skills/kagenti-*/SKILL.md .claude/skills/kind-*/SKILL.md .claude/skills/local-*/SKILL.md .claude/skills/tdd-*/SKILL.md .claude/skills/rca-*/SKILL.md
 ```
 
 ### Check Mermaid Diagram Presence

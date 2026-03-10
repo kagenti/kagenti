@@ -79,7 +79,7 @@ flowchart TD
 ### Naming Conventions
 
 ```
-.claude/skills/<category>:<name>/SKILL.md
+.claude/skills/<category>-<name>/SKILL.md
 ```
 
 - **Category** = domain area (tdd, rca, k8s, git, skills, etc.)

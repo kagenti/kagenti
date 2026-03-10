@@ -46,7 +46,7 @@ For edits: always read the skill FIRST, then edit. Never overwrite without readi
 ## Skill Structure
 
 ```
-.claude/skills/<category>:<skill-name>/
+.claude/skills/<category>-<skill-name>/
 └── SKILL.md
 ```
 

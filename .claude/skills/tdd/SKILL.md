@@ -102,7 +102,7 @@ The script maintains `/tmp/kagenti/tdd/tdd-debug-state.json` with:
 
 When debug mode is active and the workflow enters a sub-skill (`tdd:ci`, `tdd:kind`, `tdd:hypershift`), pass the debug flag through:
 
-1. Use the sub-skill's own `.mmd` template (e.g., `.claude/skills/tdd:ci/tdd-ci-workflow.mmd`)
+1. Use the sub-skill's own `.mmd` template (e.g., `.claude/skills/tdd-ci/tdd-ci-workflow.mmd`)
 2. Continue updating `/tmp/kagenti/tdd/tdd-debug-state.json` with the sub-skill's node transitions
 3. When the sub-skill completes, resume tracking in the parent `tdd-workflow.mmd`
 
