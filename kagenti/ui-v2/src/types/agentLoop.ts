@@ -47,6 +47,11 @@ export interface AgentLoop {
   };
 }
 
+export interface PromptMessage {
+  role: string;
+  preview: string;
+}
+
 export interface AgentLoopStep {
   index: number;
   description: string;
@@ -58,6 +63,10 @@ export interface AgentLoopStep {
   status: 'pending' | 'running' | 'done' | 'failed';
   /** LLM reasoning / chain-of-thought text (optional, model-dependent). */
   reasoning?: string;
+  /** System prompt sent to the LLM for this step. */
+  systemPrompt?: string;
+  /** Full message list sent to the LLM (summarized). */
+  promptMessages?: PromptMessage[];
   /** Granular event type from the graph node. */
   eventType?: NodeEventType;
   /** @deprecated Use {@link eventType} for new code. */

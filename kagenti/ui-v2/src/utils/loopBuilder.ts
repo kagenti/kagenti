@@ -41,6 +41,10 @@ export interface LoopEvent {
   tokens_budget?: number;
   wall_clock_s?: number;
   max_wall_clock_s?: number;
+  /** System prompt sent to the LLM */
+  system_prompt?: string;
+  /** Summarized message list sent to the LLM */
+  prompt_messages?: Array<{ role: string; preview: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +119,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           index: loop.steps.length,
           description: `${stepLabel} (iteration ${iterNum + 1}): ${incomingSteps.length} steps`,
           reasoning: planContent,
+          systemPrompt: le.system_prompt,
+          promptMessages: le.prompt_messages,
           model: le.model || loop.model,
           nodeType: nodeTypeVal,
           tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
@@ -153,9 +159,10 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           description: le.description || existingStep?.description || '',
           model: le.model || loop.model,
           reasoning: (le.reasoning as string) || existingStep?.reasoning || undefined,
+          systemPrompt: le.system_prompt || existingStep?.systemPrompt,
+          promptMessages: le.prompt_messages || existingStep?.promptMessages,
           nodeType: 'executor' as const,
           tokens: { prompt: le.prompt_tokens || existingStep?.tokens?.prompt || 0, completion: le.completion_tokens || existingStep?.tokens?.completion || 0 },
-          // Merge tool data from existing step (tool_call/tool_result events may have arrived first)
           toolCalls: existingStep?.toolCalls || [],
           toolResults: existingStep?.toolResults || [],
           durationMs: 0,
