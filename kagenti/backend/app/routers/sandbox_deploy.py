@@ -12,6 +12,7 @@ via the Kubernetes Python client. Mirrors the resources created by
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -315,12 +316,34 @@ def _build_deployment_manifest(
             "namespace": namespace,
             "labels": labels,
             "annotations": {
+                # Legacy annotations (backward compat)
                 "kagenti.io/description": f"Sandbox agent ({req.base_agent}) deployed via UI wizard",
                 "kagenti.io/variant": req.base_agent,
                 "kagenti.io/isolation-mode": req.isolation_mode,
                 "kagenti.io/proxy-allowlist": req.proxy_allowlist,
                 "kagenti.io/source-repo": req.repo,
                 "kagenti.io/source-branch": req.branch,
+                # Full wizard config (cfg-* annotations)
+                "kagenti.io/cfg-name": req.name,
+                "kagenti.io/cfg-repo": req.repo,
+                "kagenti.io/cfg-branch": req.branch,
+                "kagenti.io/cfg-context-dir": req.context_dir,
+                "kagenti.io/cfg-dockerfile": req.dockerfile,
+                "kagenti.io/cfg-base-agent": req.base_agent,
+                "kagenti.io/cfg-model": req.model,
+                "kagenti.io/cfg-namespace": req.namespace,
+                "kagenti.io/cfg-enable-persistence": str(req.enable_persistence).lower(),
+                "kagenti.io/cfg-isolation-mode": req.isolation_mode,
+                "kagenti.io/cfg-workspace-size": req.workspace_size,
+                "kagenti.io/cfg-workspace-storage": req.workspace_storage,
+                "kagenti.io/cfg-secctx": str(req.secctx).lower(),
+                "kagenti.io/cfg-landlock": str(req.landlock).lower(),
+                "kagenti.io/cfg-proxy": str(req.proxy).lower(),
+                "kagenti.io/cfg-gvisor": str(req.gvisor).lower(),
+                "kagenti.io/cfg-proxy-domains": req.proxy_domains or "",
+                "kagenti.io/cfg-llm-key-source": req.llm_key_source,
+                "kagenti.io/cfg-llm-secret-name": req.llm_secret_name,
+                "kagenti.io/cfg-db-source": "postgres" if req.enable_persistence else "none",
             },
         },
         "spec": {
@@ -762,3 +785,197 @@ async def delete_sandbox(
         "deleted": deleted,
         "errors": errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# Config retrieval & update endpoints
+# ---------------------------------------------------------------------------
+
+# Annotation prefix -> camelCase key mapping for the GET /config endpoint
+_CFG_KEY_MAP = {
+    "cfg-name": "name",
+    "cfg-repo": "repo",
+    "cfg-branch": "branch",
+    "cfg-context-dir": "contextDir",
+    "cfg-dockerfile": "dockerfile",
+    "cfg-base-agent": "baseAgent",
+    "cfg-model": "model",
+    "cfg-namespace": "namespace",
+    "cfg-enable-persistence": "enablePersistence",
+    "cfg-isolation-mode": "isolationMode",
+    "cfg-workspace-size": "workspaceSize",
+    "cfg-workspace-storage": "workspaceStorage",
+    "cfg-secctx": "secctx",
+    "cfg-landlock": "landlock",
+    "cfg-proxy": "proxy",
+    "cfg-gvisor": "gvisor",
+    "cfg-proxy-domains": "proxyDomains",
+    "cfg-llm-key-source": "llmKeySource",
+    "cfg-llm-secret-name": "llmSecretName",
+    "cfg-db-source": "dbSource",
+}
+
+_BOOL_KEYS = {"enablePersistence", "secctx", "landlock", "proxy", "gvisor"}
+
+# Fields whose change means the container image must be rebuilt
+_BUILD_FIELDS = {"cfg-repo", "cfg-branch", "cfg-context-dir", "cfg-dockerfile", "cfg-base-agent"}
+
+
+@router.get("/{namespace}/{name}/config")
+async def get_sandbox_config(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> dict:
+    """Return the wizard configuration stored in the Deployment's annotations.
+
+    Reads ``kagenti.io/cfg-*`` annotations and returns them as a JSON object
+    with camelCase keys matching the frontend WizardState shape.
+    """
+    try:
+        deployment = kube.get_deployment(namespace=namespace, name=name)
+    except ApiException as e:
+        logger.error("Failed to read Deployment %s/%s: %s", namespace, name, e)
+        return {"error": f"Deployment not found: {e.reason}"}
+
+    annotations: dict = (deployment.get("metadata") or {}).get("annotations") or {}
+
+    config: dict = {}
+    for ann_suffix, camel_key in _CFG_KEY_MAP.items():
+        ann_key = f"kagenti.io/{ann_suffix}"
+        value = annotations.get(ann_key)
+        if value is None:
+            continue
+        if camel_key in _BOOL_KEYS:
+            config[camel_key] = value.lower() == "true"
+        else:
+            config[camel_key] = value
+
+    return config
+
+
+@router.put("/{namespace}/{name}")
+async def update_sandbox(
+    namespace: str,
+    name: str,
+    request: SandboxCreateRequest,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> SandboxCreateResponse:
+    """Update (reconfigure) an existing sandbox agent deployment.
+
+    Compares the new request against the current annotations to detect
+    build-related changes, patches the Deployment and proxy resources,
+    and triggers a rollout restart.
+    """
+    # Override namespace from path
+    request.namespace = namespace
+    request.name = name
+
+    # 1. Read current deployment to get existing annotations
+    try:
+        current = kube.get_deployment(namespace=namespace, name=name)
+    except ApiException as e:
+        logger.error("Failed to read Deployment %s/%s: %s", namespace, name, e)
+        return SandboxCreateResponse(
+            status="failed",
+            message=f"Deployment '{name}' not found in namespace '{namespace}': {e.reason}",
+        )
+
+    current_annotations: dict = (current.get("metadata") or {}).get("annotations") or {}
+
+    # 2. Detect build-related changes
+    rebuild_required = False
+    for field in _BUILD_FIELDS:
+        ann_key = f"kagenti.io/{field}"
+        old_val = current_annotations.get(ann_key, "")
+        new_val = getattr(request, field.replace("cfg-", "").replace("-", "_"), "")
+        if str(old_val) != str(new_val):
+            rebuild_required = True
+            logger.info(
+                "Build field '%s' changed: '%s' -> '%s'",
+                field,
+                old_val,
+                new_val,
+            )
+
+    # 3. Rebuild the deployment manifest
+    deployment_manifest = _build_deployment_manifest(request)
+
+    # 4. Add rollout restart annotation (triggers pod recreation)
+    restart_annotation = {
+        "kubectl.kubernetes.io/restartedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    deployment_manifest["spec"]["template"]["metadata"].setdefault("annotations", {})
+    deployment_manifest["spec"]["template"]["metadata"]["annotations"].update(restart_annotation)
+
+    # 5. Patch the Deployment
+    try:
+        kube.patch_deployment(namespace=namespace, name=name, body=deployment_manifest)
+        logger.info("Patched Deployment '%s' in namespace '%s'", name, namespace)
+    except ApiException as e:
+        logger.error("Failed to patch Deployment %s/%s: %s", namespace, name, e)
+        return SandboxCreateResponse(
+            status="failed",
+            message=f"Failed to patch Deployment: {e.reason}",
+        )
+
+    # 6. Update Squid proxy ConfigMap if proxy settings changed
+    old_proxy_domains = current_annotations.get("kagenti.io/cfg-proxy-domains", "")
+    new_proxy_domains = request.proxy_domains or ""
+    if old_proxy_domains != new_proxy_domains:
+        squid_conf = _build_squid_conf(request)
+        managed_labels = {
+            "app.kubernetes.io/managed-by": "kagenti-ui",
+            "app.kubernetes.io/part-of": name,
+        }
+        try:
+            kube.create_configmap(
+                namespace=namespace,
+                name=f"{name}-squid-config",
+                data={"squid.conf": squid_conf},
+                labels=managed_labels,
+            )
+            logger.info(
+                "Updated Squid ConfigMap '%s-squid-config' (domains: %s)",
+                name,
+                new_proxy_domains or "DENY ALL",
+            )
+        except Exception as e:
+            logger.warning("Failed to update Squid ConfigMap: %s", e)
+
+    # 7. Update egress proxy deployment if proxy config changed
+    if old_proxy_domains != new_proxy_domains:
+        proxy_deploy, _proxy_svc = _build_egress_proxy_manifests(request)
+        # Add restart annotation to force proxy pod recreation
+        proxy_deploy["spec"]["template"]["metadata"].setdefault("annotations", {})
+        proxy_deploy["spec"]["template"]["metadata"]["annotations"].update(restart_annotation)
+        try:
+            kube.patch_deployment(
+                namespace=namespace,
+                name=f"{name}-egress-proxy",
+                body=proxy_deploy,
+            )
+            logger.info("Patched egress proxy Deployment '%s-egress-proxy'", name)
+        except ApiException as e:
+            if e.status == 404:
+                logger.info("Egress proxy not found, skipping update")
+            else:
+                logger.warning("Failed to patch egress proxy: %s", e)
+
+    # 8. Build response
+    profile = request.profile
+    composable_name = profile.name if profile else name
+    security_warnings = profile.warnings if profile else []
+
+    status_msg = "updated"
+    message_parts = [f"Sandbox agent '{name}' updated in namespace '{namespace}'"]
+    if rebuild_required:
+        message_parts.append("Container image rebuild required (build fields changed)")
+
+    return SandboxCreateResponse(
+        status=status_msg,
+        message=". ".join(message_parts),
+        composable_name=composable_name,
+        security_warnings=security_warnings,
+        agent_url=f"http://{name}.{namespace}.svc.cluster.local:8000",
+    )

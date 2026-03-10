@@ -14,8 +14,10 @@ import {
   Alert,
   Label,
   Tooltip,
+  Modal,
+  ModalVariant,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, FileIcon, ShieldAltIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, FileIcon, ShieldAltIcon, CogIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,6 +40,7 @@ import { LlmUsagePanel } from '../components/LlmUsagePanel';
 import { FileBrowser } from '../components/FileBrowser';
 import { SidecarPanel } from '../components/SidecarTab';
 import { ModelSwitcher } from '../components/ModelSwitcher';
+import { SandboxWizard } from '../components/SandboxWizard';
 import { SubSessionsPanel, useChildSessionCount } from '../components/SubSessionsPanel';
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
@@ -767,6 +770,7 @@ export const SandboxPage: React.FC = () => {
 
   // Sidecar agents state
   const [sidecars, setSidecars] = useState<SidecarInfo[]>([]);
+  const [reconfigureOpen, setReconfigureOpen] = useState(false);
   // Poll sidecars list when we have a contextId
   useEffect(() => {
     if (!contextId || !namespace) return;
@@ -1658,6 +1662,16 @@ export const SandboxPage: React.FC = () => {
               <Tooltip content="Active sandbox agent handling this session">
                 <Label isCompact color="purple">{selectedAgent}</Label>
               </Tooltip>
+              <Tooltip content="Reconfigure agent">
+                <Button
+                  variant="plain"
+                  size="sm"
+                  style={{ padding: '0 4px', marginLeft: 4 }}
+                  onClick={() => setReconfigureOpen(true)}
+                >
+                  <CogIcon />
+                </Button>
+              </Tooltip>
             </SplitItem>
             <SplitItem>
               <span style={{ fontSize: '0.9em', color: 'var(--pf-v5-global--Color--200)', marginRight: 4 }}>Namespace:</span>
@@ -2127,6 +2141,23 @@ export const SandboxPage: React.FC = () => {
           color: var(--pf-v5-global--Color--200);
         }
       `}</style>
+
+      {/* Reconfigure Modal */}
+      <Modal
+        variant={ModalVariant.large}
+        title={`Reconfigure ${selectedAgent}`}
+        isOpen={reconfigureOpen}
+        onClose={() => setReconfigureOpen(false)}
+        showClose
+      >
+        <SandboxWizard
+          mode="reconfigure"
+          agentName={selectedAgent}
+          namespace={namespace}
+          onClose={() => setReconfigureOpen(false)}
+          onSuccess={() => setReconfigureOpen(false)}
+        />
+      </Modal>
     </PageSection>
   );
 };

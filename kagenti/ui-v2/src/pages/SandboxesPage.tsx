@@ -24,13 +24,17 @@ import {
   DescriptionListGroup,
   DescriptionListTerm,
   DescriptionListDescription,
+  Modal,
+  ModalVariant,
 } from '@patternfly/react-core';
+import { CogIcon } from '@patternfly/react-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
 import { sandboxService, sandboxFileService } from '../services/api';
 import { NamespaceSelector } from '../components/NamespaceSelector';
 import type { SandboxAgentInfo, TaskSummary } from '../types/sandbox';
+import { SandboxWizard } from '../components/SandboxWizard';
 
 function statusColor(
   status: string
@@ -71,6 +75,7 @@ const SandboxAgentCard: React.FC<{
 }> = ({ agent, sessions, namespace }) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(agent.active_sessions > 0);
+  const [reconfigureOpen, setReconfigureOpen] = useState(false);
 
   const { data: storageStats } = useQuery({
     queryKey: ['sandbox-stats', namespace, agent.name],
@@ -218,11 +223,36 @@ const SandboxAgentCard: React.FC<{
           <Button
             variant="secondary"
             size="sm"
+            icon={<CogIcon />}
+            onClick={() => setReconfigureOpen(true)}
+          >
+            Reconfigure
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => navigate(`/sandbox/files/${namespace}/${agent.name}`)}
           >
             Browse Files
           </Button>
         </div>
+
+        {/* Reconfigure Modal */}
+        <Modal
+          variant={ModalVariant.large}
+          title={`Reconfigure ${agent.name}`}
+          isOpen={reconfigureOpen}
+          onClose={() => setReconfigureOpen(false)}
+          showClose
+        >
+          <SandboxWizard
+            mode="reconfigure"
+            agentName={agent.name}
+            namespace={namespace}
+            onClose={() => setReconfigureOpen(false)}
+            onSuccess={() => setReconfigureOpen(false)}
+          />
+        </Modal>
       </CardBody>
     </Card>
   );

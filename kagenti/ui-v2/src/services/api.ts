@@ -897,6 +897,24 @@ export const sandboxService = {
     );
   },
 
+  async getConfig(namespace: string, name: string): Promise<Record<string, unknown>> {
+    return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/config`);
+  },
+
+  async updateSandbox(
+    namespace: string,
+    name: string,
+    data: Record<string, unknown>
+  ): Promise<{ status: string; message: string; rebuild_required?: boolean }> {
+    return apiFetch(
+      `/sandbox/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
   async getChildSessions(namespace: string, contextId: string): Promise<Array<{
     context_id: string;
     agent_name: string;
