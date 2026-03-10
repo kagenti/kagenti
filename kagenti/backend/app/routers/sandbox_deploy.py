@@ -138,6 +138,9 @@ def _build_squid_conf(req: SandboxCreateRequest) -> str:
 
     When domains are specified, only those are allowed.
     When empty, all egress is denied (secure default).
+
+    Config is designed for non-root containers (OCP arbitrary UID):
+    all writable paths point to /tmp.
     """
     proxy_domains = req.proxy_domains or req.proxy_allowlist or ""
     domain_lines = ""
@@ -146,16 +149,34 @@ def _build_squid_conf(req: SandboxCreateRequest) -> str:
         if d:
             domain_lines += f"acl allowed_domains dstdomain .{d}\n"
 
+    base = (
+        "http_port 3128\n"
+        "pid_filename /tmp/squid.pid\n"
+        "cache_log /tmp/cache.log\n"
+        "access_log /tmp/access.log\n"
+        "coredump_dir /tmp\n"
+        "cache_dir null /tmp\n"
+        "cache deny all\n"
+        "logfile_rotate 0\n"
+        "acl localnet src 10.0.0.0/8\n"
+        "acl localnet src 172.16.0.0/12\n"
+        "acl localnet src 192.168.0.0/16\n"
+        "acl localnet src 127.0.0.0/8\n"
+        "acl SSL_ports port 443\n"
+        "acl Safe_ports port 80\n"
+        "acl Safe_ports port 443\n"
+        "acl Safe_ports port 8000-9000\n"
+        "acl CONNECT method CONNECT\n"
+        "http_access deny !Safe_ports\n"
+        "http_access deny CONNECT !SSL_ports\n"
+    )
     if domain_lines:
         return (
-            "http_port 3128\n"
-            f"{domain_lines}"
-            "http_access allow allowed_domains\n"
-            "http_access deny all\n"
-            "cache deny all\n"
-            "access_log none\n"
+            base
+            + domain_lines
+            + "http_access allow localnet allowed_domains\nhttp_access deny all\n"
         )
-    return "http_port 3128\nhttp_access deny all\ncache deny all\naccess_log none\n"
+    return base + "http_access deny all\n"
 
 
 def _build_deployment_manifest(
@@ -253,50 +274,28 @@ def _build_deployment_manifest(
     if req.read_only_root:
         security_context["readOnlyRootFilesystem"] = True
 
-    # Skills are loaded by the agent at startup via git clone (see agent.py).
     init_containers: list[dict] = []
-    sidecar_containers: list[dict] = []
 
     volumes = [
         {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
         {"name": "cache", "emptyDir": {}},
     ]
 
-    # -- Squid egress proxy sidecar (always deployed) ----------------------
-    # Domain filtering is configured via ConfigMap created in create_sandbox().
-    # When no domains are set, all egress is blocked (secure default).
-    volumes.append(
-        {
-            "name": "squid-config",
-            "configMap": {"name": f"{name}-squid-config"},
-        }
-    )
-    sidecar_containers.append(
-        {
-            "name": "squid-proxy",
-            "image": "ubuntu/squid:latest",
-            "ports": [{"containerPort": 3128}],
-            "resources": {
-                "requests": {"cpu": "10m", "memory": "32Mi"},
-                "limits": {"cpu": "100m", "memory": "128Mi"},
-            },
-            "securityContext": {
-                "allowPrivilegeEscalation": False,
-                "seccompProfile": {"type": "RuntimeDefault"},
-            },
-            "volumeMounts": [
-                {
-                    "name": "squid-config",
-                    "mountPath": "/etc/squid/squid.conf",
-                    "subPath": "squid.conf",
-                },
-            ],
-        }
-    )
-    # Route agent's outbound traffic through the Squid sidecar (localhost:3128)
-    env_vars.append({"name": "HTTP_PROXY", "value": "http://localhost:3128"})
-    env_vars.append({"name": "HTTPS_PROXY", "value": "http://localhost:3128"})
-    env_vars.append({"name": "NO_PROXY", "value": "localhost,127.0.0.1,.svc,.svc.cluster.local"})
+    # -- Per-agent egress proxy (separate pod) -----------------------------
+    # Each agent gets its own egress-proxy Deployment + Service with a
+    # ConfigMap containing the domain allowlist from the wizard.
+    # The agent's HTTP_PROXY env var points to the proxy service.
+    # A namespace-wide NetworkPolicy blocks direct public egress from
+    # agent pods — only the egress-proxy pods can reach the internet.
+    proxy_svc = f"{name}-egress-proxy"
+    proxy_url = f"http://{proxy_svc}.{namespace}.svc:3128"
+    no_proxy = "localhost,127.0.0.1,.svc,.svc.cluster.local"
+    for var_name in ("HTTP_PROXY", "http_proxy"):
+        env_vars.append({"name": var_name, "value": proxy_url})
+    for var_name in ("HTTPS_PROXY", "https_proxy"):
+        env_vars.append({"name": var_name, "value": proxy_url})
+    for var_name in ("NO_PROXY", "no_proxy"):
+        env_vars.append({"name": var_name, "value": no_proxy})
 
     return {
         "apiVersion": "apps/v1",
@@ -356,13 +355,82 @@ def _build_deployment_manifest(
                                 {"name": "cache", "mountPath": "/app/.cache"},
                             ],
                         },
-                    ]
-                    + sidecar_containers,
+                    ],
                     "volumes": volumes,
                 },
             },
         },
     }
+
+
+def _build_egress_proxy_manifests(req: SandboxCreateRequest) -> tuple[dict, dict]:
+    """Build Deployment + Service manifests for the per-agent egress proxy.
+
+    Returns (deployment, service) dicts.
+    """
+    name = f"{req.name}-egress-proxy"
+    namespace = req.namespace
+    labels = {
+        "kagenti.io/type": "egress-proxy",
+        "app.kubernetes.io/name": name,
+        "app.kubernetes.io/part-of": req.name,
+        "app.kubernetes.io/managed-by": "kagenti-ui",
+    }
+    deployment = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {"name": name, "namespace": namespace, "labels": labels},
+        "spec": {
+            "replicas": 1,
+            "selector": {"matchLabels": {"app.kubernetes.io/name": name}},
+            "template": {
+                "metadata": {"labels": labels},
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "squid",
+                            "image": "ubuntu/squid:latest",
+                            "command": [
+                                "squid",
+                                "--foreground",
+                                "-f",
+                                "/etc/squid/squid.conf",
+                                "-YC",
+                            ],
+                            "ports": [{"containerPort": 3128}],
+                            "resources": {
+                                "requests": {"cpu": "10m", "memory": "64Mi"},
+                                "limits": {"cpu": "200m", "memory": "256Mi"},
+                            },
+                            "volumeMounts": [
+                                {
+                                    "name": "config",
+                                    "mountPath": "/etc/squid/squid.conf",
+                                    "subPath": "squid.conf",
+                                }
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {
+                            "name": "config",
+                            "configMap": {"name": f"{req.name}-squid-config"},
+                        }
+                    ],
+                },
+            },
+        },
+    }
+    service = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {"name": name, "namespace": namespace, "labels": labels},
+        "spec": {
+            "selector": {"app.kubernetes.io/name": name},
+            "ports": [{"port": 3128, "targetPort": 3128, "protocol": "TCP"}],
+        },
+    }
+    return deployment, service
 
 
 def _build_service_manifest(req: SandboxCreateRequest) -> dict:
@@ -511,7 +579,26 @@ async def create_sandbox(
     except Exception as e:
         logger.warning("Failed to create/update Squid ConfigMap: %s", e)
 
-    # --- Create the Deployment ---
+    # --- Create per-agent egress proxy (Deployment + Service) ---
+    proxy_deploy, proxy_svc = _build_egress_proxy_manifests(request)
+    try:
+        kube.create_deployment(namespace=namespace, body=proxy_deploy)
+        logger.info("Created egress proxy Deployment '%s-egress-proxy'", request.name)
+    except ApiException as e:
+        if e.status == 409:
+            logger.info("Egress proxy '%s-egress-proxy' already exists", request.name)
+        else:
+            logger.warning("Failed to create egress proxy Deployment: %s", e)
+    try:
+        kube.create_service(namespace=namespace, body=proxy_svc)
+        logger.info("Created egress proxy Service '%s-egress-proxy'", request.name)
+    except ApiException as e:
+        if e.status == 409:
+            logger.info("Egress proxy Service already exists")
+        else:
+            logger.warning("Failed to create egress proxy Service: %s", e)
+
+    # --- Create the agent Deployment ---
     try:
         kube.create_deployment(namespace=namespace, body=deployment_manifest)
         logger.info(f"Created Deployment '{request.name}' in namespace '{namespace}'")
