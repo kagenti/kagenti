@@ -276,8 +276,15 @@ def _build_deployment_manifest(
 
     init_containers: list[dict] = []
 
+    # Workspace uses a PVC so files survive pod restarts.
+    # The PVC is created in create_sandbox() and deleted when the session
+    # is deleted (or TTL expires via WorkspaceManager.cleanup_expired).
+    workspace_pvc_name = f"{name}-workspace"
     volumes = [
-        {"name": "workspace", "emptyDir": {"sizeLimit": req.workspace_size}},
+        {
+            "name": "workspace",
+            "persistentVolumeClaim": {"claimName": workspace_pvc_name},
+        },
         {"name": "cache", "emptyDir": {}},
     ]
 
@@ -562,6 +569,32 @@ async def create_sandbox(
     # TODO(Session N): Once base image moves to kagenti repo, bake
     # skill_pack_loader.py into the image for verified skill loading.
 
+    # --- Create workspace PVC (persistent across pod restarts) ---
+    workspace_pvc_name = f"{request.name}-workspace"
+    try:
+        pvc_body = {
+            "apiVersion": "v1",
+            "kind": "PersistentVolumeClaim",
+            "metadata": {
+                "name": workspace_pvc_name,
+                "namespace": namespace,
+                "labels": managed_cm_labels,
+            },
+            "spec": {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": {
+                    "requests": {"storage": request.workspace_size},
+                },
+            },
+        }
+        kube.core_api.create_namespaced_persistent_volume_claim(namespace=namespace, body=pvc_body)
+        logger.info("Created workspace PVC '%s' (%s)", workspace_pvc_name, request.workspace_size)
+    except ApiException as e:
+        if e.status == 409:
+            logger.info("Workspace PVC '%s' already exists", workspace_pvc_name)
+        else:
+            logger.warning("Failed to create workspace PVC: %s", e)
+
     # --- Create Squid proxy ConfigMap (always — deny-all if no domains) ---
     squid_conf = _build_squid_conf(request)
     try:
@@ -652,3 +685,63 @@ async def create_sandbox(
         security_warnings=security_warnings,
         agent_url=agent_url,
     )
+
+
+@router.delete("/{namespace}/{name}", response_model=dict)
+async def delete_sandbox(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> dict:
+    """Delete a sandbox agent and all associated resources.
+
+    Cleans up: Deployment, Service, egress-proxy Deployment + Service,
+    workspace PVC, squid ConfigMap, and any Secrets created by the wizard.
+    """
+    deleted: list[str] = []
+    errors: list[str] = []
+
+    resources = [
+        ("Deployment", name, lambda: kube.apps_api.delete_namespaced_deployment(name, namespace)),
+        ("Service", name, lambda: kube.core_api.delete_namespaced_service(name, namespace)),
+        (
+            "Deployment",
+            f"{name}-egress-proxy",
+            lambda: kube.apps_api.delete_namespaced_deployment(f"{name}-egress-proxy", namespace),
+        ),
+        (
+            "Service",
+            f"{name}-egress-proxy",
+            lambda: kube.core_api.delete_namespaced_service(f"{name}-egress-proxy", namespace),
+        ),
+        (
+            "PVC",
+            f"{name}-workspace",
+            lambda: kube.core_api.delete_namespaced_persistent_volume_claim(
+                f"{name}-workspace", namespace
+            ),
+        ),
+        (
+            "ConfigMap",
+            f"{name}-squid-config",
+            lambda: kube.core_api.delete_namespaced_config_map(f"{name}-squid-config", namespace),
+        ),
+    ]
+
+    for kind, rname, delete_fn in resources:
+        try:
+            delete_fn()
+            deleted.append(f"{kind}/{rname}")
+            logger.info("Deleted %s '%s' from namespace '%s'", kind, rname, namespace)
+        except ApiException as e:
+            if e.status == 404:
+                pass  # Already gone
+            else:
+                errors.append(f"{kind}/{rname}: {e.reason}")
+                logger.warning("Failed to delete %s '%s': %s", kind, rname, e)
+
+    return {
+        "status": "deleted" if not errors else "partial",
+        "deleted": deleted,
+        "errors": errors,
+    }
