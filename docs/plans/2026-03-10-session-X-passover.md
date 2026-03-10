@@ -165,7 +165,14 @@ When the agent loop is running, any new messages sent should be **queued** (not 
 ### 11. Subsessions Panel Shows Nothing
 The SubSessionsPanel only shows data when the agent uses the `delegate` tool to spawn child sessions. For RCA tasks without delegation, this is expected. Consider showing "No sub-sessions" message instead of empty panel.
 
-### 12. Visualizations Tab (Design: [2026-03-10-visualizations-design.md](2026-03-10-visualizations-design.md))
+### 12. Kiali Graph Missing LiteLLM + Squid Proxy
+LiteLLM proxy and Squid egress proxy don't appear in the Kiali service graph. Possible reasons:
+- Squid runs as a separate Deployment (not a sidecar) — may not be in the Istio mesh if it lacks a sidecar proxy
+- LiteLLM may be in a different namespace or not Istio-injected
+- PVC volumes won't appear in Kiali (it shows network traffic only)
+- Fix: ensure both deployments have `istio.io/rev` label or are in ambient mesh
+
+### 13. Visualizations Tab (Design: [2026-03-10-visualizations-design.md](2026-03-10-visualizations-design.md))
 New tab in session detail showing agent loop visualizations. See linked design doc for details.
 
 ---
