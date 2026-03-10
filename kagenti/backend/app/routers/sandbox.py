@@ -1625,9 +1625,8 @@ async def _stream_sandbox_response(
                     if not line:
                         continue
                     line_count += 1
-                    # Log all data lines (not pings) for debugging
-                    if line.startswith("data:") or line_count <= 3:
-                        logger.info("Agent SSE [%d]: %s", line_count, line[:300])
+                    # Log all SSE lines for pipeline debugging
+                    logger.info("Agent SSE [%d]: %s", line_count, line[:300])
 
                     if line.startswith("data: "):
                         data = line[6:]
@@ -1782,10 +1781,16 @@ async def _stream_sandbox_response(
                             _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
                             has_loop_events = False
                             if status_message:
-                                for msg_line in status_message.split("\n"):
-                                    msg_line = msg_line.strip()
-                                    if not msg_line:
-                                        continue
+                                msg_lines = [
+                                    l.strip() for l in status_message.split("\n") if l.strip()
+                                ]
+                                logger.info(
+                                    "SSE_PARSE session=%s lines=%d preview=%s",
+                                    session_id,
+                                    len(msg_lines),
+                                    msg_lines[0][:120] if msg_lines else "(empty)",
+                                )
+                                for msg_line in msg_lines:
                                     try:
                                         parsed = json.loads(msg_line)
                                         if isinstance(parsed, dict) and "loop_id" in parsed:
