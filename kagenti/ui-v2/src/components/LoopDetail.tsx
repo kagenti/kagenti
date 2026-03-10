@@ -219,10 +219,26 @@ const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
 // Tool call / result rendering (matches SandboxPage ToolCallStep pattern)
 // ---------------------------------------------------------------------------
 
+/** One-line preview of tool args */
+function toolArgsPreview(args: unknown): string {
+  if (!args) return '';
+  const s = typeof args === 'string' ? args : JSON.stringify(args);
+  return s.replace(/[\n\r]+/g, ' ').substring(0, 80);
+}
+
+/** One-line preview of tool output */
+function toolOutputPreview(output: string | undefined): string {
+  if (!output) return '(no output)';
+  const first = output.split('\n')[0].substring(0, 80);
+  const hasError = /error|fail|denied|stderr/i.test(first);
+  return hasError ? `\u274c ${first}` : first;
+}
+
 const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({ call }) => {
   const [expanded, setExpanded] = useState(false);
 
   const label = call.name || 'unknown';
+  const preview = toolArgsPreview(call.args);
   return (
     <div
       style={{
@@ -238,6 +254,11 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({
     >
       <div style={{ fontWeight: 600 }}>
         {expanded ? '\u25bc' : '\u25b6'} Tool Call: {label}
+        {!expanded && preview && (
+          <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
+            {preview}{preview.length >= 80 ? '...' : ''}
+          </span>
+        )}
       </div>
       {expanded && (
         <pre
@@ -261,12 +282,14 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number] }> = ({
 const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
   const [expanded, setExpanded] = useState(false);
 
+  const preview = toolOutputPreview(result.output);
+  const hasError = /error|fail|denied|stderr/i.test(result.output || '');
   return (
     <div
       style={{
         margin: '4px 0',
         padding: '6px 10px',
-        borderLeft: '3px solid var(--pf-v5-global--success-color--100)',
+        borderLeft: `3px solid ${hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--success-color--100)'}`,
         backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
         borderRadius: '0 4px 4px 0',
         fontSize: '0.85em',
@@ -276,6 +299,11 @@ const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }
     >
       <div style={{ fontWeight: 600 }}>
         {expanded ? '\u25bc' : '\u25b6'} Result: {result.name || 'unknown'}
+        {!expanded && (
+          <span style={{ fontWeight: 400, color: hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
+            {preview}
+          </span>
+        )}
       </div>
       {expanded && (
         <pre
@@ -382,14 +410,21 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         <ReasoningBlock reasoning={step.description} />
       )}
 
-      {/* Tool calls */}
-      {step.toolCalls.map((tc, i) => (
-        <ToolCallBlock key={`call-${i}`} call={tc} />
-      ))}
-
-      {/* Tool results */}
-      {step.toolResults.map((tr, i) => (
-        <ToolResultBlock key={`result-${i}`} result={tr} />
+      {/* Tool calls paired with results — call followed by its result */}
+      {step.toolCalls.map((tc, i) => {
+        // Match result by index or by name
+        const matchedResult = step.toolResults[i] ||
+          step.toolResults.find((tr) => tr.name === tc.name && !step.toolCalls.slice(0, i).some((prev) => prev.name === tr.name));
+        return (
+          <div key={`tool-pair-${i}`} style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
+            <ToolCallBlock call={tc} />
+            {matchedResult && <ToolResultBlock result={matchedResult} />}
+          </div>
+        );
+      })}
+      {/* Orphan results (no matching call) */}
+      {step.toolResults.slice(step.toolCalls.length).map((tr, i) => (
+        <ToolResultBlock key={`orphan-result-${i}`} result={tr} />
       ))}
     </div>
   );
