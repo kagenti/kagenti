@@ -117,14 +117,55 @@ After the SSE stream ends, the backend should **poll the agent's A2A task endpoi
 
 ---
 
-## Remaining P0 items (from Session X)
+## Session Y Progress (2026-03-11)
+
+### FIXED in this session
+
+| Fix | Commits |
+|-----|---------|
+| **loop_events persistence** | GeneratorExit killed `await conn.execute()` in finally block. Moved ALL persistence to background task `_persist_and_recover()` — immune to GeneratorExit. |
+| **Recovery polling** | `_recover_loop_events_from_agent` now polls with exponential backoff (5s→60s, 10 retries) waiting for task COMPLETED/FAILED state. |
+| **micro_reasoning events** | New event type emitted between executor tool calls. Each executor micro-step captures reasoning, prompt, tokens. |
+| **PromptInspector overlay** | Fullscreen overlay (ESC/X to close) showing system prompt, input messages, LLM response, tokens for any node. |
+| **Full prompt data** | Increased truncation: system_prompt 3K→10K, messages 500→5000 chars, 30→100 entries. Model name now populated. |
+| **Token display** | micro-reasoning blocks show token usage and model name inline. |
+
+### NEW P0: Token Budget Not Enforced
+
+**CRITICAL**: `budget.add_tokens()` is NEVER called — token tracking is dead code.
+- `AgentBudget.max_tokens = 1_000_000` exists but `tokens_used` is never incremented
+- `tokens_exceeded` is never checked by any node
+- Only `max_iterations` is enforced (in reflector only)
+- Session `10f9e8471d034583a09f900c9c589617` consumed 1.49M tokens without stopping
+
+**Fix needed in `reasoning.py`:**
+1. After each LLM call, call `budget.add_tokens(prompt_tokens + completion_tokens)`
+2. In reflector AND executor, check `budget.tokens_exceeded` and force done
+3. Emit a `budget_update` event after each node with current usage
+
+### NEW P0: Context Window Management
+
+**Problem**: LangGraph message history grows unbounded. Each LLM call includes ALL previous messages. When history exceeds the model's context window (131K for Llama 4 Scout), calls either fail or get truncated silently.
+
+**UI shows wrong number**: Stats tab shows "1,489,577 / 131,072 tokens (1136.5%)" — this compares CUMULATIVE tokens (all calls summed) to the PER-CALL context window. These are different metrics:
+- **Cumulative usage**: total tokens consumed across all LLM calls (budget tracking)
+- **Context window usage**: tokens in the CURRENT call vs model's max context
+
+**Needs:**
+1. **Message trimming in graph**: Before each LLM call, trim history to fit within context window (e.g., keep system prompt + last N messages within 100K). Use LangGraph's `trim_messages` or custom trimmer.
+2. **Per-call context tracking**: Emit `prompt_tokens` per node (already done), show it as "context: X/131K" in the UI.
+3. **UI fix**: Don't show cumulative tokens as context window %. Show two separate metrics:
+   - "Total usage: 1.49M tokens" (cumulative, budget)
+   - "Last call: 45K/131K context" (per-call, window)
+
+### Remaining P0 items (from Session X)
 
 | # | Item | Notes |
 |---|------|-------|
-| 1 | **loop_events persistence** | Root cause investigation above |
+| 1 | ~~loop_events persistence~~ | FIXED — background task |
 | 2 | **Budget controls in wizard** | Step showing SANDBOX_* defaults, passed as env vars |
 | 3 | **RCA quality 3/5** | Reporter prompt formatting for Llama 4 Scout |
-| 4 | **Agent ends after few steps** | Verify graph topology fix works |
+| 4 | ~~Agent ends after few steps~~ | Partially fixed — recovery polling fills gaps |
 | 5 | **Message queue + cancel button** | Queue messages during loop, cancel button top right |
 | 6 | **Visualizations tab** | Design doc at `2026-03-10-visualizations-design.md` |
 | 7 | **Kiali ambient mesh** | LiteLLM + Squid need `istio.io/dataplane-mode: ambient` |
@@ -135,6 +176,10 @@ After the SSE stream ends, the backend should **poll the agent's A2A task endpoi
 | 12 | **Reflector prompt says "continue"** | Should say "execute" to match route name |
 | 13 | **Loop failure reason not shown** | Failed agent loops should show the error reason next to the failure icon |
 | 14 | **Agent writes outside workspace** | `mkdir ../../output` fails — skills/prompts reference paths outside `/workspace` |
+| 15 | **Token budget enforcement** | NEW — `add_tokens()` never called, budget is dead code |
+| 16 | **Context window management** | NEW — no message trimming, UI shows wrong metric |
+| 17 | **DB persistence gap** | BG persist logs UPDATE completed but DB shows no loop_events |
+| 18 | **SSE stream drops events** | Only router event reaches backend via SSE; rest come via recovery |
 
 ## Checking Logs After Tests
 
