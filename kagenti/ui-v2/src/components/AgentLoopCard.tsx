@@ -49,14 +49,17 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
   const [expanded, setExpanded] = useState(false);
   const wasStreaming = useRef(false);
 
-  // Auto-expand during streaming, auto-collapse when streaming finishes
+  // Auto-expand during streaming, auto-collapse only when loop completes with an answer
   useEffect(() => {
     if (isStreaming) {
       setExpanded(true);
       wasStreaming.current = true;
     } else if (wasStreaming.current) {
-      // Streaming just stopped — collapse
-      setExpanded(false);
+      // Streaming stopped — only collapse if loop has a final answer (success).
+      // Keep expanded for failed/executing loops so the user can see what happened.
+      if (loop.status === 'done' && loop.finalAnswer) {
+        setExpanded(false);
+      }
       wasStreaming.current = false;
     }
   }, [isStreaming]);
