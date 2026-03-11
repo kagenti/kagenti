@@ -2440,3 +2440,148 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get(
+    "/{namespace}/sessions/{session_id}/subscribe",
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def subscribe_session(
+    namespace: str,
+    session_id: str,
+    user: TokenData = Depends(get_required_user),
+):
+    """Subscribe to a running session's event stream via tasks/resubscribe.
+
+    Used when the UI opens a session that's still in 'working' state.
+    Returns an SSE stream of events from the agent without resending
+    the original message.
+    """
+    _validate_namespace(namespace)
+
+    # Look up the A2A task ID and agent name for this session
+    pool = await get_session_pool(namespace)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, status::json->>'state' as state FROM tasks "
+            "WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            session_id,
+        )
+    if not row:
+        raise HTTPException(404, "Session not found")
+
+    task_id = row["id"]
+    state = (row["state"] or "").lower()
+    if state in ("completed", "failed", "canceled"):
+        # Task already finished — nothing to subscribe to
+        return StreamingResponse(
+            _done_stream(session_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    agent_name = await _resolve_agent_name(namespace, session_id, None)
+    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+
+    return StreamingResponse(
+        _subscribe_stream(agent_url, task_id, session_id, namespace),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _done_stream(session_id: str):
+    """Emit a single done event for already-completed sessions."""
+    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+
+
+async def _subscribe_stream(
+    agent_url: str,
+    task_id: str,
+    session_id: str,
+    namespace: str,
+):
+    """Proxy A2A tasks/resubscribe events to the browser."""
+    _KEEPALIVE_INTERVAL = 15
+    resub_msg = {
+        "jsonrpc": "2.0",
+        "id": str(uuid4()),
+        "method": "tasks/resubscribe",
+        "params": {"id": task_id},
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "POST",
+                agent_url,
+                json=resub_msg,
+            ) as response:
+                if response.status_code != 200:
+                    logger.warning("Subscribe: resubscribe returned %d", response.status_code)
+                    yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                    return
+
+                logger.info("Subscribe: connected to agent stream for session %s", session_id)
+                line_iter = response.aiter_lines().__aiter__()
+
+                while True:
+                    try:
+                        line = await asyncio.wait_for(
+                            line_iter.__anext__(),
+                            timeout=_KEEPALIVE_INTERVAL,
+                        )
+                    except asyncio.TimeoutError:
+                        yield f"data: {json.dumps({'ping': True})}\n\n"
+                        continue
+                    except StopAsyncIteration:
+                        break
+
+                    if not line or not line.startswith("data: "):
+                        continue
+
+                    data = line[6:]
+                    if data == "[DONE]":
+                        logger.info("Subscribe: received [DONE] for session %s", session_id)
+                        yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                        return
+
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if "result" not in chunk:
+                        continue
+
+                    result = chunk["result"]
+                    payload: dict = {"session_id": session_id}
+
+                    # Forward loop events
+                    if "status" in result and "message" in result.get("status", {}):
+                        parts = result["status"].get("message", {}).get("parts", [])
+                        status_message = _extract_text_from_parts(parts)
+                        if status_message:
+                            _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
+                            for msg_line in [
+                                l.strip() for l in status_message.split("\n") if l.strip()
+                            ]:
+                                try:
+                                    parsed = json.loads(msg_line)
+                                    if isinstance(parsed, dict) and "loop_id" in parsed:
+                                        evt_type = parsed.get("type", "")
+                                        if evt_type not in _LEGACY:
+                                            loop_payload = dict(payload)
+                                            loop_payload["loop_id"] = parsed["loop_id"]
+                                            loop_payload["loop_event"] = parsed
+                                            yield f"data: {json.dumps(loop_payload)}\n\n"
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+
+    except Exception as e:
+        logger.warning("Subscribe stream error: %s", e)
+        yield f"data: {json.dumps({'error': str(e), 'session_id': session_id})}\n\n"

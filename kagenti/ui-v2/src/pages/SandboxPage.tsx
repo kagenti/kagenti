@@ -950,6 +950,83 @@ export const SandboxPage: React.FC = () => {
     };
   };
 
+  /** Subscribe to a running session's event stream via tasks/resubscribe. */
+  const _subscribeToSession = async (ns: string, ctxId: string) => {
+    try {
+      const token = await getToken();
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const url = `/api/v1/sandbox/${encodeURIComponent(ns)}/sessions/${encodeURIComponent(ctxId)}/subscribe`;
+      const response = await fetch(url, { headers });
+      if (!response.ok || !response.body) {
+        console.log('[subscribe] Not available or session completed');
+        return;
+      }
+
+      console.log('[subscribe] Connected to live stream');
+      setIsStreaming(true);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (!raw) continue;
+            try {
+              const data = JSON.parse(raw);
+              if (data.done) {
+                console.log('[subscribe] Stream done');
+                // Reload history to get final state
+                await loadInitialHistory(ns, ctxId);
+                return;
+              }
+              if (data.ping) continue;
+              if (data.loop_id && data.loop_event) {
+                // Apply loop event to agentLoops
+                setAgentLoops((prev) => {
+                  const next = new Map(prev);
+                  const loopId = data.loop_id;
+                  const existing = next.get(loopId) || {
+                    id: loopId, status: 'executing' as const, model: '',
+                    plan: [], replans: [], currentStep: 0, totalSteps: 0,
+                    iteration: 0, steps: [], budget: { tokensUsed: 0, tokensBudget: 0, iterationsUsed: 0, iterationsBudget: 0 },
+                  };
+                  // Use applyLoopEvent if available, otherwise basic append
+                  const evt = data.loop_event;
+                  const evtType = evt.type;
+                  if (evtType === 'reporter_output') {
+                    existing.finalAnswer = evt.content || evt.final_answer || '';
+                    existing.status = 'done';
+                  }
+                  next.set(loopId, { ...existing });
+                  return next;
+                });
+              }
+            } catch {
+              // skip parse errors
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+        setIsStreaming(false);
+      }
+    } catch (err) {
+      console.warn('[subscribe] Error:', err);
+      setIsStreaming(false);
+    }
+  };
+
   /** Load the initial (most recent) page of history. */
   const loadInitialHistory = useCallback(
     async (ns: string, ctxId: string) => {
@@ -1002,6 +1079,14 @@ export const SandboxPage: React.FC = () => {
             const loops = buildAgentLoops(events);
             console.log(`[history] Reconstructed ${loops.size} loop(s):`, Array.from(loops.entries()).map(([lid, l]) => ({ id: lid, status: l.status, steps: l.steps.length, finalAnswer: !!l.finalAnswer })));
             setAgentLoops(loops);
+
+            // If no loop has a finalAnswer, the agent may still be running.
+            // Subscribe to the live event stream to get real-time updates.
+            const hasComplete = Array.from(loops.values()).some((l) => l.finalAnswer);
+            if (!hasComplete && ctxId) {
+              console.log('[history] No final answer — subscribing to live stream');
+              _subscribeToSession(ns, ctxId);
+            }
           }
         }
       } catch {
@@ -1625,10 +1710,12 @@ export const SandboxPage: React.FC = () => {
           if (loop.finalAnswer) {
             next.set(id, { ...loop, status: 'done' });
           } else {
+            // Don't mark as "failed" — the agent may still be processing.
+            // Keep as "executing" so the UI shows an in-progress state.
+            // The user can reload to check for updates.
             next.set(id, {
               ...loop,
-              status: 'failed',
-              failureReason: 'Stream disconnected before agent completed. The agent may still be processing — reload to check for updates.',
+              status: 'executing',
             });
           }
         }
