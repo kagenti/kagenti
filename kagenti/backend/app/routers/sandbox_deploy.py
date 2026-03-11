@@ -101,7 +101,7 @@ class SandboxCreateRequest(BaseModel):
     max_tool_calls_per_step: int = 10
     max_wall_clock_s: int = 600
     hitl_interval: int = 50
-    recursion_limit: int = 2000
+    recursion_limit: int = 300
 
     @property
     def profile(self):
