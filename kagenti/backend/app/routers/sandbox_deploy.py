@@ -442,6 +442,8 @@ def _build_egress_proxy_manifests(req: SandboxCreateRequest) -> tuple[dict, dict
         "app.kubernetes.io/name": name,
         "app.kubernetes.io/part-of": req.name,
         "app.kubernetes.io/managed-by": "kagenti-ui",
+        "istio.io/dataplane-mode": "ambient",
+        "istio.io/use-waypoint": "waypoint",
     }
     deployment = {
         "apiVersion": "apps/v1",
