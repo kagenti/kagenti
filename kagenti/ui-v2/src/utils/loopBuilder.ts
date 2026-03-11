@@ -57,6 +57,8 @@ export interface LoopEvent {
   status?: 'success' | 'error' | 'timeout' | 'pending';
   /** call_id that this micro-reasoning follows */
   after_call_id?: string;
+  /** Step selector brief for the executor */
+  brief?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +351,32 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
           systemPrompt: le.system_prompt,
           promptMessages: le.prompt_messages,
+          toolCalls: [],
+          toolResults: [],
+          durationMs: 0,
+          createdAt: now(),
+          updatedAt: now(),
+          status: 'done' as const,
+        },
+      ],
+    };
+  }
+
+  if (eventType === 'step_selector') {
+    return {
+      ...loop,
+      status: 'planning',
+      currentStep: le.current_step ?? loop.currentStep,
+      steps: [
+        ...loop.steps.map((s) => s.status === 'running' ? { ...s, status: 'done' as const } : s),
+        {
+          index: le.step as number,
+          planStep: le.current_step,
+          description: le.description || `Advancing to step ${(le.current_step ?? 0) + 1}`,
+          reasoning: le.brief || le.description || '',
+          model: '',
+          nodeType: 'planner' as const,
+          tokens: { prompt: 0, completion: 0 },
           toolCalls: [],
           toolResults: [],
           durationMs: 0,
