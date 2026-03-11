@@ -54,7 +54,6 @@ export interface WizardState {
   secctx: boolean;
   landlock: boolean;
   proxy: boolean;
-  gvisor: boolean;
   proxyDomains: string;
   workspaceSize: string;
   sessionTtl: string;
@@ -73,6 +72,13 @@ export interface WizardState {
   otelEndpoint: string;
   enableMlflow: boolean;
   model: string;
+  // Step 6: Budget
+  maxIterations: number;
+  maxTokens: number;
+  maxToolCallsPerStep: number;
+  maxWallClockS: number;
+  hitlInterval: number;
+  recursionLimit: number;
 }
 
 export const INITIAL_STATE: WizardState = {
@@ -86,7 +92,6 @@ export const INITIAL_STATE: WizardState = {
   secctx: true,
   landlock: false,
   proxy: false,
-  gvisor: false,
   proxyDomains: 'github.com, pypi.org',
   workspaceSize: '5Gi',
   sessionTtl: '7d',
@@ -102,6 +107,12 @@ export const INITIAL_STATE: WizardState = {
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
   model: 'llama-4-scout',
+  maxIterations: 100,
+  maxTokens: 1000000,
+  maxToolCallsPerStep: 10,
+  maxWallClockS: 600,
+  hitlInterval: 50,
+  recursionLimit: 50,
 };
 
 const STEPS = [
@@ -110,6 +121,7 @@ const STEPS = [
   'Identity',
   'Persistence',
   'Observability',
+  'Budget',
   'Review',
 ];
 
@@ -172,7 +184,6 @@ function configToWizardState(config: Record<string, unknown>): Partial<WizardSta
   if (config.secctx != null) ws.secctx = Boolean(config.secctx);
   if (config.landlock != null) ws.landlock = Boolean(config.landlock);
   if (config.proxy != null) ws.proxy = Boolean(config.proxy);
-  if (config.gvisor != null) ws.gvisor = Boolean(config.gvisor);
   if (config.proxy_domains != null) ws.proxyDomains = String(config.proxy_domains);
   if (config.enable_persistence != null) ws.enablePersistence = Boolean(config.enable_persistence);
   if (config.db_source != null) ws.dbSource = config.db_source as 'in-cluster' | 'external';
@@ -183,6 +194,12 @@ function configToWizardState(config: Record<string, unknown>): Partial<WizardSta
   if (config.credential_mode != null) ws.credentialMode = config.credential_mode as 'pat' | 'github-app';
   if (config.llm_key_source != null) ws.llmKeySource = config.llm_key_source as 'new' | 'existing';
   if (config.llm_secret_name != null) ws.llmSecretName = String(config.llm_secret_name);
+  if (config.maxIterations != null) ws.maxIterations = Number(config.maxIterations);
+  if (config.maxTokens != null) ws.maxTokens = Number(config.maxTokens);
+  if (config.maxToolCallsPerStep != null) ws.maxToolCallsPerStep = Number(config.maxToolCallsPerStep);
+  if (config.maxWallClockS != null) ws.maxWallClockS = Number(config.maxWallClockS);
+  if (config.hitlInterval != null) ws.hitlInterval = Number(config.hitlInterval);
+  if (config.recursionLimit != null) ws.recursionLimit = Number(config.recursionLimit);
   return ws;
 }
 
@@ -258,13 +275,19 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         secctx: state.secctx,
         landlock: state.landlock,
         proxy: state.proxy,
-        gvisor: state.gvisor,
         proxy_domains: state.proxy ? state.proxyDomains : undefined,
         // Credentials
         github_pat: state.githubPat || undefined,
         llm_api_key: state.llmApiKey || undefined,
         llm_key_source: state.llmKeySource,
         llm_secret_name: state.llmSecretName,
+        // Budget controls
+        max_iterations: state.maxIterations,
+        max_tokens: state.maxTokens,
+        max_tool_calls_per_step: state.maxToolCallsPerStep,
+        max_wall_clock_s: state.maxWallClockS,
+        hitl_interval: state.hitlInterval,
+        recursion_limit: state.recursionLimit,
       };
 
       if (mode === 'reconfigure' && agentName) {
@@ -390,43 +413,36 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         </FormSelect>
       </FormGroup>
       <FormGroup label="Security Layers" fieldId="security-layers">
-        <Switch
-          id="secctx"
-          label="Container Hardening (non-root, drop caps, seccomp)"
-          isChecked={state.secctx}
-          onChange={(_e, c) => update('secctx', c)}
-          style={{ marginBottom: 8 }}
-        />
-        <Switch
-          id="landlock"
-          label="Landlock Filesystem Sandbox"
-          isChecked={state.landlock}
-          onChange={(_e, c) => update('landlock', c)}
-          style={{ marginBottom: 8 }}
-        />
-        <Switch
-          id="proxy"
-          label="Network Proxy (egress allowlist)"
-          isChecked={state.proxy}
-          onChange={(_e, c) => update('proxy', c)}
-          style={{ marginBottom: 8 }}
-        />
-        {state.proxy && (
-          <FormGroup label="Allowed Domains" fieldId="proxy-domains" style={{ marginLeft: 24, marginBottom: 8 }}>
-            <TextArea
-              id="proxy-domains"
-              value={state.proxyDomains}
-              onChange={(_e, v) => update('proxyDomains', v)}
-              rows={2}
-            />
-          </FormGroup>
-        )}
-        <Switch
-          id="gvisor"
-          label="gVisor Kernel Sandbox"
-          isChecked={state.gvisor}
-          onChange={(_e, c) => update('gvisor', c)}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Switch
+            id="secctx"
+            label="Container Hardening (non-root, drop caps, seccomp)"
+            isChecked={state.secctx}
+            onChange={(_e, c) => update('secctx', c)}
+          />
+          <Switch
+            id="landlock"
+            label="Landlock Filesystem Sandbox"
+            isChecked={state.landlock}
+            onChange={(_e, c) => update('landlock', c)}
+          />
+          <Switch
+            id="proxy"
+            label="Network Proxy (egress allowlist)"
+            isChecked={state.proxy}
+            onChange={(_e, c) => update('proxy', c)}
+          />
+          {state.proxy && (
+            <FormGroup label="Allowed Domains" fieldId="proxy-domains" style={{ marginLeft: 24 }}>
+              <TextArea
+                id="proxy-domains"
+                value={state.proxyDomains}
+                onChange={(_e, v) => update('proxyDomains', v)}
+                rows={2}
+              />
+            </FormGroup>
+          )}
+        </div>
       </FormGroup>
       <Split hasGutter>
         <SplitItem isFilled>
@@ -523,7 +539,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
             onChange={(_e, v) => update('llmSecretName', v)}
             placeholder="openai-secret"
           />
-          <div style={{ fontSize: '0.82em', color: 'var(--pf-v5-global--Color--200)', marginTop: 4 }}>
+          <div className="pf-v5-c-form__helper-text" style={{ fontSize: '0.82em', marginTop: 4 }}>
             Kubernetes Secret in the target namespace containing the API key.
           </div>
         </FormGroup>
@@ -537,7 +553,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
             onChange={(_e, v) => update('llmApiKey', v)}
             placeholder="sk-..."
           />
-          <div style={{ fontSize: '0.82em', color: 'var(--pf-v5-global--Color--200)', marginTop: 4 }}>
+          <div className="pf-v5-c-form__helper-text" style={{ fontSize: '0.82em', marginTop: 4 }}>
             Will be stored as a Kubernetes Secret in the target namespace.
           </div>
         </FormGroup>
@@ -629,6 +645,65 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
     </Form>
   );
 
+  const renderBudgetStep = () => (
+    <Form>
+      <Split hasGutter>
+        <SplitItem isFilled>
+          <FormGroup label="Max Iterations" fieldId="max-iterations"
+            helperText="Outer reasoning loops (planner → executor → reflector)">
+            <TextInput id="max-iterations" type="number"
+              value={String(state.maxIterations)}
+              onChange={(_e, v) => update('maxIterations', Number(v) || 100)} />
+          </FormGroup>
+        </SplitItem>
+        <SplitItem isFilled>
+          <FormGroup label="Max Tokens" fieldId="max-tokens"
+            helperText="Total prompt + completion tokens per message">
+            <TextInput id="max-tokens" type="number"
+              value={String(state.maxTokens)}
+              onChange={(_e, v) => update('maxTokens', Number(v) || 1000000)} />
+          </FormGroup>
+        </SplitItem>
+      </Split>
+      <Split hasGutter>
+        <SplitItem isFilled>
+          <FormGroup label="Max Wall Clock (seconds)" fieldId="max-wall-clock"
+            helperText="Maximum time per message run">
+            <TextInput id="max-wall-clock" type="number"
+              value={String(state.maxWallClockS)}
+              onChange={(_e, v) => update('maxWallClockS', Number(v) || 600)} />
+          </FormGroup>
+        </SplitItem>
+        <SplitItem isFilled>
+          <FormGroup label="Tool Calls Per Step" fieldId="max-tool-calls"
+            helperText="Max tool invocations per plan step">
+            <TextInput id="max-tool-calls" type="number"
+              value={String(state.maxToolCallsPerStep)}
+              onChange={(_e, v) => update('maxToolCallsPerStep', Number(v) || 10)} />
+          </FormGroup>
+        </SplitItem>
+      </Split>
+      <Split hasGutter>
+        <SplitItem isFilled>
+          <FormGroup label="HITL Check-in Interval" fieldId="hitl-interval"
+            helperText="Iterations between human-in-the-loop check-ins">
+            <TextInput id="hitl-interval" type="number"
+              value={String(state.hitlInterval)}
+              onChange={(_e, v) => update('hitlInterval', Number(v) || 50)} />
+          </FormGroup>
+        </SplitItem>
+        <SplitItem isFilled>
+          <FormGroup label="Recursion Limit" fieldId="recursion-limit"
+            helperText="LangGraph graph recursion limit">
+            <TextInput id="recursion-limit" type="number"
+              value={String(state.recursionLimit)}
+              onChange={(_e, v) => update('recursionLimit', Number(v) || 50)} />
+          </FormGroup>
+        </SplitItem>
+      </Split>
+    </Form>
+  );
+
   const renderReviewStep = () => (
     <>
       <DescriptionList isHorizontal>
@@ -675,6 +750,12 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           </DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
+          <DescriptionListTerm>Budget</DescriptionListTerm>
+          <DescriptionListDescription>
+            {state.maxIterations} iterations, {(state.maxTokens / 1000).toFixed(0)}K tokens, {state.maxWallClockS}s wall clock
+          </DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
           <DescriptionListTerm>LLM API Key</DescriptionListTerm>
           <DescriptionListDescription>
             {state.llmKeySource === 'existing'
@@ -705,6 +786,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
     renderIdentityStep,
     renderPersistenceStep,
     renderObservabilityStep,
+    renderBudgetStep,
     renderReviewStep,
   ];
 
@@ -722,8 +804,11 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
             titleId={`step-${i}-title`}
             isCurrent={i === step}
             aria-label={label}
-            onClick={() => i < step && setStep(i)}
-            style={{ cursor: i < step ? 'pointer' : 'default' }}
+            onClick={() => {
+              // Allow backward always; forward only if current step passes validation
+              if (i < step || canAdvance()) setStep(i);
+            }}
+            style={{ cursor: (i < step || canAdvance()) ? 'pointer' : 'default' }}
           >
             {label}
           </ProgressStep>

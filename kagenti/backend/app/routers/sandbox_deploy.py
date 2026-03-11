@@ -79,7 +79,6 @@ class SandboxCreateRequest(BaseModel):
     secctx: bool = True
     landlock: bool = False
     proxy: bool = False
-    gvisor: bool = False
     proxy_domains: Optional[str] = None
     # Deployment mechanism
     managed_lifecycle: bool = False
@@ -96,6 +95,13 @@ class SandboxCreateRequest(BaseModel):
     llm_secret_name: str = ""  # Empty = use cluster default (DEFAULT_LLM_SECRET)
     # Skill packs (Session M)
     skill_packs: list[str] = []  # Pack names from skill-packs.yaml (empty = defaults)
+    # Budget controls (passed as SANDBOX_* env vars to the agent)
+    max_iterations: int = 100
+    max_tokens: int = 1_000_000
+    max_tool_calls_per_step: int = 10
+    max_wall_clock_s: int = 600
+    hitl_interval: int = 50
+    recursion_limit: int = 50
 
     @property
     def profile(self):
@@ -107,7 +113,6 @@ class SandboxCreateRequest(BaseModel):
             secctx=self.secctx,
             landlock=self.landlock,
             proxy=self.proxy,
-            gvisor=self.gvisor,
             managed_lifecycle=self.managed_lifecycle,
             ttl_hours=self.ttl_hours,
             namespace=self.namespace,
@@ -264,6 +269,16 @@ def _build_deployment_manifest(
         env_vars.append({"name": "TASK_STORE_DB_URL", "value": db_url})
         env_vars.append({"name": "CHECKPOINT_DB_URL", "value": checkpoint_url})
 
+    # Budget env vars (consumed by AgentBudget dataclass in the agent)
+    env_vars.append({"name": "SANDBOX_MAX_ITERATIONS", "value": str(req.max_iterations)})
+    env_vars.append({"name": "SANDBOX_MAX_TOKENS", "value": str(req.max_tokens)})
+    env_vars.append(
+        {"name": "SANDBOX_MAX_TOOL_CALLS_PER_STEP", "value": str(req.max_tool_calls_per_step)}
+    )
+    env_vars.append({"name": "SANDBOX_MAX_WALL_CLOCK_S", "value": str(req.max_wall_clock_s)})
+    env_vars.append({"name": "SANDBOX_HITL_INTERVAL", "value": str(req.hitl_interval)})
+    env_vars.append({"name": "SANDBOX_RECURSION_LIMIT", "value": str(req.recursion_limit)})
+
     labels = {
         "kagenti.io/type": "agent",
         "kagenti.io/protocol": "a2a",
@@ -347,11 +362,16 @@ def _build_deployment_manifest(
                 "kagenti.io/cfg-secctx": str(req.secctx).lower(),
                 "kagenti.io/cfg-landlock": str(req.landlock).lower(),
                 "kagenti.io/cfg-proxy": str(req.proxy).lower(),
-                "kagenti.io/cfg-gvisor": str(req.gvisor).lower(),
                 "kagenti.io/cfg-proxy-domains": req.proxy_domains or "",
                 "kagenti.io/cfg-llm-key-source": req.llm_key_source,
                 "kagenti.io/cfg-llm-secret-name": req.llm_secret_name,
                 "kagenti.io/cfg-db-source": "postgres" if req.enable_persistence else "none",
+                "kagenti.io/cfg-max-iterations": str(req.max_iterations),
+                "kagenti.io/cfg-max-tokens": str(req.max_tokens),
+                "kagenti.io/cfg-max-tool-calls-per-step": str(req.max_tool_calls_per_step),
+                "kagenti.io/cfg-max-wall-clock-s": str(req.max_wall_clock_s),
+                "kagenti.io/cfg-hitl-interval": str(req.hitl_interval),
+                "kagenti.io/cfg-recursion-limit": str(req.recursion_limit),
             },
         },
         "spec": {
@@ -819,14 +839,27 @@ _CFG_KEY_MAP = {
     "cfg-secctx": "secctx",
     "cfg-landlock": "landlock",
     "cfg-proxy": "proxy",
-    "cfg-gvisor": "gvisor",
     "cfg-proxy-domains": "proxyDomains",
     "cfg-llm-key-source": "llmKeySource",
     "cfg-llm-secret-name": "llmSecretName",
     "cfg-db-source": "dbSource",
+    "cfg-max-iterations": "maxIterations",
+    "cfg-max-tokens": "maxTokens",
+    "cfg-max-tool-calls-per-step": "maxToolCallsPerStep",
+    "cfg-max-wall-clock-s": "maxWallClockS",
+    "cfg-hitl-interval": "hitlInterval",
+    "cfg-recursion-limit": "recursionLimit",
 }
 
-_BOOL_KEYS = {"enablePersistence", "secctx", "landlock", "proxy", "gvisor"}
+_BOOL_KEYS = {"enablePersistence", "secctx", "landlock", "proxy"}
+_INT_KEYS = {
+    "maxIterations",
+    "maxTokens",
+    "maxToolCallsPerStep",
+    "maxWallClockS",
+    "hitlInterval",
+    "recursionLimit",
+}
 
 # Fields whose change means the container image must be rebuilt
 _BUILD_FIELDS = {"cfg-repo", "cfg-branch", "cfg-context-dir", "cfg-dockerfile", "cfg-base-agent"}
@@ -859,6 +892,11 @@ async def get_sandbox_config(
             continue
         if camel_key in _BOOL_KEYS:
             config[camel_key] = value.lower() == "true"
+        elif camel_key in _INT_KEYS:
+            try:
+                config[camel_key] = int(value)
+            except (ValueError, TypeError):
+                config[camel_key] = value
         else:
             config[camel_key] = value
 

@@ -430,10 +430,12 @@ export function buildAgentLoops(events: LoopEvent[]): Map<string, AgentLoop> {
     if (hasReporter) {
       loop.status = 'done';
     } else {
-      // Loop didn't complete — stream was likely interrupted
-      loop.status = 'failed';
-      if (!loop.finalAnswer) {
-        loop.finalAnswer = 'Agent loop was interrupted before completion.';
+      // Loop didn't complete — may still be running or was interrupted.
+      // Don't set finalAnswer — that would prevent subscribe reconnection.
+      // Use failureReason instead for the UI to show.
+      if (loop.status !== 'done') {
+        loop.status = 'executing';
+        loop.failureReason = loop.failureReason || 'Agent loop in progress or was interrupted.';
       }
     }
     // Finalize any steps still marked as running/pending — in a completed or

@@ -19,6 +19,13 @@ import type { AgentLoop } from '../types/agentLoop';
 import { LoopSummaryBar } from './LoopSummaryBar';
 import { LoopDetail } from './LoopDetail';
 
+/** Check if the loop failed due to recursion limit (not a real error). */
+function isRecursionLimitHit(loop: AgentLoop): boolean {
+  if (loop.status !== 'failed') return false;
+  const reason = (loop.failureReason || '').toLowerCase();
+  return reason.includes('recursion') || reason.includes('recursion_limit');
+}
+
 interface AgentLoopCardProps {
   loop: AgentLoop;
   isStreaming?: boolean;
@@ -64,7 +71,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
         padding: '10px 14px',
         marginBottom: 4,
         borderRadius: 8,
-        border: `1px solid ${borderColor(loop.status)}`,
+        border: `1px solid ${isRecursionLimitHit(loop) ? '#d97706' : borderColor(loop.status)}`,
         backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
       }}
     >
@@ -90,22 +97,35 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Failure reason — show prominently when loop failed */}
         {loop.status === 'failed' && !loop.finalAnswer && (
-          <div style={{
-            fontSize: '0.88em', marginBottom: 8, padding: '8px 12px',
-            backgroundColor: 'var(--pf-v5-global--danger-color--100, #c9190b)',
-            color: '#fff', borderRadius: 4,
-          }}>
-            <strong>Failed</strong>
-            {loop.failureReason && <span> — {loop.failureReason}</span>}
-            {!loop.failureReason && loop.steps.length > 0 && (() => {
-              // Extract failure reason from the last reflector assessment
-              const lastStep = [...loop.steps].reverse().find(s =>
-                s.eventType === 'reflector_decision' || s.nodeType === 'reflector'
-              );
-              const reason = lastStep?.reasoning || lastStep?.description;
-              return reason ? <span> — {reason.substring(0, 300)}</span> : null;
-            })()}
-          </div>
+          isRecursionLimitHit(loop) ? (
+            <div style={{
+              fontSize: '0.88em', marginBottom: 8, padding: '8px 12px',
+              backgroundColor: '#d97706',
+              color: '#fff', borderRadius: 4,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span>
+                <strong>Recursion limit reached</strong>
+                {loop.failureReason && <span> — {loop.failureReason}</span>}
+              </span>
+            </div>
+          ) : (
+            <div style={{
+              fontSize: '0.88em', marginBottom: 8, padding: '8px 12px',
+              backgroundColor: 'var(--pf-v5-global--danger-color--100, #c9190b)',
+              color: '#fff', borderRadius: 4,
+            }}>
+              <strong>Failed</strong>
+              {loop.failureReason && <span> — {loop.failureReason}</span>}
+              {!loop.failureReason && loop.steps.length > 0 && (() => {
+                const lastStep = [...loop.steps].reverse().find(s =>
+                  s.eventType === 'reflector_decision' || s.nodeType === 'reflector'
+                );
+                const reason = lastStep?.reasoning || lastStep?.description;
+                return reason ? <span> — {reason.substring(0, 300)}</span> : null;
+              })()}
+            </div>
+          )
         )}
 
         {/* Final answer — always visible */}
