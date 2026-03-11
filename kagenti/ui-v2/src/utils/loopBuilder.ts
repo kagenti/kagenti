@@ -161,6 +161,28 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         model: le.model || loop.model,
       };
     }
+    // Update existing step IN PLACE to preserve chronological ordering
+    // relative to planner/reflector steps. Don't filter+push (reorders).
+    if (existingStep) {
+      const updatedStep = {
+        ...existingStep,
+        description: le.description || existingStep.description || '',
+        model: le.model || existingStep.model || loop.model,
+        reasoning: (le.reasoning as string) || existingStep.reasoning || undefined,
+        systemPrompt: le.system_prompt || existingStep.systemPrompt,
+        promptMessages: le.prompt_messages || existingStep.promptMessages,
+        tokens: { prompt: le.prompt_tokens || existingStep.tokens?.prompt || 0, completion: le.completion_tokens || existingStep.tokens?.completion || 0 },
+      };
+      return {
+        ...loop,
+        status: 'executing',
+        currentStep: le.step ?? loop.currentStep,
+        totalSteps: le.total_steps ?? loop.totalSteps,
+        model: le.model || loop.model,
+        steps: loop.steps.map((s) => s.index === le.step ? updatedStep : s),
+      };
+    }
+    // No existing step — create new one at the end
     return {
       ...loop,
       status: 'executing',
@@ -168,21 +190,21 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       totalSteps: le.total_steps ?? loop.totalSteps,
       model: le.model || loop.model,
       steps: [
-        ...loop.steps.filter((s) => s.index !== le.step),
+        ...loop.steps,
         {
           index: le.step as number,
-          description: le.description || existingStep?.description || '',
+          description: le.description || '',
           model: le.model || loop.model,
-          reasoning: (le.reasoning as string) || existingStep?.reasoning || undefined,
-          systemPrompt: le.system_prompt || existingStep?.systemPrompt,
-          promptMessages: le.prompt_messages || existingStep?.promptMessages,
+          reasoning: (le.reasoning as string) || undefined,
+          systemPrompt: le.system_prompt,
+          promptMessages: le.prompt_messages,
           nodeType: 'executor' as const,
-          tokens: { prompt: le.prompt_tokens || existingStep?.tokens?.prompt || 0, completion: le.completion_tokens || existingStep?.tokens?.completion || 0 },
-          toolCalls: existingStep?.toolCalls || [],
-          toolResults: existingStep?.toolResults || [],
-          microReasonings: existingStep?.microReasonings || [],
+          tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+          toolCalls: [],
+          toolResults: [],
+          microReasonings: [],
           durationMs: 0,
-          status: existingStep?.status || ('running' as const),
+          status: 'running' as const,
         },
       ],
     };
