@@ -13,7 +13,7 @@
 
 ### Project summary
 
-Zero-trust authentication and workload identity platform for cloud-native AI agents on Kubernetes, using SPIFFE/SPIRE, OAuth 2.0 token exchange, and transparent sidecar injection.
+Zero-trust authentication and workload identity platform for cloud-native AI agents on Kubernetes using SPIFFE/SPIRE, OAuth 2.0 token exchange, and transparent sidecar injection.
 
 ### Project description
 
