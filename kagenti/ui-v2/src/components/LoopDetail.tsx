@@ -420,7 +420,10 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
           // Executor: use plan step if available, then loop's currentStep, then omit number
           const planStep = step.planStep ?? loopCurrentStep;
           const stepLabel = planStep != null ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}` : '';
-          const desc = step.description !== 'Tool execution' ? step.description : '';
+          // Strip redundant "Step N:" prefix from description (agent may include it)
+          let desc = step.description || '';
+          desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
+          if (desc === 'Tool execution') desc = '';
           return `${stepLabel}${stepLabel && desc ? ': ' : ''}${desc || stepLabel || 'Executing'}`;
         })()}
         {showModelBadge && (
