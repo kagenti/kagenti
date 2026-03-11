@@ -424,7 +424,9 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
           let desc = step.description || '';
           desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
           if (desc === 'Tool execution') desc = '';
-          return `${stepLabel}${stepLabel && desc ? ': ' : ''}${desc || stepLabel || 'Executing'}`;
+          if (stepLabel && desc) return `${stepLabel}: ${desc}`;
+          if (stepLabel) return stepLabel;
+          return desc || 'Executing';
         })()}
         {showModelBadge && (
           <span
