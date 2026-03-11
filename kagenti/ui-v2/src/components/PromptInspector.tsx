@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface PromptInspectorProps {
   isOpen: boolean;
@@ -32,7 +33,10 @@ const PromptInspector: React.FC<PromptInspectorProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  // Use portal to render at document.body level — escapes any parent
+  // stacking context (transform, filter, will-change) that would make
+  // position:fixed relative to the parent instead of the viewport.
+  return createPortal(
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999,
@@ -136,7 +140,8 @@ const PromptInspector: React.FC<PromptInspectorProps> = ({
           </section>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
