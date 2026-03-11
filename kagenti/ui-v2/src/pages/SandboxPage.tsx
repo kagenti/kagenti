@@ -1615,14 +1615,21 @@ export const SandboxPage: React.FC = () => {
       sendingRef.current = false;
       setIsStreaming(false);
       setStreamingContent('');
-      // Mark active agent loops as "done" — the stream ended.
-      // Keep the SSE-built loop data (don't reload from DB, because
-      // loop_events may not be persisted yet — the DB often has stale data).
+      // Mark active agent loops based on completion state.
+      // If the loop has a finalAnswer (reporter ran), mark as "done".
+      // Otherwise the stream was interrupted — mark as "failed" with reason.
       setAgentLoops((prev) => {
         const next = new Map(prev);
         for (const [id, loop] of next) {
-          if (loop.status !== 'done') {
+          if (loop.status === 'done') continue;
+          if (loop.finalAnswer) {
             next.set(id, { ...loop, status: 'done' });
+          } else {
+            next.set(id, {
+              ...loop,
+              status: 'failed',
+              failureReason: 'Stream disconnected before agent completed. The agent may still be processing — reload to check for updates.',
+            });
           }
         }
         return next;
