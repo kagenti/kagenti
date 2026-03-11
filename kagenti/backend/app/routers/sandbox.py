@@ -435,7 +435,7 @@ async def get_session_history(
         # multi-turn session has N task records. Each record's history contains
         # the messages for that specific exchange. We merge them chronologically.
         rows = await conn.fetch(
-            "SELECT history, artifacts, metadata FROM tasks WHERE context_id = $1"
+            "SELECT id, history, artifacts, metadata FROM tasks WHERE context_id = $1"
             " ORDER BY COALESCE((status::json->>'timestamp')::text, '') ASC",
             context_id,
         )
@@ -476,27 +476,71 @@ async def get_session_history(
         row_meta = _parse_json_field(row.get("metadata"))
         has_persisted = isinstance(row_meta, dict) and bool(row_meta.get("loop_events"))
         if not has_persisted:
-            for msg in task_history:
-                if msg.get("role") != "agent":
-                    continue
-                for part in msg.get("parts") or []:
-                    text = part.get("text", "") if isinstance(part, dict) else ""
-                    for line in text.split("\n"):
-                        line = line.strip()
-                        if not line:
+            # Extract events server-side via SQL to avoid loading full history
+            # into Python memory (can be 500KB+). Query uses jsonb functions
+            # to parse event JSON lines from agent message parts.
+            task_id = row.get("id") or (row["id"] if "id" in row.keys() else None)
+            if task_id:
+                try:
+                    extract_pool = await get_session_pool(namespace)
+                    async with extract_pool.acquire() as extract_conn:
+                        db_events = await extract_conn.fetch(
+                            """
+                            SELECT DISTINCT ON (evt_json)
+                                line::jsonb AS evt,
+                                line AS evt_json
+                            FROM tasks,
+                                jsonb_array_elements(history::jsonb) AS msg,
+                                jsonb_array_elements(msg->'parts') AS part,
+                                unnest(string_to_array(part->>'text', E'\\n')) AS line
+                            WHERE tasks.id = $1
+                                AND msg->>'role' = 'agent'
+                                AND part->>'text' IS NOT NULL
+                                AND line ~ '^\\s*\\{.*"loop_id"'
+                                AND line::jsonb->>'type' IS NOT NULL
+                                AND line::jsonb->>'type' NOT IN ('plan', 'plan_step', 'reflection', 'llm_response')
+                            """,
+                            task_id,
+                        )
+                        for db_evt in db_events:
+                            evt = json.loads(db_evt["evt_json"])
+                            evt_json = json.dumps(evt, sort_keys=True)
+                            if evt_json not in seen_event_json:
+                                seen_event_json.add(evt_json)
+                                all_loop_events.append(evt)
+                except Exception as e:
+                    logger.warning(
+                        "SQL event extraction failed for task %s: %s — falling back to Python",
+                        task_id,
+                        e,
+                    )
+                    # Fallback: Python extraction (loads full history)
+                    for msg in task_history:
+                        if msg.get("role") != "agent":
                             continue
-                        try:
-                            parsed = json.loads(line)
-                            if isinstance(parsed, dict) and "loop_id" in parsed:
-                                evt_type = parsed.get("type", "")
-                                _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
-                                if evt_type not in _LEGACY:
-                                    evt_json = json.dumps(parsed, sort_keys=True)
-                                    if evt_json not in seen_event_json:
-                                        seen_event_json.add(evt_json)
-                                        all_loop_events.append(parsed)
-                        except (json.JSONDecodeError, TypeError):
-                            pass
+                        for part in msg.get("parts") or []:
+                            text = part.get("text", "") if isinstance(part, dict) else ""
+                            for line in text.split("\n"):
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    parsed = json.loads(line)
+                                    if isinstance(parsed, dict) and "loop_id" in parsed:
+                                        evt_type = parsed.get("type", "")
+                                        _LEGACY = {
+                                            "plan",
+                                            "plan_step",
+                                            "reflection",
+                                            "llm_response",
+                                        }
+                                        if evt_type not in _LEGACY:
+                                            evt_json = json.dumps(parsed, sort_keys=True)
+                                            if evt_json not in seen_event_json:
+                                                seen_event_json.add(evt_json)
+                                                all_loop_events.append(parsed)
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
 
         for msg in task_history:
             raw_history.append(msg)
