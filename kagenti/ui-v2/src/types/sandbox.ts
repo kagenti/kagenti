@@ -57,6 +57,8 @@ export interface HistoryPage {
   total: number;
   has_more: boolean;
   loop_events?: Array<Record<string, unknown>>;
+  task_state?: string;
+  last_updated?: string;
 }
 
 export interface SandboxAgentInfo {

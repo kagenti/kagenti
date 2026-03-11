@@ -1179,8 +1179,9 @@ export const SandboxPage: React.FC = () => {
   // ---------------------------------------------------------------------------
   // Poll for new messages when session is idle (not streaming).
   // This enables multi-tab / multi-user updates without WebSocket.
-  // Stops polling once all loops are done/failed (session complete).
+  // Stops polling when the backend reports a terminal task_state.
   // ---------------------------------------------------------------------------
+  const lastUpdatedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!contextId || !namespace || isStreaming || loadingSession) return;
 
@@ -1190,33 +1191,45 @@ export const SandboxPage: React.FC = () => {
     );
     if (allLoopsDone) return;
 
-    // Track how many loop events the client already has for incremental polling
-    const knownEventCount = Array.from(agentLoops.values()).reduce(
-      (sum, l) => sum + l.steps.length, 0
-    );
+    const TERMINAL_STATES = new Set(['completed', 'failed', 'canceled', 'rejected']);
 
     const pollInterval = setInterval(async () => {
       try {
-        // Incremental polling: only fetch new events + recent messages
+        // Skip events on lightweight polls — only check task_state + new messages.
+        // Full event fetch happens on initial load; polling just watches for completion.
         const histPage = await sandboxService.getHistory(namespace, contextId, {
           limit: 5,
-          events_since: knownEventCount,
+          skip_events: true,
         });
 
-        // Merge new loop events into existing loops (incremental)
-        if (histPage.loop_events && histPage.loop_events.length > 0) {
-          const newEvents = histPage.loop_events as unknown as LoopEvent[];
+        // Backend reports terminal state — stop polling and finalize loops
+        if (histPage.task_state && TERMINAL_STATES.has(histPage.task_state)) {
+          console.log('[poll] Task reached terminal state:', histPage.task_state, '— stopping poll');
+          clearInterval(pollInterval);
+
+          // Mark executing loops as done/failed based on task_state
           setAgentLoops((prev) => {
             const next = new Map(prev);
-            for (const evt of newEvents) {
-              const loopId = evt.loop_id;
-              if (!loopId) continue;
-              const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
-              next.set(loopId, applyLoopEvent(existing, evt));
+            for (const [id, loop] of next) {
+              if (loop.status === 'done' || loop.status === 'failed') continue;
+              if (histPage.task_state === 'completed') {
+                next.set(id, { ...loop, status: loop.finalAnswer ? 'done' : 'failed',
+                  failureReason: loop.finalAnswer ? undefined : 'Agent completed without a final answer.' });
+              } else {
+                next.set(id, { ...loop, status: 'failed',
+                  failureReason: `Session ${histPage.task_state}.` });
+              }
             }
             return next;
           });
+          return;
         }
+
+        // Track last_updated to avoid re-processing unchanged state
+        if (histPage.last_updated && histPage.last_updated === lastUpdatedRef.current) {
+          return; // No changes since last poll
+        }
+        lastUpdatedRef.current = histPage.last_updated || null;
 
         if (histPage.messages.length === 0) return;
 

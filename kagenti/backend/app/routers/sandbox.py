@@ -78,6 +78,8 @@ class HistoryPage(BaseModel):
     total: int
     has_more: bool
     loop_events: Optional[List[Dict[str, Any]]] = None
+    task_state: Optional[str] = None
+    last_updated: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -443,12 +445,26 @@ async def get_session_history(
         # multi-turn session has N task records. Each record's history contains
         # the messages for that specific exchange. We merge them chronologically.
         rows = await conn.fetch(
-            "SELECT id, history, artifacts, metadata FROM tasks WHERE context_id = $1"
+            "SELECT id, history, artifacts, metadata, status FROM tasks WHERE context_id = $1"
             " ORDER BY COALESCE((status::json->>'timestamp')::text, '') ASC",
             context_id,
         )
         if not rows:
             raise HTTPException(status_code=404, detail="Session not found")
+
+    # Extract task_state and last_updated from the most recent task row.
+    # The A2A SDK stores state transitions in the status JSON column.
+    _last_status = _parse_json_field(rows[-1].get("status")) or {}
+    _task_state = (
+        _last_status.get("state")
+        if isinstance(_last_status.get("state"), str)
+        else (
+            _last_status.get("state", {}).get("state")
+            if isinstance(_last_status.get("state"), dict)
+            else None
+        )
+    )
+    _last_updated = _last_status.get("timestamp")
 
     # Merge history from all task records (ordered by task creation time)
     raw_history: list = []
@@ -750,6 +766,8 @@ async def get_session_history(
         total=total,
         has_more=has_more,
         loop_events=persisted_loop_events,
+        task_state=_task_state,
+        last_updated=_last_updated,
     )
 
 
