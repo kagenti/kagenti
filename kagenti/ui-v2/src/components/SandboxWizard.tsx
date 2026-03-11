@@ -112,7 +112,7 @@ export const INITIAL_STATE: WizardState = {
   maxToolCallsPerStep: 10,
   maxWallClockS: 600,
   hitlInterval: 50,
-  recursionLimit: 2000,
+  recursionLimit: 2000,  // graph node visit limit — safety net, not user-facing
 };
 
 const STEPS = [
