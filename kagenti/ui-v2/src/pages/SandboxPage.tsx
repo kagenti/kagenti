@@ -985,9 +985,18 @@ export const SandboxPage: React.FC = () => {
             try {
               const data = JSON.parse(raw);
               if (data.done) {
-                console.log('[subscribe] Stream done');
-                // Reload history to get final state
-                await loadInitialHistory(ns, ctxId);
+                console.log('[subscribe] Stream done — marking loops as done');
+                // Don't reload history — it would overwrite streaming-built
+                // loops and lose micro-reasoning. Just mark loops as done.
+                setAgentLoops((prev) => {
+                  const next = new Map(prev);
+                  for (const [id, loop] of next) {
+                    if (loop.status !== 'done') {
+                      next.set(id, { ...loop, status: 'done' });
+                    }
+                  }
+                  return next;
+                });
                 return;
               }
               if (data.ping) continue;
