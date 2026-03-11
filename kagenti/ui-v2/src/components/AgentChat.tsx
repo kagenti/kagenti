@@ -15,7 +15,7 @@ import {
   Label,
   ExpandableSection,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import { useQuery, useMutation } from '@tanstack/react-query';
 
 import { chatService } from '@/services/api';
@@ -90,6 +90,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
   const [streamingEvents, setStreamingEvents] = useState<A2AEvent[]>([]);
   const [showAgentCard, setShowAgentCard] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { getToken, user } = useAuth();
   const currentUsername = user?.username || 'you';
 
@@ -156,6 +157,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const response = await fetch(
           `/api/v1/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/stream`,
           {
@@ -165,6 +169,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
               message: messageToSend,
               session_id: sessionId,
             }),
+            signal: controller.signal,
           }
         );
 
@@ -293,17 +298,32 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
           ]);
         }
       } catch (error) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
-            timestamp: new Date(),
-            isComplete: true,
-          },
-        ]);
+        // Don't show error for user-initiated cancellation
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: '*Request cancelled by user.*',
+              timestamp: new Date(),
+              isComplete: true,
+            },
+          ]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+              timestamp: new Date(),
+              isComplete: true,
+            },
+          ]);
+        }
       } finally {
+        abortControllerRef.current = null;
         setIsStreaming(false);
         setStreamingContent('');
         setStreamingEvents([]);
@@ -341,6 +361,12 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   };
 
@@ -622,16 +648,27 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
             />
           </SplitItem>
           <SplitItem>
-            <Button
-              variant="primary"
-              onClick={handleSendMessage}
-              isDisabled={!input.trim() || isStreaming || sendMessageMutation.isPending}
-              isLoading={isStreaming || sendMessageMutation.isPending}
-              icon={<PaperPlaneIcon />}
-              style={{ height: '100%' }}
-            >
-              Send
-            </Button>
+            {isStreaming ? (
+              <Button
+                variant="danger"
+                onClick={handleCancel}
+                icon={<TimesCircleIcon />}
+                style={{ height: '100%' }}
+              >
+                Cancel
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={handleSendMessage}
+                isDisabled={!input.trim() || sendMessageMutation.isPending}
+                isLoading={sendMessageMutation.isPending}
+                icon={<PaperPlaneIcon />}
+                style={{ height: '100%' }}
+              >
+                Send
+              </Button>
+            )}
           </SplitItem>
         </Split>
 
