@@ -72,6 +72,7 @@ export interface WizardState {
   otelEndpoint: string;
   enableMlflow: boolean;
   model: string;
+  forceToolChoice: boolean;
   // Step 6: Budget
   maxIterations: number;
   maxTokens: number;
@@ -107,6 +108,7 @@ export const INITIAL_STATE: WizardState = {
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
   model: 'llama-4-scout',
+  forceToolChoice: true,
   maxIterations: 100,
   maxTokens: 1000000,
   maxToolCallsPerStep: 10,
@@ -281,6 +283,8 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         llm_api_key: state.llmApiKey || undefined,
         llm_key_source: state.llmKeySource,
         llm_secret_name: state.llmSecretName,
+        // LLM behavior
+        force_tool_choice: state.forceToolChoice,
         // Budget controls
         max_iterations: state.maxIterations,
         max_tokens: state.maxTokens,
@@ -629,6 +633,14 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           label="Send traces to MLflow"
           isChecked={state.enableMlflow}
           onChange={(_e, c) => update('enableMlflow', c)}
+        />
+      </FormGroup>
+      <FormGroup label="Force Tool Calling" fieldId="force-tool-choice">
+        <Switch
+          id="force-tool-choice"
+          label="Force structured tool calls (required for Llama 4 Scout)"
+          isChecked={state.forceToolChoice}
+          onChange={(_e, c) => update('forceToolChoice', c)}
         />
       </FormGroup>
       <FormGroup label="Default LLM Model" fieldId="model">

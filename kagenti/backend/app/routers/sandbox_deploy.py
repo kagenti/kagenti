@@ -95,6 +95,8 @@ class SandboxCreateRequest(BaseModel):
     llm_secret_name: str = ""  # Empty = use cluster default (DEFAULT_LLM_SECRET)
     # Skill packs (Session M)
     skill_packs: list[str] = []  # Pack names from skill-packs.yaml (empty = defaults)
+    # LLM behavior
+    force_tool_choice: bool = True
     # Budget controls (passed as SANDBOX_* env vars to the agent)
     max_iterations: int = 100
     max_tokens: int = 1_000_000
@@ -269,6 +271,10 @@ def _build_deployment_manifest(
         env_vars.append({"name": "TASK_STORE_DB_URL", "value": db_url})
         env_vars.append({"name": "CHECKPOINT_DB_URL", "value": checkpoint_url})
 
+    # LLM behavior
+    env_vars.append(
+        {"name": "SANDBOX_FORCE_TOOL_CHOICE", "value": "1" if req.force_tool_choice else "0"}
+    )
     # Budget env vars (consumed by AgentBudget dataclass in the agent)
     env_vars.append({"name": "SANDBOX_MAX_ITERATIONS", "value": str(req.max_iterations)})
     env_vars.append({"name": "SANDBOX_MAX_TOKENS", "value": str(req.max_tokens)})
