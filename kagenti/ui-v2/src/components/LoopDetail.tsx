@@ -13,7 +13,8 @@
 import React, { useState } from 'react';
 import { Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
-import type { AgentLoop, AgentLoopStep, NodeType } from '../types/agentLoop';
+import type { AgentLoop, AgentLoopStep, MicroReasoning, NodeType } from '../types/agentLoop';
+import PromptInspector from './PromptInspector';
 
 // ---------------------------------------------------------------------------
 // Graph node badge
@@ -387,7 +388,7 @@ function formatStepTokens(step: AgentLoopStep): string {
   return String(total);
 }
 
-const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: string }> = ({ step, total, loopModel }) => {
+const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: string; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopModel, onOpenInspector }) => {
   const showModelBadge = step.model && step.model !== loopModel;
 
   return (
@@ -430,6 +431,19 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
           </span>
         )}
         <StepStatusIcon status={step.status} />
+        {onOpenInspector && (step.systemPrompt || step.promptMessages) && (
+          <button
+            onClick={() => onOpenInspector(`${step.eventType || step.nodeType || 'Step'} ${step.index}`, step)}
+            style={{
+              background: 'none', border: '1px solid #555', color: '#888',
+              fontSize: '11px', padding: '2px 6px', borderRadius: '3px',
+              cursor: 'pointer', marginLeft: '8px',
+            }}
+            title="View full prompt and response"
+          >
+            Prompt
+          </button>
+        )}
       </div>
 
       {/* Prompt — system prompt + messages sent to LLM */}
@@ -474,6 +488,35 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
       {step.toolResults.filter((_tr, idx) => idx >= step.toolCalls.length).map((tr, i) => (
         <ToolResultBlock key={`orphan-result-${i}`} result={tr} />
       ))}
+
+      {/* Micro-reasoning entries */}
+      {step.microReasonings?.map((mr, mrIdx) => (
+        <div key={`mr-${mrIdx}`} style={{
+          margin: '8px 0', padding: '8px 12px',
+          backgroundColor: '#1a1a2e', borderRadius: '4px',
+          borderLeft: '3px solid #58a6ff', fontSize: '13px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px' }}>
+              Micro-reasoning {mrIdx + 1}
+            </span>
+            {onOpenInspector && (
+              <button
+                onClick={() => onOpenInspector(`Micro-reasoning ${mrIdx + 1}`, mr)}
+                style={{
+                  background: 'none', border: '1px solid #555', color: '#888',
+                  fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
+                }}
+              >
+                Prompt
+              </button>
+            )}
+          </div>
+          <p style={{ margin: '4px 0 0', color: '#ccc', whiteSpace: 'pre-wrap' }}>
+            {mr.reasoning?.substring(0, 500)}{(mr.reasoning?.length ?? 0) > 500 ? '...' : ''}
+          </p>
+        </div>
+      ))}
     </div>
   );
 };
@@ -516,6 +559,30 @@ const ReplanSection: React.FC<{ replans: AgentLoop['replans'] }> = ({ replans })
 // ---------------------------------------------------------------------------
 
 export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
+  const [inspectorData, setInspectorData] = useState<{
+    isOpen: boolean;
+    title: string;
+    systemPrompt?: string;
+    promptMessages?: Array<{ role: string; preview: string }>;
+    response?: string;
+    model?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+  } | null>(null);
+
+  const openInspector = (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => {
+    setInspectorData({
+      isOpen: true,
+      title,
+      systemPrompt: 'system_prompt' in data ? (data as Record<string, unknown>).system_prompt as string : (data as AgentLoopStep).systemPrompt,
+      promptMessages: 'prompt_messages' in data ? (data as Record<string, unknown>).prompt_messages as Array<{ role: string; preview: string }> : (data as AgentLoopStep).promptMessages,
+      response: (data as AgentLoopStep).reasoning || (data as Record<string, unknown>).assessment as string || (data as Record<string, unknown>).content as string || '',
+      model: data.model,
+      promptTokens: 'prompt_tokens' in data ? (data as Record<string, unknown>).prompt_tokens as number : (data as AgentLoopStep).tokens?.prompt,
+      completionTokens: 'completion_tokens' in data ? (data as Record<string, unknown>).completion_tokens as number : (data as AgentLoopStep).tokens?.completion,
+    });
+  };
+
   return (
     <div
       style={{
@@ -528,8 +595,22 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
       <ReplanSection replans={loop.replans} />
 
       {loop.steps.map((step) => (
-        <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} />
+        <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} onOpenInspector={openInspector} />
       ))}
+
+      {inspectorData && (
+        <PromptInspector
+          isOpen={inspectorData.isOpen}
+          onClose={() => setInspectorData(null)}
+          title={inspectorData.title}
+          systemPrompt={inspectorData.systemPrompt}
+          promptMessages={inspectorData.promptMessages}
+          response={inspectorData.response}
+          model={inspectorData.model}
+          promptTokens={inspectorData.promptTokens}
+          completionTokens={inspectorData.completionTokens}
+        />
+      )}
     </div>
   );
 };

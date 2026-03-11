@@ -21,7 +21,8 @@ export type NodeEventType =
   | 'reflector_decision'
   | 'reporter_output'
   | 'budget_update'
-  | 'hitl_request';
+  | 'hitl_request'
+  | 'micro_reasoning';
 
 /** @deprecated Use {@link NodeEventType} for new code. */
 export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter' | 'replanner';
@@ -45,6 +46,20 @@ export interface AgentLoop {
     wallClockS: number;
     maxWallClockS: number;
   };
+}
+
+export interface MicroReasoning {
+  type: 'micro_reasoning';
+  loop_id: string;
+  step: number;
+  micro_step: number;
+  reasoning: string;
+  next_action: string;
+  model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  system_prompt?: string;
+  prompt_messages?: Array<{ role: string; preview: string }>;
 }
 
 export interface PromptMessage {
@@ -71,4 +86,6 @@ export interface AgentLoopStep {
   eventType?: NodeEventType;
   /** @deprecated Use {@link eventType} for new code. */
   nodeType?: NodeType;
+  /** Micro-reasoning entries between tool calls within this step. */
+  microReasonings?: MicroReasoning[];
 }

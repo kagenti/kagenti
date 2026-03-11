@@ -217,6 +217,24 @@ def reconstruct_loops(events: list[dict]) -> dict[str, dict]:
                     }
                 )
                 loop["steps"][si]["status"] = "done"
+        elif et == "micro_reasoning":
+            si = le.get("step", 0)
+            if si in loop["steps"]:
+                if "microReasonings" not in loop["steps"][si]:
+                    loop["steps"][si]["microReasonings"] = []
+                loop["steps"][si]["microReasonings"].append(
+                    {
+                        "type": "micro_reasoning",
+                        "micro_step": le.get("micro_step", 0),
+                        "reasoning": le.get("reasoning", ""),
+                        "next_action": le.get("next_action", ""),
+                        "model": le.get("model", ""),
+                        "prompt_tokens": le.get("prompt_tokens", 0),
+                        "completion_tokens": le.get("completion_tokens", 0),
+                        "system_prompt": le.get("system_prompt", ""),
+                        "prompt_messages": le.get("prompt_messages", []),
+                    }
+                )
         elif et == "reflector_decision":
             loop["status"] = "reflecting"
         elif et == "reporter_output":

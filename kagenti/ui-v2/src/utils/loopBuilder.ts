@@ -9,7 +9,7 @@
  * had its own ~150-line event-handling chain, which drifted over time.
  */
 
-import type { AgentLoop, AgentLoopStep } from '../types/agentLoop';
+import type { AgentLoop, AgentLoopStep, MicroReasoning } from '../types/agentLoop';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -45,6 +45,10 @@ export interface LoopEvent {
   system_prompt?: string;
   /** Summarized message list sent to the LLM */
   prompt_messages?: Array<{ role: string; preview: string }>;
+  /** Micro-reasoning sub-step index */
+  micro_step?: number;
+  /** Next action planned after micro-reasoning */
+  next_action?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +319,42 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         },
       ],
     };
+  }
+
+  if (eventType === 'micro_reasoning') {
+    const stepIdx = le.step ?? loop.currentStep;
+    const steps = [...loop.steps];
+    let step = steps.find((s) => s.index === stepIdx);
+    if (!step) {
+      // Create an implicit executor step if none exists
+      step = {
+        index: stepIdx,
+        description: 'Tool execution',
+        model: le.model || loop.model,
+        nodeType: 'executor' as const,
+        tokens: { prompt: 0, completion: 0 },
+        toolCalls: [],
+        toolResults: [],
+        durationMs: 0,
+        status: 'running' as const,
+      };
+      steps.push(step);
+    }
+    const mr: MicroReasoning = {
+      type: 'micro_reasoning',
+      loop_id: le.loop_id,
+      step: le.step ?? stepIdx,
+      micro_step: le.micro_step ?? 0,
+      reasoning: le.reasoning || '',
+      next_action: le.next_action || '',
+      model: le.model,
+      prompt_tokens: le.prompt_tokens,
+      completion_tokens: le.completion_tokens,
+      system_prompt: le.system_prompt,
+      prompt_messages: le.prompt_messages,
+    };
+    step.microReasonings = [...(step.microReasonings || []), mr];
+    return { ...loop, steps };
   }
 
   // Unknown event type — return loop unchanged
