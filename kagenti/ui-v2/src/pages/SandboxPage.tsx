@@ -1179,9 +1179,16 @@ export const SandboxPage: React.FC = () => {
   // ---------------------------------------------------------------------------
   // Poll for new messages when session is idle (not streaming).
   // This enables multi-tab / multi-user updates without WebSocket.
+  // Stops polling once all loops are done/failed (session complete).
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (!contextId || !namespace || isStreaming) return;
+    if (!contextId || !namespace || isStreaming || loadingSession) return;
+
+    // Don't poll if all loops are complete (no new events expected)
+    const allLoopsDone = agentLoops.size > 0 && Array.from(agentLoops.values()).every(
+      (l) => l.status === 'done' || l.status === 'failed'
+    );
+    if (allLoopsDone) return;
 
     const pollInterval = setInterval(async () => {
       try {
