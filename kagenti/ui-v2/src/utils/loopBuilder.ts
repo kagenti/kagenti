@@ -180,6 +180,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           tokens: { prompt: le.prompt_tokens || existingStep?.tokens?.prompt || 0, completion: le.completion_tokens || existingStep?.tokens?.completion || 0 },
           toolCalls: existingStep?.toolCalls || [],
           toolResults: existingStep?.toolResults || [],
+          microReasonings: existingStep?.microReasonings || [],
           durationMs: 0,
           status: existingStep?.status || ('running' as const),
         },
