@@ -88,6 +88,7 @@ export function createDefaultAgentLoop(loopId: string): AgentLoop {
     totalSteps: 0,
     iteration: 0,
     steps: [],
+    nodeVisits: 0,
     budget: { tokensUsed: 0, tokensBudget: 0, wallClockS: 0, maxWallClockS: 0 },
   };
 }
@@ -107,6 +108,10 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   // Normalize: agent may emit plan_step or current_step
   if (le.plan_step != null && le.current_step == null) {
     le.current_step = le.plan_step;
+  }
+  // Track highest node visit index (global recursion counter)
+  if (le.step != null && le.step > loop.nodeVisits) {
+    loop = { ...loop, nodeVisits: le.step };
   }
   const eventType = le.type;
 

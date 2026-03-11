@@ -41,6 +41,8 @@ export interface AgentLoop {
   reflectorDecision?: 'continue' | 'replan' | 'done';
   finalAnswer?: string;
   failureReason?: string;
+  /** Highest graph node visit index seen (global recursion counter). */
+  nodeVisits: number;
   budget: {
     tokensUsed: number;
     tokensBudget: number;

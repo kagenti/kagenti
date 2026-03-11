@@ -314,8 +314,16 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
               <table style={tableStyle}>
                 <tbody>
                   <tr>
-                    <td style={{ ...tdStyle, fontWeight: 600 }}>Iterations (steps)</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>{totalIterations}</td>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>Plan Steps</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{loops.reduce((s, l) => s + (l.totalSteps || l.plan.length), 0)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>Graph Node Visits</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }} data-testid="stats-node-visits">{loops.reduce((s, l) => s + l.nodeVisits, 0)}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>Tool Calls</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{loops.reduce((s, l) => s + l.steps.reduce((ts, st) => ts + st.toolCalls.length, 0), 0)}</td>
                   </tr>
                 </tbody>
               </table>

@@ -418,9 +418,12 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
           if (nt === 'planner' || nt === 'replanner') return step.description;
           if (nt === 'reflector') return step.description;
           if (nt === 'reporter') return 'Final answer';
-          // Executor: use plan step if available, then loop's currentStep, then omit number
+          // Executor: Step X [N] where X=plan step, N=global node visit
           const planStep = step.planStep ?? loopCurrentStep;
-          const stepLabel = planStep != null ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}` : '';
+          const visitNum = step.index != null ? `[${step.index}]` : '';
+          const stepLabel = planStep != null
+            ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''} ${visitNum}`.trim()
+            : visitNum || '';
           // Strip redundant "Step N:" prefix from description (agent may include it)
           let desc = step.description || '';
           desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
