@@ -166,7 +166,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
             marginBottom: expanded ? 8 : 0,
           }}
         >
-          {expanded ? '\u25bc' : '\u25b6'} {loop.steps.length} step{loop.steps.length !== 1 ? 's' : ''}
+          {expanded ? '\u25bc' : '\u25b6'} {loop.totalSteps || loop.plan.length || loop.steps.length} step{(loop.totalSteps || loop.plan.length || loop.steps.length) !== 1 ? 's' : ''}
         </div>
 
         {/* Expanded reasoning details */}
