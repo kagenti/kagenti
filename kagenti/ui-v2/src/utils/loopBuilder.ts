@@ -106,6 +106,14 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     return loop;
   }
 
+  // Router is an internal node — just update status, no visual step
+  if (eventType === 'router') {
+    return {
+      ...loop,
+      status: 'planning',
+    };
+  }
+
   if (eventType === 'planner_output') {
     const incomingSteps = le.steps || [];
     const isReplan = loop.plan.length > 0;
