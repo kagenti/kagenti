@@ -1924,7 +1924,7 @@ async def _stream_sandbox_response(
         # by GeneratorExit (a BaseException) when the client disconnects.
         # GeneratorExit kills any `await` in progress and is NOT caught by
         # `except Exception`. Background tasks are immune to this.
-        if namespace and not loop_events_persisted:
+        if namespace:
             has_reporter = any(e.get("type") == "reporter_output" for e in loop_events)
             logger.info(
                 "Spawning background persist+recovery: session=%s task=%s "
@@ -1941,6 +1941,7 @@ async def _stream_sandbox_response(
                     session_id=session_id,
                     task_db_id=stream_task_id,
                     loop_events=list(loop_events),  # snapshot
+                    loop_events_already_persisted=loop_events_persisted,
                     owner=owner,
                     message=message,
                     agent_name=agent_name,
@@ -1956,17 +1957,21 @@ async def _persist_and_recover(
     session_id: str,
     task_db_id: Optional[str],
     loop_events: list[dict],
-    owner: Optional[str],
-    message: Optional[str],
-    agent_name: Optional[str],
-    session_has_loops: bool,
-    has_reporter: bool,
-    agent_url: str,
+    loop_events_already_persisted: bool = False,
+    owner: Optional[str] = None,
+    message: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    session_has_loops: bool = False,
+    has_reporter: bool = False,
+    agent_url: str = "",
 ) -> None:
     """Background task: persist metadata + loop events, then recover if needed.
 
     Runs as a standalone coroutine (not a generator), so it is immune to
     GeneratorExit that would kill the finally block of the SSE generator.
+
+    Always writes metadata (owner, title, agent_name). Only writes loop_events
+    if they weren't already persisted by the inline [DONE] handler.
     """
     try:
         if task_db_id is None:
@@ -1980,10 +1985,11 @@ async def _persist_and_recover(
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT metadata FROM tasks WHERE id = $1", task_db_id)
             logger.info(
-                "BG persist: task %s row_found=%s loop_events=%d",
+                "BG persist: task %s row_found=%s loop_events=%d already_persisted=%s",
                 task_db_id[:12] if task_db_id else "?",
                 row is not None,
                 len(loop_events),
+                loop_events_already_persisted,
             )
             if row:
                 meta = _parse_json_field(row["metadata"]) or {}
@@ -1994,7 +2000,7 @@ async def _persist_and_recover(
                     meta["title"] = message[:80].replace("\n", " ")
                 if agent_name:
                     meta["agent_name"] = agent_name
-                if loop_events:
+                if loop_events and not loop_events_already_persisted:
                     meta["loop_events"] = loop_events
                     logger.info(
                         "BG persist: writing %d loop events for session %s",

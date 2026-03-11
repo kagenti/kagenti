@@ -1517,11 +1517,13 @@ export const SandboxPage: React.FC = () => {
   const handleSendMessage = async () => {
     if (!input.trim() || isStreaming || sendingRef.current) return;
     sendingRef.current = true;
+    // Capture and clear input immediately to prevent double-send
+    const trimmed = input.trim();
+    setInput('');
 
     shouldAutoScroll.current = true;
 
     // Parse /skill:name prefix from message (e.g. "/rca:ci #758" → skill="rca:ci", text="#758")
-    const trimmed = input.trim();
     const skillMatch = trimmed.match(/^\/([\w:.-]+)\s*(.*)/s);
     const skill = skillMatch ? skillMatch[1] : undefined;
 
@@ -1535,7 +1537,6 @@ export const SandboxPage: React.FC = () => {
     setMessages((prev) => [...prev, userMessage]);
     // Send full text to backend (preserve skill prefix in history)
     const messageToSend = trimmed;
-    setInput('');
     setIsStreaming(true);
     setStreamingContent('');
     setError(null);
