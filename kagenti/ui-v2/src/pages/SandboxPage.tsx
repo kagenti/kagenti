@@ -1117,15 +1117,27 @@ export const SandboxPage: React.FC = () => {
     []
   );
 
+  // Track whether we just finished streaming — skip history reload
+  // because the streaming-built agentLoops are fresher than the DB.
+  const justFinishedStreamingRef = useRef(false);
+
   // Load history on session change + sync URL if restored from localStorage
-  // Skip during streaming — the stream handler manages state while active.
+  // Skip during streaming AND skip the first !isStreaming after streaming ends.
   useEffect(() => {
     if (contextId && namespace && !isStreaming) {
-      loadInitialHistory(namespace, contextId);
+      if (justFinishedStreamingRef.current) {
+        // Just finished streaming — skip reload, keep streaming data
+        justFinishedStreamingRef.current = false;
+      } else {
+        loadInitialHistory(namespace, contextId);
+      }
       // Sync URL if session was restored from localStorage
       if (!searchParams.get('session') && contextId) {
         setSearchParams({ session: contextId }, { replace: true });
       }
+    }
+    if (isStreaming) {
+      justFinishedStreamingRef.current = true;
     }
   }, [contextId, namespace, isStreaming, loadInitialHistory, searchParams, setSearchParams]);
 
