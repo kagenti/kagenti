@@ -571,15 +571,18 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
   } | null>(null);
 
   const openInspector = (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = data as any;
+    const isMicro = d.type === 'micro_reasoning';
     setInspectorData({
       isOpen: true,
       title,
-      systemPrompt: 'system_prompt' in data ? (data as Record<string, unknown>).system_prompt as string : (data as AgentLoopStep).systemPrompt,
-      promptMessages: 'prompt_messages' in data ? (data as Record<string, unknown>).prompt_messages as Array<{ role: string; preview: string }> : (data as AgentLoopStep).promptMessages,
-      response: (data as AgentLoopStep).reasoning || (data as Record<string, unknown>).assessment as string || (data as Record<string, unknown>).content as string || '',
-      model: data.model,
-      promptTokens: 'prompt_tokens' in data ? (data as Record<string, unknown>).prompt_tokens as number : (data as AgentLoopStep).tokens?.prompt,
-      completionTokens: 'completion_tokens' in data ? (data as Record<string, unknown>).completion_tokens as number : (data as AgentLoopStep).tokens?.completion,
+      systemPrompt: isMicro ? d.system_prompt : d.systemPrompt,
+      promptMessages: isMicro ? d.prompt_messages : d.promptMessages,
+      response: d.reasoning || d.assessment || d.content || '',
+      model: d.model,
+      promptTokens: isMicro ? d.prompt_tokens : d.tokens?.prompt,
+      completionTokens: isMicro ? d.completion_tokens : d.tokens?.completion,
     });
   };
 
