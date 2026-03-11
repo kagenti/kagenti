@@ -1590,8 +1590,12 @@ async def _stream_sandbox_response(
     # (default 300s) from killing long-running agent connections.
     _KEEPALIVE_INTERVAL = 15
 
+    _MAX_RESUBSCRIBE = 5  # Max reconnection attempts via tasks/resubscribe
+    _done_received = False
+
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
+            # --- Initial stream: message/stream ---
             async with client.stream(
                 "POST",
                 agent_url,
@@ -1606,16 +1610,12 @@ async def _stream_sandbox_response(
                 stream_exhausted = False
 
                 while not stream_exhausted:
-                    # Race between next SSE line and keepalive timeout.
-                    # If no data arrives within _KEEPALIVE_INTERVAL, send a ping
-                    # to keep the nginx->browser connection alive.
                     try:
                         line = await asyncio.wait_for(
                             line_iter.__anext__(),
                             timeout=_KEEPALIVE_INTERVAL,
                         )
                     except asyncio.TimeoutError:
-                        # No data from agent — send keepalive ping to browser
                         yield f"data: {json.dumps({'ping': True})}\n\n"
                         continue
                     except StopAsyncIteration:
@@ -1632,6 +1632,7 @@ async def _stream_sandbox_response(
                         data = line[6:]
 
                         if data == "[DONE]":
+                            _done_received = True
                             logger.info("Received [DONE] from agent")
                             # Fan out done signal to sidecar manager so
                             # the looper detects stream completion
@@ -1898,6 +1899,209 @@ async def _stream_sandbox_response(
                                 "Unknown result structure: keys=%s",
                                 list(result.keys()),
                             )
+
+            # --- Resubscribe loop: reconnect if stream closed without [DONE] ---
+            if not _done_received and stream_task_id:
+                for resub_attempt in range(1, _MAX_RESUBSCRIBE + 1):
+                    logger.info(
+                        "Resubscribe attempt %d/%d: task=%s session=%s",
+                        resub_attempt,
+                        _MAX_RESUBSCRIBE,
+                        stream_task_id,
+                        session_id,
+                    )
+                    resub_msg = {
+                        "jsonrpc": "2.0",
+                        "id": str(uuid4()),
+                        "method": "tasks/resubscribe",
+                        "params": {"id": stream_task_id},
+                    }
+                    try:
+                        # First try a non-streaming POST to check if the task
+                        # is still running. If it's terminal, resubscribe will
+                        # fail, so we skip to recovery polling.
+                        check_resp = await client.post(
+                            agent_url,
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": str(uuid4()),
+                                "method": "tasks/get",
+                                "params": {"id": stream_task_id},
+                            },
+                        )
+                        if check_resp.status_code == 200:
+                            check_data = check_resp.json()
+                            check_state = (
+                                check_data.get("result", {})
+                                .get("status", {})
+                                .get("state", "")
+                                .lower()
+                            )
+                            if check_state in ("completed", "failed", "canceled"):
+                                logger.info(
+                                    "Task already %s — skipping resubscribe, using recovery",
+                                    check_state,
+                                )
+                                break
+
+                        async with client.stream(
+                            "POST",
+                            agent_url,
+                            json=resub_msg,
+                            headers=headers,
+                        ) as resub_response:
+                            if resub_response.status_code != 200:
+                                logger.info(
+                                    "Resubscribe returned %d — falling back to recovery",
+                                    resub_response.status_code,
+                                )
+                                break
+
+                            logger.info(
+                                "Resubscribed to agent stream, status=%d",
+                                resub_response.status_code,
+                            )
+                            resub_iter = resub_response.aiter_lines().__aiter__()
+                            resub_exhausted = False
+
+                            while not resub_exhausted:
+                                try:
+                                    line = await asyncio.wait_for(
+                                        resub_iter.__anext__(),
+                                        timeout=_KEEPALIVE_INTERVAL,
+                                    )
+                                except asyncio.TimeoutError:
+                                    yield f"data: {json.dumps({'ping': True})}\n\n"
+                                    continue
+                                except StopAsyncIteration:
+                                    resub_exhausted = True
+                                    break
+
+                                if not line:
+                                    continue
+                                line_count += 1
+                                logger.info("Agent SSE [%d] (resub): %s", line_count, line[:300])
+
+                                if line.startswith("data: "):
+                                    data = line[6:]
+
+                                    if data == "[DONE]":
+                                        _done_received = True
+                                        logger.info("Received [DONE] from agent (via resubscribe)")
+                                        await _set_owner_metadata()
+                                        if loop_events and namespace and not loop_events_persisted:
+                                            try:
+                                                pool = await get_session_pool(namespace)
+                                                async with pool.acquire() as conn:
+                                                    task_db_id = stream_task_id
+                                                    if task_db_id is not None:
+                                                        row = await conn.fetchrow(
+                                                            "SELECT metadata FROM tasks WHERE id = $1",
+                                                            task_db_id,
+                                                        )
+                                                        if row:
+                                                            meta = (
+                                                                json.loads(row["metadata"])
+                                                                if row["metadata"]
+                                                                else {}
+                                                            )
+                                                            meta["loop_events"] = loop_events
+                                                            await conn.execute(
+                                                                "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                                                                json.dumps(meta),
+                                                                task_db_id,
+                                                            )
+                                                    loop_events_persisted = True
+                                            except Exception as e:
+                                                logger.warning(
+                                                    "Failed to persist loop events on resubscribe: %s",
+                                                    e,
+                                                )
+                                        yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                                        break
+
+                                    try:
+                                        chunk = json.loads(data)
+                                    except json.JSONDecodeError:
+                                        continue
+
+                                    if "result" not in chunk:
+                                        continue
+
+                                    result = chunk["result"]
+                                    payload: dict = {"session_id": session_id}
+                                    if owner:
+                                        payload["username"] = owner
+
+                                    # Process status updates (same logic as initial stream)
+                                    if "status" in result and "message" in result.get("status", {}):
+                                        state = result["status"].get("state", "UNKNOWN")
+                                        parts = result["status"].get("message", {}).get("parts", [])
+                                        status_message = _extract_text_from_parts(parts)
+                                        is_final = result.get("final", False)
+
+                                        _LEGACY = {
+                                            "plan",
+                                            "plan_step",
+                                            "reflection",
+                                            "llm_response",
+                                        }
+                                        has_loop_events = False
+                                        if status_message:
+                                            msg_lines = [
+                                                l.strip()
+                                                for l in status_message.split("\n")
+                                                if l.strip()
+                                            ]
+                                            for msg_line in msg_lines:
+                                                try:
+                                                    parsed = json.loads(msg_line)
+                                                    if (
+                                                        isinstance(parsed, dict)
+                                                        and "loop_id" in parsed
+                                                    ):
+                                                        evt_type = parsed.get("type", "")
+                                                        if evt_type in _LEGACY:
+                                                            continue
+                                                        loop_payload = dict(payload)
+                                                        loop_payload["loop_id"] = parsed["loop_id"]
+                                                        loop_payload["loop_event"] = parsed
+                                                        yield f"data: {json.dumps(loop_payload)}\n\n"
+                                                        logger.info(
+                                                            "LOOP_FWD session=%s loop=%s type=%s step=%s (resub)",
+                                                            session_id,
+                                                            parsed["loop_id"][:8],
+                                                            evt_type,
+                                                            parsed.get("step", ""),
+                                                        )
+                                                        has_loop_events = True
+                                                        session_has_loops = True
+                                                        loop_events.append(parsed)
+                                                except (json.JSONDecodeError, TypeError):
+                                                    pass
+
+                                            if not has_loop_events and not session_has_loops:
+                                                payload["event"] = {
+                                                    "type": "status",
+                                                    "taskId": result.get("taskId", ""),
+                                                    "state": state,
+                                                    "final": is_final,
+                                                    "message": status_message or None,
+                                                }
+                                                yield f"data: {json.dumps(payload)}\n\n"
+
+                    except (httpx.RequestError, httpx.ReadError, httpx.RemoteProtocolError) as e:
+                        logger.warning(
+                            "Resubscribe connection error (attempt %d): %s", resub_attempt, e
+                        )
+                        await asyncio.sleep(2)
+                        continue
+                    except Exception as e:
+                        logger.warning("Resubscribe error (attempt %d): %s", resub_attempt, e)
+                        break
+
+                    if _done_received:
+                        break
 
     except httpx.HTTPStatusError as e:
         error_msg = f"Agent error: {e.response.status_code}"
