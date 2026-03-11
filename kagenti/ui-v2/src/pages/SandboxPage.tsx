@@ -729,6 +729,7 @@ export const SandboxPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(false);
   const [oldestIndex, setOldestIndex] = useState<number | null>(null);
   // Synchronous guard against double-send (React StrictMode double-invokes
   // effects/callbacks, and async setState batching means two rapid calls
@@ -1136,6 +1137,7 @@ export const SandboxPage: React.FC = () => {
         setHasMoreHistory(hasMore);
         setOldestIndex(oldest);
         setLoadingHistory(false);
+        setLoadingSession(false);
 
         // Subscribe AFTER state is settled (next tick)
         if (shouldSubscribe) {
@@ -1144,6 +1146,7 @@ export const SandboxPage: React.FC = () => {
         }
       } catch {
         setLoadingHistory(false);
+        setLoadingSession(false);
       }
     },
     []
@@ -1298,8 +1301,7 @@ export const SandboxPage: React.FC = () => {
         setSelectedAgent(sessionAgentName);
         if (id) localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + id, sessionAgentName);
       }
-      setMessages([]);
-      setAgentLoops(new Map());
+      setLoadingSession(true);
       setInput('');
       setStreamingContent('');
       setIsStreaming(false);
@@ -1337,9 +1339,22 @@ export const SandboxPage: React.FC = () => {
     (agentName: string) => {
       selectedAgentRef.current = agentName; // sync ref immediately
       setSelectedAgent(agentName);
-      handleSelectSession('', agentName); // pass agent directly (state update is async)
+      // Clear contextId to start fresh (no existing session)
+      setContextId('');
+      setMessages([]);
+      setAgentLoops(new Map());
+      setLoadingSession(false);
+      setInput('');
+      setStreamingContent('');
+      setIsStreaming(false);
+      setError(null);
+      setHasMoreHistory(false);
+      setOldestIndex(null);
+      shouldAutoScroll.current = true;
+      setSearchParams({});
+      localStorage.removeItem(STORAGE_KEY_SESSION);
     },
-    [handleSelectSession]
+    [setSearchParams]
   );
 
   // Persist namespace to localStorage
@@ -1918,7 +1933,12 @@ export const SandboxPage: React.FC = () => {
           {activeTab === 'chat' && (
           <>
           {/* Chat messages */}
-          <Card style={{ flex: 1, overflow: 'hidden' }}>
+          <Card style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+            {loadingSession && (
+              <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 4 }}>
+                <Spinner size="lg" />
+              </div>
+            )}
             <CardBody
               ref={scrollContainerRef}
               data-testid="chat-messages"
