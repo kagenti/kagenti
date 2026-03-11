@@ -229,9 +229,13 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       step.nodeType = 'executor';
     } else {
       // No matching step — create an implicit executor step
+      // Use plan step description if available
+      const planStepIdx = le.current_step ?? loop.currentStep;
+      const planDesc = loop.plan[planStepIdx] || '';
       steps.push({
         index: stepIdx,
-        description: 'Tool execution',
+        planStep: planStepIdx,
+        description: planDesc || `Tool execution`,
         model: le.model || loop.model,
         nodeType: 'executor' as const,
         tokens: { prompt: 0, completion: 0 },
@@ -276,9 +280,12 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       step.nodeType = 'executor';
     } else {
       // No matching step — create an implicit executor step
+      const planStepIdx = le.current_step ?? loop.currentStep;
+      const planDesc = loop.plan[planStepIdx] || '';
       steps.push({
         index: stepIdx,
-        description: 'Tool execution',
+        planStep: planStepIdx,
+        description: planDesc || 'Tool execution',
         model: le.model || loop.model,
         nodeType: 'executor' as const,
         tokens: { prompt: 0, completion: 0 },
