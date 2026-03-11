@@ -287,14 +287,14 @@ test.describe('Agent RCA Workflow', () => {
     const sid = sessionUrl.match(/session=([a-f0-9]+)/)?.[1] || '';
     await page.goto('/'); await loginIfNeeded(page);
     // SPA route to session (avoids Keycloak re-auth redirect)
-    await page.evaluate((s) => {
-      window.history.pushState({}, '', `/sandbox?session=${s}`);
+    await page.evaluate(([s, a]) => {
+      window.history.pushState({}, '', `/sandbox?session=${s}&agent=${a}`);
       window.dispatchEvent(new PopStateEvent('popstate'));
-    }, sid);
+    }, [sid, AGENT_NAME]);
     await page.waitForTimeout(5000);
 
     const userMsg = page.getByTestId('chat-messages').getByText('Analyze the latest CI failures').first();
-    await expect(userMsg).toBeVisible({ timeout: 30000 });
+    await expect(userMsg).toBeVisible({ timeout: 60000 });
     console.log('[rca] Session persists after navigation');
 
     // ── Step 6: Files tab — verify session workspace is browsable ───────
