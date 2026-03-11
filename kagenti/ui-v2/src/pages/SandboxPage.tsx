@@ -1548,17 +1548,23 @@ export const SandboxPage: React.FC = () => {
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      // Try streaming first; fall back to non-streaming on failure
+      // Try streaming first; fall back to non-streaming ONLY if the
+      // initial connection failed (HTTP error). Once the stream connects
+      // and starts receiving data, the message has already been sent to
+      // the agent — do NOT resend via non-streaming fallback.
       let streamed = false;
       try {
         streamed = await sendStreaming(messageToSend, headers, skill);
       } catch (streamErr) {
-        // Streaming failed — check if it's a connection error
+        // Streaming threw — but if we got a 200 response, the message
+        // was already sent. Only fall back on connection/pre-send errors.
         const streamMsg = streamErr instanceof Error ? streamErr.message : '';
-        if (streamMsg.includes('connection') || streamMsg.includes('chunked')) {
+        if (streamMsg.includes('connection') || streamMsg.includes('chunked') || streamMsg.includes('network')) {
           throw streamErr; // Let the outer catch handle with backoff
         }
-        // Other errors: fall through to non-streaming
+        // Stream reader error after 200 — message was sent, don't resend
+        console.warn('[chat] Stream reader error (message already sent):', streamMsg);
+        streamed = true;
       }
 
       if (!streamed) {
