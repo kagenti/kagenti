@@ -61,6 +61,7 @@ export interface MicroReasoning {
   completion_tokens?: number;
   system_prompt?: string;
   prompt_messages?: Array<{ role: string; preview: string }>;
+  after_call_id?: string;
 }
 
 export interface PromptMessage {
@@ -73,8 +74,8 @@ export interface AgentLoopStep {
   description: string;
   model: string;
   tokens: { prompt: number; completion: number };
-  toolCalls: Array<{ type: string; name?: string; args?: unknown; tools?: unknown[] }>;
-  toolResults: Array<{ type: string; name?: string; output?: string }>;
+  toolCalls: Array<{ type: string; name?: string; args?: unknown; tools?: unknown[]; call_id?: string }>;
+  toolResults: Array<{ type: string; name?: string; output?: string; call_id?: string; status?: 'success' | 'error' | 'timeout' | 'pending' }>;
   durationMs: number;
   status: 'pending' | 'running' | 'done' | 'failed';
   /** LLM reasoning / chain-of-thought text (optional, model-dependent). */

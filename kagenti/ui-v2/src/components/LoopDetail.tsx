@@ -311,18 +311,27 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number]; hasRes
   );
 };
 
+const statusIcon = (status?: string) => {
+  switch (status) {
+    case 'error': return '\u274c';
+    case 'timeout': return '\u23f3';
+    case 'success': return '\u2713';
+    default: return '\u25b6';
+  }
+};
+
 const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
   const [expanded, setExpanded] = useState(false);
 
   const preview = toolOutputPreview(result.output);
-  const hasError = isToolResultError(result.output);
+  const hasError = result.status === 'error' || isToolResultError(result.output);
   return (
     <div
       style={{
         margin: '4px 0',
         padding: '6px 10px',
         borderLeft: `3px solid ${hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--success-color--100)'}`,
-        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        backgroundColor: hasError ? 'rgba(201, 25, 11, 0.08)' : 'var(--pf-v5-global--BackgroundColor--200)',
         borderRadius: '0 4px 4px 0',
         fontSize: '0.85em',
         cursor: 'pointer',
@@ -330,6 +339,7 @@ const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }
       onClick={() => setExpanded(!expanded)}
     >
       <div style={{ fontWeight: 600 }}>
+        <span style={{ marginRight: 4 }}>{statusIcon(result.status)}</span>
         {expanded ? '\u25bc' : '\u25b6'} Result: {result.name || 'unknown'}
         {!expanded && (
           <span style={{ fontWeight: 400, color: hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
@@ -463,8 +473,17 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         const usedResults = new Set<number>();
         const mrs = step.microReasonings || [];
         return step.toolCalls.map((tc, i) => {
-          let matchedResult = step.toolResults[i] && !usedResults.has(i) ? step.toolResults[i] : undefined;
-          let matchedIdx = matchedResult ? i : -1;
+          // First try call_id match
+          let matchedResult = step.toolResults.find(
+            (tr, idx) => !usedResults.has(idx) && tr.call_id && tr.call_id === tc.call_id
+          );
+          let matchedIdx = matchedResult ? step.toolResults.indexOf(matchedResult) : -1;
+
+          // Fall back to positional, then name-based
+          if (!matchedResult) {
+            matchedResult = step.toolResults[i] && !usedResults.has(i) ? step.toolResults[i] : undefined;
+            matchedIdx = matchedResult ? i : -1;
+          }
           if (!matchedResult) {
             matchedIdx = step.toolResults.findIndex(
               (tr, idx) => !usedResults.has(idx) && tr.name === tc.name,

@@ -49,6 +49,12 @@ export interface LoopEvent {
   micro_step?: number;
   /** Next action planned after micro-reasoning */
   next_action?: string;
+  /** Unique call identifier for pairing tool calls with results */
+  call_id?: string;
+  /** Explicit status for tool results */
+  status?: 'success' | 'error' | 'timeout' | 'pending';
+  /** call_id that this micro-reasoning follows */
+  after_call_id?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +192,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     const steps = [...loop.steps];
     const step = steps.find((s) => s.index === stepIdx);
     if (step) {
-      step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '' }])];
+      step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }])];
       step.nodeType = 'executor';
     } else {
       // No matching step — create an implicit executor step
@@ -196,7 +202,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         model: le.model || loop.model,
         nodeType: 'executor' as const,
         tokens: { prompt: 0, completion: 0 },
-        toolCalls: (le.tools as AgentLoopStep['toolCalls']) || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '' }],
+        toolCalls: (le.tools as AgentLoopStep['toolCalls']) || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }],
         toolResults: [],
         durationMs: 0,
         status: 'running' as const,
@@ -229,7 +235,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     }
 
     if (step) {
-      step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '' }];
+      step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }];
       // Mark step as done only when all tool calls have results
       if (step.toolResults.length >= step.toolCalls.length) {
         step.status = 'done';
@@ -244,7 +250,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         nodeType: 'executor' as const,
         tokens: { prompt: 0, completion: 0 },
         toolCalls: [],
-        toolResults: [{ type: 'tool_result', name: resultName, output: le.output || '' }],
+        toolResults: [{ type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }],
         durationMs: 0,
         status: 'done' as const,
       });
@@ -352,6 +358,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       completion_tokens: le.completion_tokens,
       system_prompt: le.system_prompt,
       prompt_messages: le.prompt_messages,
+      after_call_id: le.after_call_id,
     };
     step.microReasonings = [...(step.microReasonings || []), mr];
     return { ...loop, steps };
