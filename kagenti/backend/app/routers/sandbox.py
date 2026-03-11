@@ -2501,8 +2501,10 @@ async def subscribe_session(
 
     task_id = row["id"]
     state = (row["state"] or "").lower()
+    logger.info("Subscribe: session=%s task=%s state=%s", session_id, task_id, state)
     if state in ("completed", "failed", "canceled"):
         # Task already finished — nothing to subscribe to
+        logger.info("Subscribe: session=%s already %s — sending done", session_id, state)
         return StreamingResponse(
             _done_stream(session_id),
             media_type="text/event-stream",

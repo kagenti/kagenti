@@ -964,7 +964,7 @@ export const SandboxPage: React.FC = () => {
         return;
       }
 
-      console.log('[subscribe] Connected to live stream');
+      console.log('[subscribe] Connected to live stream, status:', response.status, 'content-type:', response.headers.get('content-type'));
       setIsStreaming(true);
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -984,6 +984,7 @@ export const SandboxPage: React.FC = () => {
             if (!raw) continue;
             try {
               const data = JSON.parse(raw);
+              console.log('[subscribe] Raw data:', JSON.stringify(data).substring(0, 200));
               if (data.done) {
                 console.log('[subscribe] Stream done — marking loops as done');
                 // Don't reload history — it would overwrite streaming-built
@@ -1082,8 +1083,11 @@ export const SandboxPage: React.FC = () => {
               finalMessages = allMessages.filter((m) => m.role === 'user');
               console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events`);
 
+              const loopStatuses = Array.from(finalLoops.values()).map((l) => ({ id: l.id, status: l.status, hasFinalAnswer: !!l.finalAnswer, steps: l.steps.length }));
+              console.log('[history] Loop statuses:', JSON.stringify(loopStatuses));
               const hasComplete = Array.from(finalLoops.values()).some((l) => l.finalAnswer);
               shouldSubscribe = !hasComplete;
+              console.log('[history] hasComplete:', hasComplete, 'shouldSubscribe:', shouldSubscribe);
             } else {
               finalMessages = allMessages;
             }
