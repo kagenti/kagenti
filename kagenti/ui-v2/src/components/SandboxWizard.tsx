@@ -74,6 +74,7 @@ export interface WizardState {
   model: string;
   forceToolChoice: boolean;
   textToolParsing: boolean;
+  debugPrompts: boolean;
   // Step 6: Budget
   maxIterations: number;
   maxTokens: number;
@@ -111,6 +112,7 @@ export const INITIAL_STATE: WizardState = {
   model: 'llama-4-scout',
   forceToolChoice: true,
   textToolParsing: true,
+  debugPrompts: true,
   maxIterations: 100,
   maxTokens: 1000000,
   maxToolCallsPerStep: 10,
@@ -288,6 +290,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         // LLM behavior
         force_tool_choice: state.forceToolChoice,
         text_tool_parsing: state.textToolParsing,
+        debug_prompts: state.debugPrompts,
         // Budget controls
         max_iterations: state.maxIterations,
         max_tokens: state.maxTokens,
@@ -664,6 +667,14 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
             <FormSelectOption key={m.value} value={m.value} label={m.label} />
           ))}
         </FormSelect>
+      </FormGroup>
+      <FormGroup label="Debug Prompts" fieldId="debug-prompts">
+        <Switch
+          id="debug-prompts"
+          label="Include full system prompts and message history in events (large data)"
+          isChecked={state.debugPrompts}
+          onChange={(_e, c) => update('debugPrompts', c)}
+        />
       </FormGroup>
     </Form>
   );

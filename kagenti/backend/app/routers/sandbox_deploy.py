@@ -98,6 +98,7 @@ class SandboxCreateRequest(BaseModel):
     # LLM behavior
     force_tool_choice: bool = True
     text_tool_parsing: bool = True
+    debug_prompts: bool = False
     # Budget controls (passed as SANDBOX_* env vars to the agent)
     max_iterations: int = 100
     max_tokens: int = 1_000_000
@@ -279,6 +280,7 @@ def _build_deployment_manifest(
     env_vars.append(
         {"name": "SANDBOX_TEXT_TOOL_PARSING", "value": "1" if req.text_tool_parsing else "0"}
     )
+    env_vars.append({"name": "SANDBOX_DEBUG_PROMPTS", "value": "1" if req.debug_prompts else "0"})
     # Budget env vars (consumed by AgentBudget dataclass in the agent)
     env_vars.append({"name": "SANDBOX_MAX_ITERATIONS", "value": str(req.max_iterations)})
     env_vars.append({"name": "SANDBOX_MAX_TOKENS", "value": str(req.max_tokens)})
