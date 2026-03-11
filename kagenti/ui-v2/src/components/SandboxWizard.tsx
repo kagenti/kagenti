@@ -650,7 +650,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
       <Split hasGutter>
         <SplitItem isFilled>
           <FormGroup label="Max Iterations" fieldId="max-iterations"
-            helperText="Outer reasoning loops (planner → executor → reflector)">
+>
             <TextInput id="max-iterations" type="number"
               value={String(state.maxIterations)}
               onChange={(_e, v) => update('maxIterations', Number(v) || 100)} />
@@ -658,7 +658,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         </SplitItem>
         <SplitItem isFilled>
           <FormGroup label="Max Tokens" fieldId="max-tokens"
-            helperText="Total prompt + completion tokens per message">
+>
             <TextInput id="max-tokens" type="number"
               value={String(state.maxTokens)}
               onChange={(_e, v) => update('maxTokens', Number(v) || 1000000)} />
@@ -668,7 +668,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
       <Split hasGutter>
         <SplitItem isFilled>
           <FormGroup label="Max Wall Clock (seconds)" fieldId="max-wall-clock"
-            helperText="Maximum time per message run">
+>
             <TextInput id="max-wall-clock" type="number"
               value={String(state.maxWallClockS)}
               onChange={(_e, v) => update('maxWallClockS', Number(v) || 600)} />
@@ -676,7 +676,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         </SplitItem>
         <SplitItem isFilled>
           <FormGroup label="Tool Calls Per Step" fieldId="max-tool-calls"
-            helperText="Max tool invocations per plan step">
+>
             <TextInput id="max-tool-calls" type="number"
               value={String(state.maxToolCallsPerStep)}
               onChange={(_e, v) => update('maxToolCallsPerStep', Number(v) || 10)} />
@@ -686,7 +686,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
       <Split hasGutter>
         <SplitItem isFilled>
           <FormGroup label="HITL Check-in Interval" fieldId="hitl-interval"
-            helperText="Iterations between human-in-the-loop check-ins">
+>
             <TextInput id="hitl-interval" type="number"
               value={String(state.hitlInterval)}
               onChange={(_e, v) => update('hitlInterval', Number(v) || 50)} />
@@ -694,7 +694,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         </SplitItem>
         <SplitItem isFilled>
           <FormGroup label="Recursion Limit" fieldId="recursion-limit"
-            helperText="LangGraph graph recursion limit">
+>
             <TextInput id="recursion-limit" type="number"
               value={String(state.recursionLimit)}
               onChange={(_e, v) => update('recursionLimit', Number(v) || 50)} />
