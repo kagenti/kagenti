@@ -995,16 +995,15 @@ export const SandboxPage: React.FC = () => {
                 // Apply loop event to agentLoops
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
-                  const loopId = data.loop_id;
-                  const existing = next.get(loopId) || {
-                    id: loopId, status: 'executing' as const, model: '',
+                  const loopId = data.loop_id as string;
+                  const existing: AgentLoop = next.get(loopId) || {
+                    id: loopId, status: 'executing', model: '',
                     plan: [], replans: [], currentStep: 0, totalSteps: 0,
-                    iteration: 0, steps: [], budget: { tokensUsed: 0, tokensBudget: 0, iterationsUsed: 0, iterationsBudget: 0 },
+                    iteration: 0, steps: [], finalAnswer: undefined,
+                    budget: { tokensUsed: 0, tokensBudget: 0, iterationsUsed: 0, iterationsBudget: 0 },
                   };
-                  // Use applyLoopEvent if available, otherwise basic append
                   const evt = data.loop_event;
-                  const evtType = evt.type;
-                  if (evtType === 'reporter_output') {
+                  if (evt.type === 'reporter_output') {
                     existing.finalAnswer = evt.content || evt.final_answer || '';
                     existing.status = 'done';
                   }
