@@ -999,24 +999,17 @@ export const SandboxPage: React.FC = () => {
                 });
                 return;
               }
-              if (data.ping) continue;
+              if (data.ping) { console.log('[subscribe] ping'); continue; }
               if (data.loop_id && data.loop_event) {
-                // Apply loop event to agentLoops
+                const evt = data.loop_event as LoopEvent;
+                evt.loop_id = evt.loop_id || data.loop_id;
+                console.log('[subscribe] Event:', evt.type, 'step:', evt.step, 'loop:', evt.loop_id);
+                // Apply loop event using the canonical reducer
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
-                  const loopId = data.loop_id as string;
-                  const existing: AgentLoop = next.get(loopId) || ({
-                    id: loopId, status: 'executing', model: '',
-                    plan: [], replans: [], currentStep: 0, totalSteps: 0,
-                    iteration: 0, steps: [], finalAnswer: undefined,
-                    budget: { tokensUsed: 0, tokensBudget: 0, iterationsUsed: 0, iterationsBudget: 0 },
-                  } as unknown as AgentLoop);
-                  const evt = data.loop_event;
-                  if (evt.type === 'reporter_output') {
-                    existing.finalAnswer = evt.content || evt.final_answer || '';
-                    existing.status = 'done';
-                  }
-                  next.set(loopId, { ...existing });
+                  const loopId = evt.loop_id;
+                  const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
+                  next.set(loopId, applyLoopEvent(existing, evt));
                   return next;
                 });
               }
