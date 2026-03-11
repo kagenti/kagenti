@@ -178,8 +178,10 @@ After the SSE stream ends, the backend should **poll the agent's A2A task endpoi
 | 14 | **Agent writes outside workspace** | `mkdir ../../output` fails — skills/prompts reference paths outside `/workspace` |
 | 15 | **Token budget enforcement** | NEW — `add_tokens()` never called, budget is dead code |
 | 16 | **Context window management** | NEW — no message trimming, UI shows wrong metric |
-| 17 | **DB persistence gap** | BG persist logs UPDATE completed but DB shows no loop_events |
-| 18 | **SSE stream drops events** | Only router event reaches backend via SSE; rest come via recovery |
+| 17 | **DB metadata race condition** | CRITICAL: A2A SDK's `DatabaseTaskStore.save()` overwrites metadata column. Backend writes `{owner, agent_name, loop_events}`, then A2A SDK calls `session.merge()` and replaces with `{}`. Same `tasks` table, same `metadata` column. Fix: use separate `session_metadata` table or separate column. |
+| 18 | **SSE stream closes at 30s** | Agent's A2A SSE handler closes after ~30s. With clean checkpointer (81K entries deleted), SSE delivered 12+ events. Dirty checkpointer = slow agent = only router arrives. Recovery now works (correct task ID) but metadata is overwritten by A2A SDK. |
+| 19 | **Double-send UI bug** | 3rd session created during tests. Input cleared but message still sent twice. 32s gap suggests retry/fallback mechanism, not double-click. |
+| 20 | **Ghost sessions after cleanup** | Recovery background tasks survive pod rollout transition, writing to DB after cleanup. Fix: clean DB AFTER all pods fully restarted. |
 
 ## Checking Logs After Tests
 
