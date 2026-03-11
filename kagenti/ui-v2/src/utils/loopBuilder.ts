@@ -115,6 +115,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   }
 
   if (eventType === 'planner_output') {
+    console.log('[loopBuilder] planner_output: system_prompt=', le.system_prompt?.substring(0, 50), 'prompt_messages=', le.prompt_messages?.length);
     const incomingSteps = le.steps || [];
     const isReplan = loop.plan.length > 0;
     const iterNum = le.iteration ?? loop.iteration ?? 0;
