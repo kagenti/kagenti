@@ -455,12 +455,14 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         <ReasoningBlock reasoning={step.description} />
       )}
 
-      {/* Tool calls paired with results — call followed by its result */}
+      {/* Tool calls paired with results, interleaved with micro-reasoning.
+          Micro-reasoning N appears AFTER tool pair N (chronological order):
+          tool_call[0] → result[0] → micro_reasoning[0] → tool_call[1] → result[1] → micro_reasoning[1] ...
+      */}
       {(() => {
-        // Track which results have been consumed so each result is used at most once
         const usedResults = new Set<number>();
+        const mrs = step.microReasonings || [];
         return step.toolCalls.map((tc, i) => {
-          // Try positional match first, then name-based match
           let matchedResult = step.toolResults[i] && !usedResults.has(i) ? step.toolResults[i] : undefined;
           let matchedIdx = matchedResult ? i : -1;
           if (!matchedResult) {
@@ -471,51 +473,52 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
           }
           if (matchedResult && matchedIdx >= 0) usedResults.add(matchedIdx);
 
-          // A tool call is "pending" only if there's no matched result AND
-          // the step is still running. Once the step is done/failed (e.g. node
-          // transition happened), treat unmatched calls as complete too.
           const hasResult = !!matchedResult || step.status === 'done' || step.status === 'failed';
           const resultError = !!matchedResult && isToolResultError(matchedResult?.output);
+          // Find micro-reasoning that follows this tool pair (micro_step matches tool index)
+          const mr = mrs.find(m => m.micro_step === i + 1) || mrs[i];
           return (
-            <div key={`tool-pair-${i}`} style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
-              <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
-              {matchedResult && <ToolResultBlock result={matchedResult} />}
-            </div>
+            <React.Fragment key={`tool-group-${i}`}>
+              <div style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
+                <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
+                {matchedResult && <ToolResultBlock result={matchedResult} />}
+              </div>
+              {mr && (
+                <div style={{
+                  margin: '8px 0', padding: '8px 12px',
+                  backgroundColor: '#1a1a2e', borderRadius: '4px',
+                  borderLeft: '3px solid #58a6ff', fontSize: '13px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px' }}>
+                      Micro-reasoning {(mr.micro_step || i + 1)}
+                    </span>
+                    {onOpenInspector && (
+                      <button
+                        onClick={() => onOpenInspector(`Micro-reasoning ${mr.micro_step || i + 1}`, mr)}
+                        style={{
+                          background: 'none', border: '1px solid #555', color: '#888',
+                          fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
+                        }}
+                      >
+                        Prompt
+                      </button>
+                    )}
+                  </div>
+                  {mr.reasoning && (
+                    <p style={{ margin: '4px 0 0', color: '#ccc', whiteSpace: 'pre-wrap' }}>
+                      {mr.reasoning.substring(0, 500)}{mr.reasoning.length > 500 ? '...' : ''}
+                    </p>
+                  )}
+                </div>
+              )}
+            </React.Fragment>
           );
         });
       })()}
       {/* Orphan results (no matching call) */}
       {step.toolResults.filter((_tr, idx) => idx >= step.toolCalls.length).map((tr, i) => (
         <ToolResultBlock key={`orphan-result-${i}`} result={tr} />
-      ))}
-
-      {/* Micro-reasoning entries */}
-      {step.microReasonings?.map((mr, mrIdx) => (
-        <div key={`mr-${mrIdx}`} style={{
-          margin: '8px 0', padding: '8px 12px',
-          backgroundColor: '#1a1a2e', borderRadius: '4px',
-          borderLeft: '3px solid #58a6ff', fontSize: '13px',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px' }}>
-              Micro-reasoning {mrIdx + 1}
-            </span>
-            {onOpenInspector && (
-              <button
-                onClick={() => onOpenInspector(`Micro-reasoning ${mrIdx + 1}`, mr)}
-                style={{
-                  background: 'none', border: '1px solid #555', color: '#888',
-                  fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
-                }}
-              >
-                Prompt
-              </button>
-            )}
-          </div>
-          <p style={{ margin: '4px 0 0', color: '#ccc', whiteSpace: 'pre-wrap' }}>
-            {mr.reasoning?.substring(0, 500)}{(mr.reasoning?.length ?? 0) > 500 ? '...' : ''}
-          </p>
-        </div>
       ))}
     </div>
   );
