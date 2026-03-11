@@ -163,7 +163,7 @@ After the SSE stream ends, the backend should **poll the agent's A2A task endpoi
 | # | Item | Notes |
 |---|------|-------|
 | 1 | ~~loop_events persistence~~ | FIXED — background task |
-| 2 | **Budget controls in wizard** | Step showing SANDBOX_* defaults, passed as env vars |
+| 2 | **Budget controls in wizard + reconfigure** | Wizard step showing SANDBOX_MAX_ITERATIONS, SANDBOX_MAX_TOKENS, SANDBOX_MAX_TOOL_CALLS_PER_STEP as editable fields with defaults. On reconfigure, allow clicking any step in the top stepper to jump directly. Budget values passed as env vars on deploy. |
 | 3 | **RCA quality 3/5** | Reporter prompt formatting for Llama 4 Scout |
 | 4 | ~~Agent ends after few steps~~ | Partially fixed — recovery polling fills gaps |
 | 5 | **Message queue + cancel button** | Queue messages during loop, cancel button top right |
