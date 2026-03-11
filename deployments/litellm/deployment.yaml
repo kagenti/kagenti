@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: litellm-proxy
         app.kubernetes.io/component: model-gateway
+        istio.io/dataplane-mode: ambient
+        istio.io/use-waypoint: waypoint
     spec:
       serviceAccountName: litellm-proxy
       containers:
