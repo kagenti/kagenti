@@ -148,7 +148,9 @@ const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMess
               {promptMessages.map((msg, i) => (
                 <div key={i} style={{ margin: '2px 0', padding: '4px 8px', borderLeft: `2px solid ${msg.role === 'system' ? '#475569' : msg.role === 'tool' ? '#2e7d32' : '#0066cc'}`, fontSize: '0.85em' }}>
                   <span style={{ fontWeight: 600, fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)' }}>{msg.role}</span>
-                  <span style={{ marginLeft: 6, color: 'var(--pf-v5-global--Color--100)' }}>{msg.preview.substring(0, 150)}{msg.preview.length > 150 ? '...' : ''}</span>
+                  <pre style={{ margin: '4px 0 0', padding: 6, backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)', color: 'var(--pf-v5-global--Color--light-100)', borderRadius: 4, fontSize: '0.85em', overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {msg.preview}
+                  </pre>
                 </div>
               ))}
             </NestedCollapsible>
