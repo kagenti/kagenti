@@ -1026,91 +1026,93 @@ export const SandboxPage: React.FC = () => {
     }
   };
 
-  /** Load the initial (most recent) page of history. */
+  /** Load the initial (most recent) page of history.
+   *
+   * Uses parallel fetches and batched state updates to minimize re-renders.
+   * Computes all derived state (messages, loops, agent) BEFORE any setState.
+   */
   const loadInitialHistory = useCallback(
     async (ns: string, ctxId: string) => {
       if (!ns || !ctxId) return;
       setLoadingHistory(true);
 
-      // Fetch session metadata to restore the correct agent name.
-      // This handles page reload / URL restoration where handleSelectSession
-      // was not called, so selectedAgent would otherwise stay at the default.
       try {
-        const sessionDetail = await sandboxService.getSession(ns, ctxId);
+        // Parallel fetch: session metadata + history in one round-trip
+        const [sessionDetail, historyPage] = await Promise.all([
+          sandboxService.getSession(ns, ctxId).catch(() => null),
+          sandboxService.getHistory(ns, ctxId, { limit: INITIAL_HISTORY_LIMIT }).catch(() => null),
+        ]);
+
+        // --- Compute all derived state BEFORE any setState calls ---
+
+        // 1. Agent name
         const metaAgent = (sessionDetail?.metadata as Record<string, unknown> | null)?.agent_name as string | undefined;
+        const resolvedAgent = metaAgent
+          || localStorage.getItem(STORAGE_KEY_AGENT_PREFIX + ctxId)
+          || new URLSearchParams(window.location.search).get('agent')
+          || selectedAgentRef.current
+          || 'sandbox-legion';
         if (metaAgent) {
-          setSelectedAgent(metaAgent);
           localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + ctxId, metaAgent);
-        } else {
-          // Metadata is empty (race condition on new sessions). Fall back to:
-          // 1. localStorage for this session, 2. URL ?agent= param,
-          // 3. current selectedAgent (keep as-is), 4. 'sandbox-legion'
-          const storedAgent = localStorage.getItem(STORAGE_KEY_AGENT_PREFIX + ctxId);
-          const urlAgent = new URLSearchParams(window.location.search).get('agent');
-          const fallback = storedAgent || urlAgent || selectedAgentRef.current || 'sandbox-legion';
-          setSelectedAgent(fallback);
         }
-      } catch {
-        // Non-critical — agent badge may show default but chat still works
-      }
 
-      try {
-        const page = await sandboxService.getHistory(ns, ctxId, {
-          limit: INITIAL_HISTORY_LIMIT,
-        });
-        console.log(`[history] Loaded: ${page.messages.length} messages, loop_events=${page.loop_events?.length ?? 'none'}, total=${page.total}`);
-        setMessages(page.messages.map(toMessage));
-        setHasMoreHistory(page.has_more);
-        if (page.messages.length > 0) {
-          setOldestIndex(page.messages[0]._index ?? 0);
-        }
-        // Reconstruct loop cards from persisted loop events
-        if (page.loop_events) {
-          const events = page.loop_events as unknown as LoopEvent[];
-          if (events.length > 0) {
-            // When loop events are available, filter out flat assistant messages
-            // to prevent duplicate rendering (loop cards handle all agent content).
-            // Keep only user messages in the messages array.
-            setMessages((prev) => prev.filter((m) => m.role === 'user'));
+        // 2. Messages and loops
+        let finalMessages: Message[] = [];
+        let finalLoops = new Map<string, AgentLoop>();
+        let hasMore = false;
+        let oldest: number | null = null;
+        let shouldSubscribe = false;
 
-            console.log(`[history] LOOP_REBUILD events=${events.length} types=${events.map((e) => e.type).slice(0, 10)}`);
+        if (historyPage) {
+          console.log(`[history] Loaded: ${historyPage.messages.length} messages, loop_events=${historyPage.loop_events?.length ?? 'none'}, total=${historyPage.total}`);
+          const allMessages = historyPage.messages.map(toMessage);
+          hasMore = historyPage.has_more;
+          if (historyPage.messages.length > 0) {
+            oldest = historyPage.messages[0]._index ?? 0;
+          }
 
-            const loops = buildAgentLoops(events);
-            console.log(`[history] Reconstructed ${loops.size} loop(s):`, Array.from(loops.entries()).map(([lid, l]) => ({ id: lid, status: l.status, steps: l.steps.length, finalAnswer: !!l.finalAnswer })));
-            setAgentLoops(loops);
+          // Build loops from events
+          if (historyPage.loop_events) {
+            const events = historyPage.loop_events as unknown as LoopEvent[];
+            if (events.length > 0) {
+              finalLoops = buildAgentLoops(events);
+              // Keep only user messages when we have loop cards
+              finalMessages = allMessages.filter((m) => m.role === 'user');
+              console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events`);
 
-            // If no loop has a finalAnswer, the agent may still be running.
-            // Subscribe to the live event stream to get real-time updates.
-            const hasComplete = Array.from(loops.values()).some((l) => l.finalAnswer);
-            if (!hasComplete && ctxId) {
-              console.log('[history] No final answer — subscribing to live stream');
-              _subscribeToSession(ns, ctxId);
+              const hasComplete = Array.from(finalLoops.values()).some((l) => l.finalAnswer);
+              shouldSubscribe = !hasComplete;
+            } else {
+              finalMessages = allMessages;
             }
+          } else {
+            finalMessages = allMessages;
           }
+        } else if (sessionDetail?.history) {
+          // Fallback: no history endpoint — use session detail
+          const filtered = sessionDetail.history.filter((h: { role: string; parts?: Array<{ text?: string }> }) => {
+            if (h.role === 'user') return true;
+            const text = h.parts?.map((p: { text?: string }) => p.text).filter(Boolean).join('') || '';
+            return text ? !isGraphDump(text) : false;
+          });
+          finalMessages = filtered.slice(-INITIAL_HISTORY_LIMIT).map(toMessage);
+          hasMore = filtered.length > INITIAL_HISTORY_LIMIT;
+        }
+
+        // --- ONE batch of setState calls (React 18 auto-batches) ---
+        setSelectedAgent(resolvedAgent);
+        setMessages(finalMessages);
+        setAgentLoops(finalLoops);
+        setHasMoreHistory(hasMore);
+        setOldestIndex(oldest);
+        setLoadingHistory(false);
+
+        // Subscribe AFTER state is settled (next tick)
+        if (shouldSubscribe) {
+          console.log('[history] No final answer — subscribing to live stream');
+          _subscribeToSession(ns, ctxId);
         }
       } catch {
-        // Fallback: endpoint may not exist on older backends
-        try {
-          const detail = await sandboxService.getSession(ns, ctxId);
-          if (detail?.history) {
-            const filtered = detail.history.filter((h) => {
-              if (h.role === 'user') return true;
-              const text =
-                h.parts?.map((p) => p.text).filter(Boolean).join('') || '';
-              return text ? !isGraphDump(text) : false;
-            });
-            setMessages(filtered.slice(-INITIAL_HISTORY_LIMIT).map(toMessage));
-            setHasMoreHistory(filtered.length > INITIAL_HISTORY_LIMIT);
-          }
-          // Also restore agent name from the fallback detail response
-          const metaAgent = (detail?.metadata as Record<string, unknown> | null)?.agent_name as string | undefined;
-          if (metaAgent) {
-            setSelectedAgent(metaAgent);
-          }
-        } catch {
-          // ignore
-        }
-      } finally {
         setLoadingHistory(false);
       }
     },
@@ -1901,8 +1903,33 @@ export const SandboxPage: React.FC = () => {
               {/* Sentinel for infinite scroll — loads older messages */}
               <div ref={sentinelRef} style={{ minHeight: 1 }} />
               {loadingHistory && (
-                <div style={{ textAlign: 'center', padding: 8 }}>
-                  <Spinner size="sm" />
+                <div style={{ padding: '12px 14px' }}>
+                  {/* Skeleton: user message placeholder */}
+                  <div style={{
+                    display: 'flex', justifyContent: 'flex-end', marginBottom: 8,
+                  }}>
+                    <div style={{
+                      height: 40, width: '60%', maxWidth: 400,
+                      backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                      borderRadius: 8, opacity: 0.6,
+                    }} />
+                  </div>
+                  {/* Skeleton: agent loop placeholder */}
+                  <div style={{
+                    display: 'flex', gap: 10, padding: '10px 14px', marginBottom: 4,
+                    borderRadius: 8, border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                    backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
+                    opacity: 0.6, minHeight: 80,
+                  }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%',
+                      backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                    }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ height: 14, width: '70%', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', borderRadius: 4, marginBottom: 8 }} />
+                      <div style={{ height: 10, width: '40%', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', borderRadius: 4 }} />
+                    </div>
+                  </div>
                 </div>
               )}
 
