@@ -59,20 +59,26 @@ async function navigateToAgent(page: Page, agentName: string) {
   await loginIfNeeded(page);
   await page.goto(`/sandbox?agent=${agentName}`);
   await page.waitForLoadState('networkidle');
+  // Wait for chat input to appear (session must be ready)
+  const chatInput = page.getByPlaceholder(/Type your message/i);
+  await expect(chatInput).toBeVisible({ timeout: 30000 });
 }
 
 async function sendMessage(page: Page, message: string) {
-  const chatInput = page.locator('textarea[aria-label="Message input"]');
+  const chatInput = page.getByPlaceholder(/Type your message/i);
   await expect(chatInput).toBeVisible({ timeout: 15000 });
   await expect(chatInput).toBeEnabled({ timeout: 15000 });
   await chatInput.fill(message);
-  const sendBtn = page.locator('button[aria-label="Send message"]');
-  await expect(sendBtn).toBeEnabled({ timeout: 5000 });
+  // Scope send button to chat area to avoid matching sidebar buttons
+  const sendBtn = page.locator('[data-testid="chat-messages"]')
+    .locator('..').locator('..')
+    .getByRole('button', { name: /Send/i });
+  await expect(sendBtn).toBeEnabled({ timeout: 10000 });
   await sendBtn.click();
 }
 
 async function waitForResponse(page: Page, timeoutMs = 120000) {
-  const chatInput = page.locator('textarea[aria-label="Message input"]');
+  const chatInput = page.getByPlaceholder(/Type your message/i);
   await expect(chatInput).toBeEnabled({ timeout: timeoutMs });
   await page.waitForTimeout(2000); // Let UI settle
 }
