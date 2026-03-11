@@ -16,7 +16,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { loginIfNeeded } from './helpers/auth';
 
 const NAMESPACE = 'team1';
-const AGENT_NAME = 'sandbox-legion';
+const AGENT_NAME = 'sandbox-hardened';
 
 // Task that triggers multiple tool calls
 const TASK_PROMPT =
