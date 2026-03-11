@@ -388,7 +388,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     };
   }
 
-  if (eventType === 'budget') {
+  if (eventType === 'budget' || eventType === 'budget_update') {
     return {
       ...loop,
       budget: {
