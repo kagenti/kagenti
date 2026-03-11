@@ -522,6 +522,35 @@ async def get_session_history(
             len(all_loop_events),
             [e.get("type") for e in all_loop_events[:10]],
         )
+        # Write-back: if events were extracted from history text but not in
+        # metadata, persist them so future loads don't need re-extraction.
+        if total_raw_count == 0 and len(all_loop_events) > 0 and rows:
+
+            async def _writeback():
+                try:
+                    wb_pool = await get_session_pool(namespace)
+                    async with wb_pool.acquire() as conn:
+                        task_id = rows[-1]["id"]
+                        row = await conn.fetchrow(
+                            "SELECT metadata FROM tasks WHERE id = $1", task_id
+                        )
+                        if row:
+                            meta = _parse_json_field(row["metadata"]) or {}
+                            meta["loop_events"] = all_loop_events
+                            await conn.execute(
+                                "UPDATE tasks SET metadata = $1::jsonb WHERE id = $2",
+                                json.dumps(meta),
+                                task_id,
+                            )
+                            logger.info(
+                                "HISTORY write-back: saved %d events to metadata for session %s",
+                                len(all_loop_events),
+                                context_id,
+                            )
+                except Exception as e:
+                    logger.warning("HISTORY write-back failed for session %s: %s", context_id, e)
+
+            asyncio.create_task(_writeback())
 
     # Parse graph event dumps into structured tool call data.
     # Raw history contains: user messages + graph events like:
