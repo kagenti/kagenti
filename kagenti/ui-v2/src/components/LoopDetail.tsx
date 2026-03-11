@@ -394,7 +394,7 @@ function formatStepTokens(step: AgentLoopStep): string {
   return String(total);
 }
 
-const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: string; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopModel, onOpenInspector }) => {
+const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentStep?: number; loopModel?: string; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopCurrentStep, loopModel, onOpenInspector }) => {
   const showModelBadge = step.model && step.model !== loopModel;
 
   return (
@@ -417,9 +417,11 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
           if (nt === 'planner' || nt === 'replanner') return step.description;
           if (nt === 'reflector') return step.description;
           if (nt === 'reporter') return 'Final answer';
-          // Executor: show plan step number if available, else fallback
-          const planStep = step.planStep ?? step.index;
-          return `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}: ${step.description}`;
+          // Executor: use plan step if available, then loop's currentStep, then omit number
+          const planStep = step.planStep ?? loopCurrentStep;
+          const stepLabel = planStep != null ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}` : '';
+          const desc = step.description !== 'Tool execution' ? step.description : '';
+          return `${stepLabel}${stepLabel && desc ? ': ' : ''}${desc || stepLabel || 'Executing'}`;
         })()}
         {showModelBadge && (
           <span
@@ -634,7 +636,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
       <ReplanSection replans={loop.replans} />
 
       {loop.steps.map((step) => (
-        <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} onOpenInspector={openInspector} />
+        <StepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} onOpenInspector={openInspector} />
       ))}
 
       {/* Streaming indicator — shows when agent is still working */}
