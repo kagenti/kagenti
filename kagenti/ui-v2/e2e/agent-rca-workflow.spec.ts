@@ -355,6 +355,21 @@ test.describe('Agent RCA Workflow', () => {
       const toolCalls = Number(await page.locator('[data-testid="stats-tool-calls"]').textContent() || '0');
       console.log(`[rca] Stats: ${toolCalls} tool calls`);
 
+      // ── Budget section (should appear when agent emits budget_update events) ──
+      const budgetTokensEl = page.locator('[data-testid="stats-budget-tokens-used"]');
+      if (await budgetTokensEl.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const budgetUsed = Number((await budgetTokensEl.textContent() || '0').replace(/,/g, ''));
+        const budgetTotal = Number((await page.locator('[data-testid="stats-budget-tokens-total"]').textContent() || '0').replace(/,/g, ''));
+        console.log(`[rca] Budget: ${budgetUsed.toLocaleString()} / ${budgetTotal.toLocaleString()} tokens`);
+        // Budget used should be reasonable (< 200K tokens for a single RCA)
+        if (budgetUsed > 0) {
+          expect(budgetUsed).toBeLessThan(200_000);
+          console.log(`[rca] Budget check: ${budgetUsed.toLocaleString()} < 200K ✓`);
+        }
+      } else {
+        console.log('[rca] Budget section not visible (agent may not emit budget_update events)');
+      }
+
       // Switch back to chat tab
       const chatTab2 = page.locator('button[role="tab"]').filter({ hasText: 'Chat' });
       await chatTab2.click();
@@ -418,6 +433,17 @@ test.describe('Agent RCA Workflow', () => {
       );
       console.log(`[rca] Token usage in metadata: ${tokenCheck.trim().split('\\n').pop()?.trim()}`);
     }
+
+    // ── Step 7d: Verify step labels are not duplicated ──────────────────
+    // Regression test: "Step 1Step 1" duplication bug
+    const allStepText = await page.locator('.agent-loop-card').textContent() || '';
+    const stepDupMatch = allStepText.match(/Step \d+Step \d+/);
+    if (stepDupMatch) {
+      console.log(`[rca] BUG: Duplicate step label found: "${stepDupMatch[0]}"`);
+    } else {
+      console.log('[rca] Step labels: no duplication ✓');
+    }
+    expect(stepDupMatch).toBeNull();
 
     // ── Step 8: Check RCA assessment quality ─────────────────────────────
     await page.waitForTimeout(10000);
