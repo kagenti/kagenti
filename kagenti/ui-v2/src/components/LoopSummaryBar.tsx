@@ -25,15 +25,26 @@ function countTools(loop: AgentLoop): number {
   return loop.steps.reduce((sum, s) => sum + s.toolCalls.length, 0);
 }
 
-/** Sum all tokens across every step and format as "1.2k" or raw number. */
+/** Sum all tokens across every step (including micro-reasoning) and format as "1.2k" or raw number. */
 function formatTokens(loop: AgentLoop): string {
-  // Prefer budget.tokensUsed, fall back to summing step tokens
+  // Prefer budget.tokensUsed, fall back to summing step + micro-reasoning tokens
   let total = loop.budget.tokensUsed;
   if (!total) {
-    total = loop.steps.reduce((sum, s) => sum + s.tokens.prompt + s.tokens.completion, 0);
+    total = sumAllTokens(loop);
   }
   if (total >= 1000) return (total / 1000).toFixed(1) + 'k';
   return String(total);
+}
+
+/** Sum tokens from steps AND their micro-reasoning sub-calls. */
+function sumAllTokens(loop: AgentLoop): number {
+  return loop.steps.reduce((sum, s) => {
+    let stepTotal = s.tokens.prompt + s.tokens.completion;
+    for (const mr of s.microReasonings || []) {
+      stepTotal += (mr.prompt_tokens || 0) + (mr.completion_tokens || 0);
+    }
+    return sum + stepTotal;
+  }, 0);
 }
 
 /** Format seconds for display (e.g. "12.3s"). */
@@ -80,10 +91,7 @@ export const LoopSummaryBar: React.FC<LoopSummaryBarProps> = ({ loop, expanded, 
   const tokens = formatTokens(loop);
   const duration = formatDuration(loop.budget.wallClockS);
   const sl = statusLabel(loop.status);
-  const totalTokens = loop.steps.reduce(
-    (sum, s) => sum + s.tokens.prompt + s.tokens.completion,
-    0,
-  );
+  const totalTokens = loop.budget.tokensUsed || sumAllTokens(loop);
 
   return (
     <div
