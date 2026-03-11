@@ -2373,19 +2373,48 @@ async def _recover_loop_events_from_agent(
                 if row:
                     meta = _parse_json_field(row["metadata"]) or {}
                     existing = meta.get("loop_events", [])
-                    # Replace if recovered set is larger (more complete)
-                    if len(recovered_events) > len(existing):
-                        meta["loop_events"] = recovered_events
+                    # MERGE: keep SSE-captured events (have prompt data)
+                    # and add only NEW events from recovery.
+                    # Dedup by (type, step, micro_step) or full JSON.
+                    existing_sigs = set()
+                    for evt in existing:
+                        sig = json.dumps(
+                            {
+                                k: evt.get(k)
+                                for k in ("type", "loop_id", "step", "micro_step", "name")
+                            },
+                            sort_keys=True,
+                        )
+                        existing_sigs.add(sig)
+
+                    merged = list(existing)
+                    added = 0
+                    for evt in recovered_events:
+                        sig = json.dumps(
+                            {
+                                k: evt.get(k)
+                                for k in ("type", "loop_id", "step", "micro_step", "name")
+                            },
+                            sort_keys=True,
+                        )
+                        if sig not in existing_sigs:
+                            merged.append(evt)
+                            existing_sigs.add(sig)
+                            added += 1
+
+                    if added > 0:
+                        meta["loop_events"] = merged
                         await conn.execute(
                             "UPDATE tasks SET metadata = $1::json WHERE id = $2",
                             json.dumps(meta),
                             task_db_id,
                         )
                         logger.info(
-                            "Recovery: replaced %d events with %d recovered events for session %s",
+                            "Recovery: merged %d existing + %d new events for session %s (total %d)",
                             len(existing),
-                            len(recovered_events),
+                            added,
                             session_id,
+                            len(merged),
                         )
     except Exception:
         logger.warning(
