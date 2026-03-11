@@ -879,7 +879,6 @@ export const sandboxService = {
       secctx?: boolean;
       landlock?: boolean;
       proxy?: boolean;
-      gvisor?: boolean;
       proxy_domains?: string;
       // Credentials
       github_pat?: string;

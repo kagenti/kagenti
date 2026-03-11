@@ -629,6 +629,27 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
         <StepSection key={step.index} step={step} total={loop.totalSteps} loopModel={loop.model} onOpenInspector={openInspector} />
       ))}
 
+      {/* Streaming indicator — shows when agent is still working */}
+      {(loop.status === 'executing' || loop.status === 'planning' || loop.status === 'reflecting') && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', marginTop: 4,
+          borderLeft: '3px solid var(--pf-v5-global--info-color--100)',
+          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+          borderRadius: '0 4px 4px 0', fontSize: '0.85em',
+          color: 'var(--pf-v5-global--Color--200)',
+        }}>
+          <span style={{
+            display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+            backgroundColor: 'var(--pf-v5-global--info-color--100)',
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }} />
+          Agent is {loop.status === 'planning' ? 'planning' : loop.status === 'reflecting' ? 'reflecting' : 'working'}...
+          {loop.budget?.tokensUsed ? ` (${(loop.budget.tokensUsed / 1000).toFixed(1)}K tokens)` : ''}
+          <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+        </div>
+      )}
+
       {inspectorData && (
         <PromptInspector
           isOpen={inspectorData.isOpen}
