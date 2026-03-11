@@ -129,11 +129,12 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     return {
       ...loop,
       status: 'planning',
-      plan: isReplan ? loop.plan : incomingSteps,
+      plan: incomingSteps.length > 0 ? incomingSteps : loop.plan,
       replans: isReplan
         ? [...loop.replans, { iteration: iterNum, steps: incomingSteps, model: le.model || loop.model, content: le.content }]
         : loop.replans,
-      totalSteps: isReplan ? loop.totalSteps : incomingSteps.length,
+      totalSteps: incomingSteps.length > 0 ? incomingSteps.length : loop.totalSteps,
+      currentStep: isReplan ? 0 : loop.currentStep,
       iteration: iterNum,
       model: le.model || loop.model,
       steps: [
