@@ -272,7 +272,6 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
         const budgetTokensTotal = loops.reduce((s, l) => s + l.budget.tokensBudget, 0);
         const budgetWallClock = loops.reduce((s, l) => s + l.budget.wallClockS, 0);
         const budgetMaxWallClock = loops.reduce((s, l) => s + l.budget.maxWallClockS, 0);
-        const totalIterations = loops.reduce((s, l) => s + l.steps.length, 0);
         const hasBudget = budgetTokensUsed > 0 || budgetTokensTotal > 0;
         if (!hasBudget) return null;
 
