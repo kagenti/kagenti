@@ -13,23 +13,27 @@
 
 ### Project summary
 
-Zero-trust authentication and workload identity platform for cloud-native AI agents on Kubernetes using SPIFFE/SPIRE, OAuth 2.0 token exchange, and transparent sidecar injection.
+Cloud-native platform for deploying, securing, and managing AI agents on Kubernetes -- providing framework-neutral lifecycle management, zero-trust authentication (SPIFFE/SPIRE + OAuth 2.0 token exchange), multi-protocol support (A2A, MCP), and built-in observability.
 
 ### Project description
 
 <!-- 100-300 words -->
 
-Kagenti provides zero-trust authentication infrastructure for AI agents running on Kubernetes. As AI agents increasingly act on behalf of users -- committing code, calling APIs, and triggering workflows -- the question of identity, delegation, and auditability becomes critical. Kagenti addresses this by combining workload identity (SPIFFE/SPIRE), OAuth 2.0 token exchange (RFC 8693), and a transparent sidecar architecture so that agent developers never write authentication code.
+Kagenti is a cloud-native platform for deploying and operating AI agents on Kubernetes. As organizations adopt agentic AI -- where autonomous agents act on behalf of users, call APIs, invoke tools, and collaborate with other agents -- the infrastructure needs shift from simple model serving to a full lifecycle platform with identity, authorization, build pipelines, observability, and multi-tenancy. Kagenti provides this infrastructure so that agent developers focus on agent logic, not platform concerns.
 
-The project has three core components:
+The project has five core areas:
 
-1. **kagenti-webhook** -- A Kubernetes mutating admission webhook that automatically injects authentication sidecars (Envoy proxy, SPIFFE helper, Keycloak client registration) into workload pods based on labels, with no application code changes required.
+1. **Zero-trust identity and authorization** (`kagenti-extensions`) -- A Kubernetes mutating admission webhook injects authentication sidecars (Envoy proxy, SPIFFE helper, Keycloak client registration) into agent pods. AuthBridge transparently validates inbound JWTs and exchanges outbound tokens (RFC 8693) with subject preservation, creating a full audit chain: which user authorized which agent to perform which action. Workloads are automatically registered as OAuth2 clients using their SPIFFE identity, eliminating static credentials.
 
-2. **AuthBridge (AuthProxy)** -- An Envoy-based sidecar with a gRPC external processor that transparently validates inbound JWTs and exchanges outbound tokens for the correct target audience. Subject preservation through token exchange ensures that every action is traceable to both the acting agent and the authorizing user.
+2. **Agent and tool lifecycle** (`kagenti/backend`) -- A FastAPI backend provides REST APIs for the full CRUD lifecycle of agents and tools: create, deploy, build from source (via Shipwright), delete, and inspect. Container images are built from Git sources directly on-cluster using Shipwright BuildRuns.
 
-3. **Client Registration** -- A Python component that automatically registers Kubernetes workloads as OAuth2 clients in Keycloak using their SPIFFE identity, eliminating static credentials and manual provisioning.
+3. **Multi-protocol agent communication** -- Native support for A2A (Agent-to-Agent) protocol including agent card discovery (`/.well-known/agent-card.json`) and chat, plus MCP (Model Context Protocol) for tool integration with inspection and invocation endpoints.
 
-Together, these components implement a security model where the agent holds cryptographic identity (SPIFFE), the user holds delegated authorization (preserved in the token `sub` claim), and the platform holds policy enforcement. This fills a gap in the cloud-native ecosystem: while SPIFFE/SPIRE provides workload identity and service meshes provide mTLS, no existing project provides transparent OAuth 2.0 token exchange with subject preservation specifically designed for agentic AI workloads on Kubernetes.
+4. **Platform UI** (`kagenti/ui-v2`) -- A React dashboard providing agent and tool catalogs, deployment wizards, build progress tracking, MCP gateway management, observability views, and admin configuration -- all backed by Keycloak-based RBAC (viewer/operator/admin roles).
+
+5. **Observability and experiment tracking** -- Integrated Phoenix (LLM trace visualization), OpenTelemetry Collector (trace export), and MLflow (experiment tracking), all deployed via Helm with OAuth2 authentication through Keycloak.
+
+The platform deploys as Helm charts on any conformant Kubernetes cluster (Kind, OpenShift, EKS) with Istio ambient mesh for mTLS, namespace-based multi-tenancy for team isolation, and a full infrastructure-as-code stack (Keycloak, SPIRE, cert-manager, Istio, Phoenix, MLflow).
 
 ---
 
@@ -74,19 +78,13 @@ Kagenti's roadmap is organized around three themes:
 
 ### Contributing guide
 
-<!-- TODO: Create CONTRIBUTING.md in kagenti/kagenti and paste the URL here. -->
-
-**[TODO]** -- `CONTRIBUTING.md` does not yet exist. Must be created before submission.
-
-Suggested location: `https://github.com/kagenti/kagenti/blob/main/CONTRIBUTING.md`
+https://github.com/kagenti/kagenti/blob/main/CONTRIBUTING.md
 
 ### Code of Conduct (CoC)
 
-<!-- TODO: Adopt the CNCF Code of Conduct and add CODE_OF_CONDUCT.md. -->
+The project has adopted the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md).
 
-**[TODO]** -- `CODE_OF_CONDUCT.md` does not yet exist. The recommended approach for CNCF projects is to adopt the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md).
-
-Suggested location: `https://github.com/kagenti/kagenti/blob/main/CODE_OF_CONDUCT.md`
+https://github.com/kagenti/kagenti/blob/main/CODE_OF_CONDUCT.md
 
 ### Adopters
 
@@ -96,21 +94,11 @@ Suggested location: `https://github.com/kagenti/kagenti/blob/main/CODE_OF_CONDUC
 
 ### Maintainers file
 
-<!-- TODO: Create MAINTAINERS.md listing project maintainers with GitHub handles and affiliations. -->
-
-**[TODO]** -- `MAINTAINERS.md` does not yet exist. Must be created before submission.
-
-Suggested location: `https://github.com/kagenti/kagenti/blob/main/MAINTAINERS.md`
+https://github.com/kagenti/kagenti/blob/main/MAINTAINERS.md
 
 ### Security policy file
 
-<!-- TODO: Create SECURITY.md with vulnerability reporting instructions. -->
-
-**[TODO]** -- `SECURITY.md` does not yet exist. Must be created before submission.
-
-See CNCF [security guidelines](https://contribute.cncf.io/maintainers/security/security-guidelines/#3-securitymd) and [templates](https://github.com/cncf/tag-security/tree/main/community/resources/project-resources/templates) for reference.
-
-Suggested location: `https://github.com/kagenti/kagenti/blob/main/SECURITY.md`
+https://github.com/kagenti/kagenti/blob/main/SECURITY.md
 
 ### Standard or specification?
 
@@ -164,7 +152,7 @@ Kagenti is cloud-native by design:
 
 - **Multi-architecture**: All container images are built for linux/amd64 and linux/arm64 via GitHub Actions CI/CD.
 
-- **Observable**: Prometheus metrics endpoints and structured logging are built into the webhook controller.
+- **Observable**: Prometheus metrics endpoints and structured logging are built into the webhook controller. The platform integrates OpenTelemetry Collector for distributed trace export and Phoenix for LLM trace visualization, enabling end-to-end observability of agent interactions.
 
 - **Standards-based**: Built on OAuth 2.0 (RFC 6749), Token Exchange (RFC 8693), SPIFFE, and OpenID Connect -- not proprietary protocols.
 
@@ -180,6 +168,7 @@ Kagenti complements and depends on several CNCF projects:
 | **cert-manager** (Graduated) | Used for webhook TLS certificate management. |
 | **Helm** (Graduated) | The webhook is packaged and distributed as a Helm chart via OCI registry. |
 | **Prometheus** (Graduated) | Metrics collection via ServiceMonitor for the webhook controller. |
+| **OpenTelemetry** (Graduated) | Kagenti deploys an OpenTelemetry Collector for distributed trace export, enabling end-to-end observability of agent interactions alongside Phoenix for LLM trace visualization. |
 | **Kuadrant** (Sandbox) | Complementary. Kagenti's roadmap includes MCP Gateway integration via Kuadrant for centralized policy and audit at the agent-to-tool boundary. |
 
 ### Cloud native overlap
@@ -233,7 +222,7 @@ No existing project provides Kagenti's specific combination of automatic SPIFFE-
 
 ### Will the project require a license exception?
 
-N/A. Kagenti uses the Apache License 2.0 for all project code. All third-party dependencies use licenses on the [CNCF Allowlist](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md).
+N/A. Kagenti uses the Apache License 2.0 for all project code. All third-party dependencies use licenses on the [CNCF Allowlist](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md). The project enforces the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) on all pull requests via CI checks, ensuring all contributions are properly signed off.
 
 ### Project "Domain Technical Review"
 
@@ -286,6 +275,8 @@ Or, if an individual or individual(s):
 
 - **Blog**: The project maintains a blog at [medium.com/kagenti-the-agentic-platform](https://medium.com/kagenti-the-agentic-platform).
 
+- **Security posture**: The project runs [OpenSSF Scorecard](https://securityscorecards.dev/) via GitHub Actions with a badge in the README, demonstrating commitment to supply-chain security best practices.
+
 - **Technical highlights**:
   - Subject preservation through RFC 8693 token exchange ensures full audit trail (user + agent visible at every hop)
   - Coexistence with Istio ambient mesh (iptables rules handle ztunnel fwmark and HBONE)
@@ -305,10 +296,10 @@ The following items **must be completed** before filing the CNCF Sandbox issue:
 
 | Item | Status | Action |
 |---|---|---|
-| `CONTRIBUTING.md` | Missing | Create in `kagenti/kagenti` with contribution guidelines, DCO/CLA info, development setup |
-| `CODE_OF_CONDUCT.md` | Missing | Adopt the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md) in `kagenti/kagenti` |
-| `SECURITY.md` | Missing | Create using [CNCF security templates](https://github.com/cncf/tag-security/tree/main/community/resources/project-resources/templates) in `kagenti/kagenti` |
-| `MAINTAINERS.md` | Missing | Create in `kagenti/kagenti` listing maintainers with GitHub handles and affiliations |
+| `CONTRIBUTING.md` | **Exists** | [Link](https://github.com/kagenti/kagenti/blob/main/CONTRIBUTING.md) -- has contribution guidelines, DCO info, development setup |
+| `CODE_OF_CONDUCT.md` | **Exists** | [Link](https://github.com/kagenti/kagenti/blob/main/CODE_OF_CONDUCT.md) -- references CNCF Code of Conduct |
+| `SECURITY.md` | **Exists** | [Link](https://github.com/kagenti/kagenti/blob/main/SECURITY.md) -- has vulnerability reporting policy |
+| `MAINTAINERS.md` | **Exists** | [Link](https://github.com/kagenti/kagenti/blob/main/MAINTAINERS.md) -- lists core maintainers with contact info |
 | Public roadmap | Missing | Create a GitHub Projects board or `ROADMAP.md` and link it above |
 | Contact emails | Missing | Fill in the contact information section above |
 | Signatory information | Missing | Fill in the signatory table above |
@@ -321,6 +312,7 @@ The following items **must be completed** before filing the CNCF Sandbox issue:
 |---|---|---|
 | `ADOPTERS.md` | Missing | Create listing any organizations or individuals using Kagenti |
 | `GOVERNANCE.md` | Missing | Create describing project governance model (maintainer roles, decision process, etc.) |
+| [OpenSSF Best Practices Badge](https://www.bestpractices.dev/) | Not started | Apply for the CII Best Practices badge (separate from the OpenSSF Scorecard already in CI) |
 | CNCF Landscape listing | Not listed | Submit at [landscape.cncf.io](https://landscape.cncf.io/) |
 | TAG Security engagement | Not started | Schedule a Day 0 technical review presentation with TAG Security |
 | Business/product separation | Needs confirmation | Team to confirm the "unrelated to any product" statement or describe separation |
