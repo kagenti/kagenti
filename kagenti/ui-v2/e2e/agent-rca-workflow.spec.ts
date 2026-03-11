@@ -113,7 +113,7 @@ test.describe('Agent RCA Workflow', () => {
       await next(page); await next(page);
       const si = page.locator('#llm-secret-name');
       if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
-      await next(page); await next(page); await next(page);
+      await next(page); await next(page); await next(page); await next(page);
       await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
       await page.getByRole('button', { name: /Deploy Agent/i }).click();
 
