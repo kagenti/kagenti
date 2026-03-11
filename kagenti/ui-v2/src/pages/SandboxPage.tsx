@@ -734,6 +734,7 @@ export const SandboxPage: React.FC = () => {
   // effects/callbacks, and async setState batching means two rapid calls
   // can both see isStreaming===false before either sets it to true).
   const sendingRef = useRef(false);
+  const subscribeAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -952,13 +953,21 @@ export const SandboxPage: React.FC = () => {
 
   /** Subscribe to a running session's event stream via tasks/resubscribe. */
   const _subscribeToSession = async (ns: string, ctxId: string) => {
+    // Cancel any existing subscribe stream before starting a new one
+    if (subscribeAbortRef.current) {
+      subscribeAbortRef.current.abort();
+      subscribeAbortRef.current = null;
+    }
+    const controller = new AbortController();
+    subscribeAbortRef.current = controller;
+
     try {
       const token = await getToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const url = `/api/v1/sandbox/${encodeURIComponent(ns)}/sessions/${encodeURIComponent(ctxId)}/subscribe`;
-      const response = await fetch(url, { headers });
+      const response = await fetch(url, { headers, signal: controller.signal });
       if (!response.ok || !response.body) {
         console.log('[subscribe] Not available or session completed');
         return;
@@ -1026,8 +1035,16 @@ export const SandboxPage: React.FC = () => {
         setIsStreaming(false);
       }
     } catch (err) {
-      console.warn('[subscribe] Error:', err);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.log('[subscribe] Aborted (session changed)');
+      } else {
+        console.warn('[subscribe] Error:', err);
+      }
       setIsStreaming(false);
+    } finally {
+      if (subscribeAbortRef.current === controller) {
+        subscribeAbortRef.current = null;
+      }
     }
   };
 
@@ -1039,6 +1056,11 @@ export const SandboxPage: React.FC = () => {
   const loadInitialHistory = useCallback(
     async (ns: string, ctxId: string) => {
       if (!ns || !ctxId) return;
+      // Cancel any existing subscribe stream when loading new session
+      if (subscribeAbortRef.current) {
+        subscribeAbortRef.current.abort();
+        subscribeAbortRef.current = null;
+      }
       setLoadingHistory(true);
 
       try {
