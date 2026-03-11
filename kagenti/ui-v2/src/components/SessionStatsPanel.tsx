@@ -266,6 +266,64 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
         </Card>
       )}
 
+      {/* Budget — aggregated across all loops */}
+      {(() => {
+        const budgetTokensUsed = loops.reduce((s, l) => s + l.budget.tokensUsed, 0);
+        const budgetTokensTotal = loops.reduce((s, l) => s + l.budget.tokensBudget, 0);
+        const budgetWallClock = loops.reduce((s, l) => s + l.budget.wallClockS, 0);
+        const budgetMaxWallClock = loops.reduce((s, l) => s + l.budget.maxWallClockS, 0);
+        const totalIterations = loops.reduce((s, l) => s + l.steps.length, 0);
+        const hasBudget = budgetTokensUsed > 0 || budgetTokensTotal > 0;
+        if (!hasBudget) return null;
+
+        const tokenPct = budgetTokensTotal > 0 ? (budgetTokensUsed / budgetTokensTotal) * 100 : 0;
+        const wallPct = budgetMaxWallClock > 0 ? (budgetWallClock / budgetMaxWallClock) * 100 : 0;
+        const colorVariant = (pct: number) =>
+          pct > 80 ? ('danger' as const) : pct > 50 ? ('warning' as const) : undefined;
+
+        return (
+          <Card>
+            <CardTitle>Budget</CardTitle>
+            <CardBody>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: '0.85em', marginBottom: 4, fontWeight: 600 }}>
+                  Tokens: <span data-testid="stats-budget-tokens-used">{budgetTokensUsed.toLocaleString()}</span> / <span data-testid="stats-budget-tokens-total">{budgetTokensTotal.toLocaleString()}</span>
+                </div>
+                {budgetTokensTotal > 0 && (
+                  <Progress
+                    value={Math.min(tokenPct, 100)}
+                    title={`${tokenPct.toFixed(1)}%`}
+                    variant={colorVariant(tokenPct)}
+                    measureLocation="outside"
+                  />
+                )}
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: '0.85em', marginBottom: 4, fontWeight: 600 }}>
+                  Wall Clock: <span data-testid="stats-budget-wallclock">{formatDuration(budgetWallClock)}</span> / {formatDuration(budgetMaxWallClock)}
+                </div>
+                {budgetMaxWallClock > 0 && (
+                  <Progress
+                    value={Math.min(wallPct, 100)}
+                    title={`${wallPct.toFixed(1)}%`}
+                    variant={colorVariant(wallPct)}
+                    measureLocation="outside"
+                  />
+                )}
+              </div>
+              <table style={tableStyle}>
+                <tbody>
+                  <tr>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>Iterations (steps)</td>
+                    <td style={{ ...tdStyle, textAlign: 'right' }}>{totalIterations}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </CardBody>
+          </Card>
+        );
+      })()}
+
       {/* Timing per loop — only when loop data available */}
       {loops.length > 0 && (
         <Card>
