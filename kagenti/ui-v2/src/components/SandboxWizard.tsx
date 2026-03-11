@@ -645,62 +645,72 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
     </Form>
   );
 
+  const sectionHeader = (title: string, subtitle: string) => (
+    <div style={{ marginBottom: 8, marginTop: 16 }}>
+      <div style={{ fontWeight: 600, fontSize: '0.95em', color: 'var(--pf-v5-global--Color--100)' }}>{title}</div>
+      <div className="pf-v5-c-form__helper-text" style={{ fontSize: '0.82em', marginTop: 2 }}>{subtitle}</div>
+    </div>
+  );
+
+  const budgetHelper = (text: string) => (
+    <div className="pf-v5-c-form__helper-text" style={{ fontSize: '0.8em', marginTop: 4 }}>{text}</div>
+  );
+
   const renderBudgetStep = () => (
     <Form>
+      {sectionHeader('Session Limits', 'Total resource budget for a single user message (across all reasoning loops)')}
       <Split hasGutter>
         <SplitItem isFilled>
-          <FormGroup label="Max Iterations" fieldId="max-iterations"
->
-            <TextInput id="max-iterations" type="number"
-              value={String(state.maxIterations)}
-              onChange={(_e, v) => update('maxIterations', Number(v) || 100)} />
-          </FormGroup>
-        </SplitItem>
-        <SplitItem isFilled>
-          <FormGroup label="Max Tokens" fieldId="max-tokens"
->
+          <FormGroup label="Max Tokens" fieldId="max-tokens">
             <TextInput id="max-tokens" type="number"
               value={String(state.maxTokens)}
               onChange={(_e, v) => update('maxTokens', Number(v) || 1000000)} />
+            {budgetHelper('Total prompt + completion tokens consumed across all LLM calls per message. Prevents runaway cost.')}
           </FormGroup>
         </SplitItem>
-      </Split>
-      <Split hasGutter>
         <SplitItem isFilled>
-          <FormGroup label="Max Wall Clock (seconds)" fieldId="max-wall-clock"
->
+          <FormGroup label="Max Wall Clock (seconds)" fieldId="max-wall-clock">
             <TextInput id="max-wall-clock" type="number"
               value={String(state.maxWallClockS)}
               onChange={(_e, v) => update('maxWallClockS', Number(v) || 600)} />
-          </FormGroup>
-        </SplitItem>
-        <SplitItem isFilled>
-          <FormGroup label="Tool Calls Per Step" fieldId="max-tool-calls"
->
-            <TextInput id="max-tool-calls" type="number"
-              value={String(state.maxToolCallsPerStep)}
-              onChange={(_e, v) => update('maxToolCallsPerStep', Number(v) || 10)} />
+            {budgetHelper('Maximum real-time seconds the agent can work on a single message before being stopped.')}
           </FormGroup>
         </SplitItem>
       </Split>
+
+      {sectionHeader('Loop Limits', 'Controls for the planner → executor → reflector reasoning cycle')}
       <Split hasGutter>
         <SplitItem isFilled>
-          <FormGroup label="HITL Check-in Interval" fieldId="hitl-interval"
->
-            <TextInput id="hitl-interval" type="number"
-              value={String(state.hitlInterval)}
-              onChange={(_e, v) => update('hitlInterval', Number(v) || 50)} />
+          <FormGroup label="Max Iterations" fieldId="max-iterations">
+            <TextInput id="max-iterations" type="number"
+              value={String(state.maxIterations)}
+              onChange={(_e, v) => update('maxIterations', Number(v) || 100)} />
+            {budgetHelper('Maximum planner→executor→reflector cycles. Each iteration executes one plan step and reflects.')}
           </FormGroup>
         </SplitItem>
         <SplitItem isFilled>
-          <FormGroup label="Recursion Limit" fieldId="recursion-limit"
->
+          <FormGroup label="Recursion Limit" fieldId="recursion-limit">
             <TextInput id="recursion-limit" type="number"
               value={String(state.recursionLimit)}
               onChange={(_e, v) => update('recursionLimit', Number(v) || 50)} />
+            {budgetHelper('LangGraph internal graph traversal limit. Triggers a warning (not failure) when reached.')}
           </FormGroup>
         </SplitItem>
       </Split>
+      <FormGroup label="HITL Check-in Interval" fieldId="hitl-interval">
+        <TextInput id="hitl-interval" type="number"
+          value={String(state.hitlInterval)}
+          onChange={(_e, v) => update('hitlInterval', Number(v) || 50)} />
+        {budgetHelper('After this many iterations, pause and ask the user before continuing. Set high to run autonomously.')}
+      </FormGroup>
+
+      {sectionHeader('Step Limits', 'Controls for individual plan step execution')}
+      <FormGroup label="Tool Calls Per Step" fieldId="max-tool-calls">
+        <TextInput id="max-tool-calls" type="number"
+          value={String(state.maxToolCallsPerStep)}
+          onChange={(_e, v) => update('maxToolCallsPerStep', Number(v) || 10)} />
+        {budgetHelper('Maximum tool invocations (shell commands, API calls) within a single plan step before moving on.')}
+      </FormGroup>
     </Form>
   );
 
