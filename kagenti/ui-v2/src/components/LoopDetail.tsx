@@ -145,17 +145,7 @@ const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMess
   );
 };
 
-const NestedCollapsible: React.FC<{ label: string; preview: string; children: React.ReactNode }> = ({ label, preview, children }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ margin: '4px 0' }}>
-      <div style={{ fontWeight: 500, cursor: 'pointer', userSelect: 'none', fontSize: '0.9em' }} onClick={() => setOpen(!open)}>
-        {open ? '\u25bc' : '\u25b6'} {label} <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>{!open ? preview : ''}</span>
-      </div>
-      {open && children}
-    </div>
-  );
-};
+// NestedCollapsible removed — PromptBlock now opens PromptInspector popup
 
 // ---------------------------------------------------------------------------
 // Reasoning block (expandable, like ToolCallBlock)
