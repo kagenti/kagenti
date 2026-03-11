@@ -10,7 +10,7 @@
  * 5. Verify the session is still usable (send a follow-up message)
  * 6. Verify the agent responds after restart
  *
- * Requires a live cluster with sandbox-legion deployed.
+ * Requires a live cluster with sandbox-hardened deployed.
  *
  * Run: KAGENTI_UI_URL=https://... npx playwright test agent-resilience
  */
@@ -18,7 +18,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { loginIfNeeded } from './helpers/auth';
 import { execSync } from 'child_process';
 
-const AGENT_NAME = 'sandbox-legion';
+const AGENT_NAME = 'sandbox-hardened';
 const NAMESPACE = 'team1';
 const SCREENSHOT_DIR = 'test-results/agent-resilience';
 
