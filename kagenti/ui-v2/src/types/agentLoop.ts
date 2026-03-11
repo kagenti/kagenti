@@ -90,6 +90,10 @@ export interface AgentLoopStep {
   nodeType?: NodeType;
   /** Plan step index (0-based) — maps to the plan step, not the global step counter. */
   planStep?: number;
+  /** Timestamp when this step was first created (ISO string). */
+  createdAt?: string;
+  /** Timestamp when this step was last updated (ISO string). */
+  updatedAt?: string;
   /** Micro-reasoning entries between tool calls within this step. */
   microReasonings?: MicroReasoning[];
 }

@@ -446,6 +446,14 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
             &middot; {formatStepTokens(step)} tokens
           </span>
         )}
+        {step.updatedAt && (
+          <span
+            title={`Created: ${step.createdAt || '?'}\nUpdated: ${step.updatedAt}`}
+            style={{ fontWeight: 400, fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}
+          >
+            &middot; {new Date(step.updatedAt).toLocaleTimeString()}
+          </span>
+        )}
         <StepStatusIcon status={step.status} />
         {onOpenInspector && (step.systemPrompt || step.promptMessages) && (
           <button

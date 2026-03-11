@@ -67,6 +67,9 @@ export interface LoopEvent {
  */
 export const LEGACY_TYPES = new Set(['plan', 'plan_step', 'reflection', 'llm_response']);
 
+/** Current ISO timestamp for step creation/update tracking. */
+function now(): string { return new Date().toISOString(); }
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -152,6 +155,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           toolCalls: [],
           toolResults: [],
           durationMs: 0,
+          createdAt: now(),
+          updatedAt: now(),
           status: 'done' as const,
         },
       ],
@@ -216,6 +221,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           toolResults: [],
           microReasonings: [],
           durationMs: 0,
+          createdAt: now(),
+          updatedAt: now(),
           status: 'running' as const,
         },
       ],
@@ -229,6 +236,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     if (step) {
       step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }])];
       step.nodeType = 'executor';
+      step.updatedAt = now();
     } else {
       // No matching step — create an implicit executor step
       // Use plan step description if available
@@ -244,6 +252,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         toolCalls: (le.tools as AgentLoopStep['toolCalls']) || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }],
         toolResults: [],
         durationMs: 0,
+        createdAt: now(),
+        updatedAt: now(),
         status: 'running' as const,
       });
     }
@@ -280,6 +290,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         step.status = 'done';
       }
       step.nodeType = 'executor';
+      step.updatedAt = now();
     } else {
       // No matching step — create an implicit executor step
       const planStepIdx = le.current_step ?? loop.currentStep;
@@ -294,6 +305,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         toolCalls: [],
         toolResults: [{ type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }],
         durationMs: 0,
+        createdAt: now(),
+        updatedAt: now(),
         status: 'done' as const,
       });
     }
@@ -328,6 +341,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           toolCalls: [],
           toolResults: [],
           durationMs: 0,
+          createdAt: now(),
+          updatedAt: now(),
           status: 'done' as const,
         },
       ],
@@ -371,6 +386,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           toolCalls: [],
           toolResults: [],
           durationMs: 0,
+          createdAt: now(),
+          updatedAt: now(),
           status: 'done' as const,
         },
       ],
@@ -392,6 +409,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         toolCalls: [],
         toolResults: [],
         durationMs: 0,
+        createdAt: now(),
+        updatedAt: now(),
         status: 'running' as const,
       };
       steps.push(step);
