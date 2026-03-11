@@ -107,7 +107,7 @@ export const INITIAL_STATE: WizardState = {
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
   model: 'llama-4-scout',
-  maxIterations: 100,
+  maxIterations: 200,
   maxTokens: 1000000,
   maxToolCallsPerStep: 10,
   maxWallClockS: 600,

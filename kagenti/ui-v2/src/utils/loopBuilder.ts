@@ -31,6 +31,8 @@ export interface LoopEvent {
   iteration?: number;
   done?: boolean;
   current_step?: number;
+  /** Alias for current_step — agent may use either field name */
+  plan_step?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
   tools?: Array<{ type?: string; name?: string; args?: unknown; tools?: unknown[] }>;
@@ -102,6 +104,10 @@ export function createDefaultAgentLoop(loopId: string): AgentLoop {
  * and history reconstruction.
  */
 export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
+  // Normalize: agent may emit plan_step or current_step
+  if (le.plan_step != null && le.current_step == null) {
+    le.current_step = le.plan_step;
+  }
   const eventType = le.type;
 
   // Skip legacy event types
