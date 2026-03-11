@@ -97,6 +97,7 @@ class SandboxCreateRequest(BaseModel):
     skill_packs: list[str] = []  # Pack names from skill-packs.yaml (empty = defaults)
     # LLM behavior
     force_tool_choice: bool = True
+    text_tool_parsing: bool = True
     # Budget controls (passed as SANDBOX_* env vars to the agent)
     max_iterations: int = 100
     max_tokens: int = 1_000_000
@@ -274,6 +275,9 @@ def _build_deployment_manifest(
     # LLM behavior
     env_vars.append(
         {"name": "SANDBOX_FORCE_TOOL_CHOICE", "value": "1" if req.force_tool_choice else "0"}
+    )
+    env_vars.append(
+        {"name": "SANDBOX_TEXT_TOOL_PARSING", "value": "1" if req.text_tool_parsing else "0"}
     )
     # Budget env vars (consumed by AgentBudget dataclass in the agent)
     env_vars.append({"name": "SANDBOX_MAX_ITERATIONS", "value": str(req.max_iterations)})

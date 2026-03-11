@@ -73,6 +73,7 @@ export interface WizardState {
   enableMlflow: boolean;
   model: string;
   forceToolChoice: boolean;
+  textToolParsing: boolean;
   // Step 6: Budget
   maxIterations: number;
   maxTokens: number;
@@ -109,6 +110,7 @@ export const INITIAL_STATE: WizardState = {
   enableMlflow: true,
   model: 'llama-4-scout',
   forceToolChoice: true,
+  textToolParsing: true,
   maxIterations: 100,
   maxTokens: 1000000,
   maxToolCallsPerStep: 10,
@@ -285,6 +287,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         llm_secret_name: state.llmSecretName,
         // LLM behavior
         force_tool_choice: state.forceToolChoice,
+        text_tool_parsing: state.textToolParsing,
         // Budget controls
         max_iterations: state.maxIterations,
         max_tokens: state.maxTokens,
@@ -641,6 +644,14 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           label="Force structured tool calls (required for Llama 4 Scout)"
           isChecked={state.forceToolChoice}
           onChange={(_e, c) => update('forceToolChoice', c)}
+        />
+      </FormGroup>
+      <FormGroup label="Text Tool Parsing" fieldId="text-tool-parsing">
+        <Switch
+          id="text-tool-parsing"
+          label="Parse tool calls from text responses and strip fabricated output"
+          isChecked={state.textToolParsing}
+          onChange={(_e, c) => update('textToolParsing', c)}
         />
       </FormGroup>
       <FormGroup label="Default LLM Model" fieldId="model">
