@@ -166,7 +166,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       return {
         ...loop,
         status: 'executing',
-        currentStep: le.step ?? loop.currentStep,
+        currentStep: le.current_step ?? loop.currentStep,
         totalSteps: le.total_steps ?? loop.totalSteps,
         model: le.model || loop.model,
       };
@@ -187,7 +187,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       return {
         ...loop,
         status: 'executing',
-        currentStep: le.step ?? loop.currentStep,
+        currentStep: le.current_step ?? loop.currentStep,
         totalSteps: le.total_steps ?? loop.totalSteps,
         model: le.model || loop.model,
         steps: loop.steps.map((s) => s.index === le.step ? updatedStep : s),
@@ -197,7 +197,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     return {
       ...loop,
       status: 'executing',
-      currentStep: le.step ?? loop.currentStep,
+      currentStep: le.current_step ?? loop.currentStep,
       totalSteps: le.total_steps ?? loop.totalSteps,
       model: le.model || loop.model,
       steps: [
