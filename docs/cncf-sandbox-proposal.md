@@ -4,8 +4,8 @@
 >
 > This document mirrors every field of the
 > [CNCF Sandbox application form](https://github.com/cncf/sandbox/blob/main/.github/ISSUE_TEMPLATE/application.yml).
-> Items marked with `<!-- TODO -->` or **[TODO]** need team input before we can
-> file the issue at <https://github.com/cncf/sandbox/issues/new?template=application.yml>.
+> Items requiring team input are marked with `[!IMPORTANT]` callouts.
+> File the issue at <https://github.com/cncf/sandbox/issues/new?template=application.yml> once all are resolved.
 
 ---
 
@@ -60,11 +60,10 @@ https://kagenti.io
 
 ### Roadmap
 
-<!-- TODO: Create a public roadmap (e.g. GitHub Project board or ROADMAP.md) and paste the URL here. -->
-
-**[TODO]** -- A public roadmap URL is required. Options:
-- A `ROADMAP.md` file in `kagenti/kagenti`
-- A GitHub Projects board at `https://github.com/orgs/kagenti/projects/...`
+> [!IMPORTANT]
+> **ACTION REQUIRED -- Roadmap URL**: Create a public roadmap and paste the URL here. Options:
+> - A `ROADMAP.md` file in `kagenti/kagenti`
+> - A GitHub Projects board at `https://github.com/orgs/kagenti/projects/...`
 
 ### Roadmap context
 
@@ -88,9 +87,8 @@ https://github.com/kagenti/kagenti/blob/main/CODE_OF_CONDUCT.md
 
 ### Adopters
 
-<!-- TODO (optional): Create an ADOPTERS.md listing organizations or individuals using Kagenti. -->
-
-**[TODO]** -- No `ADOPTERS.md` exists yet. This field is optional but strengthens the application.
+> [!NOTE]
+> **OPTIONAL** -- No `ADOPTERS.md` exists yet. This field is optional but strengthens the application.
 
 ### Maintainers file
 
@@ -106,9 +104,10 @@ N/A. Kagenti is not a standard or specification. It implements existing standard
 
 ### Business product or service to project separation
 
-<!-- TODO: Confirm this with the team. If Kagenti is related to a company's product, describe the separation. -->
+> [!IMPORTANT]
+> **ACTION REQUIRED -- Team confirmation**: Confirm or revise the statement below.
 
-**[TODO -- confirm with team]** This project is unrelated to any product or service. Kagenti is a community-driven open-source project that composes existing CNCF and open-source building blocks (SPIFFE/SPIRE, Envoy, Keycloak) into a pluggable blueprint for securing AI agent workloads on Kubernetes.
+This project is unrelated to any product or service. Kagenti is a community-driven open-source project that composes existing CNCF and open-source building blocks (SPIFFE/SPIRE, Envoy, Keycloak) into a pluggable blueprint for securing AI agent workloads on Kubernetes.
 
 ---
 
@@ -196,9 +195,10 @@ No existing project provides Kagenti's specific combination of automatic SPIFFE-
 
 ### Landscape
 
-<!-- TODO: Apply to be listed on the CNCF Landscape before or in parallel with this submission. -->
+> [!IMPORTANT]
+> **ACTION REQUIRED -- Landscape listing**: Submit a landscape application at [landscape.cncf.io](https://landscape.cncf.io/) before or in parallel with this submission.
 
-**[TODO]** -- Kagenti is not yet listed on the [Cloud Native Landscape](https://landscape.cncf.io/). We plan to submit a landscape application in parallel with this Sandbox application.
+Kagenti is not yet listed on the [Cloud Native Landscape](https://landscape.cncf.io/). We plan to submit a landscape application in parallel with this Sandbox application.
 
 ---
 
@@ -208,17 +208,15 @@ No existing project provides Kagenti's specific combination of automatic SPIFFE-
 
 - [x] If the project is accepted, I agree to donate all project trademarks and accounts to the CNCF
 
-<!-- TODO: All maintainers must acknowledge this before submission. -->
-
-**[TODO -- team acknowledgment required]**
+> [!IMPORTANT]
+> **ACTION REQUIRED -- Trademark acknowledgment**: All maintainers must acknowledge this before submission.
 
 ### IP policy
 
 - [x] If the project is accepted, I agree the project will follow the CNCF IP Policy
 
-<!-- TODO: All maintainers must acknowledge this before submission. -->
-
-**[TODO -- team acknowledgment required]**
+> [!IMPORTANT]
+> **ACTION REQUIRED -- IP policy acknowledgment**: All maintainers must acknowledge this before submission.
 
 ### Will the project require a license exception?
 
@@ -226,9 +224,10 @@ N/A. Kagenti uses the Apache License 2.0 for all project code. All third-party d
 
 ### Project "Domain Technical Review"
 
-<!-- TODO: Consider engaging with TAG Security before submission for a Day 0 review. -->
+> [!IMPORTANT]
+> **ACTION REQUIRED -- TAG engagement**: Schedule a Day 0 technical review with [TAG Security](https://github.com/cncf/tag-security) before submission.
 
-**[TODO]** -- We have not yet engaged with a TAG for a formal technical review. We plan to engage with [TAG Security](https://github.com/cncf/tag-security) given Kagenti's focus on workload identity and authentication.
+We have not yet engaged with a TAG for a formal technical review. We plan to engage with TAG Security given Kagenti's focus on workload identity and authentication.
 
 ---
 
@@ -236,15 +235,13 @@ N/A. Kagenti uses the Apache License 2.0 for all project code. All third-party d
 
 ### Application contact email(s)
 
-<!-- TODO: Provide comma-separated email addresses of individuals who should be contacted regarding this application. -->
-
-**[TODO]** -- *Team to fill in contact emails.*
+> [!IMPORTANT]
+> **ACTION REQUIRED -- Contact emails**: Provide comma-separated email addresses of individuals who should be contacted regarding this application.
 
 ### Contributing or sponsoring entity signatory information
 
-<!-- TODO: Fill in the appropriate table below. -->
-
-**[TODO]** -- *Team to fill in signatory information.*
+> [!IMPORTANT]
+> **ACTION REQUIRED -- Signatory information**: Fill in the appropriate table below.
 
 If an organization:
 
@@ -265,9 +262,8 @@ Or, if an individual or individual(s):
 
 ### CNCF contacts
 
-<!-- TODO: List any people who are part of CNCF leadership (TOC, TAGs, etc.) who are familiar with the project. -->
-
-**[TODO]** -- *Team to fill in any CNCF contacts familiar with the project.*
+> [!NOTE]
+> **OPTIONAL -- CNCF contacts**: List any people who are part of CNCF leadership (TOC, TAGs, etc.) who are familiar with the project.
 
 ### Additional information
 
@@ -327,4 +323,4 @@ Before submitting, all team members should review and confirm:
 - [ ] Roadmap context reflects current priorities
 - [ ] Cloud native overlap section is fair and accurate
 - [ ] Similar projects comparison is complete
-- [ ] All **[TODO]** items above have been resolved
+- [ ] All **ACTION REQUIRED** items above have been resolved
