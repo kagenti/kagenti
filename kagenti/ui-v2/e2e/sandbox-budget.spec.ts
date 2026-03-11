@@ -193,6 +193,24 @@ test.describe('Budget Enforcement', () => {
         loopText.includes('token')
     ).toBe(true);
 
+    // Token consistency: loop card tokens MUST be close to LLM Usage total
+    // Switch to LLM Usage tab and compare
+    const llmTab = page.locator('[role="tab"]').filter({ hasText: /LLM Usage/i });
+    if (await llmTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await llmTab.click();
+      await page.waitForTimeout(1000);
+      // LLM Usage "Total" row shows total_tokens from LiteLLM
+      const llmTotalEl = page.locator('td').filter({ hasText: /Total/i }).locator('..').locator('td').nth(3);
+      if (await llmTotalEl.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const llmTotal = Number((await llmTotalEl.textContent() || '0').replace(/,/g, ''));
+        console.log(`[budget] LLM Usage total: ${llmTotal.toLocaleString()}, Budget used: ${used.toLocaleString()}`);
+        // Budget tokens MUST match LLM total (both count the same LLM calls)
+        if (llmTotal > 0) {
+          expect(used).toBe(llmTotal);
+        }
+      }
+    }
+
     console.log('[budget] Budget enforcement test complete');
   });
 });
