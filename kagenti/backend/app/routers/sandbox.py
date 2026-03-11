@@ -1993,26 +1993,44 @@ async def _persist_and_recover(
             )
             if row:
                 meta = _parse_json_field(row["metadata"]) or {}
-                if owner and not meta.get("owner"):
+                logger.info(
+                    "BG persist: DB meta BEFORE update session=%s keys=%s agent=%s owner=%s",
+                    session_id,
+                    list(meta.keys()),
+                    meta.get("agent_name", "(none)"),
+                    meta.get("owner", "(none)"),
+                )
+                # Always set metadata fields — the inline _set_owner_metadata
+                # may have been killed by GeneratorExit before committing
+                if owner:
                     meta["owner"] = owner
-                    meta["visibility"] = "private"
-                if not meta.get("title") and message:
-                    meta["title"] = message[:80].replace("\n", " ")
+                    meta["visibility"] = meta.get("visibility", "private")
+                if message:
+                    meta["title"] = meta.get("title") or message[:80].replace("\n", " ")
                 if agent_name:
                     meta["agent_name"] = agent_name
                 if loop_events and not loop_events_already_persisted:
                     meta["loop_events"] = loop_events
-                    logger.info(
-                        "BG persist: writing %d loop events for session %s",
-                        len(loop_events),
-                        session_id,
-                    )
-                await conn.execute(
+                meta_json = json.dumps(meta)
+                logger.info(
+                    "BG persist: WRITING session=%s agent=%s owner=%s events=%d json_len=%d",
+                    session_id,
+                    meta.get("agent_name", "(none)"),
+                    meta.get("owner", "(none)"),
+                    len(meta.get("loop_events", [])),
+                    len(meta_json),
+                )
+                result = await conn.execute(
                     "UPDATE tasks SET metadata = $1::json WHERE id = $2",
-                    json.dumps(meta),
+                    meta_json,
                     task_db_id,
                 )
-                logger.info("BG persist: UPDATE completed for session %s", session_id)
+                logger.info(
+                    "BG persist: UPDATE result=%s session=%s task=%s",
+                    result,
+                    session_id,
+                    task_db_id,
+                )
 
         # Recovery: if loop didn't complete, poll agent for remaining events
         if session_has_loops and not has_reporter:

@@ -40,6 +40,7 @@ export interface AgentLoop {
   reflection?: string;
   reflectorDecision?: 'continue' | 'replan' | 'done';
   finalAnswer?: string;
+  failureReason?: string;
   budget: {
     tokensUsed: number;
     tokensBudget: number;

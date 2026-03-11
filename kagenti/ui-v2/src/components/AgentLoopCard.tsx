@@ -88,6 +88,26 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Failure reason — show prominently when loop failed */}
+        {loop.status === 'failed' && !loop.finalAnswer && (
+          <div style={{
+            fontSize: '0.88em', marginBottom: 8, padding: '8px 12px',
+            backgroundColor: 'var(--pf-v5-global--danger-color--100, #c9190b)',
+            color: '#fff', borderRadius: 4,
+          }}>
+            <strong>Failed</strong>
+            {loop.failureReason && <span> — {loop.failureReason}</span>}
+            {!loop.failureReason && loop.steps.length > 0 && (() => {
+              // Extract failure reason from the last reflector assessment
+              const lastStep = [...loop.steps].reverse().find(s =>
+                s.eventType === 'reflector_decision' || s.nodeType === 'reflector'
+              );
+              const reason = lastStep?.reasoning || lastStep?.description;
+              return reason ? <span> — {reason.substring(0, 300)}</span> : null;
+            })()}
+          </div>
+        )}
+
         {/* Final answer — always visible */}
         {loop.finalAnswer && (() => {
           const filtered = loop.finalAnswer
