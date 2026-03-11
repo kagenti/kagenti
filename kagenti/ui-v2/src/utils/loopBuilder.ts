@@ -174,6 +174,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     if (existingStep) {
       const updatedStep = {
         ...existingStep,
+        planStep: le.current_step ?? existingStep.planStep,
         description: le.description || existingStep.description || '',
         model: le.model || existingStep.model || loop.model,
         reasoning: (le.reasoning as string) || existingStep.reasoning || undefined,
@@ -201,6 +202,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         ...loop.steps,
         {
           index: le.step as number,
+          planStep: le.current_step,
           description: le.description || '',
           model: le.model || loop.model,
           reasoning: (le.reasoning as string) || undefined,

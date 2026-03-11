@@ -88,6 +88,8 @@ export interface AgentLoopStep {
   eventType?: NodeEventType;
   /** @deprecated Use {@link eventType} for new code. */
   nodeType?: NodeType;
+  /** Plan step index (0-based) — maps to the plan step, not the global step counter. */
+  planStep?: number;
   /** Micro-reasoning entries between tool calls within this step. */
   microReasonings?: MicroReasoning[];
 }

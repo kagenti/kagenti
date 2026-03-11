@@ -412,7 +412,15 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
         }}
       >
         <NodeBadge nodeType={inferNodeType(step)} />
-        Step {step.index + 1}{total > 0 ? `/${total}` : ''}: {step.description}
+        {(() => {
+          const nt = inferNodeType(step);
+          if (nt === 'planner' || nt === 'replanner') return step.description;
+          if (nt === 'reflector') return step.description;
+          if (nt === 'reporter') return 'Final answer';
+          // Executor: show plan step number if available, else fallback
+          const planStep = step.planStep ?? step.index;
+          return `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}: ${step.description}`;
+        })()}
         {showModelBadge && (
           <span
             style={{
