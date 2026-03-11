@@ -111,14 +111,19 @@ const PlanSection: React.FC<{ plan: string[]; currentStep: number; loopDone: boo
 
 interface PromptMessage { role: string; preview: string }
 
-const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMessage[] }> = ({ systemPrompt, promptMessages }) => {
-  const [expanded, setExpanded] = useState(false);
+const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMessage[]; onOpenInspector?: (title: string, data: Partial<AgentLoopStep>) => void }> = ({ systemPrompt, promptMessages, onOpenInspector }) => {
   if (!systemPrompt && (!promptMessages || promptMessages.length === 0)) return null;
 
   const msgCount = promptMessages?.length || 0;
   const preview = systemPrompt
     ? `${systemPrompt.substring(0, 80).replace(/\n/g, ' ')}...`
     : `${msgCount} messages`;
+
+  const handleClick = () => {
+    if (onOpenInspector) {
+      onOpenInspector('Prompt Details', { systemPrompt, promptMessages } as Partial<AgentLoopStep>);
+    }
+  };
 
   return (
     <div
@@ -129,34 +134,13 @@ const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMess
         backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
         borderRadius: '0 4px 4px 0',
         fontSize: '0.85em',
+        cursor: onOpenInspector ? 'pointer' : 'default',
       }}
+      onClick={handleClick}
     >
-      <div style={{ fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => setExpanded(!expanded)}>
-        {expanded ? '\u25bc' : '\u25b6'} Prompt <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>({preview})</span>
+      <div style={{ fontWeight: 600, userSelect: 'none' }}>
+        {'\u25b6'} Prompt <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>({preview})</span>
       </div>
-      {expanded && (
-        <div style={{ marginTop: 6 }}>
-          {systemPrompt && (
-            <NestedCollapsible label="System Prompt" preview={systemPrompt.substring(0, 60).replace(/\n/g, ' ')}>
-              <pre style={{ margin: '4px 0', padding: 8, backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)', color: 'var(--pf-v5-global--Color--light-100)', borderRadius: 4, fontSize: '0.85em', overflow: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {systemPrompt}
-              </pre>
-            </NestedCollapsible>
-          )}
-          {promptMessages && promptMessages.length > 0 && (
-            <NestedCollapsible label={`Messages (${msgCount})`} preview={`${msgCount} messages: ${promptMessages.map(m => m.role).join(', ').substring(0, 40)}`}>
-              {promptMessages.map((msg, i) => (
-                <div key={i} style={{ margin: '2px 0', padding: '4px 8px', borderLeft: `2px solid ${msg.role === 'system' ? '#475569' : msg.role === 'tool' ? '#2e7d32' : '#0066cc'}`, fontSize: '0.85em' }}>
-                  <span style={{ fontWeight: 600, fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)' }}>{msg.role}</span>
-                  <pre style={{ margin: '4px 0 0', padding: 6, backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)', color: 'var(--pf-v5-global--Color--light-100)', borderRadius: 4, fontSize: '0.85em', overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {msg.preview}
-                  </pre>
-                </div>
-              ))}
-            </NestedCollapsible>
-          )}
-        </div>
-      )}
     </div>
   );
 };
@@ -459,7 +443,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
       </div>
 
       {/* Prompt — system prompt + messages sent to LLM */}
-      <PromptBlock systemPrompt={step.systemPrompt} promptMessages={step.promptMessages} />
+      <PromptBlock systemPrompt={step.systemPrompt} promptMessages={step.promptMessages} onOpenInspector={onOpenInspector} />
 
       {/* Reasoning / LLM response (expandable for all node types) */}
       {step.reasoning && <ReasoningBlock reasoning={step.reasoning} />}
