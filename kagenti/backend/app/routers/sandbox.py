@@ -2065,11 +2065,26 @@ async def _recover_loop_events_from_agent(
     try:
         _TERMINAL_STATES = {"completed", "failed", "canceled"}
 
+        # Use task_db_id (the A2A task ID captured from the stream) to query
+        # the agent. The agent stores tasks by their own UUID (task.id), NOT
+        # by context_id (session_id). Using session_id here was why recovery
+        # always returned "Task not found".
+        if not task_db_id:
+            logger.warning(
+                "Recovery: no A2A task ID available for session %s — cannot query agent",
+                session_id,
+            )
+            return
+        logger.info(
+            "Recovery: querying agent with a2a_task_id=%s (session=%s)",
+            task_db_id,
+            session_id,
+        )
         a2a_request = {
             "jsonrpc": "2.0",
             "id": str(uuid4()),
             "method": "tasks/get",
-            "params": {"id": session_id},
+            "params": {"id": task_db_id},
         }
 
         recovered_events: list[dict] = []
