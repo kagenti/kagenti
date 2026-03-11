@@ -492,18 +492,28 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopModel?: st
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px' }}>
                       Micro-reasoning {(mr.micro_step || i + 1)}
+                      {(mr.prompt_tokens || mr.completion_tokens) && (
+                        <span style={{ color: '#888', fontWeight: 'normal', marginLeft: '8px', fontSize: '11px' }}>
+                          · {((mr.prompt_tokens || 0) + (mr.completion_tokens || 0)).toLocaleString()} tokens
+                        </span>
+                      )}
                     </span>
-                    {onOpenInspector && (
-                      <button
-                        onClick={() => onOpenInspector(`Micro-reasoning ${mr.micro_step || i + 1}`, mr)}
-                        style={{
-                          background: 'none', border: '1px solid #555', color: '#888',
-                          fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
-                        }}
-                      >
-                        Prompt
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {mr.model && (
+                        <span style={{ fontSize: '11px', color: '#666' }}>{mr.model}</span>
+                      )}
+                      {onOpenInspector && (
+                        <button
+                          onClick={() => onOpenInspector(`Micro-reasoning ${mr.micro_step || i + 1}`, mr)}
+                          style={{
+                            background: 'none', border: '1px solid #555', color: '#888',
+                            fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
+                          }}
+                        >
+                          Prompt
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {mr.reasoning && (
                     <p style={{ margin: '4px 0 0', color: '#ccc', whiteSpace: 'pre-wrap' }}>
