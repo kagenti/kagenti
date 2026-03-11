@@ -996,12 +996,12 @@ export const SandboxPage: React.FC = () => {
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
                   const loopId = data.loop_id as string;
-                  const existing: AgentLoop = next.get(loopId) || {
+                  const existing: AgentLoop = next.get(loopId) || ({
                     id: loopId, status: 'executing', model: '',
                     plan: [], replans: [], currentStep: 0, totalSteps: 0,
                     iteration: 0, steps: [], finalAnswer: undefined,
                     budget: { tokensUsed: 0, tokensBudget: 0, iterationsUsed: 0, iterationsBudget: 0 },
-                  };
+                  } as AgentLoop);
                   const evt = data.loop_event;
                   if (evt.type === 'reporter_output') {
                     existing.finalAnswer = evt.content || evt.final_answer || '';
