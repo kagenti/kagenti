@@ -820,11 +820,13 @@ export const sandboxService = {
   async getHistory(
     namespace: string,
     contextId: string,
-    params?: { limit?: number; before?: number }
+    params?: { limit?: number; before?: number; skip_events?: boolean; events_since?: number }
   ): Promise<HistoryPage> {
     const qs = new URLSearchParams();
     if (params?.limit) qs.set('limit', String(params.limit));
     if (params?.before !== undefined) qs.set('before', String(params.before));
+    if (params?.skip_events) qs.set('skip_events', 'true');
+    if (params?.events_since !== undefined) qs.set('events_since', String(params.events_since));
     const query = qs.toString() ? `?${qs.toString()}` : '';
     return apiFetch(
       `/sandbox/${encodeURIComponent(namespace)}/sessions/${encodeURIComponent(contextId)}/history${query}`

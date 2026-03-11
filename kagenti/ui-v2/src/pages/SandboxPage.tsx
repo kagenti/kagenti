@@ -1190,9 +1190,34 @@ export const SandboxPage: React.FC = () => {
     );
     if (allLoopsDone) return;
 
+    // Track how many loop events the client already has for incremental polling
+    const knownEventCount = Array.from(agentLoops.values()).reduce(
+      (sum, l) => sum + l.steps.length, 0
+    );
+
     const pollInterval = setInterval(async () => {
       try {
-        const histPage = await sandboxService.getHistory(namespace, contextId, { limit: 5 });
+        // Incremental polling: only fetch new events + recent messages
+        const histPage = await sandboxService.getHistory(namespace, contextId, {
+          limit: 5,
+          events_since: knownEventCount,
+        });
+
+        // Merge new loop events into existing loops (incremental)
+        if (histPage.loop_events && histPage.loop_events.length > 0) {
+          const newEvents = histPage.loop_events as unknown as LoopEvent[];
+          setAgentLoops((prev) => {
+            const next = new Map(prev);
+            for (const evt of newEvents) {
+              const loopId = evt.loop_id;
+              if (!loopId) continue;
+              const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
+              next.set(loopId, applyLoopEvent(existing, evt));
+            }
+            return next;
+          });
+        }
+
         if (histPage.messages.length === 0) return;
 
         setMessages((prev) => {

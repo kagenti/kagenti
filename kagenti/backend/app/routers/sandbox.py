@@ -416,6 +416,14 @@ async def get_session_history(
         description="Return messages before this index (for reverse pagination). "
         "Omit to get the most recent messages.",
     ),
+    skip_events: bool = Query(
+        default=False,
+        description="Skip loop_events extraction (for lightweight polling).",
+    ),
+    events_since: Optional[int] = Query(
+        default=None,
+        description="Only return loop_events after this count (incremental polling).",
+    ),
 ):
     """Return a paginated slice of session history.
 
@@ -449,17 +457,15 @@ async def get_session_history(
     all_artifact_texts: List[str] = []
 
     # Extract persisted loop events from ALL task rows.
-    # Multi-turn sessions have one task per turn, each with its own loop_events.
-    # Aggregate and deduplicate: the finally block used to write the same events
-    # to ALL task rows (now fixed to write only to the latest). For backward
-    # compat with existing data, deduplicate by full event content hash.
+    # Skip entirely when skip_events=True (lightweight polling for messages only).
     persisted_loop_events: Optional[List[Dict[str, Any]]] = None
     all_loop_events: List[Dict[str, Any]] = []
     seen_event_json: set = set()
     total_raw_count = 0
+    _skip_event_extraction = skip_events
     for row in rows:
         meta = _parse_json_field(row.get("metadata"))
-        if isinstance(meta, dict) and meta.get("loop_events"):
+        if not _skip_event_extraction and isinstance(meta, dict) and meta.get("loop_events"):
             for evt in meta["loop_events"]:
                 total_raw_count += 1
                 # Dedup by full JSON to handle exact duplicates from old metadata merge
@@ -475,7 +481,7 @@ async def get_session_history(
         # extract them so the UI can show an incomplete loop card.
         row_meta = _parse_json_field(row.get("metadata"))
         has_persisted = isinstance(row_meta, dict) and bool(row_meta.get("loop_events"))
-        if not has_persisted:
+        if not _skip_event_extraction and not has_persisted:
             # Extract events server-side via SQL to avoid loading full history
             # into Python memory (can be 500KB+). Query uses jsonb functions
             # to parse event JSON lines from agent message parts.
@@ -556,6 +562,12 @@ async def get_session_history(
                         all_artifact_texts.append(part["text"])
 
     # Set persisted_loop_events AFTER both extraction passes (metadata + history text)
+    # Apply events_since filter — only return new events the client hasn't seen
+    if events_since is not None and len(all_loop_events) > events_since:
+        all_loop_events = all_loop_events[events_since:]
+    elif events_since is not None and len(all_loop_events) <= events_since:
+        all_loop_events = []  # Client already has everything
+
     if all_loop_events:
         persisted_loop_events = all_loop_events
         logger.info(
