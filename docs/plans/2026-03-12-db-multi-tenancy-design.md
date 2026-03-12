@@ -27,11 +27,11 @@ graph TB
         LLM[litellm-proxy]
     end
 
-    A1 -->|"user: legion_user<br/>schema: agent_legion"| PG
-    A2 -->|"user: hardened_user<br/>schema: agent_hardened"| PG
-    A3 -->|"user: rca_agent_user<br/>schema: agent_rca_agent"| PG
-    BE -->|"user: sessions_user<br/>schema: team1"| PG
-    PROXY -->|"user: llm_budget_user<br/>schema: team1"| PG
+    A1 -->|"user: team1_agent_legion_user<br/>schema: team1_agent_legion"| PG
+    A2 -->|"user: team1_agent_hardened_user<br/>schema: team1_agent_hardened"| PG
+    A3 -->|"user: team1_agent_rca_agent_user<br/>schema: team1_agent_rca_agent"| PG
+    BE -->|"user: team1_sessions_user<br/>schema: team1"| PG
+    PROXY -->|"user: team1_llm_budget_user<br/>schema: team1"| PG
     A1 --> PROXY
     A2 --> PROXY
     A3 --> PROXY
@@ -74,10 +74,10 @@ erDiagram
 
 | Schema | Owner | Created by | Accessed by | Contains |
 |--------|-------|-----------|-------------|----------|
-| `team1` | `sessions_user` | Deploy scripts | kagenti-backend, llm-budget-proxy | tasks, llm_calls, budget_limits |
-| `agent_legion` | `legion_user` | Wizard (on agent deploy) | sandbox-legion pod | checkpoints, checkpoint_blobs, checkpoint_writes |
-| `agent_hardened` | `hardened_user` | Wizard (on agent deploy) | sandbox-hardened pod | checkpoints, ... |
-| `agent_rca_agent` | `rca_agent_user` | Wizard (on agent deploy) | rca-agent pod | checkpoints, ... |
+| `team1` | `team1_sessions_user` | Deploy scripts | kagenti-backend, llm-budget-proxy | tasks, llm_calls, budget_limits |
+| `team1_agent_legion` | `team1_agent_legion_user` | Wizard (on agent deploy) | sandbox-legion pod | checkpoints, checkpoint_blobs, checkpoint_writes |
+| `team1_agent_hardened` | `team1_agent_hardened_user` | Wizard (on agent deploy) | sandbox-hardened pod | checkpoints, ... |
+| `team1_agent_rca_agent` | `team1_agent_rca_agent_user` | Wizard (on agent deploy) | rca-agent pod | checkpoints, ... |
 
 ## Lifecycle Flows
 
@@ -90,15 +90,15 @@ sequenceDiagram
     participant K8s as Kubernetes
 
     Scripts->>PG: CREATE DATABASE kagenti
-    Scripts->>PG: CREATE USER sessions_user WITH PASSWORD '...'
-    Scripts->>PG: CREATE SCHEMA team1 AUTHORIZATION sessions_user
-    Scripts->>PG: ALTER USER sessions_user SET search_path = team1
-    Scripts->>PG: CREATE USER llm_budget_user WITH PASSWORD '...'
-    Scripts->>PG: GRANT USAGE ON SCHEMA team1 TO llm_budget_user
-    Scripts->>PG: GRANT CREATE ON SCHEMA team1 TO llm_budget_user
-    Scripts->>PG: ALTER USER llm_budget_user SET search_path = team1
-    Scripts->>K8s: Create Secret sessions-db-secret (sessions_user creds)
-    Scripts->>K8s: Create Secret llm-budget-db-secret (llm_budget_user creds)
+    Scripts->>PG: CREATE USER team1_sessions_user WITH PASSWORD '...'
+    Scripts->>PG: CREATE SCHEMA team1 AUTHORIZATION team1_sessions_user
+    Scripts->>PG: ALTER USER team1_sessions_user SET search_path = team1
+    Scripts->>PG: CREATE USER team1_llm_budget_user WITH PASSWORD '...'
+    Scripts->>PG: GRANT USAGE ON SCHEMA team1 TO team1_llm_budget_user
+    Scripts->>PG: GRANT CREATE ON SCHEMA team1 TO team1_llm_budget_user
+    Scripts->>PG: ALTER USER team1_llm_budget_user SET search_path = team1
+    Scripts->>K8s: Create Secret sessions-db-secret (team1_sessions_user creds)
+    Scripts->>K8s: Create Secret llm-budget-db-secret (team1_llm_budget_user creds)
     Note over Scripts: kagenti-backend and llm-budget-proxy<br/>run their own table migrations on startup
 ```
 
@@ -112,11 +112,11 @@ sequenceDiagram
     participant K8s as Kubernetes
 
     User->>BE: POST /sandbox/team1/create {name: "sandbox-legion", ...}
-    BE->>PG: CREATE USER agent_legion_user WITH PASSWORD '...'
-    BE->>PG: CREATE SCHEMA agent_legion AUTHORIZATION agent_legion_user
-    BE->>PG: ALTER USER agent_legion_user SET search_path = agent_legion
-    BE->>PG: REVOKE ALL ON SCHEMA team1 FROM agent_legion_user
-    BE->>K8s: Create Secret agent-legion-db-secret<br/>(agent_legion_user creds, schema=agent_legion)
+    BE->>PG: CREATE USER team1_agent_legion_user WITH PASSWORD '...'
+    BE->>PG: CREATE SCHEMA team1_agent_legion AUTHORIZATION team1_agent_legion_user
+    BE->>PG: ALTER USER team1_agent_legion_user SET search_path = team1_agent_legion
+    BE->>PG: REVOKE ALL ON SCHEMA team1 FROM team1_agent_legion_user
+    BE->>K8s: Create Secret agent-legion-db-secret<br/>(team1_agent_legion_user creds)
     BE->>K8s: Create Deployment sandbox-legion<br/>(mounts agent-legion-db-secret as CHECKPOINT_DB_URL)
     BE->>K8s: Create Service, Route, etc.
     Note over K8s: Agent pod starts, connects to DB<br/>LangGraph creates checkpoint tables<br/>in agent_legion schema automatically
@@ -183,12 +183,12 @@ graph LR
         AH["agent_hardened schema<br/>(checkpoints)"]
     end
 
-    SU[sessions_user] -->|"OWNER, full access"| T1
-    LBU[llm_budget_user] -->|"USAGE + CREATE"| T1
-    ALU[agent_legion_user] -->|"OWNER, full access"| AL
+    SU[team1_sessions_user] -->|"OWNER, full access"| T1
+    LBU[team1_llm_budget_user] -->|"USAGE + CREATE"| T1
+    ALU[team1_agent_legion_user] -->|"OWNER, full access"| AL
     ALU -.->|"NO ACCESS"| T1
     ALU -.->|"NO ACCESS"| AH
-    AHU[agent_hardened_user] -->|"OWNER, full access"| AH
+    AHU[team1_agent_hardened_user] -->|"OWNER, full access"| AH
     AHU -.->|"NO ACCESS"| T1
     AHU -.->|"NO ACCESS"| AL
 ```
@@ -208,7 +208,9 @@ async def _create_agent_db_schema(namespace: str, agent_name: str) -> dict:
 
     Returns dict with connection details for the agent's K8s secret.
     """
-    schema_name = f"agent_{agent_name.replace('-', '_')}"
+    ns_prefix = namespace.replace('-', '_')
+    agent_safe = agent_name.replace('-', '_')
+    schema_name = f"{ns_prefix}_agent_{agent_safe}"
     db_user = f"{schema_name}_user"
     db_password = secrets.token_urlsafe(24)
 
@@ -237,7 +239,9 @@ async def _create_agent_db_schema(namespace: str, agent_name: str) -> dict:
 ```python
 async def _delete_agent_db_schema(namespace: str, agent_name: str):
     """Drop the agent's PostgreSQL schema and user. Removes all checkpoints."""
-    schema_name = f"agent_{agent_name.replace('-', '_')}"
+    ns_prefix = namespace.replace('-', '_')
+    agent_safe = agent_name.replace('-', '_')
+    schema_name = f"{ns_prefix}_agent_{agent_safe}"
     db_user = f"{schema_name}_user"
 
     pool = await get_admin_pool(namespace)
