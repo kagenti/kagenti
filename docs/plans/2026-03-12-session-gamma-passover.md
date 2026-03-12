@@ -80,9 +80,46 @@ Items marked 🔲 are still open. Grouped by priority.
 ## Recommended Session Priorities
 
 ### Session Beta — LLM Budget Proxy + DB Schemas
-See `docs/plans/2026-03-12-session-beta-passover.md`
+See [Session Beta Passover](./2026-03-12-session-beta-passover.md)
 
-### Session Gamma — UI Polish + Remaining P0s
+### Session Gamma — Main Design Doc Rewrite + UI Polish
+
+**Priority 0: Rewrite main design doc** (`docs/plans/2026-03-01-sandbox-platform-design.md`)
+
+The main doc is 600+ lines and outdated. Rewrite as a **concise index**:
+
+1. **Goal** — 2-3 sentences on what the sandbox platform does
+2. **Architecture diagram** — one mermaid C4 container diagram reflecting current state:
+   - LiteLLM in kagenti-system
+   - LLM budget proxy per namespace (planned)
+   - Egress proxy as separate deployment (not sidecar)
+   - Schema-per-agent DB isolation
+   - Plan-execute-reflect reasoning loop inside agents
+   - Sidecar agents (looper, hallucination, context)
+   - Remove gVisor
+3. **Component status matrix** — one table with columns:
+   `| Component | Status | Design Doc | Sessions | Tests |`
+   Each row links to the sub-design doc via relative path `./filename.md`
+4. **Security model** — simplified table, link to composable security detail
+5. **Planned work** — Beta/Gamma/Delta/Epsilon with links to passover docs
+6. **Sub-design doc index** — all `docs/plans/` design docs with status
+
+All detail lives in sub-design docs. Main doc is the **map**.
+
+Verify all relative links resolve on GitHub:
+```bash
+# Extract links from the doc and verify each exists on the branch
+grep -oP '\./[^)]+\.md' docs/plans/2026-03-01-sandbox-platform-design.md | while read f; do
+  full="docs/plans/$f"
+  if git ls-tree origin/feat/sandbox-agent "$full" >/dev/null 2>&1; then
+    echo "✅ $f"
+  else
+    echo "❌ $f MISSING"
+  fi
+done
+```
+
+**Priority 1: UI Polish + Remaining P0s**
 Focus on items 9-13 (step naming, reflector prompt, event ordering, page load):
 
 1. **Step numbering format** (#9, #10) — `Step 2 [5]` and `Step 2a [7]` for replans
@@ -107,15 +144,35 @@ Focus on items 9-13 (step naming, reflector prompt, event ordering, page load):
 4. **Context window UI** (#30)
 5. **Agent redeploy test** (#24)
 
-## Design Docs (review for updates)
+## Design Docs (all relative links, resolve in GitHub PR view)
 
 | Doc | Status | Topic |
 |-----|--------|-------|
-| `2026-03-12-llm-budget-proxy-design.md` | Ready for Beta | LLM proxy, llm_calls table, budget enforcement |
-| `2026-03-12-db-multi-tenancy-design.md` | Ready for Beta | Schema-per-agent, wizard creates/drops schemas |
-| `2026-03-10-visualizations-design.md` | Pending (Epsilon) | Session graph visualization |
-| `2026-03-03-sandbox-reasoning-loop-design.md` | Reference | Plan-execute-reflect architecture |
-| `2026-03-01-sandbox-platform-design.md` | Reference | Overall sandbox agent platform |
+| [Main Platform Design](./2026-03-01-sandbox-platform-design.md) | 🔧 Needs rewrite (Gamma P0) | Overall architecture, component status |
+| [LLM Budget Proxy](./2026-03-12-llm-budget-proxy-design.md) | 🔲 Ready for Beta | LLM proxy, llm_calls table, per-session budget |
+| [DB Multi-Tenancy](./2026-03-12-db-multi-tenancy-design.md) | 🔲 Ready for Beta | Schema-per-agent, wizard creates/drops schemas |
+| [Reasoning Loop](./2026-03-03-sandbox-reasoning-loop-design.md) | ✅ Built | Plan-execute-reflect with micro-reasoning |
+| [Agent Loop UI](./2026-03-03-agent-loop-ui-design.md) | ✅ Built | Loop cards, step sections, prompt inspector |
+| [LiteLLM Proxy](./2026-03-07-litellm-proxy-design.md) | ✅ Built | LiteLLM deployment in kagenti-system |
+| [LiteLLM Analytics](./2026-03-08-litellm-analytics-design.md) | ✅ Built | Token usage tab, per-session/model breakdown |
+| [Loop Event Pipeline](./2026-03-09-loop-event-pipeline-design.md) | ✅ Built | SSE forwarding, persistence, recovery |
+| [Visualizations](./2026-03-10-visualizations-design.md) | 🔲 Pending (Epsilon) | Session graph DAG visualization |
+| [File Browser](./2026-03-02-sandbox-file-browser-design.md) | ✅ Built | Workspace file browser tab |
+| [Tabbed Session View](./2026-03-05-tabbed-session-view-design.md) | ✅ Built | Chat, Stats, LLM Usage, Files, Sub-Sessions tabs |
+| [Platform Runtime](./2026-03-04-platform-agent-runtime-design.md) | 🔧 Partial | Wizard deploy, Shipwright builds |
+| [Session Orchestration](./2026-02-27-session-orchestration-design.md) | 🔲 Not built | Automated passover, session continuity |
+| [Session Ownership](./2026-02-27-session-ownership-design.md) | 🔧 Partial | Per-user session visibility |
+| [Skill Packs](./2026-03-04-skill-packs-design.md) | 🔧 Partial | Skill loading from git repos |
+
+### Session Passover Chain
+
+| Session | Passover | Focus |
+|---------|----------|-------|
+| [Alpha](./2026-03-12-session-alpha-passover.md) | Completed | Polling fix, budget events, reporter, stall detection |
+| [Beta](./2026-03-12-session-beta-passover.md) | Next | LLM budget proxy, DB schemas |
+| [Gamma](./2026-03-12-session-gamma-passover.md) | This doc | Design doc rewrite, UI polish, P0s |
+| [Y](./2026-03-11-session-Y-passover.md) | Reference | Event pipeline, micro-reasoning, prompt inspector |
+| [Z](./2026-03-11-session-Z-passover.md) | Reference | Subscribe, budget wizard, step naming |
 
 ## Main Design Doc Updates Needed
 
