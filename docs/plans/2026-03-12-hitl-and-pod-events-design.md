@@ -290,15 +290,131 @@ async def get_pod_status(namespace: str, agent_name: str):
   (e.g., red banner: "OOMKilled 6 times — consider increasing memory limit")
 - **Auto-refresh:** Poll every 30s for updated status
 
-### Egress Proxy Status
+### All Agent Pods — Not Just the Agent
 
-Also show the egress proxy pod status (if deployed):
+Each wizard-deployed agent creates up to 3 pods. The Pod tab shows all of them:
+
+| Pod | Deployment Name | Purpose |
+|-----|----------------|---------|
+| **Agent** | `{agent-name}` | LangGraph reasoning, tool execution |
+| **Egress Proxy** | `{agent-name}-egress-proxy` | Squid domain allowlist |
+| **LLM Budget Proxy** | `llm-budget-proxy` | Per-session token enforcement |
+
+**Backend endpoint** returns status for all related pods:
 
 ```
-GET /api/v1/sandbox/{namespace}/agents/{agent_name}-egress-proxy/pod-status
+GET /api/v1/sandbox/{namespace}/agents/{agent_name}/pod-status
 ```
 
-This lets users see if the proxy is healthy and what domains are configured.
+Response includes an array of pod groups:
+
+```json
+{
+  "pods": [
+    {
+      "component": "agent",
+      "deployment": "rca-agent-emptydir",
+      "replicas": 1,
+      "ready_replicas": 1,
+      "pod_name": "rca-agent-emptydir-675d59d779-c4r7p",
+      "status": "Running",
+      "restarts": 0,
+      "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}, "limits": {"cpu": "500m", "memory": "1Gi"}},
+      "events": [...]
+    },
+    {
+      "component": "egress-proxy",
+      "deployment": "rca-agent-emptydir-egress-proxy",
+      "replicas": 1,
+      "ready_replicas": 1,
+      "pod_name": "rca-agent-emptydir-egress-proxy-9bd4c4498-6vjdr",
+      "status": "Running",
+      "restarts": 0,
+      "resources": {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"cpu": "100m", "memory": "128Mi"}},
+      "config": {"allowed_domains": ["github.com", "api.github.com", "githubusercontent.com", "pypi.org"]},
+      "events": [...]
+    },
+    {
+      "component": "llm-budget-proxy",
+      "deployment": "llm-budget-proxy",
+      "replicas": 1,
+      "ready_replicas": 1,
+      "pod_name": "llm-budget-proxy-7d5cd95575-42njh",
+      "status": "Running",
+      "restarts": 0,
+      "resources": {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"cpu": "200m", "memory": "256Mi"}},
+      "events": [...]
+    }
+  ]
+}
+```
+
+**UI rendering** — each pod group gets a collapsible section:
+
+```
+[Agent: rca-agent-emptydir]        Running  0 restarts  1Gi/500m
+[Egress Proxy]                     Running  0 restarts  128Mi/100m
+  Allowed domains: github.com, api.github.com, ...
+[LLM Budget Proxy]                 Running  0 restarts  256Mi/200m
+```
+
+Warning banners aggregate across all pods — if any pod is crashing, the
+tab badge shows a warning indicator.
+
+---
+
+## Part 3: Resource Limits + Replicas in Wizard
+
+### Problem
+
+Resource limits (memory, CPU) and replica counts are hardcoded in deployment
+YAMLs. Users can't configure them without kubectl access.
+
+### Wizard Step: Resources
+
+Add a new wizard step (or section in Budget step) for all 3 pod types:
+
+```
+Resources
+---------
+Agent Pod:
+  Memory limit:  [1Gi    v]    CPU limit:  [500m   v]
+  Replicas:      [1      v]
+
+Egress Proxy:
+  Memory limit:  [128Mi  v]    CPU limit:  [100m   v]
+  Replicas:      [1      v]
+
+LLM Budget Proxy (shared per namespace):
+  Memory limit:  [256Mi  v]    CPU limit:  [200m   v]
+  Replicas:      [1      v]
+```
+
+**Defaults:**
+
+| Component | Memory | CPU | Replicas |
+|-----------|--------|-----|----------|
+| Agent | 1Gi | 500m | 1 |
+| Egress Proxy | 128Mi | 100m | 1 |
+| LLM Budget Proxy | 256Mi | 200m | 1 |
+
+**WizardState additions:**
+
+```typescript
+// Step: Resources
+agentMemoryLimit: string;    // "1Gi"
+agentCpuLimit: string;       // "500m"
+agentReplicas: number;       // 1
+proxyMemoryLimit: string;    // "128Mi"
+proxyCpuLimit: string;       // "100m"
+proxyReplicas: number;       // 1
+budgetProxyMemoryLimit: string;  // "256Mi"
+budgetProxyCpuLimit: string;     // "200m"
+budgetProxyReplicas: number;     // 1
+```
+
+**Backend** — `_build_deployment_manifest()` reads these from the request
+and sets `resources.limits` and `spec.replicas` on each deployment.
 
 ---
 
@@ -309,5 +425,7 @@ This lets users see if the proxy is healthy and what domains are configured.
 | HITL proper (agent + backend) | Gamma P1 | High |
 | HITL UI (approve/deny buttons) | Gamma P1 | High |
 | Permission rule in HITL event | Gamma P1 | Medium |
-| Pod events tab (backend) | Delta P2 | Medium |
-| Pod events tab (UI) | Delta P2 | Medium |
+| Pod events tab — all 3 pods (backend) | Delta P2 | Medium |
+| Pod events tab — all 3 pods (UI) | Delta P2 | Medium |
+| Resource limits in wizard | Delta P3 | Medium |
+| Replicas in wizard | Delta P3 | Low |
