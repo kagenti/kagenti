@@ -155,19 +155,23 @@ test.describe('Budget Enforcement', () => {
     ) || '1000000';
     console.log(`[budget] Original proxy DEFAULT_SESSION_MAX_TOKENS: ${originalMaxTokens}`);
 
-    // Set proxy budget to 2000 tokens (~1 LLM call)
+    // Set budget on both proxy (enforces) and agent (displays in UI)
     kc(`set env deploy/llm-budget-proxy -n ${NAMESPACE} DEFAULT_SESSION_MAX_TOKENS=2000`);
-    console.log('[budget] Set proxy DEFAULT_SESSION_MAX_TOKENS=2000');
-    kc(`rollout status deploy/llm-budget-proxy -n ${NAMESPACE} --timeout=90s`, 120000);
+    kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS=2000`);
+    console.log('[budget] Set budget=2000 on proxy + agent');
 
-    // Wait for proxy to be ready
+    // Wait for both rollouts
+    kc(`rollout status deploy/llm-budget-proxy -n ${NAMESPACE} --timeout=90s`, 120000);
+    kc(`rollout status deploy/${BUDGET_AGENT} -n ${NAMESPACE} --timeout=90s`, 120000);
+
+    // Wait for agent to be ready
     for (let i = 0; i < 10; i++) {
       const result = kc(
-        `exec deploy/llm-budget-proxy -n ${NAMESPACE} -- python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5); print('ready')" 2>/dev/null || echo "not-ready"`,
+        `exec deploy/${BUDGET_AGENT} -n ${NAMESPACE} -- python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/agent-card.json', timeout=5); print('ready')"`,
         15000
       );
       if (result.includes('ready')) {
-        console.log(`[budget] Proxy ready after ${i + 1} checks`);
+        console.log(`[budget] Agent ready after ${i + 1} checks`);
         break;
       }
       execSync('sleep 3');
@@ -175,10 +179,12 @@ test.describe('Budget Enforcement', () => {
   });
 
   test.afterAll(() => {
-    // Restore original proxy budget
+    // Restore original budget on both proxy and agent
     kc(`set env deploy/llm-budget-proxy -n ${NAMESPACE} DEFAULT_SESSION_MAX_TOKENS=${originalMaxTokens}`);
-    console.log(`[budget] Restored proxy DEFAULT_SESSION_MAX_TOKENS=${originalMaxTokens}`);
+    kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS-`);
+    console.log(`[budget] Restored proxy budget=${originalMaxTokens}, removed agent override`);
     kc(`rollout status deploy/llm-budget-proxy -n ${NAMESPACE} --timeout=90s`, 120000);
+    kc(`rollout status deploy/${BUDGET_AGENT} -n ${NAMESPACE} --timeout=90s`, 120000);
   });
 
   test('agent stops when token budget is exhausted and UI shows budget', async ({ page }) => {
