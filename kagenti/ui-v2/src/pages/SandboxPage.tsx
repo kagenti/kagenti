@@ -74,6 +74,8 @@ interface Message {
   timestamp: Date;
   toolData?: ToolCallData;
   username?: string;
+  /** Stable sort key from the backend (_index) or insertion order. */
+  order: number;
 }
 
 /** Number of history messages to show initially; rest behind "Load earlier". */
@@ -516,9 +518,10 @@ interface Turn {
 }
 
 function groupMessagesIntoTurns(messages: Message[]): Turn[] {
-  // Messages are already in chronological order from the backend.
-  // Don't re-sort — history messages all have the same timestamp (Date.now() at load time).
-  const sorted = messages;
+  // Sort by the stable `order` field (backend _index or insertion position).
+  // This is necessary because messages from polling, SSE, and history loads
+  // may be merged in non-chronological order.
+  const sorted = [...messages].sort((a, b) => a.order - b.order);
   const turns: Turn[] = [];
   let current: Turn = { assistantMessages: [], finalAnswer: '' };
 
@@ -723,6 +726,10 @@ export const SandboxPage: React.FC = () => {
     getInitialSession(searchParams)
   );
   const [messages, setMessages] = useState<Message[]>([]);
+  /** Auto-incrementing counter for message ordering.
+   *  Starts at a high value so live messages always sort after history messages
+   *  (which use backend _index values starting from 0). Reset when history loads. */
+  const orderCounterRef = useRef(1_000_000);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -735,6 +742,8 @@ export const SandboxPage: React.FC = () => {
   // effects/callbacks, and async setState batching means two rapid calls
   // can both see isStreaming===false before either sets it to true).
   const sendingRef = useRef(false);
+  /** Last user message text — attached to the next AgentLoop created during streaming. */
+  const lastUserMessageRef = useRef<string>('');
   const subscribeAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -920,15 +929,19 @@ export const SandboxPage: React.FC = () => {
   ): Message => {
     const firstPart = h.parts?.[0] as Record<string, unknown> | undefined;
 
+    // Stable sort key: prefer backend _index, fall back to array position
+    const order = h._index ?? i;
+
     // Only treat as tool data if it's an explicit tool call/result/thinking event
     const toolTypes = ['tool_call', 'tool_result', 'thinking', 'hitl_request', 'hitl_response', 'graph_event'];
     if (firstPart?.kind === 'data' && toolTypes.includes(firstPart?.type as string)) {
       return {
-        id: `history-${h._index ?? i}`,
+        id: `history-${order}`,
         role: h.role as 'user' | 'assistant',
         content: '',
         timestamp: new Date(),
         toolData: firstPart as unknown as ToolCallData,
+        order,
       };
     }
 
@@ -944,11 +957,12 @@ export const SandboxPage: React.FC = () => {
       .join('') || '';
 
     return {
-      id: `history-${h._index ?? i}`,
+      id: `history-${order}`,
       role: h.role as 'user' | 'assistant',
       content,
       timestamp: new Date(),
       username: h.username || (h.metadata?.username as string | undefined),
+      order,
     };
   };
 
@@ -1021,7 +1035,11 @@ export const SandboxPage: React.FC = () => {
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
                   const loopId = evt.loop_id;
-                  const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
+                  let existing = next.get(loopId);
+                  if (!existing) {
+                    existing = createDefaultAgentLoop(loopId);
+                    existing.userMessage = lastUserMessageRef.current || undefined;
+                  }
                   next.set(loopId, applyLoopEvent(existing, evt));
                   return next;
                 });
@@ -1097,6 +1115,10 @@ export const SandboxPage: React.FC = () => {
           hasMore = historyPage.has_more;
           if (historyPage.messages.length > 0) {
             oldest = historyPage.messages[0]._index ?? 0;
+            // Set the order counter above the highest backend _index so live
+            // messages always sort after history messages.
+            const maxIndex = Math.max(...historyPage.messages.map((m) => m._index ?? 0));
+            orderCounterRef.current = maxIndex + 1_000;
           }
 
           // Build loops from events
@@ -1449,6 +1471,7 @@ export const SandboxPage: React.FC = () => {
           role: 'assistant',
           content: data.content,
           timestamp: new Date(),
+          order: orderCounterRef.current++,
         },
       ]);
     }
@@ -1575,6 +1598,7 @@ export const SandboxPage: React.FC = () => {
                 role: 'assistant',
                 content: '',
                 timestamp: new Date(),
+                order: orderCounterRef.current++,
                 toolData: {
                   type: 'hitl_request',
                   command: data.event.taskId || '',
@@ -1594,6 +1618,7 @@ export const SandboxPage: React.FC = () => {
                 role: 'assistant',
                 content: '',
                 timestamp: new Date(),
+                order: orderCounterRef.current++,
                 toolData: {
                   type: data.event.type,
                   child_context_id: data.event.child_context_id,
@@ -1623,6 +1648,7 @@ export const SandboxPage: React.FC = () => {
                     role: 'assistant',
                     content: '',
                     timestamp: new Date(),
+                    order: orderCounterRef.current++,
                     toolData: parsed,
                   });
                   hadToolEvents = true;
@@ -1694,6 +1720,7 @@ export const SandboxPage: React.FC = () => {
             role: 'assistant',
             content: accumulatedContent,
             timestamp: new Date(),
+            order: orderCounterRef.current++,
           },
         ]);
       }
@@ -1702,8 +1729,48 @@ export const SandboxPage: React.FC = () => {
     return true;
   };
 
+  /** Cancel the in-progress agent loop: kill backend task, abort SSE stream, reset UI state. */
+  const cancelCurrentLoop = async () => {
+    // 1. Kill the backend task so the agent stops processing
+    if (contextId) {
+      try {
+        await sandboxService.killSession(namespace, contextId);
+      } catch (err) {
+        console.warn('[cancel] Failed to kill session:', err);
+      }
+    }
+
+    // 2. Abort the active subscribe/streaming SSE connection
+    if (subscribeAbortRef.current) {
+      subscribeAbortRef.current.abort();
+      subscribeAbortRef.current = null;
+    }
+
+    // 3. Mark active agent loops as 'canceled'
+    setAgentLoops((prev) => {
+      const next = new Map(prev);
+      for (const [id, loop] of next) {
+        if (loop.status !== 'done') {
+          next.set(id, { ...loop, status: 'canceled' });
+        }
+      }
+      return next;
+    });
+
+    // 4. Reset streaming UI state
+    setIsStreaming(false);
+    setStreamingContent('');
+    sendingRef.current = false;
+  };
+
   const handleSendMessage = async () => {
-    if (!input.trim() || isStreaming || sendingRef.current) return;
+    if (!input.trim() || sendingRef.current) return;
+
+    // If agent is still processing, cancel the previous loop first
+    if (isStreaming) {
+      await cancelCurrentLoop();
+    }
+
     sendingRef.current = true;
     // Capture and clear input immediately to prevent double-send
     const trimmed = input.trim();
@@ -1715,11 +1782,13 @@ export const SandboxPage: React.FC = () => {
     const skillMatch = trimmed.match(/^\/([\w:.-]+)\s*(.*)/s);
     const skill = skillMatch ? skillMatch[1] : undefined;
 
+    lastUserMessageRef.current = trimmed;
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: trimmed,
       timestamp: new Date(),
+      order: orderCounterRef.current++,
       username: currentUsername,
     };
     setMessages((prev) => [...prev, userMessage]);
@@ -1796,6 +1865,7 @@ export const SandboxPage: React.FC = () => {
             role: 'assistant',
             content: `Error: ${msg}`,
             timestamp: new Date(),
+            order: orderCounterRef.current++,
           },
         ]);
       }
@@ -2119,12 +2189,22 @@ export const SandboxPage: React.FC = () => {
                 const hasLoopCards = loopArray.length > 0;
                 const elements: React.ReactNode[] = [];
 
+                // Attach user messages to their corresponding loop cards
+                if (hasLoopCards) {
+                  loopArray.forEach((loop, idx) => {
+                    const turn = idx < turns.length ? turns[idx] : undefined;
+                    if (turn?.user?.content && !loop.userMessage) {
+                      loop.userMessage = turn.user.content;
+                    }
+                  });
+                }
+
                 // Render each turn, pairing with the corresponding loop card by position
                 turns.forEach((turn, idx) => {
                   elements.push(
                     <React.Fragment key={turn.user?.id || `turn-${idx}`}>
-                      {/* User message */}
-                      {turn.user && (
+                      {/* User message — only when no loop cards (loop cards render it internally) */}
+                      {turn.user && !hasLoopCards && (
                         <ChatBubble
                           msg={turn.user}
                           currentUsername={currentUsername}
@@ -2249,14 +2329,13 @@ export const SandboxPage: React.FC = () => {
                 placeholder="Type your message... (Enter to send, Shift+Enter for newline)"
                 aria-label="Message input"
                 rows={2}
-                isDisabled={isStreaming}
               />
             </SplitItem>
             <SplitItem>
               <Button
                 variant="primary"
                 onClick={handleSendMessage}
-                isDisabled={isStreaming || !input.trim()}
+                isDisabled={!input.trim()}
                 icon={<PaperPlaneIcon />}
               >
                 Send

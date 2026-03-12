@@ -29,8 +29,10 @@ export type NodeType = 'planner' | 'executor' | 'reflector' | 'reporter' | 'repl
 
 export interface AgentLoop {
   id: string;                    // loop_id
-  status: 'planning' | 'executing' | 'reflecting' | 'done' | 'failed';
+  status: 'planning' | 'executing' | 'reflecting' | 'done' | 'failed' | 'canceled';
   model: string;
+  /** The user message that triggered this loop. */
+  userMessage?: string;
   plan: string[];
   replans: Array<{ iteration: number; steps: string[]; model: string; content?: string }>;
   currentStep: number;

@@ -40,6 +40,7 @@ function borderColor(status: AgentLoop['status']): string {
     case 'executing':  return 'var(--pf-v5-global--info-color--100)';
     case 'done':       return 'var(--pf-v5-global--success-color--100)';
     case 'failed':     return 'var(--pf-v5-global--danger-color--100)';
+    case 'canceled':   return '#d97706';
     case 'planning':   return '#6a6e73';
     case 'reflecting': return '#d97706';
   }
@@ -98,6 +99,17 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* User message that triggered this loop */}
+        {loop.userMessage && (
+          <div style={{
+            fontSize: '0.88em', marginBottom: 8, padding: '6px 10px',
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+            borderRadius: 4, color: 'var(--pf-v5-global--Color--100)',
+          }}>
+            <strong style={{ marginRight: 6 }}>User:</strong>
+            {loop.userMessage}
+          </div>
+        )}
         {/* Failure reason — show prominently when loop failed */}
         {loop.status === 'failed' && !loop.finalAnswer && (
           isRecursionLimitHit(loop) ? (
