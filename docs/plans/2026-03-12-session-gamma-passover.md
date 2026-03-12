@@ -117,6 +117,36 @@ Focus on items 9-13 (step naming, reflector prompt, event ordering, page load):
 | `2026-03-03-sandbox-reasoning-loop-design.md` | Reference | Plan-execute-reflect architecture |
 | `2026-03-01-sandbox-platform-design.md` | Reference | Overall sandbox agent platform |
 
+## Main Design Doc Updates Needed
+
+The top-level design doc `docs/plans/2026-03-01-sandbox-platform-design.md` is
+outdated. The following architectural changes from sessions V-Alpha need to be
+reflected:
+
+| Area | Old (in doc) | Current (deployed) |
+|------|-------------|-------------------|
+| Squid proxy | Sidecar container in agent pod | Separate Deployment per agent (`{agent}-egress-proxy`) |
+| LiteLLM | Not in container diagram | Deployed in `kagenti-system`, shared LLM routing |
+| LLM Budget Proxy | Doesn't exist | Designed (per-namespace, between agent→LiteLLM) |
+| DB isolation | Single shared postgres, public schema | Schema-per-agent for checkpoints, team schema for sessions |
+| Agent naming | Composable suffixes (`-secctx-landlock-proxy`) | Simplified profiles (`-legion`, `-hardened`, `-basic`, `-restricted`) |
+| gVisor | T4 tier with RuntimeClass | Removed (incompatible with OpenShift SELinux) |
+| Sidecar agents | Not designed | Looper, Hallucination Observer, Context Guardian |
+| Budget enforcement | Not in design | In-memory → LiteLLM proxy (in progress) |
+| Agent reasoning | Basic tool loop | Plan-execute-reflect with micro-reasoning |
+| Test count | 192/196 Playwright | 196 total, 173 passing |
+| Session history | A-K | A-K, L, M, N, R-Z, Alpha, Beta |
+
+**Container diagram needs update** to show:
+- LiteLLM proxy in kagenti-system
+- LLM budget proxy per namespace (new)
+- Egress proxy as separate deployment (not sidecar)
+- Per-agent DB schema isolation
+- Sidecar agent architecture
+
+**Component status table** needs full refresh — many items moved from
+"Not built" to "Built" or changed scope.
+
 ## Main Issue
 
 TODO: Update the main GitHub issue tracking the sandbox agent feature with:
