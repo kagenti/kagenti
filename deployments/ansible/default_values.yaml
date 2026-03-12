@@ -150,7 +150,8 @@ charts:
   ####################################################################
   spire:
     enabled: false
-    namespace: spire-mgmt
+    namespace: spire-mgmt          # Helm release namespace
+    server_namespace: zero-trust-workload-identity-manager  # Actual SPIRE server component namespace
     version: 0.27.0
     crd:
       version: 0.5.0
@@ -192,6 +193,8 @@ charts:
 
       spiffe-oidc-discovery-provider:
         enabled: true
+        config:
+          set_key_use: true
         tls:
           spire:
             enabled: false

@@ -47,6 +47,9 @@ jobs:
           - name: mlflow-oauth-secret
             context: ./kagenti
             dockerfile: auth/mlflow-oauth-secret/Dockerfile
+          - name: spiffe-idp-setup
+            context: ./kagenti
+            dockerfile: auth/spiffe-idp-setup/Dockerfile
 
     steps:
       # 1. Checkout the repository code

@@ -1,5 +1,7 @@
 # Global settings
 openshift: true
+# Domain name for SPIFFE trust domain and service URLs
+domain: localtest.me
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -151,6 +153,18 @@ keycloak:
   publicUrl: http://keycloak.localtest.me:8080
   realm: kagenti
   autoBootstrapRealm: true
+
+# ------------------------------------------------------------------
+#  AuthBridge Configuration
+# ------------------------------------------------------------------
+authBridge:
+  # CLIENT_AUTH_TYPE: Controls how Keycloak clients authenticate
+  #   - "client-secret": Traditional client_secret authentication (default)
+  #   - "federated-jwt": JWT-SVID authentication via SPIFFE identity provider
+  # For federated-jwt, you must configure a SPIFFE identity provider in Keycloak
+  clientAuthType: "client-secret"
+  # SPIFFE_IDP_ALIAS: Keycloak SPIFFE identity provider alias (only used with federated-jwt)
+  spiffeIdpAlias: "spire-spiffe"
 
 # ------------------------------------------------------------------
 #  Kagenti Operator Configuration
