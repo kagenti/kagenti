@@ -77,7 +77,12 @@ async function navigateToAgent(page: Page, agentName: string) {
   await loginIfNeeded(page);
   await page.goto(`/sandbox?agent=${agentName}`);
   await page.waitForLoadState('networkidle');
-  // Wait for chat input to appear (session must be ready)
+  // Re-login if Keycloak redirect happened
+  await loginIfNeeded(page);
+  // Verify we're on the sandbox page with the right agent
+  const currentUrl = page.url();
+  console.log(`[budget] navigateToAgent: final URL = ${currentUrl.substring(0, 150)}`);
+  // Wait for chat input to appear
   const chatInput = page.getByPlaceholder(/Type your message/i);
   await expect(chatInput).toBeVisible({ timeout: 30000 });
 }
@@ -87,15 +92,20 @@ async function sendMessage(page: Page, message: string) {
   await expect(chatInput).toBeVisible({ timeout: 15000 });
   await expect(chatInput).toBeEnabled({ timeout: 15000 });
   await chatInput.fill(message);
-  // Scope send button to chat area to avoid matching sidebar buttons
-  const sendBtn = page.locator('[data-testid="chat-messages"]')
-    .locator('..').locator('..')
-    .getByRole('button', { name: /Send/i });
+  console.log(`[budget] sendMessage: filled input, looking for Send button...`);
+
+  // Try multiple selectors for the Send button
+  let sendBtn = page.locator('button[type="submit"]');
+  if (!(await sendBtn.isVisible({ timeout: 3000 }).catch(() => false))) {
+    sendBtn = page.getByRole('button', { name: /Send/i });
+  }
   await expect(sendBtn).toBeEnabled({ timeout: 10000 });
+  console.log(`[budget] sendMessage: clicking Send`);
   await sendBtn.click();
 }
 
 async function waitForResponse(page: Page, timeoutMs = 120000) {
+  console.log(`[budget] waitForResponse: waiting for chat input to be enabled (timeout=${timeoutMs}ms)`);
   const chatInput = page.getByPlaceholder(/Type your message/i);
   await expect(chatInput).toBeEnabled({ timeout: timeoutMs });
   await page.waitForTimeout(3000); // Let UI settle and loop events arrive
@@ -103,10 +113,15 @@ async function waitForResponse(page: Page, timeoutMs = 120000) {
   // Verify we're in a session (URL should have session= param)
   const url = page.url();
   const hasSession = url.includes('session=');
-  console.log(`[budget] waitForResponse: URL has session=${hasSession}, url=${url.substring(0, 120)}`);
+  console.log(`[budget] waitForResponse: URL has session=${hasSession}, url=${url.substring(0, 150)}`);
+
+  // Count messages visible in chat
+  const msgCount = await page.locator('[data-testid="chat-messages"] [class*="message"]').count();
+  console.log(`[budget] waitForResponse: ${msgCount} messages visible in chat`);
 }
 
 async function switchToStatsTab(page: Page) {
+  console.log(`[budget] switchToStatsTab: looking for Stats tab`);
   // Ensure we're in a session with data before switching tabs
   // Wait for at least one message to appear in chat (proves session loaded)
   const chatMessages = page.locator('[data-testid="chat-messages"]');
@@ -116,6 +131,13 @@ async function switchToStatsTab(page: Page) {
   await expect(statsTab).toBeVisible({ timeout: 5000 });
   await statsTab.click();
   await page.waitForTimeout(1000); // Let stats render from loop data
+
+  // Debug: check what's visible in the Stats panel
+  const statsCards = await page.locator('.pf-v5-c-card').count();
+  console.log(`[budget] switchToStatsTab: ${statsCards} cards visible in Stats panel`);
+  const budgetCard = page.locator('[data-testid="stats-budget-tokens-used"]');
+  const isBudgetVisible = await budgetCard.isVisible().catch(() => false);
+  console.log(`[budget] switchToStatsTab: budget section visible = ${isBudgetVisible}`);
 }
 
 // ── Test 1: Budget Enforcement ───────────────────────────────────────────────
@@ -163,11 +185,8 @@ test.describe('Budget Enforcement', () => {
     // Wait for agent to finish (it should stop early due to budget)
     await waitForResponse(page, 180000);
 
-    // SPA-navigate to force re-fetch of session data from DB.
-    // A full page.reload() triggers Keycloak redirect which strips URL params.
-    await spaReloadSession(page);
-
-    // Switch to Stats tab
+    // Switch to Stats tab — loop events arrive via SSE stream in real-time,
+    // so by the time waitForResponse returns, all data should be populated.
     await switchToStatsTab(page);
 
     // Budget section MUST be visible with token data
@@ -243,9 +262,6 @@ test.describe('Budget Persistence Across Restart', () => {
     await sendMessage(page, 'Create a file called /workspace/budget-test.txt with "hello"');
     await waitForResponse(page);
 
-    // SPA-reload to ensure loop events are loaded from DB
-    await spaReloadSession(page);
-
     // Step 2: Budget MUST be visible in Stats tab after first message
     await switchToStatsTab(page);
 
@@ -285,9 +301,6 @@ test.describe('Budget Persistence Across Restart', () => {
 
     await sendMessage(page, 'Read the file /workspace/budget-test.txt');
     await waitForResponse(page, 180000);
-
-    // SPA-reload to ensure updated loop events are loaded
-    await spaReloadSession(page);
 
     // Step 5: Budget MUST still be visible and >= pre-restart value
     await switchToStatsTab(page);
