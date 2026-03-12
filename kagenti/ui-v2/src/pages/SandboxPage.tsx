@@ -2049,11 +2049,6 @@ export const SandboxPage: React.FC = () => {
           <>
           {/* Chat messages */}
           <Card style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            {loadingSession && (
-              <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 4 }}>
-                <Spinner size="lg" />
-              </div>
-            )}
             <CardBody
               ref={scrollContainerRef}
               data-testid="chat-messages"
@@ -2065,6 +2060,13 @@ export const SandboxPage: React.FC = () => {
                 padding: '12px 16px',
               }}
             >
+            {loadingSession && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Spinner size="lg" />
+              </div>
+            )}
+            {!loadingSession && (<>
+
               {/* Sentinel for infinite scroll — loads older messages */}
               <div ref={sentinelRef} style={{ minHeight: 1 }} />
               {loadingHistory && (
@@ -2293,6 +2295,7 @@ export const SandboxPage: React.FC = () => {
               )}
 
               <div ref={messagesEndRef} />
+            </>)}
             </CardBody>
           </Card>
 
