@@ -57,7 +57,7 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otel-collector.kagenti-system.svc.cluster.local:8335"
         - name: LLM_API_BASE
-          value: "http://litellm-proxy.kagenti-system.svc.cluster.local:4000/v1"
+          value: "http://llm-budget-proxy.team1.svc:8080/v1"
         - name: LLM_API_KEY
           valueFrom:
             secretKeyRef:
