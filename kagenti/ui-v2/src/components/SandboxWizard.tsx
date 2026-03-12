@@ -59,6 +59,8 @@ export interface WizardState {
   sessionTtl: string;
   // Step 3: Identity
   credentialMode: 'pat' | 'github-app';
+  githubPatSource: 'secret' | 'manual';
+  githubPatSecretName: string;
   githubPat: string;
   llmKeySource: 'new' | 'existing';
   llmSecretName: string;
@@ -99,6 +101,8 @@ export const INITIAL_STATE: WizardState = {
   workspaceSize: '5Gi',
   sessionTtl: '7d',
   credentialMode: 'pat',
+  githubPatSource: 'secret',
+  githubPatSecretName: 'github-token-secret',
   githubPat: '',
   llmKeySource: 'existing',
   llmSecretName: 'openai-secret',
@@ -198,6 +202,8 @@ function configToWizardState(config: Record<string, unknown>): Partial<WizardSta
   if (config.otel_endpoint != null) ws.otelEndpoint = String(config.otel_endpoint);
   if (config.enable_mlflow != null) ws.enableMlflow = Boolean(config.enable_mlflow);
   if (config.credential_mode != null) ws.credentialMode = config.credential_mode as 'pat' | 'github-app';
+  if (config.github_pat_source != null) ws.githubPatSource = config.github_pat_source as 'secret' | 'manual';
+  if (config.github_pat_secret_name != null) ws.githubPatSecretName = String(config.github_pat_secret_name);
   if (config.llm_key_source != null) ws.llmKeySource = config.llm_key_source as 'new' | 'existing';
   if (config.llm_secret_name != null) ws.llmSecretName = String(config.llm_secret_name);
   if (config.maxIterations != null) ws.maxIterations = Number(config.maxIterations);
@@ -283,7 +289,8 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         proxy: state.proxy,
         proxy_domains: state.proxy ? state.proxyDomains : undefined,
         // Credentials
-        github_pat: state.githubPat || undefined,
+        github_pat: state.githubPatSource === 'manual' ? (state.githubPat || undefined) : undefined,
+        github_pat_secret_name: state.githubPatSource === 'secret' ? state.githubPatSecretName : undefined,
         llm_api_key: state.llmApiKey || undefined,
         llm_key_source: state.llmKeySource,
         llm_secret_name: state.llmSecretName,
@@ -509,15 +516,48 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         </FormSelect>
       </FormGroup>
       {state.credentialMode === 'pat' && (
-        <FormGroup label="GitHub PAT" fieldId="github-pat">
-          <TextInput
-            id="github-pat"
-            type="password"
-            value={state.githubPat}
-            onChange={(_e, v) => update('githubPat', v)}
-            placeholder="ghp_..."
-          />
-        </FormGroup>
+        <>
+          <FormGroup label="GitHub PAT Source" fieldId="github-pat-source">
+            <FormSelect
+              id="github-pat-source"
+              value={state.githubPatSource}
+              onChange={(_e, v) => update('githubPatSource', v as 'secret' | 'manual')}
+            >
+              <FormSelectOption
+                value="secret"
+                label="Use existing Kubernetes secret (recommended)"
+              />
+              <FormSelectOption value="manual" label="Enter PAT manually" />
+            </FormSelect>
+          </FormGroup>
+          {state.githubPatSource === 'secret' && (
+            <FormGroup label="Secret Name" fieldId="github-pat-secret-name">
+              <TextInput
+                id="github-pat-secret-name"
+                value={state.githubPatSecretName}
+                onChange={(_e, v) => update('githubPatSecretName', v)}
+                placeholder="github-pat-secret"
+              />
+              <div className="pf-v5-c-form__helper-text" style={{ fontSize: '0.82em', marginTop: 4 }}>
+                Kubernetes Secret in the target namespace containing the GitHub PAT (key: &quot;token&quot;).
+              </div>
+            </FormGroup>
+          )}
+          {state.githubPatSource === 'manual' && (
+            <FormGroup label="GitHub PAT" fieldId="github-pat">
+              <TextInput
+                id="github-pat"
+                type="password"
+                value={state.githubPat}
+                onChange={(_e, v) => update('githubPat', v)}
+                placeholder="ghp_..."
+              />
+              <div className="pf-v5-c-form__helper-text" style={{ fontSize: '0.82em', marginTop: 4 }}>
+                Will be stored as a Kubernetes Secret in the target namespace.
+              </div>
+            </FormGroup>
+          )}
+        </>
       )}
       {state.credentialMode === 'github-app' && (
         <Alert variant="info" title="GitHub App Setup" isInline>
@@ -787,9 +827,11 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           <DescriptionListTerm>GitHub Credential</DescriptionListTerm>
           <DescriptionListDescription>
             {state.credentialMode === 'pat'
-              ? state.githubPat
-                ? 'PAT provided (will create Secret)'
-                : 'PAT (not provided)'
+              ? state.githubPatSource === 'secret'
+                ? `Existing secret: ${state.githubPatSecretName}`
+                : state.githubPat
+                  ? 'PAT provided (will create Secret)'
+                  : 'PAT (not provided)'
               : 'GitHub App (Enterprise)'}
           </DescriptionListDescription>
         </DescriptionListGroup>
