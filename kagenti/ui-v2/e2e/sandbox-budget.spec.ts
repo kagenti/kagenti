@@ -158,9 +158,21 @@ test.describe('Budget Enforcement', () => {
     kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS=5000`);
     console.log('[budget] Set SANDBOX_MAX_TOKENS=5000');
 
-    // Wait for rollout
+    // Wait for rollout + pod readiness
     kc(`rollout status deploy/${BUDGET_AGENT} -n ${NAMESPACE} --timeout=90s`, 120000);
-    console.log('[budget] Rollout complete');
+    console.log('[budget] Rollout complete, waiting for agent readiness...');
+    // Wait for agent to be ready (health check via agent-card endpoint)
+    for (let i = 0; i < 10; i++) {
+      const result = kc(
+        `exec deploy/${BUDGET_AGENT} -n ${NAMESPACE} -- python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/agent-card.json', timeout=5); print('ready')"`,
+        15000
+      );
+      if (result.includes('ready')) {
+        console.log(`[budget] Agent ready after ${i + 1} checks`);
+        break;
+      }
+      execSync('sleep 3');
+    }
   });
 
   test.afterAll(() => {

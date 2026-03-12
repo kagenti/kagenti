@@ -185,6 +185,14 @@ async def _record_call(
     )
     # Invalidate cache so next check sees updated tokens
     _session_cache.pop(session_id, None)
+    if total_tokens > 0:
+        logger.info(
+            "Recorded: session=%s agent=%s tokens=%d status=%s",
+            session_id[:12] if session_id else "none",
+            agent_name or "unknown",
+            total_tokens,
+            status,
+        )
 
 
 async def _check_budget(
@@ -232,6 +240,15 @@ async def chat_completions(request: Request):
     meta = _extract_metadata(body)
     session_id = meta["session_id"]
     max_tokens = meta["max_session_tokens"] or DEFAULT_SESSION_MAX_TOKENS
+
+    logger.info(
+        "LLM request: session=%s agent=%s model=%s stream=%s max_tokens=%d",
+        session_id[:12] if session_id else "none",
+        meta["agent_name"] or "unknown",
+        model,
+        body.get("stream", False),
+        max_tokens,
+    )
 
     # Budget check
     budget_resp = await _check_budget(session_id, max_tokens, meta, model)
