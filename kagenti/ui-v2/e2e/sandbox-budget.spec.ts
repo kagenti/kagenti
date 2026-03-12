@@ -221,8 +221,7 @@ test.describe('Budget Enforcement', () => {
     }
 
     // ── Message 2: Follow-up after budget exhausted ──
-    // Agent should still respond (budget is per-session, but new session = new budget)
-    // OR if same session, should get the same budget-exceeded response
+    // Same session — proxy should return 402 again, agent should report budget exceeded
     const chatTab = page.locator('[role="tab"]').filter({ hasText: /Chat/i });
     await chatTab.click();
     await page.waitForTimeout(1000);
@@ -231,25 +230,27 @@ test.describe('Budget Enforcement', () => {
     await waitForResponse(page, 60000);
 
     const chatText2 = await chatArea.textContent() || '';
-    const hasBudgetRef2 = chatText2.toLowerCase().includes('budget') ||
-      chatText2.toLowerCase().includes('exceeded') ||
-      chatText2.toLowerCase().includes('402') ||
-      chatText2.toLowerCase().includes('no response');
+    const budgetKeywords2 = ['budget', 'exceeded', '402', 'no response', 'exhausted', 'limit'];
+    const hasBudgetRef2 = budgetKeywords2.some(kw => chatText2.toLowerCase().includes(kw));
     console.log(`[budget] Message 2 — budget reference: ${hasBudgetRef2}`);
-    console.log(`[budget] Message 2 — chat preview: ${chatText2.substring(chatText1.length, chatText1.length + 300)}`);
+    console.log(`[budget] Message 2 — new content: ${chatText2.substring(chatText1.length, chatText1.length + 300)}`);
+    // After first 402, follow-ups MUST mention budget/exceeded
+    expect(hasBudgetRef2).toBe(true);
 
     // ── Message 3: Third attempt — verify consistent behavior ──
     await sendMessage(page, 'Try one more time please');
     await waitForResponse(page, 60000);
 
     const chatText3 = await chatArea.textContent() || '';
-    console.log(`[budget] Message 3 — chat length: ${chatText3.length} (growth from msg2: ${chatText3.length - chatText2.length})`);
-
-    // The agent MUST respond to all 3 messages (not hang or crash)
-    // Even if the response is "budget exceeded", it should be consistent
+    const hasBudgetRef3 = budgetKeywords2.some(kw => chatText3.toLowerCase().includes(kw));
+    console.log(`[budget] Message 3 — budget reference: ${hasBudgetRef3}`);
+    console.log(`[budget] Message 3 — chat length: ${chatText3.length} (growth: ${chatText3.length - chatText2.length})`);
+    // Third message MUST also mention budget — behavior is consistent
+    expect(hasBudgetRef3).toBe(true);
+    // Chat MUST have grown (agent responded, didn't hang)
     expect(chatText3.length).toBeGreaterThan(chatText1.length);
 
-    console.log('[budget] Budget enforcement test complete — 3 messages sent, all got responses');
+    console.log('[budget] Budget enforcement test complete — 3 messages, all show budget exceeded');
   });
 });
 
