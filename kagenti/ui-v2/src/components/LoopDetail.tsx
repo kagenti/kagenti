@@ -489,8 +489,8 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
       )}
 
       {/* Tool calls paired with results, interleaved with micro-reasoning.
-          Micro-reasoning N appears AFTER tool pair N (chronological order):
-          tool_call[0] → result[0] → micro_reasoning[0] → tool_call[1] → result[1] → micro_reasoning[1] ...
+          Micro-reasoning N appears BEFORE tool pair N (it decided the action):
+          micro_reasoning[0] → tool_call[0] → result[0] → micro_reasoning[1] → tool_call[1] → result[1] ...
       */}
       {(() => {
         const usedResults = new Set<number>();
@@ -517,14 +517,10 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
 
           const hasResult = !!matchedResult || step.status === 'done' || step.status === 'failed';
           const resultError = !!matchedResult && isToolResultError(matchedResult?.output);
-          // Find micro-reasoning that follows this tool pair (micro_step matches tool index)
+          // Find micro-reasoning that precedes this tool call (it decided this action)
           const mr = mrs.find(m => m.micro_step === i + 1) || mrs[i];
           return (
             <React.Fragment key={`tool-group-${i}`}>
-              <div style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
-                <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
-                {matchedResult && <ToolResultBlock result={matchedResult} />}
-              </div>
               {mr && (
                 <div style={{
                   margin: '8px 0', padding: '8px 12px',
@@ -564,6 +560,10 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
                   )}
                 </div>
               )}
+              <div style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
+                <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
+                {matchedResult && <ToolResultBlock result={matchedResult} />}
+              </div>
             </React.Fragment>
           );
         });
