@@ -521,6 +521,8 @@ for the phased rollout plan starting with OpenCode.
 |---------|----------|-------|
 | [Alpha](./2026-03-12-session-alpha-passover.md) | Completed | Polling fix, budget events, reporter, stall detection |
 | [Beta](./2026-03-12-session-beta-passover.md) | Next | LLM budget proxy, DB schemas |
-| [Gamma](./2026-03-12-session-gamma-passover.md) | Reference | Design doc rewrite, UI polish |
+| [Gamma](./2026-03-12-session-gamma-passover.md) | Planned | UI polish, step naming, event ordering |
+| [Delta](./2026-03-12-session-delta-passover.md) | Planned | Infrastructure: mesh labels, OTEL, crash recovery |
+| [Epsilon](./2026-03-12-session-epsilon-passover.md) | Planned | Advanced: visualizations, message queue, context UI |
 | [Y](./2026-03-11-session-Y-passover.md) | Reference | Event pipeline, micro-reasoning |
 | [Z](./2026-03-11-session-Z-passover.md) | Reference | Subscribe, budget wizard, step naming |
