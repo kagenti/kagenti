@@ -47,7 +47,6 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
   // Fetch authoritative budget data from the LLM Budget Proxy via backend API.
   // This persists across page reloads / stream disconnects (proxy records every call).
   const [proxyTokens, setProxyTokens] = useState<number>(0);
-  const [proxyCalls, setProxyCalls] = useState<number>(0);
   useEffect(() => {
     if (!contextId || !isVisible) return;
     let cancelled = false;
@@ -56,7 +55,6 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
       .then((data) => {
         if (!cancelled) {
           setProxyTokens(data.total_tokens);
-          setProxyCalls(data.total_calls);
         }
       })
       .catch(() => { /* proxy unavailable — fall back to loop data */ });
