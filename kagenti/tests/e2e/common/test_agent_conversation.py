@@ -11,6 +11,7 @@ Usage:
     pytest tests/e2e/test_agent_conversation.py -v
 """
 
+import asyncio
 import os
 import pathlib
 import logging
@@ -26,6 +27,11 @@ from a2a.types import (
     TaskArtifactUpdateEvent,
     TaskState,
 )
+
+# LLM responses can be flaky (empty/null content from the model).
+# Retry the query up to this many times before failing.
+_LLM_QUERY_MAX_ATTEMPTS = 3
+_LLM_QUERY_RETRY_DELAY_S = 5
 
 # Import CA certificate fetching from conftest
 from kagenti.tests.e2e.conftest import (
@@ -140,6 +146,85 @@ def _task_diagnostic(task):
     return "\n    ".join(lines)
 
 
+async def _send_and_collect_response(client, user_message, context_id=None):
+    """Send a message to the agent and collect the response.
+
+    Returns a dict with keys: full_response, events_received, last_task, task_failed.
+    """
+    message = A2AMessage(
+        role="user",
+        parts=[TextPart(text=user_message)],
+        messageId=uuid4().hex,
+        **({"contextId": context_id} if context_id else {}),
+    )
+
+    full_response = ""
+    events_received = []
+    last_task = None
+    task_failed = False
+
+    async for result in client.send_message(message):
+        logger.debug("Received result type: %s", type(result))
+        if isinstance(result, tuple):
+            task, event = result
+            last_task = task
+            event_name = type(event).__name__ if event else "Task(final)"
+            events_received.append(event_name)
+            logger.debug("Event: %s", event_name)
+            logger.debug("Task: %s", _task_diagnostic(task))
+            if event:
+                logger.debug("Event details: %s", event)
+
+            # Check for failed task
+            status = getattr(task, "status", None)
+            if status and getattr(status, "state", None) == TaskState.failed:
+                task_failed = True
+                status_msg = getattr(status, "message", None)
+                if status_msg:
+                    full_response += _extract_text_from_parts(
+                        getattr(status_msg, "parts", [])
+                    )
+
+            # Extract from TaskArtifactUpdateEvent
+            if isinstance(event, TaskArtifactUpdateEvent):
+                if hasattr(event, "artifact") and event.artifact:
+                    extracted = _extract_text_from_parts(event.artifact.parts)
+                    logger.debug(
+                        "Extracted from TaskArtifactUpdateEvent: %s",
+                        extracted[:200] if extracted else "",
+                    )
+                    full_response += extracted
+
+            # Extract from final task (event=None means complete)
+            if event is None and task and task.artifacts:
+                logger.debug("Final task has %d artifacts", len(task.artifacts))
+                for i, artifact in enumerate(task.artifacts):
+                    extracted = _extract_text_from_parts(artifact.parts)
+                    logger.debug(
+                        "Extracted from artifact[%d]: %s",
+                        i,
+                        extracted[:200] if extracted else "",
+                    )
+                    full_response += extracted
+
+        elif isinstance(result, A2AMessage):
+            events_received.append("Message")
+            extracted = _extract_text_from_parts(result.parts)
+            logger.debug(
+                "Extracted from A2AMessage: %s",
+                extracted[:200] if extracted else "",
+            )
+            logger.debug("Message parts: %s", result.parts)
+            full_response += extracted
+
+    return {
+        "full_response": full_response,
+        "events_received": events_received,
+        "last_task": last_task,
+        "task_failed": task_failed,
+    }
+
+
 class TestWeatherAgentConversation:
     """Test weather-service agent with MCP weather-tool (works with both operators)."""
 
@@ -181,94 +266,50 @@ class TestWeatherAgentConversation:
                 "Check: pod running, port-forward active, service exists"
             )
 
-        # Send message
         user_message = "What is the weather like in San Francisco?"
-        message = A2AMessage(
-            role="user",
-            parts=[TextPart(text=user_message)],
-            messageId=uuid4().hex,
-        )
 
-        full_response = ""
-        tool_invocation_detected = False
-        events_received = []
-        last_task = None
-        task_failed = False
+        # Retry on empty response — LLM can return empty/null content intermittently
+        last_result = None
+        for attempt in range(1, _LLM_QUERY_MAX_ATTEMPTS + 1):
+            try:
+                last_result = await _send_and_collect_response(client, user_message)
+            except Exception as e:
+                pytest.fail(f"Error during A2A conversation: {e}")
 
-        try:
-            async for result in client.send_message(message):
-                logger.debug("Received result type: %s", type(result))
-                if isinstance(result, tuple):
-                    task, event = result
-                    last_task = task
-                    event_name = type(event).__name__ if event else "Task(final)"
-                    events_received.append(event_name)
-                    logger.debug("Event: %s", event_name)
-                    logger.debug("Task: %s", _task_diagnostic(task))
-                    if event:
-                        logger.debug("Event details: %s", event)
+            if last_result["task_failed"]:
+                pytest.fail(
+                    f"Agent returned a FAILED task\n"
+                    f"  Agent URL: {agent_url}\n"
+                    f"  Query: {user_message}\n"
+                    f"  Error: {last_result['full_response'][:_DIAG_ERROR_LIMIT]}\n"
+                    f"  Task details:\n    {_task_diagnostic(last_result['last_task'])}"
+                )
 
-                    # Check for failed task
-                    status = getattr(task, "status", None)
-                    if status and getattr(status, "state", None) == TaskState.failed:
-                        task_failed = True
-                        # Extract error message from failed task status
-                        status_msg = getattr(status, "message", None)
-                        if status_msg:
-                            full_response += _extract_text_from_parts(
-                                getattr(status_msg, "parts", [])
-                            )
-
-                    # Extract from TaskArtifactUpdateEvent
-                    if isinstance(event, TaskArtifactUpdateEvent):
-                        tool_invocation_detected = True
-                        if hasattr(event, "artifact") and event.artifact:
-                            extracted = _extract_text_from_parts(event.artifact.parts)
-                            logger.debug(
-                                "Extracted from TaskArtifactUpdateEvent: %s",
-                                extracted[:200] if extracted else "",
-                            )
-                            full_response += extracted
-
-                    # Extract from final task (event=None means complete)
-                    if event is None and task and task.artifacts:
-                        logger.debug("Final task has %d artifacts", len(task.artifacts))
-                        for i, artifact in enumerate(task.artifacts):
-                            extracted = _extract_text_from_parts(artifact.parts)
-                            logger.debug(
-                                "Extracted from artifact[%d]: %s",
-                                i,
-                                extracted[:200] if extracted else "",
-                            )
-                            full_response += extracted
-                        tool_invocation_detected = True
-
-                elif isinstance(result, A2AMessage):
-                    events_received.append("Message")
-                    extracted = _extract_text_from_parts(result.parts)
-                    logger.debug(
-                        "Extracted from A2AMessage: %s",
-                        extracted[:200] if extracted else "",
+            if last_result["full_response"]:
+                if attempt > 1:
+                    logger.info(
+                        "Got response on attempt %d/%d",
+                        attempt,
+                        _LLM_QUERY_MAX_ATTEMPTS,
                     )
-                    logger.debug("Message parts: %s", result.parts)
-                    full_response += extracted
+                break
 
-        except Exception as e:
-            pytest.fail(f"Error during A2A conversation: {e}")
-
-        # Check for agent-side failures first
-        if task_failed:
-            pytest.fail(
-                f"Agent returned a FAILED task\n"
-                f"  Agent URL: {agent_url}\n"
-                f"  Query: {user_message}\n"
-                f"  Error: {full_response[:_DIAG_ERROR_LIMIT]}\n"
-                f"  Task details:\n    {_task_diagnostic(last_task)}"
+            logger.warning(
+                "Empty response on attempt %d/%d, retrying in %ds...",
+                attempt,
+                _LLM_QUERY_MAX_ATTEMPTS,
+                _LLM_QUERY_RETRY_DELAY_S,
             )
+            if attempt < _LLM_QUERY_MAX_ATTEMPTS:
+                await asyncio.sleep(_LLM_QUERY_RETRY_DELAY_S)
+
+        full_response = last_result["full_response"]
+        events_received = last_result["events_received"]
+        last_task = last_result["last_task"]
 
         # Validate response
         assert full_response, (
-            f"Agent did not return any response\n"
+            f"Agent did not return any response after {_LLM_QUERY_MAX_ATTEMPTS} attempts\n"
             f"  Agent URL: {agent_url}\n"
             f"  Events received: {events_received}\n"
             f"  Query: {user_message}\n"
@@ -356,90 +397,53 @@ class TestWeatherAgentConversation:
         for turn, user_message in enumerate(messages, 1):
             logger.debug("Turn %d: %s", turn, user_message)
 
-            message = A2AMessage(
-                role="user",
-                parts=[TextPart(text=user_message)],
-                messageId=uuid4().hex,
-                contextId=context_id,
-            )
-
-            full_response = ""
-            last_task = None
-            events_received = []
-            try:
-                async for result in client.send_message(message):
-                    logger.debug(
-                        "Turn %d - Received result type: %s", turn, type(result)
+            # Retry on empty response — LLM can return empty content intermittently
+            last_result = None
+            for attempt in range(1, _LLM_QUERY_MAX_ATTEMPTS + 1):
+                try:
+                    last_result = await _send_and_collect_response(
+                        client, user_message, context_id=context_id
                     )
-                    if isinstance(result, tuple):
-                        task, event = result
-                        last_task = task
-                        event_name = type(event).__name__ if event else "Task(final)"
-                        events_received.append(event_name)
-                        logger.debug("Turn %d - Event: %s", turn, event_name)
-                        logger.debug("Turn %d - Task: %s", turn, _task_diagnostic(task))
+                except Exception as e:
+                    pytest.fail(f"Turn {turn} failed: {e}")
 
-                        # Check for failed task
-                        status = getattr(task, "status", None)
-                        if (
-                            status
-                            and getattr(status, "state", None) == TaskState.failed
-                        ):
-                            status_msg = getattr(status, "message", None)
-                            if status_msg:
-                                full_response += _extract_text_from_parts(
-                                    getattr(status_msg, "parts", [])
-                                )
-                            pytest.fail(
-                                f"Turn {turn}: Agent returned FAILED task\n"
-                                f"  Error: {full_response[:_DIAG_ERROR_LIMIT]}\n"
-                                f"  Task details:\n"
-                                f"    {_task_diagnostic(last_task)}"
-                            )
+                if last_result["task_failed"]:
+                    pytest.fail(
+                        f"Turn {turn}: Agent returned FAILED task\n"
+                        f"  Error: {last_result['full_response'][:_DIAG_ERROR_LIMIT]}\n"
+                        f"  Task details:\n"
+                        f"    {_task_diagnostic(last_result['last_task'])}"
+                    )
 
-                        if isinstance(event, TaskArtifactUpdateEvent):
-                            if event.artifact:
-                                extracted = _extract_text_from_parts(
-                                    event.artifact.parts
-                                )
-                                logger.debug(
-                                    "Turn %d - TaskArtifactUpdateEvent: %s",
-                                    turn,
-                                    extracted[:200] if extracted else "",
-                                )
-                                full_response += extracted
-                        if event is None and task and task.artifacts:
-                            logger.debug(
-                                "Turn %d - Final task has %d artifacts",
-                                turn,
-                                len(task.artifacts),
-                            )
-                            for i, artifact in enumerate(task.artifacts):
-                                extracted = _extract_text_from_parts(artifact.parts)
-                                logger.debug(
-                                    "Turn %d - Extracted from artifact[%d]: %s",
-                                    turn,
-                                    i,
-                                    extracted[:200] if extracted else "",
-                                )
-                                full_response += extracted
-                    elif isinstance(result, A2AMessage):
-                        extracted = _extract_text_from_parts(result.parts)
-                        logger.debug(
-                            "Turn %d - Extracted from A2AMessage: %s",
+                if last_result["full_response"]:
+                    if attempt > 1:
+                        logger.info(
+                            "Turn %d: got response on attempt %d/%d",
                             turn,
-                            extracted[:200] if extracted else "",
+                            attempt,
+                            _LLM_QUERY_MAX_ATTEMPTS,
                         )
-                        full_response += extracted
-            except Exception as e:
-                pytest.fail(f"Turn {turn} failed: {e}")
+                    break
 
-            assert full_response, (
-                f"Turn {turn}: Agent did not return any response\n"
-                f"  Events received: {events_received}\n"
-                f"  Task details:\n    {_task_diagnostic(last_task)}"
+                logger.warning(
+                    "Turn %d: empty response on attempt %d/%d, retrying in %ds...",
+                    turn,
+                    attempt,
+                    _LLM_QUERY_MAX_ATTEMPTS,
+                    _LLM_QUERY_RETRY_DELAY_S,
+                )
+                if attempt < _LLM_QUERY_MAX_ATTEMPTS:
+                    await asyncio.sleep(_LLM_QUERY_RETRY_DELAY_S)
+
+            assert last_result["full_response"], (
+                f"Turn {turn}: Agent did not return any response"
+                f" after {_LLM_QUERY_MAX_ATTEMPTS} attempts\n"
+                f"  Events received: {last_result['events_received']}\n"
+                f"  Task details:\n    {_task_diagnostic(last_result['last_task'])}"
             )
-            logger.debug("Turn %d response: %s...", turn, full_response[:100])
+            logger.debug(
+                "Turn %d response: %s...", turn, last_result["full_response"][:100]
+            )
 
         logger.debug(
             "Multi-turn conversation completed (%d turns); context ID: %s",
