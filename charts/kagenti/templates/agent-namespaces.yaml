@@ -223,6 +223,7 @@ stringData:
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
 #  Used by kagenti-client-registration sidecar injected by the webhook
+#  Note: KEYCLOAK_URL and KEYCLOAK_REALM are in the environments ConfigMap (shared)
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -232,9 +233,6 @@ metadata:
   labels:
     {{- include "kagenti.labels" $root | nindent 4 }}
 data:
-  SPIRE_ENABLED: "{{ $root.Values.spire.enabled }}"
-  KEYCLOAK_URL: "{{ $root.Values.keycloak.url }}"
-  KEYCLOAK_REALM: "{{ $root.Values.keycloak.realm }}"
   KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
   CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
@@ -411,11 +409,6 @@ data:
                     address: 127.0.0.1
                     port_value: 9090
 ---
-# ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for SPIFFE Helper in Namespace: {{ . }}
-#  NOTE: This ConfigMap is defined in spiffe-namespaces-config.yaml
-#  (Duplicate removed to avoid conflicts during helm install)
-# ——————————————————————————————————————————————————————————————————————————————
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————
 #  SCC RoleBinding for Pipeline SA in Namespace: {{ . }}
