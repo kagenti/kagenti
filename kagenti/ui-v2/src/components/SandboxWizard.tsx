@@ -84,6 +84,11 @@ export interface WizardState {
   maxWallClockS: number;
   hitlInterval: number;
   recursionLimit: number;
+  // Step 6: Budget (pod resources)
+  agentMemoryLimit: string;
+  agentCpuLimit: string;
+  proxyMemoryLimit: string;
+  proxyCpuLimit: string;
 }
 
 export const INITIAL_STATE: WizardState = {
@@ -123,6 +128,10 @@ export const INITIAL_STATE: WizardState = {
   maxWallClockS: 600,
   hitlInterval: 50,
   recursionLimit: 300,
+  agentMemoryLimit: '1Gi',
+  agentCpuLimit: '500m',
+  proxyMemoryLimit: '128Mi',
+  proxyCpuLimit: '100m',
 };
 
 const STEPS = [
@@ -212,6 +221,10 @@ function configToWizardState(config: Record<string, unknown>): Partial<WizardSta
   if (config.maxWallClockS != null) ws.maxWallClockS = Number(config.maxWallClockS);
   if (config.hitlInterval != null) ws.hitlInterval = Number(config.hitlInterval);
   if (config.recursionLimit != null) ws.recursionLimit = Number(config.recursionLimit);
+  if (config.agent_memory_limit != null) ws.agentMemoryLimit = String(config.agent_memory_limit);
+  if (config.agent_cpu_limit != null) ws.agentCpuLimit = String(config.agent_cpu_limit);
+  if (config.proxy_memory_limit != null) ws.proxyMemoryLimit = String(config.proxy_memory_limit);
+  if (config.proxy_cpu_limit != null) ws.proxyCpuLimit = String(config.proxy_cpu_limit);
   return ws;
 }
 
@@ -305,6 +318,10 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         max_wall_clock_s: state.maxWallClockS,
         hitl_interval: state.hitlInterval,
         recursion_limit: state.recursionLimit,
+        agent_memory_limit: state.agentMemoryLimit,
+        agent_cpu_limit: state.agentCpuLimit,
+        proxy_memory_limit: state.proxyMemoryLimit,
+        proxy_cpu_limit: state.proxyCpuLimit,
       };
 
       if (mode === 'reconfigure' && agentName) {
@@ -785,6 +802,20 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           onChange={(_e, v) => update('maxToolCallsPerStep', Number(v) || 10)} />
         {budgetHelper('Maximum tool invocations (shell commands, API calls) within a single plan step before moving on.')}
       </FormGroup>
+
+      {sectionHeader('Pod Resources', 'Memory and CPU limits for agent and proxy pods')}
+      <FormGroup label="Agent Memory Limit" fieldId="agent-memory-limit">
+        <TextInput id="agent-memory-limit" value={state.agentMemoryLimit} onChange={(_e, v) => update('agentMemoryLimit', v)} placeholder="1Gi" />
+      </FormGroup>
+      <FormGroup label="Agent CPU Limit" fieldId="agent-cpu-limit">
+        <TextInput id="agent-cpu-limit" value={state.agentCpuLimit} onChange={(_e, v) => update('agentCpuLimit', v)} placeholder="500m" />
+      </FormGroup>
+      <FormGroup label="Proxy Memory Limit" fieldId="proxy-memory-limit">
+        <TextInput id="proxy-memory-limit" value={state.proxyMemoryLimit} onChange={(_e, v) => update('proxyMemoryLimit', v)} placeholder="128Mi" />
+      </FormGroup>
+      <FormGroup label="Proxy CPU Limit" fieldId="proxy-cpu-limit">
+        <TextInput id="proxy-cpu-limit" value={state.proxyCpuLimit} onChange={(_e, v) => update('proxyCpuLimit', v)} placeholder="100m" />
+      </FormGroup>
     </Form>
   );
 
@@ -840,6 +871,14 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           <DescriptionListDescription>
             {state.maxIterations} iterations, {(state.maxTokens / 1000).toFixed(0)}K tokens, {state.maxWallClockS}s wall clock
           </DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
+          <DescriptionListTerm>Agent Resources</DescriptionListTerm>
+          <DescriptionListDescription>{state.agentMemoryLimit} / {state.agentCpuLimit}</DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
+          <DescriptionListTerm>Proxy Resources</DescriptionListTerm>
+          <DescriptionListDescription>{state.proxyMemoryLimit} / {state.proxyCpuLimit}</DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
           <DescriptionListTerm>LLM API Key</DescriptionListTerm>

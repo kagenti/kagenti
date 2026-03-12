@@ -107,6 +107,11 @@ class SandboxCreateRequest(BaseModel):
     max_wall_clock_s: int = 600
     hitl_interval: int = 50
     recursion_limit: int = 300
+    # Pod resource limits
+    agent_memory_limit: Optional[str] = "1Gi"
+    agent_cpu_limit: Optional[str] = "500m"
+    proxy_memory_limit: Optional[str] = "128Mi"
+    proxy_cpu_limit: Optional[str] = "100m"
 
     @property
     def profile(self):
@@ -385,6 +390,8 @@ def _build_deployment_manifest(
                 "kagenti.io/cfg-max-wall-clock-s": str(req.max_wall_clock_s),
                 "kagenti.io/cfg-hitl-interval": str(req.hitl_interval),
                 "kagenti.io/cfg-recursion-limit": str(req.recursion_limit),
+                "kagenti.io/cfg-agent-memory-limit": req.agent_memory_limit or "",
+                "kagenti.io/cfg-agent-cpu-limit": req.agent_cpu_limit or "",
             },
         },
         "spec": {
@@ -427,7 +434,10 @@ def _build_deployment_manifest(
                             ],
                             "resources": {
                                 "requests": {"cpu": "100m", "memory": "256Mi"},
-                                "limits": {"cpu": "500m", "memory": "1Gi"},
+                                "limits": {
+                                    "cpu": req.agent_cpu_limit or "500m",
+                                    "memory": req.agent_memory_limit or "1Gi",
+                                },
                             },
                             "securityContext": security_context,
                             "volumeMounts": [
@@ -481,8 +491,11 @@ def _build_egress_proxy_manifests(req: SandboxCreateRequest) -> tuple[dict, dict
                             ],
                             "ports": [{"containerPort": 3128}],
                             "resources": {
-                                "requests": {"cpu": "10m", "memory": "64Mi"},
-                                "limits": {"cpu": "200m", "memory": "256Mi"},
+                                "requests": {"cpu": "50m", "memory": "64Mi"},
+                                "limits": {
+                                    "cpu": req.proxy_cpu_limit or "100m",
+                                    "memory": req.proxy_memory_limit or "128Mi",
+                                },
                             },
                             "volumeMounts": [
                                 {
