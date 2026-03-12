@@ -115,9 +115,16 @@ app = FastAPI(title="LLM Budget Proxy", lifespan=lifespan)
 
 
 def _extract_metadata(body: dict) -> dict:
-    """Extract budget metadata from the request body."""
-    extra = body.get("extra_body") or {}
-    meta = extra.get("metadata") or {}
+    """Extract budget metadata from the request body.
+
+    The OpenAI SDK merges ``extra_body`` keys into the top-level request
+    body, so ``metadata`` appears at root level (not nested under extra_body).
+    We check both locations for robustness.
+    """
+    meta = body.get("metadata") or {}
+    if not meta:
+        extra = body.get("extra_body") or {}
+        meta = extra.get("metadata") or {}
     return {
         "session_id": meta.get("session_id", ""),
         "agent_name": meta.get("agent_name", ""),
@@ -385,10 +392,21 @@ async def models(request: Request):
 
 @app.get("/internal/usage/{session_id}")
 async def session_usage(session_id: str):
-    """Return session usage summary for UI consumption."""
+    """Return session usage summary with per-model breakdown.
+
+    Used by kagenti-backend to serve budget stats to the UI.
+    """
     if not db:
-        return {"session_id": session_id, "total_tokens": 0, "call_count": 0}
-    row = await db.fetchrow(
+        return {
+            "session_id": session_id,
+            "total_tokens": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "call_count": 0,
+            "models": [],
+        }
+    # Totals
+    totals = await db.fetchrow(
         "SELECT COALESCE(SUM(total_tokens), 0) as total_tokens, "
         "COALESCE(SUM(prompt_tokens), 0) as prompt_tokens, "
         "COALESCE(SUM(completion_tokens), 0) as completion_tokens, "
@@ -396,12 +414,35 @@ async def session_usage(session_id: str):
         "FROM llm_calls WHERE session_id = $1 AND status = 'ok'",
         session_id,
     )
+    # Per-model breakdown
+    model_rows = await db.fetch(
+        "SELECT model, "
+        "COALESCE(SUM(prompt_tokens), 0) as prompt_tokens, "
+        "COALESCE(SUM(completion_tokens), 0) as completion_tokens, "
+        "COALESCE(SUM(total_tokens), 0) as total_tokens, "
+        "COALESCE(SUM(cost_usd), 0) as cost, "
+        "COUNT(*) as num_calls "
+        "FROM llm_calls WHERE session_id = $1 AND status = 'ok' "
+        "GROUP BY model ORDER BY SUM(total_tokens) DESC",
+        session_id,
+    )
     return {
         "session_id": session_id,
-        "total_tokens": row["total_tokens"],
-        "prompt_tokens": row["prompt_tokens"],
-        "completion_tokens": row["completion_tokens"],
-        "call_count": row["call_count"],
+        "total_tokens": totals["total_tokens"],
+        "prompt_tokens": totals["prompt_tokens"],
+        "completion_tokens": totals["completion_tokens"],
+        "call_count": totals["call_count"],
+        "models": [
+            {
+                "model": r["model"] or "unknown",
+                "prompt_tokens": r["prompt_tokens"],
+                "completion_tokens": r["completion_tokens"],
+                "total_tokens": r["total_tokens"],
+                "cost": float(r["cost"]),
+                "num_calls": r["num_calls"],
+            }
+            for r in model_rows
+        ],
     }
 
 

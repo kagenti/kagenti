@@ -31,6 +31,7 @@ router = APIRouter(prefix="/token-usage", tags=["token-usage"])
 
 LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "http://litellm-proxy.kagenti-system.svc:4000")
 LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
+LLM_BUDGET_PROXY_URL = os.getenv("LLM_BUDGET_PROXY_URL", "http://llm-budget-proxy.team1.svc:8080")
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -201,24 +202,65 @@ async def _get_request_ids_from_metadata(context_id: str, namespace: str) -> Lis
     return []
 
 
+async def _fetch_from_budget_proxy(context_id: str) -> SessionTokenUsage | None:
+    """Try to fetch session usage from the LLM Budget Proxy."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(f"{LLM_BUDGET_PROXY_URL}/internal/usage/{context_id}")
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.debug("Budget proxy unavailable for %s: %s", context_id, exc)
+            return None
+
+    if not data.get("call_count"):
+        return None
+
+    models = [
+        ModelUsage(
+            model=m.get("model", "unknown"),
+            prompt_tokens=m.get("prompt_tokens", 0),
+            completion_tokens=m.get("completion_tokens", 0),
+            total_tokens=m.get("total_tokens", 0),
+            num_calls=m.get("num_calls", 0),
+            cost=m.get("cost", 0.0),
+        )
+        for m in data.get("models", [])
+    ]
+    return SessionTokenUsage(
+        context_id=context_id,
+        models=models,
+        total_prompt_tokens=data.get("prompt_tokens", 0),
+        total_completion_tokens=data.get("completion_tokens", 0),
+        total_tokens=data.get("total_tokens", 0),
+        total_calls=data.get("call_count", 0),
+        total_cost=sum(m.cost for m in models),
+    )
+
+
 @router.get(
     "/sessions/{context_id}",
     response_model=SessionTokenUsage,
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_session_token_usage(context_id: str, namespace: str = "team1"):
-    """Per-model token usage for a single session."""
-    # 1. Get request_ids from session task metadata
-    request_ids = await _get_request_ids_from_metadata(context_id, namespace)
+    """Per-model token usage for a single session.
 
-    # 2. Fetch spend for each request_id
+    Queries the LLM Budget Proxy first (authoritative, persists across
+    restarts). Falls back to LiteLLM spend logs if the proxy is unavailable.
+    """
+    # Try budget proxy first
+    proxy_result = await _fetch_from_budget_proxy(context_id)
+    if proxy_result:
+        return proxy_result
+
+    # Fallback: LiteLLM spend logs
+    request_ids = await _get_request_ids_from_metadata(context_id, namespace)
     logs: List[Dict[str, Any]] = []
     for rid in request_ids:
         spend = await _fetch_spend_by_request_id(rid)
         if spend:
             logs.extend(spend)
-
-    # 3. Aggregate by model
     return _aggregate_by_model(logs, context_id)
 
 
