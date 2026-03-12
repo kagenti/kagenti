@@ -526,11 +526,46 @@ async def startup():
     logger.info("LLM Budget Proxy ready — tables migrated")
 ```
 
+### Deploy script changes (Phase 1)
+
+The existing deploy scripts (e.g. `.github/scripts/local-setup/`) already:
+- Deploy `postgres-sessions` StatefulSet in team namespaces
+- Create `sessions` DB + user
+- Store credentials in K8s Secrets
+
+**Add to the same scripts:**
+```bash
+# After creating sessions DB, also create llm_budget DB + user
+kubectl exec -n $NAMESPACE postgres-sessions-0 -- psql -U postgres -c \
+  "CREATE USER llm_budget_user WITH PASSWORD '$LLM_BUDGET_DB_PASSWORD';"
+kubectl exec -n $NAMESPACE postgres-sessions-0 -- psql -U postgres -c \
+  "CREATE DATABASE llm_budget OWNER llm_budget_user;"
+
+# Create secret for llm-budget-proxy
+kubectl create secret generic llm-budget-db-secret -n $NAMESPACE \
+  --from-literal=host=postgres-sessions.$NAMESPACE.svc \
+  --from-literal=port=5432 \
+  --from-literal=database=llm_budget \
+  --from-literal=username=llm_budget_user \
+  --from-literal=password=$LLM_BUDGET_DB_PASSWORD
+```
+
+### Wizard: no DB changes needed
+
+The wizard (`sandbox_deploy.py`) does NOT create databases — it only creates
+K8s Deployments, Services, Secrets, and PVCs. DB provisioning is handled
+by the deploy scripts. No wizard changes needed for the proxy DB.
+
+The wizard will need changes in **Phase 2** to:
+- Select existing LiteLLM models for the agent
+- Set session token budget (passed as `SANDBOX_MAX_TOKENS` env var)
+- Create LiteLLM virtual key for the agent (monthly budget)
+
 ### Future: team provisioning operator
 
 When a new team namespace is created by the operator:
 1. Deploy `postgres-sessions` StatefulSet
-2. Run DB/user provisioning Job (creates `sessions` + `llm_budget` DBs)
+2. Run DB/user provisioning Job (creates `sessions` + `llm_budget` DBs + users)
 3. Create K8s Secrets with credentials
 4. Deploy llm-budget-proxy with secret reference
 5. Configure network policies (agent → proxy, proxy → postgres, proxy → litellm)
