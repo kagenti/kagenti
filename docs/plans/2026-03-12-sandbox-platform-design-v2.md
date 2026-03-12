@@ -528,6 +528,7 @@ for the phased rollout plan starting with OpenCode.
 | [DB Multi-Tenancy](./2026-03-12-db-multi-tenancy-design.md) | Designed | Schema-per-agent isolation |
 | [Budget Limits](./2026-03-12-budget-limits-design.md) | Reference | Naming: recursion vs cycles vs steps |
 | [Visualizations](./2026-03-10-visualizations-design.md) | Planned | Session graph DAG, timeline, token waterfall |
+| [HITL + Pod Events](./2026-03-12-hitl-and-pod-events-design.md) | Designed | HITL resume, permission rules, pod status tab |
 | [Session Orchestration](./2026-02-27-session-orchestration-design.md) | Planned | Automated passover, session continuity |
 
 ### Session Passover Chain
