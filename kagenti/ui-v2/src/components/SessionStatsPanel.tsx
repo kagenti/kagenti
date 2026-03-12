@@ -8,9 +8,10 @@
  * AgentLoop objects (available when the reasoning loop SSE pipeline is active).
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardBody, CardTitle, Progress } from '@patternfly/react-core';
 import type { AgentLoop } from '../types/agentLoop';
+import { tokenUsageService } from '../services/api';
 
 interface Message {
   role: string;
@@ -23,6 +24,8 @@ interface SessionStatsPanelProps {
   agentLoops: Map<string, AgentLoop>;
   messages: Message[];
   modelContextLimit?: number;
+  contextId?: string;
+  isVisible?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -36,8 +39,29 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
   agentLoops,
   messages,
   modelContextLimit = 131072,
+  contextId,
+  isVisible = true,
 }) => {
   const loops = Array.from(agentLoops.values());
+
+  // Fetch authoritative budget data from the LLM Budget Proxy via backend API.
+  // This persists across page reloads / stream disconnects (proxy records every call).
+  const [proxyTokens, setProxyTokens] = useState<number>(0);
+  const [proxyCalls, setProxyCalls] = useState<number>(0);
+  useEffect(() => {
+    if (!contextId || !isVisible) return;
+    let cancelled = false;
+    tokenUsageService
+      .getSessionTokenUsage(contextId)
+      .then((data) => {
+        if (!cancelled) {
+          setProxyTokens(data.total_tokens);
+          setProxyCalls(data.total_calls);
+        }
+      })
+      .catch(() => { /* proxy unavailable — fall back to loop data */ });
+    return () => { cancelled = true; };
+  }, [contextId, isVisible]);
 
   // ── Message Stats (always available) ──
   const userMsgCount = messages.filter((m) => m.role === 'user').length;
@@ -266,10 +290,13 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
         </Card>
       )}
 
-      {/* Budget — aggregated across all loops */}
+      {/* Budget — from proxy API (authoritative) with loop data fallback */}
       {(() => {
-        const budgetTokensUsed = loops.reduce((s, l) => s + l.budget.tokensUsed, 0);
-        const budgetTokensTotal = loops.reduce((s, l) => s + l.budget.tokensBudget, 0);
+        const loopTokensUsed = loops.reduce((s, l) => s + l.budget.tokensUsed, 0);
+        const loopTokensTotal = loops.reduce((s, l) => s + l.budget.tokensBudget, 0);
+        // Prefer proxy data (persists across reloads), fall back to loop events
+        const budgetTokensUsed = proxyTokens > 0 ? proxyTokens : loopTokensUsed;
+        const budgetTokensTotal = loopTokensTotal > 0 ? loopTokensTotal : (proxyTokens > 0 ? 1000000 : 0);
         const budgetWallClock = loops.reduce((s, l) => s + l.budget.wallClockS, 0);
         const budgetMaxWallClock = loops.reduce((s, l) => s + l.budget.maxWallClockS, 0);
         const hasBudget = budgetTokensUsed > 0 || budgetTokensTotal > 0;

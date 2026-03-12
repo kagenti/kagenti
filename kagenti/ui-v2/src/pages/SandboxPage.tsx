@@ -2271,6 +2271,8 @@ export const SandboxPage: React.FC = () => {
               <SessionStatsPanel
                 agentLoops={agentLoops}
                 messages={messages}
+                contextId={contextId}
+                isVisible={activeTab === 'stats'}
               />
           )}
 
