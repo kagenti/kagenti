@@ -63,6 +63,31 @@
 
 ## What Session Beta Should Do
 
+### Priority 0: Rewrite Main Design Doc
+
+The main design doc (`docs/plans/2026-03-01-sandbox-platform-design.md`) is 1400 lines
+and outdated. Rewrite to ~535 lines with updated mermaid diagrams.
+
+Use the draft outline at `docs/plans/2026-03-12-design-doc-rewrite-draft.md` as the
+starting structure. The doc should be a **concise architecture overview** with:
+
+- 5 mermaid diagrams (C4 container, reasoning flow, DB schema, HITL sequence, budget proxy)
+- Component status table (36 items) linking to 19 sub-design docs via relative `./` links
+- Security model table (7 layers × 4 profiles)
+- Planned work table (Beta/Gamma/Delta/Epsilon)
+- Sub-design document index
+
+**Process:** Brainstorm → write → review in iterations. This is the public-facing
+architecture doc linked from PR #758. It must be accurate and well-structured.
+
+Verify all links resolve:
+```bash
+grep -oP '\\./[^)]+\\.md' docs/plans/2026-03-01-sandbox-platform-design.md | sort -u | while read f; do
+  path="docs/plans/${f#./}"
+  if [ -f "$path" ]; then echo "✅ $f"; else echo "❌ $f MISSING"; fi
+done
+```
+
 ### Priority 1: Implement LLM Budget Proxy (Phase 1)
 
 1. **Create the proxy service** (`charts/kagenti/images/llm-budget-proxy/` or similar)
