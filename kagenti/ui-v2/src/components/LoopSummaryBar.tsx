@@ -83,7 +83,9 @@ function statusLabel(status: AgentLoop['status']): { text: string; color: string
     case 'reflecting': return { text: 'reflecting', color: '#d97706' };
     case 'done':       return { text: 'done',       color: 'var(--pf-v5-global--success-color--100)' };
     case 'failed':     return { text: 'failed',     color: 'var(--pf-v5-global--danger-color--100)' };
+    case 'canceled':   return { text: 'canceled',   color: '#d97706' };
   }
+  return { text: status, color: '#6a6e73' };
 }
 
 export const LoopSummaryBar: React.FC<LoopSummaryBarProps> = ({ loop, expanded, onToggle }) => {
