@@ -62,6 +62,12 @@ flowchart TB
         end
     end
 
+    subgraph gateway["gateway-system / mcp-system"]
+        direction TB
+        mcpgw["MCP Gateway<br/><small>Envoy proxy, tool discovery,<br/>request routing, OAuth</small>"]
+        mcptools["MCP Servers<br/><small>Weather, Slack, Fetch,<br/>custom tools</small>"]
+    end
+
     subgraph team1["team1 namespace (agent namespace)"]
         direction TB
         agent["Sandbox Agent<br/><small>LangGraph: plan-execute-reflect,<br/>tool execution, micro-reasoning</small>"]
@@ -80,6 +86,8 @@ flowchart TB
     agent --> postgres
     agent --> budgetproxy
     budgetproxy --> litellm
+    agent -->|"MCP tool calls"| mcpgw
+    mcpgw --> mcptools
     agent -->|"HTTP proxy"| egress
     egress --> tools
     litellm --> llm
@@ -97,6 +105,7 @@ flowchart TB
 | DB isolation | Schema-per-agent, team schema for shared tables | Agents cannot read each other's checkpoints; sessions and llm_calls are shared |
 | Agent profiles | `legion`, `basic`, `hardened`, `restricted` | Replaces composable suffixes with named presets; wizard still allows custom combos |
 | Reasoning | Plan-execute-reflect with micro-reasoning | Reflector LLM decides termination; micro-reasoning catches tool errors early |
+| MCP Gateway | Envoy proxy in `gateway-system`, MCP servers register via CRDs | Unified tool discovery endpoint; agents call tools via single `/mcp` URL |
 
 See [LLM Budget Proxy](./2026-03-12-llm-budget-proxy-design.md)
 and [DB Multi-Tenancy](./2026-03-12-db-multi-tenancy-design.md) for detailed designs.
@@ -134,6 +143,7 @@ and [DB Multi-Tenancy](./2026-03-12-db-multi-tenancy-design.md) for detailed des
 | **OTEL Collector** | Built | -- | Trace collection, multi-backend export |
 | **Phoenix** | Built | -- | LLM observability, token analytics |
 | **SPIRE** | Built | -- | SPIFFE workload identity |
+| **MCP Gateway** | Built | -- | Envoy proxy for MCP tool discovery and routing |
 | **Session ownership** | Partial | [Session Ownership](./2026-02-27-session-ownership-design.md) | Per-user visibility, role-based access |
 | **Session orchestration** | Not built | [Session Orchestration](./2026-02-27-session-orchestration-design.md) | Automated passover, session continuity |
 | **Skill packs** | Partial | [Skill Packs](./2026-03-04-skill-packs-design.md) | Skill loading from git repos |
@@ -524,5 +534,6 @@ for the phased rollout plan starting with OpenCode.
 | [Gamma](./2026-03-12-session-gamma-passover.md) | Planned | UI polish, step naming, event ordering |
 | [Delta](./2026-03-12-session-delta-passover.md) | Planned | Infrastructure: mesh labels, OTEL, crash recovery |
 | [Epsilon](./2026-03-12-session-epsilon-passover.md) | Planned | Advanced: visualizations, message queue, context UI |
+| [Zeta](./2026-03-12-session-zeta-passover.md) | Planned | MCP gateway CI integration, weather tool E2E tests |
 | [Y](./2026-03-11-session-Y-passover.md) | Reference | Event pipeline, micro-reasoning |
 | [Z](./2026-03-11-session-Z-passover.md) | Reference | Subscribe, budget wizard, step naming |
