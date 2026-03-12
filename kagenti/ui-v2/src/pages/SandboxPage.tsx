@@ -2189,22 +2189,12 @@ export const SandboxPage: React.FC = () => {
                 const hasLoopCards = loopArray.length > 0;
                 const elements: React.ReactNode[] = [];
 
-                // Attach user messages to their corresponding loop cards
-                if (hasLoopCards) {
-                  loopArray.forEach((loop, idx) => {
-                    const turn = idx < turns.length ? turns[idx] : undefined;
-                    if (turn?.user?.content && !loop.userMessage) {
-                      loop.userMessage = turn.user.content;
-                    }
-                  });
-                }
-
                 // Render each turn, pairing with the corresponding loop card by position
                 turns.forEach((turn, idx) => {
                   elements.push(
                     <React.Fragment key={turn.user?.id || `turn-${idx}`}>
-                      {/* User message — only when no loop cards (loop cards render it internally) */}
-                      {turn.user && !hasLoopCards && (
+                      {/* User message */}
+                      {turn.user && (
                         <ChatBubble
                           msg={turn.user}
                           currentUsername={currentUsername}

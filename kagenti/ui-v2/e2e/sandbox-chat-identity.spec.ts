@@ -89,7 +89,7 @@ test.describe('Sandbox Chat - User Identity', () => {
     await chatInput.fill('Hello from identity test');
     await page.getByRole('button', { name: /Send/i }).click();
 
-    // Wait for user message to appear (may appear in chat bubble or loop card header)
+    // Wait for user message to appear
     await expect(page.getByText('Hello from identity test').first()).toBeVisible({ timeout: 10000 });
 
     // Assert: sender label shows a username with "(you)" suffix.
