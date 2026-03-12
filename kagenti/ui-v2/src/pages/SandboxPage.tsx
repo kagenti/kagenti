@@ -38,6 +38,7 @@ import { FilePreviewModal } from '../components/FilePreviewModal';
 import { SessionStatsPanel } from '../components/SessionStatsPanel';
 import { LlmUsagePanel } from '../components/LlmUsagePanel';
 import { FileBrowser } from '../components/FileBrowser';
+import { PodStatusPanel } from '../components/PodStatusPanel';
 import { SidecarPanel } from '../components/SidecarTab';
 import { ModelSwitcher } from '../components/ModelSwitcher';
 import { SandboxWizard } from '../components/SandboxWizard';
@@ -2012,7 +2013,7 @@ export const SandboxPage: React.FC = () => {
 
           {/* Tab bar — stays pinned */}
           <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--pf-v5-global--BorderColor--100)', flexShrink: 0, marginBottom: 8 }}>
-            {['chat', 'stats', 'llm-usage', 'sub-sessions', 'files'].map((tab) => (
+            {['chat', 'stats', 'llm-usage', 'sub-sessions', 'files', 'pod'].map((tab) => (
               <button
                 key={tab}
                 role="tab"
@@ -2036,7 +2037,7 @@ export const SandboxPage: React.FC = () => {
                   textTransform: 'capitalize',
                 }}
               >
-                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : tab === 'llm-usage' ? 'LLM Usage' : tab === 'sub-sessions' ? `Sub-sessions${childSessionCount > 0 ? ` (${childSessionCount})` : ''}` : 'Files'}
+                {tab === 'chat' ? 'Chat' : tab === 'stats' ? 'Stats' : tab === 'llm-usage' ? 'LLM Usage' : tab === 'sub-sessions' ? `Sub-sessions${childSessionCount > 0 ? ` (${childSessionCount})` : ''}` : tab === 'files' ? 'Files' : 'Pod'}
               </button>
             ))}
             {/* Sidecar tabs removed — sidecars now in right panel */}
@@ -2373,6 +2374,15 @@ export const SandboxPage: React.FC = () => {
                   agentName={selectedAgent}
                   contextId={contextId || undefined}
                   embedded
+                />
+              </div>
+          )}
+
+          {activeTab === 'pod' && (
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                <PodStatusPanel
+                  namespace={namespace}
+                  agentName={selectedAgent}
                 />
               </div>
           )}

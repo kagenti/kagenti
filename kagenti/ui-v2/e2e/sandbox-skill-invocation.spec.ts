@@ -54,8 +54,8 @@ async function setupMocks(page: Page) {
       return;
     }
 
-    // Agent card with skills
-    if (url.includes('/chat/') && url.includes('/agent-card')) {
+    // Agent card with skills (handles both /chat/ and /sandbox/ endpoints)
+    if (url.includes('/agent-card')) {
       await route.fulfill({
         json: {
           name: 'sandbox-legion',
@@ -71,7 +71,7 @@ async function setupMocks(page: Page) {
 
     // Sessions list
     if (url.includes('/sessions')) {
-      await route.fulfill({ json: [] });
+      await route.fulfill({ json: { items: [], total: 0, limit: 50, offset: 0 } });
       return;
     }
 
@@ -80,7 +80,7 @@ async function setupMocks(page: Page) {
   });
 }
 
-/** Navigate to Sessions page and select the sandbox-legion agent */
+/** Navigate to Sessions page — chat input is always visible on /sandbox */
 async function navigateToSandboxChat(page: Page) {
   const sessionsNav = page
     .locator('nav a, nav button, [role="navigation"] a')
@@ -89,21 +89,10 @@ async function navigateToSandboxChat(page: Page) {
   await sessionsNav.first().click();
   await page.waitForLoadState('networkidle');
 
-  // Wait for agent panel with mocked agents
   // Wait for the sandbox page to load — chat input appears on all states
   await expect(
     page.getByPlaceholder(/Type your message/i)
   ).toBeVisible({ timeout: 10000 });
-
-  // Select sandbox-legion
-  const agentEntry = page.locator('div[role="button"]').filter({
-    hasText: 'sandbox-legion',
-  }).filter({
-    hasText: /session/i,
-  });
-  await expect(agentEntry.first()).toBeVisible({ timeout: 10000 });
-  await agentEntry.first().click();
-  await page.waitForTimeout(2000); // Wait for agent card fetch
 }
 
 test.describe('Sandbox Skill Invocation - Request Interception', () => {
@@ -136,8 +125,9 @@ test.describe('Sandbox Skill Invocation - Request Interception', () => {
     await expect.poll(() => capturedBody, { timeout: 10000 }).not.toBeNull();
 
     // Verify skill and message fields
+    // The component sends the full original text as `message` (including the /skill prefix)
     expect(capturedBody!.skill).toBe('tdd:ci');
-    expect(capturedBody!.message).toBe('analyze latest failures');
+    expect(capturedBody!.message).toBe('/tdd:ci analyze latest failures');
   });
 
   test('sends message without skill field when no / prefix', async ({ page }) => {
@@ -190,9 +180,9 @@ test.describe('Sandbox Skill Invocation - Request Interception', () => {
 
     await expect.poll(() => capturedBody, { timeout: 10000 }).not.toBeNull();
 
-    // When only the skill name is provided (no trailing text), the skill name
-    // itself should be used as the message text
+    // When only the skill name is provided (no trailing text), the full
+    // original text (including the / prefix) is sent as the message
     expect(capturedBody!.skill).toBe('rca:ci');
-    expect(capturedBody!.message).toBe('rca:ci');
+    expect(capturedBody!.message).toBe('/rca:ci');
   });
 });

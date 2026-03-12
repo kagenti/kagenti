@@ -37,9 +37,26 @@ async function navigateToSessions(page: Page) {
 }
 
 async function selectAgent(page: Page, agentName: string) {
+  // Try clicking an existing session for this agent
   const agentEntry = page.locator('div[role="button"]').filter({ hasText: agentName });
-  if (await agentEntry.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+  if (await agentEntry.first().isVisible({ timeout: 5000 }).catch(() => false)) {
     await agentEntry.first().click();
+    await page.waitForTimeout(1000);
+    return;
+  }
+  // No existing session — start a new session via the "+ New Session" modal
+  const newSessionBtn = page.getByText('+ New Session');
+  if (await newSessionBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await newSessionBtn.click();
+    // Select the agent in the FormSelect dropdown
+    const agentSelect = page.locator('select[aria-label="Select agent"]');
+    if (await agentSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await agentSelect.selectOption(agentName);
+    }
+    const startBtn = page.getByRole('button', { name: /^Start$/ });
+    if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startBtn.click();
+    }
     await page.waitForTimeout(1000);
   }
 }
@@ -53,7 +70,7 @@ async function sendMessage(page: Page, message: string) {
 
 async function getSessionContextId(page: Page): Promise<string> {
   const url = page.url();
-  const match = url.match(/session=([a-f0-9]+)/);
+  const match = url.match(/session=([a-f0-9-]+)/i);
   return match?.[1] || '';
 }
 

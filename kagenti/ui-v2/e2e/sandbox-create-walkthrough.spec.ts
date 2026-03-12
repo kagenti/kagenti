@@ -174,15 +174,20 @@ test.describe('Import Wizard — Basic Agent', () => {
       'otel-collector.kagenti-system:8335'
     );
     await clickNext(page);
-    await snap(page, 'basic-step6-review');
+    await snap(page, 'basic-step6-budget');
 
-    // Step 6: Review — verify summary shows our values
+    // Step 6: Budget — accept defaults
+    await expect(page.locator('#max-iterations')).toHaveValue('100');
+    await clickNext(page);
+    await snap(page, 'basic-step7-review');
+
+    // Step 7: Review — verify summary shows our values
     const review = page.locator('.pf-v5-c-card__body').first();
     await expect(review).toContainText('test-basic-agent');
     await expect(review).toContainText('kagenti/agent-examples');
     await expect(review).toContainText('main');
     await expect(review).toContainText('sandbox-legion');
-    await expect(review).toContainText('llama-4-scout-17b-16e-w4a16');
+    await expect(review).toContainText('llama-4-scout');
     await expect(review).toContainText('in-cluster');
 
     // Verify Deploy button exists
@@ -194,9 +199,9 @@ test.describe('Import Wizard — Basic Agent', () => {
     const backBtn = page.getByRole('button', { name: /^Back$/i });
     await backBtn.click();
     await page.waitForTimeout(300);
-    // Should be on step 5 (Observability)
-    await expect(page.locator('#otel-endpoint')).toBeVisible();
-    await snap(page, 'basic-back-to-step5');
+    // Should be on step 6 (Budget)
+    await expect(page.locator('#max-iterations')).toBeVisible();
+    await snap(page, 'basic-back-to-step6');
   });
 });
 
@@ -266,17 +271,20 @@ test.describe('Import Wizard — Hardened Agent', () => {
     await clickNext(page);
 
     // Step 5: Observability — change model
-    await page.locator('#model').selectOption('mistral-small-24b-w8a8');
+    await page.locator('#model').selectOption('mistral-small');
     await snap(page, 'hardened-step5-model');
     await clickNext(page);
 
-    // Step 6: Review — verify hardened config
+    // Step 6: Budget — accept defaults
+    await clickNext(page);
+
+    // Step 7: Review — verify hardened config
     const review = page.locator('.pf-v5-c-card__body').first();
     await expect(review).toContainText('secure-code-reviewer');
     await expect(review).toContainText('code-review-agent');
     await expect(review).toContainText('sandbox-agent'); // variant
     await expect(review).toContainText('pod-per-session');
-    await expect(review).toContainText('mistral-small-24b-w8a8');
+    await expect(review).toContainText('mistral-small');
     await snap(page, 'hardened-review-verified');
   });
 });
@@ -330,16 +338,19 @@ test.describe('Import Wizard — Enterprise Agent', () => {
     await snap(page, 'enterprise-step4-db-filled');
     await clickNext(page);
 
-    // Step 5: Observability — use Claude model
-    await page.locator('#model').selectOption('claude-sonnet-4-20250514');
+    // Step 5: Observability — use GPT-4o model
+    await page.locator('#model').selectOption('gpt-4o');
     await clickNext(page);
 
-    // Step 6: Review — verify enterprise config
+    // Step 6: Budget — accept defaults
+    await clickNext(page);
+
+    // Step 7: Review — verify enterprise config
     const review = page.locator('.pf-v5-c-card__body').first();
     await expect(review).toContainText('enterprise-deployer');
     await expect(review).toContainText('GitHub App');
     await expect(review).toContainText('external');
-    await expect(review).toContainText('claude-sonnet-4'); // model ID shown in review
+    await expect(review).toContainText('gpt-4o'); // model ID shown in review
     await snap(page, 'enterprise-review-verified');
   });
 });

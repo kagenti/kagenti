@@ -82,9 +82,9 @@ async function setupMocks(page: Page) {
       return;
     }
 
-    // Sessions list
+    // Sessions list (TaskListResponse shape)
     if (url.includes('/sessions')) {
-      await route.fulfill({ json: [] });
+      await route.fulfill({ json: { items: [] } });
       return;
     }
 
@@ -98,32 +98,17 @@ test.describe('Skill Whisperer', () => {
 
   test.beforeEach(async ({ page }) => {
     await setupMocks(page);
-    await page.goto('/');
+    // Navigate directly to sandbox page with agent pre-selected via URL param
+    await page.goto('/sandbox?agent=sandbox-legion');
     await page.waitForLoadState('networkidle');
 
-    // Navigate to Sessions page
-    const sessionsNav = page
-      .locator('nav a, nav button, [role="navigation"] a')
-      .filter({ hasText: /^Sessions$/ });
-    await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
-    await sessionsNav.first().click();
-    await page.waitForLoadState('networkidle');
-
-    // Wait for agent panel with mocked agents
     // Wait for the sandbox page to load — chat input appears on all states
     await expect(
       page.getByPlaceholder(/Type your message/i)
     ).toBeVisible({ timeout: 10000 });
 
-    // Select sandbox-legion
-    const agentEntry = page.locator('div[role="button"]').filter({
-      hasText: 'sandbox-legion',
-    }).filter({
-      hasText: /session/i,
-    });
-    await expect(agentEntry.first()).toBeVisible({ timeout: 10000 });
-    await agentEntry.first().click();
-    await page.waitForTimeout(2000); // Wait for agent card fetch
+    // Wait for agent card fetch (provides skills for the whisperer)
+    await page.waitForTimeout(2000);
   });
 
   test('shows skill dropdown when typing /', async ({ page }) => {

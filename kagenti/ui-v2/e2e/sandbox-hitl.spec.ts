@@ -85,6 +85,15 @@ async function mockAllAPIs(page: Page) {
       return route.fallback();
     }
 
+    // Sidecars — must be checked before the generic /sessions catch-all
+    if (url.includes('/sidecars')) {
+      return route.fulfill({
+        status: 200,
+        body: JSON.stringify([]),
+        contentType: 'application/json',
+      });
+    }
+
     // Sessions list or detail
     if (url.includes('/sessions')) {
       return route.fulfill({

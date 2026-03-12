@@ -1195,6 +1195,25 @@ def _get_apps_api():
         return None
 
 
+def _get_core_api():
+    """Return a CoreV1Api client, or None if K8s is unavailable."""
+    try:
+        import kubernetes.client
+        import kubernetes.config
+        from kubernetes.config import ConfigException
+
+        try:
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes.config.load_incluster_config()
+            else:
+                kubernetes.config.load_kube_config()
+        except ConfigException:
+            return None
+        return kubernetes.client.CoreV1Api()
+    except ImportError:
+        return None
+
+
 @router.get("/{namespace}/agents", response_model=List[SandboxAgentInfo])
 async def list_sandbox_agents(namespace: str):
     """List sandbox agent deployments in the namespace with session counts."""
@@ -1305,6 +1324,184 @@ async def get_sandbox_agent_card(namespace: str, agent_name: str):
     except httpx.RequestError as e:
         logger.warning("Failed to fetch agent card from %s: %s", card_url, e)
         raise HTTPException(503, f"Cannot reach agent {agent_name}")
+
+
+@router.get("/{namespace}/agents/{agent_name}/pod-status")
+async def get_agent_pod_status(namespace: str, agent_name: str):
+    """Return pod status, events, and resources for all pods related to an agent deployment.
+
+    Checks three deployments: the agent itself, its egress proxy, and the
+    shared llm-budget-proxy.
+    """
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid agent name")
+    if not _K8S_NAME_RE.match(namespace):
+        raise HTTPException(400, "Invalid namespace")
+
+    apps_api = _get_apps_api()
+    core_api = _get_core_api()
+    if apps_api is None or core_api is None:
+        raise HTTPException(503, "Kubernetes API unavailable")
+
+    from kubernetes.client import ApiException
+
+    component_deployments = [
+        ("agent", agent_name),
+        ("egress-proxy", f"{agent_name}-egress-proxy"),
+        ("llm-budget-proxy", "llm-budget-proxy"),
+    ]
+
+    pods_result: List[Dict[str, Any]] = []
+
+    for component, deploy_name in component_deployments:
+        # --- Fetch the Deployment -------------------------------------------
+        try:
+            deployment = apps_api.read_namespaced_deployment(name=deploy_name, namespace=namespace)
+        except ApiException as e:
+            if e.status == 404:
+                continue  # deployment doesn't exist, skip
+            logger.warning("Error reading deployment %s/%s: %s", namespace, deploy_name, e)
+            continue
+
+        replicas = deployment.spec.replicas or 1
+        ready_replicas = deployment.status.ready_replicas or 0
+
+        # --- Find pods for this deployment ----------------------------------
+        match_labels = deployment.spec.selector.match_labels or {}
+        label_selector = ",".join(f"{k}={v}" for k, v in match_labels.items())
+
+        try:
+            pod_list = core_api.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            )
+        except ApiException as e:
+            logger.warning("Error listing pods for %s/%s: %s", namespace, deploy_name, e)
+            pods_result.append(
+                {
+                    "component": component,
+                    "deployment": deploy_name,
+                    "replicas": replicas,
+                    "ready_replicas": ready_replicas,
+                    "pod_name": None,
+                    "status": "Unknown",
+                    "restarts": 0,
+                    "last_restart_reason": None,
+                    "resources": {
+                        "requests": {"cpu": "", "memory": ""},
+                        "limits": {"cpu": "", "memory": ""},
+                    },
+                    "events": [],
+                }
+            )
+            continue
+
+        if not pod_list.items:
+            pods_result.append(
+                {
+                    "component": component,
+                    "deployment": deploy_name,
+                    "replicas": replicas,
+                    "ready_replicas": ready_replicas,
+                    "pod_name": None,
+                    "status": "No pods",
+                    "restarts": 0,
+                    "last_restart_reason": None,
+                    "resources": {
+                        "requests": {"cpu": "", "memory": ""},
+                        "limits": {"cpu": "", "memory": ""},
+                    },
+                    "events": [],
+                }
+            )
+            continue
+
+        for pod in pod_list.items:
+            pod_name = pod.metadata.name
+
+            # --- Container status -------------------------------------------
+            status = "Unknown"
+            restarts = 0
+            last_restart_reason = None
+
+            container_statuses = pod.status.container_statuses or []
+            if container_statuses:
+                cs = container_statuses[0]
+                restarts = cs.restart_count or 0
+
+                if cs.state:
+                    if cs.state.running:
+                        status = "Running"
+                    elif cs.state.waiting:
+                        status = cs.state.waiting.reason or "Waiting"
+                    elif cs.state.terminated:
+                        status = cs.state.terminated.reason or "Terminated"
+
+                if cs.last_state and cs.last_state.terminated:
+                    last_restart_reason = cs.last_state.terminated.reason
+            elif pod.status.phase:
+                status = pod.status.phase
+
+            # --- Resources from pod spec ------------------------------------
+            resources: Dict[str, Dict[str, str]] = {
+                "requests": {"cpu": "", "memory": ""},
+                "limits": {"cpu": "", "memory": ""},
+            }
+            containers = pod.spec.containers or []
+            if containers:
+                res = containers[0].resources
+                if res:
+                    if res.requests:
+                        resources["requests"] = {
+                            "cpu": res.requests.get("cpu", ""),
+                            "memory": res.requests.get("memory", ""),
+                        }
+                    if res.limits:
+                        resources["limits"] = {
+                            "cpu": res.limits.get("cpu", ""),
+                            "memory": res.limits.get("memory", ""),
+                        }
+
+            # --- Events for this pod ----------------------------------------
+            events: List[Dict[str, Any]] = []
+            try:
+                event_list = core_api.list_namespaced_event(
+                    namespace=namespace,
+                    field_selector=f"involvedObject.name={pod_name}",
+                )
+                for evt in event_list.items:
+                    timestamp = None
+                    if evt.last_timestamp:
+                        timestamp = evt.last_timestamp.isoformat()
+                    elif evt.event_time:
+                        timestamp = evt.event_time.isoformat()
+                    events.append(
+                        {
+                            "type": evt.type or "",
+                            "reason": evt.reason or "",
+                            "message": evt.message or "",
+                            "timestamp": timestamp or "",
+                            "count": evt.count or 1,
+                        }
+                    )
+            except ApiException as e:
+                logger.warning("Error listing events for pod %s/%s: %s", namespace, pod_name, e)
+
+            pods_result.append(
+                {
+                    "component": component,
+                    "deployment": deploy_name,
+                    "replicas": replicas,
+                    "ready_replicas": ready_replicas,
+                    "pod_name": pod_name,
+                    "status": status,
+                    "restarts": restarts,
+                    "last_restart_reason": last_restart_reason,
+                    "resources": resources,
+                    "events": events,
+                }
+            )
+
+    return {"pods": pods_result}
 
 
 # ---------------------------------------------------------------------------
@@ -1556,6 +1753,65 @@ def _extract_text_from_parts(parts: list) -> str:
     return content
 
 
+# ---------------------------------------------------------------------------
+# Incremental loop-event persistence
+# ---------------------------------------------------------------------------
+_INCREMENTAL_PERSIST_THRESHOLD = 5  # flush every N new events
+_INCREMENTAL_TRIGGER_TYPES = frozenset({"budget_update", "tool_result", "reporter_output"})
+
+
+async def _persist_loop_events_incremental(
+    task_id: str,
+    loop_events: list[dict],
+    namespace: str,
+) -> None:
+    """Write the current loop_events list to the task metadata (fire-and-forget).
+
+    Uses ``jsonb_set`` so only the ``loop_events`` key is touched — other
+    metadata fields are left intact.  This is safe to call concurrently with
+    the final writeback because the final writeback overwrites the same key
+    with the complete list.
+    """
+    try:
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE tasks SET metadata = jsonb_set("
+                "  COALESCE(metadata::jsonb, '{}'),"
+                "  '{loop_events}',"
+                "  $1::jsonb"
+                ") WHERE id = $2",
+                json.dumps(loop_events),
+                task_id,
+            )
+        logger.debug(
+            "Incremental persist: %d loop events for task %s",
+            len(loop_events),
+            task_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Incremental loop-event persist failed for task %s: %s",
+            task_id,
+            exc,
+        )
+
+
+def _should_persist_incrementally(
+    loop_events: list[dict],
+    last_persisted_count: int,
+    latest_event: dict,
+) -> bool:
+    """Decide whether to fire an incremental DB write."""
+    # Always persist on high-value event types
+    if latest_event.get("type") in _INCREMENTAL_TRIGGER_TYPES:
+        return True
+    # Persist every N events
+    if len(loop_events) - last_persisted_count >= _INCREMENTAL_PERSIST_THRESHOLD:
+        return True
+    return False
+
+
 async def _stream_sandbox_response(
     agent_url: str,
     message: str,
@@ -1571,6 +1827,7 @@ async def _stream_sandbox_response(
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
     loop_events: list[dict] = []  # Accumulated loop events for persistence
     stream_task_id: Optional[str] = None  # DB id of the task row created by THIS stream
+    _last_persisted_count: int = 0  # count at last incremental persist
 
     async def _set_owner_metadata():
         """Set owner on THIS stream's task row only.
@@ -1828,6 +2085,16 @@ async def _stream_sandbox_response(
                                     session_id,
                                     result.get("kind", "?"),
                                 )
+                                # Flush any events buffered before task_id was known
+                                if loop_events and namespace:
+                                    _last_persisted_count = len(loop_events)
+                                    asyncio.create_task(
+                                        _persist_loop_events_incremental(
+                                            stream_task_id,
+                                            list(loop_events),
+                                            namespace,
+                                        )
+                                    )
 
                         payload: dict = {"session_id": session_id}
                         if owner:
@@ -1927,6 +2194,24 @@ async def _stream_sandbox_response(
                                             has_loop_events = True
                                             session_has_loops = True
                                             loop_events.append(parsed)
+
+                                            # -- Incremental persist --
+                                            if (
+                                                stream_task_id
+                                                and namespace
+                                                and _should_persist_incrementally(
+                                                    loop_events, _last_persisted_count, parsed
+                                                )
+                                            ):
+                                                _last_persisted_count = len(loop_events)
+                                                asyncio.create_task(
+                                                    _persist_loop_events_incremental(
+                                                        stream_task_id,
+                                                        list(loop_events),  # snapshot
+                                                        namespace,
+                                                    )
+                                                )
+
                                             continue
                                     except (json.JSONDecodeError, TypeError):
                                         pass
@@ -2180,6 +2465,26 @@ async def _stream_sandbox_response(
                                                         has_loop_events = True
                                                         session_has_loops = True
                                                         loop_events.append(parsed)
+
+                                                        # -- Incremental persist (resub) --
+                                                        if (
+                                                            stream_task_id
+                                                            and namespace
+                                                            and _should_persist_incrementally(
+                                                                loop_events,
+                                                                _last_persisted_count,
+                                                                parsed,
+                                                            )
+                                                        ):
+                                                            _last_persisted_count = len(loop_events)
+                                                            asyncio.create_task(
+                                                                _persist_loop_events_incremental(
+                                                                    stream_task_id,
+                                                                    list(loop_events),  # snapshot
+                                                                    namespace,
+                                                                )
+                                                            )
+
                                                 except (json.JSONDecodeError, TypeError):
                                                     pass
 

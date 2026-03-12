@@ -68,13 +68,8 @@ async function ensureSessionExists(page: Page) {
 
 /** Navigate to the Sessions TABLE page (not the sidebar chat view) */
 async function navigateToSessionsTable(page: Page) {
-  // Sessions sidebar → click "View All Sessions" link to get to the table
-  await page.locator('nav a', { hasText: 'Sessions' }).first().click();
-  await page.waitForLoadState('networkidle');
-  // Scroll to and click "View All Sessions" link
-  const viewAllLink = page.getByText('View All Sessions');
-  await viewAllLink.scrollIntoViewIfNeeded();
-  await viewAllLink.click();
+  // Navigate directly to the sessions table page
+  await page.goto('/sandbox/sessions');
   await page.waitForLoadState('networkidle');
   await expect(page.getByRole('heading', { name: /^Sessions$/i })).toBeVisible({
     timeout: 15000,
@@ -151,6 +146,13 @@ test.describe('Sessions Table', () => {
   test('type filter toggle filters sessions by type', async ({ page }) => {
     await navigateToSessionsTable(page);
 
+    // Wait for data to load — either table rows or the "No sessions found" empty state
+    const tableOrEmpty = page
+      .locator('td[data-label="Session ID"]')
+      .first()
+      .or(page.getByText(/No sessions found/i).first());
+    await expect(tableOrEmpty).toBeVisible({ timeout: 15000 });
+
     // The "All" toggle should be selected by default
     const allToggle = page.getByRole('button', { name: /^All$/i });
     await expect(allToggle).toBeVisible({ timeout: 10000 });
@@ -162,9 +164,11 @@ test.describe('Sessions Table', () => {
     await page.waitForTimeout(1000);
 
     // After filtering, either sessions appear or the empty state shows
+    // The empty state body text is: "No root sessions found in namespace ..."
+    // The empty state header title is: "No sessions found"
     const hasRows = await page.locator('td[data-label="Session ID"]').first()
       .isVisible({ timeout: 5000 }).catch(() => false);
-    const hasEmpty = await page.getByText(/No .* sessions found/i).first()
+    const hasEmpty = await page.getByText(/No .* sessions found|No sessions found/i).first()
       .isVisible({ timeout: 2000 }).catch(() => false);
 
     expect(hasRows || hasEmpty).toBe(true);

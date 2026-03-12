@@ -456,15 +456,28 @@ Each team namespace has a PostgreSQL server (`postgres-sessions`) that hosts
 databases for different services. Each service owns its DB and migrations.
 
 ```
-postgres-sessions.team1.svc:5432
-  ├── sessions        (owned by kagenti-backend, migrations in backend code)
-  │   └── tasks       — A2A task store, session history, loop events
-  │   └── checkpoints — LangGraph checkpoint tables
+postgres.kagenti-system.svc:5432 / database: kagenti
   │
-  └── llm_budget      (owned by llm-budget-proxy, migrations in proxy code)
-      └── llm_calls   — per-call token tracking
-      └── budget_limits — configurable budget rules
+  ├── team1 schema (user: team1_user, search_path = team1)
+  │   ├── tasks           — A2A task store, session history, loop events
+  │   ├── checkpoints     — LangGraph checkpoint tables
+  │   ├── llm_calls       — per-call token tracking (llm-budget-proxy)
+  │   └── budget_limits   — configurable budget rules (llm-budget-proxy)
+  │
+  ├── team2 schema (user: team2_user, search_path = team2)
+  │   ├── tasks
+  │   ├── checkpoints
+  │   ├── llm_calls
+  │   └── budget_limits
+  │
+  └── public schema (migrations metadata, shared config)
 ```
+
+Each team/namespace maps to a PostgreSQL schema. Users only access their
+own schema. Services use unqualified table names (`SELECT * FROM tasks`)
+— the `search_path` routes to the correct schema automatically.
+
+Multiple namespaces can share a schema if collocated under the same team.
 
 ### Who manages what
 
@@ -528,26 +541,54 @@ async def startup():
 
 ### Deploy script changes (Phase 1)
 
-The existing deploy scripts (e.g. `.github/scripts/local-setup/`) already:
-- Deploy `postgres-sessions` StatefulSet in team namespaces
-- Create `sessions` DB + user
-- Store credentials in K8s Secrets
+The existing deploy scripts create a postgres per team namespace with a
+single `sessions` database. Migrate to schema-based multi-tenancy:
 
-**Add to the same scripts:**
 ```bash
-# After creating sessions DB, also create llm_budget DB + user
+# 1. Create the kagenti database (once per postgres instance)
 kubectl exec -n $NAMESPACE postgres-sessions-0 -- psql -U postgres -c \
-  "CREATE USER llm_budget_user WITH PASSWORD '$LLM_BUDGET_DB_PASSWORD';"
-kubectl exec -n $NAMESPACE postgres-sessions-0 -- psql -U postgres -c \
-  "CREATE DATABASE llm_budget OWNER llm_budget_user;"
+  "CREATE DATABASE kagenti;"
 
-# Create secret for llm-budget-proxy
+# 2. Create team schema + user
+TEAM=$NAMESPACE  # or team name if different from namespace
+kubectl exec -n $NAMESPACE postgres-sessions-0 -- psql -U postgres -d kagenti -c "
+  CREATE USER ${TEAM}_user WITH PASSWORD '$TEAM_DB_PASSWORD';
+  CREATE SCHEMA ${TEAM} AUTHORIZATION ${TEAM}_user;
+  ALTER USER ${TEAM}_user SET search_path = ${TEAM};
+  -- Restrict to own schema only
+  REVOKE ALL ON SCHEMA public FROM ${TEAM}_user;
+"
+
+# 3. Create K8s secrets (same DSN, schema selected via user's search_path)
+# For kagenti-backend (sessions tables)
+kubectl create secret generic sessions-db-secret -n $NAMESPACE \
+  --from-literal=host=postgres-sessions.$NAMESPACE.svc \
+  --from-literal=port=5432 \
+  --from-literal=database=kagenti \
+  --from-literal=username=${TEAM}_user \
+  --from-literal=password=$TEAM_DB_PASSWORD
+
+# For llm-budget-proxy (llm_calls tables) — same user, same schema
 kubectl create secret generic llm-budget-db-secret -n $NAMESPACE \
   --from-literal=host=postgres-sessions.$NAMESPACE.svc \
   --from-literal=port=5432 \
-  --from-literal=database=llm_budget \
-  --from-literal=username=llm_budget_user \
-  --from-literal=password=$LLM_BUDGET_DB_PASSWORD
+  --from-literal=database=kagenti \
+  --from-literal=username=${TEAM}_user \
+  --from-literal=password=$TEAM_DB_PASSWORD
+```
+
+Both services connect as the same team user. The schema isolates their
+tables. Each service runs its own `CREATE TABLE IF NOT EXISTS` within
+the team schema (via search_path).
+
+**Migration from current setup:** The existing `sessions` database with
+tables in `public` schema needs a one-time migration to move tables into
+the team schema. This can be a migration script:
+```sql
+ALTER TABLE tasks SET SCHEMA team1;
+ALTER TABLE checkpoints SET SCHEMA team1;
+ALTER TABLE checkpoint_blobs SET SCHEMA team1;
+ALTER TABLE checkpoint_writes SET SCHEMA team1;
 ```
 
 ### Wizard: no DB changes needed

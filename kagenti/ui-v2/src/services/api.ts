@@ -884,6 +884,7 @@ export const sandboxService = {
       proxy_domains?: string;
       // Credentials
       github_pat?: string;
+      github_pat_secret_name?: string;
       llm_api_key?: string;
       llm_key_source?: string;
       llm_secret_name?: string;
@@ -1220,3 +1221,34 @@ export const modelsService = {
     return apiFetch<Array<{id: string}>>('/models');
   },
 };
+
+/**
+ * Pod status types and API
+ */
+export interface PodEvent {
+  type: string;
+  reason: string;
+  message: string;
+  timestamp: string;
+  count: number;
+}
+
+export interface PodInfo {
+  component: string;
+  deployment: string;
+  replicas: number;
+  ready_replicas: number;
+  pod_name: string | null;
+  status: string;
+  restarts: number;
+  last_restart_reason: string | null;
+  resources: {
+    requests: { cpu: string; memory: string };
+    limits: { cpu: string; memory: string };
+  };
+  events: PodEvent[];
+}
+
+export async function getPodStatus(namespace: string, agentName: string): Promise<{ pods: PodInfo[] }> {
+  return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/agents/${encodeURIComponent(agentName)}/pod-status`);
+}

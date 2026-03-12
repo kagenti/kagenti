@@ -90,6 +90,7 @@ class SandboxCreateRequest(BaseModel):
     proxy_allowlist: str = "github.com, pypi.org"
     # Credentials
     github_pat: Optional[str] = None
+    github_pat_secret_name: Optional[str] = None  # Use existing K8s secret instead of raw PAT
     llm_api_key: Optional[str] = None
     llm_key_source: str = "existing"  # "existing" or "new"
     llm_secret_name: str = ""  # Empty = use cluster default (DEFAULT_LLM_SECRET)
@@ -604,9 +605,10 @@ async def create_sandbox(
     else:
         llm_secret = request.llm_secret_name
 
-    # GitHub PAT secret
+    # GitHub PAT secret -- prefer existing secret reference, fall back to raw PAT
     github_pat_secret: Optional[str] = None
     if request.github_pat:
+        # Manual PAT entry: create a new secret from the raw value
         github_pat_secret = f"{request.name}-github-pat"
         try:
             kube.create_secret(
@@ -624,6 +626,14 @@ async def create_sandbox(
                 status="failed",
                 message=f"Failed to create GitHub PAT Secret: {e.reason}",
             )
+    elif request.github_pat_secret_name:
+        # Use an existing K8s secret by name (no new secret created)
+        github_pat_secret = request.github_pat_secret_name
+        logger.info(
+            "Using existing GitHub PAT Secret '%s' in namespace '%s'",
+            github_pat_secret,
+            namespace,
+        )
 
     deployment_manifest = _build_deployment_manifest(
         request,
@@ -961,8 +971,26 @@ async def update_sandbox(
                 new_val,
             )
 
-    # 3. Rebuild the deployment manifest
-    deployment_manifest = _build_deployment_manifest(request)
+    # 3. Rebuild the deployment manifest (resolve GitHub PAT secret reference)
+    github_pat_secret: Optional[str] = None
+    if request.github_pat:
+        github_pat_secret = f"{request.name}-github-pat"
+        try:
+            kube.create_secret(
+                namespace=namespace,
+                name=github_pat_secret,
+                string_data={"token": request.github_pat},
+                labels={
+                    "app.kubernetes.io/managed-by": "kagenti-ui",
+                    "app.kubernetes.io/part-of": request.name,
+                },
+            )
+        except ApiException:
+            pass  # Secret may already exist; patch will update the deployment
+    elif request.github_pat_secret_name:
+        github_pat_secret = request.github_pat_secret_name
+
+    deployment_manifest = _build_deployment_manifest(request, github_pat_secret=github_pat_secret)
 
     # 4. Add rollout restart annotation (triggers pod recreation)
     restart_annotation = {

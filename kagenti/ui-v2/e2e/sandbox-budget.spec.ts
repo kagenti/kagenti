@@ -317,13 +317,25 @@ test.describe('Budget Persistence Across Restart', () => {
     await sendMessage(page, 'Read the file /workspace/budget-test.txt');
     await waitForResponse(page, 180000);
 
-    // Step 5: Budget MUST still be visible and >= pre-restart value
+    // Step 5: Budget MUST still be visible and >= pre-restart value.
+    // After restart the local AgentBudget counter resets to 0, so the
+    // budget_update loop events only carry the post-restart delta.
+    // The Stats tab now fetches cumulative totals from the proxy API,
+    // but that fetch is async — poll until the value stabilises above
+    // the pre-restart baseline.
     await switchToStatsTab(page);
-    await expect(budgetTokensUsed).toBeVisible({ timeout: 10000 });
+    await expect(budgetTokensUsed).toBeVisible({ timeout: 15000 });
 
-    const tokensAfterRestart = Number(
-      (await budgetTokensUsed.textContent() || '0').replace(/,/g, '')
-    );
+    // Poll for up to 15 s: the proxy API fetch may lag behind the SSE stream.
+    let tokensAfterRestart = 0;
+    const pollDeadline = Date.now() + 15000;
+    while (Date.now() < pollDeadline) {
+      tokensAfterRestart = Number(
+        (await budgetTokensUsed.textContent() || '0').replace(/,/g, '')
+      );
+      if (tokensAfterRestart >= tokensBeforeRestart) break;
+      await page.waitForTimeout(1000);
+    }
     console.log(`[budget-restart] After restart: ${tokensAfterRestart.toLocaleString()}`);
 
     // Budget MUST NOT have reset — tokens after >= tokens before
