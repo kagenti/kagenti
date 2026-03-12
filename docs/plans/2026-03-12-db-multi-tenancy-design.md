@@ -198,6 +198,45 @@ graph LR
 - Only `sessions_user` and `llm_budget_user` access the team schema
 - Agent user can only see its own checkpoint tables
 
+## Identifier Generation
+
+PostgreSQL limits identifiers to 63 characters. With long namespace + agent
+names this can be exceeded. Use a deterministic format:
+
+```
+{team:20}_{agent:20}_{hash:16}_{suffix}
+```
+
+- First 20 chars of team name (truncated, sanitized)
+- First 20 chars of agent name (truncated, sanitized)
+- 16 char SHA-256 hash of the full `{namespace}/{agent_name}` (guarantees uniqueness)
+- Suffix: `u` for user, `s` for schema
+
+Examples:
+```
+team1_sandbox_legion_a3f8c1e9b2d4f7a0_u     = 45 chars (user)
+team1_sandbox_legion_a3f8c1e9b2d4f7a0_s     = 45 chars (schema)
+production_work_my_very_long_age_8b2c4d6e1f3a5b70_u = 52 chars (truncated + hash)
+```
+
+Always ≤ 63 chars. Always unique (hash covers full names). Human-readable
+prefix for debugging.
+
+```python
+import hashlib
+
+def db_identifier(namespace: str, agent_name: str, suffix: str = "u") -> str:
+    """Build a PostgreSQL identifier (≤63 chars) for a namespace/agent pair.
+
+    Format: {team:20}_{agent:20}_{hash:16}_{suffix}
+    """
+    ns = namespace.replace('-', '_')[:20]
+    agent = agent_name.replace('-', '_')[:20]
+    full = f"{namespace}/{agent_name}"
+    h = hashlib.sha256(full.encode()).hexdigest()[:16]
+    return f"{ns}_{agent}_{h}_{suffix}"
+```
+
 ## Backend Changes for Agent Lifecycle
 
 ### sandbox_deploy.py — create agent schema on deploy
@@ -208,10 +247,8 @@ async def _create_agent_db_schema(namespace: str, agent_name: str) -> dict:
 
     Returns dict with connection details for the agent's K8s secret.
     """
-    ns_prefix = namespace.replace('-', '_')
-    agent_safe = agent_name.replace('-', '_')
-    schema_name = f"{ns_prefix}_agent_{agent_safe}"
-    db_user = f"{schema_name}_user"
+    schema_name = db_identifier(namespace, agent_name, "s")
+    db_user = db_identifier(namespace, agent_name, "u")
     db_password = secrets.token_urlsafe(24)
 
     pool = await get_admin_pool(namespace)  # connects as postgres superuser
@@ -239,10 +276,8 @@ async def _create_agent_db_schema(namespace: str, agent_name: str) -> dict:
 ```python
 async def _delete_agent_db_schema(namespace: str, agent_name: str):
     """Drop the agent's PostgreSQL schema and user. Removes all checkpoints."""
-    ns_prefix = namespace.replace('-', '_')
-    agent_safe = agent_name.replace('-', '_')
-    schema_name = f"{ns_prefix}_agent_{agent_safe}"
-    db_user = f"{schema_name}_user"
+    schema_name = db_identifier(namespace, agent_name, "s")
+    db_user = db_identifier(namespace, agent_name, "u")
 
     pool = await get_admin_pool(namespace)
     async with pool.acquire() as conn:
