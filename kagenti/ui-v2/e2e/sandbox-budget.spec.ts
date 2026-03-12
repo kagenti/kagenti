@@ -54,6 +54,24 @@ function kc(cmd: string, t = 30000): string {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Re-trigger SPA route without full page reload (avoids Keycloak redirect). */
+async function spaReloadSession(page: Page) {
+  const url = page.url();
+  const match = url.match(/session=([^&]+)/);
+  if (match) {
+    const sid = match[1];
+    await page.evaluate((s) => {
+      window.history.pushState({}, '', `/sandbox?session=${s}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, sid);
+  } else {
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await loginIfNeeded(page);
+  }
+  await page.waitForTimeout(3000);
+}
+
 async function navigateToAgent(page: Page, agentName: string) {
   await page.goto('/');
   await loginIfNeeded(page);
@@ -145,13 +163,9 @@ test.describe('Budget Enforcement', () => {
     // Wait for agent to finish (it should stop early due to budget)
     await waitForResponse(page, 180000);
 
-    // Reload to ensure history + loop events are fetched from DB
-    // (SSE stream may have missed budget_update events if they arrived
-    // before the UI connected)
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-    await loginIfNeeded(page);
-    await page.waitForTimeout(3000);
+    // SPA-navigate to force re-fetch of session data from DB.
+    // A full page.reload() triggers Keycloak redirect which strips URL params.
+    await spaReloadSession(page);
 
     // Switch to Stats tab
     await switchToStatsTab(page);
@@ -229,11 +243,8 @@ test.describe('Budget Persistence Across Restart', () => {
     await sendMessage(page, 'Create a file called /workspace/budget-test.txt with "hello"');
     await waitForResponse(page);
 
-    // Reload to ensure loop events are loaded from DB
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-    await loginIfNeeded(page);
-    await page.waitForTimeout(3000);
+    // SPA-reload to ensure loop events are loaded from DB
+    await spaReloadSession(page);
 
     // Step 2: Budget MUST be visible in Stats tab after first message
     await switchToStatsTab(page);
@@ -275,11 +286,8 @@ test.describe('Budget Persistence Across Restart', () => {
     await sendMessage(page, 'Read the file /workspace/budget-test.txt');
     await waitForResponse(page, 180000);
 
-    // Reload to ensure updated loop events are loaded
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-    await loginIfNeeded(page);
-    await page.waitForTimeout(3000);
+    // SPA-reload to ensure updated loop events are loaded
+    await spaReloadSession(page);
 
     // Step 5: Budget MUST still be visible and >= pre-restart value
     await switchToStatsTab(page);
