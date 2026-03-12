@@ -195,6 +195,10 @@ Profiles replace the old composable-suffix naming (`-secctx-landlock-proxy`):
 > **gVisor (T4)** was removed. It is incompatible with OpenShift SELinux policies
 > and would require a different RuntimeClass approach for multi-platform support.
 
+For full details on composable layers, tier presets, wizard flow, entrypoints,
+and SandboxClaim integration, see
+[Composable Sandbox Security Design](./2026-03-01-composable-sandbox-security-design.md).
+
 ---
 
 ## 4. Agent Reasoning Architecture
@@ -508,6 +512,7 @@ for the phased rollout plan starting with OpenCode.
 
 | Document | Status | Topic |
 |----------|--------|-------|
+| [Composable Sandbox Security](./2026-03-01-composable-sandbox-security-design.md) | Partial | Tiers T0-T3, layers, wizard, entrypoints, SandboxClaim |
 | [Reasoning Loop](./2026-03-03-sandbox-reasoning-loop-design.md) | Built | Plan-execute-reflect with micro-reasoning |
 | [Agent Loop UI](./2026-03-03-agent-loop-ui-design.md) | Built | Loop cards, step sections, prompt inspector |
 | [LiteLLM Proxy](./2026-03-07-litellm-proxy-design.md) | Built | Centralized model routing in kagenti-system |
