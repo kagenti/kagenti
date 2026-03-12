@@ -151,7 +151,7 @@ charts:
   spire:
     enabled: false
     namespace: spire-mgmt          # Helm release namespace
-    server_namespace: spire-server  # Actual SPIRE server component namespace
+    server_namespace: zero-trust-workload-identity-manager  # Actual SPIRE server component namespace
     version: 0.27.0
     crd:
       version: 0.5.0

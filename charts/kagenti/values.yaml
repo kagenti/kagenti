@@ -165,16 +165,6 @@ authBridge:
   spiffeIdpAlias: "spire-spiffe"
 
 # ------------------------------------------------------------------
-#  SPIFFE Identity Provider Setup Job Configuration
-#  (Only runs when SPIRE is enabled)
-# ------------------------------------------------------------------
-spiffeIdp:
-  image:
-    repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
-    tag: latest
-    pullPolicy: IfNotPresent
-
-# ------------------------------------------------------------------
 #  Kagenti Operator Configuration
 # ------------------------------------------------------------------
 kagenti-operator-chart:

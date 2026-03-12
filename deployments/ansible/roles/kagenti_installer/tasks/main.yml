@@ -282,14 +282,6 @@
     (not (enable_openshift | default(false)) or (use_spire_helm_chart | default(false)))
 
 #
-#  Patch SPIRE OIDC Discovery Provider ConfigMap
-#  WORKAROUND: The SPIRE helm chart (versions <=0.28.2) does not render the set_key_use
-#  configuration option into the ConfigMap, even though the SPIRE binary supports it.
-#  Keycloak's SPIFFE provider requires "use": "sig" field in JWKS keys.
-#  This task patches the ConfigMap post-install to add set_key_use: true.
-#
-
-#
 #  Gateway API
 #
 - name: Install Gateway API
@@ -844,6 +836,14 @@
     - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
     - (charts['kagenti-deps'] | default({})).get('chart') is defined
 
+
+#
+#  Patch SPIRE OIDC Discovery Provider ConfigMap
+#  WORKAROUND: The SPIRE helm chart (versions <=0.28.2) does not render the set_key_use
+#  configuration option into the ConfigMap, even though the SPIRE binary supports it.
+#  Keycloak's SPIFFE provider requires "use": "sig" field in JWKS keys.
+#  This task patches the ConfigMap post-install to add set_key_use: true.
+#
 # Patch SPIRE OIDC ConfigMap with set_key_use (must run AFTER kagenti-deps installs SPIRE)
 - name: Patch SPIRE OIDC ConfigMap with set_key_use
   block:
