@@ -21,6 +21,10 @@ export interface LoopEvent {
   loop_id: string;
   step?: number;
   event_index?: number;
+  /** Graph node visit number — used for UI section grouping */
+  node_visit?: number;
+  /** Position within a node visit */
+  sub_index?: number;
   total_steps?: number;
   steps?: string[];
   description?: string;
@@ -180,162 +184,112 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     };
   }
 
+  // -----------------------------------------------------------------------
+  // Group ALL events by node_visit. Each node_visit = one UI section.
+  // Tool events (tool_call, tool_result) share the executor's node_visit.
+  // -----------------------------------------------------------------------
+
+  /** Find or create a step for this node_visit. */
+  const findOrCreateStep = (
+    steps: AgentLoopStep[],
+    nodeVisit: number,
+    defaults: Partial<AgentLoopStep>,
+  ): { steps: AgentLoopStep[]; step: AgentLoopStep } => {
+    const existing = steps.find((s) => s.index === nodeVisit);
+    if (existing) return { steps, step: existing };
+    const newStep: AgentLoopStep = {
+      index: nodeVisit,
+      planStep: defaults.planStep,
+      description: defaults.description || '',
+      model: defaults.model || loop.model,
+      nodeType: defaults.nodeType || 'executor',
+      tokens: defaults.tokens || { prompt: 0, completion: 0 },
+      toolCalls: [],
+      toolResults: [],
+      microReasonings: [],
+      durationMs: 0,
+      createdAt: now(),
+      updatedAt: now(),
+      status: 'running' as const,
+      ...defaults,
+    };
+    return { steps: [...steps, newStep], step: newStep };
+  };
+
+  const nv = le.node_visit ?? le.step ?? loop.steps.length;
+
   if (eventType === 'executor_step') {
-    const newDesc = ((le.description as string) || '').trim();
-    const existingStep = loop.steps.find((s) => s.index === le.step);
-    // If incoming event has empty description and existing step has content, keep existing
-    if (!newDesc && existingStep && existingStep.description?.trim()) {
-      return {
-        ...loop,
-        status: 'executing',
-        currentStep: le.current_step ?? loop.currentStep,
-        totalSteps: le.total_steps ?? loop.totalSteps,
-        model: le.model || loop.model,
-      };
-    }
-    // Update existing step IN PLACE to preserve chronological ordering
-    // relative to planner/reflector steps. Don't filter+push (reorders).
-    if (existingStep) {
-      const updatedStep = {
-        ...existingStep,
-        planStep: le.current_step ?? existingStep.planStep,
-        description: le.description || existingStep.description || '',
-        model: le.model || existingStep.model || loop.model,
-        reasoning: (le.reasoning as string) || existingStep.reasoning || undefined,
-        systemPrompt: le.system_prompt || existingStep.systemPrompt,
-        promptMessages: le.prompt_messages || existingStep.promptMessages,
-        tokens: { prompt: le.prompt_tokens || existingStep.tokens?.prompt || 0, completion: le.completion_tokens || existingStep.tokens?.completion || 0 },
-      };
-      return {
-        ...loop,
-        status: 'executing',
-        currentStep: le.current_step ?? loop.currentStep,
-        totalSteps: le.total_steps ?? loop.totalSteps,
-        model: le.model || loop.model,
-        steps: loop.steps.map((s) => s.index === le.step ? updatedStep : s),
-      };
-    }
-    // No existing step — create new one at the end
+    const { steps, step } = findOrCreateStep(loop.steps, nv, {
+      planStep: le.current_step,
+      description: le.description || '',
+      nodeType: 'executor',
+      reasoning: le.reasoning as string | undefined,
+      systemPrompt: le.system_prompt,
+      promptMessages: le.prompt_messages,
+      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+    });
+    // Update fields on existing step
+    step.planStep = le.current_step ?? step.planStep;
+    step.description = le.description || step.description;
+    step.model = le.model || step.model || loop.model;
+    step.reasoning = (le.reasoning as string) || step.reasoning;
+    step.systemPrompt = le.system_prompt || step.systemPrompt;
+    step.promptMessages = le.prompt_messages || step.promptMessages;
+    step.tokens = { prompt: le.prompt_tokens || step.tokens?.prompt || 0, completion: le.completion_tokens || step.tokens?.completion || 0 };
+    step.nodeType = 'executor';
+    step.updatedAt = now();
     return {
       ...loop,
       status: 'executing',
       currentStep: le.current_step ?? loop.currentStep,
       totalSteps: le.total_steps ?? loop.totalSteps,
       model: le.model || loop.model,
-      steps: [
-        ...loop.steps,
-        {
-          index: le.step as number,
-          planStep: le.current_step,
-          description: le.description || '',
-          model: le.model || loop.model,
-          reasoning: (le.reasoning as string) || undefined,
-          systemPrompt: le.system_prompt,
-          promptMessages: le.prompt_messages,
-          nodeType: 'executor' as const,
-          tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-          toolCalls: [],
-          toolResults: [],
-          microReasonings: [],
-          durationMs: 0,
-          createdAt: now(),
-          updatedAt: now(),
-          status: 'running' as const,
-        },
-      ],
+      steps,
     };
   }
 
   if (eventType === 'tool_call') {
-    const stepIdx = le.step ?? loop.currentStep;
-    const steps = [...loop.steps];
-    const step = steps.find((s) => s.index === stepIdx);
-    if (step) {
-      step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }])];
-      step.nodeType = 'executor';
-      step.updatedAt = now();
-    } else {
-      // No matching step — create an implicit executor step
-      // Use plan step description if available
-      const planStepIdx = le.current_step ?? loop.currentStep;
-      const planDesc = loop.plan[planStepIdx] || '';
-      steps.push({
-        index: stepIdx,
-        planStep: planStepIdx,
-        description: planDesc || `Tool execution`,
-        model: le.model || loop.model,
-        nodeType: 'executor' as const,
-        tokens: { prompt: 0, completion: 0 },
-        toolCalls: (le.tools as AgentLoopStep['toolCalls']) || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }],
-        toolResults: [],
-        durationMs: 0,
-        createdAt: now(),
-        updatedAt: now(),
-        status: 'running' as const,
-      });
-    }
+    const { steps, step } = findOrCreateStep(loop.steps, nv, {
+      planStep: le.current_step ?? loop.currentStep,
+      description: loop.plan[le.current_step ?? loop.currentStep] || 'Tool execution',
+      nodeType: 'executor',
+    });
+    step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }])];
+    step.nodeType = 'executor';
+    step.updatedAt = now();
     return { ...loop, steps, model: le.model || loop.model };
   }
 
   if (eventType === 'tool_result') {
-    const stepIdx = le.step ?? loop.currentStep;
-    const steps = [...loop.steps];
+    // Tool results share the executor's node_visit — find by node_visit first
+    const { steps, step } = findOrCreateStep(loop.steps, nv, {
+      planStep: le.current_step ?? loop.currentStep,
+      nodeType: 'executor',
+    });
     const resultName = le.name || 'unknown';
-
-    // Helper: does a step have unmatched tool calls for this result name?
-    const hasPendingCall = (s: AgentLoopStep) => {
-      const callCount = s.toolCalls.filter((tc) => tc.name === resultName).length;
-      const resultCount = s.toolResults.filter((tr) => tr.name === resultName).length;
-      return callCount > resultCount;
-    };
-
-    // Try to find the step by index first
-    let step = steps.find((s) => s.index === stepIdx);
-
-    // If the target step has no pending tool call for this result, search
-    // other steps — the result may have arrived after a node transition
-    // moved currentStep forward, so it belongs to an earlier step.
-    if (!step || !hasPendingCall(step)) {
-      const betterStep = steps.find((s) => s.index !== stepIdx && hasPendingCall(s));
-      if (betterStep) step = betterStep;
+    step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }];
+    if (step.toolResults.length >= step.toolCalls.length && step.toolCalls.length > 0) {
+      step.status = 'done';
     }
-
-    if (step) {
-      step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }];
-      // Mark step as done only when all tool calls have results
-      if (step.toolResults.length >= step.toolCalls.length) {
-        step.status = 'done';
-      }
-      step.nodeType = 'executor';
-      step.updatedAt = now();
-    } else {
-      // No matching step — create an implicit executor step
-      const planStepIdx = le.current_step ?? loop.currentStep;
-      const planDesc = loop.plan[planStepIdx] || '';
-      steps.push({
-        index: stepIdx,
-        planStep: planStepIdx,
-        description: planDesc || 'Tool execution',
-        model: le.model || loop.model,
-        nodeType: 'executor' as const,
-        tokens: { prompt: 0, completion: 0 },
-        toolCalls: [],
-        toolResults: [{ type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }],
-        durationMs: 0,
-        createdAt: now(),
-        updatedAt: now(),
-        status: 'done' as const,
-      });
-    }
+    step.updatedAt = now();
     return { ...loop, steps };
   }
 
   if (eventType === 'reflector_decision') {
-    // Finalize all running executor steps — the node transition means
-    // any pending tool calls from the previous node are complete.
     const finalizedSteps = loop.steps.map((s) =>
       s.status === 'running' ? { ...s, status: 'done' as const } : s,
     );
+    const { steps } = findOrCreateStep(finalizedSteps, nv, {
+      description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
+      reasoning: le.assessment || '',
+      model: le.model || loop.model,
+      nodeType: 'reflector',
+      eventType: 'reflector_decision',
+      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+      systemPrompt: le.system_prompt,
+      promptMessages: le.prompt_messages,
+      status: 'done' as const,
+    });
     return {
       ...loop,
       status: 'reflecting',
@@ -343,52 +297,26 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       reflectorDecision: le.decision as 'continue' | 'replan' | 'done' | undefined,
       iteration: le.iteration ?? loop.iteration,
       model: le.model || loop.model,
-      steps: [
-        ...finalizedSteps,
-        {
-          index: loop.steps.length,
-          description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
-          reasoning: le.assessment || '',
-          model: le.model || loop.model,
-          nodeType: 'reflector' as const,
-          eventType: 'reflector_decision',
-          tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-          systemPrompt: le.system_prompt,
-          promptMessages: le.prompt_messages,
-          toolCalls: [],
-          toolResults: [],
-          durationMs: 0,
-          createdAt: now(),
-          updatedAt: now(),
-          status: 'done' as const,
-        },
-      ],
+      steps,
     };
   }
 
   if (eventType === 'step_selector') {
+    const finalizedSteps = loop.steps.map((s) =>
+      s.status === 'running' ? { ...s, status: 'done' as const } : s,
+    );
+    const { steps } = findOrCreateStep(finalizedSteps, nv, {
+      planStep: le.current_step,
+      description: le.description || `Advancing to step ${(le.current_step ?? 0) + 1}`,
+      reasoning: le.brief || le.description || '',
+      nodeType: 'planner',
+      status: 'done' as const,
+    });
     return {
       ...loop,
       status: 'planning',
       currentStep: le.current_step ?? loop.currentStep,
-      steps: [
-        ...loop.steps.map((s) => s.status === 'running' ? { ...s, status: 'done' as const } : s),
-        {
-          index: le.step as number,
-          planStep: le.current_step,
-          description: le.description || `Advancing to step ${(le.current_step ?? 0) + 1}`,
-          reasoning: le.brief || le.description || '',
-          model: '',
-          nodeType: 'planner' as const,
-          tokens: { prompt: 0, completion: 0 },
-          toolCalls: [],
-          toolResults: [],
-          durationMs: 0,
-          createdAt: now(),
-          updatedAt: now(),
-          status: 'done' as const,
-        },
-      ],
+      steps,
     };
   }
 
@@ -438,30 +366,15 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   }
 
   if (eventType === 'micro_reasoning') {
-    const stepIdx = le.step ?? loop.currentStep;
-    const steps = [...loop.steps];
-    let step = steps.find((s) => s.index === stepIdx);
-    if (!step) {
-      // Create an implicit executor step if none exists
-      step = {
-        index: stepIdx,
-        description: 'Tool execution',
-        model: le.model || loop.model,
-        nodeType: 'executor' as const,
-        tokens: { prompt: 0, completion: 0 },
-        toolCalls: [],
-        toolResults: [],
-        durationMs: 0,
-        createdAt: now(),
-        updatedAt: now(),
-        status: 'running' as const,
-      };
-      steps.push(step);
-    }
+    const { steps, step } = findOrCreateStep(loop.steps, nv, {
+      planStep: le.current_step ?? loop.currentStep,
+      description: 'Tool execution',
+      nodeType: 'executor',
+    });
     const mr: MicroReasoning = {
       type: 'micro_reasoning',
       loop_id: le.loop_id,
-      step: le.step ?? stepIdx,
+      step: le.step ?? nv,
       micro_step: le.micro_step ?? 0,
       reasoning: le.reasoning || '',
       next_action: le.next_action || '',

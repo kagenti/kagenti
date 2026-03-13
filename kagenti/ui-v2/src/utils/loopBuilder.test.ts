@@ -85,8 +85,9 @@ describe('applyLoopEvent', () => {
       name: 'shell',
       args: { command: 'ls' },
       event_index: 1,
+      node_visit: 1,
     });
-    // Apply tool result with matching call_id
+    // Apply tool result with matching call_id and same node_visit
     loop = applyLoopEvent(loop, {
       type: 'tool_result',
       loop_id: 'L1',
@@ -94,6 +95,7 @@ describe('applyLoopEvent', () => {
       name: 'shell',
       output: 'file1.txt',
       event_index: 2,
+      node_visit: 1,
     });
 
     // Find the step with the tool call
