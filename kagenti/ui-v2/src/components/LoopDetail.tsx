@@ -458,25 +458,42 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
       >
         {/* Index badge (event_index) */}
         {step.index != null && <Badge isRead data-testid="step-visit-badge" style={{ marginRight: 4 }}>{step.index}</Badge>}
-        {/* Step number badge (blue, for executor steps) */}
+        {/* Node type + step badge with description as hover title */}
         {(() => {
           const nt = inferNodeType(step);
           const planStep = step.planStep ?? loopCurrentStep;
-          if ((nt === 'executor') && planStep != null) {
-            return <Badge style={{ marginRight: 4 }} data-testid="step-number-badge">{`Step ${planStep + 1}${total > 0 ? `/${total}` : ''}`}</Badge>;
-          }
-          return null;
-        })()}
-        {/* Node name badge */}
-        <NodeBadge nodeType={inferNodeType(step)} />
-        {/* Description text */}
-        {(() => {
-          const nt = inferNodeType(step);
-          if (nt === 'reporter') return 'Final answer';
           let desc = step.description || '';
           desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
           if (desc === 'Tool execution') desc = '';
-          return desc || (nt === 'executor' ? 'Executing' : '');
+
+          // Build label: "executor Step 2/5" or just "planner" / "reflector" / "reporter"
+          let label: string = nt;
+          if (nt === 'executor' && planStep != null) {
+            label = `${nt} Step ${planStep + 1}${total > 0 ? `/${total}` : ''}`;
+          }
+
+          const info = NODE_COLORS[nt];
+          return (
+            <span
+              title={desc || label}
+              style={{
+                display: 'inline-block',
+                padding: '1px 6px',
+                borderRadius: 3,
+                fontSize: '0.78em',
+                fontWeight: 600,
+                color: '#fff',
+                backgroundColor: info.bg,
+                marginRight: 6,
+                lineHeight: 1.5,
+                verticalAlign: 'middle',
+                cursor: desc ? 'help' : 'default',
+              }}
+              data-testid="step-node-badge"
+            >
+              {label}
+            </span>
+          );
         })()}
         {showModelBadge && (
           <span
