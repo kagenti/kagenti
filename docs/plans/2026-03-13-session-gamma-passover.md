@@ -4,8 +4,8 @@
 > **Cluster:** sbox42 (KUBECONFIG=/tmp/kagenti/sbox42-kubeconfig)
 > **Worktrees:** `.worktrees/sandbox-agent` (kagenti), `.worktrees/agent-examples` (agent code)
 > **Branch:** `feat/sandbox-agent` (both repos)
-> **RCA Test:** Passing (1.6m, quality 5/5)
-> **Unit Tests:** 134 passing (context_isolation=36, event_serializer=89, node_visit=9)
+> **RCA Test:** Passing (2.2m, quality 5/5, 42K tokens)
+> **Unit Tests:** 152 passing (context_isolation=38, event_serializer=89, node_visit=9, executor_loop=8, loopBuilder=6, validation=2)
 
 ## Session Summary
 
@@ -83,9 +83,39 @@ Tool nodes ("tools", "planner_tools", "reflector_tools") inherit the
 preceding node's node_visit and continue its sub_index.
 ```
 
+## Additional Commits (Late Session)
+
+### Agent (agent-examples repo)
+
+| Commit | Description |
+|--------|-------------|
+| 0cc396d | Remove dedup, fix tool loop + 8 TDD tests |
+| 0c4e3b1 | Reflection HumanMessage after EACH tool result |
+| 8d866d5 | Generic debugging guidelines, --help hint |
+| cae8818 | Remove gh-specific from generic prompts |
+| b582f31 | replanner_output event type for replan visibility |
+
+### UI + Skills (kagenti repo)
+
+| Commit | Description |
+|--------|-------------|
+| dacc4fdb | gh CLI flag reference in rca:ci skill |
+| ffa48c4a | Handle replanner_output, preserve currentStep on replan |
+
+## Fixed Issues (This Session)
+
+| Issue | Fix |
+|-------|-----|
+| Orphaned tool_results | Removed dedup logic — structured calls have unique IDs |
+| Executor tool loop (10x repeat) | Per-tool-result reflection HumanMessage |
+| Invalid gh flags (--head, --pr) | Flag reference in rca:ci skill, --help hint in reflection |
+| Replan resets step index | replanner_output event, loopBuilder preserves currentStep |
+| Replan invisible in UI | Separate replanner node type |
+| gh-specific in generic prompts | Moved to rca:ci skill |
+
 ## Remaining Issues (Next Session)
 
-### P0: Orphaned tool_call/tool_result pairing
+### P0: UI loopBuilder group by node_visit
 
 **Symptom:** Some tool_result events appear without matching tool_call events.
 This happens when the executor's dedup logic skips tool calls (`_dedup: True`)
