@@ -456,23 +456,27 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
           flexWrap: 'wrap',
         }}
       >
-        <NodeBadge nodeType={inferNodeType(step)} />
+        {/* Index badge (event_index) */}
+        {step.index != null && <Badge isRead data-testid="step-visit-badge" style={{ marginRight: 4 }}>{step.index}</Badge>}
+        {/* Step number badge (blue, for executor steps) */}
         {(() => {
           const nt = inferNodeType(step);
-          if (nt === 'planner' || nt === 'replanner') return step.description;
-          if (nt === 'reflector') return step.description;
-          if (nt === 'reporter') return 'Final answer';
-          // Executor: Step X with badge for global node visit index
           const planStep = step.planStep ?? loopCurrentStep;
-          const stepLabel = planStep != null
-            ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}`
-            : '';
-          // Strip redundant "Step N:" prefix from description (agent may include it)
+          if ((nt === 'executor') && planStep != null) {
+            return <Badge style={{ marginRight: 4 }} data-testid="step-number-badge">{`Step ${planStep + 1}${total > 0 ? `/${total}` : ''}`}</Badge>;
+          }
+          return null;
+        })()}
+        {/* Node name badge */}
+        <NodeBadge nodeType={inferNodeType(step)} />
+        {/* Description text */}
+        {(() => {
+          const nt = inferNodeType(step);
+          if (nt === 'reporter') return 'Final answer';
           let desc = step.description || '';
           desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
           if (desc === 'Tool execution') desc = '';
-          const textPart = stepLabel && desc ? `${stepLabel}: ${desc}` : stepLabel || desc || 'Executing';
-          return <>{textPart}{step.index != null && <>{' '}<Badge isRead data-testid="step-visit-badge">{step.index}</Badge></>}</>;
+          return desc || (nt === 'executor' ? 'Executing' : '');
         })()}
         {showModelBadge && (
           <span
