@@ -133,10 +133,10 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     };
   }
 
-  if (eventType === 'planner_output') {
-    console.log('[loopBuilder] planner_output: system_prompt=', le.system_prompt?.substring(0, 50), 'prompt_messages=', le.prompt_messages?.length);
+  if (eventType === 'planner_output' || eventType === 'replanner_output') {
+    console.log(`[loopBuilder] ${eventType}: system_prompt=`, le.system_prompt?.substring(0, 50), 'prompt_messages=', le.prompt_messages?.length);
     const incomingSteps = le.steps || [];
-    const isReplan = loop.plan.length > 0;
+    const isReplan = eventType === 'replanner_output' || loop.plan.length > 0;
     const iterNum = le.iteration ?? loop.iteration ?? 0;
     const stepLabel = isReplan ? 'Replan' : 'Plan';
     const nodeTypeVal = isReplan ? 'replanner' as const : 'planner' as const;
@@ -154,7 +154,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
         ? [...loop.replans, { iteration: iterNum, steps: incomingSteps, model: le.model || loop.model, content: le.content }]
         : loop.replans,
       totalSteps: incomingSteps.length > 0 ? incomingSteps.length : loop.totalSteps,
-      currentStep: isReplan ? 0 : loop.currentStep,
+      // Replan keeps the current step index — does NOT reset to 0
+      currentStep: isReplan ? loop.currentStep : loop.currentStep,
       iteration: iterNum,
       model: le.model || loop.model,
       steps: [
