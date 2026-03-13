@@ -435,6 +435,30 @@ subjects:
   - kind: ServiceAccount
     name: default
     namespace: {{ . }}
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  SCC RoleBinding for Agent SAs in Namespace: {{ . }}
+#  Grants anyuid SCC to all service accounts in the namespace so that
+#  operator-injected sidecar containers (spiffe-helper, client-registration)
+#  can run with UIDs outside the restricted SCC range.
+#  Agent SAs are created dynamically by the operator (name = agent name),
+#  so we use the namespace service accounts group.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-anyuid-scc
+  namespace: {{ . }}
+  labels:
+    {{- include "kagenti.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: system:serviceaccounts:{{ . }}
 {{- end }}
 {{- end }}
 {{- end }}
