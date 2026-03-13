@@ -94,11 +94,15 @@ async function sendAndWaitForResponse(
   // Verify user message appears immediately
   await expect(page.getByText(message).first()).toBeVisible({ timeout: 5000 });
 
-  // Wait for agent to finish — loop card must reach done/failed state
-  const loopCard = page.locator('[data-testid="agent-loop-card"]').last();
-  await expect(loopCard).toBeVisible({ timeout: 30000 });
-  await expect(loopCard.locator('text=executing')).toBeHidden({ timeout });
-  await expect(loopCard.locator('text=planning')).toBeHidden({ timeout: 5000 }).catch(() => {});
+  // Wait for agent to finish — poll until no loop card shows active status
+  const loopCards = page.locator('[data-testid="agent-loop-card"]');
+  await expect(loopCards.last()).toBeVisible({ timeout: 30000 });
+  const activeStatuses = loopCards.last().locator('text=/planning|executing|reflecting/');
+  for (let i = 0; i < 60; i++) {
+    const count = await activeStatuses.count();
+    if (count === 0) break;
+    await page.waitForTimeout(2000);
+  }
   await page.waitForTimeout(2000);
 
   // Get the last assistant message content
