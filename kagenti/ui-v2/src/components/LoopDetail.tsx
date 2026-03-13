@@ -317,6 +317,50 @@ const statusIcon = (status?: string) => {
   }
 };
 
+/** Regex to detect workspace file paths in tool output. */
+const WORKSPACE_PATH_RE = /\/workspace\/[a-f0-9-]+\/((?:output|repos|data|scripts)\/[^\s"']+)/g;
+
+/** Render tool output with workspace paths highlighted as file links. */
+function renderOutputWithFileLinks(output: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const re = new RegExp(WORKSPACE_PATH_RE.source, 'g');
+  let keyIdx = 0;
+  while ((match = re.exec(output)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(output.slice(lastIndex, match.index));
+    }
+    const fullPath = match[0];
+    const relPath = match[1];
+    parts.push(
+      <span
+        key={`flink-${keyIdx++}`}
+        data-testid="workspace-file-link"
+        title={`File: ${relPath}\n(click to copy path)`}
+        style={{
+          color: '#58a6ff',
+          textDecoration: 'underline',
+          cursor: 'pointer',
+          fontWeight: 500,
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(relPath);
+        }}
+      >
+        {fullPath}
+      </span>
+    );
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex === 0) return output;
+  if (lastIndex < output.length) {
+    parts.push(output.slice(lastIndex));
+  }
+  return <>{parts}</>;
+}
+
 const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -357,7 +401,7 @@ const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }
             maxHeight: 200,
           }}
         >
-          {result.output || '(no output)'}
+          {renderOutputWithFileLinks(result.output || '(no output)')}
         </pre>
       )}
     </div>

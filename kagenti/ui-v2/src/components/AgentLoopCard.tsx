@@ -15,6 +15,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { RobotIcon } from '@patternfly/react-icons';
+import { Badge } from '@patternfly/react-core';
 import type { AgentLoop } from '../types/agentLoop';
 import { LoopSummaryBar } from './LoopSummaryBar';
 import { LoopDetail } from './LoopDetail';
@@ -178,7 +179,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
             marginBottom: expanded ? 8 : 0,
           }}
         >
-          {expanded ? '\u25bc' : '\u25b6'} {loop.totalSteps || loop.plan.length || loop.steps.length} step{(loop.totalSteps || loop.plan.length || loop.steps.length) !== 1 ? 's' : ''}{loop.nodeVisits > 0 ? ` · [${loop.nodeVisits}]` : ''}
+          {expanded ? '\u25bc' : '\u25b6'} {loop.totalSteps || loop.plan.length || loop.steps.length} step{(loop.totalSteps || loop.plan.length || loop.steps.length) !== 1 ? 's' : ''}{loop.nodeVisits > 0 && <>{' · '}<Badge isRead data-testid="node-visits-badge">{loop.nodeVisits}</Badge></>}
         </div>
 
         {/* Expanded reasoning details */}

@@ -489,8 +489,11 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
  * Used by `loadInitialHistory` to rebuild loop cards from stored events.
  */
 export function buildAgentLoops(events: LoopEvent[]): Map<string, AgentLoop> {
+  // Sort events by event_index for correct chronological ordering.
+  // Events from DB may arrive out of order (gaps from SSE disconnect).
+  const sorted = [...events].sort((a, b) => (a.event_index ?? 0) - (b.event_index ?? 0));
   const loops = new Map<string, AgentLoop>();
-  for (const evt of events) {
+  for (const evt of sorted) {
     const loopId = evt.loop_id;
     if (!loopId) continue;
     const prev = loops.get(loopId) || createDefaultAgentLoop(loopId);

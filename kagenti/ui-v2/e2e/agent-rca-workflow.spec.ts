@@ -451,6 +451,29 @@ test.describe('Agent RCA Workflow', () => {
     }
     expect(stepDupMatch).toBeNull();
 
+    // ── Step 7e: Verify node visits badge renders ────────────────────────
+    const badge = page.locator('[data-testid="node-visits-badge"]');
+    const badgeCount = await badge.count();
+    console.log(`[rca] Node visits badges: ${badgeCount}`);
+    // Badge should appear when nodeVisits > 0 (at least one loop card has events)
+    if (badgeCount > 0) {
+      const badgeText = await badge.first().textContent();
+      console.log(`[rca] First badge value: ${badgeText}`);
+      expect(Number(badgeText)).toBeGreaterThan(0);
+    }
+
+    // ── Step 7f: Check workspace file links in tool results ──────────────
+    const fileLinks = page.locator('[data-testid="workspace-file-link"]');
+    const fileLinkCount = await fileLinks.count();
+    console.log(`[rca] Workspace file links: ${fileLinkCount}`);
+    // File links are only rendered when agent uses full workspace paths
+    // in redirects — this is a soft assertion (may be 0 on older agents)
+    if (fileLinkCount > 0) {
+      const firstLink = await fileLinks.first().textContent();
+      console.log(`[rca] First file link: ${firstLink}`);
+      expect(firstLink).toContain('/workspace/');
+    }
+
     // ── Step 8: Check RCA assessment quality ─────────────────────────────
     await page.waitForTimeout(10000);
 
