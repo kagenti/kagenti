@@ -17,6 +17,6 @@ quay.io/containers/buildah:v1.37.5
 quay.io/keycloak/keycloak:26.3.3
 ghcr.io/shipwright-io/build/shipwright-build-controller:v0.14.0
 ghcr.io/shipwright-io/build/shipwright-build-webhook:v0.14.0
-ghcr.io/kagenti/kagenti/ui-v2:v0.5.0-alpha.10
+ghcr.io/kagenti/kagenti/ui-v2:v0.5.0-alpha.11
 ghcr.io/kagenti/kagenti-operator/kagenti-operator:0.2.0-alpha.19
-ghcr.io/kagenti/kagenti/backend:v0.5.0-alpha.10
+ghcr.io/kagenti/kagenti/backend:v0.5.0-alpha.11
