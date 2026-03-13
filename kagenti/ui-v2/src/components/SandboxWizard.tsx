@@ -120,7 +120,7 @@ export const INITIAL_STATE: WizardState = {
   enableMlflow: true,
   model: 'llama-4-scout',
   forceToolChoice: true,
-  textToolParsing: true,
+  textToolParsing: false,
   debugPrompts: true,
   maxIterations: 100,
   maxTokens: 1000000,
