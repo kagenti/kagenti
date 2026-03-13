@@ -15,6 +15,7 @@ import { Badge, Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import type { AgentLoop, AgentLoopStep, MicroReasoning, NodeType } from '../types/agentLoop';
 import PromptInspector from './PromptInspector';
+import { FilePreviewModal } from './FilePreviewModal';
 
 // ---------------------------------------------------------------------------
 // Graph node badge
@@ -59,6 +60,8 @@ const NodeBadge: React.FC<{ nodeType: NodeType }> = ({ nodeType }) => {
 
 interface LoopDetailProps {
   loop: AgentLoop;
+  namespace?: string;
+  agentName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,12 +254,34 @@ function isToolResultError(output: string | undefined): boolean {
   return /\b(error|fail(ed|ure)?|denied|permission denied|not found|traceback|exception)\b/i.test(output);
 }
 
-/** One-line preview of tool output */
-function toolOutputPreview(output: string | undefined): string {
+/** One-line preview of tool output, with workspace paths as badges. */
+function toolOutputPreview(output: string | undefined): React.ReactNode {
   if (!output) return '(no output)';
-  const first = output.split('\n')[0].substring(0, 80);
+  const first = output.split('\n')[0].substring(0, 120);
   const hasError = isToolResultError(output);
-  return hasError ? `\u274c ${first}` : first;
+  const prefix = hasError ? '\u274c ' : '';
+
+  // Check for workspace paths in the preview text
+  const re = new RegExp(WORKSPACE_PATH_RE.source, 'g');
+  const match = re.exec(first);
+  if (match) {
+    const relPath = match[2];
+    const fileName = relPath.split('/').pop() || relPath;
+    const before = first.slice(0, match.index);
+    const after = first.slice(re.lastIndex, 80);
+    return (
+      <>
+        {prefix}{before}
+        <Badge isRead style={{ fontSize: '0.85em', verticalAlign: 'baseline' }} title={match[0]}>
+          📄 {fileName}
+        </Badge>
+        {after}
+      </>
+    );
+  }
+
+  const text = first.substring(0, 80);
+  return `${prefix}${text}`;
 }
 
 const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number]; hasResult?: boolean; resultError?: boolean }> = ({ call, hasResult, resultError }) => {
@@ -317,40 +342,43 @@ const statusIcon = (status?: string) => {
   }
 };
 
-/** Regex to detect workspace file paths in tool output. */
-const WORKSPACE_PATH_RE = /\/workspace\/[a-f0-9-]+\/((?:output|repos|data|scripts)\/[^\s"']+)/g;
+/** Regex to detect workspace file paths in tool output.
+ *  Captures: group 0 = full path, group 1 = context_id, group 2 = relative path */
+const WORKSPACE_PATH_RE = /\/workspace\/([a-f0-9]+)\/((?:output|repos|data|scripts)\/[^\s"']+)/g;
 
-/** Render tool output with workspace paths highlighted as file links. */
-function renderOutputWithFileLinks(output: string): React.ReactNode {
+/** Render tool output with workspace paths as clickable badges. */
+function renderOutputWithFileLinks(
+  output: string,
+  onFileClick?: (relPath: string, contextId: string) => void,
+): React.ReactNode {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
   const re = new RegExp(WORKSPACE_PATH_RE.source, 'g');
+  let match: RegExpExecArray | null;
   let keyIdx = 0;
   while ((match = re.exec(output)) !== null) {
     if (match.index > lastIndex) {
       parts.push(output.slice(lastIndex, match.index));
     }
-    const fullPath = match[0];
-    const relPath = match[1];
+    const contextId = match[1];
+    const relPath = match[2];
+    const fileName = relPath.split('/').pop() || relPath;
     parts.push(
-      <span
+      <Badge
         key={`flink-${keyIdx++}`}
         data-testid="workspace-file-link"
-        title={`File: ${relPath}\n(click to copy path)`}
         style={{
-          color: '#58a6ff',
-          textDecoration: 'underline',
           cursor: 'pointer',
-          fontWeight: 500,
+          fontSize: '0.85em',
+          verticalAlign: 'baseline',
         }}
-        onClick={(e) => {
+        onClick={(e: React.MouseEvent) => {
           e.stopPropagation();
-          navigator.clipboard.writeText(relPath);
+          onFileClick?.(relPath, contextId);
         }}
       >
-        {fullPath}
-      </span>
+        📄 {fileName}
+      </Badge>
     );
     lastIndex = re.lastIndex;
   }
@@ -361,11 +389,23 @@ function renderOutputWithFileLinks(output: string): React.ReactNode {
   return <>{parts}</>;
 }
 
-const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }> = ({ result }) => {
+interface ToolResultBlockProps {
+  result: AgentLoopStep['toolResults'][number];
+  namespace?: string;
+  agentName?: string;
+}
+
+const ToolResultBlock: React.FC<ToolResultBlockProps> = ({ result, namespace, agentName }) => {
   const [expanded, setExpanded] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ path: string; contextId: string } | null>(null);
 
   const preview = toolOutputPreview(result.output);
   const hasError = result.status === 'error' || isToolResultError(result.output);
+
+  const handleFileClick = (relPath: string, contextId: string) => {
+    setPreviewFile({ path: relPath, contextId });
+  };
+
   return (
     <div
       style={{
@@ -401,8 +441,18 @@ const ToolResultBlock: React.FC<{ result: AgentLoopStep['toolResults'][number] }
             maxHeight: 200,
           }}
         >
-          {renderOutputWithFileLinks(result.output || '(no output)')}
+          {renderOutputWithFileLinks(result.output || '(no output)', namespace ? handleFileClick : undefined)}
         </pre>
+      )}
+      {previewFile && namespace && agentName && (
+        <FilePreviewModal
+          filePath={previewFile.path}
+          namespace={namespace}
+          agentName={agentName}
+          contextId={previewFile.contextId}
+          isOpen={!!previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
       )}
     </div>
   );
@@ -439,7 +489,7 @@ function formatStepTokens(step: AgentLoopStep): string {
   return String(total);
 }
 
-const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentStep?: number; loopModel?: string; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopCurrentStep, loopModel, onOpenInspector }) => {
+const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentStep?: number; loopModel?: string; namespace?: string; agentName?: string; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopCurrentStep, loopModel, namespace, agentName, onOpenInspector }) => {
   const showModelBadge = step.model && step.model !== loopModel;
 
   return (
@@ -625,7 +675,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
               )}
               <div style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
                 <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
-                {matchedResult && <ToolResultBlock result={matchedResult} />}
+                {matchedResult && <ToolResultBlock result={matchedResult} namespace={namespace} agentName={agentName} />}
               </div>
             </React.Fragment>
           );
@@ -633,7 +683,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
       })()}
       {/* Orphan results (no matching call) */}
       {step.toolResults.filter((_tr, idx) => idx >= step.toolCalls.length).map((tr, i) => (
-        <ToolResultBlock key={`orphan-result-${i}`} result={tr} />
+        <ToolResultBlock key={`orphan-result-${i}`} result={tr} namespace={namespace} agentName={agentName} />
       ))}
     </div>
   );
@@ -676,7 +726,7 @@ const ReplanSection: React.FC<{ replans: AgentLoop['replans'] }> = ({ replans })
 // Main export
 // ---------------------------------------------------------------------------
 
-export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
+export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentName }) => {
   const [inspectorData, setInspectorData] = useState<{
     isOpen: boolean;
     title: string;
@@ -716,7 +766,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop }) => {
       <ReplanSection replans={loop.replans} />
 
       {loop.steps.map((step) => (
-        <StepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} onOpenInspector={openInspector} />
+        <StepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} namespace={namespace} agentName={agentName} onOpenInspector={openInspector} />
       ))}
 
       {/* Streaming indicator — shows when agent is still working */}

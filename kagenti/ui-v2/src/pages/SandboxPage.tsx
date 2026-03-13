@@ -2229,6 +2229,8 @@ export const SandboxPage: React.FC = () => {
                           key={loopArray[idx].id}
                           loop={loopArray[idx]}
                           isStreaming={isStreaming && idx === loopArray.length - 1}
+                          namespace={namespace}
+                          agentName={selectedAgent}
                         />
                       )}
                     </React.Fragment>,
@@ -2239,7 +2241,7 @@ export const SandboxPage: React.FC = () => {
                 // (e.g. during live streaming when the loop is the latest item)
                 loopArray.slice(turns.length).forEach((loop) => {
                   elements.push(
-                    <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} />,
+                    <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} namespace={namespace} agentName={selectedAgent} />,
                   );
                 });
 

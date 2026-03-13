@@ -47,7 +47,7 @@ function borderColor(status: AgentLoop['status']): string {
   }
 }
 
-export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming = false }) => {
+export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming = false, namespace, agentName }) => {
   const [expanded, setExpanded] = useState(false);
   const wasStreaming = useRef(false);
 
@@ -160,6 +160,33 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
           ) : null;
         })()}
 
+        {/* Plan summary — always visible (collapsed or expanded) */}
+        {loop.plan.length > 0 && (
+          <div style={{ fontSize: '0.82em', marginBottom: 6, color: 'var(--pf-v5-global--Color--200)' }}>
+            <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+              {loop.plan.map((step, i) => {
+                const isDone = loop.status === 'done' || i < loop.currentStep;
+                const isCurrent = i === loop.currentStep && loop.status !== 'done';
+                return (
+                  <li key={i} style={{
+                    color: isDone ? 'var(--pf-v5-global--success-color--100)' : isCurrent ? 'var(--pf-v5-global--info-color--100)' : undefined,
+                    fontWeight: isCurrent ? 600 : 400,
+                  }}>
+                    {step}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+
+        {/* Status bar — always visible */}
+        <LoopSummaryBar
+          loop={loop}
+          expanded={expanded}
+          onToggle={() => setExpanded((prev) => !prev)}
+        />
+
         {/* Reasoning toggle */}
         <div
           onClick={() => setExpanded((prev) => !prev)}
@@ -185,12 +212,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
         {/* Expanded reasoning details */}
         {expanded && (
           <div style={{ marginTop: 4 }}>
-            <LoopSummaryBar
-              loop={loop}
-              expanded={expanded}
-              onToggle={() => setExpanded((prev) => !prev)}
-            />
-            <LoopDetail loop={loop} />
+            <LoopDetail loop={loop} namespace={namespace} agentName={agentName} />
           </div>
         )}
       </div>
