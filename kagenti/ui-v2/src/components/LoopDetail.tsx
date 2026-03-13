@@ -652,6 +652,137 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
 };
 
 // ---------------------------------------------------------------------------
+// Collapsible step wrapper — groups each step as a collapsible section
+// ---------------------------------------------------------------------------
+
+/** Compute summary counts for tool calls in a step. */
+function stepSummary(step: AgentLoopStep): { total: number; success: number; errors: number } {
+  const total = step.toolCalls.length;
+  let errors = 0;
+  let success = 0;
+  for (const tr of step.toolResults) {
+    if (tr.status === 'error' || isToolResultError(tr.output)) {
+      errors++;
+    } else {
+      success++;
+    }
+  }
+  // Results not yet received count as neither success nor error
+  return { total, success, errors };
+}
+
+const CollapsibleStepSection: React.FC<{
+  step: AgentLoopStep;
+  total: number;
+  loopCurrentStep?: number;
+  loopModel?: string;
+  namespace?: string;
+  agentName?: string;
+  onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void;
+}> = ({ step, total, loopCurrentStep, loopModel, namespace, agentName, onOpenInspector }) => {
+  const [expanded, setExpanded] = useState(false);
+  const nt = inferNodeType(step);
+  const info = NODE_COLORS[nt];
+  const { total: tcTotal, success, errors } = stepSummary(step);
+  const hasMicro = (step.microReasonings || []).length > 0;
+
+  // Build summary text
+  const summaryParts: string[] = [];
+  if (tcTotal > 0) {
+    summaryParts.push(`${tcTotal} tool call${tcTotal !== 1 ? 's' : ''}`);
+    if (success > 0) summaryParts.push(`${success} success`);
+    if (errors > 0) summaryParts.push(`${errors} error${errors !== 1 ? 's' : ''}`);
+  }
+  if (hasMicro) {
+    summaryParts.push(`${step.microReasonings!.length} reasoning`);
+  }
+  if (step.reasoning) {
+    summaryParts.push('reasoning');
+  }
+  const summaryText = summaryParts.join(', ');
+
+  return (
+    <div style={{ marginBottom: 6 }}>
+      {/* Collapsible header — shifted left for visual hierarchy */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 8px',
+          marginLeft: -6,
+          marginRight: -2,
+          borderRadius: 4,
+          cursor: 'pointer',
+          userSelect: 'none',
+          fontSize: '0.84em',
+          fontWeight: 600,
+          color: 'var(--pf-v5-global--Color--100)',
+          backgroundColor: expanded ? 'var(--pf-v5-global--BackgroundColor--200)' : 'transparent',
+          transition: 'background-color 0.15s',
+        }}
+        data-testid="collapsible-step-header"
+      >
+        <span style={{ fontSize: '0.85em', width: 14, textAlign: 'center', flexShrink: 0 }}>
+          {expanded ? '\u25bc' : '\u25b6'}
+        </span>
+        {/* Index badge */}
+        {step.index != null && (
+          <Badge isRead style={{ fontSize: '0.82em', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>
+            {step.index}
+          </Badge>
+        )}
+        {/* Node type badge */}
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '1px 6px',
+            borderRadius: 3,
+            fontSize: '0.78em',
+            fontWeight: 600,
+            color: '#fff',
+            backgroundColor: info.bg,
+            lineHeight: 1.5,
+          }}
+        >
+          {info.label}
+        </span>
+        {/* Status icon */}
+        <StepStatusIcon status={step.status} />
+        {/* Summary counts */}
+        {summaryText && (
+          <span style={{ fontWeight: 400, fontSize: '0.88em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 4 }}>
+            {summaryText}
+          </span>
+        )}
+        {/* Error count badge */}
+        {errors > 0 && (
+          <Badge style={{ fontSize: '0.78em', backgroundColor: 'var(--pf-v5-global--danger-color--100)', color: '#fff' }}>
+            {errors} err
+          </Badge>
+        )}
+      </div>
+
+      {/* Expanded content — sub-items indented relative to header */}
+      {expanded && (
+        <div style={{ marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+          <StepSection
+            step={step}
+            total={total}
+            loopCurrentStep={loopCurrentStep}
+            loopModel={loopModel}
+            namespace={namespace}
+            agentName={agentName}
+            onOpenInspector={onOpenInspector}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Replan section (expandable, shows revised plans after reflector triggers replan)
 // ---------------------------------------------------------------------------
 
@@ -728,7 +859,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentNa
       <ReplanSection replans={loop.replans} />
 
       {loop.steps.map((step) => (
-        <StepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} namespace={namespace} agentName={agentName} onOpenInspector={openInspector} />
+        <CollapsibleStepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} namespace={namespace} agentName={agentName} onOpenInspector={openInspector} />
       ))}
 
       {/* Streaming indicator — shows when agent is still working */}
