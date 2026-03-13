@@ -105,19 +105,24 @@ async function sendMessage(page: Page, message: string) {
 }
 
 async function waitForResponse(page: Page, timeoutMs = 120000) {
-  console.log(`[budget] waitForResponse: waiting for chat input to be enabled (timeout=${timeoutMs}ms)`);
-  const chatInput = page.getByPlaceholder(/Type your message/i);
-  await expect(chatInput).toBeEnabled({ timeout: timeoutMs });
-  await page.waitForTimeout(3000); // Let UI settle and loop events arrive
+  console.log(`[budget] waitForResponse: waiting for loop card done (timeout=${timeoutMs}ms)`);
 
-  // Verify we're in a session (URL should have session= param)
+  // Wait for loop card to appear and reach done/failed state
+  const loopCards = page.locator('[data-testid="agent-loop-card"]');
+  await expect(loopCards.last()).toBeVisible({ timeout: 30000 });
+  const activeStatuses = loopCards.last().locator('text=/planning|executing|reflecting/');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const count = await activeStatuses.count();
+    if (count === 0) break;
+    await page.waitForTimeout(2000);
+  }
+  await page.waitForTimeout(2000);
+
+  // Verify we're in a session
   const url = page.url();
   const hasSession = url.includes('session=');
   console.log(`[budget] waitForResponse: URL has session=${hasSession}, url=${url.substring(0, 150)}`);
-
-  // Count messages visible in chat
-  const msgCount = await page.locator('[data-testid="chat-messages"] [class*="message"]').count();
-  console.log(`[budget] waitForResponse: ${msgCount} messages visible in chat`);
 }
 
 async function switchToStatsTab(page: Page) {

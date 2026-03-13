@@ -159,6 +159,16 @@ function getSessionIdFromUrl(page: Page): string {
   return new URL(page.url()).searchParams.get('session') || '';
 }
 
+async function waitForSessionIdInUrl(page: Page, timeoutMs = 15000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const sid = getSessionIdFromUrl(page);
+    if (sid) return sid;
+    await page.waitForTimeout(500);
+  }
+  return '';
+}
+
 // ===========================================================================
 // TESTS
 // ===========================================================================
@@ -198,7 +208,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
       page,
       `Say exactly: ${SESSION_A_MARKER}-turn1`
     );
-    const sessionAId = getSessionIdFromUrl(page);
+    const sessionAId = await waitForSessionIdInUrl(page);
     expect(sessionAId).toBeTruthy();
     await snap(page, 'session-a-turn1');
 
@@ -272,7 +282,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
       page,
       `Say exactly: ${SESSION_B_MARKER}-turn1`
     );
-    const sessionBId = getSessionIdFromUrl(page);
+    const sessionBId = await waitForSessionIdInUrl(page);
     expect(sessionBId).toBeTruthy();
     expect(sessionBId).not.toBe(sessionAId); // Different session
     await snap(page, 'session-b-turn1');
