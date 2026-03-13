@@ -20,6 +20,7 @@ export interface LoopEvent {
   type: string;
   loop_id: string;
   step?: number;
+  event_index?: number;
   total_steps?: number;
   steps?: string[];
   description?: string;
@@ -111,9 +112,11 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   if (le.plan_step != null && le.current_step == null) {
     le.current_step = le.plan_step;
   }
-  // Track highest node visit index (global recursion counter)
-  if (le.step != null && le.step > loop.nodeVisits) {
-    loop = { ...loop, nodeVisits: le.step };
+  // Track highest node visit index (global recursion counter).
+  // Prefer event_index (chronological counter) over step (plan step).
+  const visitIdx = le.event_index ?? le.step;
+  if (visitIdx != null && visitIdx > loop.nodeVisits) {
+    loop = { ...loop, nodeVisits: visitIdx };
   }
   const eventType = le.type;
 
