@@ -451,13 +451,13 @@ function formatStepTokens(step: AgentLoopStep): string {
   return String(total);
 }
 
-const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentStep?: number; loopModel?: string; namespace?: string; agentName?: string; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopCurrentStep, loopModel, namespace, agentName, onOpenInspector }) => {
+const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentStep?: number; loopModel?: string; namespace?: string; agentName?: string; hideHeader?: boolean; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopCurrentStep, loopModel, namespace, agentName, hideHeader, onOpenInspector }) => {
   const showModelBadge = step.model && step.model !== loopModel;
 
   return (
     <div style={{ marginBottom: 10 }}>
-      {/* Step header */}
-      <div
+      {/* Step header — hidden when rendered inside CollapsibleStepSection */}
+      {!hideHeader && <div
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -552,7 +552,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
             Prompt
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Prompt — system prompt + messages sent to LLM */}
       <PromptBlock systemPrompt={step.systemPrompt} promptMessages={step.promptMessages} onOpenInspector={onOpenInspector} />
@@ -733,6 +733,12 @@ const CollapsibleStepSection: React.FC<{
             {step.index}
           </Badge>
         )}
+        {/* Step number badge (blue, for executor steps) */}
+        {nt === 'executor' && (step.planStep ?? loopCurrentStep) != null && (
+          <Badge style={{ fontSize: '0.78em' }}>
+            Step {((step.planStep ?? loopCurrentStep)! + 1)}{total > 0 ? `/${total}` : ''}
+          </Badge>
+        )}
         {/* Node type badge */}
         <span
           style={{
@@ -774,6 +780,7 @@ const CollapsibleStepSection: React.FC<{
             loopModel={loopModel}
             namespace={namespace}
             agentName={agentName}
+            hideHeader
             onOpenInspector={onOpenInspector}
           />
         </div>
