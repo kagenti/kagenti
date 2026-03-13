@@ -62,7 +62,7 @@ metadata:
     {{- include "kagenti.labels" $root | nindent 4 }}
 type: kubernetes.io/dockerconfigjson
 data:
-  .dockerconfigjson: {{ (printf "{\"auths\":{\"ghcr.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.githubUser $.Values.secrets.githubToken (printf "%s:%s" $.Values.secrets.githubUser $.Values.secrets.githubToken | b64enc)) | b64enc }}
+  .dockerconfigjson: {{ dict "auths" (dict "ghcr.io" (dict "username" $.Values.secrets.githubUser "password" $.Values.secrets.githubToken "auth" (printf "%s:%s" $.Values.secrets.githubUser $.Values.secrets.githubToken | b64enc))) | toJson | b64enc }}
 ---
 {{ end }}
 # 4. OpenAI API Key Secret

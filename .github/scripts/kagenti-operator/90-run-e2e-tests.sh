@@ -20,8 +20,18 @@ cd "$REPO_ROOT/kagenti"
 export AGENT_URL="${AGENT_URL:-http://localhost:8000}"
 export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/dev_values.yaml}"
 
+# Auto-detect Keycloak URL on OpenShift (via route) if not already set
+if [ -z "${KEYCLOAK_URL:-}" ] && [ "$IS_OPENSHIFT" = "true" ]; then
+    KC_HOST=$(oc get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$KC_HOST" ]; then
+        export KEYCLOAK_URL="https://$KC_HOST"
+        log_info "Auto-detected KEYCLOAK_URL: $KEYCLOAK_URL"
+    fi
+fi
+
 echo "AGENT_URL: $AGENT_URL"
 echo "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+echo "KEYCLOAK_URL: ${KEYCLOAK_URL:-not set (default: localhost:8081)}"
 
 mkdir -p "$REPO_ROOT/test-results"
 
