@@ -457,7 +457,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
         }}
       >
         {/* Index badge (event_index) */}
-        {step.index != null && <Badge isRead data-testid="step-visit-badge" style={{ marginRight: 4 }}>{step.index}</Badge>}
+        {step.index != null && <Badge isRead data-testid="step-visit-badge" style={{ marginRight: 4, backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>{step.index}</Badge>}
         {/* Node type + step badge with description as hover title */}
         {(() => {
           const nt = inferNodeType(step);
