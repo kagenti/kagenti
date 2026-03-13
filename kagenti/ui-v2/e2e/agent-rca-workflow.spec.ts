@@ -163,6 +163,16 @@ test.describe('Agent RCA Workflow', () => {
       .or(page.locator('.sandbox-markdown'))
       .or(page.locator('text=/Tool Call:|Result:/i'));
     await expect(agentOutput.first()).toBeVisible({ timeout: 180000 }); // 3 min for LLM
+    console.log('[rca] First agent output visible — waiting for loop completion');
+
+    // Wait for agent loop to FINISH before inspecting or navigating.
+    // The input textarea is disabled during streaming and re-enabled when done.
+    // This prevents the SSE stream from being killed by early navigation.
+    const inputEnabled = page.locator('textarea[aria-label="Message input"]:not([disabled])');
+    await expect(inputEnabled).toBeVisible({ timeout: 300000 }); // 5 min for full loop
+    console.log('[rca] Input re-enabled — agent loop complete');
+    // Extra buffer for final events to flush to DB
+    await page.waitForTimeout(3000);
 
     const mdCount = await page.locator('.sandbox-markdown').count();
     const toolCount = await page.locator('text=/Tool Call:|Result:.*tool/i').count();
@@ -177,10 +187,6 @@ test.describe('Agent RCA Workflow', () => {
     );
     const hasModelBadge = await modelBadge.first().isVisible({ timeout: 5000 }).catch(() => false);
     console.log(`[rca] Model badge visible: ${hasModelBadge}`);
-
-    // ── Graph node badges + loop iteration assertion ──────────────────
-    // Wait for streaming to complete fully before inspecting loop cards
-    await page.waitForTimeout(5000);
 
     const loopCards = page.locator('[data-testid="agent-loop-card"]');
     const loopCardCount = await loopCards.count();
