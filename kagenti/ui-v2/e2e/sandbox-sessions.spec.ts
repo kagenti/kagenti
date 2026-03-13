@@ -98,8 +98,10 @@ async function sendAndWaitForResponse(
   // We detect completion by: no more Spinner elements AND input is re-enabled
   await expect(chatInput).toBeEnabled({ timeout });
 
-  // Give rendering a moment to settle
-  await page.waitForTimeout(1000);
+  // Wait for loop card to finish rendering + URL to update with session ID
+  const loopCard = page.locator('[data-testid="agent-loop-card"]').last();
+  await loopCard.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(3000);
 
   // Get the last assistant message content
   // Agent responses can be in ChatBubble (.sandbox-markdown) or AgentLoopCard
