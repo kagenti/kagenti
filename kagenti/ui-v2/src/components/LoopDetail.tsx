@@ -11,7 +11,7 @@
  */
 
 import React, { useState } from 'react';
-import { Spinner } from '@patternfly/react-core';
+import { Badge, Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import type { AgentLoop, AgentLoopStep, MicroReasoning, NodeType } from '../types/agentLoop';
 import PromptInspector from './PromptInspector';
@@ -462,19 +462,17 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
           if (nt === 'planner' || nt === 'replanner') return step.description;
           if (nt === 'reflector') return step.description;
           if (nt === 'reporter') return 'Final answer';
-          // Executor: Step X [N] where X=plan step, N=global node visit
+          // Executor: Step X with badge for global node visit index
           const planStep = step.planStep ?? loopCurrentStep;
-          const visitNum = step.index != null ? `[${step.index}]` : '';
           const stepLabel = planStep != null
-            ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''} ${visitNum}`.trim()
-            : visitNum || '';
+            ? `Step ${planStep + 1}${total > 0 ? `/${total}` : ''}`
+            : '';
           // Strip redundant "Step N:" prefix from description (agent may include it)
           let desc = step.description || '';
           desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
           if (desc === 'Tool execution') desc = '';
-          if (stepLabel && desc) return `${stepLabel}: ${desc}`;
-          if (stepLabel) return stepLabel;
-          return desc || 'Executing';
+          const textPart = stepLabel && desc ? `${stepLabel}: ${desc}` : stepLabel || desc || 'Executing';
+          return <>{textPart}{step.index != null && <>{' '}<Badge isRead data-testid="step-visit-badge">{step.index}</Badge></>}</>;
         })()}
         {showModelBadge && (
           <span
