@@ -25,7 +25,8 @@ if [ -z "${KEYCLOAK_URL:-}" ] && [ "$IS_OPENSHIFT" = "true" ]; then
     KC_HOST=$(oc get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$KC_HOST" ]; then
         export KEYCLOAK_URL="https://$KC_HOST"
-        log_info "Auto-detected KEYCLOAK_URL: $KEYCLOAK_URL"
+        export KEYCLOAK_VERIFY_SSL="${KEYCLOAK_VERIFY_SSL:-false}"
+        log_info "Auto-detected KEYCLOAK_URL: $KEYCLOAK_URL (verify_ssl=$KEYCLOAK_VERIFY_SSL)"
     fi
 fi
 
