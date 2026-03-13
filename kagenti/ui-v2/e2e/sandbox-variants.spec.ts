@@ -81,15 +81,15 @@ async function sendAndWait(
   // Verify user message appears
   await expect(page.getByText(message).first()).toBeVisible({ timeout: 5000 });
 
-  // Wait for agent to finish
-  await expect(chatInput).toBeEnabled({ timeout });
-
-  // Wait for loop card to finish rendering (final answer or done status)
+  // Wait for agent to finish — loop card must reach done/failed state
+  // (chatInput.toBeEnabled() fires too early while loop is still executing)
   const loopCard = page.locator('[data-testid="agent-loop-card"]').last();
-  await expect(loopCard).toBeVisible({ timeout: 10000 });
-  // Wait for the loop card to show a final answer or done state
-  // (the card border turns green when done)
-  await page.waitForTimeout(3000);
+  await expect(loopCard).toBeVisible({ timeout: 30000 });
+  // Wait for the loop card border to turn green (done) or red (failed)
+  // by checking that the "executing" / "planning" status text disappears
+  await expect(loopCard.locator('text=executing')).toBeHidden({ timeout });
+  await expect(loopCard.locator('text=planning')).toBeHidden({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 
   // Get response content
   const chatArea = page.getByTestId('chat-messages');

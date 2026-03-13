@@ -94,14 +94,12 @@ async function sendAndWaitForResponse(
   // Verify user message appears immediately
   await expect(page.getByText(message).first()).toBeVisible({ timeout: 5000 });
 
-  // Wait for agent to finish — spinner disappears OR new assistant bubble appears
-  // We detect completion by: no more Spinner elements AND input is re-enabled
-  await expect(chatInput).toBeEnabled({ timeout });
-
-  // Wait for loop card to finish rendering + URL to update with session ID
+  // Wait for agent to finish — loop card must reach done/failed state
   const loopCard = page.locator('[data-testid="agent-loop-card"]').last();
-  await loopCard.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
-  await page.waitForTimeout(3000);
+  await expect(loopCard).toBeVisible({ timeout: 30000 });
+  await expect(loopCard.locator('text=executing')).toBeHidden({ timeout });
+  await expect(loopCard.locator('text=planning')).toBeHidden({ timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(2000);
 
   // Get the last assistant message content
   // Agent responses can be in ChatBubble (.sandbox-markdown) or AgentLoopCard
