@@ -53,6 +53,22 @@ export interface AgentLoop {
   };
 }
 
+export interface ThinkingIteration {
+  type: 'thinking';
+  loop_id: string;
+  iteration: number;
+  total_iterations: number;
+  reasoning: string;
+  node?: string;
+  model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  system_prompt?: string;
+  prompt_messages?: Array<{ role: string; preview: string }>;
+  bound_tools?: Array<{ name: string; description?: string }>;
+  llm_response?: unknown;
+}
+
 export interface MicroReasoning {
   type: 'micro_reasoning';
   loop_id: string;
@@ -67,6 +83,8 @@ export interface MicroReasoning {
   prompt_messages?: Array<{ role: string; preview: string }>;
   bound_tools?: Array<{ name: string; description?: string }>;
   after_call_id?: string;
+  /** Number of thinking iterations that preceded this micro-reasoning. */
+  thinking_count?: number;
 }
 
 export interface PromptMessage {
@@ -103,4 +121,6 @@ export interface AgentLoopStep {
   updatedAt?: string;
   /** Micro-reasoning entries between tool calls within this step. */
   microReasonings?: MicroReasoning[];
+  /** Thinking iterations that preceded each micro-reasoning. */
+  thinkings?: ThinkingIteration[];
 }

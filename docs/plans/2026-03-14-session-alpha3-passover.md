@@ -336,3 +336,52 @@ tool_choice="auto" (explicit):   0% structured on vLLM Llama 4 Scout
 implicit auto (omitted):         0% structured on vLLM Llama 4 Scout
 bare LLM (no tools):             100% text (forced, no tools to call)
 ```
+
+## Research: A2A Message Queuing & Task Cancellation
+
+### Current A2A Task Lifecycle
+```
+Client → POST /tasks/sendSubscribe (SSE) → Agent processes → streams events → final status
+```
+Each `tasks/send` or `tasks/sendSubscribe` is independent. A2A has NO built-in
+message queuing that blocks until a previous task completes.
+
+### Task Cancellation (A2A spec)
+The A2A protocol defines `POST /tasks/cancel` with `{"id": "<task_id>"}`.
+The agent SHOULD set `task.status.state = "canceled"` and stop work.
+
+Our sandbox agent uses LangGraph's `astream()` — cancellation requires:
+1. Backend receives cancel request
+2. Backend signals the agent (e.g., sets a flag in the task store or cancels the SSE connection)
+3. Agent checks for cancellation between LLM calls / tool executions
+4. Agent emits a final `status_update` with `state: "canceled"`
+
+### Pattern 1: Cancel + New (Recommended First)
+```
+User clicks cancel → UI sends POST /api/sandbox/tasks/{id}/cancel
+→ Backend cancels SSE connection to agent
+→ Agent detects broken pipe, cleans up
+→ UI sends new message via POST /api/sandbox/tasks/sendSubscribe
+```
+**Pros:** Simple, matches ChatGPT/Claude UX, no queuing needed.
+**Cons:** Loses in-progress work. Agent must handle abrupt cancellation gracefully.
+
+### Pattern 2: Message Queuing (Future)
+```
+User sends message while task running → queued in backend
+→ Current task finishes → backend sends queued message
+→ Agent processes next message with full context
+```
+**Pros:** No lost work, natural conversation flow.
+**Cons:** More complex, needs queue persistence, user may wait a long time.
+
+### Implementation Plan
+1. **Cancel button (P1):** Add cancel button to running agent loop card.
+   - UI: button with confirmation popup
+   - Backend: `POST /api/sandbox/tasks/{task_id}/cancel` endpoint
+   - Agent: graceful cancellation (check flag between tool calls)
+
+2. **Message queuing (P2):** Queue messages when task is running.
+   - Backend holds pending messages in session state
+   - Auto-send after current task completes or is canceled
+   - UI shows "queued" indicator on pending messages

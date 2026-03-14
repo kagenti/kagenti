@@ -17,7 +17,7 @@ import {
   Modal,
   ModalVariant,
 } from '@patternfly/react-core';
-import { PaperPlaneIcon, UserIcon, RobotIcon, FileIcon, ShieldAltIcon, CogIcon } from '@patternfly/react-icons';
+import { PaperPlaneIcon, UserIcon, RobotIcon, FileIcon, ShieldAltIcon, CogIcon, StopCircleIcon } from '@patternfly/react-icons';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -2308,14 +2308,26 @@ export const SandboxPage: React.FC = () => {
               />
             </SplitItem>
             <SplitItem>
-              <Button
-                variant="primary"
-                onClick={handleSendMessage}
-                isDisabled={!input.trim()}
-                icon={<PaperPlaneIcon />}
-              >
-                Send
-              </Button>
+              {isStreaming ? (
+                <Button
+                  variant="danger"
+                  onClick={cancelCurrentLoop}
+                  icon={<StopCircleIcon />}
+                  data-testid="cancel-button"
+                >
+                  Cancel
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={handleSendMessage}
+                  isDisabled={!input.trim()}
+                  icon={<PaperPlaneIcon />}
+                  data-testid="send-button"
+                >
+                  Send
+                </Button>
+              )}
             </SplitItem>
           </Split>
 

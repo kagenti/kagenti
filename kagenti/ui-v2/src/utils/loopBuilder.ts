@@ -9,7 +9,7 @@
  * had its own ~150-line event-handling chain, which drifted over time.
  */
 
-import type { AgentLoop, AgentLoopStep, MicroReasoning } from '../types/agentLoop';
+import type { AgentLoop, AgentLoopStep, MicroReasoning, ThinkingIteration } from '../types/agentLoop';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -66,6 +66,14 @@ export interface LoopEvent {
   after_call_id?: string;
   /** Step selector brief for the executor */
   brief?: string;
+  /** Thinking iteration: total iterations in this thinking loop */
+  total_iterations?: number;
+  /** Thinking iteration: node name */
+  node?: string;
+  /** LLM response data for prompt inspector */
+  llm_response?: unknown;
+  /** Number of thinking iterations that preceded this micro-reasoning */
+  thinking_count?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,8 +133,9 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   // Only process known event types — ignore legacy/unknown types from old sessions
   const KNOWN_TYPES = new Set([
     'router', 'planner_output', 'replanner_output', 'executor_step',
-    'tool_call', 'tool_result', 'micro_reasoning', 'reflector_decision',
-    'reporter_output', 'step_selector', 'budget', 'budget_update',
+    'tool_call', 'tool_result', 'micro_reasoning', 'thinking',
+    'reflector_decision', 'reporter_output', 'step_selector',
+    'budget', 'budget_update',
   ]);
   if (!KNOWN_TYPES.has(eventType)) {
     return loop;
@@ -370,6 +379,31 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     };
   }
 
+  if (eventType === 'thinking') {
+    const { steps, step } = findOrCreateStep(loop.steps, nv, {
+      planStep: le.current_step ?? loop.currentStep,
+      description: 'Tool execution',
+      nodeType: 'executor',
+    });
+    const ti: ThinkingIteration = {
+      type: 'thinking',
+      loop_id: le.loop_id,
+      iteration: le.iteration ?? 1,
+      total_iterations: le.total_iterations ?? 1,
+      reasoning: le.reasoning || '',
+      node: le.node,
+      model: le.model,
+      prompt_tokens: le.prompt_tokens,
+      completion_tokens: le.completion_tokens,
+      system_prompt: le.system_prompt,
+      prompt_messages: le.prompt_messages,
+      bound_tools: le.bound_tools,
+      llm_response: le.llm_response,
+    };
+    step.thinkings = [...(step.thinkings || []), ti];
+    return { ...loop, steps };
+  }
+
   if (eventType === 'micro_reasoning') {
     const { steps, step } = findOrCreateStep(loop.steps, nv, {
       planStep: le.current_step ?? loop.currentStep,
@@ -390,6 +424,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       prompt_messages: le.prompt_messages,
       bound_tools: le.bound_tools,
       after_call_id: le.after_call_id,
+      thinking_count: le.thinking_count,
     };
     step.microReasonings = [...(step.microReasonings || []), mr];
     return { ...loop, steps };

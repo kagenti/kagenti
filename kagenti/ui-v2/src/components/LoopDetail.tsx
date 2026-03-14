@@ -13,7 +13,7 @@
 import React, { useState } from 'react';
 import { Badge, Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
-import type { AgentLoop, AgentLoopStep, MicroReasoning, NodeType } from '../types/agentLoop';
+import type { AgentLoop, AgentLoopStep, MicroReasoning, ThinkingIteration, NodeType } from '../types/agentLoop';
 import PromptInspector from './PromptInspector';
 import { FilePreviewModal } from './FilePreviewModal';
 
@@ -174,6 +174,97 @@ const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
           {reasoning}
         </pre>
       )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Thinking block — collapsible list of thinking iterations
+// ---------------------------------------------------------------------------
+
+const ThinkingBlock: React.FC<{
+  thinkings: ThinkingIteration[];
+  onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning | ThinkingIteration) => void;
+}> = ({ thinkings, onOpenInspector }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!thinkings || thinkings.length === 0) return null;
+
+  const totalTokens = thinkings.reduce(
+    (sum, t) => sum + (t.prompt_tokens || 0) + (t.completion_tokens || 0), 0,
+  );
+  const lastThinking = thinkings[thinkings.length - 1];
+  const summary = lastThinking.reasoning?.substring(0, 150) || '';
+
+  return (
+    <div
+      style={{
+        margin: '6px 0', padding: '8px 12px',
+        backgroundColor: '#1a1a2e', borderRadius: '4px',
+        borderLeft: '3px solid #b388ff', fontSize: '13px',
+      }}
+    >
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setExpanded(!expanded)}
+        data-testid="thinking-header"
+      >
+        <span style={{ color: '#b388ff', fontWeight: 'bold', fontSize: '12px', userSelect: 'text' }}>
+          {expanded ? '\u25bc' : '\u25b6'} Thinking
+          <span style={{ color: '#888', fontWeight: 'normal', marginLeft: '8px', fontSize: '11px' }}>
+            · {thinkings.length} iteration{thinkings.length !== 1 ? 's' : ''} · {totalTokens.toLocaleString()} tokens
+          </span>
+        </span>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {lastThinking.model && (
+            <span style={{ fontSize: '11px', color: '#666' }}>{lastThinking.model}</span>
+          )}
+        </div>
+      </div>
+
+      {!expanded && summary && (
+        <p style={{ margin: '4px 0 0', color: '#999', fontSize: '12px', fontStyle: 'italic' }}>
+          &quot;{summary}{summary.length >= 150 ? '...' : ''}&quot;
+        </p>
+      )}
+
+      {expanded && thinkings.map((t, idx) => (
+        <div
+          key={idx}
+          style={{
+            margin: '4px 0', padding: '6px 10px',
+            background: '#12122a', borderRadius: '3px',
+            borderLeft: '2px solid rgba(179, 136, 255, 0.3)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+            <span style={{ color: '#b388ff', fontWeight: 600, opacity: 0.8 }}>
+              Thinking {t.iteration}
+            </span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ color: '#666', fontSize: '11px' }}>
+                {((t.prompt_tokens || 0) + (t.completion_tokens || 0)).toLocaleString()} tokens
+              </span>
+              {onOpenInspector && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpenInspector(`Thinking ${t.iteration}`, t); }}
+                  style={{
+                    background: 'none', border: '1px solid #555', color: '#888',
+                    fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
+                  }}
+                >
+                  Prompt
+                </button>
+              )}
+            </div>
+          </div>
+          {t.reasoning && (
+            <p style={{ margin: '3px 0 0', color: '#bbb', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: 1.4 }}>
+              {t.reasoning.substring(0, 500)}{t.reasoning.length > 500 ? '...' : ''}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   );
 };
@@ -594,8 +685,25 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
           const resultError = !!matchedResult && isToolResultError(matchedResult?.output);
           // Find micro-reasoning that precedes this tool call (it decided this action)
           const mr = mrs.find(m => m.micro_step === i + 1) || mrs[i];
+          // Find thinking iterations for this micro-reasoning
+          const allThinkings = step.thinkings || [];
+          const thinkingCount = mr?.thinking_count || 0;
+          // Slice thinkings: each micro-reasoning "owns" thinking_count iterations
+          // They arrive in order, so we compute the offset from previous micro-reasonings
+          let thinkingOffset = 0;
+          for (let j = 0; j < i; j++) {
+            const prevMr = mrs.find(m => m.micro_step === j + 1) || mrs[j];
+            thinkingOffset += prevMr?.thinking_count || 0;
+          }
+          const thinkingsForMr = thinkingCount > 0
+            ? allThinkings.slice(thinkingOffset, thinkingOffset + thinkingCount)
+            : [];
           return (
             <React.Fragment key={`tool-group-${i}`}>
+              {/* Thinking iterations before micro-reasoning */}
+              {thinkingsForMr.length > 0 && (
+                <ThinkingBlock thinkings={thinkingsForMr} onOpenInspector={onOpenInspector} />
+              )}
               {mr && (
                 <div style={{
                   margin: '8px 0', padding: '8px 12px',
@@ -603,7 +711,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
                   borderLeft: '3px solid #58a6ff', fontSize: '13px',
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px' }}>
+                    <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px', userSelect: 'text' }}>
                       Micro-reasoning {(mr.micro_step || i + 1)}
                       {(mr.prompt_tokens || mr.completion_tokens) && (
                         <span style={{ color: '#888', fontWeight: 'normal', marginLeft: '8px', fontSize: '11px' }}>
@@ -612,6 +720,16 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
                       )}
                     </span>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {mr.thinking_count ? (
+                        <span style={{
+                          display: 'inline-block', padding: '1px 6px', borderRadius: '3px',
+                          fontSize: '0.78em', fontWeight: 600, userSelect: 'text',
+                          background: 'rgba(179,136,255,0.2)', color: '#b388ff',
+                          border: '1px solid rgba(179,136,255,0.3)',
+                        }}>
+                          {mr.thinking_count} thinking
+                        </span>
+                      ) : null}
                       {mr.model && (
                         <span style={{ fontSize: '11px', color: '#666' }}>{mr.model}</span>
                       )}
@@ -685,6 +803,7 @@ const CollapsibleStepSection: React.FC<{
   const info = NODE_COLORS[nt];
   const { total: tcTotal, success, errors } = stepSummary(step);
   const hasMicro = (step.microReasonings || []).length > 0;
+  const thinkingCount = (step.thinkings || []).length;
 
   // Build summary text
   const summaryParts: string[] = [];
@@ -692,6 +811,9 @@ const CollapsibleStepSection: React.FC<{
     summaryParts.push(`${tcTotal} tool call${tcTotal !== 1 ? 's' : ''}`);
     if (success > 0) summaryParts.push(`${success} success`);
     if (errors > 0) summaryParts.push(`${errors} error${errors !== 1 ? 's' : ''}`);
+  }
+  if (thinkingCount > 0) {
+    summaryParts.push(`${thinkingCount} thinking`);
   }
   if (hasMicro) {
     summaryParts.push(`${step.microReasonings!.length} reasoning`);
@@ -729,13 +851,13 @@ const CollapsibleStepSection: React.FC<{
         </span>
         {/* Index badge */}
         {step.index != null && (
-          <Badge isRead style={{ fontSize: '0.82em', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>
+          <Badge isRead style={{ fontSize: '0.82em', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)', userSelect: 'text', cursor: 'text' }}>
             {step.index}
           </Badge>
         )}
         {/* Step number badge (blue, for executor steps) */}
         {nt === 'executor' && (step.planStep ?? loopCurrentStep) != null && (
-          <Badge style={{ fontSize: '0.78em' }}>
+          <Badge style={{ fontSize: '0.78em', userSelect: 'text', cursor: 'text' }}>
             Step {((step.planStep ?? loopCurrentStep)! + 1)}{total > 0 ? `/${total}` : ''}
           </Badge>
         )}
@@ -750,6 +872,8 @@ const CollapsibleStepSection: React.FC<{
             color: '#fff',
             backgroundColor: info.bg,
             lineHeight: 1.5,
+            userSelect: 'text',
+            cursor: 'text',
           }}
         >
           {info.label}
@@ -758,7 +882,7 @@ const CollapsibleStepSection: React.FC<{
         <StepStatusIcon status={step.status} />
         {/* Summary counts */}
         {summaryText && (
-          <span style={{ fontWeight: 400, fontSize: '0.88em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 4 }}>
+          <span style={{ fontWeight: 400, fontSize: '0.88em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 4, userSelect: 'text', cursor: 'text' }}>
             {summaryText}
           </span>
         )}

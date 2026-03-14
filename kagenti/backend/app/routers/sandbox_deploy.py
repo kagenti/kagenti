@@ -104,7 +104,10 @@ class SandboxCreateRequest(BaseModel):
     # Budget controls (passed as SANDBOX_* env vars to the agent)
     max_iterations: int = 100
     max_tokens: int = 1_000_000
-    max_tool_calls_per_step: int = 10
+    max_tool_calls_per_step: int = 10  # legacy alias for max_think_act_cycles
+    max_think_act_cycles: int = 10
+    thinking_iteration_budget: int = 5
+    max_parallel_tool_calls: int = 5
     max_wall_clock_s: int = 600
     hitl_interval: int = 50
     recursion_limit: int = 300
@@ -294,6 +297,15 @@ def _build_deployment_manifest(
     env_vars.append(
         {"name": "SANDBOX_MAX_TOOL_CALLS_PER_STEP", "value": str(req.max_tool_calls_per_step)}
     )
+    env_vars.append(
+        {"name": "SANDBOX_MAX_THINK_ACT_CYCLES", "value": str(req.max_think_act_cycles)}
+    )
+    env_vars.append(
+        {"name": "SANDBOX_THINKING_ITERATION_BUDGET", "value": str(req.thinking_iteration_budget)}
+    )
+    env_vars.append(
+        {"name": "SANDBOX_MAX_PARALLEL_TOOL_CALLS", "value": str(req.max_parallel_tool_calls)}
+    )
     env_vars.append({"name": "SANDBOX_MAX_WALL_CLOCK_S", "value": str(req.max_wall_clock_s)})
     env_vars.append({"name": "SANDBOX_HITL_INTERVAL", "value": str(req.hitl_interval)})
     env_vars.append({"name": "SANDBOX_RECURSION_LIMIT", "value": str(req.recursion_limit)})
@@ -388,6 +400,9 @@ def _build_deployment_manifest(
                 "kagenti.io/cfg-max-iterations": str(req.max_iterations),
                 "kagenti.io/cfg-max-tokens": str(req.max_tokens),
                 "kagenti.io/cfg-max-tool-calls-per-step": str(req.max_tool_calls_per_step),
+                "kagenti.io/cfg-max-think-act-cycles": str(req.max_think_act_cycles),
+                "kagenti.io/cfg-thinking-iteration-budget": str(req.thinking_iteration_budget),
+                "kagenti.io/cfg-max-parallel-tool-calls": str(req.max_parallel_tool_calls),
                 "kagenti.io/cfg-max-wall-clock-s": str(req.max_wall_clock_s),
                 "kagenti.io/cfg-hitl-interval": str(req.hitl_interval),
                 "kagenti.io/cfg-recursion-limit": str(req.recursion_limit),
@@ -897,6 +912,9 @@ _CFG_KEY_MAP = {
     "cfg-max-iterations": "maxIterations",
     "cfg-max-tokens": "maxTokens",
     "cfg-max-tool-calls-per-step": "maxToolCallsPerStep",
+    "cfg-max-think-act-cycles": "maxThinkActCycles",
+    "cfg-thinking-iteration-budget": "thinkingIterationBudget",
+    "cfg-max-parallel-tool-calls": "maxParallelToolCalls",
     "cfg-max-wall-clock-s": "maxWallClockS",
     "cfg-hitl-interval": "hitlInterval",
     "cfg-recursion-limit": "recursionLimit",
