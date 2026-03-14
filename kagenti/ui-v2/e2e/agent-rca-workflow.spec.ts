@@ -120,24 +120,22 @@ test.describe('Agent RCA Workflow', () => {
       // Assert we're on the Observability step (contains the toggle)
       await expect(page.locator('#force-tool-choice')).toBeVisible({ timeout: 5000 });
       console.log('[rca] On Observability step — Force Tool Calling toggle visible');
-      // Toggle Force Tool Calling based on env var
+      // Toggle Force Tool Calling — use label click (PF Switch overlay blocks .check/.uncheck)
       const forceToggle = page.locator('#force-tool-choice');
-      if (await forceToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
-        const isChecked = await forceToggle.isChecked();
-        if (FORCE_TOOL_CHOICE && !isChecked) {
-          await forceToggle.check();
-          console.log('[rca] Checked Force Tool Calling');
-        } else if (!FORCE_TOOL_CHOICE && isChecked) {
-          await forceToggle.uncheck();
-          console.log('[rca] Unchecked Force Tool Calling');
-        }
-        // Also disable text tool parsing for both variants
-        const textParsingToggle = page.locator('#text-tool-parsing');
-        if (await textParsingToggle.isVisible({ timeout: 1000 }).catch(() => false)) {
-          if (await textParsingToggle.isChecked()) {
-            await textParsingToggle.uncheck();
-            console.log('[rca] Unchecked Text Tool Parsing');
-          }
+      const isForceChecked = await forceToggle.isChecked();
+      if (FORCE_TOOL_CHOICE && !isForceChecked) {
+        await page.locator('label[for="force-tool-choice"]').click();
+        console.log('[rca] Toggled Force Tool Calling ON');
+      } else if (!FORCE_TOOL_CHOICE && isForceChecked) {
+        await page.locator('label[for="force-tool-choice"]').click();
+        console.log('[rca] Toggled Force Tool Calling OFF');
+      }
+      // Also disable text tool parsing for both variants
+      const textParsingToggle = page.locator('#text-tool-parsing');
+      if (await textParsingToggle.isVisible({ timeout: 1000 }).catch(() => false)) {
+        if (await textParsingToggle.isChecked()) {
+          await page.locator('label[for="text-tool-parsing"]').click();
+          console.log('[rca] Toggled Text Tool Parsing OFF');
         }
       }
       console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
