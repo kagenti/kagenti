@@ -261,7 +261,7 @@ def _build_deployment_manifest(
 
     # Inject GitHub PAT for gh CLI and git operations.
     # GH_TOKEN is read by the gh CLI; GITHUB_TOKEN by git credential helpers.
-    gh_secret = github_pat_secret or "github-token-secret"
+    gh_secret = github_pat_secret or "github-readonly-secret"
     for env_name in ("GH_TOKEN", "GITHUB_TOKEN"):
         env_vars.append(
             {
