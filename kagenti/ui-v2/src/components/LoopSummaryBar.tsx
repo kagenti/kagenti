@@ -13,44 +13,12 @@ import { Spinner } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import type { AgentLoop } from '../types/agentLoop';
 import { ModelBadge } from './ModelBadge';
+import { countTools, formatTokens, formatDuration, sumAllTokens } from '../utils/loopFormatting';
 
 interface LoopSummaryBarProps {
   loop: AgentLoop;
   expanded: boolean;
   onToggle: () => void;
-}
-
-/** Count all tool calls across every step. */
-function countTools(loop: AgentLoop): number {
-  return loop.steps.reduce((sum, s) => sum + s.toolCalls.length, 0);
-}
-
-/** Sum all tokens across every step (including micro-reasoning) and format as "1.2k" or raw number. */
-function formatTokens(loop: AgentLoop): string {
-  // Prefer budget.tokensUsed, fall back to summing step + micro-reasoning tokens
-  let total = loop.budget.tokensUsed;
-  if (!total) {
-    total = sumAllTokens(loop);
-  }
-  if (total >= 1000) return (total / 1000).toFixed(1) + 'k';
-  return String(total);
-}
-
-/** Sum tokens from steps AND their micro-reasoning sub-calls. */
-function sumAllTokens(loop: AgentLoop): number {
-  return loop.steps.reduce((sum, s) => {
-    let stepTotal = s.tokens.prompt + s.tokens.completion;
-    for (const mr of s.microReasonings || []) {
-      stepTotal += (mr.prompt_tokens || 0) + (mr.completion_tokens || 0);
-    }
-    return sum + stepTotal;
-  }, 0);
-}
-
-/** Format seconds for display (e.g. "12.3s"). */
-function formatDuration(seconds: number): string {
-  if (seconds < 0.1) return '<0.1s';
-  return seconds.toFixed(1) + 's';
 }
 
 /** Status icon: spinner for executing, checkmark for done, X for failed. */

@@ -34,6 +34,9 @@ import { SkillWhisperer } from '../components/SkillWhisperer';
 import { DelegationCard, type DelegationState } from '../components/DelegationCard';
 import { HitlApprovalCard } from '../components/HitlApprovalCard';
 import { AgentLoopCard } from '../components/AgentLoopCard';
+import { SimpleLoopCard } from '../components/SimpleLoopCard';
+import { GraphLoopView } from '../components/GraphLoopView';
+import { FloatingViewBar, type ViewMode, isValidViewMode } from '../components/FloatingViewBar';
 import { FilePreviewModal } from '../components/FilePreviewModal';
 import { SessionStatsPanel } from '../components/SessionStatsPanel';
 import { LlmUsagePanel } from '../components/LlmUsagePanel';
@@ -780,6 +783,43 @@ export const SandboxPage: React.FC = () => {
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [sessionModelOverride, setSessionModelOverride] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const param = searchParams.get('view');
+    return isValidViewMode(param) ? param : 'advanced';
+  });
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (mode === 'advanced') {
+        next.delete('view');
+      } else {
+        next.set('view', mode);
+      }
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const renderLoopCard = useCallback((loop: AgentLoop, streaming: boolean) => {
+    if (viewMode === 'simple') return <SimpleLoopCard key={loop.id} loop={loop} />;
+    if (viewMode === 'graph') return <GraphLoopView key={loop.id} loop={loop} />;
+    return <AgentLoopCard key={loop.id} loop={loop} isStreaming={streaming} namespace={namespace} agentName={selectedAgent} />;
+  }, [viewMode, namespace, selectedAgent]);
+
+  // Keyboard shortcuts: Alt+1/2/3 for view modes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        if (e.key === '1') handleViewModeChange('simple');
+        else if (e.key === '2') handleViewModeChange('advanced');
+        else if (e.key === '3') handleViewModeChange('graph');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleViewModeChange]);
 
   // Child session count for sub-sessions tab badge
   const childSessionCount = useChildSessionCount(namespace, contextId);
@@ -2043,6 +2083,8 @@ export const SandboxPage: React.FC = () => {
 
           {activeTab === 'chat' && (
           <>
+          {/* View mode toggle */}
+          <FloatingViewBar viewMode={viewMode} onChange={handleViewModeChange} />
           {/* Chat messages */}
           <Card style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <CardBody
@@ -2205,15 +2247,7 @@ export const SandboxPage: React.FC = () => {
                         />
                       )}
                       {/* Loop card for this turn (paired by position) */}
-                      {hasLoopCards && idx < loopArray.length && (
-                        <AgentLoopCard
-                          key={loopArray[idx].id}
-                          loop={loopArray[idx]}
-                          isStreaming={isStreaming && idx === loopArray.length - 1}
-                          namespace={namespace}
-                          agentName={selectedAgent}
-                        />
-                      )}
+                      {hasLoopCards && idx < loopArray.length && renderLoopCard(loopArray[idx], isStreaming && idx === loopArray.length - 1)}
                     </React.Fragment>,
                   );
                 });
@@ -2221,9 +2255,7 @@ export const SandboxPage: React.FC = () => {
                 // Render any remaining loop cards that exceed the number of turns
                 // (e.g. during live streaming when the loop is the latest item)
                 loopArray.slice(turns.length).forEach((loop) => {
-                  elements.push(
-                    <AgentLoopCard key={loop.id} loop={loop} isStreaming={isStreaming} namespace={namespace} agentName={selectedAgent} />,
-                  );
+                  elements.push(renderLoopCard(loop, isStreaming));
                 });
 
                 return elements;

@@ -16,25 +16,11 @@ import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import type { AgentLoop, AgentLoopStep, MicroReasoning, ThinkingIteration, NodeType } from '../types/agentLoop';
 import PromptInspector from './PromptInspector';
 import { FilePreviewModal } from './FilePreviewModal';
+import { inferNodeType, NODE_COLORS } from '../utils/loopFormatting';
 
 // ---------------------------------------------------------------------------
 // Graph node badge
 // ---------------------------------------------------------------------------
-
-const NODE_COLORS: Record<NodeType, { bg: string; label: string }> = {
-  planner:    { bg: '#0066cc', label: 'planner' },
-  replanner:  { bg: '#0055aa', label: 'replanner' },
-  executor:   { bg: '#2e7d32', label: 'executor' },
-  reflector:  { bg: '#e65100', label: 'reflector' },
-  reporter:   { bg: '#7b1fa2', label: 'reporter' },
-};
-
-/** Infer the graph node type from step content when not explicitly set. */
-function inferNodeType(step: AgentLoopStep): NodeType {
-  if (step.nodeType) return step.nodeType;
-  if (step.toolCalls.length > 0 || step.toolResults.length > 0) return 'executor';
-  return 'planner';
-}
 
 const NodeBadge: React.FC<{ nodeType: NodeType }> = ({ nodeType }) => {
   const info = NODE_COLORS[nodeType];

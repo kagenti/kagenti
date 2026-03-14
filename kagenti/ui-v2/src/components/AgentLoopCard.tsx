@@ -19,6 +19,7 @@ import { Badge } from '@patternfly/react-core';
 import type { AgentLoop } from '../types/agentLoop';
 import { LoopSummaryBar } from './LoopSummaryBar';
 import { LoopDetail } from './LoopDetail';
+import { filterFinalAnswer } from '../utils/loopFormatting';
 
 /** Check if the loop failed due to recursion limit (not a real error). */
 function isRecursionLimitHit(loop: AgentLoop): boolean {
@@ -146,11 +147,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
 
         {/* Final answer — always visible */}
         {loop.finalAnswer && (() => {
-          const filtered = loop.finalAnswer
-            .split('\n')
-            .filter((line) => !(line.includes('Step completed') && line.includes('all requested tool calls')))
-            .join('\n')
-            .trim();
+          const filtered = filterFinalAnswer(loop.finalAnswer);
           return filtered ? (
             <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 8 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
