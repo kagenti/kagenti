@@ -2178,7 +2178,6 @@ async def _stream_sandbox_response(
                             # The agent serializer puts JSON lines in the message text.
                             # Parse each line and forward loop_id at top level so the
                             # UI can group events into AgentLoopCards.
-                            _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
                             has_loop_events = False
                             if status_message:
                                 msg_lines = [
@@ -2195,15 +2194,6 @@ async def _stream_sandbox_response(
                                         parsed = json.loads(msg_line)
                                         if isinstance(parsed, dict) and "loop_id" in parsed:
                                             evt_type = parsed.get("type", "")
-
-                                            # Skip legacy types entirely — don't forward, don't persist
-                                            if evt_type in _LEGACY:
-                                                logger.debug(
-                                                    "LEGACY_SKIP session=%s type=%s",
-                                                    session_id,
-                                                    evt_type,
-                                                )
-                                                continue
 
                                             # Forward to frontend
                                             loop_payload = dict(payload)

@@ -45,7 +45,7 @@ import { SandboxWizard } from '../components/SandboxWizard';
 import { SubSessionsPanel, useChildSessionCount } from '../components/SubSessionsPanel';
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
-import { applyLoopEvent, buildAgentLoops, createDefaultAgentLoop, LEGACY_TYPES, type LoopEvent } from '../utils/loopBuilder';
+import { applyLoopEvent, buildAgentLoops, createDefaultAgentLoop, type LoopEvent } from '../utils/loopBuilder';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
 type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
@@ -1579,11 +1579,6 @@ export const SandboxPage: React.FC = () => {
               const le = data.loop_event || data;
               const eventType = le.type;
               console.log(`[sse] LOOP_RECV loop=${loopId?.substring(0, 8)} type=${eventType} step=${le.step ?? ''} tools=${le.tools?.length ?? 0}`);
-
-              // Skip legacy events — the new-type handler already processed this
-              if (LEGACY_TYPES.has(eventType)) {
-                continue;
-              }
 
               // Apply event using shared builder
               updateLoop(loopId, (prev) => applyLoopEvent(prev, le));

@@ -72,11 +72,7 @@ export interface LoopEvent {
 // Constants
 // ---------------------------------------------------------------------------
 
-/**
- * Legacy event types emitted alongside the new types for backward compat.
- * Skip these to avoid duplicate steps.
- */
-export const LEGACY_TYPES = new Set(['plan', 'plan_step', 'reflection', 'llm_response']);
+// Legacy types fully removed — agent no longer emits plan/plan_step/reflection.
 
 /** Current ISO timestamp for step creation/update tracking. */
 function now(): string { return new Date().toISOString(); }
@@ -127,9 +123,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   const eventType = le.type;
 
   // Skip legacy event types
-  if (LEGACY_TYPES.has(eventType)) {
-    return loop;
-  }
+  // No legacy type filtering — all event types are processed.
 
   // Router is an internal node — just update status, no visual step
   if (eventType === 'router') {
