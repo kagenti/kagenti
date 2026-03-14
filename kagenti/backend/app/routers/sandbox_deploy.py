@@ -43,11 +43,12 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Cluster-aware LLM defaults — set via env vars on the backend deployment
-# or via Helm values. Route through LiteLLM proxy for proper tool calling
-# support across all models (Llama 4, Mistral, GPT, etc.).
+# or via Helm values. Route through the per-namespace LLM budget proxy
+# which enforces per-session token budgets and tracks usage.
+# The budget proxy forwards to LiteLLM after budget checks.
 DEFAULT_LLM_API_BASE = os.environ.get(
     "SANDBOX_LLM_API_BASE",
-    "http://litellm-proxy.kagenti-system.svc.cluster.local:4000/v1",
+    "http://llm-budget-proxy.{namespace}.svc:8080/v1",
 )
 DEFAULT_LLM_MODEL = os.environ.get("SANDBOX_LLM_MODEL", "llama-4-scout")
 DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "litellm-proxy-secret")
@@ -221,7 +222,7 @@ def _build_deployment_manifest(
     # Resolve cluster-aware defaults
     effective_secret = llm_secret or req.llm_secret_name or DEFAULT_LLM_SECRET
     effective_model = req.model or DEFAULT_LLM_MODEL
-    effective_api_base = DEFAULT_LLM_API_BASE
+    effective_api_base = DEFAULT_LLM_API_BASE.format(namespace=namespace)
 
     # Core env vars shared by all variants
     env_vars = [
