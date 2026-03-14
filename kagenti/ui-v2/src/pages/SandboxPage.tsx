@@ -2126,36 +2126,8 @@ export const SandboxPage: React.FC = () => {
 
               {/* Sentinel for infinite scroll — loads older messages */}
               <div ref={sentinelRef} style={{ minHeight: 1 }} />
-              {loadingHistory && (
-                <div style={{ padding: '12px 14px' }}>
-                  {/* Skeleton: user message placeholder */}
-                  <div style={{
-                    display: 'flex', justifyContent: 'flex-end', marginBottom: 8,
-                  }}>
-                    <div style={{
-                      height: 40, width: '60%', maxWidth: 400,
-                      backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-                      borderRadius: 8, opacity: 0.6,
-                    }} />
-                  </div>
-                  {/* Skeleton: agent loop placeholder */}
-                  <div style={{
-                    display: 'flex', gap: 10, padding: '10px 14px', marginBottom: 4,
-                    borderRadius: 8, border: '1px solid var(--pf-v5-global--BorderColor--100)',
-                    backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
-                    opacity: 0.6, minHeight: 80,
-                  }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: '50%',
-                      backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-                    }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ height: 14, width: '70%', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', borderRadius: 4, marginBottom: 8 }} />
-                      <div style={{ height: 10, width: '40%', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', borderRadius: 4 }} />
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Loading skeleton removed — causes empty frame flash.
+                  History loads fast enough that skeleton is not needed. */}
 
               {/* Welcome card — only when no messages and no loops */}
               {messages.length === 0 && agentLoops.size === 0 && !isStreaming && (
@@ -2272,9 +2244,26 @@ export const SandboxPage: React.FC = () => {
                 });
 
                 // Render any remaining loop cards that exceed the number of turns
-                // (e.g. during live streaming when the loop is the latest item)
-                loopArray.slice(turns.length).forEach((loop) => {
-                  elements.push(renderLoopCard(loop, isStreaming));
+                // (e.g. during history load when messages=[])
+                loopArray.slice(turns.length).forEach((loop, i) => {
+                  elements.push(
+                    <React.Fragment key={`loop-extra-${loop.id}`}>
+                      {loop.userMessage && (
+                        <ChatBubble
+                          msg={{
+                            id: `loop-user-${loop.id}`,
+                            role: 'user' as const,
+                            content: loop.userMessage,
+                            timestamp: new Date().toISOString(),
+                          }}
+                          currentUsername={currentUsername}
+                          namespace={namespace}
+                          agentName={selectedAgent}
+                        />
+                      )}
+                      {renderLoopCard(loop, isStreaming && i === loopArray.length - turns.length - 1)}
+                    </React.Fragment>,
+                  );
                 });
 
                 return elements;
