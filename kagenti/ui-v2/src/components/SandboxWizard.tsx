@@ -703,7 +703,11 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           id="force-tool-choice"
           label="Force structured tool calls (required for Llama 4 Scout)"
           isChecked={state.forceToolChoice}
-          onChange={(_e, c) => update('forceToolChoice', c)}
+          onChange={(_e, c) => {
+            update('forceToolChoice', c);
+            // Auto-enable text parsing when force is OFF (model writes tools as text)
+            if (!c) update('textToolParsing', true);
+          }}
         />
       </FormGroup>
       <FormGroup label="Text Tool Parsing" fieldId="text-tool-parsing">
