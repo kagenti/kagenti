@@ -26,6 +26,7 @@ interface SessionStatsPanelProps {
   modelContextLimit?: number;
   contextId?: string;
   isVisible?: boolean;
+  isStreaming?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -41,6 +42,7 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
   modelContextLimit = 131072,
   contextId,
   isVisible = true,
+  isStreaming = false,
 }) => {
   const loops = Array.from(agentLoops.values());
 
@@ -49,17 +51,24 @@ export const SessionStatsPanel: React.FC<SessionStatsPanelProps> = ({
   const [proxyTokens, setProxyTokens] = useState<number>(0);
   useEffect(() => {
     if (!contextId || !isVisible) return;
-    let cancelled = false;
-    tokenUsageService
-      .getSessionTokenUsage(contextId)
-      .then((data) => {
-        if (!cancelled) {
-          setProxyTokens(data.total_tokens);
-        }
-      })
-      .catch(() => { /* proxy unavailable — fall back to loop data */ });
-    return () => { cancelled = true; };
-  }, [contextId, isVisible]);
+
+    const fetchTokenUsage = async () => {
+      try {
+        const data = await tokenUsageService.getSessionTokenUsage(contextId);
+        setProxyTokens(data.total_tokens);
+      } catch (err) {
+        console.warn('Failed to fetch token usage:', err);
+      }
+    };
+
+    fetchTokenUsage(); // Initial fetch
+
+    // Poll while streaming
+    if (isStreaming) {
+      const interval = setInterval(fetchTokenUsage, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [contextId, isVisible, isStreaming]);
 
   // ── Message Stats (always available) ──
   const userMsgCount = messages.filter((m) => m.role === 'user').length;

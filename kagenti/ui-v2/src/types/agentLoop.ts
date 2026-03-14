@@ -123,4 +123,6 @@ export interface AgentLoopStep {
   microReasonings?: MicroReasoning[];
   /** Thinking iterations that preceded each micro-reasoning. */
   thinkings?: ThinkingIteration[];
+  /** Files touched during the agent loop (reported by the reporter node). */
+  filesTouched?: string[];
 }

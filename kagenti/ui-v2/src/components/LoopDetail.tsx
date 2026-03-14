@@ -642,6 +642,54 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
         <ReasoningBlock reasoning={step.description} />
       )}
 
+      {/* Files touched — shown on reporter steps */}
+      {step.filesTouched && step.filesTouched.length > 0 && (
+        <div style={{ margin: '6px 0' }}>
+          <div style={{ fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginBottom: 4 }}>
+            Files ({step.filesTouched.length})
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {step.filesTouched.slice(0, 15).map((file, i) => (
+              <span
+                key={i}
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  borderRadius: 3,
+                  fontSize: '0.75em',
+                  fontFamily: 'monospace',
+                  color: 'var(--pf-v5-global--Color--100)',
+                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                  border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  userSelect: 'text',
+                }}
+                title={file}
+              >
+                {file}
+              </span>
+            ))}
+            {step.filesTouched.length > 15 && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  borderRadius: 3,
+                  fontSize: '0.75em',
+                  color: 'var(--pf-v5-global--Color--200)',
+                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                }}
+              >
+                +{step.filesTouched.length - 15} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tool calls paired with results, interleaved with micro-reasoning.
           Micro-reasoning N appears BEFORE tool pair N (it decided the action):
           micro_reasoning[0] → tool_call[0] → result[0] → micro_reasoning[1] → tool_call[1] → result[1] ...

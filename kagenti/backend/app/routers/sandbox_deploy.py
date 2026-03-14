@@ -106,7 +106,7 @@ class SandboxCreateRequest(BaseModel):
     max_tokens: int = 1_000_000
     max_tool_calls_per_step: int = 10  # legacy alias for max_think_act_cycles
     max_think_act_cycles: int = 10
-    thinking_iteration_budget: int = 5
+    thinking_iteration_budget: int = 2
     max_parallel_tool_calls: int = 5
     max_wall_clock_s: int = 600
     hitl_interval: int = 50

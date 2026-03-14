@@ -74,6 +74,8 @@ export interface LoopEvent {
   llm_response?: unknown;
   /** Number of thinking iterations that preceded this micro-reasoning */
   thinking_count?: number;
+  /** Files touched during the agent loop (from reporter node). */
+  files_touched?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -374,6 +376,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           createdAt: now(),
           updatedAt: now(),
           status: 'done' as const,
+          ...(le.files_touched && le.files_touched.length > 0 ? { filesTouched: le.files_touched } : {}),
         },
       ],
     };

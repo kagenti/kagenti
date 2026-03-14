@@ -2373,6 +2373,7 @@ export const SandboxPage: React.FC = () => {
                 messages={messages}
                 contextId={contextId}
                 isVisible={activeTab === 'stats'}
+                isStreaming={isStreaming}
               />
           )}
 
@@ -2401,6 +2402,7 @@ export const SandboxPage: React.FC = () => {
                   agentName={selectedAgent}
                   contextId={contextId || undefined}
                   embedded
+                  isStreaming={isStreaming}
                 />
               </div>
           )}

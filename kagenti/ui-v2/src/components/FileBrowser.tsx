@@ -156,6 +156,8 @@ export interface FileBrowserProps {
   initialPath?: string;
   /** When true, renders without PageSection wrapper and adjusts height for embedding */
   embedded?: boolean;
+  /** When true, directory listing auto-refreshes every 3s */
+  isStreaming?: boolean;
 }
 
 export const FileBrowser: React.FC<FileBrowserProps> = ({
@@ -164,6 +166,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   contextId: propContextId,
   initialPath: propInitialPath,
   embedded = false,
+  isStreaming = false,
 }) => {
   const routeParams = useParams<{
     namespace: string;
@@ -191,6 +194,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
     queryKey: ['sandbox-files', namespace, agentName, contextId, currentPath],
     queryFn: () => sandboxFileService.listDirectory(namespace!, agentName!, currentPath, contextId),
     enabled: !!namespace && !!agentName,
+    refetchInterval: isStreaming ? 3000 : undefined,
     retry: (failureCount, error) => {
       // Don't retry auth errors or not-found errors
       if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
