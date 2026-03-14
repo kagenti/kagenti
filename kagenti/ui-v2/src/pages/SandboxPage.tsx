@@ -1167,10 +1167,12 @@ export const SandboxPage: React.FC = () => {
             const events = historyPage.loop_events as unknown as LoopEvent[];
             if (events.length > 0) {
               finalLoops = buildAgentLoops(events);
-              // Pair user messages with loops by position — each loop
-              // carries its own userMessage, so we don't need separate
-              // ChatBubble rendering (eliminates flicker on reload).
-              const userMsgs = allMessages.filter((m) => m.role === 'user');
+              // Pair user messages with loops by order (not position).
+              // Messages from different tasks can arrive in arbitrary order,
+              // so sort by _index/order to get chronological pairing.
+              const userMsgs = allMessages
+                .filter((m) => m.role === 'user')
+                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
               const loopArr = Array.from(finalLoops.values());
               for (let i = 0; i < Math.min(userMsgs.length, loopArr.length); i++) {
                 loopArr[i].userMessage = userMsgs[i].content;
