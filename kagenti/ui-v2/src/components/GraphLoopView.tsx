@@ -14,6 +14,7 @@ import {
   ReactFlow,
   type Node,
   type Edge,
+  type NodeMouseHandler,
   Position,
   Background,
   Controls,
@@ -22,6 +23,7 @@ import {
 import dagre from 'dagre';
 import type { AgentLoop, AgentLoopStep } from '../types/agentLoop';
 import { inferNodeType, type GraphNodeType } from '../utils/loopFormatting';
+import { GraphDetailPanel } from './GraphDetailPanel';
 
 import '@xyflow/react/dist/style.css';
 
@@ -144,6 +146,7 @@ function buildGraph(loop: AgentLoop): { nodes: Node[]; edges: Edge[]; totalNodes
         borderRadius: 8,
         padding: '8px 12px',
         minWidth: 140,
+        cursor: 'pointer',
         ...(step.status === 'running' ? { boxShadow: `0 0 8px ${style.border}` } : {}),
       },
     });
@@ -185,6 +188,7 @@ function buildGraph(loop: AgentLoop): { nodes: Node[]; edges: Edge[]; totalNodes
           padding: '4px 8px',
           fontSize: 11,
           minWidth: 100,
+          cursor: 'pointer',
         },
       });
 
@@ -218,6 +222,7 @@ function buildGraph(loop: AgentLoop): { nodes: Node[]; edges: Edge[]; totalNodes
           borderRadius: 6,
           padding: '4px 8px',
           minWidth: 80,
+          cursor: 'pointer',
         },
       });
       edges.push({
@@ -244,13 +249,18 @@ interface GraphLoopViewProps {
 
 export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop }) => {
   const [fullscreen, setFullscreen] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { nodes, edges, totalNodes } = useMemo(() => {
+  const { nodes, edges, totalNodes, allNodeIds } = useMemo(() => {
     const raw = buildGraph(loop);
     const layout = applyDagreLayout(raw.nodes, raw.edges);
-    return { ...layout, totalNodes: raw.totalNodes };
+    return { ...layout, totalNodes: raw.totalNodes, allNodeIds: raw.nodes.map((n) => n.id) };
   }, [loop]);
+
+  const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
+    setSelectedNodeId(node.id);
+  }, []);
 
   const toggleFullscreen = useCallback(() => {
     if (!fullscreen && containerRef.current) {
@@ -334,7 +344,8 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop })
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
         nodesConnectable={false}
-        elementsSelectable={false}
+        elementsSelectable
+        onNodeClick={onNodeClick}
         panOnDrag
         zoomOnScroll
       >
@@ -348,6 +359,17 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop })
           maskColor="rgba(0,0,0,0.7)"
         />
       </ReactFlow>
+
+      {/* Detail panel — slides in from right on node click */}
+      {selectedNodeId && (
+        <GraphDetailPanel
+          loop={loop}
+          nodeId={selectedNodeId}
+          onClose={() => setSelectedNodeId(null)}
+          siblingNodeIds={allNodeIds}
+          onNavigate={setSelectedNodeId}
+        />
+      )}
     </div>
   );
 });
