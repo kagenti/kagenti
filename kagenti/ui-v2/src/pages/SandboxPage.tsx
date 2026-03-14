@@ -2254,7 +2254,7 @@ export const SandboxPage: React.FC = () => {
                             id: `loop-user-${loop.id}`,
                             role: 'user' as const,
                             content: loop.userMessage,
-                            timestamp: new Date().toISOString(),
+                            timestamp: new Date(),
                           }}
                           currentUsername={currentUsername}
                           namespace={namespace}
