@@ -1996,6 +1996,11 @@ async def _stream_sandbox_response(
                         yield f"data: {json.dumps({'ping': True})}\n\n"
                         continue
                     except StopAsyncIteration:
+                        logger.info(
+                            "SSE stream exhausted for session=%s after %d lines",
+                            session_id,
+                            line_count,
+                        )
                         stream_exhausted = True
                         break
 
