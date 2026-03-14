@@ -1167,9 +1167,17 @@ export const SandboxPage: React.FC = () => {
             const events = historyPage.loop_events as unknown as LoopEvent[];
             if (events.length > 0) {
               finalLoops = buildAgentLoops(events);
-              // Keep only user messages when we have loop cards
-              finalMessages = allMessages.filter((m) => m.role === 'user');
-              console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events`);
+              // Pair user messages with loops by position — each loop
+              // carries its own userMessage, so we don't need separate
+              // ChatBubble rendering (eliminates flicker on reload).
+              const userMsgs = allMessages.filter((m) => m.role === 'user');
+              const loopArr = Array.from(finalLoops.values());
+              for (let i = 0; i < Math.min(userMsgs.length, loopArr.length); i++) {
+                loopArr[i].userMessage = userMsgs[i].content;
+              }
+              // No separate messages needed — loops carry user messages
+              finalMessages = [];
+              console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events, paired ${Math.min(userMsgs.length, loopArr.length)} user messages`);
 
               const loopStatuses = Array.from(finalLoops.values()).map((l) => ({ id: l.id, status: l.status, hasFinalAnswer: !!l.finalAnswer, steps: l.steps.length }));
               console.log('[history] Loop statuses:', JSON.stringify(loopStatuses));
@@ -2138,8 +2146,8 @@ export const SandboxPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Welcome card — only when no messages */}
-              {messages.length === 0 && !isStreaming && (
+              {/* Welcome card — only when no messages and no loops */}
+              {messages.length === 0 && agentLoops.size === 0 && !isStreaming && (
               <div
                 data-testid="welcome-card"
                 style={{

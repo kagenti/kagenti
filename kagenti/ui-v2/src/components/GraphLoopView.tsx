@@ -9,7 +9,7 @@
  * with tool call nodes branching off executors.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import {
   ReactFlow,
   type Node,
@@ -243,11 +243,38 @@ interface GraphLoopViewProps {
 }
 
 export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop }) => {
+  const [fullscreen, setFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const { nodes, edges, totalNodes } = useMemo(() => {
     const raw = buildGraph(loop);
     const layout = applyDagreLayout(raw.nodes, raw.edges);
     return { ...layout, totalNodes: raw.totalNodes };
   }, [loop]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!fullscreen && containerRef.current) {
+      containerRef.current.requestFullscreen?.().catch(() => {
+        // Fallback: just use CSS fullscreen
+        setFullscreen(true);
+      });
+      setFullscreen(true);
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+      setFullscreen(false);
+    } else {
+      setFullscreen(false);
+    }
+  }, [fullscreen]);
+
+  // Listen for ESC exiting fullscreen via browser API
+  React.useEffect(() => {
+    const handler = () => {
+      if (!document.fullscreenElement) setFullscreen(false);
+    };
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
   if (loop.steps.length === 0) {
     return (
@@ -267,15 +294,39 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop })
 
   return (
     <div
+      ref={containerRef}
       data-testid="graph-loop-view"
       style={{
-        height: Math.min(Math.max(400, totalNodes * 80 + 100), 1200),
-        border: '1px solid var(--pf-v5-global--BorderColor--100)',
-        borderRadius: 8,
-        marginBottom: 4,
+        height: fullscreen ? '100vh' : Math.min(Math.max(400, totalNodes * 80 + 100), 1200),
+        border: fullscreen ? 'none' : '1px solid var(--pf-v5-global--BorderColor--100)',
+        borderRadius: fullscreen ? 0 : 8,
+        marginBottom: fullscreen ? 0 : 4,
         backgroundColor: '#0d1117',
+        position: 'relative',
       }}
     >
+      {/* Fullscreen toggle button */}
+      <button
+        data-testid="graph-fullscreen-btn"
+        title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen graph view'}
+        onClick={toggleFullscreen}
+        style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          zIndex: 10,
+          background: 'rgba(30, 30, 50, 0.85)',
+          border: '1px solid #555',
+          color: '#ccc',
+          borderRadius: 4,
+          padding: '4px 8px',
+          fontSize: 12,
+          cursor: 'pointer',
+        }}
+      >
+        {fullscreen ? '\u2716 Exit' : '\u26F6 Fullscreen'}
+      </button>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
