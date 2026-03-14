@@ -2096,42 +2096,26 @@ export const SandboxPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Welcome card — permanent first message */}
-              <div
+              {/* Welcome card — only when no messages */}
+              {messages.length === 0 && !isStreaming && <div
                 data-testid="welcome-card"
                 style={{
                   display: 'flex',
-                  alignItems: messages.length === 0 ? 'center' : 'flex-start',
+                  alignItems: 'center',
                   justifyContent: 'center',
-                  padding: messages.length === 0 ? 32 : '12px 14px',
-                  flex: messages.length === 0 ? 1 : undefined,
+                  padding: 32,
+                  flex: 1,
                 }}
               >
                 <div style={{ maxWidth: 480, textAlign: 'center' }}>
-                  {/* Agent avatar + name */}
-                  <div
-                    style={{
-                      width: messages.length === 0 ? 48 : 32,
-                      height: messages.length === 0 ? 48 : 32,
-                      borderRadius: '50%',
-                      backgroundColor: 'var(--pf-v5-global--success-color--100)',
-                      color: '#fff',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: messages.length === 0 ? 20 : 14,
-                      marginBottom: messages.length === 0 ? 12 : 6,
-                    }}
-                  >
-                    <RobotIcon />
-                  </div>
-                  <h3 style={{ margin: '0 0 4px', fontSize: messages.length === 0 ? '1.1em' : '0.9em' }}>{selectedAgent}</h3>
+                  {/* Agent name */}
+                  <h3 style={{ margin: '0 0 4px', fontSize: '1.1em' }}>{selectedAgent}</h3>
                   <p style={{ margin: '0 0 8px', fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)' }}>
                     {(agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'} &middot; {namespace}
                   </p>
 
-                    {/* Available tools + example prompts — only when no messages */}
-                    {messages.length === 0 && !isStreaming && (
+                    {/* Available tools + example prompts */}
+                    {(
                       <>
                         {agentSkills.length > 0 && (
                           <div style={{ marginBottom: 16 }}>
@@ -2179,6 +2163,7 @@ export const SandboxPage: React.FC = () => {
                     )}
                   </div>
                 </div>
+              </div>}
 
               {/* Render messages grouped into turns, with loop cards interleaved */}
               {(() => {
