@@ -2097,7 +2097,8 @@ export const SandboxPage: React.FC = () => {
               )}
 
               {/* Welcome card — only when no messages */}
-              {messages.length === 0 && !isStreaming && <div
+              {messages.length === 0 && !isStreaming && (
+              <div
                 data-testid="welcome-card"
                 style={{
                   display: 'flex',
@@ -2161,9 +2162,9 @@ export const SandboxPage: React.FC = () => {
                         </div>
                       </>
                     )}
-                  </div>
                 </div>
-              </div>}
+              </div>
+              )}
 
               {/* Render messages grouped into turns, with loop cards interleaved */}
               {(() => {
