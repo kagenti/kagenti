@@ -1304,6 +1304,15 @@ export const SandboxPage: React.FC = () => {
 
         if (histPage.messages.length === 0) return;
 
+        // When loop cards exist, they carry user messages — skip adding
+        // messages to avoid duplicate ChatBubbles appearing alongside loops.
+        // Check is inside setMessages to get the latest agentLoops via closure
+        // on the state setter (React guarantees fresh state in updater).
+        // We use a separate check here since agentLoops isn't in deps.
+        let hasLoops = false;
+        setAgentLoops((prev) => { hasLoops = prev.size > 0; return prev; });
+        if (hasLoops) return;
+
         setMessages((prev) => {
           // Dedup by _index (history-loaded messages)
           const existingIndices = new Set(
