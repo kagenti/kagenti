@@ -21,7 +21,7 @@ COPY ui-v2/ .
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:1.29-alpine@sha256:1d13701a5f9f3fb01aaa88cef2344d65b6b5bf6b7d9fa4cf0dca557a8d7702ba
+FROM nginx:1.29-alpine@sha256:f46cb72c7df02710e693e863a983ac42f6a9579058a59a35f1ae36c9958e4ce0
 
 # Copy nginx configuration
 COPY ui-v2/nginx.conf /etc/nginx/conf.d/default.conf
