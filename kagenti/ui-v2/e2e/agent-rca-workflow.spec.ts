@@ -130,17 +130,7 @@ test.describe('Agent RCA Workflow', () => {
         await page.locator('label[for="force-tool-choice"]').first().click();
         console.log('[rca] Toggled Force Tool Calling OFF');
       }
-      // When force tools is OFF, enable text parsing (model writes tools as text)
-      // The wizard auto-enables this on toggle change, but verify it's set
-      if (!FORCE_TOOL_CHOICE) {
-        const textParsing = page.locator('#text-tool-parsing');
-        if (await textParsing.isVisible({ timeout: 1000 }).catch(() => false)) {
-          if (!(await textParsing.isChecked())) {
-            await page.locator('label[for="text-tool-parsing"]').first().click();
-            console.log('[rca] Toggled Text Tool Parsing ON (needed for auto mode)');
-          }
-        }
-      }
+      // Text Tool Parsing defaults to OFF — both variants use wizard defaults
       console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
       await next(page); // advance to Budget step (6)
       await next(page); // advance to Review step (7)
