@@ -87,6 +87,19 @@ export interface LoopEvent {
 /** Current ISO timestamp for step creation/update tracking. */
 function now(): string { return new Date().toISOString(); }
 
+/** Extract file paths from explicit list + content text (workspace paths). */
+function extractFilePaths(explicit?: string[], content?: string): string[] {
+  const paths = new Set<string>(explicit || []);
+  if (content) {
+    // Match workspace-relative paths like repos/x/file.py, output/result.txt, report.md
+    const pathRegex = /(?:\/workspace\/[a-f0-9]+\/|repos\/|output\/)[\w./\-]+\.\w+/g;
+    const simpleFileRegex = /\b([\w-]+\.(?:md|txt|log|py|ts|js|json|yaml|yml|csv|sh))\b/g;
+    for (const m of content.matchAll(pathRegex)) paths.add(m[0]);
+    for (const m of content.matchAll(simpleFileRegex)) paths.add(m[1]);
+  }
+  return [...paths].slice(0, 30);
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -376,7 +389,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           createdAt: now(),
           updatedAt: now(),
           status: 'done' as const,
-          ...(le.files_touched && le.files_touched.length > 0 ? { filesTouched: le.files_touched } : {}),
+          filesTouched: extractFilePaths(le.files_touched, rContent),
         },
       ],
     };
