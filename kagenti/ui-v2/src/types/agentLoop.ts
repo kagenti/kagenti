@@ -65,6 +65,7 @@ export interface MicroReasoning {
   completion_tokens?: number;
   system_prompt?: string;
   prompt_messages?: Array<{ role: string; preview: string }>;
+  bound_tools?: Array<{ name: string; description?: string }>;
   after_call_id?: string;
 }
 

@@ -388,6 +388,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       completion_tokens: le.completion_tokens,
       system_prompt: le.system_prompt,
       prompt_messages: le.prompt_messages,
+      bound_tools: le.bound_tools,
       after_call_id: le.after_call_id,
     };
     step.microReasonings = [...(step.microReasonings || []), mr];
