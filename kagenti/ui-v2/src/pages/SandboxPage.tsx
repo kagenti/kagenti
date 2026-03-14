@@ -2255,6 +2255,7 @@ export const SandboxPage: React.FC = () => {
                             role: 'user' as const,
                             content: loop.userMessage,
                             timestamp: new Date(),
+                            order: 0,
                           }}
                           currentUsername={currentUsername}
                           namespace={namespace}
