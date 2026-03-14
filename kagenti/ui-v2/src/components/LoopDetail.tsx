@@ -26,6 +26,7 @@ const NodeBadge: React.FC<{ nodeType: NodeType }> = ({ nodeType }) => {
   const info = NODE_COLORS[nodeType];
   return (
     <span
+      title={`Graph node: ${info.label}`}
       style={{
         display: 'inline-block',
         padding: '1px 6px',
@@ -546,7 +547,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
         }}
       >
         {/* Index badge (event_index) */}
-        {step.index != null && <Badge isRead data-testid="step-visit-badge" style={{ marginRight: 4, backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>{step.index}</Badge>}
+        {step.index != null && <Badge isRead data-testid="step-visit-badge" title={`Event index: ${step.index}`} style={{ marginRight: 4, backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>{step.index}</Badge>}
         {/* Node type + step badge with description as hover title */}
         {(() => {
           const nt = inferNodeType(step);
@@ -586,6 +587,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
         })()}
         {showModelBadge && (
           <span
+            title={`Model override: ${step.model} (loop default: ${loopModel})`}
             style={{
               display: 'inline-block',
               padding: '1px 5px',
@@ -707,7 +709,7 @@ const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentSte
                     </span>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       {mr.thinking_count ? (
-                        <span style={{
+                        <span title={`${mr.thinking_count} thinking iteration${mr.thinking_count !== 1 ? 's' : ''} before this micro-reasoning`} style={{
                           display: 'inline-block', padding: '1px 6px', borderRadius: '3px',
                           fontSize: '0.78em', fontWeight: 600, userSelect: 'text',
                           background: 'rgba(179,136,255,0.2)', color: '#b388ff',
@@ -837,18 +839,19 @@ const CollapsibleStepSection: React.FC<{
         </span>
         {/* Index badge */}
         {step.index != null && (
-          <Badge isRead style={{ fontSize: '0.82em', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)', userSelect: 'text', cursor: 'text' }}>
+          <Badge isRead title={`Event index: ${step.index}`} style={{ fontSize: '0.82em', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)', userSelect: 'text', cursor: 'text' }}>
             {step.index}
           </Badge>
         )}
         {/* Step number badge (blue, for executor steps) */}
         {nt === 'executor' && (step.planStep ?? loopCurrentStep) != null && (
-          <Badge style={{ fontSize: '0.78em', userSelect: 'text', cursor: 'text' }}>
+          <Badge title={`Plan step ${((step.planStep ?? loopCurrentStep)! + 1)} of ${total || '?'}`} style={{ fontSize: '0.78em', userSelect: 'text', cursor: 'text' }}>
             Step {((step.planStep ?? loopCurrentStep)! + 1)}{total > 0 ? `/${total}` : ''}
           </Badge>
         )}
         {/* Node type badge */}
         <span
+          title={`Graph node: ${info.label}`}
           style={{
             display: 'inline-block',
             padding: '1px 6px',
@@ -874,7 +877,7 @@ const CollapsibleStepSection: React.FC<{
         )}
         {/* Error count badge */}
         {errors > 0 && (
-          <Badge style={{ fontSize: '0.78em', backgroundColor: 'var(--pf-v5-global--danger-color--100)', color: '#fff' }}>
+          <Badge title={`${errors} tool call${errors !== 1 ? 's' : ''} returned errors`} style={{ fontSize: '0.78em', backgroundColor: 'var(--pf-v5-global--danger-color--100)', color: '#fff' }}>
             {errors} err
           </Badge>
         )}

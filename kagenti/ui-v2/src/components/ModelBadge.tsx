@@ -46,6 +46,7 @@ export const ModelBadge: React.FC<ModelBadgeProps> = ({ model }) => {
 
   return (
     <span
+      title={`LLM model: ${model}`}
       style={{
         display: 'inline-block',
         padding: '1px 8px',
