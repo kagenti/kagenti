@@ -1971,7 +1971,12 @@ async def _stream_sandbox_response(
     _done_received = False
 
     try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        # No global read timeout — agent sessions can run 10+ minutes.
+        # Per-line timeout via asyncio.wait_for(_KEEPALIVE_INTERVAL) handles
+        # keepalive pings. Connection closes when agent stops streaming.
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=None, write=30.0, pool=None)
+        ) as client:
             # --- Initial stream: message/stream ---
             async with client.stream(
                 "POST",
