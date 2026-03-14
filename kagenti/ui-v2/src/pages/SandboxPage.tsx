@@ -740,7 +740,7 @@ export const SandboxPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [loadingSession, setLoadingSession] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(() => !!getInitialSession(searchParams));
   const [oldestIndex, setOldestIndex] = useState<number | null>(null);
   // Synchronous guard against double-send (React StrictMode double-invokes
   // effects/callbacks, and async setState batching means two rapid calls
@@ -1418,6 +1418,8 @@ export const SandboxPage: React.FC = () => {
         if (id) localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + id, sessionAgentName);
       }
       setLoadingSession(true);
+      setMessages([]);
+      setAgentLoops(new Map());
       setInput('');
       setStreamingContent('');
       setIsStreaming(false);
