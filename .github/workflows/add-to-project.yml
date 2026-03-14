@@ -7,6 +7,7 @@ jobs:
   add-to-project:
     runs-on: ubuntu-latest
 
+
     steps:
       - name: Add issue or PR to Kagenti Project
         continue-on-error: true # To prevent duplicate additions
