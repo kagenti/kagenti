@@ -124,20 +124,13 @@ test.describe('Agent RCA Workflow', () => {
       const forceToggle = page.locator('#force-tool-choice');
       const isForceChecked = await forceToggle.isChecked();
       if (FORCE_TOOL_CHOICE && !isForceChecked) {
-        await page.locator('label[for="force-tool-choice"]').click();
+        await page.locator('label[for="force-tool-choice"]').first().click();
         console.log('[rca] Toggled Force Tool Calling ON');
       } else if (!FORCE_TOOL_CHOICE && isForceChecked) {
-        await page.locator('label[for="force-tool-choice"]').click();
+        await page.locator('label[for="force-tool-choice"]').first().click();
         console.log('[rca] Toggled Force Tool Calling OFF');
       }
-      // Also disable text tool parsing for both variants
-      const textParsingToggle = page.locator('#text-tool-parsing');
-      if (await textParsingToggle.isVisible({ timeout: 1000 }).catch(() => false)) {
-        if (await textParsingToggle.isChecked()) {
-          await page.locator('label[for="text-tool-parsing"]').click();
-          console.log('[rca] Toggled Text Tool Parsing OFF');
-        }
-      }
+      // Text Tool Parsing defaults to OFF in wizard — no toggle needed
       console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
       await next(page); // advance to Budget step (6)
       await next(page); // advance to Review step (7)
