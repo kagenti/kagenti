@@ -15,6 +15,7 @@ import { execSync } from 'child_process';
 
 const AGENT_NAME = process.env.RCA_AGENT_NAME || 'rca-agent';
 const SKIP_DEPLOY = process.env.RCA_SKIP_DEPLOY === '1';  // Skip cleanup+deploy when agent is pre-deployed
+const FORCE_TOOL_CHOICE = process.env.RCA_FORCE_TOOL_CHOICE !== '0';  // Default: true (force structured calls)
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
 
@@ -102,6 +103,7 @@ test.describe('Agent RCA Workflow', () => {
       cleanupAgent();
     }
     console.log(`[rca] Pre-check: ${kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found') ? 'clean' : 'exists'}`);
+    console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
   });
 
   test('RCA agent end-to-end: deploy, verify, send request, check persistence and quality', async ({ page }) => {
@@ -113,6 +115,14 @@ test.describe('Agent RCA Workflow', () => {
       await next(page); await next(page);
       const si = page.locator('#llm-secret-name');
       if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
+      // Budget/Config step — toggle Force Tool Calling based on env var
+      if (!FORCE_TOOL_CHOICE) {
+        const forceToggle = page.locator('#force-tool-choice');
+        if (await forceToggle.isChecked({ timeout: 3000 }).catch(() => false)) {
+          await forceToggle.uncheck();
+          console.log('[rca] Unchecked Force Tool Calling');
+        }
+      }
       await next(page); await next(page); await next(page); await next(page);
       await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
       await page.getByRole('button', { name: /Deploy Agent/i }).click();
