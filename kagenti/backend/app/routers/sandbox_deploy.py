@@ -102,10 +102,10 @@ class SandboxCreateRequest(BaseModel):
     text_tool_parsing: bool = True
     debug_prompts: bool = False
     # Budget controls (passed as SANDBOX_* env vars to the agent)
-    max_iterations: int = 100
+    max_iterations: int = 200
     max_tokens: int = 1_000_000
-    max_tool_calls_per_step: int = 10  # legacy alias for max_think_act_cycles
-    max_think_act_cycles: int = 10
+    max_tool_calls_per_step: int = 20  # legacy alias for max_think_act_cycles
+    max_think_act_cycles: int = 20
     thinking_iteration_budget: int = 2
     max_parallel_tool_calls: int = 5
     max_wall_clock_s: int = 600
