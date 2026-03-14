@@ -130,8 +130,8 @@ export const INITIAL_STATE: WizardState = {
   recursionLimit: 300,
   agentMemoryLimit: '1Gi',
   agentCpuLimit: '500m',
-  proxyMemoryLimit: '128Mi',
-  proxyCpuLimit: '100m',
+  proxyMemoryLimit: '256Mi',
+  proxyCpuLimit: '200m',
 };
 
 const STEPS = [
@@ -811,7 +811,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         <TextInput id="agent-cpu-limit" value={state.agentCpuLimit} onChange={(_e, v) => update('agentCpuLimit', v)} placeholder="500m" />
       </FormGroup>
       <FormGroup label="Proxy Memory Limit" fieldId="proxy-memory-limit">
-        <TextInput id="proxy-memory-limit" value={state.proxyMemoryLimit} onChange={(_e, v) => update('proxyMemoryLimit', v)} placeholder="128Mi" />
+        <TextInput id="proxy-memory-limit" value={state.proxyMemoryLimit} onChange={(_e, v) => update('proxyMemoryLimit', v)} placeholder="256Mi" />
       </FormGroup>
       <FormGroup label="Proxy CPU Limit" fieldId="proxy-cpu-limit">
         <TextInput id="proxy-cpu-limit" value={state.proxyCpuLimit} onChange={(_e, v) => update('proxyCpuLimit', v)} placeholder="100m" />

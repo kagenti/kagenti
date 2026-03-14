@@ -494,7 +494,7 @@ def _build_egress_proxy_manifests(req: SandboxCreateRequest) -> tuple[dict, dict
                                 "requests": {"cpu": "50m", "memory": "64Mi"},
                                 "limits": {
                                     "cpu": req.proxy_cpu_limit or "100m",
-                                    "memory": req.proxy_memory_limit or "128Mi",
+                                    "memory": req.proxy_memory_limit or "256Mi",
                                 },
                             },
                             "volumeMounts": [
