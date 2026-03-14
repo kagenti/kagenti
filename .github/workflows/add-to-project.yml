@@ -1,21 +1,11 @@
 name: Add Issues and PRs to Kagenti Prioritization Project
 
 on:
-  issues:
-    types: [opened]
-
-  pull_request_target:
-    types: [opened]
+  workflow_call: 
 
 jobs:
   add-to-project:
-    name: Add to Kagenti Project Board
     runs-on: ubuntu-latest
-
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: read
 
     steps:
       - name: Add issue or PR to Kagenti Project
