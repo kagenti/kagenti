@@ -122,8 +122,15 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   }
   const eventType = le.type;
 
-  // Skip legacy event types
-  // No legacy type filtering — all event types are processed.
+  // Only process known event types — ignore legacy/unknown types from old sessions
+  const KNOWN_TYPES = new Set([
+    'router', 'planner_output', 'replanner_output', 'executor_step',
+    'tool_call', 'tool_result', 'micro_reasoning', 'reflector_decision',
+    'reporter_output', 'step_selector', 'budget', 'budget_update',
+  ]);
+  if (!KNOWN_TYPES.has(eventType)) {
+    return loop;
+  }
 
   // Router is an internal node — just update status, no visual step
   if (eventType === 'router') {
