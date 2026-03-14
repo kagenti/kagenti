@@ -115,7 +115,8 @@ test.describe('Agent RCA Workflow', () => {
       await next(page); await next(page);
       const si = page.locator('#llm-secret-name');
       if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
-      await next(page); // advance to Budget/Config step
+      await next(page); // advance to Budget step
+      await next(page); // advance to Observability step (has Force Tool Calling toggle)
       // Toggle Force Tool Calling based on env var
       const forceToggle = page.locator('#force-tool-choice');
       if (await forceToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -137,7 +138,7 @@ test.describe('Agent RCA Workflow', () => {
         }
       }
       console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
-      await next(page); await next(page); await next(page);
+      await next(page); // advance to Review step
       await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
       await page.getByRole('button', { name: /Deploy Agent/i }).click();
 
