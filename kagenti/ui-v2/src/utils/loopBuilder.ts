@@ -60,6 +60,8 @@ export interface LoopEvent {
   call_id?: string;
   /** Explicit status for tool results */
   status?: 'success' | 'error' | 'timeout' | 'pending';
+  /** Bound tool schemas sent to the LLM */
+  bound_tools?: Array<{ name: string; description?: string }>;
   /** call_id that this micro-reasoning follows */
   after_call_id?: string;
   /** Step selector brief for the executor */
@@ -226,12 +228,14 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       reasoning: le.reasoning as string | undefined,
       systemPrompt: le.system_prompt,
       promptMessages: le.prompt_messages,
+      boundTools: le.bound_tools,
       tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
     });
     // Update fields on existing step
     step.planStep = le.current_step ?? step.planStep;
     step.description = le.description || step.description;
     step.model = le.model || step.model || loop.model;
+    step.boundTools = le.bound_tools || step.boundTools;
     step.reasoning = (le.reasoning as string) || step.reasoning;
     step.systemPrompt = le.system_prompt || step.systemPrompt;
     step.promptMessages = le.prompt_messages || step.promptMessages;

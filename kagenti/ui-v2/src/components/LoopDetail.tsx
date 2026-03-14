@@ -832,6 +832,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentNa
     title: string;
     systemPrompt?: string;
     promptMessages?: Array<{ role: string; preview: string }>;
+    boundTools?: Array<{ name: string; description?: string }>;
     response?: string;
     model?: string;
     promptTokens?: number;
@@ -847,6 +848,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentNa
       title,
       systemPrompt: isMicro ? d.system_prompt : d.systemPrompt,
       promptMessages: isMicro ? d.prompt_messages : d.promptMessages,
+      boundTools: d.boundTools || d.bound_tools || [],
       response: d.reasoning || d.assessment || d.content || '',
       model: d.model,
       promptTokens: isMicro ? d.prompt_tokens : d.tokens?.prompt,
@@ -897,6 +899,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentNa
           title={inspectorData.title}
           systemPrompt={inspectorData.systemPrompt}
           promptMessages={inspectorData.promptMessages}
+          boundTools={inspectorData.boundTools}
           response={inspectorData.response}
           model={inspectorData.model}
           promptTokens={inspectorData.promptTokens}

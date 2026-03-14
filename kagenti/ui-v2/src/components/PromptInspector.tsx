@@ -10,6 +10,7 @@ interface PromptInspectorProps {
   title: string;
   systemPrompt?: string;
   promptMessages?: Array<{ role: string; preview: string }>;
+  boundTools?: Array<{ name: string; description?: string }>;
   response?: string;
   model?: string;
   promptTokens?: number;
@@ -17,8 +18,8 @@ interface PromptInspectorProps {
 }
 
 const PromptInspector: React.FC<PromptInspectorProps> = ({
-  isOpen, onClose, title, systemPrompt, promptMessages, response,
-  model, promptTokens, completionTokens,
+  isOpen, onClose, title, systemPrompt, promptMessages, boundTools,
+  response, model, promptTokens, completionTokens,
 }) => {
   // Close on ESC key
   useEffect(() => {
@@ -90,6 +91,29 @@ const PromptInspector: React.FC<PromptInspectorProps> = ({
             </pre>
           </section>
         )}
+
+        {/* Bound Tools */}
+        <section style={{ marginBottom: '24px' }}>
+          <h3 style={{ color: '#58a6ff', fontSize: '14px', marginBottom: '8px' }}>
+            Bound Tools ({boundTools?.length ?? 0})
+          </h3>
+          {boundTools && boundTools.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {boundTools.map((t, i) => (
+                <span key={i} title={t.description || t.name} style={{
+                  display: 'inline-block', padding: '3px 8px', borderRadius: '4px',
+                  fontSize: '12px', fontWeight: 500,
+                  backgroundColor: '#1f6feb22', color: '#58a6ff',
+                  border: '1px solid #1f6feb44',
+                }}>
+                  {t.name}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span style={{ fontSize: '12px', color: '#484f58' }}>No tools bound (text-only node)</span>
+          )}
+        </section>
 
         {/* Input Messages */}
         {promptMessages && promptMessages.length > 0 && (
