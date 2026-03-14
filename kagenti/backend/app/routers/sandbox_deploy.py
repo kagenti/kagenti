@@ -727,7 +727,13 @@ async def create_sandbox(
         logger.info("Created egress proxy Deployment '%s-egress-proxy'", request.name)
     except ApiException as e:
         if e.status == 409:
-            logger.info("Egress proxy '%s-egress-proxy' already exists", request.name)
+            # Update existing proxy with new resource limits / config
+            proxy_name = f"{request.name}-egress-proxy"
+            try:
+                kube.patch_deployment(name=proxy_name, namespace=namespace, body=proxy_deploy)
+                logger.info("Updated egress proxy Deployment '%s'", proxy_name)
+            except Exception as patch_err:
+                logger.warning("Failed to update egress proxy '%s': %s", proxy_name, patch_err)
         else:
             logger.warning("Failed to create egress proxy Deployment: %s", e)
     try:
@@ -745,7 +751,14 @@ async def create_sandbox(
         logger.info(f"Created Deployment '{request.name}' in namespace '{namespace}'")
     except ApiException as e:
         if e.status == 409:
-            logger.warning(f"Deployment '{request.name}' already exists in namespace '{namespace}'")
+            # Update existing deployment with new config (redeploy/reconfigure)
+            try:
+                kube.patch_deployment(
+                    name=request.name, namespace=namespace, body=deployment_manifest
+                )
+                logger.info(f"Updated Deployment '{request.name}' in namespace '{namespace}'")
+            except Exception as patch_err:
+                logger.warning(f"Failed to update Deployment '{request.name}': {patch_err}")
         else:
             logger.error(f"Failed to create Deployment: {e}")
             return SandboxCreateResponse(
