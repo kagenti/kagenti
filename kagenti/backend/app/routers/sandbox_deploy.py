@@ -110,8 +110,8 @@ class SandboxCreateRequest(BaseModel):
     # Pod resource limits
     agent_memory_limit: Optional[str] = "1Gi"
     agent_cpu_limit: Optional[str] = "500m"
-    proxy_memory_limit: Optional[str] = "128Mi"
-    proxy_cpu_limit: Optional[str] = "100m"
+    proxy_memory_limit: Optional[str] = "256Mi"
+    proxy_cpu_limit: Optional[str] = "200m"
 
     @property
     def profile(self):
