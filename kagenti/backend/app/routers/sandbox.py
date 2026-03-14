@@ -1841,6 +1841,10 @@ async def _stream_sandbox_response(
     loop_events: list[dict] = []  # Accumulated loop events for persistence
     stream_task_id: Optional[str] = None  # DB id of the task row created by THIS stream
     _last_persisted_count: int = 0  # count at last incremental persist
+    # Hold strong references to fire-and-forget persist tasks so the event loop
+    # doesn't garbage-collect them before completion (Python asyncio only keeps
+    # weak refs to tasks).
+    _persist_bg_tasks: set[asyncio.Task] = set()
 
     async def _set_owner_metadata():
         """Set owner on THIS stream's task row only.
@@ -2101,13 +2105,15 @@ async def _stream_sandbox_response(
                                 # Flush any events buffered before task_id was known
                                 if loop_events and namespace:
                                     _last_persisted_count = len(loop_events)
-                                    asyncio.create_task(
+                                    _t = asyncio.create_task(
                                         _persist_loop_events_incremental(
                                             stream_task_id,
                                             list(loop_events),
                                             namespace,
                                         )
                                     )
+                                    _persist_bg_tasks.add(_t)
+                                    _t.add_done_callback(_persist_bg_tasks.discard)
 
                         payload: dict = {"session_id": session_id}
                         if owner:
@@ -2209,20 +2215,32 @@ async def _stream_sandbox_response(
                                             loop_events.append(parsed)
 
                                             # -- Incremental persist --
-                                            if (
-                                                stream_task_id
-                                                and namespace
-                                                and _should_persist_incrementally(
-                                                    loop_events, _last_persisted_count, parsed
+                                            should_persist = _should_persist_incrementally(
+                                                loop_events, _last_persisted_count, parsed
+                                            )
+                                            if stream_task_id and namespace and should_persist:
+                                                logger.info(
+                                                    "INCR_PERSIST session=%s task=%s events=%d type=%s",
+                                                    session_id,
+                                                    stream_task_id[:12],
+                                                    len(loop_events),
+                                                    evt_type,
                                                 )
-                                            ):
                                                 _last_persisted_count = len(loop_events)
-                                                asyncio.create_task(
+                                                _t = asyncio.create_task(
                                                     _persist_loop_events_incremental(
                                                         stream_task_id,
                                                         list(loop_events),  # snapshot
                                                         namespace,
                                                     )
+                                                )
+                                                _persist_bg_tasks.add(_t)
+                                                _t.add_done_callback(_persist_bg_tasks.discard)
+                                            elif not stream_task_id:
+                                                logger.warning(
+                                                    "INCR_PERSIST_SKIP session=%s no stream_task_id events=%d",
+                                                    session_id,
+                                                    len(loop_events),
                                                 )
 
                                             continue
@@ -2490,12 +2508,16 @@ async def _stream_sandbox_response(
                                                             )
                                                         ):
                                                             _last_persisted_count = len(loop_events)
-                                                            asyncio.create_task(
+                                                            _t = asyncio.create_task(
                                                                 _persist_loop_events_incremental(
                                                                     stream_task_id,
                                                                     list(loop_events),  # snapshot
                                                                     namespace,
                                                                 )
+                                                            )
+                                                            _persist_bg_tasks.add(_t)
+                                                            _t.add_done_callback(
+                                                                _persist_bg_tasks.discard
                                                             )
 
                                                 except (json.JSONDecodeError, TypeError):

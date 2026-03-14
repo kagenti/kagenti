@@ -115,15 +115,29 @@ test.describe('Agent RCA Workflow', () => {
       await next(page); await next(page);
       const si = page.locator('#llm-secret-name');
       if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
-      // Budget/Config step — toggle Force Tool Calling based on env var
-      if (!FORCE_TOOL_CHOICE) {
-        const forceToggle = page.locator('#force-tool-choice');
-        if (await forceToggle.isChecked({ timeout: 3000 }).catch(() => false)) {
+      await next(page); // advance to Budget/Config step
+      // Toggle Force Tool Calling based on env var
+      const forceToggle = page.locator('#force-tool-choice');
+      if (await forceToggle.isVisible({ timeout: 3000 }).catch(() => false)) {
+        const isChecked = await forceToggle.isChecked();
+        if (FORCE_TOOL_CHOICE && !isChecked) {
+          await forceToggle.check();
+          console.log('[rca] Checked Force Tool Calling');
+        } else if (!FORCE_TOOL_CHOICE && isChecked) {
           await forceToggle.uncheck();
           console.log('[rca] Unchecked Force Tool Calling');
         }
+        // Also disable text tool parsing for both variants
+        const textParsingToggle = page.locator('#text-tool-parsing');
+        if (await textParsingToggle.isVisible({ timeout: 1000 }).catch(() => false)) {
+          if (await textParsingToggle.isChecked()) {
+            await textParsingToggle.uncheck();
+            console.log('[rca] Unchecked Text Tool Parsing');
+          }
+        }
       }
-      await next(page); await next(page); await next(page); await next(page);
+      console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
+      await next(page); await next(page); await next(page);
       await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
       await page.getByRole('button', { name: /Deploy Agent/i }).click();
 
