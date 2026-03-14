@@ -1167,18 +1167,27 @@ export const SandboxPage: React.FC = () => {
             const events = historyPage.loop_events as unknown as LoopEvent[];
             if (events.length > 0) {
               finalLoops = buildAgentLoops(events);
-              // Pair user messages with loops by order (not position).
-              // Messages from different tasks can arrive in arbitrary order,
-              // so sort by _index/order to get chronological pairing.
-              const userMsgs = allMessages
-                .filter((m) => m.role === 'user')
-                .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+              // Pair user messages with loops chronologically.
+              // Returns paired loops + any unpaired messages (assistant msgs,
+              // excess user msgs) that should render as flat ChatBubbles.
+              const { pairMessagesWithLoops } = await import('../utils/historyPairing');
               const loopArr = Array.from(finalLoops.values());
-              for (let i = 0; i < Math.min(userMsgs.length, loopArr.length); i++) {
-                loopArr[i].userMessage = userMsgs[i].content;
+              const { pairedLoops, unpairedMessages } = pairMessagesWithLoops(
+                allMessages.map((m) => ({ role: m.role, content: m.content, order: m.order })),
+                loopArr,
+              );
+              // Update loops in the map with paired userMessage
+              for (let i = 0; i < pairedLoops.length; i++) {
+                finalLoops.set(pairedLoops[i].id, pairedLoops[i]);
               }
-              // No separate messages needed — loops carry user messages
-              finalMessages = [];
+              // Keep unpaired messages for flat rendering (mixed sessions)
+              finalMessages = unpairedMessages.map((um, idx) => ({
+                id: `unpaired-${idx}`,
+                role: um.role as 'user' | 'assistant',
+                content: um.content,
+                timestamp: new Date(),
+                order: um.order,
+              }));
               console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events, paired ${Math.min(userMsgs.length, loopArr.length)} user messages`);
 
               const loopStatuses = Array.from(finalLoops.values()).map((l) => ({ id: l.id, status: l.status, hasFinalAnswer: !!l.finalAnswer, steps: l.steps.length }));
