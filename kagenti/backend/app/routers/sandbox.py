@@ -1756,8 +1756,21 @@ def _extract_text_from_parts(parts: list) -> str:
 # ---------------------------------------------------------------------------
 # Incremental loop-event persistence
 # ---------------------------------------------------------------------------
-_INCREMENTAL_PERSIST_THRESHOLD = 2  # flush every 2 events (high-value types flush immediately)
-_INCREMENTAL_TRIGGER_TYPES = frozenset({"budget_update", "tool_result", "reporter_output"})
+_INCREMENTAL_PERSIST_THRESHOLD = 1  # persist every event — no batching, no loss on disconnect
+_INCREMENTAL_TRIGGER_TYPES = frozenset(
+    {
+        "planner_output",
+        "replanner_output",
+        "executor_step",
+        "tool_call",
+        "tool_result",
+        "micro_reasoning",
+        "reflector_decision",
+        "reporter_output",
+        "step_selector",
+        "budget_update",
+    }
+)
 
 
 async def _persist_loop_events_incremental(

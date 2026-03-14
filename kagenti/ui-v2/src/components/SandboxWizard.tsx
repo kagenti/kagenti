@@ -102,7 +102,7 @@ export const INITIAL_STATE: WizardState = {
   secctx: true,
   landlock: false,
   proxy: false,
-  proxyDomains: 'github.com, api.github.com, githubusercontent.com, pypi.org, files.pythonhosted.org',
+  proxyDomains: 'github.com, api.github.com, githubusercontent.com, pypi.org, files.pythonhosted.org, blob.core.windows.net',
   workspaceSize: '5Gi',
   sessionTtl: '7d',
   credentialMode: 'pat',
