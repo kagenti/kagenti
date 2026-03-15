@@ -80,7 +80,7 @@ class SandboxCreateRequest(BaseModel):
     # Composable security layers (Session F)
     secctx: bool = True
     landlock: bool = False
-    proxy: bool = False
+    proxy: bool = True
     proxy_domains: Optional[str] = None
     # Deployment mechanism
     managed_lifecycle: bool = False
