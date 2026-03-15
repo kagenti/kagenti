@@ -354,8 +354,8 @@ async def _wait_for_session(
     last_status = None
     last_body = ""
     for attempt in range(max_attempts):
-        # Exponential backoff: interval, interval*1.5, interval*2.25, ...
-        delay = interval * (1.5**attempt)
+        # Exponential backoff capped at 15s
+        delay = min(interval * (1.5**attempt), 15)
         await asyncio.sleep(delay)
         try:
             async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
@@ -439,6 +439,11 @@ class TestSandboxSessionsAPI:
         assert detail["context_id"] == context_id
         assert detail["kind"] == "task"
         assert "status" in detail
+        # Verify the session actually has history content (not just an empty shell)
+        history = detail.get("history", [])
+        assert len(history) > 0, (
+            f"Session {context_id} has no history entries — expected at least the user message"
+        )
 
     @pytest.mark.asyncio
     async def test_session_list_search(self):
@@ -507,8 +512,10 @@ class TestSandboxSessionsAPI:
             )
             killed = resp.json()
             status = killed.get("status", {})
-            # Status should reflect canceled state
-            assert status is not None
+            state = status.get("state", "").lower()
+            assert state in ("canceled", "cancelled", "failed"), (
+                f"Kill should set state to canceled, got: {state!r} (full status: {status})"
+            )
 
     @pytest.mark.asyncio
     async def test_session_delete(self):

@@ -288,6 +288,8 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
   };
 
   const canAdvance = (): boolean => {
+    // In reconfigure mode, all steps are navigable (fields pre-populated)
+    if (mode === 'reconfigure') return true;
     if (step === 0) return !!state.name && !!state.repo;
     return true;
   };

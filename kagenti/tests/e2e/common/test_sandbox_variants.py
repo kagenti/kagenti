@@ -233,8 +233,10 @@ class TestMultiTurnConversation:
 
         text = _extract_text(result)
         assert text, f"Agent {agent_name} returned empty response"
-        # The response should contain the echo output or reference it
-        assert len(text) > 5, f"Agent response too short: {text}"
+        # The response must contain the actual echo output
+        assert "hello-from-test" in text.lower(), (
+            f"Agent {agent_name} response doesn't contain expected echo output: {text[:200]}"
+        )
         client.close()
 
     def test_file_write_and_read(self, agent_name: str):
