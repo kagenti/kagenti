@@ -90,7 +90,9 @@ class KeyInfo(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-async def _litellm_request(method: str, path: str, json: dict | None = None) -> dict:
+async def _litellm_request(
+    method: str, path: str, json: dict | None = None, *, allow_conflict: bool = False
+) -> dict:
     """Make an authenticated request to LiteLLM admin API."""
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.request(
@@ -100,6 +102,9 @@ async def _litellm_request(method: str, path: str, json: dict | None = None) -> 
             json=json,
         )
         if resp.status_code >= 400:
+            if allow_conflict and resp.status_code == 400 and "already exists" in resp.text:
+                logger.info("LiteLLM %s %s: resource already exists (idempotent)", method, path)
+                return {"_already_exists": True}
             logger.warning(
                 "LiteLLM %s %s returned %s: %s",
                 method,
@@ -112,6 +117,17 @@ async def _litellm_request(method: str, path: str, json: dict | None = None) -> 
                 detail=f"LiteLLM error: {resp.text[:300]}",
             )
         return resp.json()
+
+
+def _extract_keys(data: dict | list) -> list[dict]:
+    """Extract key list from litellm /key/list response.
+
+    LiteLLM returns {"keys": [...], "total_count": ...} — NOT {"data": [...]}.
+    """
+    if isinstance(data, list):
+        return [k for k in data if isinstance(k, dict)]
+    raw = data.get("keys", data.get("data", []))
+    return [k for k in raw if isinstance(k, dict)]
 
 
 async def _get_team_id(namespace: str) -> str | None:
@@ -170,7 +186,9 @@ async def _create_virtual_key(
     if models:
         body["models"] = models
 
-    data = await _litellm_request("POST", "/key/generate", json=body)
+    data = await _litellm_request("POST", "/key/generate", json=body, allow_conflict=True)
+    if data.get("_already_exists"):
+        return ""  # Key exists — caller should handle empty return
     key = data.get("token") or data.get("key", "")
     if not key:
         raise HTTPException(status_code=500, detail="LiteLLM did not return a key")
@@ -194,7 +212,7 @@ async def create_team(
     """Create a litellm team for a namespace and store a default virtual key."""
     team_id = await _ensure_team(req.namespace, req.max_budget, req.budget_duration)
 
-    # Create default namespace key
+    # Create default namespace key (idempotent — may already exist)
     key = await _create_virtual_key(
         team_id=team_id,
         key_alias=f"{req.namespace}-default",
@@ -204,16 +222,17 @@ async def create_team(
         models=req.models,
     )
 
-    # Store in k8s secret
-    kube.create_secret(
-        namespace=req.namespace,
-        name="litellm-virtual-keys",
-        string_data={"api-key": key},
-        labels={
-            "app.kubernetes.io/managed-by": "kagenti",
-            "kagenti.io/litellm-team-id": team_id,
-        },
-    )
+    # Store in k8s secret (only if new key was created)
+    if key:
+        kube.create_secret(
+            namespace=req.namespace,
+            name="litellm-virtual-keys",
+            string_data={"api-key": key},
+            labels={
+                "app.kubernetes.io/managed-by": "kagenti",
+                "kagenti.io/litellm-team-id": team_id,
+            },
+        )
     logger.info("Created team %s + default key for namespace %s", team_id, req.namespace)
 
     return TeamResponse(
@@ -302,17 +321,20 @@ async def create_agent_key(
     )
 
     secret_name = f"{req.agent_name}-llm-key"
-    kube.create_secret(
-        namespace=req.namespace,
-        name=secret_name,
-        string_data={"apikey": key},
-        labels={
-            "app.kubernetes.io/managed-by": "kagenti",
-            "kagenti.io/agent": req.agent_name,
-            "kagenti.io/litellm-team-id": team_id,
-        },
-    )
-    logger.info("Created agent key %s in %s/%s", req.agent_name, req.namespace, secret_name)
+    if key:
+        kube.create_secret(
+            namespace=req.namespace,
+            name=secret_name,
+            string_data={"apikey": key},
+            labels={
+                "app.kubernetes.io/managed-by": "kagenti",
+                "kagenti.io/agent": req.agent_name,
+                "kagenti.io/litellm-team-id": team_id,
+            },
+        )
+        logger.info("Created agent key %s in %s/%s", req.agent_name, req.namespace, secret_name)
+    else:
+        logger.info("Agent key %s already exists (idempotent)", req.agent_name)
 
     return KeyResponse(
         key_alias=req.agent_name,
@@ -335,7 +357,7 @@ async def list_keys(namespace: str | None = None):
             return []
         raise
 
-    keys_raw = data if isinstance(data, list) else data.get("data", data.get("keys", []))
+    keys_raw = _extract_keys(data)
     result = []
     for k in keys_raw:
         meta = k.get("metadata") or {}
@@ -367,7 +389,7 @@ async def delete_agent_key(
     # Find the key by alias
     try:
         data = await _litellm_request("GET", "/key/list")
-        keys_raw = data if isinstance(data, list) else data.get("data", data.get("keys", []))
+        keys_raw = _extract_keys(data)
         for k in keys_raw:
             if k.get("key_alias") == agent_name:
                 token = k.get("token", k.get("key", ""))
@@ -408,7 +430,7 @@ async def get_agent_models(namespace: str, agent_name: str):
     # Try to find agent-specific key with model restrictions
     try:
         data = await _litellm_request("GET", "/key/list")
-        keys_raw = data if isinstance(data, list) else data.get("data", data.get("keys", []))
+        keys_raw = _extract_keys(data)
         for k in keys_raw:
             if k.get("key_alias") == agent_name:
                 agent_models = k.get("models") or []
