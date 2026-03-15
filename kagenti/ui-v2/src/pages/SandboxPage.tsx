@@ -1188,7 +1188,7 @@ export const SandboxPage: React.FC = () => {
                 timestamp: new Date(),
                 order: um.order,
               }));
-              console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events, paired ${Math.min(userMsgs.length, loopArr.length)} user messages`);
+              console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events, paired ${pairedLoops.length} loops, ${unpairedMessages.length} unpaired msgs`);
 
               const loopStatuses = Array.from(finalLoops.values()).map((l) => ({ id: l.id, status: l.status, hasFinalAnswer: !!l.finalAnswer, steps: l.steps.length }));
               console.log('[history] Loop statuses:', JSON.stringify(loopStatuses));
