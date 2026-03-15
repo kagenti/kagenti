@@ -109,6 +109,15 @@ type Action =
       messages: Message[];
       oldestIndex: number | null;
       hasMoreHistory: boolean;
+    }
+  | { type: 'MESSAGES_APPENDED'; messages: Message[] }
+  | { type: 'MESSAGES_SET'; messages: Message[] }
+  | {
+      type: 'LOOPS_UPDATE';
+      updater: (prev: Map<string, AgentLoop>) => Map<string, AgentLoop>;
+    }
+  | {
+      type: 'LOOP_CANCEL';
     };
 
 // ---------------------------------------------------------------------------
@@ -237,6 +246,33 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         oldestIndex: action.oldestIndex,
         hasMoreHistory: action.hasMoreHistory,
       };
+
+    case 'MESSAGES_APPENDED':
+      return {
+        ...state,
+        messages: [...state.messages, ...action.messages],
+      };
+
+    case 'MESSAGES_SET':
+      return {
+        ...state,
+        messages: action.messages,
+      };
+
+    case 'LOOPS_UPDATE': {
+      const updated = action.updater(state.agentLoops);
+      return updated === state.agentLoops ? state : { ...state, agentLoops: updated };
+    }
+
+    case 'LOOP_CANCEL': {
+      const canceled = new Map(state.agentLoops);
+      for (const [id, loop] of canceled) {
+        if (loop.status !== 'done') {
+          canceled.set(id, { ...loop, status: 'canceled' });
+        }
+      }
+      return { ...state, phase: 'LOADED', agentLoops: canceled };
+    }
 
     default:
       return state;

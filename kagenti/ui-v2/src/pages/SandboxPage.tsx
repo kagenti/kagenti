@@ -48,9 +48,8 @@ import { SandboxWizard } from '../components/SandboxWizard';
 import { SubSessionsPanel, useChildSessionCount } from '../components/SubSessionsPanel';
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
-import { applyLoopEvent, buildAgentLoops, createDefaultAgentLoop, type LoopEvent } from '../utils/loopBuilder';
-// useSessionLoader hook ready for Phase 3 migration (see docs/plans/2026-03-15-agent-graph-card-design.md)
-// import { useSessionLoader, type SessionAction } from '../hooks/useSessionLoader';
+import { applyLoopEvent, createDefaultAgentLoop } from '../utils/loopBuilder';
+import { useSessionLoader } from '../hooks/useSessionLoader';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
 type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
@@ -84,9 +83,6 @@ interface Message {
   order: number;
 }
 
-/** Number of history messages to show initially; rest behind "Load earlier". */
-const INITIAL_HISTORY_LIMIT = 30;
-
 /** Format timestamp for display — HH:mm:ss.mmm for precise ordering. */
 function formatMsgTime(d: Date): string {
   const h = String(d.getHours()).padStart(2, '0');
@@ -94,19 +90,6 @@ function formatMsgTime(d: Date): string {
   const s = String(d.getSeconds()).padStart(2, '0');
   const ms = String(d.getMilliseconds()).padStart(3, '0');
   return `${h}:${m}:${s}.${ms}`;
-}
-
-/** Detect and filter out LangGraph intermediate status dumps and JSON loop events from history. */
-function isGraphDump(text: string): boolean {
-  const t = text.trim();
-  // Old-style graph dumps: "assistant: {...}", "tools: {...}", "__end__: {...}"
-  if (/^(assistant|tools|__end__):\s/m.test(t)) return true;
-  // New-style JSON loop events stored as message text
-  try {
-    const parsed = JSON.parse(t);
-    if (parsed && typeof parsed === 'object' && parsed.type && parsed.loop_id) return true;
-  } catch { /* not JSON */ }
-  return false;
 }
 
 /** Regex matching absolute file paths in agent output. */
@@ -731,31 +714,34 @@ export const SandboxPage: React.FC = () => {
   const [contextId, setContextId] = useState(() =>
     getInitialSession(searchParams)
   );
-  const [messages, setMessages] = useState<Message[]>([]);
   /** Auto-incrementing counter for message ordering. */
   const orderCounterRef = useRef(1_000_000);
   const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [hasMoreHistory, setHasMoreHistory] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [loadingSession, setLoadingSession] = useState(() => !!getInitialSession(searchParams));
-  const [oldestIndex, setOldestIndex] = useState<number | null>(null);
 
-  // --- Session loader hook (available for future migration) ---
-  // The useSessionLoader hook provides a clean state-machine-based alternative
-  // to the polling/streaming lifecycle below. It is imported and ready for
-  // incremental adoption. See docs/plans/2026-03-15-agent-graph-card-design.md
-  // Phase 3 for the migration plan.
-  // const sessionLoader = useSessionLoader(namespace, contextId);
+  // --- Session loader hook: state-machine for session lifecycle ---
+  const {
+    messages,
+    agentLoops,
+    hasMoreHistory,
+    oldestIndex,
+    isLoading: sessionIsLoading,
+    isStreaming,
+    dispatch: sessionDispatch,
+    subscribeAbortRef,
+  } = useSessionLoader(namespace, contextId);
+
+  // Derived loading flags for backward compatibility
+  const loadingHistory = sessionIsLoading;
+  const loadingSession = sessionIsLoading;
+
   // Synchronous guard against double-send (React StrictMode double-invokes
   // effects/callbacks, and async setState batching means two rapid calls
   // can both see isStreaming===false before either sets it to true).
   const sendingRef = useRef(false);
   /** Last user message text — attached to the next AgentLoop created during streaming. */
   const lastUserMessageRef = useRef<string>('');
-  const subscribeAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -786,7 +772,6 @@ export const SandboxPage: React.FC = () => {
       setSelectedAgent(urlAgent);
     }
   }, [searchParams]);
-  const [agentLoops, setAgentLoops] = useState<Map<string, AgentLoop>>(new Map());
   const [skillWhispererDismissed, setSkillWhispererDismissed] = useState(false);
   const [sessionModelOverride, setSessionModelOverride] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'chat');
@@ -970,424 +955,71 @@ export const SandboxPage: React.FC = () => {
     }
   }, [namespace, contextId]);
 
-  /** Convert a history message from the API into a Message for display. */
-  const toMessage = (
-    h: { role: string; parts?: Array<Record<string, unknown>>; _index?: number; username?: string; metadata?: Record<string, unknown> },
-    i: number
-  ): Message => {
-    const firstPart = h.parts?.[0] as Record<string, unknown> | undefined;
+  // toMessage is now handled by useSessionLoader hook
 
-    // Stable sort key: prefer backend _index, fall back to array position
-    const order = h._index ?? i;
+  // _subscribeToSession is now handled by useSessionLoader hook (Effect 2)
 
-    // Only treat as tool data if it's an explicit tool call/result/thinking event
-    const toolTypes = ['tool_call', 'tool_result', 'thinking', 'hitl_request', 'hitl_response', 'graph_event'];
-    if (firstPart?.kind === 'data' && toolTypes.includes(firstPart?.type as string)) {
-      return {
-        id: `history-${order}`,
-        role: h.role as 'user' | 'assistant',
-        content: '',
-        timestamp: new Date(),
-        toolData: firstPart as unknown as ToolCallData,
-        order,
-      };
-    }
+  // loadInitialHistory, justFinishedStreamingRef, history trigger, and polling
+  // are now handled by useSessionLoader hook (Effects 1-4)
 
-    // Extract text from all parts (handles kind: "text", kind: "data" with text, etc.)
-    const content = h.parts
-      ?.map((p) => {
-        if (typeof p.text === 'string') return p.text;
-        // Data parts that aren't tool calls may contain text content
-        if (p.kind === 'data' && typeof p.content === 'string') return p.content;
-        return '';
-      })
-      .filter(Boolean)
-      .join('') || '';
-
-    return {
-      id: `history-${order}`,
-      role: h.role as 'user' | 'assistant',
-      content,
-      timestamp: new Date(),
-      username: h.username || (h.metadata?.username as string | undefined),
-      order,
-    };
-  };
-
-  /** Subscribe to a running session's event stream via tasks/resubscribe.
-   *  NOTE: useSessionLoader hook (src/hooks/useSessionLoader.ts) provides a
-   *  state-machine replacement for this + loadInitialHistory + polling.
-   *  This function will be removed in Phase 3 of the AgentGraphCard migration. */
-  const _subscribeToSession = async (ns: string, ctxId: string) => {
-    // Cancel any existing subscribe stream before starting a new one
-    if (subscribeAbortRef.current) {
-      subscribeAbortRef.current.abort();
-      subscribeAbortRef.current = null;
-    }
-    const controller = new AbortController();
-    subscribeAbortRef.current = controller;
-
-    try {
-      const token = await getToken();
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const url = `/api/v1/sandbox/${encodeURIComponent(ns)}/sessions/${encodeURIComponent(ctxId)}/subscribe`;
-      const response = await fetch(url, { headers, signal: controller.signal });
-      if (!response.ok || !response.body) {
-        console.log('[subscribe] Not available or session completed');
-        return;
-      }
-
-      console.log('[subscribe] Connected to live stream');
-      setIsStreaming(true);
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const raw = line.slice(6).trim();
-            if (!raw) continue;
-            try {
-              const data = JSON.parse(raw);
-              if (data.done) {
-                setAgentLoops((prev) => {
-                  const next = new Map(prev);
-                  for (const [id, loop] of next) {
-                    if (loop.status === 'done') continue;
-                    if (loop.finalAnswer) {
-                      next.set(id, { ...loop, status: 'done' });
-                    } else {
-                      next.set(id, { ...loop, status: 'failed', failureReason: loop.failureReason || 'Agent stopped without producing a final answer.' });
-                    }
-                  }
-                  return next;
-                });
-                return;
-              }
-              if (data.ping) continue;
-              if (data.loop_id && data.loop_event) {
-                const evt = data.loop_event as LoopEvent;
-                evt.loop_id = evt.loop_id || data.loop_id;
-                setAgentLoops((prev) => {
-                  const next = new Map(prev);
-                  const loopId = evt.loop_id;
-                  let existing = next.get(loopId);
-                  if (!existing) {
-                    existing = createDefaultAgentLoop(loopId);
-                    existing.userMessage = lastUserMessageRef.current || undefined;
-                  }
-                  next.set(loopId, applyLoopEvent(existing, evt));
-                  return next;
-                });
-              }
-            } catch {
-              // skip parse errors
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-        setIsStreaming(false);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        console.log('[subscribe] Aborted (session changed)');
-      } else {
-        console.warn('[subscribe] Error:', err);
-      }
-      setIsStreaming(false);
-    } finally {
-      if (subscribeAbortRef.current === controller) {
-        subscribeAbortRef.current = null;
-      }
-    }
-  };
-
-  /** Load the initial (most recent) page of history.
-   *
-   * Uses parallel fetches and batched state updates to minimize re-renders.
-   * Computes all derived state (messages, loops, agent) BEFORE any setState.
-   */
-  const loadInitialHistory = useCallback(
-    async (ns: string, ctxId: string) => {
-      if (!ns || !ctxId) return;
-      // Cancel any existing subscribe stream when loading new session
-      if (subscribeAbortRef.current) {
-        subscribeAbortRef.current.abort();
-        subscribeAbortRef.current = null;
-      }
-      setLoadingHistory(true);
-
-      try {
-        // Parallel fetch: session metadata + history in one round-trip
-        const [sessionDetail, historyPage] = await Promise.all([
-          sandboxService.getSession(ns, ctxId).catch(() => null),
-          sandboxService.getHistory(ns, ctxId, { limit: INITIAL_HISTORY_LIMIT }).catch(() => null),
-        ]);
-
-        // --- Compute all derived state BEFORE any setState calls ---
-
-        // 1. Agent name
-        const metaAgent = (sessionDetail?.metadata as Record<string, unknown> | null)?.agent_name as string | undefined;
-        const resolvedAgent = metaAgent
-          || localStorage.getItem(STORAGE_KEY_AGENT_PREFIX + ctxId)
-          || new URLSearchParams(window.location.search).get('agent')
-          || selectedAgentRef.current
-          || 'sandbox-legion';
-        if (metaAgent) {
-          localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + ctxId, metaAgent);
-        }
-
-        // 2. Messages and loops
-        let finalMessages: Message[] = [];
-        let finalLoops = new Map<string, AgentLoop>();
-        let hasMore = false;
-        let oldest: number | null = null;
-        let shouldSubscribe = false;
-
-        if (historyPage) {
-          console.log(`[history] Loaded: ${historyPage.messages.length} messages, loop_events=${historyPage.loop_events?.length ?? 'none'}, total=${historyPage.total}`);
-          const allMessages = historyPage.messages.map(toMessage);
-          hasMore = historyPage.has_more;
-          if (historyPage.messages.length > 0) {
-            oldest = historyPage.messages[0]._index ?? 0;
-            // Set the order counter above the highest backend _index so live
-            // messages always sort after history messages.
-            const maxIndex = Math.max(...historyPage.messages.map((m) => m._index ?? 0));
-            orderCounterRef.current = maxIndex + 1_000;
-          }
-
-          // Build loops from events
-          if (historyPage.loop_events) {
-            const events = historyPage.loop_events as unknown as LoopEvent[];
-            if (events.length > 0) {
-              finalLoops = buildAgentLoops(events);
-              // Pair user messages with loops chronologically.
-              // Returns paired loops + any unpaired messages (assistant msgs,
-              // excess user msgs) that should render as flat ChatBubbles.
-              const { pairMessagesWithLoops } = await import('../utils/historyPairing');
-              const loopArr = Array.from(finalLoops.values());
-              const { pairedLoops, unpairedMessages } = pairMessagesWithLoops(
-                allMessages.map((m) => ({ role: m.role, content: m.content, order: m.order })),
-                loopArr,
-              );
-              // Update loops in the map with paired userMessage
-              for (let i = 0; i < pairedLoops.length; i++) {
-                finalLoops.set(pairedLoops[i].id, pairedLoops[i]);
-              }
-              // Keep unpaired messages for flat rendering (mixed sessions)
-              finalMessages = unpairedMessages.map((um, idx) => ({
-                id: `unpaired-${idx}`,
-                role: um.role as 'user' | 'assistant',
-                content: um.content,
-                timestamp: new Date(),
-                order: um.order,
-              }));
-              console.log(`[history] Reconstructed ${finalLoops.size} loop(s), ${events.length} events, paired ${pairedLoops.length} loops, ${unpairedMessages.length} unpaired msgs`);
-
-              const loopStatuses = Array.from(finalLoops.values()).map((l) => ({ id: l.id, status: l.status, hasFinalAnswer: !!l.finalAnswer, steps: l.steps.length }));
-              console.log('[history] Loop statuses:', JSON.stringify(loopStatuses));
-              const hasComplete = Array.from(finalLoops.values()).some((l) => l.finalAnswer);
-              shouldSubscribe = !hasComplete;
-              console.log('[history] hasComplete:', hasComplete, 'shouldSubscribe:', shouldSubscribe);
-            } else {
-              finalMessages = allMessages;
-            }
-          } else {
-            finalMessages = allMessages;
-          }
-        } else if (sessionDetail?.history) {
-          // Fallback: no history endpoint — use session detail
-          const filtered = sessionDetail.history.filter((h: { role: string; parts?: Array<{ text?: string }> }) => {
-            if (h.role === 'user') return true;
-            const text = h.parts?.map((p: { text?: string }) => p.text).filter(Boolean).join('') || '';
-            return text ? !isGraphDump(text) : false;
-          });
-          finalMessages = filtered.slice(-INITIAL_HISTORY_LIMIT).map(toMessage);
-          hasMore = filtered.length > INITIAL_HISTORY_LIMIT;
-        }
-
-        // --- ONE batch of setState calls (React 18 auto-batches) ---
-        setSelectedAgent(resolvedAgent);
-        setMessages(finalMessages);
-        setAgentLoops(finalLoops);
-        setHasMoreHistory(hasMore);
-        setOldestIndex(oldest);
-        setLoadingHistory(false);
-        setLoadingSession(false);
-
-        // Subscribe AFTER state is settled (next tick)
-        if (shouldSubscribe) {
-          console.log('[history] No final answer — subscribing to live stream');
-          _subscribeToSession(ns, ctxId);
-        }
-      } catch {
-        setLoadingHistory(false);
-        setLoadingSession(false);
-      }
-    },
-    []
-  );
-
-  // Track whether we just finished streaming — skip history reload
-  // because the streaming-built agentLoops are fresher than the DB.
-  const justFinishedStreamingRef = useRef(false);
-
-  // Load history on session change + sync URL if restored from localStorage
-  // Skip during streaming AND skip the first !isStreaming after streaming ends.
+  // Sync URL when contextId is set from localStorage restoration
   useEffect(() => {
-    if (contextId && namespace && !isStreaming) {
-      if (justFinishedStreamingRef.current) {
-        // Just finished streaming — skip reload, keep streaming data
-        justFinishedStreamingRef.current = false;
-      } else {
-        loadInitialHistory(namespace, contextId);
-      }
-      // Sync URL if session was restored from localStorage
-      if (!searchParams.get('session') && contextId) {
-        setSearchParams({ session: contextId }, { replace: true });
-      }
+    if (contextId && !searchParams.get('session')) {
+      setSearchParams({ session: contextId }, { replace: true });
     }
-    if (isStreaming) {
-      justFinishedStreamingRef.current = true;
-    }
-  }, [contextId, namespace, isStreaming, loadInitialHistory, searchParams, setSearchParams]);
-
-  // ---------------------------------------------------------------------------
-  // Poll for new messages when session is idle (not streaming).
-  // This enables multi-tab / multi-user updates without WebSocket.
-  // Stops polling when the backend reports a terminal task_state.
-  // ---------------------------------------------------------------------------
-  const lastUpdatedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!contextId || !namespace || isStreaming || loadingSession) return;
-
-    // Don't poll if all loops are complete (no new events expected)
-    const allLoopsDone = agentLoops.size > 0 && Array.from(agentLoops.values()).every(
-      (l) => l.status === 'done' || l.status === 'failed'
-    );
-    if (allLoopsDone) return;
-
-    const TERMINAL_STATES = new Set(['completed', 'failed', 'canceled', 'rejected']);
-
-    const pollInterval = setInterval(async () => {
-      try {
-        // Skip events on lightweight polls — only check task_state + new messages.
-        // Full event fetch happens on initial load; polling just watches for completion.
-        const histPage = await sandboxService.getHistory(namespace, contextId, {
-          limit: 5,
-          skip_events: true,
-        });
-
-        // Backend reports terminal state — stop polling and finalize loops
-        if (histPage.task_state && TERMINAL_STATES.has(histPage.task_state)) {
-          console.log('[poll] Task reached terminal state:', histPage.task_state, '— stopping poll');
-          clearInterval(pollInterval);
-
-          // Mark executing loops as done/failed based on task_state
-          setAgentLoops((prev) => {
-            const next = new Map(prev);
-            for (const [id, loop] of next) {
-              if (loop.status === 'done' || loop.status === 'failed') continue;
-              if (histPage.task_state === 'completed') {
-                next.set(id, { ...loop, status: loop.finalAnswer ? 'done' : 'failed',
-                  failureReason: loop.finalAnswer ? undefined : 'Agent completed without a final answer.' });
-              } else {
-                next.set(id, { ...loop, status: 'failed',
-                  failureReason: `Session ${histPage.task_state}.` });
-              }
-            }
-            return next;
-          });
-          return;
-        }
-
-        // Track last_updated to avoid re-processing unchanged state
-        if (histPage.last_updated && histPage.last_updated === lastUpdatedRef.current) {
-          return; // No changes since last poll
-        }
-        lastUpdatedRef.current = histPage.last_updated || null;
-
-        if (histPage.messages.length === 0) return;
-
-        // When loop cards exist, they carry user messages — skip adding
-        // messages to avoid duplicate ChatBubbles appearing alongside loops.
-        // Check is inside setMessages to get the latest agentLoops via closure
-        // on the state setter (React guarantees fresh state in updater).
-        // We use a separate check here since agentLoops isn't in deps.
-        let hasLoops = false;
-        setAgentLoops((prev) => { hasLoops = prev.size > 0; return prev; });
-        if (hasLoops) return;
-
-        setMessages((prev) => {
-          // Dedup by _index (history-loaded messages)
-          const existingIndices = new Set(
-            prev
-              .map((m) => {
-                const match = m.id.match(/^history-(\d+)$/);
-                return match ? Number(match[1]) : null;
-              })
-              .filter((idx): idx is number => idx !== null)
-          );
-          // Also dedup by content prefix (catches SSE-added messages without _index)
-          const existingContent = new Set(
-            prev.filter((m) => m.content?.trim()).map((m) => m.content.trim().slice(0, 100))
-          );
-
-          const newMsgs = histPage.messages
-            .filter((h) => {
-              if (h._index !== undefined && existingIndices.has(h._index)) return false;
-              // Content-based dedup for SSE-added messages
-              const text = (h.parts || [])
-                .map((p: Record<string, unknown>) => (typeof p.text === 'string' ? p.text : ''))
-                .filter(Boolean)
-                .join('');
-              if (text && existingContent.has(text.trim().slice(0, 100))) return false;
-              return true;
-            })
-            .map(toMessage);
-
-          if (newMsgs.length === 0) return prev;
-          shouldAutoScroll.current = true;
-          return [...prev, ...newMsgs];
-        });
-      } catch {
-        // Polling failures are non-critical
-      }
-    }, 5000);
-
-    return () => clearInterval(pollInterval);
-  }, [contextId, namespace, isStreaming]);
+  }, [contextId, searchParams, setSearchParams]);
 
   /** Load an older page of history (triggered by scrolling to top). */
   const loadOlderHistory = useCallback(async () => {
     if (!hasMoreHistory || loadingHistory || oldestIndex === null) return;
-    setLoadingHistory(true);
     const container = scrollContainerRef.current;
     const prevScrollHeight = container?.scrollHeight ?? 0;
 
     try {
       const page = await sandboxService.getHistory(namespace, contextId, {
-        limit: INITIAL_HISTORY_LIMIT,
+        limit: 30,
         before: oldestIndex,
       });
       if (page.messages.length > 0) {
-        setMessages((prev) => [
-          ...page.messages.map(toMessage),
-          ...prev,
-        ]);
-        setOldestIndex(page.messages[0]._index ?? 0);
-        setHasMoreHistory(page.has_more);
+        // Convert history messages to Message format for prepending
+        const newMsgs: Message[] = page.messages.map((h: { role: string; parts?: Array<Record<string, unknown>>; _index?: number; username?: string; metadata?: Record<string, unknown> }, i: number) => {
+          const firstPart = h.parts?.[0] as Record<string, unknown> | undefined;
+          const order = h._index ?? i;
+          const toolTypes = ['tool_call', 'tool_result', 'thinking', 'hitl_request', 'hitl_response', 'graph_event'];
+          if (firstPart?.kind === 'data' && toolTypes.includes(firstPart?.type as string)) {
+            return {
+              id: `history-${order}`,
+              role: h.role as 'user' | 'assistant',
+              content: '',
+              timestamp: new Date(),
+              toolData: firstPart as unknown as ToolCallData,
+              order,
+            };
+          }
+          const content = h.parts
+            ?.map((p: Record<string, unknown>) => {
+              if (typeof p.text === 'string') return p.text;
+              if (p.kind === 'data' && typeof p.content === 'string') return p.content;
+              return '';
+            })
+            .filter(Boolean)
+            .join('') || '';
+          return {
+            id: `history-${order}`,
+            role: h.role as 'user' | 'assistant',
+            content,
+            timestamp: new Date(),
+            username: h.username || (h.metadata?.username as string | undefined),
+            order,
+          };
+        });
+
+        sessionDispatch({
+          type: 'MESSAGES_PREPENDED',
+          messages: newMsgs,
+          oldestIndex: page.messages[0]._index ?? 0,
+          hasMoreHistory: page.has_more,
+        });
 
         // Preserve scroll position after prepending
         requestAnimationFrame(() => {
@@ -1397,14 +1029,17 @@ export const SandboxPage: React.FC = () => {
           }
         });
       } else {
-        setHasMoreHistory(false);
+        sessionDispatch({
+          type: 'MESSAGES_PREPENDED',
+          messages: [],
+          oldestIndex: oldestIndex,
+          hasMoreHistory: false,
+        });
       }
     } catch {
       // ignore
-    } finally {
-      setLoadingHistory(false);
     }
-  }, [hasMoreHistory, loadingHistory, oldestIndex, namespace, contextId]);
+  }, [hasMoreHistory, loadingHistory, oldestIndex, namespace, contextId, sessionDispatch]);
 
   // IntersectionObserver for infinite scroll — triggers when sentinel at top is visible
   useEffect(() => {
@@ -1433,7 +1068,6 @@ export const SandboxPage: React.FC = () => {
 
   const handleSelectSession = useCallback(
     (id: string, sessionAgentName?: string) => {
-      const sameSession = id === contextId;
       setContextId(id);
       // Only update selectedAgent when sessionAgentName is a non-empty string.
       // When metadata is missing (race condition), preserve the current agent
@@ -1442,15 +1076,10 @@ export const SandboxPage: React.FC = () => {
         setSelectedAgent(sessionAgentName);
         if (id) localStorage.setItem(STORAGE_KEY_AGENT_PREFIX + id, sessionAgentName);
       }
-      setLoadingSession(true);
-      setMessages([]);
-      setAgentLoops(new Map());
+      // Reset local UI state — hook handles session data via contextId change
       setInput('');
       setStreamingContent('');
-      setIsStreaming(false);
       setError(null);
-      setHasMoreHistory(false);
-      setOldestIndex(null);
       shouldAutoScroll.current = true;
       if (id) {
         // Resolve the agent for the URL: prefer session agent, then localStorage, then current
@@ -1465,16 +1094,12 @@ export const SandboxPage: React.FC = () => {
         });
         localStorage.setItem(STORAGE_KEY_SESSION, id);
       } else {
+        sessionDispatch({ type: 'SESSION_CLEARED' });
         setSearchParams({});
         localStorage.removeItem(STORAGE_KEY_SESSION);
       }
-      // When re-selecting the same session, the useEffect keyed on contextId
-      // won't fire because the value hasn't changed. Reload history explicitly.
-      if (sameSession && id && namespace) {
-        loadInitialHistory(namespace, id);
-      }
     },
-    [setSearchParams, selectedAgent, contextId, namespace, loadInitialHistory]
+    [setSearchParams, selectedAgent, sessionDispatch]
   );
 
   /** Start a new session with the chosen agent (from the New Session modal). */
@@ -1484,20 +1109,15 @@ export const SandboxPage: React.FC = () => {
       setSelectedAgent(agentName);
       // Clear contextId to start fresh (no existing session)
       setContextId('');
-      setMessages([]);
-      setAgentLoops(new Map());
-      setLoadingSession(false);
+      sessionDispatch({ type: 'SESSION_CLEARED' });
       setInput('');
       setStreamingContent('');
-      setIsStreaming(false);
       setError(null);
-      setHasMoreHistory(false);
-      setOldestIndex(null);
       shouldAutoScroll.current = true;
       setSearchParams({});
       localStorage.removeItem(STORAGE_KEY_SESSION);
     },
-    [setSearchParams]
+    [setSearchParams, sessionDispatch]
   );
 
   // Persist namespace to localStorage
@@ -1540,28 +1160,31 @@ export const SandboxPage: React.FC = () => {
     }
 
     if (data.content) {
-      setMessages((prev) => [
-        ...prev,
-        {
+      sessionDispatch({
+        type: 'MESSAGES_APPENDED',
+        messages: [{
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: data.content,
           timestamp: new Date(),
           order: orderCounterRef.current++,
-        },
-      ]);
+        }],
+      });
     }
   };
 
-  /** Update or create an AgentLoop in the loops map. */
+  /** Update or create an AgentLoop in the loops map via dispatch. */
   const updateLoop = useCallback((loopId: string, updater: (prev: AgentLoop) => AgentLoop) => {
-    setAgentLoops((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
-      next.set(loopId, updater(existing));
-      return next;
+    sessionDispatch({
+      type: 'LOOPS_UPDATE',
+      updater: (prev) => {
+        const next = new Map(prev);
+        const existing = next.get(loopId) || createDefaultAgentLoop(loopId);
+        next.set(loopId, updater(existing));
+        return next;
+      },
     });
-  }, []);
+  }, [sessionDispatch]);
 
   /** Attempt SSE streaming via /chat/stream, return true on success. */
   const sendStreaming = async (
@@ -1601,7 +1224,7 @@ export const SandboxPage: React.FC = () => {
 
     // Snapshot current message count so retroactive cleanup only
     // removes flat messages from THIS turn, not previous turns
-    setMessages((prev) => { msgCountBeforeStream = prev.length; return prev; });
+    msgCountBeforeStream = messages.length;
 
     try {
       while (true) {
@@ -1645,10 +1268,13 @@ export const SandboxPage: React.FC = () => {
                 // Clear any pre-loop flat content to prevent duplicates
                 accumulatedContent = '';
                 setStreamingContent('');
-                setMessages((prev) => [
-                  ...prev.slice(0, msgCountBeforeStream),
-                  ...prev.slice(msgCountBeforeStream).filter((m) => m.role === 'user'),
-                ]);
+                sessionDispatch({
+                  type: 'MESSAGES_SET',
+                  messages: [
+                    ...messages.slice(0, msgCountBeforeStream),
+                    ...messages.slice(msgCountBeforeStream).filter((m) => m.role === 'user'),
+                  ],
+                });
               }
               const loopId = data.loop_id;
               const le = data.loop_event || data;
@@ -1678,7 +1304,7 @@ export const SandboxPage: React.FC = () => {
               });
               // Show the HITL message immediately (snapshot for StrictMode safety)
               const hitlSnapshot = collectedMessages.splice(0);
-              setMessages((prev) => [...prev, ...hitlSnapshot]);
+              sessionDispatch({ type: 'MESSAGES_APPENDED', messages: hitlSnapshot });
               setStreamingContent('');
             }
 
@@ -1703,7 +1329,7 @@ export const SandboxPage: React.FC = () => {
               });
               // Flush delegation events immediately (snapshot for StrictMode safety)
               const delegSnapshot = collectedMessages.splice(0);
-              setMessages((prev) => [...prev, ...delegSnapshot]);
+              sessionDispatch({ type: 'MESSAGES_APPENDED', messages: delegSnapshot });
             }
 
             // Parse and immediately flush tool call/result events
@@ -1727,7 +1353,7 @@ export const SandboxPage: React.FC = () => {
               }
               if (hadToolEvents) {
                 const snapshot = collectedMessages.splice(0);
-                setMessages((prev) => [...prev, ...snapshot]);
+                sessionDispatch({ type: 'MESSAGES_APPENDED', messages: snapshot });
               }
             }
 
@@ -1741,21 +1367,21 @@ export const SandboxPage: React.FC = () => {
                 // Loop mode: flat content is the final answer.
                 // Use it to fill the loop's finalAnswer (prevents "stuck in reasoning").
                 accumulatedContent += data.content;
-                setAgentLoops((prev) => {
-                  const next = new Map(prev);
-                  // Find the last active loop to attach the answer to
-                  let found = false;
-                  for (const [lid, loop] of [...next].reverse()) {
-                    if (!loop.finalAnswer) {
-                      next.set(lid, { ...loop, status: 'done', finalAnswer: accumulatedContent });
-                      found = true;
-                      break;
+                const capturedContent = accumulatedContent;
+                sessionDispatch({
+                  type: 'LOOPS_UPDATE',
+                  updater: (prev) => {
+                    const next = new Map(prev);
+                    let found = false;
+                    for (const [lid, loop] of [...next].reverse()) {
+                      if (!loop.finalAnswer) {
+                        next.set(lid, { ...loop, status: 'done', finalAnswer: capturedContent });
+                        found = true;
+                        break;
+                      }
                     }
-                  }
-                  // Only return new map if we actually updated a loop;
-                  // returning prev avoids phantom re-renders when all
-                  // loops already have a finalAnswer.
-                  return found ? next : prev;
+                    return found ? next : prev;
+                  },
                 });
               }
             }
@@ -1783,17 +1409,19 @@ export const SandboxPage: React.FC = () => {
     if (!seenLoopId) {
       const finalSnapshot = collectedMessages.splice(0);
       if (finalSnapshot.length > 0 || accumulatedContent) {
-        setMessages((prev) => [
-          ...prev,
-          ...finalSnapshot,
-          {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: accumulatedContent,
-            timestamp: new Date(),
-            order: orderCounterRef.current++,
-          },
-        ]);
+        sessionDispatch({
+          type: 'MESSAGES_APPENDED',
+          messages: [
+            ...finalSnapshot,
+            {
+              id: `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: accumulatedContent,
+              timestamp: new Date(),
+              order: orderCounterRef.current++,
+            },
+          ],
+        });
       }
     }
 
@@ -1817,19 +1445,10 @@ export const SandboxPage: React.FC = () => {
       subscribeAbortRef.current = null;
     }
 
-    // 3. Mark active agent loops as 'canceled'
-    setAgentLoops((prev) => {
-      const next = new Map(prev);
-      for (const [id, loop] of next) {
-        if (loop.status !== 'done') {
-          next.set(id, { ...loop, status: 'canceled' });
-        }
-      }
-      return next;
-    });
+    // 3. Mark active agent loops as 'canceled' and transition to LOADED
+    sessionDispatch({ type: 'LOOP_CANCEL' });
 
     // 4. Reset streaming UI state
-    setIsStreaming(false);
     setStreamingContent('');
     sendingRef.current = false;
   };
@@ -1862,10 +1481,10 @@ export const SandboxPage: React.FC = () => {
       order: orderCounterRef.current++,
       username: currentUsername,
     };
-    setMessages((prev) => [...prev, userMessage]);
+    sessionDispatch({ type: 'MESSAGES_APPENDED', messages: [userMessage] });
     // Send full text to backend (preserve skill prefix in history)
     const messageToSend = trimmed;
-    setIsStreaming(true);
+    sessionDispatch({ type: 'SEND_STARTED' });
     setStreamingContent('');
     setError(null);
 
@@ -1916,7 +1535,8 @@ export const SandboxPage: React.FC = () => {
             const detail = await sandboxService.getSession(namespace, contextId);
             const state = detail?.status?.state;
             if (state === 'completed' || state === 'failed') {
-              await loadInitialHistory(namespace, contextId);
+              // Trigger a reload by re-selecting the session
+              sessionDispatch({ type: 'SESSION_SELECTED' });
               setError(null);
             } else {
               setError(`Agent still working (attempt ${attempt + 1}/5)...`);
@@ -1929,42 +1549,22 @@ export const SandboxPage: React.FC = () => {
         pollSession(0);
       } else {
         setError(msg);
-        setMessages((prev) => [
-          ...prev,
-          {
+        sessionDispatch({
+          type: 'MESSAGES_APPENDED',
+          messages: [{
             id: `error-${Date.now()}`,
             role: 'assistant',
             content: `Error: ${msg}`,
             timestamp: new Date(),
             order: orderCounterRef.current++,
-          },
-        ]);
+          }],
+        });
       }
     } finally {
       sendingRef.current = false;
-      setIsStreaming(false);
+      sessionDispatch({ type: 'SEND_DONE' });
       setStreamingContent('');
-      // Mark active agent loops based on completion state.
-      // If the loop has a finalAnswer (reporter ran), mark as "done".
-      // Otherwise the stream was interrupted — mark as "failed" with reason.
-      setAgentLoops((prev) => {
-        const next = new Map(prev);
-        for (const [id, loop] of next) {
-          if (loop.status === 'done') continue;
-          if (loop.finalAnswer) {
-            next.set(id, { ...loop, status: 'done' });
-          } else {
-            // Don't mark as "failed" — the agent may still be processing.
-            // Keep as "executing" so the UI shows an in-progress state.
-            // The user can reload to check for updates.
-            next.set(id, {
-              ...loop,
-              status: 'executing',
-            });
-          }
-        }
-        return next;
-      });
+      // SEND_DONE marks loops with finalAnswer as 'done', others as 'executing'.
     }
   };
 
