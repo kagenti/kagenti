@@ -1,0 +1,50 @@
+{{- if $.Values.openshift }}
+# ——————————————————————————————————————————————————————————————————————————————
+#  Custom SCC for AuthBridge sidecars in agent namespaces.
+#
+#  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods:
+#    - proxy-init (init): iptables traffic interception (needs NET_ADMIN/NET_RAW, root)
+#    - envoy-proxy (sidecar): Envoy for auth token injection (UID 1337)
+#    - spiffe-helper (sidecar): SPIRE identity (UID 1000)
+#    - client-registration (sidecar): Keycloak registration (UID 1000)
+#
+#  This SCC grants exactly the permissions needed — no privileged mode.
+#  Bound to agent SAs via RoleBinding in agent-namespaces.yaml.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: kagenti-authbridge
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: true
+allowedCapabilities:
+  - NET_ADMIN
+  - NET_RAW
+defaultAddCapabilities: []
+requiredDropCapabilities:
+  - ALL
+fsGroup:
+  type: RunAsAny
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+volumes:
+  - configMap
+  - csi
+  - downwardAPI
+  - emptyDir
+  - ephemeral
+  - persistentVolumeClaim
+  - projected
+  - secret
+{{- end }}

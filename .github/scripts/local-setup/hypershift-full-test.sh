@@ -1006,12 +1006,16 @@ if [ "$RUN_TEST" = "true" ]; then
         KEYCLOAK_HOST=$(oc get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
         if [ -n "$KEYCLOAK_HOST" ]; then
             export KEYCLOAK_URL="https://$KEYCLOAK_HOST"
-            # OpenShift routes use self-signed certs, disable SSL verification
-            export KEYCLOAK_VERIFY_SSL="false"
         else
             log_error "keycloak route not found"
             export KEYCLOAK_URL="http://localhost:8081"
         fi
+    fi
+
+    # OpenShift routes use self-signed certs — always disable SSL verification
+    # for E2E tests, regardless of how KEYCLOAK_URL was set.
+    if [ "$IS_OPENSHIFT" = "true" ]; then
+        export KEYCLOAK_VERIFY_SSL="false"
     fi
 
     # Set config file based on environment

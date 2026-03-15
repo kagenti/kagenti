@@ -51,6 +51,7 @@ jobs:
       pr_number: ${{ steps.pr-info.outputs.number }}
       pr_sha: ${{ steps.pr-info.outputs.sha }}
       cluster_suffix: ${{ steps.pr-info.outputs.cluster_suffix }}
+      extensions_ref: ${{ steps.parse-options.outputs.extensions_ref }}
     steps:
       - name: Check user write permission
         id: check-permission
@@ -92,6 +93,21 @@ jobs:
             core.setOutput('sha', pr.head.sha);
             core.setOutput('cluster_suffix', `pr${pr.number}`);
             console.log(`PR #${pr.number} at commit ${pr.head.sha}`);
+
+      - name: Parse command options
+        id: parse-options
+        if: steps.check-permission.outputs.check-result == 'true'
+        shell: bash
+        run: |
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          # Parse --extensions-ref <branch> from comment
+          # Usage: /run-e2e --extensions-ref fix/proxy-init-drop-privileged
+          if [[ "$COMMENT_BODY" =~ --extensions-ref[[:space:]]+([^[:space:]]+) ]]; then
+            echo "extensions_ref=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "Parsed extensions_ref: ${BASH_REMATCH[1]}"
+          else
+            echo "extensions_ref=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Add safe-to-test label
         if: steps.check-permission.outputs.check-result == 'true'
@@ -261,6 +277,7 @@ jobs:
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          KAGENTI_EXTENSIONS_REF: ${{ needs.authorize.outputs.extensions_ref }}
 
       - name: Build ui-oauth-secret image from PR and restart job
         if: success()

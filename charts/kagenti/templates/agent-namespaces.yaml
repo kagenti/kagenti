@@ -415,26 +415,30 @@ subjects:
     namespace: {{ . }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
-#  SCC RoleBinding for Default SA in Namespace: {{ . }}
-#  Grants privileged SCC to the default service account to allow Istio
-#  proxy-init containers that require runAsUser:0 and privileged:true
-#  for iptables setup.
+#  SCC RoleBinding for AuthBridge in Namespace: {{ . }}
+#  Grants the kagenti-authbridge custom SCC to all service accounts so that
+#  the webhook-injected AuthBridge stack can run:
+#    - proxy-init init container (NET_ADMIN/NET_RAW, root) for iptables
+#    - envoy-proxy sidecar (UID 1337)
+#    - spiffe-helper / client-registration sidecars (UID 1000)
+#  Agent SAs are created dynamically by the operator (name = agent name),
+#  so we use the namespace service accounts group.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: default-privileged-scc
+  name: agent-authbridge-scc
   namespace: {{ . }}
   labels:
     {{- include "kagenti.labels" $root | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:privileged
+  name: system:openshift:scc:kagenti-authbridge
 subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: {{ . }}
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: system:serviceaccounts:{{ . }}
 {{- end }}
 {{- end }}
 {{- end }}

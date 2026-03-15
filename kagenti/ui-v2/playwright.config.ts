@@ -38,6 +38,14 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report' }],
     ['list'],
   ],
+  /* Per-test timeout: 60s on CI to accommodate Keycloak OAuth redirects */
+  timeout: process.env.CI ? 60000 : 30000,
+
+  /* Assertion timeout: 15s on CI (Keycloak redirect adds latency before elements appear) */
+  expect: {
+    timeout: process.env.CI ? 15000 : 5000,
+  },
+
   /* Shared settings for all the projects below */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */

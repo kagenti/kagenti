@@ -348,7 +348,11 @@
       failed_when: false
 
     - name: Wait for Kagenti istiod rollout
-      command: kubectl rollout status deployment/istiod -n istio-system --timeout=120s
+      command: kubectl rollout status deployment/istiod -n istio-system --timeout=300s
+      register: kagenti_istiod_rollout
+      retries: 3
+      delay: 30
+      until: kagenti_istiod_rollout.rc == 0
       when: kagenti_istiod_exists.rc == 0
 
     - name: Warn if Kagenti istiod not found for shared CA restart
@@ -360,7 +364,11 @@
       when: kagenti_istiod_exists.rc != 0
 
     - name: Wait for RHOAI istiod rollout
-      command: kubectl rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=120s
+      command: kubectl rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s
+      register: rhoai_istiod_rollout
+      retries: 3
+      delay: 30
+      until: rhoai_istiod_rollout.rc == 0
       failed_when: false
 
     - name: Delete stale CA ConfigMaps to force recreation with shared CA

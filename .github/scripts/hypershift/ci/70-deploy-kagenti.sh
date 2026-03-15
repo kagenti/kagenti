@@ -89,14 +89,40 @@ for i in $(seq 1 $MAX_RETRIES); do
 done
 
 # Use hypershift-full-test.sh with whitelist mode (--include-X flags)
-# This runs: install + agents only
 # Note: CLUSTER_SUFFIX is set by the workflow (e.g., pr594), don't override it
 # Intentionally not using `exec` here because the oauth bootstrap step below
 # must run after deploy completes.
-"$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
-    --include-kagenti-install \
-    --include-agents \
-    --env ocp
+#
+# When KAGENTI_EXTENSIONS_REF is set, split into two phases so we can build the
+# custom webhook image between platform install and agent deployment.
+if [[ -n "${KAGENTI_EXTENSIONS_REF:-}" ]]; then
+    echo "Custom extensions ref detected: ${KAGENTI_EXTENSIONS_REF}"
+    echo "Phase 1: Install platform..."
+    "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
+        --include-kagenti-install \
+        --env ocp
+
+    echo "Phase 2: Build custom webhook from ${KAGENTI_EXTENSIONS_REF}..."
+    WEBHOOK_BUILD_SCRIPT="$REPO_ROOT/.github/scripts/common/30-build-webhook-image.sh"
+    if [[ -x "$WEBHOOK_BUILD_SCRIPT" ]]; then
+        "$WEBHOOK_BUILD_SCRIPT"
+    elif [[ -f "$WEBHOOK_BUILD_SCRIPT" ]]; then
+        bash "$WEBHOOK_BUILD_SCRIPT"
+    else
+        echo "WARNING: $WEBHOOK_BUILD_SCRIPT not found; skipping custom webhook build"
+    fi
+
+    echo "Phase 3: Deploy agents..."
+    "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
+        --include-agents \
+        --env ocp
+else
+    # Standard path: install + agents in one pass
+    "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
+        --include-kagenti-install \
+        --include-agents \
+        --env ocp
+fi
 
 # When this script runs in GitHub Actions, always rebuild/restart ui-oauth-secret
 # from the checked-out source. This keeps PR behavior correct even when a
