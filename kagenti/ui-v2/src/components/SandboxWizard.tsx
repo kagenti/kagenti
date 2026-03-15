@@ -739,8 +739,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
           ))}
         </FormSelect>
       </FormGroup>
-      <FormGroup label="Allowed Models (virtual key scope)" fieldId="allowed-models"
-        helperText="Select which models this agent's API key can access. Empty = all models.">
+      <FormGroup label="Allowed Models (virtual key scope)" fieldId="allowed-models">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {MODELS.map((m) => {
             const checked = state.allowedModels.includes(m.value);
