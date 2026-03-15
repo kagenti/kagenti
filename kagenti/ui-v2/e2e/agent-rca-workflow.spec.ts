@@ -18,6 +18,8 @@ const SKIP_DEPLOY = process.env.RCA_SKIP_DEPLOY === '1';  // Skip cleanup+deploy
 const FORCE_TOOL_CHOICE = process.env.RCA_FORCE_TOOL_CHOICE !== '0';  // Default: true (force structured calls)
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
+// Derive workspace_storage from agent name: "emptydir" in the name => ephemeral volume
+const WORKSPACE_STORAGE = AGENT_NAME.toLowerCase().includes('emptydir') ? 'emptydir' : 'pvc';
 
 // LiteLLM virtual key secret — agents use per-namespace virtual keys for LLM access.
 const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'litellm-virtual-keys';
@@ -107,6 +109,16 @@ test.describe('Agent RCA Workflow', () => {
   test('RCA agent end-to-end: deploy, verify, send request, check persistence and quality', async ({ page }) => {
     if (!SKIP_DEPLOY) {
       // ── Step 1: Deploy agent via wizard ──────────────────────────────────
+      // Intercept the wizard's deploy API call to inject workspace_storage
+      // (the wizard UI doesn't expose this field, so we patch the request body).
+      await page.route('**/api/v1/sandbox/*/create', async (route) => {
+        const request = route.request();
+        const postData = request.postDataJSON();
+        postData.workspace_storage = WORKSPACE_STORAGE;
+        await route.continue({ postData: JSON.stringify(postData) });
+      });
+      console.log(`[rca] workspace_storage=${WORKSPACE_STORAGE} (agent=${AGENT_NAME})`);
+
       await page.goto('/'); await loginIfNeeded(page); await goToWizard(page);
       await page.locator('#agent-name').fill(AGENT_NAME);
       await page.locator('#repo-url').fill(REPO_URL);

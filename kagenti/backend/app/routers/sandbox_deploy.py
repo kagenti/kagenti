@@ -385,15 +385,18 @@ def _build_deployment_manifest(
     # The agent's HTTP_PROXY env var points to the proxy service.
     # A namespace-wide NetworkPolicy blocks direct public egress from
     # agent pods — only the egress-proxy pods can reach the internet.
-    proxy_svc = f"{name}-egress-proxy"
-    proxy_url = f"http://{proxy_svc}.{namespace}.svc:3128"
-    no_proxy = "localhost,127.0.0.1,.svc,.svc.cluster.local"
-    for var_name in ("HTTP_PROXY", "http_proxy"):
-        env_vars.append({"name": var_name, "value": proxy_url})
-    for var_name in ("HTTPS_PROXY", "https_proxy"):
-        env_vars.append({"name": var_name, "value": proxy_url})
-    for var_name in ("NO_PROXY", "no_proxy"):
-        env_vars.append({"name": var_name, "value": no_proxy})
+    # Only inject proxy env vars when proxy is enabled — otherwise the
+    # agent would try to route traffic through a non-existent proxy.
+    if req.proxy:
+        proxy_svc = f"{name}-egress-proxy"
+        proxy_url = f"http://{proxy_svc}.{namespace}.svc:3128"
+        no_proxy = "localhost,127.0.0.1,.svc,.svc.cluster.local"
+        for var_name in ("HTTP_PROXY", "http_proxy"):
+            env_vars.append({"name": var_name, "value": proxy_url})
+        for var_name in ("HTTPS_PROXY", "https_proxy"):
+            env_vars.append({"name": var_name, "value": proxy_url})
+        for var_name in ("NO_PROXY", "no_proxy"):
+            env_vars.append({"name": var_name, "value": no_proxy})
 
     return {
         "apiVersion": "apps/v1",
@@ -752,47 +755,48 @@ async def create_sandbox(
                     message=f"Failed to create workspace PVC: {e.reason}",
                 )
 
-    # --- Create Squid proxy ConfigMap (always — deny-all if no domains) ---
-    squid_conf = _build_squid_conf(request)
-    try:
-        kube.create_configmap(
-            namespace=namespace,
-            name=f"{request.name}-squid-config",
-            data={"squid.conf": squid_conf},
-            labels=managed_cm_labels,
-        )
-        logger.info(
-            "Created Squid ConfigMap '%s-squid-config' (domains: %s)",
-            request.name,
-            request.proxy_domains or request.proxy_allowlist or "DENY ALL",
-        )
-    except Exception as e:
-        logger.warning("Failed to create/update Squid ConfigMap: %s", e)
+    # --- Create Squid proxy ConfigMap + egress proxy (only when proxy is enabled) ---
+    if request.proxy:
+        squid_conf = _build_squid_conf(request)
+        try:
+            kube.create_configmap(
+                namespace=namespace,
+                name=f"{request.name}-squid-config",
+                data={"squid.conf": squid_conf},
+                labels=managed_cm_labels,
+            )
+            logger.info(
+                "Created Squid ConfigMap '%s-squid-config' (domains: %s)",
+                request.name,
+                request.proxy_domains or request.proxy_allowlist or "DENY ALL",
+            )
+        except Exception as e:
+            logger.warning("Failed to create/update Squid ConfigMap: %s", e)
 
-    # --- Create per-agent egress proxy (Deployment + Service) ---
-    proxy_deploy, proxy_svc = _build_egress_proxy_manifests(request)
-    try:
-        kube.create_deployment(namespace=namespace, body=proxy_deploy)
-        logger.info("Created egress proxy Deployment '%s-egress-proxy'", request.name)
-    except ApiException as e:
-        if e.status == 409:
-            # Update existing proxy with new resource limits / config
-            proxy_name = f"{request.name}-egress-proxy"
-            try:
-                kube.patch_deployment(name=proxy_name, namespace=namespace, body=proxy_deploy)
-                logger.info("Updated egress proxy Deployment '%s'", proxy_name)
-            except Exception as patch_err:
-                logger.warning("Failed to update egress proxy '%s': %s", proxy_name, patch_err)
-        else:
-            logger.warning("Failed to create egress proxy Deployment: %s", e)
-    try:
-        kube.create_service(namespace=namespace, body=proxy_svc)
-        logger.info("Created egress proxy Service '%s-egress-proxy'", request.name)
-    except ApiException as e:
-        if e.status == 409:
-            logger.info("Egress proxy Service already exists")
-        else:
-            logger.warning("Failed to create egress proxy Service: %s", e)
+        # --- Create per-agent egress proxy (Deployment + Service) ---
+        proxy_deploy, proxy_svc = _build_egress_proxy_manifests(request)
+        try:
+            kube.create_deployment(namespace=namespace, body=proxy_deploy)
+            logger.info("Created egress proxy Deployment '%s-egress-proxy'", request.name)
+        except ApiException as e:
+            if e.status == 409:
+                # Update existing proxy with new resource limits / config
+                proxy_name = f"{request.name}-egress-proxy"
+                try:
+                    kube.patch_deployment(name=proxy_name, namespace=namespace, body=proxy_deploy)
+                    logger.info("Updated egress proxy Deployment '%s'", proxy_name)
+                except Exception as patch_err:
+                    logger.warning("Failed to update egress proxy '%s': %s", proxy_name, patch_err)
+            else:
+                logger.warning("Failed to create egress proxy Deployment: %s", e)
+        try:
+            kube.create_service(namespace=namespace, body=proxy_svc)
+            logger.info("Created egress proxy Service '%s-egress-proxy'", request.name)
+        except ApiException as e:
+            if e.status == 409:
+                logger.info("Egress proxy Service already exists")
+            else:
+                logger.warning("Failed to create egress proxy Service: %s", e)
 
     # --- Create the agent Deployment ---
     try:
