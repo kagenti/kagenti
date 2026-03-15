@@ -132,6 +132,26 @@ spec:
       containers:
         - name: mcp-inspector
           image: "{{ .Values.mcpInspector.image }}:{{ .Values.mcpInspector.tag }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Patch the open package to prevent browser opening
+              OPEN_PKG="/app/node_modules/open/index.js"
+              if [ -f "$OPEN_PKG" ]; then
+                cat > "$OPEN_PKG" << 'EOF'
+              const openStub = async () => {
+                console.log('Browser opening disabled in container environment');
+                return { exitCode: 0 };
+              };
+              
+              export default openStub;
+              export { openStub as openApp };
+              export const apps = {};
+              EOF
+                echo "Patched open package to disable browser launching"
+              fi
+              # Start the application
+              npm start
           ports:
             - containerPort: 6274
             - containerPort: 6277
@@ -143,6 +163,10 @@ spec:
               cpu: 25m
               memory: 64Mi
           env:
+          - name: BROWSER
+            value: "none"
+          - name: NO_BROWSER
+            value: "true"
           - name: DANGEROUSLY_OMIT_AUTH
             value: "true"
           - name: ALLOWED_ORIGINS
