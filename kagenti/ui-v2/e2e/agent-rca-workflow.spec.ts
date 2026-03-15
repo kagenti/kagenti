@@ -339,8 +339,9 @@ test.describe('Agent RCA Workflow', () => {
       await filesTab.click();
       await page.waitForTimeout(3000);
 
-      // Should see either a file tree or a breadcrumb (not just empty heading)
-      const hasTree = await page.locator('[aria-label="File tree"]').isVisible({ timeout: 10000 }).catch(() => false);
+      // File browser uses kubectl exec into agent pod — requires pods/exec RBAC.
+      // Wait a bit longer for the exec-based file listing to complete.
+      const hasTree = await page.locator('[aria-label="File tree"]').isVisible({ timeout: 15000 }).catch(() => false);
       const hasBreadcrumb = await page.getByRole('navigation', { name: 'Breadcrumb' }).isVisible({ timeout: 5000 }).catch(() => false);
       console.log(`[rca] Files tab: tree=${hasTree}, breadcrumb=${hasBreadcrumb}`);
       expect(hasTree || hasBreadcrumb).toBe(true);
