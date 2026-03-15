@@ -55,7 +55,7 @@ spec:
         - name: WORKSPACE_ROOT
           value: "/workspace"
         - name: LLM_API_BASE
-          value: "http://llm-budget-proxy.team1.svc:8080/v1"
+          value: "http://litellm-proxy.kagenti-system.svc:4000/v1"
         - name: LLM_API_KEY
           valueFrom:
             secretKeyRef:
