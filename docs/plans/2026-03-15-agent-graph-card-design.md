@@ -1254,6 +1254,132 @@ enabled, the deployment sets `OTEL_EXPORTER_OTLP_ENDPOINT`. The agent's
 
 ---
 
+## 13. Extended Planning Node + Structured Plan Store
+
+### Problem
+
+The current planner creates a flat list of steps in a single LLM call. For
+complex prompts (skill invocations, multi-phase tasks), this is insufficient:
+- No substeps that could run in parallel
+- No iterative plan refinement (thinking/tool loop)
+- Plan exists only in LangGraph state, not queryable/persistent
+
+### Design: Two Planning Modes
+
+The planner node detects prompt complexity and routes to one of two modes:
+
+```
+router → planner_dispatcher → [simple]   → planner (current)
+                             → [extended] → extended_planner (new)
+```
+
+**Simple mode** (current behavior): Single LLM call produces flat step list.
+Still stores plan as JSON in session store.
+
+**Extended mode** (new): Full thinking/micro-reasoning/tool-calling loop with
+plan-specific tools:
+- `plan_add_step(parent, description, substeps?)` — add step with optional parallel substeps
+- `plan_add_dependency(step_a, step_b)` — declare ordering constraint
+- `plan_set_parallel_group(steps[], max_concurrent)` — mark steps as parallelizable
+- `plan_read()` — read current plan state
+- `plan_write_detail(step_id, detail_md)` — write detailed plan notes
+
+### Structured Plan Store (JSON in session DB)
+
+```json
+{
+  "id": "plan-abc123",
+  "version": 3,
+  "created_at": "2026-03-15T18:00:00Z",
+  "steps": [
+    {
+      "id": "s1",
+      "description": "Set up development environment",
+      "status": "done",
+      "substeps": [
+        { "id": "s1.1", "description": "Clone repo", "status": "done", "parallel_group": "setup" },
+        { "id": "s1.2", "description": "Install deps", "status": "done", "parallel_group": "setup" }
+      ],
+      "parallel_group": null
+    },
+    {
+      "id": "s2",
+      "description": "Implement feature",
+      "status": "running",
+      "substeps": [
+        { "id": "s2.1", "description": "Write backend API", "status": "running" },
+        { "id": "s2.2", "description": "Write UI component", "status": "pending", "parallel_group": "impl" },
+        { "id": "s2.3", "description": "Write tests", "status": "pending", "parallel_group": "impl" }
+      ]
+    }
+  ],
+  "dependencies": [
+    { "from": "s1", "to": "s2" }
+  ],
+  "max_parallel": 1,
+  "detail_md": "## Plan Details\n\n### Step 1: Setup\n..."
+}
+```
+
+**Append-only operations** (PlanStore already has this pattern):
+- `create_plan(steps)` — initial creation
+- `add_steps(parent_id, substeps)` — extend plan
+- `set_step_status(step_id, status)` — update progress
+- `add_dependency(from, to)` — add ordering
+- `get_plan_json()` — serialize for session store
+- `to_flat_plan()` — flatten for backward-compat rendering
+
+**Persistence:** Plan JSON stored in task metadata alongside loop_events.
+Also written as `plan.md` in the workspace for agent reference.
+
+### Parallel Execution (Phase 2)
+
+Controlled by `max_parallel` env var (default: 1 = sequential, current behavior).
+
+When `max_parallel > 1`:
+1. Step selector identifies steps in the same `parallel_group` with status `pending`
+2. Up to `max_parallel` steps dispatched concurrently to separate executor instances
+3. Each executor runs in its own context but shares the workspace
+4. Reflector waits for all parallel steps before deciding next action
+
+### Graph Card Extension
+
+New event types for extended planning:
+
+```json
+"extended_plan_start": {
+  "category": "reasoning",
+  "langgraph_nodes": ["extended_planner"],
+  "has_llm_call": true,
+  "fields": {
+    "complexity_score": { "type": "float" },
+    "reason": { "type": "string" }
+  }
+},
+"plan_mutation": {
+  "category": "execution",
+  "langgraph_nodes": ["extended_planner"],
+  "has_llm_call": false,
+  "fields": {
+    "operation": { "type": "string", "enum": ["add_step", "add_substep", "set_parallel", "add_dependency"] },
+    "step_id": { "type": "string" },
+    "detail": { "type": "object" }
+  }
+}
+```
+
+New topology nodes: `planner_dispatcher`, `extended_planner`
+New edges: `planner_dispatcher → planner` (simple), `planner_dispatcher → extended_planner` (complex)
+
+### Implementation Phases
+
+1. **Plan Store as JSON** — store plan in session metadata (both modes)
+2. **Extended planner node** — thinking/tool loop with plan tools
+3. **plan.md generation** — workspace file with plan details
+4. **Parallel execution** — `max_parallel` env var + concurrent step dispatch
+
+---
+
 ## Sources
 
 - [A2A Protocol Specification](https://a2a-protocol.org/latest/specification/)
