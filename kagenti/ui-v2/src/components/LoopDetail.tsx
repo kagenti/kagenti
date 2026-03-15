@@ -1010,7 +1010,9 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentNa
       systemPrompt: isMicro ? d.system_prompt : d.systemPrompt,
       promptMessages: isMicro ? d.prompt_messages : d.promptMessages,
       boundTools: d.boundTools || d.bound_tools || [],
-      response: d.reasoning || d.assessment || d.content || '',
+      response: typeof (d.llmResponse || d.llm_response) === 'object'
+        ? JSON.stringify(d.llmResponse || d.llm_response, null, 2)
+        : (d.llmResponse || d.llm_response || d.reasoning || d.assessment || d.content || ''),
       model: d.model,
       promptTokens: isMicro ? d.prompt_tokens : d.tokens?.prompt,
       completionTokens: isMicro ? d.completion_tokens : d.tokens?.completion,

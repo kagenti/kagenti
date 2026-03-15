@@ -197,6 +197,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           reasoning: planContent,
           systemPrompt: le.system_prompt,
           promptMessages: le.prompt_messages,
+          boundTools: le.bound_tools,
+          llmResponse: le.llm_response,
           model: le.model || loop.model,
           nodeType: nodeTypeVal,
           tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
@@ -261,6 +263,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     step.description = le.description || step.description;
     step.model = le.model || step.model || loop.model;
     step.boundTools = le.bound_tools || step.boundTools;
+    step.llmResponse = le.llm_response || step.llmResponse;
     step.reasoning = (le.reasoning as string) || step.reasoning;
     step.systemPrompt = le.system_prompt || step.systemPrompt;
     step.promptMessages = le.prompt_messages || step.promptMessages;
@@ -317,6 +320,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
       systemPrompt: le.system_prompt,
       promptMessages: le.prompt_messages,
+      boundTools: le.bound_tools,
+      llmResponse: le.llm_response,
       status: 'done' as const,
     });
     return {
@@ -383,6 +388,8 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
           tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
           systemPrompt: le.system_prompt,
           promptMessages: le.prompt_messages,
+          boundTools: le.bound_tools,
+          llmResponse: le.llm_response,
           toolCalls: [],
           toolResults: [],
           durationMs: 0,

@@ -109,6 +109,8 @@ export interface AgentLoopStep {
   promptMessages?: PromptMessage[];
   /** Tool schemas bound to the LLM for this step. */
   boundTools?: Array<{ name: string; description?: string }>;
+  /** Raw LLM response (text or tool_calls JSON). */
+  llmResponse?: unknown;
   /** Granular event type from the graph node. */
   eventType?: NodeEventType;
   /** @deprecated Use {@link eventType} for new code. */
