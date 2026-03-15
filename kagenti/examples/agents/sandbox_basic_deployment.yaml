@@ -59,13 +59,13 @@ spec:
         - name: LLM_API_KEY
           valueFrom:
             secretKeyRef:
-              name: litellm-proxy-secret
-              key: apikey
+              name: litellm-virtual-keys
+              key: api-key
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: litellm-proxy-secret
-              key: apikey
+              name: litellm-virtual-keys
+              key: api-key
         - name: LLM_MODEL
           value: "llama-4-scout"
         - name: UV_CACHE_DIR

@@ -46,6 +46,7 @@ from app.routers import (
     token_usage,
     sidecar,
     models,
+    llm_keys,
 )
 from app.services.session_db import close_all_pools
 
@@ -136,6 +137,7 @@ app.include_router(integrations.router, prefix="/api/v1")
 app.include_router(token_usage.router, prefix="/api/v1")
 app.include_router(sidecar.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
+app.include_router(llm_keys.router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

@@ -963,6 +963,14 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     log_step "Creating test users in Keycloak (admin, dev-user, ns-admin)..."
     ./kagenti/auth/create-test-users.sh
+
+    # Deploy LiteLLM proxy (model gateway + virtual keys)
+    if [ -f "$MAIN_REPO_ROOT/.env.maas" ] || [ -f "$REPO_ROOT/.env.maas" ]; then
+        log_step "Deploying LiteLLM proxy..."
+        ./.github/scripts/kagenti-operator/38-deploy-litellm.sh
+    else
+        log_warn "Skipping LiteLLM — .env.maas not found (agents will need manual LLM secret)"
+    fi
 else
     log_phase "PHASE 2: Skipping Kagenti Installation"
 fi

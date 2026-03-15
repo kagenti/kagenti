@@ -51,7 +51,8 @@ DEFAULT_LLM_API_BASE = os.environ.get(
     "http://llm-budget-proxy.{namespace}.svc:8080/v1",
 )
 DEFAULT_LLM_MODEL = os.environ.get("SANDBOX_LLM_MODEL", "llama-4-scout")
-DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "litellm-proxy-secret")
+DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "litellm-virtual-keys")
+DEFAULT_LLM_SECRET_KEY = os.environ.get("SANDBOX_LLM_SECRET_KEY", "api-key")
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox-deploy"])
 
@@ -227,6 +228,10 @@ def _build_deployment_manifest(
     effective_model = req.model or DEFAULT_LLM_MODEL
     effective_api_base = DEFAULT_LLM_API_BASE.format(namespace=namespace)
 
+    # Determine secret key name: per-agent secrets use "apikey",
+    # namespace default (litellm-virtual-keys) uses "api-key"
+    effective_secret_key = "apikey" if llm_secret else DEFAULT_LLM_SECRET_KEY
+
     # Core env vars shared by all variants
     env_vars = [
         {"name": "PORT", "value": "8000"},
@@ -239,11 +244,11 @@ def _build_deployment_manifest(
         {"name": "LLM_API_BASE", "value": effective_api_base},
         {
             "name": "LLM_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": effective_secret, "key": "apikey"}},
+            "valueFrom": {"secretKeyRef": {"name": effective_secret, "key": effective_secret_key}},
         },
         {
             "name": "OPENAI_API_KEY",
-            "valueFrom": {"secretKeyRef": {"name": effective_secret, "key": "apikey"}},
+            "valueFrom": {"secretKeyRef": {"name": effective_secret, "key": effective_secret_key}},
         },
         {"name": "LLM_MODEL", "value": effective_model},
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
