@@ -1083,6 +1083,24 @@ if [ "$RUN_TEST" = "true" ]; then
     # Set config file based on environment
     export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
 
+    # Set up LiteLLM test env vars (port-forward to litellm proxy)
+    if kubectl get svc litellm-proxy -n kagenti-system &>/dev/null; then
+        LITELLM_PF_PORT=14000
+        lsof -ti:${LITELLM_PF_PORT} 2>/dev/null | xargs kill 2>/dev/null || true
+        kubectl port-forward -n kagenti-system svc/litellm-proxy \
+            "${LITELLM_PF_PORT}:4000" &>/tmp/litellm-test-pf.log &
+        LITELLM_PF_PID=$!
+        sleep 3
+        export LITELLM_PROXY_URL="http://localhost:${LITELLM_PF_PORT}"
+        export LITELLM_MASTER_KEY=$(kubectl get secret litellm-proxy-secret -n kagenti-system \
+            -o jsonpath='{.data.master-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        export LITELLM_VIRTUAL_KEY=$(kubectl get secret litellm-virtual-keys -n team1 \
+            -o jsonpath='{.data.api-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        log_step "LITELLM_PROXY_URL: $LITELLM_PROXY_URL (PID: $LITELLM_PF_PID)"
+    else
+        log_warn "LiteLLM proxy not deployed — litellm tests will be skipped"
+    fi
+
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
     log_step "SANDBOX_LEGION_URL: ${SANDBOX_LEGION_URL:-not set}"
