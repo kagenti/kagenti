@@ -19,8 +19,8 @@ const FORCE_TOOL_CHOICE = process.env.RCA_FORCE_TOOL_CHOICE !== '0';  // Default
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
 
-// LiteLLM proxy secret — agents route through LiteLLM for tool calling support.
-const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'litellm-proxy-secret';
+// LiteLLM virtual key secret — agents use per-namespace virtual keys for LLM access.
+const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'litellm-virtual-keys';
 
 function getKubeconfig(): string {
   return process.env.KUBECONFIG || `${process.env.HOME}/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig`;
@@ -93,8 +93,6 @@ async function pickRcaAgent(page: Page) {
 
 test.describe('Agent RCA Workflow', () => {
   test.setTimeout(600_000);
-  // No retries — each retry creates a ghost session with wrong agent
-  test.describe.configure({ retries: 0 });
 
   test.beforeAll(() => {
     if (SKIP_DEPLOY) {

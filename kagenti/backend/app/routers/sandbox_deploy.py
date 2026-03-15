@@ -239,7 +239,8 @@ def _build_deployment_manifest(
 
     # Determine secret key name: per-agent secrets use "apikey",
     # namespace default (litellm-virtual-keys) uses "api-key"
-    effective_secret_key = "apikey" if llm_secret else DEFAULT_LLM_SECRET_KEY
+    is_per_agent_secret = llm_secret and llm_secret != DEFAULT_LLM_SECRET
+    effective_secret_key = "apikey" if is_per_agent_secret else DEFAULT_LLM_SECRET_KEY
 
     # Core env vars shared by all variants
     env_vars = [
