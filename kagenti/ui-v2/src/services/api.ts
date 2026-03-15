@@ -1220,6 +1220,9 @@ export const modelsService = {
   async getAvailableModels(): Promise<Array<{id: string}>> {
     return apiFetch<Array<{id: string}>>('/models');
   },
+  async getAgentModels(namespace: string, agentName: string): Promise<Array<{id: string}>> {
+    return apiFetch<Array<{id: string}>>(`/llm/agent-models/${namespace}/${agentName}`);
+  },
 };
 
 /**

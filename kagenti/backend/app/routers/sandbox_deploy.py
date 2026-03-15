@@ -96,6 +96,7 @@ class SandboxCreateRequest(BaseModel):
     llm_api_key: Optional[str] = None
     llm_key_source: str = "existing"  # "existing" or "new"
     llm_secret_name: str = ""  # Empty = use cluster default (DEFAULT_LLM_SECRET)
+    allowed_models: Optional[list[str]] = None  # Model restrictions for virtual key (empty = all)
     # Skill packs (Session M)
     skill_packs: list[str] = []  # Pack names from skill-packs.yaml (empty = defaults)
     # LLM behavior

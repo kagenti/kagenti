@@ -25,12 +25,14 @@ export interface ModelSwitcherProps {
   currentModel: string;
   onModelChange: (model: string) => void;
   namespace: string;
+  agentName?: string;
 }
 
 export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
   currentModel,
   onModelChange,
-  namespace: _namespace,
+  namespace,
+  agentName,
 }) => {
   const [models, setModels] = useState<Array<{ id: string }>>([]);
   const [loading, setLoading] = useState(false);
@@ -41,11 +43,20 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const result = await modelsService.getAvailableModels();
+      // Use agent-specific models if agent name is known, else all models
+      const result = agentName && namespace
+        ? await modelsService.getAgentModels(namespace, agentName)
+        : await modelsService.getAvailableModels();
       setModels(result);
     } catch (err) {
-      setError('Failed to load models');
-      console.warn('ModelSwitcher: failed to fetch models', err);
+      // Fallback to all models if agent-specific fails
+      try {
+        const fallback = await modelsService.getAvailableModels();
+        setModels(fallback);
+      } catch {
+        setError('Failed to load models');
+        console.warn('ModelSwitcher: failed to fetch models', err);
+      }
     } finally {
       setLoading(false);
     }

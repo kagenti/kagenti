@@ -2031,6 +2031,7 @@ export const SandboxPage: React.FC = () => {
                 currentModel={sessionModelOverride || (agentCard as Record<string, unknown>)?.model as string || 'llama4-scout'}
                 onModelChange={setSessionModelOverride}
                 namespace={namespace}
+                agentName={selectedAgent}
               />
             </SplitItem>
             <SplitItem>

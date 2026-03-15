@@ -39,7 +39,7 @@ import {
   Bullseye,
 } from '@patternfly/react-core';
 import { useQuery } from '@tanstack/react-query';
-import { sandboxService } from '@/services/api';
+import { sandboxService, modelsService } from '@/services/api';
 
 export interface WizardState {
   // Step 1: Source
@@ -74,6 +74,7 @@ export interface WizardState {
   otelEndpoint: string;
   enableMlflow: boolean;
   model: string;
+  allowedModels: string[];
   forceToolChoice: boolean;
   textToolParsing: boolean;
   debugPrompts: boolean;
@@ -119,6 +120,7 @@ export const INITIAL_STATE: WizardState = {
   otelEndpoint: 'otel-collector.kagenti-system:8335',
   enableMlflow: true,
   model: 'llama-4-scout',
+  allowedModels: [],
   forceToolChoice: true,
   textToolParsing: false,
   debugPrompts: true,
@@ -150,8 +152,8 @@ const VARIANTS = [
   { value: 'custom', label: 'Custom' },
 ];
 
-// Models served via LiteLLM proxy -- names match litellm config model_name
-const MODELS = [
+// Fallback models when LiteLLM is not available
+const FALLBACK_MODELS = [
   { value: 'llama-4-scout', label: 'Llama 4 Scout 109B (tool calling)' },
   { value: 'mistral-small', label: 'Mistral Small 24B' },
   { value: 'deepseek-r1', label: 'DeepSeek R1 14B (reasoning)' },
@@ -258,6 +260,17 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
     retry: 1,
   });
 
+  // Fetch available models from LiteLLM
+  const { data: availableModels } = useQuery({
+    queryKey: ['litellm-models'],
+    queryFn: () => modelsService.getAvailableModels(),
+    staleTime: 300000,
+    retry: 1,
+  });
+  const MODELS = availableModels && availableModels.length > 0
+    ? availableModels.map(m => ({ value: m.id, label: m.id }))
+    : FALLBACK_MODELS;
+
   // Apply fetched config to state once
   useEffect(() => {
     if (existingConfig && !configApplied) {
@@ -307,6 +320,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
         llm_api_key: state.llmApiKey || undefined,
         llm_key_source: state.llmKeySource,
         llm_secret_name: state.llmSecretName,
+        allowed_models: state.allowedModels.length > 0 ? state.allowedModels : undefined,
         // LLM behavior
         force_tool_choice: state.forceToolChoice,
         text_tool_parsing: state.textToolParsing,
@@ -724,6 +738,33 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
             <FormSelectOption key={m.value} value={m.value} label={m.label} />
           ))}
         </FormSelect>
+      </FormGroup>
+      <FormGroup label="Allowed Models (virtual key scope)" fieldId="allowed-models"
+        helperText="Select which models this agent's API key can access. Empty = all models.">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {MODELS.map((m) => {
+            const checked = state.allowedModels.includes(m.value);
+            return (
+              <label key={m.value} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 10px', borderRadius: 4, fontSize: '0.85em', cursor: 'pointer',
+                backgroundColor: checked ? 'var(--pf-v5-global--primary-color--100)' : 'var(--pf-v5-global--BackgroundColor--200)',
+                color: checked ? '#fff' : 'var(--pf-v5-global--Color--100)',
+                border: `1px solid ${checked ? 'var(--pf-v5-global--primary-color--100)' : 'var(--pf-v5-global--BorderColor--100)'}`,
+              }}>
+                <input type="checkbox" checked={checked} style={{ display: 'none' }}
+                  onChange={() => {
+                    const next = checked
+                      ? state.allowedModels.filter(v => v !== m.value)
+                      : [...state.allowedModels, m.value];
+                    update('allowedModels', next);
+                  }}
+                />
+                {m.label}
+              </label>
+            );
+          })}
+        </div>
       </FormGroup>
       <FormGroup label="Debug Prompts" fieldId="debug-prompts">
         <Switch
