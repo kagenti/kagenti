@@ -281,6 +281,19 @@ For MCP Inspector, also accept the proxy certificate:
 echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
 ```
 
+### MCP Inspector Configuration
+
+When opening the MCP inspector on a new installation through the **MCP Gateway** tab, the default settings do not include the inspector proxy address, causing connection failures.
+
+1. Navigate to **Configuration**.
+2. Set the **Connection Type** to `via proxy`.
+3. Set **Inspector Proxy Address** based on your environment:
+   - **Kind**: `http://mcp-proxy.localtest.me:8080`
+   - **OpenShift**: The URL output by the proxy certificate command above.
+4. Click **Test connection** to verify it is working.
+
+*Note: These settings are persisted in your browser and only need to be configured once per browser installation.*
+
 ### Default Credentials
 
 ```

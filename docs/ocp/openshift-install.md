@@ -364,6 +364,18 @@ echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.sta
 
 Open the printed address in your browser and accept the certificate. It is normal to see a `Cannot GET /` message — this indicates the proxy is reachable but not serving an HTML page; you can safely close the tab.
 
+
+### MCP Inspector Configuration
+
+When opening the MCP inspector through the **MCP Gateway** tab on a new installation, the default settings do not include the inspector proxy address, causing connection failures.
+
+1. Navigate to **Configuration**.
+2. Set the **Connection Type** to `via proxy`.
+3. Set **Inspector Proxy Address** to the URL output by the proxy certificate command above.
+4. Click **Test connection** to verify it is working.
+
+*Note: These settings are persisted in your browser and only need to be configured once per browser installation.*
+
 ## Running the demo
 
 You may use the pre-built images available at [https://github.com/orgs/kagenti/packages?repo_name=agent-examples](https://github.com/orgs/kagenti/packages?repo_name=agent-examples) or build from source. Agents support both Ollama and OpenAI backends — select the appropriate environment variable set when importing an agent. See the [Local Models Guide](../local-models.md) for details.
