@@ -216,6 +216,73 @@ def extract_commit_message(command_str):
     return None
 
 
+# Regex to extract total_tokens, tool_uses, duration_ms from <usage> tags
+_USAGE_RE = re.compile(
+    r"total_tokens:\s*(\d+).*?tool_uses:\s*(\d+).*?duration_ms:\s*(\d+)",
+    re.DOTALL,
+)
+
+
+def _extract_subagent_usage(tool_use_id, result_text, task_tool_id_map, subagents):
+    """Extract usage from a Task tool result and update the subagent."""
+    if tool_use_id not in task_tool_id_map:
+        return
+    pseudo_id = task_tool_id_map[tool_use_id]
+    if pseudo_id not in subagents:
+        return
+    match = _USAGE_RE.search(result_text)
+    if match:
+        subagents[pseudo_id]["tokens"]["total"] = int(match.group(1))
+        subagents[pseudo_id]["tool_uses"] = int(match.group(2))
+        subagents[pseudo_id]["duration_ms"] = int(match.group(3))
+
+
+def _extract_task_notification_usage(content_str, subagents):
+    """Extract usage from a <task-notification> string."""
+    if "<task-notification>" not in content_str:
+        return
+    match = _USAGE_RE.search(content_str)
+    if not match:
+        return
+    total = int(match.group(1))
+    tools = int(match.group(2))
+    dur = int(match.group(3))
+    # Match by description from <summary>Agent "..." completed</summary>
+    summary_match = re.search(r'Agent "(.+?)"', content_str)
+    if not summary_match:
+        return
+    desc = summary_match.group(1)
+    for sa in subagents.values():
+        if sa.get("description", "").startswith(desc[:30]):
+            sa["tokens"]["total"] = total
+            sa["tool_uses"] = tools
+            sa["duration_ms"] = dur
+            break
+
+
+def format_duration_ms(ms):
+    """Format milliseconds as human-readable duration.
+
+    >>> format_duration_ms(0)
+    '0s'
+    >>> format_duration_ms(45000)
+    '45s'
+    >>> format_duration_ms(120000)
+    '2m'
+    >>> format_duration_ms(3900000)
+    '1h 5m'
+    """
+    seconds = ms / 1000
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{minutes:.0f}m"
+    hours = int(minutes // 60)
+    mins = int(minutes % 60)
+    return f"{hours}h {mins}m" if mins else f"{hours}h"
+
+
 def parse_session_jsonl(jsonl_path):
     """Parse a Claude Code JSONL session file and return structured stats.
 
@@ -233,6 +300,8 @@ def parse_session_jsonl(jsonl_path):
     tool_counts = Counter()
     skill_invocations = Counter()
     subagents = {}  # agentId -> info dict
+    task_tool_id_map = {}  # tool_use_id -> pseudo subagent id
+    task_order = []  # sequential list of pseudo subagent ids
     commits = []
     timestamps = []
 
@@ -298,12 +367,15 @@ def parse_session_jsonl(jsonl_path):
                             "id": agent_id[:7] if len(agent_id) > 7 else agent_id,
                             "type": "unknown",
                             "model": model,
-                            "tokens": {"input": 0, "output": 0},
+                            "tokens": {"total": 0},
+                            "tool_uses": 0,
+                            "duration_ms": 0,
                             "description": "",
                         }
                     sa = subagents[agent_id]
-                    sa["tokens"]["input"] += usage.get("input_tokens", 0)
-                    sa["tokens"]["output"] += usage.get("output_tokens", 0)
+                    sa["tokens"]["total"] += usage.get("input_tokens", 0) + usage.get(
+                        "output_tokens", 0
+                    )
 
                 # Parse tool_use content blocks
                 content = message.get("content", [])
@@ -336,9 +408,16 @@ def parse_session_jsonl(jsonl_path):
                             "id": pseudo_id,
                             "type": sub_type,
                             "model": sub_model,
-                            "tokens": {"input": 0, "output": 0},
+                            "tokens": {"total": 0},
+                            "tool_uses": 0,
+                            "duration_ms": 0,
                             "description": desc[:120],
                         }
+                        # Track tool_use_id for matching results
+                        tool_use_id = block.get("id", "")
+                        if tool_use_id:
+                            task_tool_id_map[tool_use_id] = pseudo_id
+                        task_order.append(pseudo_id)
 
                     # Git commits via Bash
                     if tool_name == "Bash":
@@ -346,6 +425,38 @@ def parse_session_jsonl(jsonl_path):
                         commit_msg = extract_commit_message(cmd)
                         if commit_msg:
                             commits.append({"message": commit_msg})
+
+            # --- User records: parse Task tool results for subagent usage ---
+            if rec_type == "user":
+                msg_content = record.get("message", {})
+                if isinstance(msg_content, dict):
+                    user_content = msg_content.get("content", [])
+                    if isinstance(user_content, list):
+                        for uc in user_content:
+                            if not isinstance(uc, dict):
+                                continue
+                            if uc.get("type") == "tool_result":
+                                tool_use_id = uc.get("tool_use_id", "")
+                                result_content = uc.get("content", "")
+                                # content can be a list of blocks or a string
+                                if isinstance(result_content, list):
+                                    result_text = " ".join(
+                                        str(b.get("text", ""))
+                                        if isinstance(b, dict)
+                                        else str(b)
+                                        for b in result_content
+                                    )
+                                else:
+                                    result_text = str(result_content)
+                                _extract_subagent_usage(
+                                    tool_use_id,
+                                    result_text,
+                                    task_tool_id_map,
+                                    subagents,
+                                )
+                    elif isinstance(user_content, str):
+                        # Task notifications come as string content
+                        _extract_task_notification_usage(user_content, subagents)
 
     # --- Compute aggregates ---
     total_input = sum(m["input_tokens"] for m in models.values())
@@ -948,20 +1059,22 @@ def format_session_comment(stats, diagrams=None):
     if subagents:
         lines.append("#### Subagents")
         lines.append("")
-        lines.append("| ID | Type | Model | Input | Output |")
-        lines.append("|----|------|-------|------:|-------:|")
+        lines.append("| ID | Type | Model | Total Tokens | Tool Uses | Duration |")
+        lines.append("|----|------|-------|-------------:|----------:|---------:|")
         for sa in subagents:
             sa_model = sa.get("model", "")
             sa_model_short = re.sub(r"^claude-", "", sa_model) if sa_model else "-"
             sa_model_short = (
                 re.sub(r"-\d{8}$", "", sa_model_short) if sa_model_short != "-" else "-"
             )
+            sa_duration = sa.get("duration_ms", 0)
             lines.append(
                 f"| {sa.get('id', '')} "
                 f"| {sa.get('type', '')} "
                 f"| {sa_model_short} "
-                f"| {format_tokens(sa.get('tokens', {}).get('input', 0))} "
-                f"| {format_tokens(sa.get('tokens', {}).get('output', 0))} |"
+                f"| {format_tokens(sa.get('tokens', {}).get('total', 0))} "
+                f"| {sa.get('tool_uses', 0)} "
+                f"| {format_duration_ms(sa_duration) if sa_duration else '-'} |"
             )
         lines.append("")
 
@@ -1594,14 +1707,11 @@ def _build_extract_row(item, item_type, session_data):
     for sa in subagents:
         sa_type = sa.get("type", "unknown")
         tokens = sa.get("tokens", {})
+        total = tokens.get("total", 0)
         if sa_type in per_subagent:
-            per_subagent[sa_type]["in"] += tokens.get("input", 0)
-            per_subagent[sa_type]["out"] += tokens.get("output", 0)
+            per_subagent[sa_type]["total"] += total
         else:
-            per_subagent[sa_type] = {
-                "in": tokens.get("input", 0),
-                "out": tokens.get("output", 0),
-            }
+            per_subagent[sa_type] = {"total": total}
     per_subagent_str = json.dumps(per_subagent) if per_subagent else ""
 
     problems = session_data.get("problems_faced", [])
@@ -2678,7 +2788,9 @@ def run_self_test():
                 "id": "task-0",
                 "type": "Explore",
                 "model": "claude-opus-4-6",
-                "tokens": {"input": 1000, "output": 500},
+                "tokens": {"total": 46320},
+                "tool_uses": 42,
+                "duration_ms": 1832865,
                 "description": "Research something",
             }
         ],
@@ -3000,7 +3112,7 @@ def run_self_test():
             "skills_used": "tdd:ci,k8s:health",
             "per_skill_tokens": '{"tdd:ci":{"in":1000,"out":500}}',
             "subagent_count": 1,
-            "per_subagent_tokens": '{"Explore":{"in":2000,"out":1000}}',
+            "per_subagent_tokens": '{"Explore":{"total":3000}}',
             "problems_count": 1,
             "problems_resolved": 0,
             "lines_added": 120,
@@ -3319,7 +3431,12 @@ def run_self_test():
             {"skill": "k8s:health", "count": 1, "status": "unknown"},
         ],
         "subagents": [
-            {"type": "Explore", "tokens": {"input": 300, "output": 150}},
+            {
+                "type": "Explore",
+                "tokens": {"total": 450},
+                "tool_uses": 5,
+                "duration_ms": 60000,
+            },
         ],
         "problems_faced": ["build error"],
     }
@@ -3467,6 +3584,270 @@ def run_self_test():
             ">0</div>" in empty_html,
             "zero sessions card not found",
         )
+
+    # ---- Subagent usage extraction tests ----
+    print("\n--- Subagent usage extraction tests ---", file=sys.stderr)
+
+    # Test: format_duration_ms
+    check(
+        "format_duration_ms 0",
+        format_duration_ms(0) == "0s",
+        f"got: {format_duration_ms(0)}",
+    )
+    check(
+        "format_duration_ms 45000",
+        format_duration_ms(45000) == "45s",
+        f"got: {format_duration_ms(45000)}",
+    )
+    check(
+        "format_duration_ms 120000",
+        format_duration_ms(120000) == "2m",
+        f"got: {format_duration_ms(120000)}",
+    )
+    check(
+        "format_duration_ms 1800000",
+        format_duration_ms(1800000) == "30m",
+        f"got: {format_duration_ms(1800000)}",
+    )
+    check(
+        "format_duration_ms 3900000",
+        format_duration_ms(3900000) == "1h 5m",
+        f"got: {format_duration_ms(3900000)}",
+    )
+    check(
+        "format_duration_ms 7200000",
+        format_duration_ms(7200000) == "2h",
+        f"got: {format_duration_ms(7200000)}",
+    )
+
+    # Test: _USAGE_RE regex
+    usage_text = (
+        "<usage>total_tokens: 46320\ntool_uses: 42\nduration_ms: 1832865</usage>"
+    )
+    usage_match = _USAGE_RE.search(usage_text)
+    check(
+        "_USAGE_RE matches usage text",
+        usage_match is not None,
+        "regex did not match",
+    )
+    if usage_match:
+        check(
+            "_USAGE_RE total_tokens",
+            usage_match.group(1) == "46320",
+            f"got: {usage_match.group(1)}",
+        )
+        check(
+            "_USAGE_RE tool_uses",
+            usage_match.group(2) == "42",
+            f"got: {usage_match.group(2)}",
+        )
+        check(
+            "_USAGE_RE duration_ms",
+            usage_match.group(3) == "1832865",
+            f"got: {usage_match.group(3)}",
+        )
+
+    # Test: _extract_subagent_usage
+    test_subagents = {
+        "task-0": {
+            "id": "task-0",
+            "type": "Explore",
+            "model": "",
+            "tokens": {"total": 0},
+            "tool_uses": 0,
+            "duration_ms": 0,
+            "description": "Test task",
+        }
+    }
+    test_id_map = {"toolu_abc123": "task-0"}
+    _extract_subagent_usage(
+        "toolu_abc123",
+        "Result text <usage>total_tokens: 22768\ntool_uses: 9\nduration_ms: 37952</usage>",
+        test_id_map,
+        test_subagents,
+    )
+    check(
+        "extract_subagent_usage total_tokens",
+        test_subagents["task-0"]["tokens"]["total"] == 22768,
+        f"got: {test_subagents['task-0']['tokens']['total']}",
+    )
+    check(
+        "extract_subagent_usage tool_uses",
+        test_subagents["task-0"]["tool_uses"] == 9,
+        f"got: {test_subagents['task-0']['tool_uses']}",
+    )
+    check(
+        "extract_subagent_usage duration_ms",
+        test_subagents["task-0"]["duration_ms"] == 37952,
+        f"got: {test_subagents['task-0']['duration_ms']}",
+    )
+
+    # Test: _extract_subagent_usage with unmatched tool_use_id (should not crash)
+    _extract_subagent_usage("toolu_unknown", "some text", test_id_map, test_subagents)
+    check(
+        "extract_subagent_usage unmatched id is no-op",
+        test_subagents["task-0"]["tokens"]["total"] == 22768,
+        "values changed unexpectedly",
+    )
+
+    # Test: _extract_task_notification_usage
+    notif_subagents = {
+        "task-0": {
+            "id": "task-0",
+            "type": "Explore",
+            "model": "",
+            "tokens": {"total": 0},
+            "tool_uses": 0,
+            "duration_ms": 0,
+            "description": "Explore Claude Code session data",
+        }
+    }
+    notification = (
+        "<task-notification>\n"
+        "<task-id>a6aaab8</task-id>\n"
+        "<status>completed</status>\n"
+        '<summary>Agent "Explore Claude Code session data" completed</summary>\n'
+        "<result>Done</result>\n"
+        "<usage>total_tokens: 22768\ntool_uses: 9\nduration_ms: 37952</usage>\n"
+        "</task-notification>"
+    )
+    _extract_task_notification_usage(notification, notif_subagents)
+    check(
+        "extract_task_notification total_tokens",
+        notif_subagents["task-0"]["tokens"]["total"] == 22768,
+        f"got: {notif_subagents['task-0']['tokens']['total']}",
+    )
+    check(
+        "extract_task_notification tool_uses",
+        notif_subagents["task-0"]["tool_uses"] == 9,
+        f"got: {notif_subagents['task-0']['tool_uses']}",
+    )
+    check(
+        "extract_task_notification duration_ms",
+        notif_subagents["task-0"]["duration_ms"] == 37952,
+        f"got: {notif_subagents['task-0']['duration_ms']}",
+    )
+
+    # Test: _extract_task_notification_usage with no match (should not crash)
+    _extract_task_notification_usage("no notification here", notif_subagents)
+    check(
+        "extract_task_notification no-match is no-op",
+        notif_subagents["task-0"]["tokens"]["total"] == 22768,
+        "values changed unexpectedly",
+    )
+
+    # Test: parse synthetic JSONL with Task tool_result containing usage
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as tmp:
+        lines = [
+            json.dumps(
+                {
+                    "type": "user",
+                    "sessionId": "test-usage-1234",
+                    "gitBranch": "usage-branch",
+                    "timestamp": "2026-01-01T10:00:00.000Z",
+                    "message": {"role": "user", "content": "hello"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "timestamp": "2026-01-01T10:00:05.000Z",
+                    "message": {
+                        "model": "claude-opus-4-6",
+                        "role": "assistant",
+                        "usage": {"input_tokens": 100, "output_tokens": 200},
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_usage_test_1",
+                                "name": "Task",
+                                "input": {
+                                    "subagent_type": "research",
+                                    "description": "Analyze session data",
+                                    "prompt": "...",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "user",
+                    "timestamp": "2026-01-01T10:01:00.000Z",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_usage_test_1",
+                                "content": "Task completed successfully\n<usage>total_tokens: 15000\ntool_uses: 12\nduration_ms: 90000</usage>",
+                            }
+                        ],
+                    },
+                }
+            ),
+        ]
+        tmp.write("\n".join(lines) + "\n")
+        tmp.flush()
+        tmp_path = Path(tmp.name)
+
+    try:
+        usage_stats = parse_session_jsonl(tmp_path)
+        usage_sa = usage_stats["subagents"]
+        check(
+            "usage JSONL: subagent found",
+            len(usage_sa) == 1,
+            f"got {len(usage_sa)} subagents",
+        )
+        if usage_sa:
+            check(
+                "usage JSONL: tokens.total extracted",
+                usage_sa[0]["tokens"]["total"] == 15000,
+                f"got: {usage_sa[0]['tokens']['total']}",
+            )
+            check(
+                "usage JSONL: tool_uses extracted",
+                usage_sa[0]["tool_uses"] == 12,
+                f"got: {usage_sa[0]['tool_uses']}",
+            )
+            check(
+                "usage JSONL: duration_ms extracted",
+                usage_sa[0]["duration_ms"] == 90000,
+                f"got: {usage_sa[0]['duration_ms']}",
+            )
+            check(
+                "usage JSONL: type correct",
+                usage_sa[0]["type"] == "research",
+                f"got: {usage_sa[0]['type']}",
+            )
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    # Test: format_session_comment subagents table uses new columns
+    sa_comment = format_session_comment(test_stats)
+    check(
+        "comment subagents table has Total Tokens header",
+        "Total Tokens" in sa_comment,
+        "Total Tokens column header not found",
+    )
+    check(
+        "comment subagents table has Tool Uses header",
+        "Tool Uses" in sa_comment,
+        "Tool Uses column header not found",
+    )
+    check(
+        "comment subagents table has Duration header",
+        "Duration" in sa_comment and "|----|------|-------|" in sa_comment,
+        "Duration column header not found",
+    )
+    check(
+        "comment subagents table no Input/Output headers",
+        "| Input |" not in sa_comment
+        and "| Output |" not in sa_comment
+        or "#### Token Usage" in sa_comment,  # Input/Output only in Token Usage section
+        "old Input/Output headers found in subagents table",
+    )
 
     # Summary
     total = passed + failed
