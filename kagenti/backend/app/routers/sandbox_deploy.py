@@ -110,6 +110,7 @@ class SandboxCreateRequest(BaseModel):
     force_tool_choice: bool = True
     text_tool_parsing: bool = True
     debug_prompts: bool = False
+    enable_tracing: bool = True  # Enable OTel GenAI auto-instrumentation
     # Budget controls (passed as SANDBOX_* env vars to the agent)
     max_iterations: int = 200
     max_tokens: int = 1_000_000
@@ -245,10 +246,16 @@ def _build_deployment_manifest(
         {"name": "PORT", "value": "8000"},
         {"name": "HOST", "value": "0.0.0.0"},
         {"name": "WORKSPACE_ROOT", "value": "/workspace"},
-        {
-            "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
-            "value": "http://otel-collector.kagenti-system.svc.cluster.local:8335",
-        },
+        *(
+            [
+                {
+                    "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                    "value": "http://otel-collector.kagenti-system.svc.cluster.local:8335",
+                },
+            ]
+            if req.enable_tracing
+            else []
+        ),
         {"name": "LLM_API_BASE", "value": effective_api_base},
         {
             "name": "LLM_API_KEY",

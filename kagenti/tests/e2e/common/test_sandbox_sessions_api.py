@@ -18,13 +18,18 @@ Usage:
     SANDBOX_LEGION_URL=http://... pytest tests/e2e/common/test_sandbox_sessions_api.py -v
 """
 
+import base64
+import logging
 import os
 import pathlib
+import subprocess
 
 import httpx
 import pytest
 import yaml
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 
 def _get_backend_url() -> str:
@@ -40,8 +45,6 @@ def _get_backend_url() -> str:
         return explicit
 
     # Auto-discover from route
-    import subprocess
-
     try:
         result = subprocess.run(
             [
@@ -66,15 +69,129 @@ def _get_backend_url() -> str:
     return "http://kagenti-backend.kagenti-system.svc.cluster.local:8000"
 
 
+# ---------------------------------------------------------------------------
+# Auth helper — acquire Keycloak token for backend API calls
+# ---------------------------------------------------------------------------
+
+_cached_auth_headers: dict | None = None
+
+
+def _get_auth_headers() -> dict:
+    """Get Authorization headers for backend API calls.
+
+    When Keycloak auth is enabled, acquires a token using admin credentials
+    from the keycloak-initial-admin secret. When auth is disabled (Kind
+    without Keycloak), returns empty headers.
+
+    The token is cached for the module lifetime to avoid repeated token
+    requests.
+    """
+    global _cached_auth_headers
+    if _cached_auth_headers is not None:
+        return _cached_auth_headers
+
+    # Try to get Keycloak credentials from K8s secret
+    try:
+        import kubernetes.client
+        import kubernetes.config
+        from kubernetes.config import ConfigException
+
+        try:
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes.config.load_incluster_config()
+            else:
+                kubernetes.config.load_kube_config()
+        except ConfigException:
+            logger.info("No K8s config — assuming auth disabled, using empty headers")
+            _cached_auth_headers = {}
+            return _cached_auth_headers
+
+        api = kubernetes.client.CoreV1Api()
+        try:
+            secret = api.read_namespaced_secret(
+                name="keycloak-initial-admin", namespace="keycloak"
+            )
+        except Exception:
+            logger.info(
+                "keycloak-initial-admin secret not found — auth likely disabled"
+            )
+            _cached_auth_headers = {}
+            return _cached_auth_headers
+
+        if not secret.data:
+            _cached_auth_headers = {}
+            return _cached_auth_headers
+
+        username = base64.b64decode(secret.data["username"]).decode("utf-8")
+        password = base64.b64decode(secret.data["password"]).decode("utf-8")
+
+    except ImportError:
+        logger.info("kubernetes package not available — assuming auth disabled")
+        _cached_auth_headers = {}
+        return _cached_auth_headers
+
+    # Acquire token from Keycloak
+    keycloak_base_url = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
+    token_url = f"{keycloak_base_url}/realms/master/protocol/openid-connect/token"
+
+    verify_ssl: bool | str = True
+    if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() == "false":
+        verify_ssl = False
+    elif os.environ.get("KEYCLOAK_CA_BUNDLE"):
+        verify_ssl = os.environ["KEYCLOAK_CA_BUNDLE"]
+
+    try:
+        resp = httpx.post(
+            token_url,
+            data={
+                "grant_type": "password",
+                "client_id": "admin-cli",
+                "username": username,
+                "password": password,
+            },
+            timeout=10,
+            verify=verify_ssl,
+        )
+        if resp.status_code == 200:
+            token_data = resp.json()
+            access_token = token_data["access_token"]
+            _cached_auth_headers = {"Authorization": f"Bearer {access_token}"}
+            logger.info("Acquired Keycloak token for backend API calls")
+            return _cached_auth_headers
+        else:
+            logger.warning(
+                "Keycloak token request failed (%d) — using empty headers: %s",
+                resp.status_code,
+                resp.text[:200],
+            )
+    except Exception as exc:
+        logger.warning(
+            "Could not reach Keycloak at %s — assuming auth disabled: %s",
+            keycloak_base_url,
+            exc,
+        )
+
+    _cached_auth_headers = {}
+    return _cached_auth_headers
+
+
 def _check_sandbox_api_available() -> bool:
-    """Check if the backend has the sandbox sessions API endpoint."""
+    """Check if the backend has the sandbox sessions API endpoint.
+
+    Sends a request with auth headers (if available). Accepts 200 or 401
+    as proof the endpoint exists (401 means auth is required but endpoint
+    is registered). Only 404 means the endpoint is not deployed.
+    """
     url = _get_backend_url()
+    headers = _get_auth_headers()
     try:
         resp = httpx.get(
             f"{url}/api/v1/sandbox/team1/sessions",
             timeout=10,
             verify=False,
+            headers=headers,
         )
+        # 404 = endpoint not registered; anything else = endpoint exists
         return resp.status_code != 404
     except Exception:
         return False
@@ -225,21 +342,62 @@ async def _wait_for_session(
     max_attempts: int = _MAX_POLL_ATTEMPTS,
     interval: float = _POLL_INTERVAL_S,
 ) -> dict | None:
-    """Poll the sessions API until *context_id* appears, returning the detail."""
+    """Poll the sessions API until *context_id* appears, returning the detail.
+
+    Uses exponential backoff and includes auth headers. Logs non-200
+    status codes to aid debugging when the session never appears.
+    """
     import asyncio
 
     ssl_verify = _get_ssl_context()
+    headers = _get_auth_headers()
+    last_status = None
+    last_body = ""
     for attempt in range(max_attempts):
-        await asyncio.sleep(interval)
+        # Exponential backoff: interval, interval*1.5, interval*2.25, ...
+        delay = interval * (1.5**attempt)
+        await asyncio.sleep(delay)
         try:
             async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
                 resp = await client.get(
-                    f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}"
+                    f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}",
+                    headers=headers,
                 )
+                last_status = resp.status_code
                 if resp.status_code == 200:
                     return resp.json()
-        except httpx.HTTPError:
-            pass
+                if resp.status_code == 404:
+                    # Session not yet in DB — keep polling
+                    continue
+                # Auth or server errors — log and keep trying (DB pool may
+                # need time to initialise)
+                last_body = resp.text[:300]
+                logger.warning(
+                    "Poll attempt %d/%d for session %s: HTTP %d — %s",
+                    attempt + 1,
+                    max_attempts,
+                    context_id,
+                    resp.status_code,
+                    last_body,
+                )
+        except httpx.HTTPError as exc:
+            last_status = None
+            last_body = str(exc)
+            logger.warning(
+                "Poll attempt %d/%d for session %s: connection error — %s",
+                attempt + 1,
+                max_attempts,
+                context_id,
+                exc,
+            )
+    # Return None with a clear log message for the assertion
+    logger.error(
+        "Session %s not found after %d poll attempts (last status=%s, body=%s)",
+        context_id,
+        max_attempts,
+        last_status,
+        last_body[:200],
+    )
     return None
 
 
@@ -286,6 +444,7 @@ class TestSandboxSessionsAPI:
     async def test_session_list_search(self):
         """Verify search parameter filters by context_id."""
         backend_url = _get_backend_url()
+        headers = _get_auth_headers()
 
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
@@ -293,8 +452,11 @@ class TestSandboxSessionsAPI:
             resp = await client.get(
                 f"{backend_url}/api/v1/sandbox/team1/sessions",
                 params={"search": "nonexistent-context-id-xyz"},
+                headers=headers,
             )
-            assert resp.status_code == 200
+            assert resp.status_code == 200, (
+                f"List sessions failed: HTTP {resp.status_code} — {resp.text[:300]}"
+            )
             data = resp.json()
             assert data["total"] == 0, "Search returned unexpected results"
 
@@ -302,14 +464,18 @@ class TestSandboxSessionsAPI:
     async def test_session_list_pagination(self):
         """Verify pagination parameters work correctly."""
         backend_url = _get_backend_url()
+        headers = _get_auth_headers()
 
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
             resp = await client.get(
                 f"{backend_url}/api/v1/sandbox/team1/sessions",
                 params={"limit": 2, "offset": 0},
+                headers=headers,
             )
-            assert resp.status_code == 200
+            assert resp.status_code == 200, (
+                f"List sessions failed: HTTP {resp.status_code} — {resp.text[:300]}"
+            )
             data = resp.json()
             assert data["limit"] == 2
             assert data["offset"] == 0
@@ -320,6 +486,7 @@ class TestSandboxSessionsAPI:
         """Send A2A message, then kill the session via API."""
         agent_url = _get_sandbox_legion_url()
         backend_url = _get_backend_url()
+        headers = _get_auth_headers()
 
         result = await _send_a2a_message(agent_url, "Say: kill-test")
         context_id = result.get("contextId", result.get("context_id"))
@@ -332,7 +499,8 @@ class TestSandboxSessionsAPI:
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
             resp = await client.post(
-                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}/kill"
+                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}/kill",
+                headers=headers,
             )
             assert resp.status_code == 200, (
                 f"Kill failed: {resp.status_code} {resp.text}"
@@ -347,6 +515,7 @@ class TestSandboxSessionsAPI:
         """Send A2A message, then delete the session via API."""
         agent_url = _get_sandbox_legion_url()
         backend_url = _get_backend_url()
+        headers = _get_auth_headers()
 
         result = await _send_a2a_message(agent_url, "Say: delete-test")
         context_id = result.get("contextId", result.get("context_id"))
@@ -360,13 +529,17 @@ class TestSandboxSessionsAPI:
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
             # Delete
             resp = await client.delete(
-                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}"
+                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}",
+                headers=headers,
             )
-            assert resp.status_code == 204, f"Delete failed: {resp.status_code}"
+            assert resp.status_code == 204, (
+                f"Delete failed: HTTP {resp.status_code} — {resp.text[:300]}"
+            )
 
             # Verify gone
             resp2 = await client.get(
-                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}"
+                f"{backend_url}/api/v1/sandbox/team1/sessions/{context_id}",
+                headers=headers,
             )
             assert resp2.status_code == 404
 
@@ -374,10 +547,14 @@ class TestSandboxSessionsAPI:
     async def test_session_not_found(self):
         """Verify 404 for non-existent session."""
         backend_url = _get_backend_url()
+        headers = _get_auth_headers()
 
         ssl_verify = _get_ssl_context()
         async with httpx.AsyncClient(timeout=30.0, verify=ssl_verify) as client:
             resp = await client.get(
-                f"{backend_url}/api/v1/sandbox/team1/sessions/nonexistent-id"
+                f"{backend_url}/api/v1/sandbox/team1/sessions/nonexistent-id",
+                headers=headers,
             )
-            assert resp.status_code == 404
+            assert resp.status_code == 404, (
+                f"Expected 404 but got HTTP {resp.status_code} — {resp.text[:300]}"
+            )

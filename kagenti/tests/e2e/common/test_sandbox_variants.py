@@ -53,13 +53,24 @@ AGENT_VARIANTS = [
 NAMESPACE = os.getenv("SANDBOX_NAMESPACE", "team1")
 
 
-def _get_agent_url(agent_name: str) -> str:
-    """Get the agent URL — from env or default to in-cluster DNS."""
-    env_key = f"SANDBOX_{agent_name.upper().replace('-', '_')}_URL"
-    return os.getenv(
-        env_key,
-        f"http://{agent_name}.{NAMESPACE}.svc.cluster.local:8000",
-    )
+def _get_agent_url(agent_name: str) -> str | None:
+    """Get the agent URL — from env var, or fall back to in-cluster DNS.
+
+    Environment variables checked (example for sandbox-legion):
+        SANDBOX_LEGION_URL — explicit URL (e.g. OpenShift route)
+
+    Falls back to in-cluster DNS:
+        http://sandbox-legion.<NAMESPACE>.svc.cluster.local:8000
+
+    Returns None when the env var is not set AND in-cluster DNS is
+    unlikely to work (i.e. no ENABLE_SANDBOX_TESTS flag).
+    """
+    env_key = f"SANDBOX_{agent_name.split('-', 1)[-1].upper()}_URL"
+    url = os.getenv(env_key)
+    if url:
+        return url
+    # Fall back to in-cluster DNS (works when tests run inside the cluster)
+    return f"http://{agent_name}.{NAMESPACE}.svc.cluster.local:8000"
 
 
 def _is_openshift_from_config() -> bool:
@@ -94,6 +105,30 @@ def _make_client(agent_name: str) -> httpx.Client:
             ctx = ssl.create_default_context(cafile=ca_file.name)
             kwargs["verify"] = ctx
     return httpx.Client(**kwargs)
+
+
+def _skip_if_unreachable(agent_name: str, agent_url: str) -> None:
+    """Skip the test if the agent URL is not reachable.
+
+    Performs a quick connectivity check (GET agent card) with a short
+    timeout.  This turns DNS/connection failures into clean skips
+    instead of ugly tracebacks.
+    """
+    client = _make_client(agent_name)
+    try:
+        resp = client.get(
+            f"{agent_url}/.well-known/agent-card.json",
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        env_key = f"SANDBOX_{agent_name.split('-', 1)[-1].upper()}_URL"
+        pytest.skip(
+            f"Agent {agent_name} not reachable at {agent_url} "
+            f"(set {env_key} to the route URL): {exc}"
+        )
+    finally:
+        client.close()
 
 
 def _send_message(
@@ -154,6 +189,7 @@ class TestAgentCard:
 
     def test_agent_card_accessible(self, agent_name: str):
         agent_url = _get_agent_url(agent_name)
+        _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
 
         resp = client.get(f"{agent_url}/.well-known/agent-card.json")
@@ -166,6 +202,7 @@ class TestAgentCard:
 
     def test_agent_card_has_streaming(self, agent_name: str):
         agent_url = _get_agent_url(agent_name)
+        _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
 
         resp = client.get(f"{agent_url}/.well-known/agent-card.json")
@@ -183,6 +220,7 @@ class TestMultiTurnConversation:
     def test_shell_command(self, agent_name: str):
         """Agent can execute a shell command and return output."""
         agent_url = _get_agent_url(agent_name)
+        _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
         context_id = uuid4().hex[:36]
 
@@ -202,6 +240,7 @@ class TestMultiTurnConversation:
     def test_file_write_and_read(self, agent_name: str):
         """Agent can write a file and read it back in the same session."""
         agent_url = _get_agent_url(agent_name)
+        _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
         context_id = uuid4().hex[:36]
         marker = f"variant-test-{agent_name}-{uuid4().hex[:8]}"
@@ -233,6 +272,7 @@ class TestMultiTurnConversation:
     def test_multi_turn_context_memory(self, agent_name: str):
         """Agent remembers information across turns within the same session."""
         agent_url = _get_agent_url(agent_name)
+        _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
         context_id = uuid4().hex[:36]
         secret_word = f"zebra-{uuid4().hex[:6]}"
@@ -267,6 +307,7 @@ class TestSessionIsolation:
     def test_workspace_isolation(self, agent_name: str):
         """Files in session A are NOT visible in session B."""
         agent_url = _get_agent_url(agent_name)
+        _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
 
         session_a = uuid4().hex[:36]

@@ -1069,16 +1069,20 @@ if [ "$RUN_TEST" = "true" ]; then
         fi
     fi
 
-    # Get sandbox-legion URL from route (if not already set)
-    if [ -z "${SANDBOX_LEGION_URL:-}" ]; then
-        SANDBOX_ROUTE_HOST=$(oc get route -n team1 sandbox-legion -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-        if [ -n "$SANDBOX_ROUTE_HOST" ]; then
-            export SANDBOX_LEGION_URL="https://$SANDBOX_ROUTE_HOST"
-            log_step "Found sandbox-legion route: $SANDBOX_LEGION_URL"
-        else
-            log_warn "sandbox-legion route not found — sandbox legion tests will use in-cluster DNS"
+    # Get sandbox variant URLs from routes (if not already set)
+    for _variant in legion hardened basic restricted; do
+        _env_var="SANDBOX_${_variant^^}_URL"
+        _route_name="sandbox-${_variant}"
+        if [ -z "${!_env_var:-}" ]; then
+            _route_host=$(oc get route -n team1 "${_route_name}" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+            if [ -n "$_route_host" ]; then
+                export "${_env_var}=https://${_route_host}"
+                log_step "Found ${_route_name} route: ${!_env_var}"
+            else
+                log_warn "${_route_name} route not found — tests will use in-cluster DNS"
+            fi
         fi
-    fi
+    done
 
     # Set config file based on environment
     export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
@@ -1104,6 +1108,9 @@ if [ "$RUN_TEST" = "true" ]; then
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
     log_step "SANDBOX_LEGION_URL: ${SANDBOX_LEGION_URL:-not set}"
+    log_step "SANDBOX_HARDENED_URL: ${SANDBOX_HARDENED_URL:-not set}"
+    log_step "SANDBOX_BASIC_URL: ${SANDBOX_BASIC_URL:-not set}"
+    log_step "SANDBOX_RESTRICTED_URL: ${SANDBOX_RESTRICTED_URL:-not set}"
     log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
     # Export pytest filter options if specified

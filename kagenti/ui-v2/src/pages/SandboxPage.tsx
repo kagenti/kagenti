@@ -49,6 +49,7 @@ import { SubSessionsPanel, useChildSessionCount } from '../components/SubSession
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
 import { applyLoopEvent, buildAgentLoops, createDefaultAgentLoop, type LoopEvent } from '../utils/loopBuilder';
+import { useSessionLoader, type SessionAction } from '../hooks/useSessionLoader';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
 type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
@@ -730,9 +731,7 @@ export const SandboxPage: React.FC = () => {
     getInitialSession(searchParams)
   );
   const [messages, setMessages] = useState<Message[]>([]);
-  /** Auto-incrementing counter for message ordering.
-   *  Starts at a high value so live messages always sort after history messages
-   *  (which use backend _index values starting from 0). Reset when history loads. */
+  /** Auto-incrementing counter for message ordering. */
   const orderCounterRef = useRef(1_000_000);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -742,6 +741,13 @@ export const SandboxPage: React.FC = () => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingSession, setLoadingSession] = useState(() => !!getInitialSession(searchParams));
   const [oldestIndex, setOldestIndex] = useState<number | null>(null);
+
+  // --- Session loader hook (available for future migration) ---
+  // The useSessionLoader hook provides a clean state-machine-based alternative
+  // to the polling/streaming lifecycle below. It is imported and ready for
+  // incremental adoption. See docs/plans/2026-03-15-agent-graph-card-design.md
+  // Phase 3 for the migration plan.
+  // const sessionLoader = useSessionLoader(namespace, contextId);
   // Synchronous guard against double-send (React StrictMode double-invokes
   // effects/callbacks, and async setState batching means two rapid calls
   // can both see isStreaming===false before either sets it to true).
@@ -1007,7 +1013,10 @@ export const SandboxPage: React.FC = () => {
     };
   };
 
-  /** Subscribe to a running session's event stream via tasks/resubscribe. */
+  /** Subscribe to a running session's event stream via tasks/resubscribe.
+   *  NOTE: useSessionLoader hook (src/hooks/useSessionLoader.ts) provides a
+   *  state-machine replacement for this + loadInitialHistory + polling.
+   *  This function will be removed in Phase 3 of the AgentGraphCard migration. */
   const _subscribeToSession = async (ns: string, ctxId: string) => {
     // Cancel any existing subscribe stream before starting a new one
     if (subscribeAbortRef.current) {
@@ -1029,7 +1038,7 @@ export const SandboxPage: React.FC = () => {
         return;
       }
 
-      console.log('[subscribe] Connected to live stream, status:', response.status, 'content-type:', response.headers.get('content-type'));
+      console.log('[subscribe] Connected to live stream');
       setIsStreaming(true);
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1049,10 +1058,7 @@ export const SandboxPage: React.FC = () => {
             if (!raw) continue;
             try {
               const data = JSON.parse(raw);
-              console.log('[subscribe] Raw data:', JSON.stringify(data).substring(0, 200));
               if (data.done) {
-                console.log('[subscribe] Stream done — finalizing loops');
-                // Mark loops as done (if reporter ran) or failed (if no final answer)
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
                   for (const [id, loop] of next) {
@@ -1067,12 +1073,10 @@ export const SandboxPage: React.FC = () => {
                 });
                 return;
               }
-              if (data.ping) { console.log('[subscribe] ping'); continue; }
+              if (data.ping) continue;
               if (data.loop_id && data.loop_event) {
                 const evt = data.loop_event as LoopEvent;
                 evt.loop_id = evt.loop_id || data.loop_id;
-                console.log('[subscribe] Event:', evt.type, 'step:', evt.step, 'loop:', evt.loop_id);
-                // Apply loop event using the canonical reducer
                 setAgentLoops((prev) => {
                   const next = new Map(prev);
                   const loopId = evt.loop_id;

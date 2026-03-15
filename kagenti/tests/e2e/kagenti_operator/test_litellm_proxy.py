@@ -75,12 +75,14 @@ class TestLiteLLMModels:
                 f"Expected model '{expected}' not in {model_ids}"
             )
 
+    @pytest.mark.skipif(
+        not os.environ.get("OPENAI_API_KEY"),
+        reason="OPENAI_API_KEY not configured",
+    )
     def test_openai_models_present(self, master_client):
         """OpenAI models present when OPENAI_API_KEY is configured."""
         resp = master_client.get("/v1/models")
         model_ids = [m["id"] for m in resp.json()["data"]]
-        if "gpt-4o-mini" not in model_ids:
-            pytest.skip("OpenAI models not configured (no OPENAI_API_KEY)")
         assert "gpt-4o-mini" in model_ids
         assert "gpt-4o" in model_ids
 
@@ -189,18 +191,18 @@ class TestLiteLLMChatCompletions:
         )
 
 
+_openai_configured = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY not configured",
+)
+
+
 class TestLiteLLMOpenAI:
-    """OpenAI model tests (skipped if OpenAI not configured)."""
+    """OpenAI model tests (skipped if OPENAI_API_KEY not configured)."""
 
-    def _skip_if_no_openai(self, master_client):
-        resp = master_client.get("/v1/models")
-        model_ids = [m["id"] for m in resp.json()["data"]]
-        if "gpt-4o-mini" not in model_ids:
-            pytest.skip("OpenAI models not configured")
-
+    @_openai_configured
     def test_chat_gpt4o_mini(self, master_client):
         """Test chat completion with GPT-4o mini."""
-        self._skip_if_no_openai(master_client)
         resp = master_client.post(
             "/v1/chat/completions",
             json={
@@ -214,9 +216,9 @@ class TestLiteLLMOpenAI:
         content = resp.json()["choices"][0]["message"]["content"]
         assert len(content) > 0, "Empty response"
 
+    @_openai_configured
     def test_chat_gpt4o(self, master_client):
         """Test chat completion with GPT-4o."""
-        self._skip_if_no_openai(master_client)
         resp = master_client.post(
             "/v1/chat/completions",
             json={
@@ -230,9 +232,9 @@ class TestLiteLLMOpenAI:
         content = resp.json()["choices"][0]["message"]["content"]
         assert len(content) > 0, "Empty response"
 
+    @_openai_configured
     def test_gpt4o_mini_has_usage(self, master_client):
         """Verify token usage tracking works for OpenAI models."""
-        self._skip_if_no_openai(master_client)
         resp = master_client.post(
             "/v1/chat/completions",
             json={
