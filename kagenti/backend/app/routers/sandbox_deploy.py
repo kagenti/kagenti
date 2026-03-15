@@ -97,6 +97,13 @@ class SandboxCreateRequest(BaseModel):
     llm_key_source: str = "existing"  # "existing" or "new"
     llm_secret_name: str = ""  # Empty = use cluster default (DEFAULT_LLM_SECRET)
     allowed_models: Optional[list[str]] = None  # Model restrictions for virtual key (empty = all)
+    # Per-node model overrides (empty = use model default)
+    model_planner: str = ""
+    model_executor: str = ""
+    model_reflector: str = ""
+    model_reporter: str = ""
+    model_thinking: str = ""
+    model_micro_reasoning: str = ""
     # Skill packs (Session M)
     skill_packs: list[str] = []  # Pack names from skill-packs.yaml (empty = defaults)
     # LLM behavior
@@ -254,6 +261,18 @@ def _build_deployment_manifest(
         {"name": "LLM_MODEL", "value": effective_model},
         {"name": "UV_CACHE_DIR", "value": "/app/.cache/uv"},
     ]
+
+    # Per-node model overrides (only add if set)
+    for node_type, field in [
+        ("PLANNER", req.model_planner),
+        ("EXECUTOR", req.model_executor),
+        ("REFLECTOR", req.model_reflector),
+        ("REPORTER", req.model_reporter),
+        ("THINKING", req.model_thinking),
+        ("MICRO_REASONING", req.model_micro_reasoning),
+    ]:
+        if field:
+            env_vars.append({"name": f"LLM_MODEL_{node_type}", "value": field})
 
     # Skill repos — pass through from backend env or derive from source repo.
     # Skills live in the kagenti repo (.claude/skills/), not agent-examples.
