@@ -621,7 +621,7 @@ export function useSessionLoader(
     const interval = setInterval(async () => {
       try {
         const session = await sandboxService.getSession(namespace, contextId);
-        const taskState = (session?.status as Record<string, unknown> | undefined)?.state as string | undefined;
+        const taskState = (session?.status as unknown as Record<string, unknown> | undefined)?.state as string | undefined;
 
         if (taskState && !TERMINAL_STATES.has(taskState)) {
           // Session is active again — need to reload

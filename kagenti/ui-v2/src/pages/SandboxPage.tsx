@@ -49,7 +49,8 @@ import { SubSessionsPanel, useChildSessionCount } from '../components/SubSession
 import { sidecarService, type SidecarInfo } from '../services/api';
 import type { AgentLoop } from '../types/agentLoop';
 import { applyLoopEvent, buildAgentLoops, createDefaultAgentLoop, type LoopEvent } from '../utils/loopBuilder';
-import { useSessionLoader, type SessionAction } from '../hooks/useSessionLoader';
+// useSessionLoader hook ready for Phase 3 migration (see docs/plans/2026-03-15-agent-graph-card-design.md)
+// import { useSessionLoader, type SessionAction } from '../hooks/useSessionLoader';
 
 const DELEGATION_EVENT_TYPES = ['delegation_start', 'delegation_progress', 'delegation_complete'] as const;
 type DelegationEventType = typeof DELEGATION_EVENT_TYPES[number];
