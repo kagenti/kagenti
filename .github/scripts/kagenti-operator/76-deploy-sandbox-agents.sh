@@ -42,6 +42,76 @@ run_with_timeout 120 "kubectl rollout status statefulset/postgres-sessions -n $N
 log_success "postgres-sessions running"
 
 # ============================================================================
+# Step 1b: Deploy LLM budget proxy (per-namespace, shared by all agents)
+# ============================================================================
+
+log_info "Building llm-budget-proxy image..."
+if [ "$IS_OPENSHIFT" = "true" ] && oc api-resources --api-group=build.openshift.io 2>/dev/null | grep -q BuildConfig; then
+    oc create imagestream llm-budget-proxy -n "$NAMESPACE" 2>/dev/null || true
+    cat <<BPEOF | kubectl apply -f -
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: llm-budget-proxy
+  namespace: $NAMESPACE
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: llm-budget-proxy:v0.0.1
+  source:
+    type: Git
+    git:
+      uri: $(git remote get-url origin 2>/dev/null || echo "https://github.com/kagenti/kagenti.git")
+      ref: $(git rev-parse HEAD 2>/dev/null || echo "main")
+    contextDir: kagenti
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: llm-budget-proxy/Dockerfile
+      noCache: true
+BPEOF
+    BUILD_NAME=$(oc start-build llm-budget-proxy -n "$NAMESPACE" -o name 2>&1) || {
+        log_error "Failed to start llm-budget-proxy build"
+        exit 1
+    }
+    log_info "Build: $BUILD_NAME"
+    run_with_timeout 300 "oc wait --for=jsonpath='{.status.phase}'=Complete --timeout=300s $BUILD_NAME -n $NAMESPACE" || {
+        BUILD_PHASE=$(oc get "$BUILD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        if [ "$BUILD_PHASE" != "Complete" ]; then
+            log_error "llm-budget-proxy build failed (phase: $BUILD_PHASE)"
+            oc logs "$BUILD_NAME" -n "$NAMESPACE" 2>&1 | tail -20 || true
+            exit 1
+        fi
+    }
+    log_success "llm-budget-proxy image built"
+else
+    log_warn "OpenShift builds not available — skipping llm-budget-proxy build"
+    log_info "Pre-build the image and push to the registry manually"
+fi
+
+log_info "Deploying llm-budget-proxy..."
+
+# Create the llm_budget database in postgres-sessions
+POSTGRES_POD=$(kubectl get pod -n "$NAMESPACE" -l app.kubernetes.io/name=postgres-sessions \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "postgres-sessions-0")
+kubectl exec -n "$NAMESPACE" "$POSTGRES_POD" -- bash -c \
+    "psql -U kagenti -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname='llm_budget'\" | grep -q 1 || \
+     psql -U kagenti -d postgres -c 'CREATE DATABASE llm_budget'" 2>/dev/null || {
+    log_warn "Could not create llm_budget DB (may already exist)"
+}
+
+kubectl apply -f "$REPO_ROOT/deployments/sandbox/llm-budget-proxy.yaml"
+
+run_with_timeout 120 "kubectl rollout status deployment/llm-budget-proxy -n $NAMESPACE --timeout=120s" || {
+    log_error "llm-budget-proxy did not become ready"
+    kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=llm-budget-proxy
+    kubectl describe pods -n "$NAMESPACE" -l app.kubernetes.io/name=llm-budget-proxy 2>&1 | tail -20 || true
+    exit 1
+}
+log_success "llm-budget-proxy running"
+
+# ============================================================================
 # Step 2: Build shared sandbox-agent image
 # ============================================================================
 # Uses OpenShift BuildConfig (Docker strategy with noCache: true) to avoid
