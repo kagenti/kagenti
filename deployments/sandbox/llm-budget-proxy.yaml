@@ -30,7 +30,7 @@ spec:
         - name: LITELLM_URL
           value: "http://litellm-proxy.kagenti-system.svc.cluster.local:4000"
         - name: DATABASE_URL
-          value: "postgresql://kagenti:kagenti@postgres-sessions.team1.svc:5432/llm_budget"
+          value: "postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1.svc:5432/llm_budget"
         resources:
           requests:
             cpu: 50m
