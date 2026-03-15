@@ -682,6 +682,8 @@ async def get_session_history(
 
     filtered: List[Dict[str, Any]] = []
     for msg in raw_history:
+        if not isinstance(msg, dict):
+            continue
         if msg.get("role") == "user":
             # Propagate username from A2A message metadata to top level
             username = msg.get("metadata", {}).get("username")
