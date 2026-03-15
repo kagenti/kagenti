@@ -113,6 +113,20 @@ metadata:
   labels:
     {{- include "kagenti.labels" $root | nindent 4 }}
 data:
+  # Keycloak keys for AuthBridge client-registration sidecar (injected by webhook).
+  # Admin credentials reference the Keycloak secret — the client-registration container
+  # reads these as plain values from the ConfigMap, so we inline the defaults here.
+  # TODO: move admin credentials to a Secret and use secretKeyRef in the webhook instead.
+  KEYCLOAK_URL: {{ $root.Values.keycloak.url | quote }}
+  KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | default "demo" | quote }}
+  # NOTE: These are placeholder defaults. On RHBK (OpenShift), the bootstrap admin
+  # is "temp-admin" with a random password stored in the keycloak-initial-admin secret,
+  # not "admin/admin". Deployers must patch this ConfigMap with the actual credentials.
+  KEYCLOAK_ADMIN_USERNAME: "admin"
+  KEYCLOAK_ADMIN_PASSWORD: "admin"
+  KEYCLOAK_TOKEN_EXCHANGE_ENABLED: "true"
+  KEYCLOAK_CLIENT_REGISTRATION_ENABLED: "true"
+  SPIRE_ENABLED: "true"
   ollama: |
     [
       {"name": "LLM_API_BASE", "value": "http://host.docker.internal:11434/v1"},
