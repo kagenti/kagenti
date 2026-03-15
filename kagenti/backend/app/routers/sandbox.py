@@ -686,7 +686,7 @@ async def get_session_history(
             continue
         if msg.get("role") == "user":
             # Propagate username from A2A message metadata to top level
-            username = msg.get("metadata", {}).get("username")
+            username = (msg.get("metadata") or {}).get("username")
             entry: Dict[str, Any] = {
                 "role": "user",
                 "parts": msg.get("parts", []),
