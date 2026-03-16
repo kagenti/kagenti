@@ -6,22 +6,29 @@ Configuration API endpoints.
 """
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from app.core.auth import require_roles, ROLE_VIEWER
 from app.core.config import settings
 from app.models.responses import DashboardConfigResponse
 
+
+class FeatureFlagsResponse(BaseModel):
+    sandbox: bool
+    integrations: bool
+    triggers: bool
+
 router = APIRouter(prefix="/config", tags=["config"])
 
 
-@router.get("/features")
-async def get_feature_flags() -> dict:
-    """Return enabled feature flags for UI gating. No auth required."""
-    return {
-        "sandbox": settings.kagenti_feature_flag_sandbox,
-        "integrations": settings.kagenti_feature_flag_integrations,
-        "triggers": settings.kagenti_feature_flag_triggers,
-    }
+@router.get("/features", response_model=FeatureFlagsResponse)
+async def get_feature_flags() -> FeatureFlagsResponse:
+    """Return enabled feature flags for UI gating. Public endpoint — flags are not sensitive."""
+    return FeatureFlagsResponse(
+        sandbox=settings.kagenti_feature_flag_sandbox,
+        integrations=settings.kagenti_feature_flag_integrations,
+        triggers=settings.kagenti_feature_flag_triggers,
+    )
 
 
 @router.get(

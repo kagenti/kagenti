@@ -38,20 +38,45 @@ from app.routers import (
     config,
     auth,
     chat,
-    models,
-    llm_keys,
 )
 
 # Conditionally import feature-flagged modules
+_sandbox_modules_loaded = False
 if settings.kagenti_feature_flag_sandbox:
-    from app.routers import sandbox, sandbox_deploy, sandbox_files, token_usage, sidecar, events
-    from app.services.session_db import close_all_pools
+    try:
+        from app.routers import (
+            sandbox, sandbox_deploy, sandbox_files, token_usage,
+            sidecar, events, models, llm_keys,
+        )
+        from app.services.session_db import close_all_pools
 
+        _sandbox_modules_loaded = True
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "SANDBOX flag enabled but sandbox modules not installed — skipping"
+        )
+
+_triggers_modules_loaded = False
 if settings.kagenti_feature_flag_triggers:
-    from app.routers import sandbox_trigger
+    try:
+        from app.routers import sandbox_trigger
 
+        _triggers_modules_loaded = True
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "TRIGGERS flag enabled but trigger modules not installed — skipping"
+        )
+
+_integrations_modules_loaded = False
 if settings.kagenti_feature_flag_integrations:
-    from app.routers import integrations
+    try:
+        from app.routers import integrations
+
+        _integrations_modules_loaded = True
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "INTEGRATIONS flag enabled but integration modules not installed — skipping"
+        )
 
 # Configure logging
 logging.basicConfig(
@@ -92,8 +117,8 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-    # Shutdown sandbox services (only if enabled)
-    if settings.kagenti_feature_flag_sandbox:
+    # Shutdown sandbox services (only if enabled and loaded)
+    if _sandbox_modules_loaded:
         from app.services.sidecar_manager import get_sidecar_manager
 
         await get_sidecar_manager().shutdown()
@@ -133,26 +158,26 @@ app.include_router(agents.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
-app.include_router(models.router, prefix="/api/v1")
-app.include_router(llm_keys.router, prefix="/api/v1")
 
 # Feature-flagged routers — sandbox
-if settings.kagenti_feature_flag_sandbox:
+if _sandbox_modules_loaded:
     app.include_router(sandbox.router, prefix="/api/v1")
     app.include_router(sandbox_deploy.router, prefix="/api/v1")
     app.include_router(sandbox_files.router, prefix="/api/v1")
     app.include_router(token_usage.router, prefix="/api/v1")
     app.include_router(sidecar.router, prefix="/api/v1")
     app.include_router(events.router, prefix="/api/v1")
+    app.include_router(models.router, prefix="/api/v1")
+    app.include_router(llm_keys.router, prefix="/api/v1")
     logger.info("Feature flag SANDBOX enabled — sandbox routes registered")
 
 # Feature-flagged routers — triggers
-if settings.kagenti_feature_flag_triggers:
+if _triggers_modules_loaded:
     app.include_router(sandbox_trigger.router, prefix="/api/v1")
     logger.info("Feature flag TRIGGERS enabled — trigger routes registered")
 
 # Feature-flagged routers — integrations
-if settings.kagenti_feature_flag_integrations:
+if _integrations_modules_loaded:
     app.include_router(integrations.router, prefix="/api/v1")
     logger.info("Feature flag INTEGRATIONS enabled — integration routes registered")
 
