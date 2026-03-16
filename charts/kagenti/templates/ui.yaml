@@ -114,6 +114,13 @@ spec:
                   optional: true
             - name: ENABLE_AUTH
               value: "{{ .Values.ui.auth.enabled }}"
+            # Feature flags
+            - name: KAGENTI_FEATURE_FLAG_SANDBOX
+              value: "{{ .Values.featureFlags.sandbox }}"
+            - name: KAGENTI_FEATURE_FLAG_INTEGRATIONS
+              value: "{{ .Values.featureFlags.integrations }}"
+            - name: KAGENTI_FEATURE_FLAG_TRIGGERS
+              value: "{{ .Values.featureFlags.triggers }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             # Dashboard URLs from ConfigMap (populated by ui-routes-job)
@@ -190,6 +197,18 @@ spec:
                 secretKeyRef:
                   name: kagenti-ui-oauth-secret
                   key: SCOPE
+                  optional: true
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-proxy-secret
+                  key: master-key
+                  optional: true
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-proxy-secret
+                  key: master-key
                   optional: true
           resources:
             {{- toYaml .Values.ui.backend.resources | nindent 12 }}
@@ -340,14 +359,14 @@ rules:
     resources: ["clusterbuildstrategies"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
+    resources: ["pods", "pods/exec", "pods/log"]
+    verbs: ["get", "list", "create"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "create", "patch", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "create", "patch", "delete"]
   # Deployments, StatefulSets and Services for managing workloads
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets"]
@@ -359,11 +378,19 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # PersistentVolumeClaims for agent workspace storage
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "patch", "delete"]
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Integration CRDs for repository integrations
+  - apiGroups: ["kagenti.io"]
+    resources: ["integrations", "integrations/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
