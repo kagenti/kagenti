@@ -163,6 +163,11 @@ async def list_sessions(
 ):
     """List sessions (tasks) with pagination and optional search.
 
+    Queries the sessions table first (fast indexed lookup), then JOINs
+    with the tasks table for latest status/kind.  Falls back to the
+    legacy tasks-only CTE when the sessions table is empty (first run
+    or pre-migration).
+
     Visibility is role-based:
     - Admin: all sessions across all namespaces.
     - Operator: own sessions + sessions with visibility='namespace'.
@@ -170,6 +175,116 @@ async def list_sessions(
     """
     pool = await get_session_pool(namespace)
 
+    async with pool.acquire() as conn:
+        # Check if sessions table has data for this namespace
+        sessions_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM sessions WHERE namespace = $1", namespace
+        )
+
+        if sessions_count > 0:
+            # --- Primary path: query sessions table ---
+            items, total = await _list_sessions_from_sessions_table(
+                conn, namespace, user, limit, offset, search, agent_name
+            )
+        else:
+            # --- Fallback: legacy tasks-only path (backward compat) ---
+            items, total = await _list_sessions_from_tasks_table(
+                conn, namespace, user, limit, offset, search, agent_name
+            )
+
+    return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+async def _list_sessions_from_sessions_table(
+    conn,
+    namespace: str,
+    user: TokenData,
+    limit: int,
+    offset: int,
+    search: Optional[str],
+    agent_name: Optional[str],
+) -> tuple:
+    """Query sessions table with LATERAL join to tasks for status."""
+    is_admin = user.has_role(ROLE_ADMIN)
+
+    conditions: List[str] = ["s.namespace = $1"]
+    args: List[Any] = [namespace]
+    idx = 2
+
+    if search:
+        conditions.append(f"s.context_id ILIKE ${idx}")
+        args.append(f"%{search}%")
+        idx += 1
+
+    if agent_name:
+        conditions.append(f"s.agent_name = ${idx}")
+        args.append(agent_name)
+        idx += 1
+
+    # Role-based visibility filtering
+    if not is_admin:
+        conditions.append(f"(s.owner = ${idx} OR s.visibility != 'private' OR s.owner = '')")
+        args.append(user.username)
+        idx += 1
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    total = await conn.fetchval(
+        f"SELECT COUNT(*) FROM sessions s {where}",
+        *args,
+    )
+
+    rows = await conn.fetch(
+        f"SELECT s.context_id, s.agent_name, s.title, s.owner, s.visibility,"
+        f"       s.namespace, s.model_override, s.budget_max_tokens,"
+        f"       s.created_at, s.updated_at, s.last_message_at,"
+        f"       t.status, t.kind"
+        f" FROM sessions s"
+        f" LEFT JOIN LATERAL ("
+        f"   SELECT status, kind FROM tasks"
+        f"   WHERE context_id = s.context_id"
+        f"   ORDER BY id DESC LIMIT 1"
+        f" ) t ON true"
+        f" {where}"
+        f" ORDER BY s.updated_at DESC"
+        f" LIMIT ${idx} OFFSET ${idx + 1}",
+        *args,
+        limit,
+        offset,
+    )
+
+    items = []
+    for r in rows:
+        status = _parse_json_field(r["status"]) if r["status"] else {"state": "unknown"}
+        metadata = {
+            "title": r["title"] or "",
+            "owner": r["owner"] or "",
+            "visibility": r["visibility"] or "private",
+            "agent_name": r["agent_name"] or "",
+        }
+        items.append(
+            TaskSummary(
+                id=r["context_id"],
+                context_id=r["context_id"],
+                kind=r["kind"] or "",
+                status=status,
+                metadata=metadata,
+            )
+        )
+
+    return items, total
+
+
+async def _list_sessions_from_tasks_table(
+    conn,
+    namespace: str,
+    user: TokenData,
+    limit: int,
+    offset: int,
+    search: Optional[str],
+    agent_name: Optional[str],
+) -> tuple:
+    """Legacy fallback: query tasks table directly when sessions table is empty."""
     conditions: List[str] = []
     args: List[Any] = []
     idx = 1
@@ -187,7 +302,6 @@ async def list_sessions(
     # Role-based visibility filtering
     if not user.has_role(ROLE_ADMIN):
         if user.has_role(ROLE_OPERATOR):
-            # Operators see own sessions + namespace-shared sessions
             conditions.append(
                 f"(metadata::json->>'owner' = ${idx}"
                 f" OR metadata::json->>'visibility' = 'namespace'"
@@ -196,7 +310,6 @@ async def list_sessions(
             args.append(user.username)
             idx += 1
         else:
-            # Viewers see only their own sessions
             conditions.append(
                 f"(metadata::json->>'owner' = ${idx} OR metadata::json->>'owner' IS NULL)"
             )
@@ -207,100 +320,27 @@ async def list_sessions(
     if conditions:
         where = "WHERE " + " AND ".join(conditions)
 
-    async with pool.acquire() as conn:
-        # Deduplicate: A2A SDK creates a new immutable task per message exchange.
-        # Multiple tasks share the same context_id. For the session list, pick
-        # the latest task (most recent status) for each context_id.
-        dedup_cte = (
-            "WITH latest AS ("
-            "  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
-            "  FROM tasks ORDER BY context_id, id DESC"
-            ")"
-        )
+    dedup_cte = (
+        "WITH latest AS ("
+        "  SELECT DISTINCT ON (context_id) id, context_id, kind, status, metadata"
+        "  FROM tasks ORDER BY context_id, id DESC"
+        ")"
+    )
 
-        total = await conn.fetchval(f"{dedup_cte} SELECT COUNT(*) FROM latest {where}", *args)
+    total = await conn.fetchval(f"{dedup_cte} SELECT COUNT(*) FROM latest {where}", *args)
 
-        rows = await conn.fetch(
-            f"{dedup_cte} SELECT id, context_id, kind, status, metadata"
-            f" FROM latest {where}"
-            f" ORDER BY COALESCE((status::json->>'timestamp')::text, id::text) DESC"
-            f" LIMIT ${idx} OFFSET ${idx + 1}",
-            *args,
-            limit,
-            offset,
-        )
+    rows = await conn.fetch(
+        f"{dedup_cte} SELECT id, context_id, kind, status, metadata"
+        f" FROM latest {where}"
+        f" ORDER BY COALESCE((status::json->>'timestamp')::text, id::text) DESC"
+        f" LIMIT ${idx} OFFSET ${idx + 1}",
+        *args,
+        limit,
+        offset,
+    )
 
-        # Merge metadata across rows: _set_owner_metadata() sets title/owner
-        # on the first task row, but the agent creates later rows without it.
-        # For each session where the latest row lacks title/owner, look for
-        # it in sibling rows.
-        items = [_row_to_summary(r) for r in rows]
-        missing_meta = [s for s in items if not (s.metadata or {}).get("title")]
-        if missing_meta:
-            ctx_ids = [s.context_id for s in missing_meta]
-            meta_rows = await conn.fetch(
-                "SELECT DISTINCT ON (context_id) context_id, metadata"
-                " FROM tasks"
-                " WHERE context_id = ANY($1)"
-                "   AND metadata::json->>'title' IS NOT NULL"
-                " ORDER BY context_id, id DESC",
-                ctx_ids,
-            )
-            meta_map = {}
-            for mr in meta_rows:
-                parsed = _parse_json_field(mr["metadata"])
-                if parsed:
-                    meta_map[mr["context_id"]] = parsed
-            for s in missing_meta:
-                donor = meta_map.get(s.context_id)
-                if donor:
-                    if s.metadata is None:
-                        s.metadata = {}
-                    for key in ("title", "owner", "visibility", "agent_name"):
-                        if key not in s.metadata and key in donor:
-                            s.metadata[key] = donor[key]
-
-            # Backfill: for sessions with NO title anywhere (e.g., created by
-            # direct A2A messages bypassing the backend), derive title from
-            # the first user message in history.
-            still_missing = [s for s in items if not (s.metadata or {}).get("title")]
-            if still_missing:
-                ctx_ids_2 = [s.context_id for s in still_missing]
-                hist_rows = await conn.fetch(
-                    "SELECT DISTINCT ON (context_id) context_id, history"
-                    " FROM tasks"
-                    " WHERE context_id = ANY($1)"
-                    "   AND history IS NOT NULL"
-                    " ORDER BY context_id, id ASC",
-                    ctx_ids_2,
-                )
-                for hr in hist_rows:
-                    hist = _parse_json_field(hr["history"])
-                    if hist and isinstance(hist, list):
-                        for msg in hist:
-                            if msg.get("role") == "user":
-                                parts = msg.get("parts", [])
-                                text = ""
-                                for p in parts:
-                                    if isinstance(p, dict) and p.get("kind") == "text":
-                                        text = p.get("text", "")
-                                        break
-                                if text:
-                                    target = next(
-                                        (
-                                            s
-                                            for s in still_missing
-                                            if s.context_id == hr["context_id"]
-                                        ),
-                                        None,
-                                    )
-                                    if target:
-                                        if target.metadata is None:
-                                            target.metadata = {}
-                                        target.metadata["title"] = text[:100]
-                                    break
-
-    return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
+    items = [_row_to_summary(r) for r in rows]
+    return items, total
 
 
 @router.get(
@@ -1110,6 +1150,13 @@ async def set_session_visibility(
             context_id,
         )
 
+        # Keep sessions table in sync
+        await conn.execute(
+            "UPDATE sessions SET visibility = $1, updated_at = NOW() WHERE context_id = $2",
+            request.visibility,
+            context_id,
+        )
+
     return {"visibility": request.visibility}
 
 
@@ -1602,6 +1649,22 @@ async def _resolve_agent_name(
     try:
         pool = await get_session_pool(namespace)
         async with pool.acquire() as conn:
+            # Check sessions table first (fast, indexed lookup)
+            srow = await conn.fetchrow(
+                "SELECT agent_name FROM sessions WHERE context_id = $1",
+                session_id,
+            )
+            if srow and srow["agent_name"]:
+                if srow["agent_name"] != request_agent:
+                    logger.info(
+                        "Resolved agent from sessions table: %s (request had %s) for session %s",
+                        srow["agent_name"],
+                        request_agent,
+                        session_id[:12],
+                    )
+                return srow["agent_name"]
+
+            # Fall back to tasks metadata (backward compat)
             row = await conn.fetchrow(
                 "SELECT metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
                 session_id,
@@ -1739,6 +1802,23 @@ async def chat_send(
                         json.dumps(merged),
                         final_context_id,
                     )
+
+                # Upsert into sessions table (authoritative session metadata)
+                await conn.execute(
+                    "INSERT INTO sessions (context_id, agent_name, namespace, title, owner, updated_at, last_message_at)"
+                    " VALUES ($1, $2, $3, $4, $5, NOW(), NOW())"
+                    " ON CONFLICT (context_id) DO UPDATE SET"
+                    "   title = COALESCE(NULLIF(sessions.title, ''), EXCLUDED.title),"
+                    "   agent_name = COALESCE(NULLIF(sessions.agent_name, ''), EXCLUDED.agent_name),"
+                    "   owner = COALESCE(NULLIF(sessions.owner, ''), EXCLUDED.owner),"
+                    "   last_message_at = NOW(),"
+                    "   updated_at = NOW()",
+                    final_context_id,
+                    merged.get("agent_name", ""),
+                    namespace,
+                    merged.get("title", ""),
+                    merged.get("owner", ""),
+                )
     except Exception:
         pass  # non-critical
 
@@ -1968,6 +2048,24 @@ async def _stream_sandbox_response(
                             stream_task_id,
                             session_id,
                         )
+
+                    # Upsert into sessions table (authoritative session metadata)
+                    title = meta.get("title", "")
+                    await conn.execute(
+                        "INSERT INTO sessions (context_id, agent_name, namespace, title, owner, updated_at, last_message_at)"
+                        " VALUES ($1, $2, $3, $4, $5, NOW(), NOW())"
+                        " ON CONFLICT (context_id) DO UPDATE SET"
+                        "   title = COALESCE(NULLIF(sessions.title, ''), EXCLUDED.title),"
+                        "   agent_name = COALESCE(NULLIF(sessions.agent_name, ''), EXCLUDED.agent_name),"
+                        "   owner = COALESCE(NULLIF(sessions.owner, ''), EXCLUDED.owner),"
+                        "   last_message_at = NOW(),"
+                        "   updated_at = NOW()",
+                        session_id,
+                        agent_name or "",
+                        namespace or "",
+                        title or "",
+                        owner or "",
+                    )
                 break  # Success
             except Exception:
                 logger.warning(
@@ -2719,6 +2817,23 @@ async def _persist_and_recover(
                     result,
                     session_id,
                     task_db_id,
+                )
+
+                # Upsert into sessions table (authoritative session metadata)
+                await conn.execute(
+                    "INSERT INTO sessions (context_id, agent_name, namespace, title, owner, updated_at, last_message_at)"
+                    " VALUES ($1, $2, $3, $4, $5, NOW(), NOW())"
+                    " ON CONFLICT (context_id) DO UPDATE SET"
+                    "   title = COALESCE(NULLIF(sessions.title, ''), EXCLUDED.title),"
+                    "   agent_name = COALESCE(NULLIF(sessions.agent_name, ''), EXCLUDED.agent_name),"
+                    "   owner = COALESCE(NULLIF(sessions.owner, ''), EXCLUDED.owner),"
+                    "   last_message_at = NOW(),"
+                    "   updated_at = NOW()",
+                    session_id,
+                    meta.get("agent_name", ""),
+                    namespace,
+                    meta.get("title", ""),
+                    meta.get("owner", ""),
                 )
 
         # Recovery: if loop didn't complete, poll agent for remaining events

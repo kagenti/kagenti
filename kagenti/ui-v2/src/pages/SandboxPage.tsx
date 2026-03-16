@@ -798,7 +798,7 @@ export const SandboxPage: React.FC = () => {
 
   const renderLoopCard = useCallback((loop: AgentLoop, streaming: boolean) => {
     if (viewMode === 'simple') return <SimpleLoopCard key={loop.id} loop={loop} />;
-    if (viewMode === 'graph') return <GraphLoopView key={loop.id} loop={loop} />;
+    if (viewMode === 'graph') return <GraphLoopView key={loop.id} loop={loop} allLoops={allLoopsArray} />;
     return <AgentLoopCard key={loop.id} loop={loop} isStreaming={streaming} namespace={namespace} agentName={selectedAgent} />;
   }, [viewMode, namespace, selectedAgent, allLoopsArray]);
 
@@ -1849,6 +1849,7 @@ export const SandboxPage: React.FC = () => {
                     <GraphLoopView
                       key="graph-topology-view"
                       loop={lastLoop}
+                      allLoops={loopArray}
                     />
                   );
                   return elements;

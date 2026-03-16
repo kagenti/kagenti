@@ -161,6 +161,7 @@ async def get_session_pool(namespace: str) -> asyncpg.Pool:
     dsn = _dsn_for_namespace(namespace)
     logger.info("Creating session DB pool for namespace=%s", namespace)
     pool = await _create_pool(dsn)
+    await _ensure_sessions_schema(pool)
     _pool_cache[namespace] = pool
     return pool
 
@@ -184,6 +185,42 @@ async def close_all_pools() -> None:
     _pool_cache.clear()
 
 
-# NOTE: Schema management is handled by the A2A SDK's DatabaseTaskStore.
-# The backend only reads from the SDK-managed 'tasks' table.
-# No ensure_schema() is needed — the SDK creates tables on agent startup.
+# ---------------------------------------------------------------------------
+# Sessions table schema
+# ---------------------------------------------------------------------------
+
+SESSIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    context_id TEXT PRIMARY KEY,
+    agent_name TEXT NOT NULL DEFAULT '',
+    namespace TEXT NOT NULL DEFAULT '',
+    title TEXT DEFAULT '',
+    owner TEXT DEFAULT '',
+    owner_email TEXT DEFAULT '',
+    owner_sub TEXT DEFAULT '',
+    visibility TEXT DEFAULT 'private',
+    model_override TEXT DEFAULT '',
+    budget_max_tokens BIGINT DEFAULT 0,
+    budget_max_wall_clock_s INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    last_message_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_ns_updated ON sessions(namespace, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_owner ON sessions(owner);
+CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_name, namespace);
+"""
+
+
+async def _ensure_sessions_schema(pool: asyncpg.Pool) -> None:
+    """Create sessions table if it doesn't exist. Idempotent."""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(SESSIONS_SCHEMA)
+        logger.info("Sessions schema ensured")
+    except Exception as exc:
+        logger.warning("Failed to ensure sessions schema: %s", exc)
+
+
+# NOTE: The A2A SDK's DatabaseTaskStore manages the 'tasks' table schema.
+# The backend reads from 'tasks' and manages the 'sessions' table above.
