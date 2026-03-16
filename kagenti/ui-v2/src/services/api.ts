@@ -1326,3 +1326,52 @@ export interface PodInfo {
 export async function getPodStatus(namespace: string, agentName: string): Promise<{ pods: PodInfo[] }> {
   return apiFetch(`/sandbox/${encodeURIComponent(namespace)}/agents/${encodeURIComponent(agentName)}/pod-status`);
 }
+
+/**
+ * Pod metrics types and API (metrics-server data)
+ */
+export interface ContainerMetrics {
+  name: string;
+  cpu_usage_mc: number;
+  cpu_limit_mc: number;
+  cpu_usage_raw: string;
+  memory_usage_bytes: number;
+  memory_limit_bytes: number;
+  memory_usage_raw: string;
+}
+
+export interface PodMetrics {
+  component: string;
+  pod_name: string;
+  limits_cpu: string;
+  limits_memory: string;
+  containers: ContainerMetrics[];
+}
+
+export interface PodEventDetail {
+  pod_name: string;
+  component: string;
+  type: string;
+  reason: string;
+  message: string;
+  timestamp: string;
+  count: number;
+}
+
+export async function getPodMetrics(
+  namespace: string,
+  agentName: string,
+): Promise<{ pods: PodMetrics[] }> {
+  return apiFetch(
+    `/sandbox/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(agentName)}/metrics`,
+  );
+}
+
+export async function getPodEvents(
+  namespace: string,
+  agentName: string,
+): Promise<{ events: PodEventDetail[] }> {
+  return apiFetch(
+    `/sandbox/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(agentName)}/events`,
+  );
+}

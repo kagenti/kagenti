@@ -1303,6 +1303,62 @@ def _get_core_api():
         return None
 
 
+def _get_custom_objects_api():
+    """Return a CustomObjectsApi client, or None if K8s is unavailable."""
+    try:
+        import kubernetes.client
+        import kubernetes.config
+        from kubernetes.config import ConfigException
+
+        try:
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes.config.load_incluster_config()
+            else:
+                kubernetes.config.load_kube_config()
+        except ConfigException:
+            return None
+        return kubernetes.client.CustomObjectsApi()
+    except ImportError:
+        return None
+
+
+def _parse_cpu(value: str) -> float:
+    """Parse a Kubernetes CPU value (e.g. '100m', '1', '0.5') to millicores."""
+    if not value:
+        return 0.0
+    value = value.strip()
+    if value.endswith("n"):
+        return float(value[:-1]) / 1_000_000
+    if value.endswith("m"):
+        return float(value[:-1])
+    return float(value) * 1000
+
+
+def _parse_memory(value: str) -> int:
+    """Parse a Kubernetes memory value (e.g. '128Mi', '1Gi', '1024Ki') to bytes."""
+    if not value:
+        return 0
+    value = value.strip()
+    suffixes = {
+        "Ki": 1024,
+        "Mi": 1024**2,
+        "Gi": 1024**3,
+        "Ti": 1024**4,
+        "k": 1000,
+        "M": 1000**2,
+        "G": 1000**3,
+        "T": 1000**4,
+    }
+    for suffix, multiplier in suffixes.items():
+        if value.endswith(suffix):
+            return int(float(value[: -len(suffix)]) * multiplier)
+    # plain bytes
+    try:
+        return int(value)
+    except ValueError:
+        return 0
+
+
 @router.get("/{namespace}/agents", response_model=List[SandboxAgentInfo])
 async def list_sandbox_agents(namespace: str):
     """List sandbox agent deployments in the namespace with session counts."""
@@ -1591,6 +1647,209 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
             )
 
     return {"pods": pods_result}
+
+
+@router.get("/{namespace}/pods/{agent_name}/metrics")
+async def get_pod_metrics(namespace: str, agent_name: str):
+    """Return CPU/memory usage from metrics-server for pods related to an agent.
+
+    Uses the metrics.k8s.io/v1beta1 API (requires metrics-server installed).
+    Returns current usage alongside limits from the pod spec so the UI can
+    render percentage-based progress bars.
+    """
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid agent name")
+    if not _K8S_NAME_RE.match(namespace):
+        raise HTTPException(400, "Invalid namespace")
+
+    apps_api = _get_apps_api()
+    core_api = _get_core_api()
+    custom_api = _get_custom_objects_api()
+    if apps_api is None or core_api is None:
+        raise HTTPException(503, "Kubernetes API unavailable")
+
+    from kubernetes.client import ApiException
+
+    component_deployments = [
+        ("agent", agent_name),
+        ("egress-proxy", f"{agent_name}-egress-proxy"),
+        ("llm-budget-proxy", "llm-budget-proxy"),
+    ]
+
+    metrics_result: List[Dict[str, Any]] = []
+
+    for component, deploy_name in component_deployments:
+        # --- Fetch the Deployment to find its pods ---------------------------
+        try:
+            deployment = apps_api.read_namespaced_deployment(name=deploy_name, namespace=namespace)
+        except ApiException as e:
+            if e.status == 404:
+                continue
+            logger.warning("Error reading deployment %s/%s: %s", namespace, deploy_name, e)
+            continue
+
+        match_labels = deployment.spec.selector.match_labels or {}
+        label_selector = ",".join(f"{k}={v}" for k, v in match_labels.items())
+
+        try:
+            pod_list = core_api.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            )
+        except ApiException:
+            continue
+
+        for pod in pod_list.items or []:
+            pod_name = pod.metadata.name
+
+            # --- Resource limits from pod spec --------------------------------
+            containers_spec = pod.spec.containers or []
+            limits_cpu = ""
+            limits_memory = ""
+            if containers_spec:
+                res = containers_spec[0].resources
+                if res and res.limits:
+                    limits_cpu = res.limits.get("cpu", "")
+                    limits_memory = res.limits.get("memory", "")
+
+            # --- Current usage from metrics-server ----------------------------
+            container_metrics: List[Dict[str, Any]] = []
+            if custom_api is not None:
+                try:
+                    pod_metrics = custom_api.get_namespaced_custom_object(
+                        group="metrics.k8s.io",
+                        version="v1beta1",
+                        namespace=namespace,
+                        plural="pods",
+                        name=pod_name,
+                    )
+                    for cm in pod_metrics.get("containers", []):
+                        usage = cm.get("usage", {})
+                        usage_cpu_raw = usage.get("cpu", "0")
+                        usage_mem_raw = usage.get("memory", "0")
+                        usage_cpu_mc = _parse_cpu(usage_cpu_raw)
+                        usage_mem_bytes = _parse_memory(usage_mem_raw)
+                        limit_cpu_mc = _parse_cpu(limits_cpu)
+                        limit_mem_bytes = _parse_memory(limits_memory)
+
+                        container_metrics.append(
+                            {
+                                "name": cm.get("name", ""),
+                                "cpu_usage_mc": round(usage_cpu_mc, 1),
+                                "cpu_limit_mc": round(limit_cpu_mc, 1),
+                                "cpu_usage_raw": usage_cpu_raw,
+                                "memory_usage_bytes": usage_mem_bytes,
+                                "memory_limit_bytes": limit_mem_bytes,
+                                "memory_usage_raw": usage_mem_raw,
+                            }
+                        )
+                except ApiException as e:
+                    if e.status != 404:
+                        logger.warning(
+                            "Error fetching metrics for pod %s/%s: %s",
+                            namespace,
+                            pod_name,
+                            e,
+                        )
+                    # metrics-server may not have data yet; return empty list
+                except Exception as e:
+                    logger.warning("Unexpected error fetching pod metrics: %s", e)
+
+            metrics_result.append(
+                {
+                    "component": component,
+                    "pod_name": pod_name,
+                    "limits_cpu": limits_cpu,
+                    "limits_memory": limits_memory,
+                    "containers": container_metrics,
+                }
+            )
+
+    return {"pods": metrics_result}
+
+
+@router.get("/{namespace}/pods/{agent_name}/events")
+async def get_pod_events(namespace: str, agent_name: str):
+    """Return events for all pods related to an agent deployment.
+
+    Collects events from the Kubernetes Events API for each pod owned by the
+    agent's deployments. Results are sorted by timestamp descending.
+    """
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid agent name")
+    if not _K8S_NAME_RE.match(namespace):
+        raise HTTPException(400, "Invalid namespace")
+
+    apps_api = _get_apps_api()
+    core_api = _get_core_api()
+    if apps_api is None or core_api is None:
+        raise HTTPException(503, "Kubernetes API unavailable")
+
+    from kubernetes.client import ApiException
+
+    component_deployments = [
+        ("agent", agent_name),
+        ("egress-proxy", f"{agent_name}-egress-proxy"),
+        ("llm-budget-proxy", "llm-budget-proxy"),
+    ]
+
+    all_events: List[Dict[str, Any]] = []
+
+    for component, deploy_name in component_deployments:
+        try:
+            deployment = apps_api.read_namespaced_deployment(name=deploy_name, namespace=namespace)
+        except ApiException as e:
+            if e.status == 404:
+                continue
+            logger.warning("Error reading deployment %s/%s: %s", namespace, deploy_name, e)
+            continue
+
+        match_labels = deployment.spec.selector.match_labels or {}
+        label_selector = ",".join(f"{k}={v}" for k, v in match_labels.items())
+
+        try:
+            pod_list = core_api.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            )
+        except ApiException:
+            continue
+
+        for pod in pod_list.items or []:
+            pod_name = pod.metadata.name
+            try:
+                event_list = core_api.list_namespaced_event(
+                    namespace=namespace,
+                    field_selector=f"involvedObject.name={pod_name}",
+                )
+                for evt in event_list.items:
+                    timestamp = None
+                    if evt.last_timestamp:
+                        timestamp = evt.last_timestamp.isoformat()
+                    elif evt.event_time:
+                        timestamp = evt.event_time.isoformat()
+
+                    all_events.append(
+                        {
+                            "pod_name": pod_name,
+                            "component": component,
+                            "type": evt.type or "",
+                            "reason": evt.reason or "",
+                            "message": evt.message or "",
+                            "timestamp": timestamp or "",
+                            "count": evt.count or 1,
+                        }
+                    )
+            except ApiException as e:
+                logger.warning(
+                    "Error listing events for pod %s/%s: %s",
+                    namespace,
+                    pod_name,
+                    e,
+                )
+
+    # Sort by timestamp descending (most recent first)
+    all_events.sort(key=lambda e: e["timestamp"], reverse=True)
+
+    return {"events": all_events}
 
 
 # ---------------------------------------------------------------------------

@@ -182,13 +182,15 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
         </button>
       </div>
 
-      {/* Active sub-view */}
-      {subView === 'steps' && (
-        <StepGraphView loop={loop} allLoops={loops} eventDetail={eventDetail} />
-      )}
-      {subView === 'topology' && (
-        <TopologyGraphView loop={loop} allLoops={loops} graphCard={graphCard} eventDetail={eventDetail} />
-      )}
+      {/* Active sub-view — flex:1 fills remaining space in fullscreen */}
+      <div style={{ flex: 1, minHeight: 400, position: 'relative' }}>
+        {subView === 'steps' && (
+          <StepGraphView loop={loop} allLoops={loops} eventDetail={eventDetail} />
+        )}
+        {subView === 'topology' && (
+          <TopologyGraphView loop={loop} allLoops={loops} graphCard={graphCard} eventDetail={eventDetail} />
+        )}
+      </div>
     </div>
   );
 });
