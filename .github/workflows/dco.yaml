@@ -1,0 +1,66 @@
+name: DCO
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    name: DCO Sign-off Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Check DCO sign-off on all commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Checking commits ${BASE_SHA}..${HEAD_SHA} for DCO sign-off..."
+          echo ""
+
+          failed=0
+          total=0
+
+          for sha in $(git rev-list "${BASE_SHA}..${HEAD_SHA}"); do
+            total=$((total + 1))
+            msg=$(git log -1 --format='%B' "$sha")
+            author=$(git log -1 --format='%an <%ae>' "$sha")
+            short=$(git log -1 --format='%h' "$sha")
+            subject=$(git log -1 --format='%s' "$sha")
+
+            # Check for Signed-off-by trailer matching the commit author
+            if echo "$msg" | grep -qi "^Signed-off-by: "; then
+              echo "PASS  ${short} ${subject}"
+            else
+              echo "FAIL  ${short} ${subject}"
+              echo "       Missing 'Signed-off-by' trailer."
+              echo "       Expected: Signed-off-by: ${author}"
+              echo "       Fix with: git commit --amend -s"
+              echo ""
+              failed=$((failed + 1))
+            fi
+          done
+
+          echo ""
+          echo "---"
+          echo "Checked ${total} commit(s): $((total - failed)) passed, ${failed} failed."
+          echo ""
+
+          if [ "$failed" -gt 0 ]; then
+            echo "All commits must include a DCO sign-off."
+            echo "The sign-off certifies that you wrote or have the right to submit"
+            echo "the code under the project's open source license (see https://developercertificate.org)."
+            echo ""
+            echo "To sign off your commits:"
+            echo "  git commit -s -m 'your message'        # new commit"
+            echo "  git commit --amend -s                   # fix last commit"
+            echo "  git rebase --signoff HEAD~${failed}     # fix last ${failed} commits"
+            exit 1
+          fi
