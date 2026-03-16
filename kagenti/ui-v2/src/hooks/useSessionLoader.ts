@@ -454,6 +454,12 @@ export function useSessionLoader(
       return;
     }
 
+    // Skip history fetch if we're actively streaming — contextId was just set
+    // by sendStreaming from the SSE response. The streaming data is authoritative.
+    if (state.phase === 'SUBSCRIBING') {
+      return;
+    }
+
     // Cancel any existing SSE before loading new session
     if (subscribeAbortRef.current) {
       subscribeAbortRef.current.abort();

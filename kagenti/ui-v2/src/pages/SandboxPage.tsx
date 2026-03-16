@@ -1244,8 +1244,10 @@ export const SandboxPage: React.FC = () => {
             const data = JSON.parse(line.slice(6));
 
             // Track session from the streaming response
-            if (data.session_id && !contextId) {
+            // Use ref to avoid stale closure (contextId may be stale after handleNewSession)
+            if (data.session_id && !contextIdRef.current) {
               setContextId(data.session_id);
+              contextIdRef.current = data.session_id;
               // Only add session param — preserve existing agent param from URL
               setSearchParams((prev) => {
                 const next = new URLSearchParams(prev);
