@@ -184,7 +184,9 @@ def _check_sandbox_api_available() -> bool:
     """
     url = _get_backend_url()
     headers = _get_auth_headers()
-    ssl_verify = _get_ssl_context()
+    # Use verify=False at module-import time (SSL helpers defined later in file)
+    ssl_env = os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower()
+    ssl_verify = False if ssl_env in ("false", "0", "no") else True
     try:
         resp = httpx.get(
             f"{url}/api/v1/sandbox/team1/sessions",
