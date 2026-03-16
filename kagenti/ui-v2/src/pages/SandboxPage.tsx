@@ -1569,13 +1569,18 @@ export const SandboxPage: React.FC = () => {
       }
     } finally {
       sendingRef.current = false;
-      sendInProgressRef.current = false;
       sessionDispatch({ type: 'SEND_DONE' });
       setStreamingContent('');
       // Set contextId state AFTER SEND_DONE — deferred from streaming to avoid
       // triggering Effect 1 mid-stream (which wipes messages).
+      // Keep sendInProgressRef=true until AFTER setContextId so Effect 1
+      // doesn't reload history when contextId changes.
       if (contextIdRef.current && contextIdRef.current !== contextId) {
         setContextId(contextIdRef.current);
+        // Clear sendInProgressRef on next tick — after React processes contextId
+        setTimeout(() => { sendInProgressRef.current = false; }, 0);
+      } else {
+        sendInProgressRef.current = false;
       }
       // SEND_DONE marks loops with finalAnswer as 'done', others as 'executing'.
     }
