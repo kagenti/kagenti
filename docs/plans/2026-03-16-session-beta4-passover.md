@@ -1,4 +1,4 @@
-# Session Beta-2 — Unified Turn Rendering, Multi-Turn Tests, Graph Feedback
+# Session Beta-4 — Unified Turn Rendering, Multi-Turn Tests, Graph Feedback
 
 > **Date:** 2026-03-16
 > **Cluster:** sandbox42 (KUBECONFIG=~/clusters/hcp/kagenti-team-sandbox42/auth/kubeconfig)
@@ -17,7 +17,7 @@
 - RCA wizard deploy tests: emptydir + PVC both PASSING (5/5 quality)
 - 73 broad UI tests passing, 2 rendering tests fixed
 
-## What Beta-2 Must Do
+## What Beta-4 Must Do
 
 ### P0: Unified Turn Block Rendering
 
@@ -75,7 +75,7 @@ contextId, but the UI may not re-render fast enough before the test checks.
 4. The graph nodes should show better progress indicators
 
 **Implementation:** The `GraphLoopView.tsx` was enhanced in Beta with topology
-DAG, edge counters, and multi-message sidebar. Beta-2 should:
+DAG, edge counters, and multi-message sidebar. Beta-4 should:
 - Add the subtab toggle (All Messages / Selected Message)
 - Polish the sidebar (show agent name, step progress, token count)
 - Add a "Fullscreen" button per message that expands to full graph view
@@ -110,7 +110,7 @@ Sessions API tests failed on SSL cert verification. Need to:
 - Set `verify=False` or use OpenShift CA in `_get_ssl_context()`
 - Run full backend E2E suite and fix remaining failures
 
-## Also Planned for Beta-2+ Sessions
+## Also Planned for Beta-4+ Sessions
 
 ### Beta-3: Per-Session Landlock Isolation
 - Design doc: `docs/plans/2026-03-16-session-beta3-per-session-isolation.md`
@@ -136,7 +136,7 @@ Sessions API tests failed on SSL cert verification. Need to:
 - Extended mode: thinking/tool loop with plan-specific tools
 - Plan files as multi-turn source of truth
 
-## How to Start Beta-2
+## How to Start Beta-4
 
 ```bash
 # 1. Setup
@@ -208,7 +208,7 @@ kagenti/ui-v2/src/hooks/useSessionLoader.ts      # Session lifecycle state machi
 # Design docs
 docs/plans/2026-03-15-agent-graph-card-design.md # Full architecture + extended planning
 docs/plans/2026-03-15-session-beta-passover.md   # This session's passover
-docs/plans/2026-03-16-session-beta2-passover.md  # Next session plan
+docs/plans/2026-03-16-session-beta4-passover.md  # Next session plan
 ```
 
 ## Test Baseline (from Beta)
@@ -219,7 +219,7 @@ docs/plans/2026-03-16-session-beta2-passover.md  # Next session plan
 | RCA emptydir wizard | 1 passed (5/5 quality) |
 | RCA PVC wizard | 1 passed (5/5 quality) |
 | Rendering tests | 2 passed (were failing, fixed in Beta) |
-| Session isolation | 1 FAILING (P0 for Beta-2) |
+| Session isolation | 1 FAILING (P0 for Beta-4) |
 | Agent unit tests | 416 passed, 18 pre-existing failures |
 
 ## Pre-Existing Issues (NOT caused by Beta)
