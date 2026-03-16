@@ -118,7 +118,7 @@ class SandboxCreateRequest(BaseModel):
     max_think_act_cycles: int = 20
     thinking_iteration_budget: int = 2
     max_parallel_tool_calls: int = 5
-    max_wall_clock_s: int = 600
+    max_wall_clock_s: int = 3600  # 1 hour default
     hitl_interval: int = 50
     recursion_limit: int = 300
     # Pod resource limits
