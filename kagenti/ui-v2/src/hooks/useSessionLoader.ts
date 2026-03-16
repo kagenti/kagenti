@@ -181,7 +181,7 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
       // Mark all loops as done or failed when stream completes
       const finalized = new Map(state.agentLoops);
       for (const [id, loop] of finalized) {
-        if (loop.status === 'done' || loop.status === 'completed') continue;
+        if (loop.status === 'done') continue;
         // Check if reporter step exists (loop completed even if finalAnswer is empty)
         const hasReporter = loop.steps.some(
           (s) => s.eventType === 'reporter_output' || s.nodeType === 'reporter',
