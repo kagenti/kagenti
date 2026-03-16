@@ -19,7 +19,6 @@ import {
   ReactFlow,
   type Node,
   type Edge,
-  type NodeMouseHandler,
   Position,
   Background,
   Controls,
@@ -31,6 +30,66 @@ import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge } from '.
 import { countTools, formatTokens, formatDuration } from '../utils/loopFormatting';
 
 import '@xyflow/react/dist/style.css';
+
+// ---------------------------------------------------------------------------
+// Design tokens / constants
+// ---------------------------------------------------------------------------
+
+/** Graph canvas background. */
+const COLOR_BG_CANVAS = '#0d1117';
+/** Muted text color. */
+const COLOR_TEXT_MUTED = '#888';
+/** Secondary text color. */
+const COLOR_TEXT_SECONDARY = '#ccc';
+/** Faint text / tertiary. */
+const COLOR_TEXT_TERTIARY = '#666';
+/** Label text color on edges. */
+const COLOR_LABEL_TEXT = '#aaa';
+/** Accent blue for traversed edges, active sidebar entries, etc. */
+const COLOR_ACCENT_BLUE = '#58a6ff';
+/** Highlight blue for active node glow. */
+const COLOR_HIGHLIGHT_BLUE = '#4fc3f7';
+/** Border / divider color. */
+const COLOR_BORDER = '#555';
+/** Dark border / divider. */
+const COLOR_BORDER_DARK = '#333';
+/** Overlay background for popups, badges, toolbar buttons. */
+const COLOR_OVERLAY_BG = 'rgba(30, 30, 50, 0.85)';
+/** Popup panel background. */
+const COLOR_PANEL_BG = '#1a1a2e';
+/** Status green. */
+const COLOR_STATUS_OK = '#4caf50';
+/** Status red. */
+const COLOR_STATUS_FAIL = '#f44336';
+/** Status amber. */
+const COLOR_STATUS_WARN = '#ff9800';
+
+/** Default fallback for untraversed edges. */
+const COLOR_EDGE_INACTIVE = '#444';
+
+/** Sidebar width in pixels. */
+const SIDEBAR_WIDTH = 260;
+/** Default node width for dagre layout. */
+const NODE_WIDTH = 160;
+/** Default node height for dagre layout. */
+const NODE_HEIGHT = 50;
+/** Max edge stroke width. */
+const EDGE_STROKE_MAX = 4;
+/** Per-traversal stroke growth. */
+const EDGE_STROKE_STEP = 0.3;
+/** Max characters shown for user message in sidebar. */
+const MSG_TRUNCATE = 35;
+
+// Shared inline style for toolbar buttons (sidebar toggle + fullscreen).
+const TOOLBAR_BTN_STYLE: React.CSSProperties = {
+  background: COLOR_OVERLAY_BG,
+  border: `1px solid ${COLOR_BORDER}`,
+  color: COLOR_TEXT_SECONDARY,
+  borderRadius: 4,
+  padding: '4px 8px',
+  fontSize: 12,
+  cursor: 'pointer',
+};
 
 // ---------------------------------------------------------------------------
 // Default graph card topology (sandbox-legion, used as fallback)
@@ -91,8 +150,10 @@ const TOPO_NODE_COLORS: Record<string, { bg: string; border: string }> = {
   reporter:        { bg: '#7b1fa2', border: '#4a148c' },
 };
 
+const DEFAULT_NODE_COLORS = { bg: '#37474f', border: '#263238' };
+
 function getNodeColors(nodeId: string): { bg: string; border: string } {
-  return TOPO_NODE_COLORS[nodeId] || { bg: '#37474f', border: '#263238' };
+  return TOPO_NODE_COLORS[nodeId] || DEFAULT_NODE_COLORS;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +273,7 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
   g.setGraph({ rankdir: 'TB', nodesep: 40, ranksep: 60 });
 
   for (const node of nodes) {
-    g.setNode(node.id, { width: node.measured?.width ?? 160, height: node.measured?.height ?? 50 });
+    g.setNode(node.id, { width: node.measured?.width ?? NODE_WIDTH, height: node.measured?.height ?? NODE_HEIGHT });
   }
   for (const edge of edges) {
     g.setEdge(edge.source, edge.target);
@@ -222,8 +283,8 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
 
   const layoutNodes = nodes.map((node) => {
     const pos = g.node(node.id);
-    const w = node.measured?.width ?? 160;
-    const h = node.measured?.height ?? 50;
+    const w = node.measured?.width ?? NODE_WIDTH;
+    const h = node.measured?.height ?? NODE_HEIGHT;
     return {
       ...node,
       position: { x: pos.x - w / 2, y: pos.y - h / 2 },
@@ -290,13 +351,13 @@ function buildTopologyGraph(
       position: { x: 0, y: 0 },
       style: {
         background: colors.bg,
-        border: `2px solid ${isActive ? '#4fc3f7' : colors.border}`,
+        border: `2px solid ${isActive ? COLOR_HIGHLIGHT_BLUE : colors.border}`,
         color: '#fff',
         borderRadius: 8,
         padding: '8px 12px',
         minWidth: 130,
         ...(isActive ? {
-          boxShadow: '0 0 12px rgba(79, 195, 247, 0.6)',
+          boxShadow: `0 0 12px rgba(79, 195, 247, 0.6)`,
         } : {}),
       },
     });
@@ -307,7 +368,6 @@ function buildTopologyGraph(
     const edgeKey = `${te.from}->${te.to}`;
     const traversal = edgeCounts.get(edgeKey);
     const count = traversal?.count || 0;
-    const isConditional = te.condition != null;
 
     let edgeLabel: string | undefined;
     if (count > 0 && te.condition) {
@@ -324,13 +384,13 @@ function buildTopologyGraph(
       target: te.to,
       animated: count > 0 && te.to === activeNode,
       label: edgeLabel,
-      labelStyle: { fill: '#aaa', fontSize: 10 },
-      labelBgStyle: { fill: '#0d1117', fillOpacity: 0.8 },
+      labelStyle: { fill: COLOR_LABEL_TEXT, fontSize: 10 },
+      labelBgStyle: { fill: COLOR_BG_CANVAS, fillOpacity: 0.8 },
       labelBgPadding: [4, 2] as [number, number],
       style: {
-        stroke: count > 0 ? '#58a6ff' : '#444',
-        strokeWidth: count > 0 ? Math.min(1 + count * 0.3, 4) : 1,
-        ...(isConditional && count === 0 ? { strokeDasharray: '4 4' } : {}),
+        stroke: count > 0 ? COLOR_ACCENT_BLUE : COLOR_EDGE_INACTIVE,
+        strokeWidth: count > 0 ? Math.min(1 + count * EDGE_STROKE_STEP, EDGE_STROKE_MAX) : 1,
+        ...(te.condition != null && count === 0 ? { strokeDasharray: '4 4' } : {}),
       },
     });
   }
@@ -339,7 +399,7 @@ function buildTopologyGraph(
 }
 
 // ---------------------------------------------------------------------------
-// Message sidebar entry
+// Message sidebar helpers
 // ---------------------------------------------------------------------------
 
 interface MessageEntry {
@@ -383,11 +443,187 @@ function statusIcon(status: string): string {
 
 function statusColor(status: string): string {
   switch (status) {
-    case 'done':      return '#4caf50';
-    case 'failed':    return '#f44336';
-    case 'canceled':  return '#ff9800';
-    default:          return '#58a6ff';
+    case 'done':      return COLOR_STATUS_OK;
+    case 'failed':    return COLOR_STATUS_FAIL;
+    case 'canceled':  return COLOR_STATUS_WARN;
+    default:          return COLOR_ACCENT_BLUE;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Extracted sub-components
+// ---------------------------------------------------------------------------
+
+interface MessageSidebarProps {
+  loops: AgentLoop[];
+  messageEntries: MessageEntry[];
+  selectedLoopId: string | null;
+  setSelectedLoopId: (id: string | null) => void;
+}
+
+/** Collapsible message list shown on the left in multi-message mode. */
+const MessageSidebar: React.FC<MessageSidebarProps> = React.memo(
+  ({ loops, messageEntries, selectedLoopId, setSelectedLoopId }) => (
+    <>
+      {/* Sidebar header */}
+      <div style={{
+        padding: '8px 10px',
+        borderBottom: `1px solid ${COLOR_BORDER_DARK}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: COLOR_TEXT_SECONDARY }}>
+          Messages ({loops.length})
+        </span>
+        <button
+          onClick={() => setSelectedLoopId(null)}
+          title="Show all messages"
+          style={{
+            background: selectedLoopId === null ? '#1a3a5c' : 'none',
+            border: `1px solid ${COLOR_BORDER}`,
+            color: COLOR_TEXT_SECONDARY,
+            borderRadius: 3,
+            padding: '2px 6px',
+            fontSize: 10,
+            cursor: 'pointer',
+          }}
+        >
+          All
+        </button>
+      </div>
+
+      {/* Message list */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
+        {messageEntries.map((entry, idx) => (
+          <div
+            key={entry.loopId}
+            data-testid={`graph-msg-entry-${idx}`}
+            onClick={() => setSelectedLoopId(entry.isActive && selectedLoopId !== null ? null : entry.loopId)}
+            style={{
+              padding: '8px 10px',
+              cursor: 'pointer',
+              backgroundColor: entry.isActive ? 'rgba(88, 166, 255, 0.1)' : 'transparent',
+              borderLeft: entry.isActive ? `3px solid ${COLOR_ACCENT_BLUE}` : '3px solid transparent',
+              transition: 'background-color 0.15s',
+            }}
+          >
+            {/* User prompt summary */}
+            <div style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: COLOR_TEXT_SECONDARY,
+              marginBottom: 4,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {idx + 1}. {entry.userMessage.length > MSG_TRUNCATE
+                ? entry.userMessage.substring(0, MSG_TRUNCATE) + '...'
+                : entry.userMessage}
+            </div>
+            {/* Status line */}
+            <div style={{ fontSize: 11, color: COLOR_TEXT_MUTED, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: statusColor(entry.status) }}>{statusIcon(entry.status)}</span>
+              <span>{entry.stepProgress}</span>
+              <span>{entry.toolCount} tools</span>
+              <span>{entry.tokens} tok</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  ),
+);
+MessageSidebar.displayName = 'MessageSidebar';
+
+// ---------------------------------------------------------------------------
+
+interface EdgeDetailInfo {
+  from: string;
+  to: string;
+  condition: string | null;
+  description?: string;
+  count: number;
+  loopIds: string[];
+}
+
+interface EdgeDetailPopupProps {
+  info: EdgeDetailInfo;
+  loops: AgentLoop[];
+  onClose: () => void;
+}
+
+/** Popup showing traversal details for a clicked edge. */
+const EdgeDetailPopup: React.FC<EdgeDetailPopupProps> = React.memo(({ info, loops, onClose }) => (
+  <div
+    data-testid="graph-edge-popup"
+    style={{
+      position: 'absolute',
+      bottom: 40,
+      right: 8,
+      zIndex: 20,
+      background: COLOR_PANEL_BG,
+      border: `1px solid ${COLOR_BORDER}`,
+      borderRadius: 6,
+      padding: '10px 14px',
+      fontSize: 12,
+      color: COLOR_TEXT_SECONDARY,
+      maxWidth: 280,
+      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+    }}
+  >
+    <div style={{ fontWeight: 600, marginBottom: 6 }}>
+      {info.from} → {info.to}
+    </div>
+    {info.condition && (
+      <div style={{ fontSize: 11, color: COLOR_TEXT_MUTED, marginBottom: 4 }}>
+        Condition: {info.condition}
+      </div>
+    )}
+    {info.description && (
+      <div style={{ fontSize: 11, color: COLOR_TEXT_MUTED, marginBottom: 4 }}>
+        {info.description}
+      </div>
+    )}
+    <div style={{ fontSize: 11, marginBottom: 2 }}>
+      Traversals: <span style={{ color: COLOR_ACCENT_BLUE, fontWeight: 600 }}>{info.count}</span>
+    </div>
+    {info.loopIds.length > 0 && (
+      <div style={{ fontSize: 10, color: COLOR_TEXT_TERTIARY, marginTop: 4 }}>
+        Messages: {info.loopIds.map((id) => {
+          const idx = loops.findIndex((l) => l.id === id);
+          return idx >= 0 ? `#${idx + 1}` : id.substring(0, 6);
+        }).join(', ')}
+      </div>
+    )}
+    <button
+      onClick={onClose}
+      style={{
+        position: 'absolute',
+        top: 4,
+        right: 6,
+        background: 'none',
+        border: 'none',
+        color: COLOR_TEXT_TERTIARY,
+        cursor: 'pointer',
+        fontSize: 12,
+      }}
+    >
+      {'\u2716'}
+    </button>
+  </div>
+));
+EdgeDetailPopup.displayName = 'EdgeDetailPopup';
+
+// ---------------------------------------------------------------------------
+// MiniMap node color callback (stable reference)
+// ---------------------------------------------------------------------------
+
+function miniMapNodeColor(node: Node): string {
+  const bg = node.style?.background;
+  return typeof bg === 'string' ? bg : '#555';
 }
 
 // ---------------------------------------------------------------------------
@@ -404,7 +640,9 @@ export interface GraphLoopViewProps {
 }
 
 export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, allLoops, graphCard }) => {
-  const loops = allLoops || [loop];
+  // Stabilize the loops array so downstream useMemo deps don't churn
+  // when allLoops is not provided (avoids creating a new [loop] every render).
+  const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
   const topology = graphCard?.topology || DEFAULT_TOPOLOGY;
 
   const [fullscreen, setFullscreen] = useState(false);
@@ -413,10 +651,12 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Determine which loop(s) contribute to the graph
-  const activeLoops = selectedLoopId
-    ? loops.filter((l) => l.id === selectedLoopId)
-    : loops;
+  // Determine which loop(s) contribute to the graph — memoized to avoid
+  // creating a new array reference on every render.
+  const activeLoops = useMemo(
+    () => (selectedLoopId ? loops.filter((l) => l.id === selectedLoopId) : loops),
+    [selectedLoopId, loops],
+  );
 
   // Compute edge traversal counts
   const edgeCounts = useMemo(
@@ -430,7 +670,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
     return latest ? getActiveTopoNode(latest) : null;
   }, [activeLoops]);
 
-  // Build the topology graph
+  // Build the topology graph (dagre layout is the expensive part)
   const { nodes, edges } = useMemo(() => {
     const raw = buildTopologyGraph(topology, activeNode, edgeCounts);
     return applyDagreLayout(raw.nodes, raw.edges);
@@ -441,10 +681,6 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
     () => buildMessageEntries(loops, selectedLoopId),
     [loops, selectedLoopId],
   );
-
-  const onNodeClick: NodeMouseHandler = useCallback((_event, _node) => {
-    // Future: could show node detail panel. For now, no-op.
-  }, []);
 
   const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
     setHoveredEdge((prev) => (prev === edge.id ? null : edge.id));
@@ -464,6 +700,8 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
     }
   }, [fullscreen]);
 
+  const closeEdgePopup = useCallback(() => setHoveredEdge(null), []);
+
   // Listen for ESC exiting fullscreen via browser API
   React.useEffect(() => {
     const handler = () => {
@@ -474,7 +712,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
   }, []);
 
   // Show "waiting" when all loops are empty
-  const allEmpty = loops.every((l) => l.steps.length === 0);
+  const allEmpty = useMemo(() => loops.every((l) => l.steps.length === 0), [loops]);
   if (allEmpty) {
     return (
       <div
@@ -491,8 +729,9 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
     );
   }
 
-  // Edge popup detail
-  const hoveredEdgeInfo = hoveredEdge ? (() => {
+  // Memoize the edge detail info derived from hovered edge ID
+  const hoveredEdgeInfo = useMemo<EdgeDetailInfo | null>(() => {
+    if (!hoveredEdge) return null;
     // Edge ID format: "e-{from}->{to}"
     const withoutPrefix = hoveredEdge.substring(2); // remove "e-"
     const arrowIdx = withoutPrefix.indexOf('->');
@@ -504,9 +743,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
     const info = edgeCounts.get(key);
     if (!te || !info) return null;
     return { from, to, condition: te.condition, description: te.description, count: info.count, loopIds: info.loopIds };
-  })() : null;
-
-  const sidebarWidth = 260;
+  }, [hoveredEdge, topology.edges, edgeCounts]);
 
   return (
     <div
@@ -517,7 +754,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
         border: fullscreen ? 'none' : '1px solid var(--pf-v5-global--BorderColor--100)',
         borderRadius: fullscreen ? 0 : 8,
         marginBottom: fullscreen ? 0 : 4,
-        backgroundColor: '#0d1117',
+        backgroundColor: COLOR_BG_CANVAS,
         position: 'relative',
         display: 'flex',
       }}
@@ -527,84 +764,22 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
         <div
           data-testid="graph-message-sidebar"
           style={{
-            width: sidebarOpen ? sidebarWidth : 0,
-            minWidth: sidebarOpen ? sidebarWidth : 0,
+            width: sidebarOpen ? SIDEBAR_WIDTH : 0,
+            minWidth: sidebarOpen ? SIDEBAR_WIDTH : 0,
             overflow: 'hidden',
             transition: 'width 0.2s, min-width 0.2s',
-            borderRight: sidebarOpen ? '1px solid #333' : 'none',
+            borderRight: sidebarOpen ? `1px solid ${COLOR_BORDER_DARK}` : 'none',
             display: 'flex',
             flexDirection: 'column',
             flexShrink: 0,
           }}
         >
-          {/* Sidebar header */}
-          <div style={{
-            padding: '8px 10px',
-            borderBottom: '1px solid #333',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#ccc' }}>
-              Messages ({loops.length})
-            </span>
-            <button
-              onClick={() => setSelectedLoopId(null)}
-              title="Show all messages"
-              style={{
-                background: selectedLoopId === null ? '#1a3a5c' : 'none',
-                border: '1px solid #555',
-                color: '#ccc',
-                borderRadius: 3,
-                padding: '2px 6px',
-                fontSize: 10,
-                cursor: 'pointer',
-              }}
-            >
-              All
-            </button>
-          </div>
-
-          {/* Message list */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
-            {messageEntries.map((entry, idx) => (
-              <div
-                key={entry.loopId}
-                data-testid={`graph-msg-entry-${idx}`}
-                onClick={() => setSelectedLoopId(entry.isActive && selectedLoopId !== null ? null : entry.loopId)}
-                style={{
-                  padding: '8px 10px',
-                  cursor: 'pointer',
-                  backgroundColor: entry.isActive ? 'rgba(88, 166, 255, 0.1)' : 'transparent',
-                  borderLeft: entry.isActive ? '3px solid #58a6ff' : '3px solid transparent',
-                  transition: 'background-color 0.15s',
-                }}
-              >
-                {/* User prompt summary */}
-                <div style={{
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: '#ccc',
-                  marginBottom: 4,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {idx + 1}. {entry.userMessage.length > 35
-                    ? entry.userMessage.substring(0, 35) + '...'
-                    : entry.userMessage}
-                </div>
-                {/* Status line */}
-                <div style={{ fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: statusColor(entry.status) }}>{statusIcon(entry.status)}</span>
-                  <span>{entry.stepProgress}</span>
-                  <span>{entry.toolCount} tools</span>
-                  <span>{entry.tokens} tok</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <MessageSidebar
+            loops={loops}
+            messageEntries={messageEntries}
+            selectedLoopId={selectedLoopId}
+            setSelectedLoopId={setSelectedLoopId}
+          />
         </div>
       )}
 
@@ -624,15 +799,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               data-testid="graph-sidebar-toggle"
               title={sidebarOpen ? 'Hide message sidebar' : 'Show message sidebar'}
               onClick={() => setSidebarOpen((p) => !p)}
-              style={{
-                background: 'rgba(30, 30, 50, 0.85)',
-                border: '1px solid #555',
-                color: '#ccc',
-                borderRadius: 4,
-                padding: '4px 8px',
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
+              style={TOOLBAR_BTN_STYLE}
             >
               {sidebarOpen ? '\u25c0 Hide' : '\u25b6 Messages'}
             </button>
@@ -641,15 +808,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
             data-testid="graph-fullscreen-btn"
             title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen graph view'}
             onClick={toggleFullscreen}
-            style={{
-              background: 'rgba(30, 30, 50, 0.85)',
-              border: '1px solid #555',
-              color: '#ccc',
-              borderRadius: 4,
-              padding: '4px 8px',
-              fontSize: 12,
-              cursor: 'pointer',
-            }}
+            style={TOOLBAR_BTN_STYLE}
           >
             {fullscreen ? '\u2716 Exit' : '\u26F6 Fullscreen'}
           </button>
@@ -665,8 +824,8 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               left: 8,
               zIndex: 10,
               background: 'rgba(30, 30, 50, 0.9)',
-              border: '1px solid #4fc3f7',
-              color: '#4fc3f7',
+              border: `1px solid ${COLOR_HIGHLIGHT_BLUE}`,
+              color: COLOR_HIGHLIGHT_BLUE,
               borderRadius: 4,
               padding: '4px 10px',
               fontSize: 11,
@@ -687,8 +846,8 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               left: 8,
               zIndex: 10,
               background: 'rgba(30, 30, 50, 0.9)',
-              border: '1px solid #555',
-              color: '#aaa',
+              border: `1px solid ${COLOR_BORDER}`,
+              color: COLOR_LABEL_TEXT,
               borderRadius: 4,
               padding: '4px 10px',
               fontSize: 11,
@@ -706,83 +865,28 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable
-          onNodeClick={onNodeClick}
           onEdgeClick={onEdgeClick}
           panOnDrag
           zoomOnScroll
         >
-          <Background color="#333" gap={16} />
+          <Background color={COLOR_BORDER_DARK} gap={16} />
           <Controls showInteractive={false} />
           <MiniMap
-            nodeColor={(node) => {
-              const bg = node.style?.background;
-              return typeof bg === 'string' ? bg : '#555';
-            }}
+            nodeColor={miniMapNodeColor}
             maskColor="rgba(0,0,0,0.7)"
           />
         </ReactFlow>
 
         {/* Edge detail popup */}
         {hoveredEdgeInfo && hoveredEdgeInfo.count > 0 && (
-          <div
-            data-testid="graph-edge-popup"
-            style={{
-              position: 'absolute',
-              bottom: 40,
-              right: 8,
-              zIndex: 20,
-              background: '#1a1a2e',
-              border: '1px solid #555',
-              borderRadius: 6,
-              padding: '10px 14px',
-              fontSize: 12,
-              color: '#ccc',
-              maxWidth: 280,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: 6 }}>
-              {hoveredEdgeInfo.from} → {hoveredEdgeInfo.to}
-            </div>
-            {hoveredEdgeInfo.condition && (
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-                Condition: {hoveredEdgeInfo.condition}
-              </div>
-            )}
-            {hoveredEdgeInfo.description && (
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-                {hoveredEdgeInfo.description}
-              </div>
-            )}
-            <div style={{ fontSize: 11, marginBottom: 2 }}>
-              Traversals: <span style={{ color: '#58a6ff', fontWeight: 600 }}>{hoveredEdgeInfo.count}</span>
-            </div>
-            {hoveredEdgeInfo.loopIds.length > 0 && (
-              <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
-                Messages: {hoveredEdgeInfo.loopIds.map((id) => {
-                  const idx = loops.findIndex((l) => l.id === id);
-                  return idx >= 0 ? `#${idx + 1}` : id.substring(0, 6);
-                }).join(', ')}
-              </div>
-            )}
-            <button
-              onClick={() => setHoveredEdge(null)}
-              style={{
-                position: 'absolute',
-                top: 4,
-                right: 6,
-                background: 'none',
-                border: 'none',
-                color: '#666',
-                cursor: 'pointer',
-                fontSize: 12,
-              }}
-            >
-              \u2716
-            </button>
-          </div>
+          <EdgeDetailPopup
+            info={hoveredEdgeInfo}
+            loops={loops}
+            onClose={closeEdgePopup}
+          />
         )}
       </div>
     </div>
   );
 });
+GraphLoopView.displayName = 'GraphLoopView';

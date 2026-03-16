@@ -7,9 +7,15 @@
  * Both SSE streaming and history reconstruction use `applyLoopEvent`
  * so that rendering parity is guaranteed. Previously each code path
  * had its own ~150-line event-handling chain, which drifted over time.
+ *
+ * Event routing is category-based: each event type is looked up in
+ * EVENT_CATALOG to determine its category, then dispatched to a
+ * per-category handler. This keeps the core reducer stable as new
+ * event types are added — they only need a catalog entry.
  */
 
 import type { AgentLoop, AgentLoopStep, MicroReasoning, ThinkingIteration } from '../types/agentLoop';
+import type { EventTypeDef } from '../types/graphCard';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -79,10 +85,53 @@ export interface LoopEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
+// Event catalog — single source of truth for event type -> category mapping
 // ---------------------------------------------------------------------------
 
-// Legacy types fully removed — agent no longer emits plan/plan_step/reflection.
+/**
+ * Canonical event catalog for sandbox-legion agents.
+ *
+ * Each entry maps an event type string to its EventTypeDef (category,
+ * description, etc.). The KNOWN_TYPES set is derived from this catalog
+ * so there is exactly one place to add new event types.
+ *
+ * Categories (7 stable values):
+ *   reasoning   — planning, reasoning, thinking events
+ *   execution   — tool invocations
+ *   tool_output — tool results
+ *   decision    — routing / reflection decisions
+ *   terminal    — final output (reporter)
+ *   meta        — budget, bookkeeping
+ *   interaction — human-in-the-loop
+ */
+export const EVENT_CATALOG: Record<string, Pick<EventTypeDef, 'category' | 'description'>> = {
+  // reasoning
+  planner_output:     { category: 'reasoning',   description: 'Initial or updated execution plan' },
+  replanner_output:   { category: 'reasoning',   description: 'Revised execution plan after reflection' },
+  executor_step:      { category: 'reasoning',   description: 'Executor reasoning and step execution' },
+  thinking:           { category: 'reasoning',   description: 'Thinking iteration within a node' },
+  micro_reasoning:    { category: 'reasoning',   description: 'Micro-reasoning between tool calls' },
+  // execution
+  tool_call:          { category: 'execution',   description: 'Tool invocation request' },
+  // tool_output
+  tool_result:        { category: 'tool_output', description: 'Tool execution result' },
+  // decision
+  reflector_decision: { category: 'decision',    description: 'Reflector assessment and routing decision' },
+  router:             { category: 'decision',    description: 'Router node — determines next graph path' },
+  step_selector:      { category: 'decision',    description: 'Step selector — picks next plan step' },
+  // terminal
+  reporter_output:    { category: 'terminal',    description: 'Final summary report' },
+  // meta
+  budget:             { category: 'meta',        description: 'Budget snapshot' },
+  budget_update:      { category: 'meta',        description: 'Budget update' },
+};
+
+/** Set of known event types — derived from the catalog. */
+export const KNOWN_TYPES: ReadonlySet<string> = new Set(Object.keys(EVENT_CATALOG));
+
+// ---------------------------------------------------------------------------
+// Constants & helpers
+// ---------------------------------------------------------------------------
 
 /** Current ISO timestamp for step creation/update tracking. */
 function now(): string { return new Date().toISOString(); }
@@ -122,47 +171,54 @@ export function createDefaultAgentLoop(loopId: string): AgentLoop {
 }
 
 // ---------------------------------------------------------------------------
-// Core reducer
+// Shared step finder
+// ---------------------------------------------------------------------------
+
+/** Find or create a step for this node_visit. */
+function findOrCreateStep(
+  steps: AgentLoopStep[],
+  nodeVisit: number,
+  defaults: Partial<AgentLoopStep>,
+  loop: AgentLoop,
+): { steps: AgentLoopStep[]; step: AgentLoopStep } {
+  const existing = steps.find((s) => s.index === nodeVisit);
+  if (existing) return { steps, step: existing };
+  const newStep: AgentLoopStep = {
+    index: nodeVisit,
+    planStep: defaults.planStep,
+    description: defaults.description || '',
+    model: defaults.model || loop.model,
+    nodeType: defaults.nodeType || 'executor',
+    tokens: defaults.tokens || { prompt: 0, completion: 0 },
+    toolCalls: [],
+    toolResults: [],
+    microReasonings: [],
+    durationMs: 0,
+    createdAt: now(),
+    updatedAt: now(),
+    status: 'running' as const,
+    ...defaults,
+  };
+  return { steps: [...steps, newStep], step: newStep };
+}
+
+/** Finalize all running steps — mark them as 'done'. */
+function finalizeRunningSteps(steps: AgentLoopStep[]): AgentLoopStep[] {
+  return steps.map((s) =>
+    s.status === 'running' ? { ...s, status: 'done' as const } : s,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Category handlers
 // ---------------------------------------------------------------------------
 
 /**
- * Pure function that applies a single loop event to an AgentLoop,
- * returning the updated loop (new object — safe for React state).
- *
- * This is the **canonical** implementation used by both SSE streaming
- * and history reconstruction.
+ * Handle reasoning events: planner_output, replanner_output, executor_step,
+ * thinking, micro_reasoning.
  */
-export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
-  // Normalize: agent may emit plan_step or current_step
-  if (le.plan_step != null && le.current_step == null) {
-    le.current_step = le.plan_step;
-  }
-  // Track highest node visit index (global recursion counter).
-  // Prefer event_index (chronological counter) over step (plan step).
-  const visitIdx = le.event_index ?? le.step;
-  if (visitIdx != null && visitIdx > loop.nodeVisits) {
-    loop = { ...loop, nodeVisits: visitIdx };
-  }
+function applyReasoningEvent(loop: AgentLoop, le: LoopEvent, nv: number): AgentLoop {
   const eventType = le.type;
-
-  // Only process known event types — ignore legacy/unknown types from old sessions
-  const KNOWN_TYPES = new Set([
-    'router', 'planner_output', 'replanner_output', 'executor_step',
-    'tool_call', 'tool_result', 'micro_reasoning', 'thinking',
-    'reflector_decision', 'reporter_output', 'step_selector',
-    'budget', 'budget_update',
-  ]);
-  if (!KNOWN_TYPES.has(eventType)) {
-    return loop;
-  }
-
-  // Router is an internal node — just update status, no visual step
-  if (eventType === 'router') {
-    return {
-      ...loop,
-      status: 'planning',
-    };
-  }
 
   if (eventType === 'planner_output' || eventType === 'replanner_output') {
     console.log(`[loopBuilder] ${eventType}: system_prompt=`, le.system_prompt?.substring(0, 50), 'prompt_messages=', le.prompt_messages?.length);
@@ -174,9 +230,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     const planContent = le.content || incomingSteps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || undefined;
     // Finalize all running steps — a planner/replanner event means the
     // previous node is done and any pending tool calls should resolve.
-    const finalizedSteps = loop.steps.map((s) =>
-      s.status === 'running' ? { ...s, status: 'done' as const } : s,
-    );
+    const finalizedSteps = finalizeRunningSteps(loop.steps);
     return {
       ...loop,
       status: 'planning',
@@ -213,40 +267,6 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     };
   }
 
-  // -----------------------------------------------------------------------
-  // Group ALL events by node_visit. Each node_visit = one UI section.
-  // Tool events (tool_call, tool_result) share the executor's node_visit.
-  // -----------------------------------------------------------------------
-
-  /** Find or create a step for this node_visit. */
-  const findOrCreateStep = (
-    steps: AgentLoopStep[],
-    nodeVisit: number,
-    defaults: Partial<AgentLoopStep>,
-  ): { steps: AgentLoopStep[]; step: AgentLoopStep } => {
-    const existing = steps.find((s) => s.index === nodeVisit);
-    if (existing) return { steps, step: existing };
-    const newStep: AgentLoopStep = {
-      index: nodeVisit,
-      planStep: defaults.planStep,
-      description: defaults.description || '',
-      model: defaults.model || loop.model,
-      nodeType: defaults.nodeType || 'executor',
-      tokens: defaults.tokens || { prompt: 0, completion: 0 },
-      toolCalls: [],
-      toolResults: [],
-      microReasonings: [],
-      durationMs: 0,
-      createdAt: now(),
-      updatedAt: now(),
-      status: 'running' as const,
-      ...defaults,
-    };
-    return { steps: [...steps, newStep], step: newStep };
-  };
-
-  const nv = le.node_visit ?? le.step ?? loop.steps.length;
-
   if (eventType === 'executor_step') {
     const { steps, step } = findOrCreateStep(loop.steps, nv, {
       planStep: le.current_step,
@@ -257,7 +277,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       promptMessages: le.prompt_messages,
       boundTools: le.bound_tools,
       tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-    });
+    }, loop);
     // Update fields on existing step
     step.planStep = le.current_step ?? step.planStep;
     step.description = le.description || step.description;
@@ -280,134 +300,12 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     };
   }
 
-  if (eventType === 'tool_call') {
-    const { steps, step } = findOrCreateStep(loop.steps, nv, {
-      planStep: le.current_step ?? loop.currentStep,
-      description: loop.plan[le.current_step ?? loop.currentStep] || 'Tool execution',
-      nodeType: 'executor',
-    });
-    step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }])];
-    step.nodeType = 'executor';
-    step.updatedAt = now();
-    return { ...loop, steps, model: le.model || loop.model };
-  }
-
-  if (eventType === 'tool_result') {
-    // Tool results share the executor's node_visit — find by node_visit first
-    const { steps, step } = findOrCreateStep(loop.steps, nv, {
-      planStep: le.current_step ?? loop.currentStep,
-      nodeType: 'executor',
-    });
-    const resultName = le.name || 'unknown';
-    step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }];
-    if (step.toolResults.length >= step.toolCalls.length && step.toolCalls.length > 0) {
-      step.status = 'done';
-    }
-    step.updatedAt = now();
-    return { ...loop, steps };
-  }
-
-  if (eventType === 'reflector_decision') {
-    const finalizedSteps = loop.steps.map((s) =>
-      s.status === 'running' ? { ...s, status: 'done' as const } : s,
-    );
-    const { steps } = findOrCreateStep(finalizedSteps, nv, {
-      description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
-      reasoning: le.assessment || '',
-      model: le.model || loop.model,
-      nodeType: 'reflector',
-      eventType: 'reflector_decision',
-      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-      systemPrompt: le.system_prompt,
-      promptMessages: le.prompt_messages,
-      boundTools: le.bound_tools,
-      llmResponse: le.llm_response,
-      status: 'done' as const,
-    });
-    return {
-      ...loop,
-      status: 'reflecting',
-      reflection: le.assessment || '',
-      reflectorDecision: le.decision as 'continue' | 'replan' | 'done' | undefined,
-      iteration: le.iteration ?? loop.iteration,
-      model: le.model || loop.model,
-      steps,
-    };
-  }
-
-  if (eventType === 'step_selector') {
-    const finalizedSteps = loop.steps.map((s) =>
-      s.status === 'running' ? { ...s, status: 'done' as const } : s,
-    );
-    const { steps } = findOrCreateStep(finalizedSteps, nv, {
-      planStep: le.current_step,
-      description: le.description || `Advancing to step ${(le.current_step ?? 0) + 1}`,
-      reasoning: le.brief || le.description || '',
-      nodeType: 'planner',
-      status: 'done' as const,
-    });
-    return {
-      ...loop,
-      status: 'planning',
-      currentStep: le.current_step ?? loop.currentStep,
-      steps,
-    };
-  }
-
-  if (eventType === 'budget' || eventType === 'budget_update') {
-    return {
-      ...loop,
-      budget: {
-        tokensUsed: le.tokens_used ?? loop.budget.tokensUsed,
-        tokensBudget: le.tokens_budget ?? loop.budget.tokensBudget,
-        wallClockS: le.wall_clock_s ?? loop.budget.wallClockS,
-        maxWallClockS: le.max_wall_clock_s ?? loop.budget.maxWallClockS,
-      },
-    };
-  }
-
-  if (eventType === 'reporter_output') {
-    // Filter leaked reflector decisions ("continue"/"replan"/"done")
-    const rContent = le.content || '';
-    const isLeaked = /^(continue|replan|done|hitl)\s*$/i.test(String(rContent).trim());
-    return {
-      ...loop,
-      status: 'done',
-      finalAnswer: isLeaked ? '' : rContent,
-      model: le.model || loop.model,
-      // Mark all running steps as done + add reporter step
-      steps: [
-        ...loop.steps.map((s) => s.status === 'running' ? { ...s, status: 'done' as const } : s),
-        {
-          index: loop.steps.length,
-          description: isLeaked ? 'Final answer (no content)' : 'Final answer',
-          reasoning: isLeaked ? '' : rContent,
-          model: le.model || loop.model,
-          nodeType: 'reporter' as const,
-          eventType: 'reporter_output',
-          tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
-          systemPrompt: le.system_prompt,
-          promptMessages: le.prompt_messages,
-          boundTools: le.bound_tools,
-          llmResponse: le.llm_response,
-          toolCalls: [],
-          toolResults: [],
-          durationMs: 0,
-          createdAt: now(),
-          updatedAt: now(),
-          status: 'done' as const,
-          filesTouched: extractFilePaths(le.files_touched, rContent),
-        },
-      ],
-    };
-  }
-
   if (eventType === 'thinking') {
     const { steps, step } = findOrCreateStep(loop.steps, nv, {
       planStep: le.current_step ?? loop.currentStep,
       description: 'Tool execution',
       nodeType: 'executor',
-    });
+    }, loop);
     const ti: ThinkingIteration = {
       type: 'thinking',
       loop_id: le.loop_id,
@@ -432,7 +330,7 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
       planStep: le.current_step ?? loop.currentStep,
       description: 'Tool execution',
       nodeType: 'executor',
-    });
+    }, loop);
     const mr: MicroReasoning = {
       type: 'micro_reasoning',
       loop_id: le.loop_id,
@@ -453,9 +351,206 @@ export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
     return { ...loop, steps };
   }
 
-  // Unknown event type — return loop unchanged
-  console.warn(`[loopBuilder] Unknown loop event type: "${eventType}"`);
   return loop;
+}
+
+/** Handle execution events: tool_call. */
+function applyExecutionEvent(loop: AgentLoop, le: LoopEvent, nv: number): AgentLoop {
+  const { steps, step } = findOrCreateStep(loop.steps, nv, {
+    planStep: le.current_step ?? loop.currentStep,
+    description: loop.plan[le.current_step ?? loop.currentStep] || 'Tool execution',
+    nodeType: 'executor',
+  }, loop);
+  step.toolCalls = [...step.toolCalls, ...(le.tools as AgentLoopStep['toolCalls'] || [{ type: 'tool_call', name: le.name || 'unknown', args: le.args || '', call_id: le.call_id }])];
+  step.nodeType = 'executor';
+  step.updatedAt = now();
+  return { ...loop, steps, model: le.model || loop.model };
+}
+
+/** Handle tool_output events: tool_result. */
+function applyToolOutputEvent(loop: AgentLoop, le: LoopEvent, nv: number): AgentLoop {
+  // Tool results share the executor's node_visit — find by node_visit first
+  const { steps, step } = findOrCreateStep(loop.steps, nv, {
+    planStep: le.current_step ?? loop.currentStep,
+    nodeType: 'executor',
+  }, loop);
+  const resultName = le.name || 'unknown';
+  step.toolResults = [...step.toolResults, { type: 'tool_result', name: resultName, output: le.output || '', call_id: le.call_id, status: le.status }];
+  if (step.toolResults.length >= step.toolCalls.length && step.toolCalls.length > 0) {
+    step.status = 'done';
+  }
+  step.updatedAt = now();
+  return { ...loop, steps };
+}
+
+/** Handle decision events: reflector_decision, router, step_selector. */
+function applyDecisionEvent(loop: AgentLoop, le: LoopEvent, nv: number): AgentLoop {
+  const eventType = le.type;
+
+  // Router is an internal node — just update status, no visual step
+  if (eventType === 'router') {
+    return {
+      ...loop,
+      status: 'planning',
+    };
+  }
+
+  if (eventType === 'reflector_decision') {
+    const finalizedSteps = finalizeRunningSteps(loop.steps);
+    const { steps } = findOrCreateStep(finalizedSteps, nv, {
+      description: `Reflection [${le.decision || 'assess'}]: ${(le.assessment || '').substring(0, 80)}`,
+      reasoning: le.assessment || '',
+      model: le.model || loop.model,
+      nodeType: 'reflector',
+      eventType: 'reflector_decision',
+      tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+      systemPrompt: le.system_prompt,
+      promptMessages: le.prompt_messages,
+      boundTools: le.bound_tools,
+      llmResponse: le.llm_response,
+      status: 'done' as const,
+    }, loop);
+    return {
+      ...loop,
+      status: 'reflecting',
+      reflection: le.assessment || '',
+      reflectorDecision: le.decision as 'continue' | 'replan' | 'done' | undefined,
+      iteration: le.iteration ?? loop.iteration,
+      model: le.model || loop.model,
+      steps,
+    };
+  }
+
+  if (eventType === 'step_selector') {
+    const finalizedSteps = finalizeRunningSteps(loop.steps);
+    const { steps } = findOrCreateStep(finalizedSteps, nv, {
+      planStep: le.current_step,
+      description: le.description || `Advancing to step ${(le.current_step ?? 0) + 1}`,
+      reasoning: le.brief || le.description || '',
+      nodeType: 'planner',
+      status: 'done' as const,
+    }, loop);
+    return {
+      ...loop,
+      status: 'planning',
+      currentStep: le.current_step ?? loop.currentStep,
+      steps,
+    };
+  }
+
+  return loop;
+}
+
+/** Handle terminal events: reporter_output. */
+function applyTerminalEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
+  // Filter leaked reflector decisions ("continue"/"replan"/"done")
+  const rContent = le.content || '';
+  const isLeaked = /^(continue|replan|done|hitl)\s*$/i.test(String(rContent).trim());
+  return {
+    ...loop,
+    status: 'done',
+    finalAnswer: isLeaked ? '' : rContent,
+    model: le.model || loop.model,
+    // Mark all running steps as done + add reporter step
+    steps: [
+      ...finalizeRunningSteps(loop.steps),
+      {
+        index: loop.steps.length,
+        description: isLeaked ? 'Final answer (no content)' : 'Final answer',
+        reasoning: isLeaked ? '' : rContent,
+        model: le.model || loop.model,
+        nodeType: 'reporter' as const,
+        eventType: 'reporter_output',
+        tokens: { prompt: le.prompt_tokens || 0, completion: le.completion_tokens || 0 },
+        systemPrompt: le.system_prompt,
+        promptMessages: le.prompt_messages,
+        boundTools: le.bound_tools,
+        llmResponse: le.llm_response,
+        toolCalls: [],
+        toolResults: [],
+        durationMs: 0,
+        createdAt: now(),
+        updatedAt: now(),
+        status: 'done' as const,
+        filesTouched: extractFilePaths(le.files_touched, rContent),
+      },
+    ],
+  };
+}
+
+/** Handle meta events: budget, budget_update. */
+function applyMetaEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
+  return {
+    ...loop,
+    budget: {
+      tokensUsed: le.tokens_used ?? loop.budget.tokensUsed,
+      tokensBudget: le.tokens_budget ?? loop.budget.tokensBudget,
+      wallClockS: le.wall_clock_s ?? loop.budget.wallClockS,
+      maxWallClockS: le.max_wall_clock_s ?? loop.budget.maxWallClockS,
+    },
+  };
+}
+
+/** Handle interaction events: hitl_request (placeholder for future use). */
+function applyInteractionEvent(loop: AgentLoop, _le: LoopEvent): AgentLoop {
+  // No interaction events are currently emitted; return loop unchanged.
+  return loop;
+}
+
+// ---------------------------------------------------------------------------
+// Core reducer
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure function that applies a single loop event to an AgentLoop,
+ * returning the updated loop (new object — safe for React state).
+ *
+ * This is the **canonical** implementation used by both SSE streaming
+ * and history reconstruction.
+ *
+ * Event routing is category-based: the event type is looked up in
+ * EVENT_CATALOG to determine its category, then dispatched to a
+ * per-category handler function.
+ */
+export function applyLoopEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
+  // Normalize: agent may emit plan_step or current_step
+  if (le.plan_step != null && le.current_step == null) {
+    le.current_step = le.plan_step;
+  }
+  // Track highest node visit index (global recursion counter).
+  // Prefer event_index (chronological counter) over step (plan step).
+  const visitIdx = le.event_index ?? le.step;
+  if (visitIdx != null && visitIdx > loop.nodeVisits) {
+    loop = { ...loop, nodeVisits: visitIdx };
+  }
+
+  // Look up event type in the catalog
+  const eventDef = EVENT_CATALOG[le.type];
+  if (!eventDef) {
+    // Unknown event type — ignore legacy/unknown types from old sessions
+    return loop;
+  }
+
+  // Compute node_visit for step grouping (used by most handlers)
+  const nv = le.node_visit ?? le.step ?? loop.steps.length;
+
+  // Dispatch by category
+  switch (eventDef.category) {
+    case 'reasoning':   return applyReasoningEvent(loop, le, nv);
+    case 'execution':   return applyExecutionEvent(loop, le, nv);
+    case 'tool_output': return applyToolOutputEvent(loop, le, nv);
+    case 'decision':    return applyDecisionEvent(loop, le, nv);
+    case 'terminal':    return applyTerminalEvent(loop, le);
+    case 'meta':        return applyMetaEvent(loop, le);
+    case 'interaction': return applyInteractionEvent(loop, le);
+    default: {
+      // Exhaustive check — if a new category is added to EventCategory,
+      // TypeScript will error here until a handler is added.
+      const _exhaustive: never = eventDef.category;
+      console.warn(`[loopBuilder] Unhandled event category: "${_exhaustive}"`);
+      return loop;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -160,7 +160,7 @@ export interface FileBrowserProps {
   isStreaming?: boolean;
 }
 
-export const FileBrowser: React.FC<FileBrowserProps> = ({
+export const FileBrowser: React.FC<FileBrowserProps> = React.memo(({
   namespace: propNamespace,
   agentName: propAgentName,
   contextId: propContextId,
@@ -436,6 +436,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
       </div>
     </ContentWrapper>
   );
-};
+});
+
+FileBrowser.displayName = 'FileBrowser';
 
 export default FileBrowser;

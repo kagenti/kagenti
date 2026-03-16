@@ -184,11 +184,12 @@ def _check_sandbox_api_available() -> bool:
     """
     url = _get_backend_url()
     headers = _get_auth_headers()
+    ssl_verify = _get_ssl_context()
     try:
         resp = httpx.get(
             f"{url}/api/v1/sandbox/team1/sessions",
             timeout=10,
-            verify=False,
+            verify=ssl_verify,
             headers=headers,
         )
         # 404 = endpoint not registered; anything else = endpoint exists
@@ -246,6 +247,11 @@ def _get_ssl_context():
 
     from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 
+    # Honour KEYCLOAK_VERIFY_SSL=false — disable SSL verification entirely
+    # (needed on HyperShift clusters with self-signed ingress certs).
+    if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() in ("false", "0", "no"):
+        return False
+
     if not _is_openshift_from_config():
         return True
     ca_path = os.getenv("OPENSHIFT_INGRESS_CA")
@@ -254,7 +260,12 @@ def _get_ssl_context():
     if not ca_path:
         ca_path = _fetch_openshift_ingress_ca()
     if not ca_path:
-        raise RuntimeError("Could not fetch OpenShift ingress CA certificate.")
+        # Fallback: disable verification when the CA cannot be obtained
+        # (e.g. HyperShift clusters where the ingress CA configmap is absent).
+        logger.warning(
+            "Could not fetch OpenShift ingress CA — falling back to verify=False"
+        )
+        return False
     return ssl.create_default_context(cafile=ca_path)
 
 
