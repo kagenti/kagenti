@@ -176,6 +176,34 @@ graph card's `event_catalog` to look up category.
 - `types/graphCard.ts` — already created in Beta
 - `services/api.ts` — `graphCardService.fetchGraphCard` already created
 
+### P1: Wizard Defaults from Backend API
+
+**Problem:** UI wizard `INITIAL_STATE` hardcodes defaults (wallclock, budget,
+proxy, etc.) that must be kept in sync with backend `SandboxCreateRequest`.
+When backend changes a default, the UI sends the old value.
+
+**Fix:** Add `GET /api/v1/sandbox/defaults` endpoint that returns the backend's
+default `SandboxCreateRequest` values. Wizard loads these on mount instead of
+using hardcoded `INITIAL_STATE`. Reconfigure mode already loads from
+`GET /config/{agent}` — new deployments should load from `/defaults`.
+
+### P1: StepGraphView Nodes Mode — Group by LangGraph Node
+
+**Problem:** "Nodes" mode groups steps by EVENT_CATALOG category (reasoning,
+execution, etc.) instead of by langgraph_node (planner, executor, reflector).
+Planner and executor are both "reasoning" but should be separate nodes.
+
+**Fix:** Group by `step.langgraph_node` or `step.nodeType` instead of by
+category. Each LangGraph node = one merged group.
+
+### P1: Graph View Unit Tests
+
+**Problem:** Zero unit tests for graph view components. No tests for
+`parseNodeId`, `buildLoopGraph`, `stepToTopoNode`, mode switching.
+
+**Fix:** Create `StepGraphView.test.ts` and `TopologyGraphView.test.ts`
+with tests for all node ID formats, both modes, multi-message connections.
+
 ### P2: Backend E2E Tests
 
 Sessions API tests failed on SSL cert verification. Need to:
