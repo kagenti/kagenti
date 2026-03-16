@@ -112,84 +112,34 @@ The user can't see the agent's progress in real time through the graph.
 
 ### P0: Reporter Node — Must Be Terminal, Clean Final Answer
 
-**Problem:** The reporter node emits a raw `respond_to_user(response="...")`
-tool call that renders as an ugly step in the UI instead of a clean final
-answer. Events appear AFTER the reporter (budget_update, node_transition
-to `__end__`), making it look non-terminal.
+**Progress in Beta:** Serializer fix DONE — `_serialize_reporter()` now extracts
+`respond_to_user` tool call response as clean `reporter_output` content (5 tests).
+File badges in final answer DONE — collapsible "Files (N)" section with badges.
 
-**What should happen:**
-1. `reporter_output` event should be the LAST content event in the stream
-2. The reporter's `respond_to_user` tool call should be intercepted by
-   the serializer and converted to a `reporter_output` event with clean
-   `content` field (just the response text, no tool call syntax)
-3. No content events should appear after `reporter_output` (budget_update
-   and node_transition to `__end__` are meta events, OK to follow)
-4. The UI should render `reporter_output` as a markdown final answer with
-   file path links showing preview badges
-
-**Files to fix:**
-- `event_serializer.py` — in `_serialize_reporter()`, detect `respond_to_user`
-  tool calls and extract the `response` arg as `content` for `reporter_output`
-- `reasoning.py` — consider removing `respond_to_user` from reporter's tools
-  entirely (reporter should just produce text, not call tools)
-- `loopBuilder.ts` — `applyTerminalEvent()` should set `finalAnswer` from
-  the reporter_output content, ensuring it renders as markdown
-
-**Current behavior (broken):**
-```
-Step 5: reporter starts
-  [respond_to_user(response="The latest CI failures...")]  ← raw tool call
-  budget_update
-  node_transition: reporter → __end__
-```
-
-**Expected behavior:**
-```
-Step 5: reporter
-  Final Answer (markdown):
-    ## Root Cause Analysis
-    The latest CI failures for PR #860...
-    ### Files Touched
-    - [report.md](/workspace/.../report.md) [preview badge]
-```
+**Still TODO:**
+- Reporter step still shows raw `[STEP_BOUNDARY]` text in some cases
+- UI should filter `budget_update` and `node_transition` from step rendering
+- Verify reporter is always the LAST rendered step in all graph views
 
 ### P0: Unified Turn Block Rendering
 
-**Problem:** Messages and agent loops are rendered separately. The
-`groupMessagesIntoTurns` function groups messages into "turns", and loop
-cards are interleaved by position. This causes:
-- Loops not visually associated with their user message
-- Multi-turn renders are fragile (position-based pairing)
-- Session isolation test fails because rendering order breaks
+**Progress in Beta:** Content-based pairing DONE — `SandboxPage.tsx` pairs user
+messages with loops by content match instead of position. User message no longer
+disappears (removed stale `MESSAGES_SET` dispatch).
 
-**Fix:** Each "turn" should be ONE visual block:
-```
-Turn 1:
-  [User bubble] "Analyze CI failures for #860"
-  [AgentLoopCard] Plan: 5 steps, tools, final answer
-Turn 2:
-  [User bubble] "Also fix the flaky test"
-  [AgentLoopCard] Streaming... step 2/3
-```
-
-**Pairing logic:** Match user message to AgentLoop by:
-1. `loop.userMessage` text match (set during streaming)
-2. Temporal ordering (user message order → next unpaired loop)
-3. The existing `pairMessagesWithLoops` utility in `historyPairing.ts`
-
-**Files to modify:**
-- `SandboxPage.tsx` — the rendering section at lines ~1825-1900 (the IIFE with `groupMessagesIntoTurns`)
-- `utils/loopBuilder.ts` — may need to store user message reference in AgentLoop
-- `e2e/sandbox-sessions.spec.ts:185` — session isolation test must assertively verify:
-  - Each turn shows user message + loop card in correct order
-  - Session A messages don't appear in Session B
-  - Agent badge shows correct agent name per session
+**Still TODO:**
+- User message still renders AFTER loop card in some timing scenarios
+  (needs the custom A2A persistor with per-event storage to fix properly)
+- Session isolation test still fails (multi-session timing)
+- The pairing is fragile — depends on `loop.userMessage` being set correctly
 
 ### P0: Session Isolation Test Fix
 
-**Current failure:** `sandbox-sessions.spec.ts:185` — after creating Session B,
-the `startNewSession` function can't find the welcome card because the UI
-still shows Session A's content.
+**Progress in Beta:** Test updated with `toPass()` retry pattern, longer
+timeouts, sidebar verification. `startNewSession` now handles React batching.
+
+**Still TODO:**
+- Test still fails intermittently (1 of ~200 UI tests)
 
 **Root cause:** `handleNewSession` dispatches `SESSION_CLEARED` and resets
 contextId, but the UI may not re-render fast enough before the test checks.
@@ -227,16 +177,11 @@ resetting scroll position.
 - Use `React.memo` on FileBrowser to prevent re-render when parent state changes
 - Or use `shouldComponentUpdate` / `useMemo` to stabilize the file tree data
 
-### P1: loopBuilder Category-Based Reducer
+### P1: loopBuilder Category-Based Reducer — DONE in Beta
 
-**Design done in Beta:** Switch `applyLoopEvent` from `switch(event.type)`
-(14+ cases) to `switch(eventDef.category)` (7 stable values). Uses the
-graph card's `event_catalog` to look up category.
-
-**Files:**
-- `utils/loopBuilder.ts` — refactor `applyLoopEvent`
-- `types/graphCard.ts` — already created in Beta
-- `services/api.ts` — `graphCardService.fetchGraphCard` already created
+**Completed:** `applyLoopEvent` refactored to 7 category handlers via
+`EVENT_CATALOG` lookup. 15 event types mapped. All 22 unit tests pass.
+Added `node_transition` + `hitl_request` to catalog.
 
 ### P1: Wizard Defaults from Backend API
 
@@ -249,14 +194,11 @@ default `SandboxCreateRequest` values. Wizard loads these on mount instead of
 using hardcoded `INITIAL_STATE`. Reconfigure mode already loads from
 `GET /config/{agent}` — new deployments should load from `/defaults`.
 
-### P1: StepGraphView Nodes Mode — Group by LangGraph Node
+### P1: StepGraphView Nodes Mode — Group by LangGraph Node — DONE in Beta
 
-**Problem:** "Nodes" mode groups steps by EVENT_CATALOG category (reasoning,
-execution, etc.) instead of by langgraph_node (planner, executor, reflector).
-Planner and executor are both "reasoning" but should be separate nodes.
-
-**Fix:** Group by `step.langgraph_node` or `step.nodeType` instead of by
-category. Each LangGraph node = one merged group.
+**Completed:** Nodes mode now groups by `step.nodeType` (langgraph node name)
+instead of EVENT_CATALOG category. Shows: planner, executor, reflector,
+reporter as separate merged groups. Colors by category for visual distinction.
 
 ### P1: Graph View Unit Tests
 
@@ -268,9 +210,11 @@ with tests for all node ID formats, both modes, multi-message connections.
 
 ### P2: Backend E2E Tests
 
-Sessions API tests failed on SSL cert verification. Need to:
-- Set `verify=False` or use OpenShift CA in `_get_ssl_context()`
-- Run full backend E2E suite and fix remaining failures
+**Progress in Beta:** SSL cert fix DONE (`KEYCLOAK_VERIFY_SSL=false` fallback).
+Import order fix DONE. Auth headers added to all 9 call sites.
+
+**Still TODO:** Sessions API tests fail on HTTP 401 — Keycloak token acquisition
+needs `KEYCLOAK_URL` auto-detected from cluster. 8 passed, 8 failed.
 
 ## Also Planned for Beta-4+ Sessions
 
@@ -282,9 +226,11 @@ Sessions API tests failed on SSL cert verification. Need to:
 
 ### Gamma: Graph Feedback + File Browser Plan
 - Design doc: `docs/plans/2026-03-15-session-gamma-plan.md`
-- Graph view subtabs and polish
-- File browser scroll fix
-- Plan file rendering with badges
+- Graph view subtabs: DONE (Step Graph / Topology + Nodes / Events)
+- Graph view topology events flow: DONE (event types as nodes)
+- File browser scroll fix: DONE (React.memo)
+- File badges in final answer: DONE (collapsible section)
+- **Still TODO:** File browser integration with plan files, file preview badges
 
 ### Theta: Squid Proxy Domain Counters
 - Design doc: `docs/plans/2026-03-15-session-theta-squid-proxy-counters.md`
