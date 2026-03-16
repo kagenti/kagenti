@@ -127,7 +127,7 @@ export const INITIAL_STATE: WizardState = {
   maxIterations: 100,
   maxTokens: 1000000,
   maxToolCallsPerStep: 10,
-  maxWallClockS: 600,
+  maxWallClockS: 3600,
   hitlInterval: 50,
   recursionLimit: 300,
   agentMemoryLimit: '1Gi',
