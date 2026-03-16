@@ -2,6 +2,14 @@
 openshift: true
 
 # ------------------------------------------------------------------
+#  Feature flags: experimental features disabled by default
+# ------------------------------------------------------------------
+featureFlags:
+  sandbox: false
+  integrations: false
+  triggers: false
+
+# ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
 # ------------------------------------------------------------------
 components:
@@ -79,7 +87,7 @@ ui:
     resources:
       limits:
         cpu: 250m
-        memory: 256Mi
+        memory: 512Mi
       requests:
         cpu: 50m
         memory: 128Mi
