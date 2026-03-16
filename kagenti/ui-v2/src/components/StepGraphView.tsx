@@ -27,6 +27,7 @@ import {
 import dagre from 'dagre';
 import type { AgentLoop, AgentLoopStep } from '../types/agentLoop';
 import { inferNodeType, type GraphNodeType } from '../utils/loopFormatting';
+import { EVENT_CATALOG } from '../utils/loopBuilder';
 import { GraphDetailPanel } from './GraphDetailPanel';
 
 import '@xyflow/react/dist/style.css';
@@ -46,6 +47,48 @@ const NODE_STYLES: Record<ExtendedNodeType, { bg: string; border: string; color:
   tool:      { bg: '#1a1a2e', border: '#333', color: '#ccc' },
   thinking:  { bg: '#1a1a2e', border: '#b388ff', color: '#b388ff' },
 };
+
+// ---------------------------------------------------------------------------
+// Category colors (for 'categories' mode)
+// ---------------------------------------------------------------------------
+
+type EventCategory = 'reasoning' | 'execution' | 'tool_output' | 'decision' | 'terminal' | 'meta' | 'interaction';
+
+const CATEGORY_STYLES: Record<EventCategory, { bg: string; border: string; color: string }> = {
+  reasoning:   { bg: '#0066cc', border: '#004999', color: '#fff' },
+  execution:   { bg: '#2e7d32', border: '#1b5e20', color: '#fff' },
+  tool_output: { bg: '#1a1a2e', border: '#333',    color: '#ccc' },
+  decision:    { bg: '#e65100', border: '#bf360c', color: '#fff' },
+  terminal:    { bg: '#7b1fa2', border: '#4a148c', color: '#fff' },
+  meta:        { bg: '#455a64', border: '#37474f', color: '#ccc' },
+  interaction: { bg: '#795548', border: '#5d4037', color: '#fff' },
+};
+
+/** Human-friendly category labels. */
+const CATEGORY_LABELS: Record<EventCategory, string> = {
+  reasoning:   'Reasoning',
+  execution:   'Execution',
+  tool_output: 'Tool Output',
+  decision:    'Decision',
+  terminal:    'Terminal',
+  meta:        'Meta',
+  interaction: 'Interaction',
+};
+
+/** Look up the category for a step, using its eventType first, then nodeType fallback. */
+function stepCategory(step: AgentLoopStep): EventCategory {
+  // Try eventType in catalog
+  if (step.eventType) {
+    const def = EVENT_CATALOG[step.eventType];
+    if (def) return def.category as EventCategory;
+  }
+  // Fallback: map nodeType to category
+  const nt = step.nodeType;
+  if (nt === 'planner' || nt === 'replanner' || nt === 'executor') return 'reasoning';
+  if (nt === 'reflector') return 'decision';
+  if (nt === 'reporter') return 'terminal';
+  return 'reasoning';
+}
 
 // ---------------------------------------------------------------------------
 // Dagre layout
@@ -110,146 +153,268 @@ function buildLoopGraph(
   loop: AgentLoop,
   prefix: string,
   messageIdx: number | null,
+  eventDetail: 'categories' | 'event_types',
 ): { nodes: Node[]; edges: Edge[]; firstNodeId: string | null; lastNodeId: string | null } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   let prevNodeId: string | null = null;
   let firstNodeId: string | null = null;
 
-  for (const step of loop.steps) {
-    const nt = inferNodeType(step);
-    const style = NODE_STYLES[nt];
-    const nodeId = `${prefix}step-${step.index}`;
-
-    let label: string = nt;
-    if (nt === 'executor' && step.planStep != null) {
-      label = `Step ${step.planStep + 1}`;
-    } else if (nt === 'reflector') {
-      label = `Reflector: ${loop.reflectorDecision || ''}`;
-    } else if (nt === 'reporter') {
-      label = 'Reporter';
-    } else if (nt === 'planner' || nt === 'replanner') {
-      label = `${nt} (${loop.plan.length} steps)`;
+  if (eventDetail === 'categories') {
+    // ---- Categories mode: merge consecutive same-category steps ----
+    interface MergedGroup {
+      category: EventCategory;
+      steps: AgentLoopStep[];
+      firstIndex: number;
+    }
+    const groups: MergedGroup[] = [];
+    for (const step of loop.steps) {
+      const cat = stepCategory(step);
+      const last = groups[groups.length - 1];
+      if (last && last.category === cat) {
+        last.steps.push(step);
+      } else {
+        groups.push({ category: cat, steps: [step], firstIndex: step.index });
+      }
     }
 
-    // Prepend message index for multi-message mode
-    if (messageIdx !== null) {
-      label = `M${messageIdx + 1}: ${label}`;
-    }
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi];
+      const catStyle = CATEGORY_STYLES[group.category];
+      const nodeId = `${prefix}cat-${gi}`;
+      const count = group.steps.length;
+      const anyRunning = group.steps.some((s) => s.status === 'running');
 
-    const tokens = step.tokens.prompt + step.tokens.completion;
-    const tokenLabel = tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
+      // Aggregate tokens across merged steps
+      const totalTokens = group.steps.reduce((sum, s) => sum + s.tokens.prompt + s.tokens.completion, 0);
+      const tokenLabel = totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : String(totalTokens);
 
-    nodes.push({
-      id: nodeId,
-      data: {
-        label: (
-          <div style={{ textAlign: 'center', fontSize: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
-            <div style={{ fontSize: 10, opacity: 0.8 }}>
-              {statusText(step.status)} {tokens > 0 ? `${tokenLabel} tokens` : ''}
-            </div>
-          </div>
-        ),
-      },
-      position: { x: 0, y: 0 },
-      style: {
-        background: style.bg,
-        border: `2px solid ${style.border}`,
-        color: style.color,
-        borderRadius: 8,
-        padding: '8px 12px',
-        minWidth: 140,
-        cursor: 'pointer',
-        ...(step.status === 'running' ? { boxShadow: `0 0 8px ${style.border}` } : {}),
-      },
-    });
+      let label = CATEGORY_LABELS[group.category];
+      if (count > 1) label += ` (${count})`;
+      if (messageIdx !== null) label = `M${messageIdx + 1}: ${label}`;
 
-    if (firstNodeId === null) firstNodeId = nodeId;
-
-    if (prevNodeId) {
-      const isReplanEdge = nt === 'planner' || nt === 'replanner';
-      edges.push({
-        id: `e-${prevNodeId}-${nodeId}`,
-        source: prevNodeId,
-        target: nodeId,
-        animated: step.status === 'running',
-        style: isReplanEdge ? { strokeDasharray: '5 5', stroke: '#e65100' } : undefined,
-        label: isReplanEdge ? 'replan' : undefined,
-      });
-    }
-
-    // Tool call nodes
-    step.toolCalls.forEach((tc, j) => {
-      const toolId = `${nodeId}-tool-${j}`;
-      const result = step.toolResults[j];
-      const toolStyle = NODE_STYLES.tool;
+      // Representative status — running if any step is running, else last step status
+      const repStatus = anyRunning ? 'running' : group.steps[group.steps.length - 1].status;
 
       nodes.push({
-        id: toolId,
+        id: nodeId,
         data: {
           label: (
-            <div style={{ textAlign: 'center', fontSize: 11 }}>
-              <div style={{ fontWeight: 500 }}>{tc.name || 'tool'}</div>
-              <div style={{ fontSize: 10 }}>{toolStatusIcon(result?.status)}</div>
+            <div style={{ textAlign: 'center', fontSize: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
+              <div style={{ fontSize: 10, opacity: 0.8 }}>
+                {statusText(repStatus)} {totalTokens > 0 ? `${tokenLabel} tokens` : ''}
+              </div>
             </div>
           ),
         },
         position: { x: 0, y: 0 },
         style: {
-          background: toolStyle.bg,
-          border: `1px solid ${result?.status === 'error' ? 'var(--pf-v5-global--danger-color--100)' : toolStyle.border}`,
-          color: toolStyle.color,
-          borderRadius: 6,
-          padding: '4px 8px',
-          fontSize: 11,
-          minWidth: 100,
+          background: catStyle.bg,
+          border: `2px solid ${catStyle.border}`,
+          color: catStyle.color,
+          borderRadius: 8,
+          padding: '8px 12px',
+          minWidth: 140,
           cursor: 'pointer',
+          ...(anyRunning ? { boxShadow: `0 0 8px ${catStyle.border}` } : {}),
         },
       });
 
-      edges.push({
-        id: `e-${nodeId}-${toolId}`,
-        source: nodeId,
-        target: toolId,
-        style: { stroke: '#555' },
-      });
-    });
+      if (firstNodeId === null) firstNodeId = nodeId;
 
-    // Thinking sub-nodes (collapsed into a single node per step)
-    const thinkings = step.thinkings || [];
-    if (thinkings.length > 0) {
-      const thinkId = `${nodeId}-think`;
-      const thinkStyle = NODE_STYLES.thinking;
+      if (prevNodeId) {
+        edges.push({
+          id: `e-${prevNodeId}-${nodeId}`,
+          source: prevNodeId,
+          target: nodeId,
+          animated: anyRunning,
+        });
+      }
+
+      // Tool call nodes for all steps in the group
+      for (const step of group.steps) {
+        step.toolCalls.forEach((tc, j) => {
+          const toolId = `${prefix}step-${step.index}-tool-${j}`;
+          const result = step.toolResults[j];
+          const toolStyle = NODE_STYLES.tool;
+
+          nodes.push({
+            id: toolId,
+            data: {
+              label: (
+                <div style={{ textAlign: 'center', fontSize: 11 }}>
+                  <div style={{ fontWeight: 500 }}>{tc.name || 'tool'}</div>
+                  <div style={{ fontSize: 10 }}>{toolStatusIcon(result?.status)}</div>
+                </div>
+              ),
+            },
+            position: { x: 0, y: 0 },
+            style: {
+              background: toolStyle.bg,
+              border: `1px solid ${result?.status === 'error' ? 'var(--pf-v5-global--danger-color--100)' : toolStyle.border}`,
+              color: toolStyle.color,
+              borderRadius: 6,
+              padding: '4px 8px',
+              fontSize: 11,
+              minWidth: 100,
+              cursor: 'pointer',
+            },
+          });
+
+          edges.push({
+            id: `e-${nodeId}-${toolId}`,
+            source: nodeId,
+            target: toolId,
+            style: { stroke: '#555' },
+          });
+        });
+      }
+
+      prevNodeId = nodeId;
+    }
+  } else {
+    // ---- Event Types mode: each step is its own node with specific event type label ----
+    for (const step of loop.steps) {
+      const nt = inferNodeType(step);
+      const style = NODE_STYLES[nt];
+      const nodeId = `${prefix}step-${step.index}`;
+
+      // Use specific event type as label
+      let label: string;
+      if (step.eventType) {
+        label = step.eventType;
+      } else if (nt === 'executor' && step.planStep != null) {
+        label = `executor_step (${step.planStep + 1})`;
+      } else if (nt === 'reflector') {
+        label = `reflector_decision: ${loop.reflectorDecision || ''}`;
+      } else if (nt === 'reporter') {
+        label = 'reporter_output';
+      } else if (nt === 'planner' || nt === 'replanner') {
+        label = `${nt === 'replanner' ? 'replanner_output' : 'planner_output'} (${loop.plan.length} steps)`;
+      } else {
+        label = nt;
+      }
+
+      // Prepend message index for multi-message mode
+      if (messageIdx !== null) {
+        label = `M${messageIdx + 1}: ${label}`;
+      }
+
+      const tokens = step.tokens.prompt + step.tokens.completion;
+      const tokenLabel = tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
+
       nodes.push({
-        id: thinkId,
+        id: nodeId,
         data: {
           label: (
-            <div style={{ textAlign: 'center', fontSize: 11 }}>
-              <div style={{ fontWeight: 500 }}>{thinkings.length} thinking</div>
+            <div style={{ textAlign: 'center', fontSize: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
+              <div style={{ fontSize: 10, opacity: 0.8 }}>
+                {statusText(step.status)} {tokens > 0 ? `${tokenLabel} tokens` : ''}
+              </div>
             </div>
           ),
         },
         position: { x: 0, y: 0 },
         style: {
-          background: thinkStyle.bg,
-          border: `1px solid ${thinkStyle.border}`,
-          color: thinkStyle.color,
-          borderRadius: 6,
-          padding: '4px 8px',
-          minWidth: 80,
+          background: style.bg,
+          border: `2px solid ${style.border}`,
+          color: style.color,
+          borderRadius: 8,
+          padding: '8px 12px',
+          minWidth: 140,
           cursor: 'pointer',
+          ...(step.status === 'running' ? { boxShadow: `0 0 8px ${style.border}` } : {}),
         },
       });
-      edges.push({
-        id: `e-${nodeId}-${thinkId}`,
-        source: nodeId,
-        target: thinkId,
-        style: { stroke: '#b388ff', strokeDasharray: '3 3' },
-      });
-    }
 
-    prevNodeId = nodeId;
+      if (firstNodeId === null) firstNodeId = nodeId;
+
+      if (prevNodeId) {
+        const isReplanEdge = nt === 'planner' || nt === 'replanner';
+        edges.push({
+          id: `e-${prevNodeId}-${nodeId}`,
+          source: prevNodeId,
+          target: nodeId,
+          animated: step.status === 'running',
+          style: isReplanEdge ? { strokeDasharray: '5 5', stroke: '#e65100' } : undefined,
+          label: isReplanEdge ? 'replan' : undefined,
+        });
+      }
+
+      // Tool call nodes
+      step.toolCalls.forEach((tc, j) => {
+        const toolId = `${nodeId}-tool-${j}`;
+        const result = step.toolResults[j];
+        const toolStyle = NODE_STYLES.tool;
+
+        nodes.push({
+          id: toolId,
+          data: {
+            label: (
+              <div style={{ textAlign: 'center', fontSize: 11 }}>
+                <div style={{ fontWeight: 500 }}>{tc.name || 'tool'}</div>
+                <div style={{ fontSize: 10 }}>{toolStatusIcon(result?.status)}</div>
+              </div>
+            ),
+          },
+          position: { x: 0, y: 0 },
+          style: {
+            background: toolStyle.bg,
+            border: `1px solid ${result?.status === 'error' ? 'var(--pf-v5-global--danger-color--100)' : toolStyle.border}`,
+            color: toolStyle.color,
+            borderRadius: 6,
+            padding: '4px 8px',
+            fontSize: 11,
+            minWidth: 100,
+            cursor: 'pointer',
+          },
+        });
+
+        edges.push({
+          id: `e-${nodeId}-${toolId}`,
+          source: nodeId,
+          target: toolId,
+          style: { stroke: '#555' },
+        });
+      });
+
+      // Thinking sub-nodes (collapsed into a single node per step)
+      const thinkings = step.thinkings || [];
+      if (thinkings.length > 0) {
+        const thinkId = `${nodeId}-think`;
+        const thinkStyle = NODE_STYLES.thinking;
+        nodes.push({
+          id: thinkId,
+          data: {
+            label: (
+              <div style={{ textAlign: 'center', fontSize: 11 }}>
+                <div style={{ fontWeight: 500 }}>{thinkings.length} thinking</div>
+              </div>
+            ),
+          },
+          position: { x: 0, y: 0 },
+          style: {
+            background: thinkStyle.bg,
+            border: `1px solid ${thinkStyle.border}`,
+            color: thinkStyle.color,
+            borderRadius: 6,
+            padding: '4px 8px',
+            minWidth: 80,
+            cursor: 'pointer',
+          },
+        });
+        edges.push({
+          id: `e-${nodeId}-${thinkId}`,
+          source: nodeId,
+          target: thinkId,
+          style: { stroke: '#b388ff', strokeDasharray: '3 3' },
+        });
+      }
+
+      prevNodeId = nodeId;
+    }
   }
 
   return { nodes, edges, firstNodeId, lastNodeId: prevNodeId };
@@ -259,7 +424,7 @@ function buildLoopGraph(
 // Build multi-message graph: connect last node of loop N to first of N+1
 // ---------------------------------------------------------------------------
 
-function buildMultiLoopGraph(loops: AgentLoop[]): { nodes: Node[]; edges: Edge[]; totalNodes: number; allNodeIds: string[] } {
+function buildMultiLoopGraph(loops: AgentLoop[], eventDetail: 'categories' | 'event_types'): { nodes: Node[]; edges: Edge[]; totalNodes: number; allNodeIds: string[] } {
   const allNodes: Node[] = [];
   const allEdges: Edge[] = [];
   let prevLastNodeId: string | null = null;
@@ -272,6 +437,7 @@ function buildMultiLoopGraph(loops: AgentLoop[]): { nodes: Node[]; edges: Edge[]
       loop,
       prefix,
       isMulti ? i : null,
+      eventDetail,
     );
 
     allNodes.push(...nodes);
