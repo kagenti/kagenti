@@ -310,6 +310,8 @@ export interface StepGraphViewProps {
   loop: AgentLoop;
   /** All loops in the session for multi-message mode. */
   allLoops?: AgentLoop[];
+  /** Event detail level: 'types' shows node categories, 'subtypes' shows individual events. */
+  eventDetail?: 'types' | 'subtypes';
 }
 
 export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, allLoops }) => {

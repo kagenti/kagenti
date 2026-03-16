@@ -641,6 +641,8 @@ export interface TopologyGraphViewProps {
   allLoops?: AgentLoop[];
   /** Optional: graph card data for topology. Falls back to default sandbox-legion topology. */
   graphCard?: AgentGraphCard;
+  /** Event detail level: 'types' shows node categories, 'subtypes' shows individual events. */
+  eventDetail?: 'types' | 'subtypes';
 }
 
 export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({ loop, allLoops, graphCard }) => {

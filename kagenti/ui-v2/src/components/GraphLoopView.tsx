@@ -15,6 +15,7 @@ import type { AgentLoop } from '../types/agentLoop';
 import type { AgentGraphCard } from '../types/graphCard';
 
 type GraphSubView = 'steps' | 'topology';
+type EventDetail = 'types' | 'subtypes';
 
 export interface GraphLoopViewProps {
   /** Primary loop (backward-compatible). */
@@ -49,6 +50,7 @@ function toggleBtnStyle(active: boolean): React.CSSProperties {
 
 export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, allLoops, graphCard }) => {
   const [subView, setSubView] = useState<GraphSubView>('steps');
+  const [eventDetail, setEventDetail] = useState<EventDetail>('types');
 
   // Stabilize loops array
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
@@ -84,30 +86,61 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
     >
       {/* Subtab toggle bar + fullscreen */}
       <div style={{ ...TOGGLE_BAR_STYLE, justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 0 }}>
-          <button
-            data-testid="graph-toggle-steps"
-            onClick={() => setSubView('steps')}
-            style={{
-              ...toggleBtnStyle(subView === 'steps'),
-              borderTopLeftRadius: 4,
-              borderBottomLeftRadius: 4,
-            }}
-          >
-            Step Graph
-          </button>
-          <button
-            data-testid="graph-toggle-topology"
-            onClick={() => setSubView('topology')}
-            style={{
-              ...toggleBtnStyle(subView === 'topology'),
-              borderLeft: 'none',
-              borderTopRightRadius: 4,
-              borderBottomRightRadius: 4,
-            }}
-          >
-            Topology
-          </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* View toggle: Step Graph / Topology */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            <button
+              data-testid="graph-toggle-steps"
+              onClick={() => setSubView('steps')}
+              style={{
+                ...toggleBtnStyle(subView === 'steps'),
+                borderTopLeftRadius: 4,
+                borderBottomLeftRadius: 4,
+              }}
+            >
+              Step Graph
+            </button>
+            <button
+              data-testid="graph-toggle-topology"
+              onClick={() => setSubView('topology')}
+              style={{
+                ...toggleBtnStyle(subView === 'topology'),
+                borderLeft: 'none',
+                borderTopRightRadius: 4,
+                borderBottomRightRadius: 4,
+              }}
+            >
+              Topology
+            </button>
+          </div>
+          {/* Event detail toggle: Types / Subtypes */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            <button
+              data-testid="graph-toggle-types"
+              onClick={() => setEventDetail('types')}
+              style={{
+                ...toggleBtnStyle(eventDetail === 'types'),
+                borderTopLeftRadius: 4,
+                borderBottomLeftRadius: 4,
+                fontSize: 11,
+              }}
+            >
+              Event Types
+            </button>
+            <button
+              data-testid="graph-toggle-subtypes"
+              onClick={() => setEventDetail('subtypes')}
+              style={{
+                ...toggleBtnStyle(eventDetail === 'subtypes'),
+                borderLeft: 'none',
+                borderTopRightRadius: 4,
+                borderBottomRightRadius: 4,
+                fontSize: 11,
+              }}
+            >
+              Subtypes
+            </button>
+          </div>
         </div>
         <button
           data-testid="graph-fullscreen-toggle"
@@ -126,10 +159,10 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
 
       {/* Active sub-view */}
       {subView === 'steps' && (
-        <StepGraphView loop={loop} allLoops={loops} />
+        <StepGraphView loop={loop} allLoops={loops} eventDetail={eventDetail} />
       )}
       {subView === 'topology' && (
-        <TopologyGraphView loop={loop} allLoops={loops} graphCard={graphCard} />
+        <TopologyGraphView loop={loop} allLoops={loops} graphCard={graphCard} eventDetail={eventDetail} />
       )}
     </div>
   );
