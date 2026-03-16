@@ -124,6 +124,9 @@ export const EVENT_CATALOG: Record<string, Pick<EventTypeDef, 'category' | 'desc
   // meta
   budget:             { category: 'meta',        description: 'Budget snapshot' },
   budget_update:      { category: 'meta',        description: 'Budget update' },
+  node_transition:    { category: 'meta',        description: 'Graph edge traversal between nodes' },
+  // interaction
+  hitl_request:       { category: 'interaction', description: 'Human-in-the-loop approval request' },
 };
 
 /** Set of known event types — derived from the catalog. */
