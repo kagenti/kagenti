@@ -48,6 +48,45 @@
 
 ## What Beta-4 Must Do
 
+### P0: Custom A2A Event Persistor + Seamless History Loading
+
+**Problem:** User message blocks load AFTER the agent loop card instead of
+before. History loading is all-or-nothing. The A2A SDK's task store persists
+events as a blob in task metadata — no per-event granularity.
+
+**Solution: Custom persistor that stores events individually:**
+
+1. **New `events` table** (in sessions DB):
+   ```sql
+   CREATE TABLE events (
+     id BIGSERIAL PRIMARY KEY,
+     context_id TEXT NOT NULL,
+     task_id TEXT NOT NULL,
+     event_index INT NOT NULL,
+     event_type TEXT NOT NULL,
+     langgraph_node TEXT,
+     payload JSONB NOT NULL,
+     created_at TIMESTAMPTZ DEFAULT NOW()
+   );
+   CREATE INDEX idx_events_ctx ON events(context_id, event_index);
+   ```
+
+2. **Backend persistor**: stores each event separately as it arrives from
+   the agent SSE stream. Also stores a summary record per task (updated
+   periodically) with: step count, status, token totals, last event index.
+
+3. **UI loading model**:
+   - Load tasks (messages) in batches of 5 from sessions table
+   - For each OPENED task: batch-load its events from events table
+   - For LIVE streaming task: connect to SSE + collect gap events
+   - "Load more" rectangle at top for older messages
+   - Closed blocks show summary (from task summary record)
+   - Opened blocks show full events (lazy-loaded)
+
+4. **User message rendering**: user message stored in sessions/tasks table
+   with `created_at` timestamp. ALWAYS renders BEFORE its agent loop.
+   No position-based or content-based pairing needed — just by task_id.
+
 ### P0: Reporter Node — Must Be Terminal, Clean Final Answer
 
 **Problem:** The reporter node emits a raw `respond_to_user(response="...")`
