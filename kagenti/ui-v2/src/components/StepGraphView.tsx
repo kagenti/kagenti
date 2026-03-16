@@ -120,19 +120,19 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
 
 export function statusText(status: AgentLoopStep['status']): string {
   switch (status) {
-    case 'done':    return '\u2713';
-    case 'running': return '\u25b6';
-    case 'failed':  return '\u2717';
-    default:        return '\u2022';
+    case 'done':    return '[done]';
+    case 'running': return '[running]';
+    case 'failed':  return '[failed]';
+    default:        return '[pending]';
   }
 }
 
 export function toolStatusIcon(status?: string): string {
   switch (status) {
-    case 'success': return '\u2713';
-    case 'error':   return '\u2717';
-    case 'timeout': return '\u23f3';
-    default:        return '\u25b6';
+    case 'success': return '[ok]';
+    case 'error':   return '[err]';
+    case 'timeout': return '[timeout]';
+    default:        return '[...]';
   }
 }
 

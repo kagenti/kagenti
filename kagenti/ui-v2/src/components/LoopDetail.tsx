@@ -86,7 +86,7 @@ const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMess
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => setExpanded(!expanded)}>
-          {expanded ? '\u25bc' : '\u25b6'} Prompt <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>({preview})</span>
+          {expanded ? '[-]' : '[+]'} Prompt <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>({preview})</span>
         </div>
         {onOpenInspector && (
           <button
@@ -141,7 +141,7 @@ const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
       onClick={() => setExpanded(!expanded)}
     >
       <div style={{ fontWeight: 600 }}>
-        {expanded ? '\u25bc' : '\u25b6'} Reasoning
+        {expanded ? '[-]' : '[+]'} Reasoning
       </div>
       {expanded && (
         <pre
@@ -197,7 +197,7 @@ const ThinkingBlock: React.FC<{
         data-testid="thinking-header"
       >
         <span style={{ color: '#b388ff', fontWeight: 'bold', fontSize: '12px', userSelect: 'text' }}>
-          {expanded ? '\u25bc' : '\u25b6'} Thinking
+          {expanded ? '[-]' : '[+]'} Thinking
           <span style={{ color: '#888', fontWeight: 'normal', marginLeft: '8px', fontSize: '11px' }}>
             · {thinkings.length} iteration{thinkings.length !== 1 ? 's' : ''} · {totalTokens.toLocaleString()} tokens
           </span>
@@ -299,7 +299,7 @@ function toolOutputPreview(output: string | undefined): React.ReactNode {
   if (!output) return '(no output)';
   const first = output.split('\n')[0].substring(0, 120);
   const hasError = isToolResultError(output);
-  const prefix = hasError ? '\u274c ' : '';
+  const prefix = hasError ? '[ERROR] ' : '';
 
   // Check for workspace paths in the preview text
   const re = new RegExp(WORKSPACE_PATH_RE.source, 'g');
@@ -313,7 +313,7 @@ function toolOutputPreview(output: string | undefined): React.ReactNode {
       <>
         {prefix}{before}
         <Badge isRead style={{ fontSize: '0.85em', verticalAlign: 'baseline' }} title={match[0]}>
-          📄 {fileName}
+          {fileName}
         </Badge>
         {after}
       </>
@@ -344,7 +344,7 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number]; hasRes
       onClick={() => setExpanded(!expanded)}
     >
       <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
-        {expanded ? '\u25bc' : '\u25b6'} Tool Call: {label}
+        {expanded ? '[-]' : '[+]'} Tool Call: {label}
         {pending && <Spinner size="sm" aria-label="running" style={{ marginLeft: 6 }} />}
         {hasResult && !resultError && <CheckCircleIcon style={{ color: 'var(--pf-v5-global--success-color--100)', marginLeft: 6, fontSize: '0.9em' }} />}
         {resultError && <TimesCircleIcon style={{ color: 'var(--pf-v5-global--danger-color--100)', marginLeft: 6, fontSize: '0.9em' }} />}
@@ -375,10 +375,10 @@ const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number]; hasRes
 
 const statusIcon = (status?: string) => {
   switch (status) {
-    case 'error': return '\u274c';
-    case 'timeout': return '\u23f3';
-    case 'success': return '\u2713';
-    default: return '\u25b6';
+    case 'error': return '[ERROR]';
+    case 'timeout': return '[TIMEOUT]';
+    case 'success': return '[OK]';
+    default: return '[...]';
   }
 };
 
@@ -417,7 +417,7 @@ function renderOutputWithFileLinks(
           onFileClick?.(relPath, contextId);
         }}
       >
-        📄 {fileName}
+        {fileName}
       </Badge>
     );
     lastIndex = re.lastIndex;
@@ -461,7 +461,7 @@ const ToolResultBlock: React.FC<ToolResultBlockProps> = ({ result, namespace, ag
     >
       <div style={{ fontWeight: 600 }}>
         <span style={{ marginRight: 4 }}>{statusIcon(result.status)}</span>
-        {expanded ? '\u25bc' : '\u25b6'} Result: {result.name || 'unknown'}
+        {expanded ? '[-]' : '[+]'} Result: {result.name || 'unknown'}
         {!expanded && (
           <span style={{ fontWeight: 400, color: hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
             {preview}
@@ -883,7 +883,7 @@ const CollapsibleStepSection: React.FC<{
         data-testid="collapsible-step-header"
       >
         <span style={{ fontSize: '0.85em', width: 14, textAlign: 'center', flexShrink: 0 }}>
-          {expanded ? '\u25bc' : '\u25b6'}
+          {expanded ? '[-]' : '[+]'}
         </span>
         {/* Index badge */}
         {step.index != null && (
@@ -968,7 +968,7 @@ const ReplanSection: React.FC<{ replans: AgentLoop['replans'] }> = ({ replans })
             onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
           >
             <NodeBadge nodeType="replanner" />
-            {expandedIdx === idx ? '\u25BC' : '\u25B6'} Replan (iteration {rp.iteration + 1}): {rp.steps.length} step{rp.steps.length !== 1 ? 's' : ''}
+            {expandedIdx === idx ? '[-]' : '[+]'} Replan (iteration {rp.iteration + 1}): {rp.steps.length} step{rp.steps.length !== 1 ? 's' : ''}
           </div>
           {expandedIdx === idx && (
             <ol style={{ margin: 0, paddingLeft: 22, fontSize: '0.83em', lineHeight: 1.7 }}>

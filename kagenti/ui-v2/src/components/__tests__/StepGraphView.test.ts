@@ -88,20 +88,20 @@ describe('stepCategory', () => {
 // ---------------------------------------------------------------------------
 
 describe('statusText', () => {
-  it('returns checkmark for done', () => {
-    expect(statusText('done')).toBe('\u2713');
+  it('returns [done] for done', () => {
+    expect(statusText('done')).toBe('[done]');
   });
 
-  it('returns play triangle for running', () => {
-    expect(statusText('running')).toBe('\u25b6');
+  it('returns [running] for running', () => {
+    expect(statusText('running')).toBe('[running]');
   });
 
-  it('returns cross for failed', () => {
-    expect(statusText('failed')).toBe('\u2717');
+  it('returns [failed] for failed', () => {
+    expect(statusText('failed')).toBe('[failed]');
   });
 
-  it('returns bullet for pending', () => {
-    expect(statusText('pending')).toBe('\u2022');
+  it('returns [pending] for pending', () => {
+    expect(statusText('pending')).toBe('[pending]');
   });
 });
 
@@ -110,21 +110,21 @@ describe('statusText', () => {
 // ---------------------------------------------------------------------------
 
 describe('toolStatusIcon', () => {
-  it('returns checkmark for success', () => {
-    expect(toolStatusIcon('success')).toBe('\u2713');
+  it('returns [ok] for success', () => {
+    expect(toolStatusIcon('success')).toBe('[ok]');
   });
 
-  it('returns cross for error', () => {
-    expect(toolStatusIcon('error')).toBe('\u2717');
+  it('returns [err] for error', () => {
+    expect(toolStatusIcon('error')).toBe('[err]');
   });
 
-  it('returns hourglass for timeout', () => {
-    expect(toolStatusIcon('timeout')).toBe('\u23f3');
+  it('returns [timeout] for timeout', () => {
+    expect(toolStatusIcon('timeout')).toBe('[timeout]');
   });
 
-  it('returns play triangle for undefined/unknown status', () => {
-    expect(toolStatusIcon(undefined)).toBe('\u25b6');
-    expect(toolStatusIcon('pending')).toBe('\u25b6');
+  it('returns [...] for undefined/unknown status', () => {
+    expect(toolStatusIcon(undefined)).toBe('[...]');
+    expect(toolStatusIcon('pending')).toBe('[...]');
   });
 });
 

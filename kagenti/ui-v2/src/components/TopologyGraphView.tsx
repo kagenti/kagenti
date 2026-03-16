@@ -710,10 +710,10 @@ function buildMessageEntries(loops: AgentLoop[], selectedLoopId: string | null):
 
 function statusIcon(status: string): string {
   switch (status) {
-    case 'done':      return '\u2713';
-    case 'failed':    return '\u2717';
-    case 'canceled':  return '\u2718';
-    default:          return '\u25b6';
+    case 'done':      return '[done]';
+    case 'failed':    return '[failed]';
+    case 'canceled':  return '[canceled]';
+    default:          return '[running]';
   }
 }
 
@@ -887,7 +887,7 @@ const EdgeDetailPopup: React.FC<EdgeDetailPopupProps> = React.memo(({ info, loop
         fontSize: 12,
       }}
     >
-      {'\u2716'}
+      X
     </button>
   </div>
 ));
@@ -1172,7 +1172,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
               onClick={() => setSidebarOpen((p) => !p)}
               style={TOOLBAR_BTN_STYLE}
             >
-              {sidebarOpen ? '\u25c0 Hide' : '\u25b6 Messages'}
+              {sidebarOpen ? '<< Hide' : '>> Messages'}
             </button>
           )}
           {/* Fullscreen button is in the wrapper (GraphLoopView) toggle bar */}

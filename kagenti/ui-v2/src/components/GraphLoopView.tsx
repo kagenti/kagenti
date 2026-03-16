@@ -70,10 +70,10 @@ interface MessageSidebarProps {
 
 function statusIcon(status: string): string {
   switch (status) {
-    case 'done':     return '\u2713';
-    case 'failed':   return '\u2717';
-    case 'canceled': return '\u2718';
-    default:         return '\u25b6';
+    case 'done':     return '[done]';
+    case 'failed':   return '[failed]';
+    case 'canceled': return '[canceled]';
+    default:         return '[running]';
   }
 }
 
@@ -102,7 +102,7 @@ const MessageSidebarPanel: React.FC<MessageSidebarProps> = React.memo(
           display: 'flex',
           flexDirection: 'column',
           flexShrink: 0,
-          overflow: 'hidden',
+          overflow: 'auto',
         }}
       >
         {/* Header */}
@@ -364,7 +364,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
             transition: 'all 0.15s',
           }}
         >
-          &#x26F6; Fullscreen
+          Fullscreen
         </button>
       </div>
 

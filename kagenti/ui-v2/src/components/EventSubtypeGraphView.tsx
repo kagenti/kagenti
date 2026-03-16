@@ -435,7 +435,7 @@ export const EventSubtypeGraphView: React.FC<EventSubtypeGraphViewProps> = React
                 fontSize: 12,
               }}
             >
-              {'\u2716'}
+              X
             </button>
           </div>
         )}
