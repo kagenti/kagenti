@@ -47,6 +47,7 @@ spec:
         kagenti.io/framework: Python
         app.kubernetes.io/name: weather-tool
     spec:
+      serviceAccountName: weather-tool
       securityContext:
         runAsNonRoot: true
         seccompProfile:
