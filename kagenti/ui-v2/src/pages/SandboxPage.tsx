@@ -730,6 +730,7 @@ export const SandboxPage: React.FC = () => {
     isStreaming,
     dispatch: sessionDispatch,
     subscribeAbortRef,
+    sendInProgressRef,
   } = useSessionLoader(namespace, contextId);
 
   // Derived loading flags for backward compatibility
@@ -1486,6 +1487,7 @@ export const SandboxPage: React.FC = () => {
     sessionDispatch({ type: 'MESSAGES_APPENDED', messages: [userMessage] });
     // Send full text to backend (preserve skill prefix in history)
     const messageToSend = trimmed;
+    sendInProgressRef.current = true;
     sessionDispatch({ type: 'SEND_STARTED' });
     setStreamingContent('');
     setError(null);
@@ -1564,6 +1566,7 @@ export const SandboxPage: React.FC = () => {
       }
     } finally {
       sendingRef.current = false;
+      sendInProgressRef.current = false;
       sessionDispatch({ type: 'SEND_DONE' });
       setStreamingContent('');
       // SEND_DONE marks loops with finalAnswer as 'done', others as 'executing'.

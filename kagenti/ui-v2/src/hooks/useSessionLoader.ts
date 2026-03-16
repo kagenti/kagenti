@@ -424,6 +424,7 @@ export interface UseSessionLoaderReturn {
   isStreaming: boolean;
   dispatch: Dispatch<Action>;
   subscribeAbortRef: MutableRefObject<AbortController | null>;
+  sendInProgressRef: MutableRefObject<boolean>;
 }
 
 export function useSessionLoader(
@@ -435,6 +436,9 @@ export function useSessionLoader(
   const pendingReloadSignal = useRef(false);
   /** Ref mirrors state.phase for use in Effect 1 where closure state may be stale. */
   const phaseRef = useRef<Phase>('IDLE');
+  /** Set true during sendStreaming cycle (SEND_STARTED→SEND_DONE).
+   *  Prevents Effect 1 from reloading history when contextId changes mid-stream. */
+  const sendInProgressRef = useRef(false);
 
   const [state, dispatch] = useReducer(sessionReducer, {
     phase: 'IDLE',
@@ -461,8 +465,9 @@ export function useSessionLoader(
 
     // Skip history fetch if we're actively streaming — contextId was just set
     // by sendStreaming from the SSE response. The streaming data is authoritative.
-    // Use phaseRef (not state.phase) to avoid stale closure from useEffect deps.
-    if (phaseRef.current === 'SUBSCRIBING') {
+    // Check both phaseRef (for async subscribe) and sendInProgressRef (for sync
+    // mock SSE that completes before React re-renders).
+    if (phaseRef.current === 'SUBSCRIBING' || sendInProgressRef.current) {
       return;
     }
 
@@ -741,6 +746,7 @@ export function useSessionLoader(
     isStreaming: state.phase === 'SUBSCRIBING',
     dispatch,
     subscribeAbortRef,
+    sendInProgressRef,
   };
 }
 
