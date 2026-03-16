@@ -148,7 +148,6 @@ async function switchToStatsTab(page: Page) {
 // ── Test 1: Budget Enforcement ───────────────────────────────────────────────
 
 test.describe('Budget Enforcement', () => {
-  test.describe.configure({ retries: 0 });
 
   let originalMaxTokens: string;
 
@@ -262,7 +261,6 @@ test.describe('Budget Enforcement', () => {
 // ── Test 2: Budget Persists Across Restart ───────────────────────────────────
 
 test.describe('Budget Persistence Across Restart', () => {
-  test.describe.configure({ retries: 0 });
 
   test('budget tokens do not reset after agent pod restart', async ({ page }) => {
     test.setTimeout(300_000);

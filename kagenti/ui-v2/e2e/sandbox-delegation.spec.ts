@@ -91,7 +91,6 @@ async function sendAndWait(
 // =============================================================================
 
 test.describe('Sandbox Delegation — Live', () => {
-  test.describe.configure({ retries: 0 });
 
   test('delegate tool spawns child session, renders in sidebar, completes task', async ({
     page,

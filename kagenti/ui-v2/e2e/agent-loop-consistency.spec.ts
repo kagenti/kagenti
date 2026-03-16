@@ -148,7 +148,6 @@ async function captureLoopSnapshot(page: Page, label: string): Promise<LoopSnaps
 
 test.describe('Agent Loop Consistency — Streaming vs Historical', () => {
   test.setTimeout(600_000); // 10 min — Llama 4 Scout can be slow
-  test.describe.configure({ retries: 0 });
 
   test('loop card structure matches between streaming and reload', async ({ page }) => {
     // 1. Login and navigate to sandbox

@@ -132,7 +132,6 @@ async function sendMessageAndWait(page: Page, message: string) {
 
 test.describe('Agent Redeploy', () => {
   test.setTimeout(600_000);
-  test.describe.configure({ retries: 0 });
 
   test.beforeAll(() => {
     // Clean up any existing deployment

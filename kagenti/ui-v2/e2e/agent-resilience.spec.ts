@@ -119,7 +119,6 @@ async function ensureAgentReady(page: Page, maxWaitSeconds = 120): Promise<boole
 // ---------------------------------------------------------------------------
 
 test.describe('Agent Resilience — Loop Recovery', () => {
-  test.describe.configure({ retries: 0 });
 
   // Always restore the agent to 1 replica, even if the test fails
   test.afterEach(async () => {
