@@ -14,7 +14,7 @@ import { loginIfNeeded } from './helpers/auth';
 import { execSync } from 'child_process';
 
 const AGENT_NAME = process.env.RCA_AGENT_NAME || 'rca-agent';
-const SKIP_DEPLOY = process.env.RCA_SKIP_DEPLOY === '1';  // Skip cleanup+deploy when agent is pre-deployed
+// SKIP_DEPLOY removed — agent MUST always be deployed via wizard to test the full pipeline
 const FORCE_TOOL_CHOICE = process.env.RCA_FORCE_TOOL_CHOICE !== '0';  // Default: true (force structured calls)
 const REPO_URL = 'https://github.com/kagenti/kagenti';
 const NAMESPACE = 'team1';
@@ -97,76 +97,69 @@ test.describe('Agent RCA Workflow', () => {
   test.setTimeout(600_000);
 
   test.beforeAll(() => {
-    if (SKIP_DEPLOY) {
-      console.log(`[rca] SKIP_DEPLOY=1 — using pre-deployed ${AGENT_NAME}`);
-    } else {
-      cleanupAgent();
-    }
+    cleanupAgent();
     console.log(`[rca] Pre-check: ${kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found') ? 'clean' : 'exists'}`);
     console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
   });
 
   test('RCA agent end-to-end: deploy, verify, send request, check persistence and quality', async ({ page }) => {
-    if (!SKIP_DEPLOY) {
-      // ── Step 1: Deploy agent via wizard ──────────────────────────────────
-      // Intercept the wizard's deploy API call to inject workspace_storage
-      // (the wizard UI doesn't expose this field, so we patch the request body).
-      await page.route('**/api/v1/sandbox/*/create', async (route) => {
-        const request = route.request();
-        const postData = request.postDataJSON();
-        postData.workspace_storage = WORKSPACE_STORAGE;
-        await route.continue({ postData: JSON.stringify(postData) });
-      });
-      console.log(`[rca] workspace_storage=${WORKSPACE_STORAGE} (agent=${AGENT_NAME})`);
+    // ── Step 1: Deploy agent via wizard ──────────────────────────────────
+    // Intercept the wizard's deploy API call to inject workspace_storage
+    // (the wizard UI doesn't expose this field, so we patch the request body).
+    await page.route('**/api/v1/sandbox/*/create', async (route) => {
+      const request = route.request();
+      const postData = request.postDataJSON();
+      postData.workspace_storage = WORKSPACE_STORAGE;
+      await route.continue({ postData: JSON.stringify(postData) });
+    });
+    console.log(`[rca] workspace_storage=${WORKSPACE_STORAGE} (agent=${AGENT_NAME})`);
 
-      await page.goto('/'); await loginIfNeeded(page); await goToWizard(page);
-      await page.locator('#agent-name').fill(AGENT_NAME);
-      await page.locator('#repo-url').fill(REPO_URL);
-      await next(page); await next(page);
-      const si = page.locator('#llm-secret-name');
-      if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
-      await next(page); // advance to Persistence step (4)
-      await next(page); // advance to Observability step (5) — has Force Tool Calling toggle
-      // Assert we're on the Observability step (contains the toggle)
-      await expect(page.locator('#force-tool-choice')).toBeVisible({ timeout: 5000 });
-      console.log('[rca] On Observability step — Force Tool Calling toggle visible');
-      // Toggle Force Tool Calling — use label click (PF Switch overlay blocks .check/.uncheck)
-      const forceToggle = page.locator('#force-tool-choice');
-      const isForceChecked = await forceToggle.isChecked();
-      if (FORCE_TOOL_CHOICE && !isForceChecked) {
-        await page.locator('label[for="force-tool-choice"]').first().click();
-        console.log('[rca] Toggled Force Tool Calling ON');
-      } else if (!FORCE_TOOL_CHOICE && isForceChecked) {
-        await page.locator('label[for="force-tool-choice"]').first().click();
-        console.log('[rca] Toggled Force Tool Calling OFF');
-      }
-      // Text Tool Parsing defaults to OFF — both variants use wizard defaults
-      console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
-      await next(page); // advance to Budget step (6)
-      await next(page); // advance to Review step (7)
-      await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
-      await page.getByRole('button', { name: /Deploy Agent/i }).click();
-
-      let ok = false;
-      for (let i = 0; i < 12; i++) { if (!kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found')) { ok = true; break; } await page.waitForTimeout(5000); }
-      expect(ok).toBe(true);
-
-      // TODO(installer): Fix TOFU PermissionError — Dockerfile should chmod g+w /app
-      const p = { spec: { template: { spec: { securityContext: { runAsUser: 1001 } } } } };
-      kc(`patch deploy ${AGENT_NAME} -n ${NAMESPACE} -p '${JSON.stringify(p)}'`);
-      console.log('[rca] Patched runAsUser for TOFU');
-
-      let ready = false;
-      for (let i = 0; i < 36; i++) { if (kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1') { ready = true; break; } await page.waitForTimeout(5000); }
-      expect(ready).toBe(true);
-      console.log('[rca] Agent deployed and ready');
-    } else {
-      // SKIP_DEPLOY: verify pre-deployed agent is ready
-      await page.goto('/'); await loginIfNeeded(page);
-      const ready = kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1';
-      expect(ready).toBe(true);
-      console.log(`[rca] Pre-deployed ${AGENT_NAME} is ready`);
+    await page.goto('/'); await loginIfNeeded(page); await goToWizard(page);
+    await page.locator('#agent-name').fill(AGENT_NAME);
+    await page.locator('#repo-url').fill(REPO_URL);
+    await next(page); await next(page);
+    const si = page.locator('#llm-secret-name');
+    if (await si.isVisible({ timeout: 3000 }).catch(() => false)) await si.fill(LLM_SECRET_NAME);
+    await next(page); // advance to Persistence step (4)
+    await next(page); // advance to Observability step (5) — has Force Tool Calling toggle
+    // Assert we're on the Observability step (contains the toggle)
+    await expect(page.locator('#force-tool-choice')).toBeVisible({ timeout: 5000 });
+    console.log('[rca] On Observability step — Force Tool Calling toggle visible');
+    // Toggle Force Tool Calling — use label click (PF Switch overlay blocks .check/.uncheck)
+    const forceToggle = page.locator('#force-tool-choice');
+    const isForceChecked = await forceToggle.isChecked();
+    if (FORCE_TOOL_CHOICE && !isForceChecked) {
+      await page.locator('label[for="force-tool-choice"]').first().click();
+      console.log('[rca] Toggled Force Tool Calling ON');
+    } else if (!FORCE_TOOL_CHOICE && isForceChecked) {
+      await page.locator('label[for="force-tool-choice"]').first().click();
+      console.log('[rca] Toggled Force Tool Calling OFF');
     }
+    console.log(`[rca] Force tool choice: ${FORCE_TOOL_CHOICE}`);
+    await next(page); // advance to Budget step (6)
+    await next(page); // advance to Review step (7)
+    await expect(page.locator('.pf-v5-c-card__body').first()).toContainText(AGENT_NAME);
+    await page.getByRole('button', { name: /Deploy Agent/i }).click();
+
+    let ok = false;
+    for (let i = 0; i < 12; i++) { if (!kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} 2>&1`).includes('not found')) { ok = true; break; } await page.waitForTimeout(5000); }
+    expect(ok).toBe(true);
+
+    // TODO(installer): Fix TOFU PermissionError — Dockerfile should chmod g+w /app
+    const p = { spec: { template: { spec: { securityContext: { runAsUser: 1001 } } } } };
+    kc(`patch deploy ${AGENT_NAME} -n ${NAMESPACE} -p '${JSON.stringify(p)}'`);
+    console.log('[rca] Patched runAsUser for TOFU');
+
+    let ready = false;
+    for (let i = 0; i < 36; i++) { if (kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`) === '1') { ready = true; break; } await page.waitForTimeout(5000); }
+    expect(ready).toBe(true);
+    console.log('[rca] Agent deployed and ready');
+
+    // ── Assertive check: verify the deployed agent has the correct labels ──
+    const labels = kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.metadata.labels}'`);
+    console.log(`[rca] Agent labels: ${labels}`);
+    expect(labels).toContain('kagenti.io/framework');
+    expect(labels).toContain('a2a');
 
     // ── Step 2: Verify agent card ────────────────────────────────────────
     let card = '';
