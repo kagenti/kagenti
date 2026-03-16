@@ -64,16 +64,7 @@ const CATEGORY_STYLES: Record<EventCategory, { bg: string; border: string; color
   interaction: { bg: '#795548', border: '#5d4037', color: '#fff' },
 };
 
-/** Human-friendly category labels. */
-const CATEGORY_LABELS: Record<EventCategory, string> = {
-  reasoning:   'Reasoning',
-  execution:   'Execution',
-  tool_output: 'Tool Output',
-  decision:    'Decision',
-  terminal:    'Terminal',
-  meta:        'Meta',
-  interaction: 'Interaction',
-};
+// CATEGORY_LABELS removed — Nodes mode now uses langgraph node names directly
 
 /** Look up the category for a step, using its eventType first, then nodeType fallback. */
 function stepCategory(step: AgentLoopStep): EventCategory {
