@@ -13,6 +13,7 @@ import React, {
 import Keycloak from 'keycloak-js';
 
 import { setTokenGetter } from '@/services/api';
+import { setEventServiceTokenGetter } from '@/services/eventService';
 
 // API base URL for fetching auth config
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -346,6 +347,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Register token getter with API service
   useEffect(() => {
     setTokenGetter(getToken);
+    setEventServiceTokenGetter(getToken);
   }, [getToken]);
 
   const value = useMemo(

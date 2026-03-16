@@ -127,4 +127,6 @@ export interface AgentLoopStep {
   thinkings?: ThinkingIteration[];
   /** Files touched during the agent loop (reported by the reporter node). */
   filesTouched?: string[];
+  /** If true, this step is a meta event (budget_update, node_transition) and should not be rendered. */
+  hidden?: boolean;
 }

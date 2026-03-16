@@ -40,6 +40,7 @@ import {
 } from '@patternfly/react-core';
 import { useQuery } from '@tanstack/react-query';
 import { sandboxService, modelsService } from '@/services/api';
+import { eventService } from '@/services/eventService';
 
 export interface WizardState {
   // Step 1: Source
@@ -260,6 +261,15 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
     retry: 1,
   });
 
+  // Fetch backend defaults for create mode
+  const { data: backendDefaults } = useQuery({
+    queryKey: ['sandbox-defaults'],
+    queryFn: () => eventService.getDefaults(),
+    enabled: mode === 'create',
+    staleTime: 600000,
+    retry: 1,
+  });
+
   // Fetch available models from LiteLLM
   const { data: availableModels } = useQuery({
     queryKey: ['litellm-models'],
@@ -271,7 +281,7 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
     ? availableModels.map(m => ({ value: m.id, label: m.id }))
     : FALLBACK_MODELS;
 
-  // Apply fetched config to state once
+  // Apply fetched config to state once (reconfigure mode)
   useEffect(() => {
     if (existingConfig && !configApplied) {
       const mapped = configToWizardState(existingConfig);
@@ -279,6 +289,23 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
       setConfigApplied(true);
     }
   }, [existingConfig, configApplied]);
+
+  // Apply backend defaults on mount (create mode)
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  useEffect(() => {
+    if (backendDefaults && !defaultsApplied && mode === 'create') {
+      const mapped = configToWizardState(backendDefaults as unknown as Record<string, unknown>);
+      // Override model with the cluster-level default
+      if (backendDefaults.default_llm_model) {
+        mapped.model = backendDefaults.default_llm_model;
+      }
+      if (backendDefaults.default_llm_secret) {
+        mapped.llmSecretName = backendDefaults.default_llm_secret;
+      }
+      setState((prev) => ({ ...prev, ...mapped }));
+      setDefaultsApplied(true);
+    }
+  }, [backendDefaults, defaultsApplied, mode]);
 
   const update = <K extends keyof WizardState>(
     key: K,
@@ -470,12 +497,17 @@ export const SandboxWizard: React.FC<SandboxWizardProps> = ({
             isChecked={state.secctx}
             onChange={(_e, c) => update('secctx', c)}
           />
-          <Switch
-            id="landlock"
-            label="Landlock Filesystem Sandbox"
-            isChecked={state.landlock}
-            onChange={(_e, c) => update('landlock', c)}
-          />
+          <div>
+            <Switch
+              id="landlock"
+              label="Landlock Filesystem Sandbox"
+              isChecked={state.landlock}
+              onChange={(_e, c) => update('landlock', c)}
+            />
+            <div style={{ fontSize: '0.82em', color: 'var(--pf-v5-global--Color--200)', marginTop: 2, marginLeft: 48 }}>
+              Requires Linux kernel 5.13+. Deployment will fail if kernel does not support Landlock.
+            </div>
+          </div>
           <Switch
             id="proxy"
             label="Network Proxy (egress allowlist)"

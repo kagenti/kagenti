@@ -221,6 +221,16 @@ async def _ensure_sessions_schema(pool: asyncpg.Pool) -> None:
     except Exception as exc:
         logger.warning("Failed to ensure sessions schema: %s", exc)
 
+    # Also ensure events table
+    try:
+        from app.models.event import EVENTS_SCHEMA
+
+        async with pool.acquire() as conn:
+            await conn.execute(EVENTS_SCHEMA)
+        logger.info("Events schema ensured")
+    except Exception as exc:
+        logger.warning("Failed to ensure events schema: %s", exc)
+
 
 # NOTE: The A2A SDK's DatabaseTaskStore manages the 'tasks' table schema.
 # The backend reads from 'tasks' and manages the 'sessions' table above.

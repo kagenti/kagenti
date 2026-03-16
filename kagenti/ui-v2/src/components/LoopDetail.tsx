@@ -1030,7 +1030,7 @@ export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentNa
       {/* Plan is rendered in AgentLoopCard (always visible). Skip here to avoid duplication. */}
       <ReplanSection replans={loop.replans} />
 
-      {loop.steps.map((step) => (
+      {loop.steps.filter((step) => !step.hidden).map((step) => (
         <CollapsibleStepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} namespace={namespace} agentName={agentName} onOpenInspector={openInspector} />
       ))}
 

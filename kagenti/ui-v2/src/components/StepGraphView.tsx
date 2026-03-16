@@ -67,7 +67,7 @@ const CATEGORY_STYLES: Record<EventCategory, { bg: string; border: string; color
 // CATEGORY_LABELS removed — Nodes mode now uses langgraph node names directly
 
 /** Look up the category for a step, using its eventType first, then nodeType fallback. */
-function stepCategory(step: AgentLoopStep): EventCategory {
+export function stepCategory(step: AgentLoopStep): EventCategory {
   // Try eventType in catalog
   if (step.eventType) {
     const def = EVENT_CATALOG[step.eventType];
@@ -118,7 +118,7 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
 // Status helpers
 // ---------------------------------------------------------------------------
 
-function statusText(status: AgentLoopStep['status']): string {
+export function statusText(status: AgentLoopStep['status']): string {
   switch (status) {
     case 'done':    return '\u2713';
     case 'running': return '\u25b6';
@@ -127,7 +127,7 @@ function statusText(status: AgentLoopStep['status']): string {
   }
 }
 
-function toolStatusIcon(status?: string): string {
+export function toolStatusIcon(status?: string): string {
   switch (status) {
     case 'success': return '\u2713';
     case 'error':   return '\u2717';
@@ -140,7 +140,7 @@ function toolStatusIcon(status?: string): string {
 // Build graph from a single AgentLoop (with optional prefix for multi-loop)
 // ---------------------------------------------------------------------------
 
-function buildLoopGraph(
+export function buildLoopGraph(
   loop: AgentLoop,
   prefix: string,
   messageIdx: number | null,
@@ -417,7 +417,7 @@ function buildLoopGraph(
 // Build multi-message graph: connect last node of loop N to first of N+1
 // ---------------------------------------------------------------------------
 
-function buildMultiLoopGraph(loops: AgentLoop[], eventDetail: 'nodes' | 'events'): { nodes: Node[]; edges: Edge[]; totalNodes: number; allNodeIds: string[] } {
+export function buildMultiLoopGraph(loops: AgentLoop[], eventDetail: 'nodes' | 'events'): { nodes: Node[]; edges: Edge[]; totalNodes: number; allNodeIds: string[] } {
   const allNodes: Node[] = [];
   const allEdges: Edge[] = [];
   let prevLastNodeId: string | null = null;
@@ -487,14 +487,89 @@ export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, a
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // --- Streaming animation state ---
+  const lastProcessedCountRef = useRef(0);
+  const [animActiveNodeId, setAnimActiveNodeId] = useState<string | null>(null);
+  const [animActiveEdge, setAnimActiveEdge] = useState<{ from: string; to: string } | null>(null);
+  const [animVisitedNodes, setAnimVisitedNodes] = useState<Set<string>>(new Set());
+
   // Clear selection when mode changes (node IDs change between categories/event_types)
   useEffect(() => { setSelectedNodeId(null); }, [eventDetail]);
 
-  const { nodes, edges, totalNodes, allNodeIds } = useMemo(() => {
+  // Reset animation state when eventDetail changes (node IDs change)
+  useEffect(() => {
+    lastProcessedCountRef.current = 0;
+    setAnimActiveNodeId(null);
+    setAnimActiveEdge(null);
+    setAnimVisitedNodes(new Set());
+  }, [eventDetail]);
+
+  const { nodes: rawNodes, edges: rawEdges, totalNodes, allNodeIds } = useMemo(() => {
     const raw = buildMultiLoopGraph(loops, eventDetail);
     const layout = applyDagreLayout(raw.nodes, raw.edges);
     return { ...layout, totalNodes: raw.totalNodes, allNodeIds: raw.allNodeIds };
   }, [loops, eventDetail]);
+
+  // Track streaming progress: when new steps appear, advance animation
+  const totalStepCount = useMemo(() => loops.reduce((sum, l) => sum + l.steps.length, 0), [loops]);
+
+  useEffect(() => {
+    if (totalStepCount <= lastProcessedCountRef.current) return;
+
+    // Process the latest step to determine the active node
+    const currentLoop = loops[loops.length - 1];
+    if (!currentLoop?.steps?.length) return;
+
+    const lastStep = currentLoop.steps[currentLoop.steps.length - 1];
+    const loopIndex = loops.length - 1;
+    const prefix = `loop${loopIndex}-`;
+
+    // Determine which node ID corresponds to the latest step
+    let newActiveId: string | null = null;
+    if (eventDetail === 'nodes') {
+      // In nodes mode, find the last group node
+      const groupCount = rawNodes.filter((n) => n.id.startsWith(prefix + 'cat-')).length;
+      if (groupCount > 0) {
+        newActiveId = `${prefix}cat-${groupCount - 1}`;
+      }
+    } else {
+      newActiveId = `${prefix}step-${lastStep.index}`;
+    }
+
+    if (newActiveId && newActiveId !== animActiveNodeId) {
+      if (animActiveNodeId) {
+        setAnimVisitedNodes((prev) => new Set([...prev, animActiveNodeId]));
+        setAnimActiveEdge({ from: animActiveNodeId, to: newActiveId });
+      }
+      setAnimActiveNodeId(newActiveId);
+    }
+
+    lastProcessedCountRef.current = totalStepCount;
+  }, [totalStepCount, loops, eventDetail, rawNodes, animActiveNodeId]);
+
+  // Apply animation CSS classes to nodes
+  const nodes = useMemo(() => rawNodes.map((node) => {
+    let className = '';
+    if (node.id === animActiveNodeId) {
+      className = 'graph-node-active';
+    } else if (animVisitedNodes.has(node.id)) {
+      className = 'graph-node-visited';
+    } else if (animActiveNodeId) {
+      className = 'graph-node-inactive';
+    }
+    return className ? { ...node, className } : node;
+  }), [rawNodes, animActiveNodeId, animVisitedNodes]);
+
+  // Apply animation CSS classes to edges
+  const edges = useMemo(() => rawEdges.map((edge) => {
+    if (animActiveEdge?.from === edge.source && animActiveEdge?.to === edge.target) {
+      return { ...edge, className: 'graph-edge-active' };
+    }
+    if (animVisitedNodes.has(edge.source) && (animVisitedNodes.has(edge.target) || edge.target === animActiveNodeId)) {
+      return { ...edge, className: 'graph-edge-visited' };
+    }
+    return edge;
+  }), [rawEdges, animActiveEdge, animVisitedNodes, animActiveNodeId]);
 
   const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setSelectedNodeId(node.id);

@@ -2206,6 +2206,65 @@ def _should_persist_incrementally(
     return False
 
 
+# ---------------------------------------------------------------------------
+# Per-event persistence (events table)
+# ---------------------------------------------------------------------------
+
+# Event type -> category mapping (mirrors loopBuilder.ts EVENT_CATALOG)
+_EVENT_CATEGORY_MAP: dict[str, str] = {
+    "planner_output": "reasoning",
+    "replanner_output": "reasoning",
+    "executor_step": "reasoning",
+    "thinking": "reasoning",
+    "micro_reasoning": "reasoning",
+    "tool_call": "execution",
+    "tool_result": "tool_output",
+    "reflector_decision": "decision",
+    "router": "decision",
+    "step_selector": "decision",
+    "reporter_output": "terminal",
+    "budget": "meta",
+    "budget_update": "meta",
+    "node_transition": "meta",
+    "hitl_request": "interaction",
+}
+
+
+async def _persist_event_row(
+    context_id: str,
+    task_id: str,
+    event_index: int,
+    event_type: str,
+    event_category: Optional[str],
+    langgraph_node: Optional[str],
+    payload: dict,
+    namespace: str,
+) -> None:
+    """Persist a single event to the events table (fire-and-forget).
+
+    Uses INSERT ... ON CONFLICT DO NOTHING so duplicate events from
+    retries or resubscribe are silently skipped.
+    """
+    try:
+        pool = await get_session_pool(namespace)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO events (context_id, task_id, event_index,"
+                "  event_type, event_category, langgraph_node, payload)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)"
+                " ON CONFLICT (context_id, task_id, event_index) DO NOTHING",
+                context_id,
+                task_id,
+                event_index,
+                event_type,
+                event_category,
+                langgraph_node,
+                json.dumps(payload),
+            )
+    except Exception as exc:
+        logger.debug("Event persist failed (ctx=%s idx=%d): %s", context_id, event_index, exc)
+
+
 async def _stream_sandbox_response(
     agent_url: str,
     message: str,
@@ -2220,6 +2279,7 @@ async def _stream_sandbox_response(
     loop_events_persisted = False  # Guard against double-write of loop events
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
     loop_events: list[dict] = []  # Accumulated loop events for persistence
+    _event_counter: int = 0  # Monotonic counter for per-event persistence
     stream_task_id: Optional[str] = None  # DB id of the task row created by THIS stream
     _last_persisted_count: int = 0  # count at last incremental persist
     # Hold strong references to fire-and-forget persist tasks so the event loop
@@ -2612,6 +2672,26 @@ async def _stream_sandbox_response(
                                             has_loop_events = True
                                             session_has_loops = True
                                             loop_events.append(parsed)
+
+                                            # -- Per-event persistence (events table) --
+                                            _event_counter += 1
+                                            if stream_task_id and namespace:
+                                                _t_evt = asyncio.create_task(
+                                                    _persist_event_row(
+                                                        context_id=session_id,
+                                                        task_id=stream_task_id,
+                                                        event_index=_event_counter,
+                                                        event_type=evt_type,
+                                                        event_category=_EVENT_CATEGORY_MAP.get(
+                                                            evt_type
+                                                        ),
+                                                        langgraph_node=parsed.get("langgraph_node"),
+                                                        payload=parsed,
+                                                        namespace=namespace,
+                                                    )
+                                                )
+                                                _persist_bg_tasks.add(_t_evt)
+                                                _t_evt.add_done_callback(_persist_bg_tasks.discard)
 
                                             # -- Incremental persist --
                                             should_persist = _should_persist_incrementally(

@@ -283,11 +283,11 @@ function applyReasoningEvent(loop: AgentLoop, le: LoopEvent, nv: number): AgentL
     }, loop);
     // Update fields on existing step
     step.planStep = le.current_step ?? step.planStep;
-    step.description = le.description || step.description;
+    step.description = cleanStepBoundary(le.description || step.description);
     step.model = le.model || step.model || loop.model;
     step.boundTools = le.bound_tools || step.boundTools;
     step.llmResponse = le.llm_response || step.llmResponse;
-    step.reasoning = (le.reasoning as string) || step.reasoning;
+    step.reasoning = cleanStepBoundary((le.reasoning as string) || step.reasoning || '');
     step.systemPrompt = le.system_prompt || step.systemPrompt;
     step.promptMessages = le.prompt_messages || step.promptMessages;
     step.tokens = { prompt: le.prompt_tokens || step.tokens?.prompt || 0, completion: le.completion_tokens || step.tokens?.completion || 0 };
@@ -444,10 +444,16 @@ function applyDecisionEvent(loop: AgentLoop, le: LoopEvent, nv: number): AgentLo
   return loop;
 }
 
+/** Clean [STEP_BOUNDARY ...] markers from reporter output. */
+function cleanStepBoundary(text: string): string {
+  return text.replace(/\[STEP_BOUNDARY\s*\d*\][^\n]*/g, '').trim();
+}
+
 /** Handle terminal events: reporter_output. */
 function applyTerminalEvent(loop: AgentLoop, le: LoopEvent): AgentLoop {
   // Filter leaked reflector decisions ("continue"/"replan"/"done")
-  const rContent = le.content || '';
+  const rawContent = le.content || '';
+  const rContent = cleanStepBoundary(rawContent);
   const isLeaked = /^(continue|replan|done|hitl)\s*$/i.test(String(rContent).trim());
   return {
     ...loop,

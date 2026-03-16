@@ -731,6 +731,8 @@ export const SandboxPage: React.FC = () => {
     dispatch: sessionDispatch,
     subscribeAbortRef,
     sendInProgressRef,
+    hasMoreTasks,
+    loadMoreTasks,
   } = useSessionLoader(namespace, contextId);
 
   // Derived loading flags for backward compatibility
@@ -1843,6 +1845,35 @@ export const SandboxPage: React.FC = () => {
               </div>
               )}
 
+              {/* "Load more" button for older turns */}
+              {(hasMoreHistory || hasMoreTasks) && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    padding: '8px 0',
+                    marginBottom: 8,
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      if (hasMoreTasks) loadMoreTasks();
+                    }}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 6,
+                      border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                      backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                      cursor: 'pointer',
+                      fontSize: '0.85em',
+                      color: 'var(--pf-v5-global--Color--200)',
+                    }}
+                  >
+                    Load earlier messages
+                  </button>
+                </div>
+              )}
+
               {/* Render messages grouped into turns, with loop cards interleaved */}
               {(() => {
                 const turns = groupMessagesIntoTurns(messages);
@@ -1864,9 +1895,9 @@ export const SandboxPage: React.FC = () => {
                   return elements;
                 }
 
-                // Pair user messages with loops by CONTENT MATCH, not position.
-                // This ensures the user message and its loop render together
-                // even during streaming when they arrive at different times.
+                // Pair user messages with loops by CONTENT MATCH first,
+                // then by task_id from taskSummaries, then by position.
+                // This ensures user message ALWAYS renders BEFORE its agent loop.
                 const pairedLoopIds = new Set<string>();
 
                 turns.forEach((turn, idx) => {

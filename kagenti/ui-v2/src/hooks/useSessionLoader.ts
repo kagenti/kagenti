@@ -12,8 +12,9 @@
  * The hook manages data lifecycle only — it does NOT render anything.
  */
 
-import { useReducer, useEffect, useRef, type Dispatch, type MutableRefObject } from 'react';
+import { useReducer, useEffect, useRef, useCallback, type Dispatch, type MutableRefObject } from 'react';
 import { sandboxService } from '../services/api';
+import { eventService, type TaskSummary } from '../services/eventService';
 import { useAuth } from '../contexts/AuthContext';
 import type { AgentLoop } from '../types/agentLoop';
 import type { LoopEvent } from '../utils/loopBuilder';
@@ -67,6 +68,9 @@ interface SessionState {
   oldestIndex: number | null;
   error: string | null;
   recoveryAttempts: number;
+  /** Paginated task summaries for turn-block rendering. */
+  taskSummaries: TaskSummary[];
+  hasMoreTasks: boolean;
 }
 
 /** Detect and filter out LangGraph intermediate status dumps and JSON loop events from history. */
@@ -118,6 +122,12 @@ type Action =
     }
   | {
       type: 'LOOP_CANCEL';
+    }
+  | {
+      type: 'TASKS_LOADED';
+      tasks: TaskSummary[];
+      hasMore: boolean;
+      prepend: boolean;
     };
 
 // ---------------------------------------------------------------------------
@@ -136,6 +146,8 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         oldestIndex: null,
         error: null,
         recoveryAttempts: 0,
+        taskSummaries: [],
+        hasMoreTasks: false,
       };
 
     case 'HISTORY_LOADED':
@@ -220,6 +232,8 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         oldestIndex: null,
         error: null,
         recoveryAttempts: 0,
+        taskSummaries: [],
+        hasMoreTasks: false,
       };
 
     case 'SEND_STARTED':
@@ -272,6 +286,13 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         }
       }
       return { ...state, phase: 'LOADED', agentLoops: canceled };
+    }
+
+    case 'TASKS_LOADED': {
+      const combined = action.prepend
+        ? [...action.tasks, ...state.taskSummaries]
+        : action.tasks;
+      return { ...state, taskSummaries: combined, hasMoreTasks: action.hasMore };
     }
 
     default:
@@ -425,6 +446,11 @@ export interface UseSessionLoaderReturn {
   dispatch: Dispatch<Action>;
   subscribeAbortRef: MutableRefObject<AbortController | null>;
   sendInProgressRef: MutableRefObject<boolean>;
+  /** Paginated task summaries for turn-block rendering. */
+  taskSummaries: TaskSummary[];
+  hasMoreTasks: boolean;
+  /** Load older tasks (for "Load more" button). */
+  loadMoreTasks: () => Promise<void>;
 }
 
 export function useSessionLoader(
@@ -448,6 +474,8 @@ export function useSessionLoader(
     oldestIndex: null,
     error: null,
     recoveryAttempts: 0,
+    taskSummaries: [],
+    hasMoreTasks: false,
   });
 
   // Keep phaseRef in sync with state.phase (always current, no stale closures)
@@ -483,8 +511,21 @@ export function useSessionLoader(
 
     (async () => {
       try {
-        const result = await fetchAndBuildHistory(namespace, contextId);
+        const [result, tasksResult] = await Promise.all([
+          fetchAndBuildHistory(namespace, contextId),
+          eventService.getTasks(namespace, contextId, 5).catch(() => null),
+        ]);
         if (cancelled) return;
+
+        // Dispatch task summaries if available
+        if (tasksResult && tasksResult.tasks.length > 0) {
+          dispatch({
+            type: 'TASKS_LOADED',
+            tasks: tasksResult.tasks,
+            hasMore: tasksResult.has_more,
+            prepend: false,
+          });
+        }
 
         dispatch({
           type: 'HISTORY_LOADED',
@@ -511,6 +552,24 @@ export function useSessionLoader(
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextId, namespace]);
+
+  // ----- loadMoreTasks callback -----
+  const loadMoreTasks = useCallback(async () => {
+    if (!contextId || !namespace || !state.hasMoreTasks) return;
+    const oldest = state.taskSummaries[state.taskSummaries.length - 1];
+    if (!oldest) return;
+    try {
+      const result = await eventService.getTasks(namespace, contextId, 5, oldest.task_id);
+      dispatch({
+        type: 'TASKS_LOADED',
+        tasks: result.tasks,
+        hasMore: result.has_more,
+        prepend: false,
+      });
+    } catch (err) {
+      console.error('[useSessionLoader] Failed to load more tasks:', err);
+    }
+  }, [contextId, namespace, state.hasMoreTasks, state.taskSummaries]);
 
   // ----- Effect 2: SUBSCRIBING phase → open SSE -----
   useEffect(() => {
@@ -747,6 +806,9 @@ export function useSessionLoader(
     dispatch,
     subscribeAbortRef,
     sendInProgressRef,
+    taskSummaries: state.taskSummaries,
+    hasMoreTasks: state.hasMoreTasks,
+    loadMoreTasks,
   };
 }
 

@@ -618,6 +618,22 @@ def _build_service_manifest(req: SandboxCreateRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 
+@router.get("/defaults")
+async def get_sandbox_defaults():
+    """Return the backend's default SandboxCreateRequest values as JSON.
+
+    The wizard loads these on mount instead of hardcoded INITIAL_STATE,
+    keeping the UI in sync with backend defaults and cluster-level env vars.
+    """
+    defaults = SandboxCreateRequest(name="", repo="")
+    result = defaults.model_dump()
+    # Include cluster-level defaults from env vars
+    result["default_llm_model"] = DEFAULT_LLM_MODEL
+    result["default_llm_secret"] = DEFAULT_LLM_SECRET
+    result["default_llm_secret_key"] = DEFAULT_LLM_SECRET_KEY
+    return result
+
+
 @router.post("/{namespace}/create", response_model=SandboxCreateResponse)
 async def create_sandbox(
     namespace: str,

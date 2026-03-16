@@ -14,7 +14,7 @@
  * node type / eventType to determine which topology node is active.
  */
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   type Node,
@@ -98,7 +98,7 @@ const TOOLBAR_BTN_STYLE: React.CSSProperties = {
 // Default graph card topology (sandbox-legion, used as fallback)
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TOPOLOGY: GraphTopology = {
+export const DEFAULT_TOPOLOGY: GraphTopology = {
   entry_node: 'router',
   terminal_nodes: ['__end__'],
   nodes: {
@@ -206,7 +206,7 @@ const CATEGORY_NODE_COLORS: Record<string, { bg: string; border: string }> = {
  * mapping event types to the topology nodes they belong to via stepToTopoNode.
  * This is used when no graphCard is provided.
  */
-function buildDefaultEventNodeMap(): Record<string, string[]> {
+export function buildDefaultEventNodeMap(): Record<string, string[]> {
   // event type -> topology nodes (derived from the stepToTopoNode mapping)
   return {
     planner_output:     ['planner'],
@@ -229,7 +229,7 @@ function buildDefaultEventNodeMap(): Record<string, string[]> {
  * Count event types per topology node from loops.
  * Returns a map: topoNodeId -> { eventType: count }
  */
-function countEventsPerTopoNode(
+export function countEventsPerTopoNode(
   loops: AgentLoop[],
 ): Map<string, Map<string, number>> {
   const result = new Map<string, Map<string, number>>();
@@ -253,7 +253,7 @@ function countEventsPerTopoNode(
 // ---------------------------------------------------------------------------
 
 /** Map step eventType/nodeType to the topology node name. */
-function stepToTopoNode(step: { eventType?: string; nodeType?: string }): string | null {
+export function stepToTopoNode(step: { eventType?: string; nodeType?: string }): string | null {
   const nt = step.nodeType;
   const et = step.eventType;
   if (et === 'planner_output') return 'planner';
@@ -273,7 +273,7 @@ function stepToTopoNode(step: { eventType?: string; nodeType?: string }): string
 // Compute edge traversal counts from loops
 // ---------------------------------------------------------------------------
 
-interface EdgeTraversalInfo {
+export interface EdgeTraversalInfo {
   count: number;
   loopIds: string[];
 }
@@ -282,7 +282,7 @@ interface EdgeTraversalInfo {
  * For each topology edge, count how many times it was traversed based on
  * the sequence of topology nodes visited across all loops.
  */
-function computeEdgeCounts(
+export function computeEdgeCounts(
   loops: AgentLoop[],
   topoEdges: TopologyEdge[],
 ): Map<string, EdgeTraversalInfo> {
@@ -346,7 +346,7 @@ function computeEdgeCounts(
 // Determine active (highlighted) topology node
 // ---------------------------------------------------------------------------
 
-function getActiveTopoNode(loop: AgentLoop): string | null {
+export function getActiveTopoNode(loop: AgentLoop): string | null {
   if (loop.steps.length === 0) return null;
   const lastStep = loop.steps[loop.steps.length - 1];
   if (lastStep.status !== 'running' && loop.status !== 'executing' && loop.status !== 'planning' && loop.status !== 'reflecting') {
@@ -929,6 +929,20 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // --- Streaming animation state ---
+  const lastProcessedCountRef = useRef(0);
+  const [animActiveTopoNode, setAnimActiveTopoNode] = useState<string | null>(null);
+  const [animActiveEdge, setAnimActiveEdge] = useState<{ from: string; to: string } | null>(null);
+  const [animVisitedNodes, setAnimVisitedNodes] = useState<Set<string>>(new Set());
+
+  // Reset animation state when eventDetail changes
+  useEffect(() => {
+    lastProcessedCountRef.current = 0;
+    setAnimActiveTopoNode(null);
+    setAnimActiveEdge(null);
+    setAnimVisitedNodes(new Set());
+  }, [eventDetail]);
+
   // Determine which loop(s) contribute to the graph — memoized to avoid
   // creating a new array reference on every render.
   const activeLoops = useMemo(
@@ -985,13 +999,69 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
   }, [eventDetail, activeLoops, eventCatalogMemo]);
 
   // Build the graph (dagre layout is the expensive part)
-  const { nodes, edges } = useMemo(() => {
+  const { nodes: rawNodes, edges: rawEdges } = useMemo(() => {
     if (eventDetail === 'events' && eventFlowData) {
       return applyDagreLayout(eventFlowData.nodes, eventFlowData.edges);
     }
     const raw = buildTopologyGraph(topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap);
     return applyDagreLayout(raw.nodes, raw.edges);
   }, [topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap, eventFlowData]);
+
+  // Track streaming progress: advance animation when new steps appear
+  const totalStepCount = useMemo(() => activeLoops.reduce((sum, l) => sum + l.steps.length, 0), [activeLoops]);
+
+  useEffect(() => {
+    if (totalStepCount <= lastProcessedCountRef.current) return;
+
+    const currentLoop = activeLoops[activeLoops.length - 1];
+    if (!currentLoop?.steps?.length) return;
+
+    const lastStep = currentLoop.steps[currentLoop.steps.length - 1];
+
+    // Map step to topology node or event type node depending on mode
+    let newActiveId: string | null = null;
+    if (eventDetail === 'events') {
+      newActiveId = lastStep.eventType || lastStep.nodeType || null;
+    } else {
+      newActiveId = stepToTopoNode(lastStep);
+    }
+
+    if (newActiveId && newActiveId !== animActiveTopoNode) {
+      if (animActiveTopoNode) {
+        setAnimVisitedNodes((prev) => new Set([...prev, animActiveTopoNode]));
+        setAnimActiveEdge({ from: animActiveTopoNode, to: newActiveId });
+      }
+      setAnimActiveTopoNode(newActiveId);
+    }
+
+    lastProcessedCountRef.current = totalStepCount;
+  }, [totalStepCount, activeLoops, eventDetail, animActiveTopoNode]);
+
+  // Apply animation CSS classes to nodes
+  const nodes = useMemo(() => rawNodes.map((node) => {
+    // Skip pseudo-nodes from animation dimming
+    if (node.id === '__start__' || node.id === '__end__') return node;
+    let className = '';
+    if (node.id === animActiveTopoNode) {
+      className = 'graph-node-active';
+    } else if (animVisitedNodes.has(node.id)) {
+      className = 'graph-node-visited';
+    } else if (animActiveTopoNode) {
+      className = 'graph-node-inactive';
+    }
+    return className ? { ...node, className } : node;
+  }), [rawNodes, animActiveTopoNode, animVisitedNodes]);
+
+  // Apply animation CSS classes to edges
+  const edges = useMemo(() => rawEdges.map((edge) => {
+    if (animActiveEdge?.from === edge.source && animActiveEdge?.to === edge.target) {
+      return { ...edge, className: 'graph-edge-active' };
+    }
+    if (animVisitedNodes.has(edge.source) && (animVisitedNodes.has(edge.target) || edge.target === animActiveTopoNode)) {
+      return { ...edge, className: 'graph-edge-visited' };
+    }
+    return edge;
+  }), [rawEdges, animActiveEdge, animVisitedNodes, animActiveTopoNode]);
 
   // Message sidebar entries
   const messageEntries = useMemo(
