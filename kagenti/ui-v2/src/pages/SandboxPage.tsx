@@ -1223,12 +1223,12 @@ export const SandboxPage: React.FC = () => {
     let accumulatedContent = '';
     let buffer = '';
     let seenLoopId = false; // Once any loop_id event seen, suppress flat messages
-    let msgCountBeforeStream = 0; // Track count to only remove current-turn flat messages
+    // msgCountBeforeStream removed — no longer wiping messages on loop start
     const collectedMessages: Message[] = [];
 
     // Snapshot current message count so retroactive cleanup only
     // removes flat messages from THIS turn, not previous turns
-    msgCountBeforeStream = messages.length;
+    // msgCountBeforeStream = messages.length; // removed — see MESSAGES_SET removal
 
     try {
       while (true) {
