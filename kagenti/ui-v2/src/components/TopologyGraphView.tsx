@@ -26,8 +26,9 @@ import {
 } from '@xyflow/react';
 import dagre from 'dagre';
 import type { AgentLoop } from '../types/agentLoop';
-import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge } from '../types/graphCard';
+import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge, EventTypeDef } from '../types/graphCard';
 import { countTools, formatTokens, formatDuration } from '../utils/loopFormatting';
+import { EVENT_CATALOG } from '../utils/loopBuilder';
 
 import '@xyflow/react/dist/style.css';
 
@@ -154,6 +155,67 @@ const DEFAULT_NODE_COLORS = { bg: '#37474f', border: '#263238' };
 
 function getNodeColors(nodeId: string): { bg: string; border: string } {
   return TOPO_NODE_COLORS[nodeId] || DEFAULT_NODE_COLORS;
+}
+
+// ---------------------------------------------------------------------------
+// Category / event type badge colors
+// ---------------------------------------------------------------------------
+
+const CATEGORY_BADGE_COLORS: Record<string, string> = {
+  reasoning:   '#58a6ff',
+  execution:   '#4caf50',
+  tool_output: '#888',
+  decision:    '#ff9800',
+  terminal:    '#ce93d8',
+  meta:        '#78909c',
+  interaction: '#a1887f',
+};
+
+/**
+ * Build a default event catalog from EVENT_CATALOG (loopBuilder) + topology,
+ * mapping event types to the topology nodes they belong to via stepToTopoNode.
+ * This is used when no graphCard is provided.
+ */
+function buildDefaultEventNodeMap(): Record<string, string[]> {
+  // event type -> topology nodes (derived from the stepToTopoNode mapping)
+  return {
+    planner_output:     ['planner'],
+    replanner_output:   ['planner'],
+    executor_step:      ['step_selector', 'executor'],
+    thinking:           ['executor'],
+    micro_reasoning:    ['executor'],
+    tool_call:          ['tools', 'planner_tools', 'reflector_tools'],
+    tool_result:        ['tools', 'planner_tools', 'reflector_tools'],
+    reflector_decision: ['reflector', 'reflector_route'],
+    router:             ['router'],
+    step_selector:      ['step_selector'],
+    reporter_output:    ['reporter'],
+    budget:             [],
+    budget_update:      [],
+  };
+}
+
+/**
+ * Count event types per topology node from loops.
+ * Returns a map: topoNodeId -> { eventType: count }
+ */
+function countEventsPerTopoNode(
+  loops: AgentLoop[],
+): Map<string, Map<string, number>> {
+  const result = new Map<string, Map<string, number>>();
+
+  for (const loop of loops) {
+    for (const step of loop.steps) {
+      const topoNode = stepToTopoNode(step);
+      if (!topoNode) continue;
+      const eventType = step.eventType || step.nodeType || 'unknown';
+      if (!result.has(topoNode)) result.set(topoNode, new Map());
+      const nodeMap = result.get(topoNode)!;
+      nodeMap.set(eventType, (nodeMap.get(eventType) || 0) + 1);
+    }
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,6 +366,10 @@ function buildTopologyGraph(
   topology: GraphTopology,
   activeNode: string | null,
   edgeCounts: Map<string, EdgeTraversalInfo>,
+  eventDetail: 'categories' | 'event_types',
+  eventCounts: Map<string, Map<string, number>>,
+  eventCatalog: Record<string, Pick<import('../types/graphCard').EventTypeDef, 'category' | 'description'>>,
+  eventNodeMap: Record<string, string[]>,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -333,10 +399,101 @@ function buildTopologyGraph(
     });
   }
 
+  // Pre-compute per-node event info for badges
+  // For 'categories' mode: collect unique categories for each topo node, with total event counts
+  // For 'event_types' mode: collect event type names that map to each topo node
+  const nodeCategoryInfo = new Map<string, { category: string; count: number }[]>();
+  const nodeEventTypeInfo = new Map<string, string[]>();
+
+  if (eventDetail === 'categories') {
+    // Aggregate observed event types into categories per topology node
+    for (const [topoNodeId, evtMap] of eventCounts) {
+      const catCounts = new Map<string, number>();
+      for (const [evtType, count] of evtMap) {
+        const def = eventCatalog[evtType];
+        const cat = def?.category || 'meta';
+        catCounts.set(cat, (catCounts.get(cat) || 0) + count);
+      }
+      nodeCategoryInfo.set(
+        topoNodeId,
+        [...catCounts.entries()]
+          .map(([category, count]) => ({ category, count }))
+          .sort((a, b) => b.count - a.count),
+      );
+    }
+  } else {
+    // Map event types to topology nodes using eventNodeMap
+    for (const [evtType, topoNodes] of Object.entries(eventNodeMap)) {
+      for (const topoNode of topoNodes) {
+        if (!nodeEventTypeInfo.has(topoNode)) nodeEventTypeInfo.set(topoNode, []);
+        const list = nodeEventTypeInfo.get(topoNode)!;
+        if (!list.includes(evtType)) list.push(evtType);
+      }
+    }
+  }
+
   // Add topology nodes
   for (const [nodeId, nodeDef] of Object.entries(topology.nodes)) {
     const colors = getNodeColors(nodeId);
     const isActive = nodeId === activeNode;
+
+    // Build badge content based on eventDetail mode
+    let badgeContent: React.ReactNode = null;
+    if (eventDetail === 'categories') {
+      const cats = nodeCategoryInfo.get(nodeId);
+      if (cats && cats.length > 0) {
+        badgeContent = (
+          <div style={{ display: 'flex', gap: 3, justifyContent: 'center', flexWrap: 'wrap', marginTop: 3 }}>
+            {cats.map((c) => (
+              <span
+                key={c.category}
+                style={{
+                  fontSize: 9,
+                  padding: '1px 5px',
+                  borderRadius: 8,
+                  backgroundColor: CATEGORY_BADGE_COLORS[c.category] || '#555',
+                  color: '#fff',
+                  fontWeight: 600,
+                  lineHeight: '14px',
+                }}
+              >
+                {c.category} {c.count}
+              </span>
+            ))}
+          </div>
+        );
+      }
+    } else {
+      // event_types mode: show which event types this node emits
+      const evtTypes = nodeEventTypeInfo.get(nodeId);
+      if (evtTypes && evtTypes.length > 0) {
+        // Show observed counts if available
+        const observed = eventCounts.get(nodeId);
+        badgeContent = (
+          <div style={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap', marginTop: 3 }}>
+            {evtTypes.map((et) => {
+              const count = observed?.get(et) || 0;
+              return (
+                <span
+                  key={et}
+                  style={{
+                    fontSize: 9,
+                    padding: '1px 4px',
+                    borderRadius: 3,
+                    backgroundColor: count > 0 ? 'rgba(88, 166, 255, 0.25)' : 'rgba(255,255,255,0.08)',
+                    color: count > 0 ? COLOR_ACCENT_BLUE : COLOR_TEXT_TERTIARY,
+                    fontWeight: count > 0 ? 600 : 400,
+                    lineHeight: '14px',
+                  }}
+                >
+                  {et}{count > 0 ? ` (${count})` : ''}
+                </span>
+              );
+            })}
+          </div>
+        );
+      }
+    }
 
     nodes.push({
       id: nodeId,
@@ -345,6 +502,7 @@ function buildTopologyGraph(
           <div style={{ textAlign: 'center', fontSize: 12 }}>
             <div style={{ fontWeight: 600, marginBottom: 2 }}>{nodeId}</div>
             <div style={{ fontSize: 10, opacity: 0.7 }}>{nodeDef.description}</div>
+            {badgeContent}
           </div>
         ),
       },
@@ -645,7 +803,7 @@ export interface TopologyGraphViewProps {
   eventDetail?: 'categories' | 'event_types';
 }
 
-export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({ loop, allLoops, graphCard }) => {
+export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({ loop, allLoops, graphCard, eventDetail = 'categories' }) => {
   // Stabilize the loops array so downstream useMemo deps don't churn
   // when allLoops is not provided (avoids creating a new [loop] every render).
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
