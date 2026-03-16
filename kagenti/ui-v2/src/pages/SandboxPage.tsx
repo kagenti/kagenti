@@ -1268,19 +1268,13 @@ export const SandboxPage: React.FC = () => {
             // and the full event in data.loop_event
             if (data.loop_id) {
               if (!seenLoopId) {
-                // First loop event: retroactively remove flat messages
-                // from THIS turn only (keep previous turns intact)
+                // First loop event: switch to loop mode.
+                // DON'T remove messages — the user message must stay visible.
+                // Loop card renders independently; flat content is suppressed
+                // by the seenLoopId flag (no more flat messages added).
                 seenLoopId = true;
-                // Clear any pre-loop flat content to prevent duplicates
                 accumulatedContent = '';
                 setStreamingContent('');
-                sessionDispatch({
-                  type: 'MESSAGES_SET',
-                  messages: [
-                    ...messages.slice(0, msgCountBeforeStream),
-                    ...messages.slice(msgCountBeforeStream).filter((m) => m.role === 'user'),
-                  ],
-                });
               }
               const loopId = data.loop_id;
               const le = data.loop_event || data;
