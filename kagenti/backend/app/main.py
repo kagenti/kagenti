@@ -31,7 +31,27 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 
 
 from app.core.config import settings
-from app.routers import agents, tools, namespaces, config, auth, chat
+from app.routers import (
+    agents,
+    tools,
+    namespaces,
+    config,
+    auth,
+    chat,
+    models,
+    llm_keys,
+)
+
+# Conditionally import feature-flagged modules
+if settings.kagenti_feature_flag_sandbox:
+    from app.routers import sandbox, sandbox_deploy, sandbox_files, token_usage, sidecar, events
+    from app.services.session_db import close_all_pools
+
+if settings.kagenti_feature_flag_triggers:
+    from app.routers import sandbox_trigger
+
+if settings.kagenti_feature_flag_integrations:
+    from app.routers import integrations
 
 # Configure logging
 logging.basicConfig(
@@ -72,6 +92,15 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+    # Shutdown sandbox services (only if enabled)
+    if settings.kagenti_feature_flag_sandbox:
+        from app.services.sidecar_manager import get_sidecar_manager
+
+        await get_sidecar_manager().shutdown()
+
+        # Close session DB pools
+        await close_all_pools()
+
     logger.info("Shutting down Kagenti Backend API")
 
 
@@ -104,6 +133,28 @@ app.include_router(agents.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
+app.include_router(models.router, prefix="/api/v1")
+app.include_router(llm_keys.router, prefix="/api/v1")
+
+# Feature-flagged routers — sandbox
+if settings.kagenti_feature_flag_sandbox:
+    app.include_router(sandbox.router, prefix="/api/v1")
+    app.include_router(sandbox_deploy.router, prefix="/api/v1")
+    app.include_router(sandbox_files.router, prefix="/api/v1")
+    app.include_router(token_usage.router, prefix="/api/v1")
+    app.include_router(sidecar.router, prefix="/api/v1")
+    app.include_router(events.router, prefix="/api/v1")
+    logger.info("Feature flag SANDBOX enabled — sandbox routes registered")
+
+# Feature-flagged routers — triggers
+if settings.kagenti_feature_flag_triggers:
+    app.include_router(sandbox_trigger.router, prefix="/api/v1")
+    logger.info("Feature flag TRIGGERS enabled — trigger routes registered")
+
+# Feature-flagged routers — integrations
+if settings.kagenti_feature_flag_integrations:
+    app.include_router(integrations.router, prefix="/api/v1")
+    logger.info("Feature flag INTEGRATIONS enabled — integration routes registered")
 
 
 @app.get("/health", tags=["health"])
