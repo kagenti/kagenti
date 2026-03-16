@@ -480,16 +480,16 @@ export interface StepGraphViewProps {
   eventDetail?: 'categories' | 'event_types';
 }
 
-export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, allLoops }) => {
+export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, allLoops, eventDetail = 'categories' }) => {
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { nodes, edges, totalNodes, allNodeIds } = useMemo(() => {
-    const raw = buildMultiLoopGraph(loops);
+    const raw = buildMultiLoopGraph(loops, eventDetail);
     const layout = applyDagreLayout(raw.nodes, raw.edges);
     return { ...layout, totalNodes: raw.totalNodes, allNodeIds: raw.allNodeIds };
-  }, [loops]);
+  }, [loops, eventDetail]);
 
   const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setSelectedNodeId(node.id);

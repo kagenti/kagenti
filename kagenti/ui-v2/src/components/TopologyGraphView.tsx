@@ -367,7 +367,7 @@ function buildTopologyGraph(
   edgeCounts: Map<string, EdgeTraversalInfo>,
   eventDetail: 'categories' | 'event_types',
   eventCounts: Map<string, Map<string, number>>,
-  eventCatalog: Record<string, Pick<EventTypeDef, 'category' | 'description'>>,
+  eventCatalog: Record<string, { category: string; description: string }>,
   eventNodeMap: Record<string, string[]>,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -842,7 +842,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
   const eventCatalogMemo = useMemo(() => {
     if (graphCard?.event_catalog) {
       // Convert EventTypeDef to the subset we need
-      const catalog: Record<string, Pick<EventTypeDef, 'category' | 'description'>> = {};
+      const catalog: Record<string, { category: string; description: string }> = {};
       for (const [key, def] of Object.entries(graphCard.event_catalog)) {
         catalog[key] = { category: def.category, description: def.description };
       }
