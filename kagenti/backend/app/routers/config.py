@@ -14,6 +14,16 @@ from app.models.responses import DashboardConfigResponse
 router = APIRouter(prefix="/config", tags=["config"])
 
 
+@router.get("/features")
+async def get_feature_flags() -> dict:
+    """Return enabled feature flags for UI gating. No auth required."""
+    return {
+        "sandbox": settings.kagenti_feature_flag_sandbox,
+        "integrations": settings.kagenti_feature_flag_integrations,
+        "triggers": settings.kagenti_feature_flag_triggers,
+    }
+
+
 @router.get(
     "/dashboards",
     response_model=DashboardConfigResponse,
