@@ -48,20 +48,28 @@ interface GraphDetailPanelProps {
 // ---------------------------------------------------------------------------
 
 function parseNodeId(nodeId: string): NavEntry | null {
+  // Strip multi-message prefix (e.g., "loop0-" or any prefix before "step-" or "cat-")
+  const stripped = nodeId.replace(/^[^-]+-(?=step-|cat-)/, '');
+
   // step-{index}-tool-{j}
-  const toolMatch = nodeId.match(/^step-(\d+)-tool-(\d+)$/);
+  const toolMatch = stripped.match(/^step-(\d+)-tool-(\d+)$/);
   if (toolMatch) {
     return { type: 'tool', label: `Tool ${parseInt(toolMatch[2]) + 1}`, stepIndex: parseInt(toolMatch[1]), subIndex: parseInt(toolMatch[2]) };
   }
   // step-{index}-think
-  const thinkMatch = nodeId.match(/^step-(\d+)-think$/);
+  const thinkMatch = stripped.match(/^step-(\d+)-think$/);
   if (thinkMatch) {
     return { type: 'thinking', label: 'Thinking', stepIndex: parseInt(thinkMatch[1]) };
   }
   // step-{index}
-  const stepMatch = nodeId.match(/^step-(\d+)$/);
+  const stepMatch = stripped.match(/^step-(\d+)$/);
   if (stepMatch) {
     return { type: 'step', label: `Step ${parseInt(stepMatch[1])}`, stepIndex: parseInt(stepMatch[1]) };
+  }
+  // cat-{index} (category mode) — map to first step in the group
+  const catMatch = stripped.match(/^cat-(\d+)$/);
+  if (catMatch) {
+    return { type: 'step', label: `Category ${parseInt(catMatch[1]) + 1}`, stepIndex: parseInt(catMatch[1]) };
   }
   return null;
 }

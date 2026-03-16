@@ -459,6 +459,15 @@ function buildMultiLoopGraph(loops: AgentLoop[], eventDetail: 'categories' | 'ev
     prevLastNodeId = lastNodeId;
   }
 
+  // Mark the last node as "active" with a cyan highlight
+  if (prevLastNodeId) {
+    const lastNode = allNodes.find((n) => n.id === prevLastNodeId);
+    if (lastNode && lastNode.style) {
+      (lastNode.style as Record<string, unknown>).border = '3px solid #58a6ff';
+      (lastNode.style as Record<string, unknown>).boxShadow = '0 0 12px rgba(88, 166, 255, 0.5)';
+    }
+  }
+
   return {
     nodes: allNodes,
     edges: allEdges,
@@ -484,6 +493,9 @@ export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, a
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Clear selection when mode changes (node IDs change between categories/event_types)
+  useEffect(() => { setSelectedNodeId(null); }, [eventDetail]);
 
   const { nodes, edges, totalNodes, allNodeIds } = useMemo(() => {
     const raw = buildMultiLoopGraph(loops, eventDetail);
