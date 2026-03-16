@@ -7,12 +7,41 @@
 > **MANAGED_BY_TAG:** kagenti-team
 > **Previous:** Session Beta (2026-03-15) — AgentGraphCard, useSessionLoader, OTel, test fixes
 
-## What Session Beta Delivered
+## What Session Beta Delivered (continued through 2026-03-16)
 
+### Architecture & Foundation
 - AgentGraphCard: 12 event types, 10 nodes, A2A extension endpoint
 - useSessionLoader: state machine replacing polling (-364 lines, 6 race conditions eliminated)
-- Graph view: topology DAG with edge counters + multi-message sidebar
-- OTel observability module (middleware removed, auto-instrumentation kept)
+- OTel observability module (middleware removed — broke SSE, auto-instrumentation kept)
+- Sessions DB: `public.sessions` table auto-migrated on backend startup
+  - Composite indexes: (namespace, updated_at DESC), (agent_name, namespace), (owner)
+  - Atomic upsert on every /chat/stream with COALESCE for safe overwrites
+  - Prepared fields: owner_email, owner_sub, model_override, budget_max_tokens
+  - list_sessions queries sessions table (indexed) instead of tasks JSON parsing
+
+### Graph Views
+- Dual graph views: StepGraphView (old per-step DAG) + TopologyGraphView (graph card topology)
+- GraphLoopView wrapper with subtab toggle: [Step Graph | Topology] [Event Types | Subtypes] [Fullscreen]
+- Both views accept `allLoops` for multi-message rendering
+- Edge labels show description + traversal count from graph card
+- Fullscreen button uses native requestFullscreen API
+
+### Test Fixes & Infrastructure
+- 35+ E2E test fixes (DNS variants, auth headers, OpenAI skips, assertive assertions)
+- Playwright pinned to ^1.50.1, removed test.describe.configure from 7 files
+- loopBuilder refactored: category-based reducer (7 categories via EVENT_CATALOG)
+- FileBrowser: React.memo wrapper prevents scroll reset on parent re-render
+- Streaming race fix: deferred setContextId + sendInProgressRef
+- RCA wizard deploy tests: emptydir + PVC both PASSING (5/5 quality)
+- 185 UI tests passing (full suite), 20 core tests green
+
+### Bug Fixes
+- RBAC: pods/exec, configmaps, secrets, PVCs in backend ClusterRole
+- Wizard: proxy=True default (both backend + UI INITIAL_STATE)
+- LLM secret key resolution (api-key vs apikey for default vs per-agent)
+- OTel HTTP middleware removed (BaseHTTPMiddleware broke SSE streaming)
+- Session title backfill from first user message (atomic DB update)
+- Reporter respond_to_user fix (in progress — serializer extraction)
 - 35+ E2E test fixes, 12 bug fixes (RBAC, secrets, proxy, wizard)
 - RCA wizard deploy tests: emptydir + PVC both PASSING (5/5 quality)
 - 73 broad UI tests passing, 2 rendering tests fixed
