@@ -271,12 +271,14 @@ if [ "$VERBOSE" = "false" ]; then
         echo -e "  $(link "$AGENT_URL" "$AGENT_URL")"
     fi
 
-    # LiteLLM
+    # LiteLLM (internal only — no external route, use port-forward)
     if [ -n "$LITELLM_MASTER_KEY" ]; then
-        echo -e "${MAGENTA}LiteLLM Proxy${NC}"
-        echo -e "  ${DIM}Master key:${NC} $(show_pass "$LITELLM_MASTER_KEY")"
+        echo -e "${MAGENTA}LiteLLM Proxy${NC}  ${DIM}(internal only)${NC}"
+        echo -e "  $(link "http://localhost:4000/ui" "http://localhost:4000/ui")  ${DIM}after port-forward${NC}"
+        echo -e "  ${DIM}Port-forward:${NC} $CLI port-forward -n kagenti-system svc/litellm 4000:4000"
+        echo -e "  ${DIM}Master key:${NC}   $(show_pass "$LITELLM_MASTER_KEY")  ${DIM}(login to UI)${NC}"
         if [ -n "$LITELLM_TEAM1_KEY" ]; then
-            echo -e "  ${DIM}Team1 key:${NC}  $(show_pass "$LITELLM_TEAM1_KEY")"
+            echo -e "  ${DIM}Team1 key:${NC}    $(show_pass "$LITELLM_TEAM1_KEY")  ${DIM}(agent API key)${NC}"
         fi
     fi
 
@@ -566,12 +568,16 @@ echo "--------------------------------------------------------------------------
 LITELLM_STATUS=$($CLI get pods -n kagenti-system -l app=litellm -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $LITELLM_STATUS"
 echo -e "${BLUE}Service:${NC}      litellm.kagenti-system.svc.cluster.local:4000"
+echo -e "${BLUE}Access:${NC}       ${DIM}Internal only — no external route${NC}"
+echo -e "${BLUE}Port-forward:${NC} $CLI port-forward -n kagenti-system svc/litellm 4000:4000"
+echo -e "${BLUE}UI:${NC}           $(link "http://localhost:4000/ui" "http://localhost:4000/ui")  ${DIM}(after port-forward)${NC}"
 if [ -n "$LITELLM_MASTER_KEY" ]; then
-    echo -e "${BLUE}Master Key:${NC}   $(show_pass "$LITELLM_MASTER_KEY")"
+    echo -e "${BLUE}Master Key:${NC}   $(show_pass "$LITELLM_MASTER_KEY")  ${DIM}(login to LiteLLM UI)${NC}"
 fi
 if [ -n "$LITELLM_TEAM1_KEY" ]; then
-    echo -e "${BLUE}Team1 Key:${NC}   $(show_pass "$LITELLM_TEAM1_KEY")"
+    echo -e "${BLUE}Team1 Key:${NC}   $(show_pass "$LITELLM_TEAM1_KEY")  ${DIM}(agent API key)${NC}"
 fi
+echo -e "${BLUE}Auth:${NC}         Master key for admin UI, virtual keys for agent API"
 echo ""
 
 echo "========================================================================="
