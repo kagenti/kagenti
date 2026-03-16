@@ -198,6 +198,7 @@ spec:
                   name: kagenti-ui-oauth-secret
                   key: SCOPE
                   optional: true
+            {{- if .Values.featureFlags.sandbox }}
             - name: LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -210,6 +211,7 @@ spec:
                   name: litellm-proxy-secret
                   key: master-key
                   optional: true
+            {{- end }}
           resources:
             {{- toYaml .Values.ui.backend.resources | nindent 12 }}
           livenessProbe:
@@ -359,7 +361,12 @@ rules:
     resources: ["clusterbuildstrategies"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    resources: ["pods", "pods/exec", "pods/log"]
+    resources: ["pods"]
+    verbs: ["get", "list", "create"]
+  {{- if .Values.featureFlags.sandbox }}
+  # Sandbox-specific: exec into pods, stream logs, manage secrets/configmaps/PVCs
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/log"]
     verbs: ["get", "list", "create"]
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -367,6 +374,7 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "create", "patch", "delete"]
+  {{- end }}
   # Deployments, StatefulSets and Services for managing workloads
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets"]
@@ -378,20 +386,24 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
-  # PersistentVolumeClaims for agent workspace storage
+  {{- if .Values.featureFlags.sandbox }}
+  # PersistentVolumeClaims for agent workspace storage (sandbox)
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "patch", "delete"]
+  {{- end }}
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if .Values.featureFlags.integrations }}
   # Integration CRDs for repository integrations
   - apiGroups: ["kagenti.io"]
     resources: ["integrations", "integrations/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -87,6 +87,8 @@ ui:
     resources:
       limits:
         cpu: 250m
+        # Increased from 256Mi to 512Mi to support sandbox agent workloads
+        # (exec streaming, log tailing, and concurrent K8s API calls)
         memory: 512Mi
       requests:
         cpu: 50m
