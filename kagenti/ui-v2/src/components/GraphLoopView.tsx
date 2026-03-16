@@ -82,30 +82,45 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
         backgroundColor: '#0d1117',
       }}
     >
-      {/* Subtab toggle bar */}
-      <div style={TOGGLE_BAR_STYLE}>
+      {/* Subtab toggle bar + fullscreen */}
+      <div style={{ ...TOGGLE_BAR_STYLE, justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: 0 }}>
+          <button
+            data-testid="graph-toggle-steps"
+            onClick={() => setSubView('steps')}
+            style={{
+              ...toggleBtnStyle(subView === 'steps'),
+              borderTopLeftRadius: 4,
+              borderBottomLeftRadius: 4,
+            }}
+          >
+            Step Graph
+          </button>
+          <button
+            data-testid="graph-toggle-topology"
+            onClick={() => setSubView('topology')}
+            style={{
+              ...toggleBtnStyle(subView === 'topology'),
+              borderLeft: 'none',
+              borderTopRightRadius: 4,
+              borderBottomRightRadius: 4,
+            }}
+          >
+            Topology
+          </button>
+        </div>
         <button
-          data-testid="graph-toggle-steps"
-          onClick={() => setSubView('steps')}
-          style={{
-            ...toggleBtnStyle(subView === 'steps'),
-            borderTopLeftRadius: 4,
-            borderBottomLeftRadius: 4,
+          data-testid="graph-fullscreen-toggle"
+          onClick={() => {
+            const el = document.querySelector('[data-testid="graph-loop-view"]');
+            if (el) {
+              if (document.fullscreenElement) document.exitFullscreen();
+              else el.requestFullscreen();
+            }
           }}
+          style={{ ...toggleBtnStyle(false), borderRadius: 4, fontSize: 11 }}
         >
-          Step Graph
-        </button>
-        <button
-          data-testid="graph-toggle-topology"
-          onClick={() => setSubView('topology')}
-          style={{
-            ...toggleBtnStyle(subView === 'topology'),
-            borderLeft: 'none',
-            borderTopRightRadius: 4,
-            borderBottomRightRadius: 4,
-          }}
-        >
-          Topology
+          &#x26F6; Fullscreen
         </button>
       </div>
 
