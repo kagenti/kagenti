@@ -161,20 +161,21 @@ function buildLoopGraph(
   let firstNodeId: string | null = null;
 
   if (eventDetail === 'nodes') {
-    // ---- Categories mode: merge consecutive same-category steps ----
+    // ---- Nodes mode: merge consecutive same-LANGGRAPH-NODE steps ----
     interface MergedGroup {
+      nodeName: string; // langgraph node name (planner, executor, reflector, etc.)
       category: EventCategory;
       steps: AgentLoopStep[];
       firstIndex: number;
     }
     const groups: MergedGroup[] = [];
     for (const step of loop.steps) {
-      const cat = stepCategory(step);
+      const nodeName = step.nodeType || inferNodeType(step);
       const last = groups[groups.length - 1];
-      if (last && last.category === cat) {
+      if (last && last.nodeName === nodeName) {
         last.steps.push(step);
       } else {
-        groups.push({ category: cat, steps: [step], firstIndex: step.index });
+        groups.push({ nodeName, category: stepCategory(step), steps: [step], firstIndex: step.index });
       }
     }
 
@@ -189,7 +190,8 @@ function buildLoopGraph(
       const totalTokens = group.steps.reduce((sum, s) => sum + s.tokens.prompt + s.tokens.completion, 0);
       const tokenLabel = totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : String(totalTokens);
 
-      let label = CATEGORY_LABELS[group.category];
+      // Use langgraph node name as label (planner, executor, reflector, etc.)
+      let label = group.nodeName;
       if (count > 1) label += ` (${count})`;
       if (messageIdx !== null) label = `M${messageIdx + 1}: ${label}`;
 
