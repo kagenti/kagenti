@@ -87,6 +87,29 @@ events as a blob in task metadata — no per-event granularity.
    with `created_at` timestamp. ALWAYS renders BEFORE its agent loop.
    No position-based or content-based pairing needed — just by task_id.
 
+### P0: Graph Streaming Animations
+
+**Problem:** All 4 graph views are static — no animation when events stream in.
+The user can't see the agent's progress in real time through the graph.
+
+**What it should look like:**
+- As each event arrives via SSE, the corresponding node PULSES (brief glow)
+- Edge from previous node to current node ANIMATES (particle/dash flow)
+- Animation seamlessly transitions to next edge as new events arrive
+- Active node has persistent highlight, previous nodes dim
+- In Topology view: edges light up as they're traversed
+- In Step Graph: new nodes APPEAR with fade-in, edges draw progressively
+- In Events flow: new event type nodes appear, edges animate between them
+
+**Implementation approach:**
+- Track `lastProcessedEventIndex` in the graph component state
+- When `agentLoops` updates with new events, compare indices to find new ones
+- For each new event: trigger CSS animation on the corresponding node/edge
+- Use ReactFlow's `animated: true` on active edges (already partially done)
+- Add CSS keyframes for node pulse (`@keyframes pulse { 0% { box-shadow: ... } }`)
+- Transition between animations: keep previous edge animated briefly, then
+  switch to new edge (overlap by 500ms for seamless flow)
+
 ### P0: Reporter Node — Must Be Terminal, Clean Final Answer
 
 **Problem:** The reporter node emits a raw `respond_to_user(response="...")`
