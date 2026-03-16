@@ -1214,6 +1214,77 @@ export const triggerService = {
 };
 
 /**
+ * Graph card service for fetching agent topology data.
+ * Falls back to hardcoded sandbox-legion topology when the endpoint is unavailable.
+ */
+import type { AgentGraphCard } from '@/types/graphCard';
+
+const SANDBOX_LEGION_GRAPH_CARD: AgentGraphCard = {
+  id: 'sandbox-legion-v1',
+  description: 'Plan-Execute-Reflect loop with tool execution',
+  framework: 'langgraph',
+  version: '1.0.0',
+  event_catalog: {},
+  common_event_fields: {},
+  topology: {
+    description: 'LangGraph graph structure for sandbox-legion agent',
+    entry_node: 'router',
+    terminal_nodes: ['__end__'],
+    nodes: {
+      router:          { description: 'Routes to planning or resume based on session state' },
+      planner:         { description: 'Creates numbered execution plan' },
+      planner_tools:   { description: 'Executes planner tool calls' },
+      step_selector:   { description: 'Selects next step, writes focused brief' },
+      executor:        { description: 'Executes current step using tools' },
+      tools:           { description: 'Executes executor tool calls' },
+      reflector:       { description: 'Evaluates results, decides next action' },
+      reflector_tools: { description: 'Executes reflector verification reads' },
+      reflector_route: { description: 'Pass-through for reflector routing' },
+      reporter:        { description: 'Generates final summary report' },
+    },
+    edges: [
+      { from: '__start__',      to: 'router',          condition: null },
+      { from: 'router',         to: 'planner',         condition: 'plan',           description: 'New session or replan' },
+      { from: 'router',         to: 'step_selector',   condition: 'resume',         description: 'Resume existing plan' },
+      { from: 'planner',        to: 'planner_tools',   condition: 'has_tool_calls' },
+      { from: 'planner',        to: 'step_selector',   condition: 'no_tool_calls',  description: 'Plan complete' },
+      { from: 'planner_tools',  to: 'planner',         condition: null },
+      { from: 'step_selector',  to: 'executor',        condition: null },
+      { from: 'executor',       to: 'tools',           condition: 'has_tool_calls' },
+      { from: 'executor',       to: 'reflector',       condition: 'no_tool_calls',  description: 'Step done' },
+      { from: 'tools',          to: 'executor',         condition: null },
+      { from: 'reflector',      to: 'reflector_tools',  condition: 'has_tool_calls' },
+      { from: 'reflector',      to: 'reflector_route',  condition: 'no_tool_calls' },
+      { from: 'reflector_tools', to: 'reflector',       condition: null },
+      { from: 'reflector_route', to: 'step_selector',   condition: 'execute',       description: 'Continue/retry' },
+      { from: 'reflector_route', to: 'planner',         condition: 'replan' },
+      { from: 'reflector_route', to: 'reporter',        condition: 'done' },
+      { from: 'reporter',       to: '__end__',          condition: null },
+    ],
+  },
+};
+
+export const graphCardService = {
+  /**
+   * Fetch the agent graph card. Falls back to hardcoded sandbox-legion topology
+   * when the endpoint is unavailable.
+   */
+  async fetchGraphCard(
+    namespace: string,
+    agentName: string
+  ): Promise<AgentGraphCard> {
+    try {
+      return await apiFetch<AgentGraphCard>(
+        `/chat/${encodeURIComponent(namespace)}/${encodeURIComponent(agentName)}/graph-card`
+      );
+    } catch {
+      // Fallback: return hardcoded sandbox-legion topology
+      return SANDBOX_LEGION_GRAPH_CARD;
+    }
+  },
+};
+
+/**
  * Models service for fetching available LLM models from LiteLLM
  */
 export const modelsService = {
