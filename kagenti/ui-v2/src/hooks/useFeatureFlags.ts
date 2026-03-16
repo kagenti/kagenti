@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0
 
 import { useState, useEffect } from 'react';
-import { API_CONFIG } from '@/services/api';
 
 export interface FeatureFlags {
   sandbox: boolean;
@@ -23,13 +22,20 @@ export function useFeatureFlags(): FeatureFlags {
 
   useEffect(() => {
     if (cachedFlags) return;
-    fetch(`${API_CONFIG.baseUrl}/config/features`)
-      .then(res => res.json())
-      .then((data: FeatureFlags) => {
-        cachedFlags = data;
-        setFlags(data);
+    const controller = new AbortController();
+    fetch('/api/v1/config/features', { signal: controller.signal })
+      .then(res => res.ok ? res.json() : DEFAULT_FLAGS)
+      .then((data) => {
+        const validated: FeatureFlags = {
+          sandbox: data.sandbox === true,
+          integrations: data.integrations === true,
+          triggers: data.triggers === true,
+        };
+        cachedFlags = validated;
+        setFlags(validated);
       })
-      .catch(() => setFlags(DEFAULT_FLAGS));
+      .catch(() => {});
+    return () => controller.abort();
   }, []);
 
   return flags;

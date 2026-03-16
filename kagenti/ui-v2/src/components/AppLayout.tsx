@@ -47,12 +47,7 @@ import {
 
 import { useAuth, useTheme } from '@/contexts';
 import type { ThemeMode } from '@/contexts';
-
-interface FeatureFlags {
-  sandbox: boolean;
-  integrations: boolean;
-  triggers: boolean;
-}
+import type { FeatureFlags } from '@/hooks/useFeatureFlags';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -374,26 +369,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
                 </NavList>
               )}
 
-              {(features?.sandbox || features?.triggers) && (
+              {features?.triggers && (
                 <NavList>
-                  {features?.sandbox && (
-                    <NavItem
-                      itemId="sessions"
-                      isActive={isNavItemActive('/sessions')}
-                      onClick={() => handleNavSelect('/sessions')}
-                    >
-                      Sessions
-                    </NavItem>
-                  )}
-                  {features?.triggers && (
-                    <NavItem
-                      itemId="triggers"
-                      isActive={isNavItemActive('/triggers')}
-                      onClick={() => handleNavSelect('/triggers')}
-                    >
-                      Triggers
-                    </NavItem>
-                  )}
+                  <NavItem
+                    itemId="triggers"
+                    isActive={isNavItemActive('/triggers')}
+                    onClick={() => handleNavSelect('/triggers')}
+                  >
+                    Triggers
+                  </NavItem>
                 </NavList>
               )}
 
@@ -425,13 +409,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
 
               <NavGroup title="Operations">
                 <NavList>
-                  <NavItem
-                    itemId="session-graph"
-                    isActive={isNavItemActive('/sandbox/graph')}
-                    onClick={() => handleNavSelect('/sandbox/graph')}
-                  >
-                    Session Graph
-                  </NavItem>
+                  {features?.sandbox && (
+                    <NavItem
+                      itemId="session-graph"
+                      isActive={isNavItemActive('/sandbox/graph')}
+                      onClick={() => handleNavSelect('/sandbox/graph')}
+                    >
+                      Session Graph
+                    </NavItem>
+                  )}
                   <NavItem
                     itemId="observability"
                     isActive={isNavItemActive('/observability')}
