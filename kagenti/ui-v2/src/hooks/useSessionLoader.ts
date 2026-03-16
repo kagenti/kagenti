@@ -433,6 +433,8 @@ export function useSessionLoader(
   const { getToken } = useAuth();
   const subscribeAbortRef = useRef<AbortController | null>(null);
   const pendingReloadSignal = useRef(false);
+  /** Ref mirrors state.phase for use in Effect 1 where closure state may be stale. */
+  const phaseRef = useRef<Phase>('IDLE');
 
   const [state, dispatch] = useReducer(sessionReducer, {
     phase: 'IDLE',
@@ -444,11 +446,14 @@ export function useSessionLoader(
     recoveryAttempts: 0,
   });
 
+  // Keep phaseRef in sync with state.phase (always current, no stale closures)
+  phaseRef.current = state.phase;
+
   // ----- Effect 1: contextId changes → fetch session + history -----
   useEffect(() => {
     if (!contextId || !namespace) {
       // contextId cleared → reset to IDLE
-      if (state.phase !== 'IDLE') {
+      if (phaseRef.current !== 'IDLE') {
         dispatch({ type: 'SESSION_CLEARED' });
       }
       return;
@@ -456,7 +461,8 @@ export function useSessionLoader(
 
     // Skip history fetch if we're actively streaming — contextId was just set
     // by sendStreaming from the SSE response. The streaming data is authoritative.
-    if (state.phase === 'SUBSCRIBING') {
+    // Use phaseRef (not state.phase) to avoid stale closure from useEffect deps.
+    if (phaseRef.current === 'SUBSCRIBING') {
       return;
     }
 
