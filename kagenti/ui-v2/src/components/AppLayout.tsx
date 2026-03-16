@@ -48,11 +48,18 @@ import {
 import { useAuth, useTheme } from '@/contexts';
 import type { ThemeMode } from '@/contexts';
 
-interface AppLayoutProps {
-  children: React.ReactNode;
+interface FeatureFlags {
+  sandbox: boolean;
+  integrations: boolean;
+  triggers: boolean;
 }
 
-export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
+interface AppLayoutProps {
+  children: React.ReactNode;
+  features?: FeatureFlags;
+}
+
+export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, isEnabled, user, error, login, logout } = useAuth();
@@ -263,21 +270,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                       onClick={() => handleThemeChange('auto')}
                       description="Follow system preference"
                     >
-                      System default {mode === 'auto' && '✓'}
+                      System default {mode === 'auto' && '*'}
                     </DropdownItem>
                     <DropdownItem
                       key="light"
                       icon={<SunIcon />}
                       onClick={() => handleThemeChange('light')}
                     >
-                      Light {mode === 'light' && '✓'}
+                      Light {mode === 'light' && '*'}
                     </DropdownItem>
                     <DropdownItem
                       key="dark"
                       icon={<MoonIcon />}
                       onClick={() => handleThemeChange('dark')}
                     >
-                      Dark {mode === 'dark' && '✓'}
+                      Dark {mode === 'dark' && '*'}
                     </DropdownItem>
                   </DropdownList>
                 </Dropdown>
@@ -334,8 +341,61 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   >
                     Tools
                   </NavItem>
+                  {features?.sandbox && (
+                    <>
+                      <NavItem
+                        itemId="sandbox"
+                        isActive={isNavItemActive('/sandbox')}
+                        onClick={() => handleNavSelect('/sandbox')}
+                      >
+                        Sessions
+                      </NavItem>
+                      <NavItem
+                        itemId="sandboxes"
+                        isActive={isNavItemActive('/sandboxes')}
+                        onClick={() => handleNavSelect('/sandboxes')}
+                      >
+                        Sandboxes
+                      </NavItem>
+                    </>
+                  )}
                 </NavList>
               </NavGroup>
+
+              {features?.integrations && (
+                <NavList>
+                  <NavItem
+                    itemId="integrations"
+                    isActive={isNavItemActive('/integrations')}
+                    onClick={() => handleNavSelect('/integrations')}
+                  >
+                    Integrations
+                  </NavItem>
+                </NavList>
+              )}
+
+              {(features?.sandbox || features?.triggers) && (
+                <NavList>
+                  {features?.sandbox && (
+                    <NavItem
+                      itemId="sessions"
+                      isActive={isNavItemActive('/sessions')}
+                      onClick={() => handleNavSelect('/sessions')}
+                    >
+                      Sessions
+                    </NavItem>
+                  )}
+                  {features?.triggers && (
+                    <NavItem
+                      itemId="triggers"
+                      isActive={isNavItemActive('/triggers')}
+                      onClick={() => handleNavSelect('/triggers')}
+                    >
+                      Triggers
+                    </NavItem>
+                  )}
+                </NavList>
+              )}
 
               <NavGroup title="Gateway & Routing">
                 <NavList>
@@ -365,6 +425,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
               <NavGroup title="Operations">
                 <NavList>
+                  <NavItem
+                    itemId="session-graph"
+                    isActive={isNavItemActive('/sandbox/graph')}
+                    onClick={() => handleNavSelect('/sandbox/graph')}
+                  >
+                    Session Graph
+                  </NavItem>
                   <NavItem
                     itemId="observability"
                     isActive={isNavItemActive('/observability')}
