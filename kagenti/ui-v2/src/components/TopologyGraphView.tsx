@@ -611,6 +611,84 @@ interface MessageEntry {
   isActive: boolean;
 }
 
+/**
+ * Build event flow graph: event types as NODES, sequential transitions as EDGES.
+ * This is the "Topology + Events" view — shows the actual event type flow
+ * observed in the session data, not the LangGraph node topology.
+ */
+function buildEventFlowGraph(
+  loops: AgentLoop[],
+  eventCatalog: Record<string, { category: string; description: string }>,
+): { nodes: Node[]; edges: Edge[] } {
+  // Count event types and transitions
+  const eventTypeCounts = new Map<string, number>();
+  const transitions = new Map<string, number>(); // "from->to" => count
+  let lastEventType: string | null = null;
+
+  for (const loop of loops) {
+    for (const step of loop.steps) {
+      const et = step.eventType || step.nodeType || 'unknown';
+      eventTypeCounts.set(et, (eventTypeCounts.get(et) || 0) + 1);
+      if (lastEventType && lastEventType !== et) {
+        const key = `${lastEventType}->${et}`;
+        transitions.set(key, (transitions.get(key) || 0) + 1);
+      }
+      lastEventType = et;
+    }
+  }
+
+  // Build nodes for each observed event type
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+
+  for (const [et, count] of eventTypeCounts) {
+    const def = eventCatalog[et];
+    const cat = def?.category || 'meta';
+    const color = CATEGORY_BADGE_COLORS[cat] || '#555';
+
+    nodes.push({
+      id: et,
+      data: {
+        label: (
+          <div style={{ textAlign: 'center', fontSize: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>{et}</div>
+            <div style={{ fontSize: 10, opacity: 0.8 }}>{count}x</div>
+            {def && <div style={{ fontSize: 9, opacity: 0.6 }}>{def.description}</div>}
+          </div>
+        ),
+      },
+      position: { x: 0, y: 0 },
+      style: {
+        background: '#161b22',
+        border: `2px solid ${color}`,
+        color: '#e6edf3',
+        borderRadius: 8,
+        padding: '8px 12px',
+        minWidth: 140,
+      },
+    });
+  }
+
+  // Build edges from observed transitions
+  for (const [key, count] of transitions) {
+    const [from, to] = key.split('->');
+    if (!eventTypeCounts.has(from) || !eventTypeCounts.has(to)) continue;
+    const thickness = Math.min(1 + count * 0.3, 4);
+    edges.push({
+      id: `evt-${from}-${to}`,
+      source: from,
+      target: to,
+      label: count > 1 ? `${count}x` : undefined,
+      labelStyle: { fill: '#8b949e', fontSize: 10 },
+      labelBgStyle: { fill: '#0d1117', fillOpacity: 0.8 },
+      style: { stroke: '#58a6ff', strokeWidth: thickness },
+      animated: count > 5,
+    });
+  }
+
+  return { nodes, edges };
+}
+
 function buildMessageEntries(loops: AgentLoop[], selectedLoopId: string | null): MessageEntry[] {
   return loops.map((loop) => {
     const stepStr = loop.status === 'done' || loop.status === 'failed'
@@ -900,11 +978,20 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
     return buildDefaultEventNodeMap();
   }, [graphCard]);
 
-  // Build the topology graph (dagre layout is the expensive part)
+  // Build event flow graph: event types as nodes, sequential transitions as edges
+  const eventFlowData = useMemo(() => {
+    if (eventDetail !== 'events') return null;
+    return buildEventFlowGraph(activeLoops, eventCatalogMemo);
+  }, [eventDetail, activeLoops, eventCatalogMemo]);
+
+  // Build the graph (dagre layout is the expensive part)
   const { nodes, edges } = useMemo(() => {
+    if (eventDetail === 'events' && eventFlowData) {
+      return applyDagreLayout(eventFlowData.nodes, eventFlowData.edges);
+    }
     const raw = buildTopologyGraph(topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap);
     return applyDagreLayout(raw.nodes, raw.edges);
-  }, [topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap]);
+  }, [topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap, eventFlowData]);
 
   // Message sidebar entries
   const messageEntries = useMemo(
