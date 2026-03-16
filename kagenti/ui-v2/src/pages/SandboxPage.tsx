@@ -1738,7 +1738,22 @@ export const SandboxPage: React.FC = () => {
           {activeTab === 'chat' && (
           <>
           {/* View mode toggle */}
-          <FloatingViewBar viewMode={viewMode} onChange={handleViewModeChange} />
+          <FloatingViewBar
+            viewMode={viewMode}
+            onChange={handleViewModeChange}
+            budget={(() => {
+              // Extract budget from the latest loop's budget data
+              const loopArr = Array.from(agentLoops.values());
+              const latest = loopArr[loopArr.length - 1];
+              if (!latest?.budget) return null;
+              return {
+                tokensUsed: latest.budget.tokensUsed || 0,
+                tokensBudget: latest.budget.tokensBudget || 0,
+                wallClockS: latest.budget.wallClockS || 0,
+                maxWallClockS: latest.budget.maxWallClockS || 0,
+              };
+            })()}
+          />
           {/* Chat messages */}
           <Card style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <CardBody
