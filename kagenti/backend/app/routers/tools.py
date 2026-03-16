@@ -924,6 +924,7 @@ def _build_tool_deployment_manifest(
                     "labels": pod_labels,
                 },
                 "spec": {
+                    "serviceAccountName": name,
                     "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},
@@ -1073,6 +1074,7 @@ def _build_tool_statefulset_manifest(
                     "labels": pod_labels,
                 },
                 "spec": {
+                    "serviceAccountName": name,
                     "securityContext": {
                         "runAsNonRoot": True,
                         "seccompProfile": {"type": "RuntimeDefault"},
@@ -1300,6 +1302,10 @@ async def create_tool(
                 description = (
                     f"Tool '{request.name}' deployed from existing image '{request.containerImage}'"
                 )
+
+            # Ensure a dedicated ServiceAccount exists so the webhook's
+            # SPIFFE identity uses the workload name, not the ReplicaSet hash.
+            kube.ensure_service_account(namespace=request.namespace, name=request.name)
 
             # Create workload (Deployment or StatefulSet)
             if request.workloadType == WORKLOAD_TYPE_STATEFULSET:
@@ -1685,6 +1691,10 @@ async def finalize_tool_shipwright_build(
 
         # Propagate SPIRE identity setting from stored config
         spire_enabled = tool_config_dict.get("spireEnabled", False)
+
+        # Ensure a dedicated ServiceAccount exists so the webhook's
+        # SPIFFE identity uses the workload name, not the ReplicaSet hash.
+        kube.ensure_service_account(namespace=namespace, name=name)
 
         # Create workload (Deployment or StatefulSet)
         if workload_type == WORKLOAD_TYPE_STATEFULSET:

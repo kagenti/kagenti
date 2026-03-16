@@ -1083,6 +1083,7 @@ async def migrate_agent(
     else:
         # Create new Deployment from Agent CRD spec
         deployment_manifest = _build_deployment_from_agent_crd(agent)
+        kube.ensure_service_account(namespace=namespace, name=name)
         try:
             kube.create_deployment(namespace=namespace, body=deployment_manifest)
             deployment_created = True
@@ -1288,6 +1289,7 @@ def _build_deployment_from_agent_crd(agent: dict) -> dict:
             )
 
         pod_spec = {
+            "serviceAccountName": name,
             "containers": [
                 {
                     "name": "agent",
@@ -1315,6 +1317,10 @@ def _build_deployment_from_agent_crd(agent: dict) -> dict:
                 {"name": "shared-data", "emptyDir": {}},
             ],
         }
+
+    # Ensure serviceAccountName is set so the webhook's SPIFFE identity
+    # derivation uses the workload name rather than the ReplicaSet hash.
+    pod_spec.setdefault("serviceAccountName", name)
 
     # Build selector labels
     selector_labels = {
@@ -1987,6 +1993,7 @@ def _build_deployment_manifest(
                     },
                 },
                 "spec": {
+                    "serviceAccountName": request.name,
                     "containers": [
                         {
                             "name": "agent",
@@ -2140,6 +2147,7 @@ def _build_statefulset_manifest(
                     },
                 },
                 "spec": {
+                    "serviceAccountName": request.name,
                     "containers": [
                         {
                             "name": "agent",
@@ -2237,6 +2245,7 @@ def _build_job_manifest(
                     },
                 },
                 "spec": {
+                    "serviceAccountName": request.name,
                     "restartPolicy": "OnFailure",
                     "containers": [
                         {
@@ -2313,6 +2322,10 @@ async def create_agent(
                     status_code=400,
                     detail="containerImage is required for image deployment",
                 )
+
+            # Ensure a dedicated ServiceAccount exists so the webhook's
+            # SPIFFE identity uses the workload name, not the ReplicaSet hash.
+            kube.ensure_service_account(namespace=request.namespace, name=request.name)
 
             # Create workload based on workloadType
             if request.workloadType == WORKLOAD_TYPE_DEPLOYMENT:
@@ -2697,6 +2710,10 @@ async def finalize_shipwright_build(
             authBridgeEnabled=final_auth_bridge,
             spireEnabled=final_spire_enabled,
         )
+
+        # Ensure a dedicated ServiceAccount exists so the webhook's
+        # SPIFFE identity uses the workload name, not the ReplicaSet hash.
+        kube.ensure_service_account(namespace=namespace, name=name)
 
         # Create workload based on workloadType
         if final_workload_type == WORKLOAD_TYPE_DEPLOYMENT:

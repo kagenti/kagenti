@@ -1,4 +1,4 @@
-{{- if .Values.components.otel.enabled }}
+{{- if and .Values.components.otel.enabled (ne ((.Values.phoenix).database).type "sqlite") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

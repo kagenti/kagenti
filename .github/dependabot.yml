@@ -44,6 +44,14 @@ updates:
       minor-and-patch:
         update-types: [minor, patch]
     ignore:
+      # keycloak-js 26.x requires Web Crypto API (crypto.randomUUID, crypto.subtle)
+      # which is unavailable over plain HTTP. Block until all environments use HTTPS.
+      - dependency-name: "keycloak-js"
+        update-types: [version-update:semver-major]
+      # keycloak-js 26.x requires Web Crypto API (crypto.randomUUID, crypto.subtle)
+      # which is unavailable over plain HTTP. Block until all environments use HTTPS.
+      - dependency-name: "keycloak-js"
+        update-types: [version-update:semver-major]
       # PatternFly packages must be upgraded together (PF5→PF6).
       # Block major version bumps to prevent partial upgrades.
       - dependency-name: "@patternfly/*"

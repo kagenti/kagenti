@@ -188,6 +188,7 @@ export interface ToolDetail {
   };
   // Deployment/StatefulSet spec
   spec: {
+    description?: string;
     replicas?: number;
     selector?: {
       matchLabels?: Record<string, string>;

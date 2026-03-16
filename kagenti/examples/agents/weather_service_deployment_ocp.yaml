@@ -67,6 +67,12 @@ spec:
         - containerPort: 8000
           name: http
           protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 12
         resources:
           requests:
             cpu: 100m

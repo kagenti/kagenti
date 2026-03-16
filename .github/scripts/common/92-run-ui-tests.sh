@@ -54,6 +54,9 @@ fi
 #   PLAYWRIGHT_GREP       — only run tests matching this tag (e.g. "@extended")
 #   PLAYWRIGHT_GREP_INVERT — exclude tests matching this tag (e.g. "@extended")
 # Set these in the workflow env to control which tests run per environment.
+# Default: exclude @extended tests (they require specific mock/state setup
+# that doesn't work reliably against a live cluster).
+PLAYWRIGHT_GREP_INVERT="${PLAYWRIGHT_GREP_INVERT:-@extended}"
 GREP_ARGS=()
 if [ -n "${PLAYWRIGHT_GREP:-}" ]; then
     GREP_ARGS+=(--grep "$PLAYWRIGHT_GREP")

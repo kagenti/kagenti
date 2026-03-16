@@ -68,6 +68,61 @@ It will be enabled if:
   - The main 'istio' component is enabled AND
   - The 'openshift' flag is NOT true.
 */}}
+{{/*
+Build the final OTEL collector config by merging the base config with
+component-specific presets when those components are enabled.
+Uses mustMergeOverwrite for recursive map merge. Arrays are replaced,
+not concatenated (e.g. service.extensions).
+*/}}
+{{- define "kagenti.otel.collectorConfig" -}}
+{{- $config := deepCopy .Values.otel.collector.config -}}
+{{- $hasComponentPipeline := false -}}
+{{- if and $.Values.components.phoenix.enabled $.Values.otel.collector.phoenixConfig -}}
+{{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.phoenixConfig) -}}
+{{- $hasComponentPipeline = true -}}
+{{- end -}}
+{{- if and $.Values.components.mlflow.enabled $.Values.otel.collector.mlflowConfig -}}
+{{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.mlflowConfig) -}}
+{{- $hasComponentPipeline = true -}}
+{{- end -}}
+{{- if and (not $hasComponentPipeline) $.Values.otel.collector.defaultConfig -}}
+{{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.defaultConfig) -}}
+{{- end -}}
+{{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled $.Values.otel.collector.mlflowAuthConfig -}}
+{{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.mlflowAuthConfig) -}}
+{{- end -}}
+{{- if and $.Values.openshift (get (get ($config) "extensions" | default dict) "oauth2client/mlflow") -}}
+{{- $_ := set (index $config "extensions" "oauth2client/mlflow") "tls" (dict "ca_file" "/etc/pki/ingress-ca/ingress-ca.pem") -}}
+{{- end -}}
+{{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled -}}
+{{- $mlflowExporter := index $config "exporters" "otlphttp/mlflow" | default dict -}}
+{{- $_ := set $mlflowExporter "auth" (dict "authenticator" "oauth2client/mlflow") -}}
+{{- end -}}
+{{- toYaml $config -}}
+{{- end -}}
+
+{{/*
+Merge two env var lists: defaults and overrides.
+Entries in overrides with the same `name` replace the default; new names are appended.
+Usage: include "kagenti.mergeEnvVars" (dict "defaults" $defaults "overrides" $overrides)
+*/}}
+{{- define "kagenti.mergeEnvVars" -}}
+{{- $overrideNames := dict -}}
+{{- range (.overrides | default list) -}}
+{{- $_ := set $overrideNames .name true -}}
+{{- end -}}
+{{- $merged := list -}}
+{{- range .defaults -}}
+{{- if not (hasKey $overrideNames .name) -}}
+{{- $merged = append $merged . -}}
+{{- end -}}
+{{- end -}}
+{{- range (.overrides | default list) -}}
+{{- $merged = append $merged . -}}
+{{- end -}}
+{{- toYaml $merged -}}
+{{- end -}}
+
 {{- define "kagenti.istio.communityCharts.enabled" -}}
 {{- tpl "{{ and .Values.components.istio.enabled (not .Values.openshift) }}" . | toString -}}
 {{- end -}}

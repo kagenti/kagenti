@@ -200,6 +200,35 @@ class KubernetesService:
             raise
 
     # -------------------------------------------------------------------------
+    # ServiceAccount Operations
+    # -------------------------------------------------------------------------
+
+    def ensure_service_account(self, namespace: str, name: str) -> None:
+        """Create a ServiceAccount if it does not already exist.
+
+        This is needed so that the webhook's SPIFFE identity derivation uses
+        the workload name (e.g. ``git-issue-agent``) rather than falling back
+        to the ReplicaSet hash.
+        """
+        try:
+            self.core_api.read_namespaced_service_account(name=name, namespace=namespace)
+            logger.debug(f"ServiceAccount '{name}' already exists in {namespace}")
+        except ApiException as e:
+            if e.status == 404:
+                sa = kubernetes.client.V1ServiceAccount(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=name,
+                        namespace=namespace,
+                        labels={"kagenti.io/managed-by": "kagenti-ui"},
+                    ),
+                )
+                self.core_api.create_namespaced_service_account(namespace=namespace, body=sa)
+                logger.info(f"Created ServiceAccount '{name}' in {namespace}")
+            else:
+                logger.error(f"Error checking ServiceAccount '{name}' in {namespace}: {e}")
+                raise
+
+    # -------------------------------------------------------------------------
     # Deployment Operations
     # -------------------------------------------------------------------------
 

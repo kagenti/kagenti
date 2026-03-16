@@ -198,8 +198,6 @@ data:
       }
     ]
   SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
-  KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-  KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
 ---
 {{- if not $root.Values.keycloak.adminExistingSecret }}
 # ——————————————————————————————————————————————————————————————————————————————
@@ -222,6 +220,10 @@ stringData:
 
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
+#  Unified config for both client-registration and envoy-proxy (go-processor).
+#  client-registration reads: KEYCLOAK_URL, KEYCLOAK_REALM, PLATFORM_CLIENT_IDS
+#  go-processor reads: KEYCLOAK_URL, KEYCLOAK_REALM (to derive TOKEN_URL/ISSUER),
+#                      ISSUER (explicit override for split-horizon DNS)
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -229,10 +231,12 @@ metadata:
   name: authbridge-config
   namespace: {{ . }}
 data:
-  TOKEN_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/token"
+  KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
+  KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
+  # ISSUER: Optional. Auto-derived from KEYCLOAK_URL + KEYCLOAK_REALM if not set.
+  # Set explicitly when the internal KEYCLOAK_URL differs from the frontend URL
+  # that appears in token "iss" claims (split-horizon DNS).
   ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-  TARGET_AUDIENCE: "auth-target"
-  TARGET_SCOPES: "openid auth-target-aud"
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
@@ -415,26 +419,34 @@ subjects:
     namespace: {{ . }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
-#  SCC RoleBinding for Default SA in Namespace: {{ . }}
-#  Grants privileged SCC to the default service account to allow Istio
-#  proxy-init containers that require runAsUser:0 and privileged:true
-#  for iptables setup.
+#  SCC RoleBinding for AuthBridge in Namespace: {{ . }}
+#  Grants the kagenti-authbridge custom SCC to all service accounts so that
+#  the webhook-injected AuthBridge stack can run:
+#    - proxy-init init container (NET_ADMIN/NET_RAW, root) for iptables
+#    - envoy-proxy sidecar (UID 1337)
+#    - spiffe-helper / client-registration sidecars (UID 1000)
+#  Agent SAs are created dynamically by the operator (name = agent name),
+#  so we use the namespace service accounts group.
+#
+#  Requires kagenti-extensions#234 (webhook uses capabilities instead of
+#  privileged mode). Use --extensions-ref to test:
+#    /run-e2e --extensions-ref fix/proxy-init-drop-privileged
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: default-privileged-scc
+  name: agent-authbridge-scc
   namespace: {{ . }}
   labels:
     {{- include "kagenti.labels" $root | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:openshift:scc:privileged
+  name: system:openshift:scc:kagenti-authbridge
 subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: {{ . }}
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: system:serviceaccounts:{{ . }}
 {{- end }}
 {{- end }}
 {{- end }}

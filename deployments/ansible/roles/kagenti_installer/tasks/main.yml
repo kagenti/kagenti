@@ -77,8 +77,8 @@
         wait: true
         timeout: "{{ helm_wait_timeout }}s"
       register: istio_base_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: istio_base_result is not failed
 
     - name: Install istiod
@@ -101,8 +101,8 @@
                 service: "{{ charts['kagenti-deps']['values']['otel']['collector']['service'] }}"
                 port: "{{ charts['kagenti-deps']['values']['otel']['collector']['port'] }}"
       register: istiod_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: istiod_result is not failed
 
     - name: Install istio-cni
@@ -119,8 +119,8 @@
         values:
           profile: ambient
       register: istio_cni_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: istio_cni_result is not failed
 
     - name: Install ztunnel
@@ -135,8 +135,8 @@
         wait: true
         timeout: "{{ helm_wait_timeout }}s"
       register: ztunnel_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: ztunnel_result is not failed
 
     - name: Label istio namespace to allow shared gateway access
@@ -180,8 +180,8 @@
         state: present
         src: "https://raw.githubusercontent.com/istio/istio/{{kiali.version}}/samples/addons/prometheus.yaml"
       register: prometheus_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: prometheus_result is not failed
 
     - name: Apply kiali manifest
@@ -189,8 +189,8 @@
         state: present
         src: "https://raw.githubusercontent.com/istio/istio/{{kiali.version}}/samples/addons/kiali.yaml"
       register: kiali_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: kiali_result is not failed
   when: (kiali.enabled | default(false)) and not (enable_openshift | default(false))
 
@@ -257,8 +257,8 @@
         wait: true
         timeout: "{{ helm_wait_timeout }}s"
       register: spire_crds_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: spire_crds_result is not failed
 
     - name: Install spire
@@ -274,8 +274,8 @@
         timeout: "{{ helm_wait_timeout }}s"
         values: "{{ (charts['spire'] | default({}))['values'] | default({}) }}"
       register: spire_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: spire_result is not failed
   when: >
     (charts.spire.enabled | default(false)) and
@@ -297,8 +297,8 @@
         state: present
         src: "https://github.com/kubernetes-sigs/gateway-api/releases/download/{{gatewayApi.version}}/standard-install.yaml"
       register: gateway_api_result
-      retries: 3
-      delay: 15
+      retries: 5
+      delay: 30
       until: gateway_api_result is not failed
       when: gateway_crd_check.rc != 0
   when: gatewayApi.enabled | default(false)
@@ -1656,67 +1656,3 @@
   when:
   - (charts['kagenti'] | default({})).get('enabled', false) | bool
   - (charts['kagenti'] | default({})).get('chart') is defined
-
-
-# TODO: Move OAuth secret job ordering to kagenti helm chart.
-# The kagenti-ui-oauth-secret-job needs the OpenShift Route to exist before it runs,
-# because it reads the Route host to construct the OAuth callback URL. Currently,
-# the Job and Route are created in parallel, causing a race condition where the Job
-# may fail with "route not found" error. The Job eventually succeeds on retry, but
-# the UI deployment may have already started with missing/stale OAuth credentials.
-#
-# Proper fix in charts/kagenti/templates/:
-# 1. Add helm hook annotation to oauth-secret-job.yaml:
-#    "helm.sh/hook": post-install,post-upgrade
-#    "helm.sh/hook-weight": "10"  # Higher than Route weight
-# 2. Ensure Route has lower hook-weight or is a regular resource (not a hook)
-# 3. This guarantees Route exists before Job runs
-#
-# For now, we restart the UI deployment after the chart installs to pick up the
-# OAuth secret that was created by the (eventually successful) Job.
-- name: Restart kagenti-ui to pick up OAuth secret on OpenShift
-  block:
-    - name: Wait for OAuth secret job to complete
-      command: >-
-        kubectl wait --for=condition=complete job
-        -l app.kubernetes.io/component=oauth-secret
-        -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
-        --timeout=120s
-      register: oauth_job_wait
-      failed_when: false
-      changed_when: false
-
-    - name: Restart kagenti-ui deployment
-      command: >-
-        kubectl rollout restart deployment/kagenti-ui
-        -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
-
-    - name: Wait for kagenti-ui rollout to complete
-      command: >-
-        kubectl rollout status deployment/kagenti-ui
-        -n {{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
-        --timeout=120s
-  when:
-    - enable_openshift | default(false)
-    - (charts['kagenti'] | default({})).get('enabled', false) | bool
-
-- name: Verify Helm release status
-  shell: |
-    NS={{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}
-    FAILED=""
-    for RELEASE in kagenti-deps kagenti; do
-      STATUS=$(helm history "$RELEASE" -n "$NS" --max 1 -o json 2>/dev/null | {{ ansible_python_interpreter | default('python3', true) }} -c "import sys,json; h=json.load(sys.stdin); print(h[0]['status'])" 2>/dev/null || echo "not-found")
-      echo "$RELEASE: $STATUS"
-      if [ "$STATUS" != "deployed" ] && [ "$STATUS" != "not-found" ]; then
-        FAILED="$FAILED $RELEASE($STATUS)"
-      fi
-    done
-    if [ -n "$FAILED" ]; then
-      echo "ERROR: Helm releases not healthy:$FAILED"
-      helm list -n "$NS" -a
-      exit 1
-    fi
-    echo "All Helm releases healthy."
-  args:
-    executable: /bin/bash
-

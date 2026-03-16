@@ -1,0 +1,196 @@
+suite: keycloak-k8s
+templates:
+  - templates/keycloak-k8s.yaml
+set:
+  openshift: false
+  components.keycloak.enabled: true
+  components.spire.enabled: false
+# Document order (db enabled):  Service(0), Service(1), StatefulSet/keycloak(2), StatefulSet/postgres(3), Service/postgres(4), Secret(5), HTTPRoute(6)
+# Document order (db disabled): Service(0), Service(1), StatefulSet/keycloak(2), Secret(3), HTTPRoute(4)
+tests:
+  - it: renders keycloak StatefulSet with default env vars
+    asserts:
+      - isKind:
+          of: StatefulSet
+        documentIndex: 2
+      - equal:
+          path: metadata.name
+          value: keycloak
+        documentIndex: 2
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["start"]
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_BOOTSTRAP_ADMIN_USERNAME
+            value: admin
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_HOSTNAME
+            value: "http://keycloak.localtest.me:8080/"
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_CACHE
+            value: ispn
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_DB
+            value: postgres
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_DB_URL_HOST
+            value: postgres
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_DB_POOL_MAX_SIZE
+            value: "20"
+        documentIndex: 2
+
+  - it: uses start-dev and omits DB env vars when database is disabled
+    set:
+      keycloak.database.enabled: false
+    asserts:
+      - isKind:
+          of: StatefulSet
+        documentIndex: 2
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["start-dev"]
+        documentIndex: 2
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_DB
+            value: postgres
+        documentIndex: 2
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_DB_URL_HOST
+            value: postgres
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_BOOTSTRAP_ADMIN_USERNAME
+            value: admin
+        documentIndex: 2
+
+  - it: overrides default env var when extraEnvVars has same name
+    set:
+      keycloak.extraEnvVars:
+        - name: KC_HOSTNAME
+          value: "https://keycloak.example.com/"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_HOSTNAME
+            value: "https://keycloak.example.com/"
+        documentIndex: 2
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_HOSTNAME
+            value: "http://keycloak.localtest.me:8080/"
+        documentIndex: 2
+
+  - it: appends new env var from extraEnvVars
+    set:
+      keycloak.extraEnvVars:
+        - name: KC_LOG_LEVEL
+          value: DEBUG
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_LOG_LEVEL
+            value: DEBUG
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_BOOTSTRAP_ADMIN_USERNAME
+            value: admin
+        documentIndex: 2
+
+  - it: handles both override and append in extraEnvVars
+    set:
+      keycloak.extraEnvVars:
+        - name: KC_CACHE
+          value: local
+        - name: KC_LOG_LEVEL
+          value: INFO
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_CACHE
+            value: local
+        documentIndex: 2
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_CACHE
+            value: ispn
+        documentIndex: 2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KC_LOG_LEVEL
+            value: INFO
+        documentIndex: 2
+
+  - it: uses custom keycloak image
+    set:
+      keycloak.image.repository: my-registry/keycloak
+      keycloak.image.tag: "25.0.0"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "my-registry/keycloak:25.0.0"
+        documentIndex: 2
+
+  - it: renders postgres StatefulSet when database is enabled
+    asserts:
+      - isKind:
+          of: StatefulSet
+        documentIndex: 3
+      - equal:
+          path: metadata.name
+          value: postgres
+        documentIndex: 3
+
+  - it: does not render postgres when database is disabled
+    set:
+      keycloak.database.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 5
+
+  - it: does not render when openshift is true
+    set:
+      openshift: true
+    asserts:
+      - hasDocuments:
+          count: 0

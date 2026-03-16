@@ -48,9 +48,13 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
+  type: {{ .Values.containerRegistry.service.type | default "ClusterIP" }}
   ports:
   - port: {{ .Values.containerRegistry.service.port | default 5000 }}
-    targetPort: {{ .Values.containerRegistry.service.port | default 5000 }}
+    targetPort: {{ .Values.containerRegistry.service.targetPort | default .Values.containerRegistry.service.port | default 5000 }}
+    {{- if .Values.containerRegistry.service.nodePort }}
+    nodePort: {{ .Values.containerRegistry.service.nodePort }}
+    {{- end }}
   selector:
     app: {{ .Values.containerRegistry.name | default "registry" }}
 

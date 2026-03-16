@@ -240,7 +240,12 @@ To ensure Kagenti installs correctly, configure Rancher Desktop with the followi
 ---
 
 ### 3. Increase Resource Limits
-- Follow the guidance in [Kubestellar Known Issue Docs](https://docs.kubestellar.io/release-0.25.1/direct/knownissue-kind-config/) to adjust limits for Kind clusters.
+- Kind clusters on Rancher Desktop may fail if Linux inotify limits are too low. Inside the Rancher Desktop VM, ensure:
+  ```bash
+  sudo sysctl fs.inotify.max_user_watches=524288
+  sudo sysctl fs.inotify.max_user_instances=512
+  ```
+  To make these persistent, add them to `/etc/sysctl.conf` inside the VM.
 
 ---
 

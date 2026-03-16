@@ -57,7 +57,24 @@ common:
 #  Keycloak Configuration
 # ------------------------------------------------------------------
 keycloak:
+  image:
+    repository: quay.io/keycloak/keycloak
+    tag: "26.3.3"
   namespace: keycloak
+  # Set to false to disable the bundled PostgreSQL and run Keycloak in dev mode (H2 database)
+  database:
+    enabled: true
+    image:
+      repository: mirror.gcr.io/postgres
+      tag: "17"
+  # Extra environment variables to inject into the Keycloak container.
+  # Entries here override hardcoded defaults by name (see _helpers.tpl: kagenti.keycloak.env).
+  # Example: override KC_HOSTNAME, add KC_LOG_LEVEL
+  # extraEnvVars:
+  #   - name: KC_HOSTNAME
+  #     value: "https://keycloak.example.com/"
+  #   - name: KC_LOG_LEVEL
+  #     value: "DEBUG"
   auth:
     adminUser: keycloakadmin
     adminPassword: your-secret-password
@@ -107,10 +124,145 @@ istio:
 # ------------------------------------------------------------------
 #  OpenTelemetry Configuration
 # ------------------------------------------------------------------
+#
+# The collector config is assembled from:
+#   1. config           - base config (always included)
+#   2. defaultConfig    - auto-merged when no component pipelines are active
+#   3. phoenixConfig    - auto-merged when components.phoenix.enabled
+#   4. mlflowConfig     - auto-merged when components.mlflow.enabled
+#   5. mlflowAuthConfig - auto-merged when mlflow.auth.enabled
+#
+# Override any section via helm values merge, e.g.:
+#
+#   # Override phoenix filter rules (in phoenixConfig preset):
+#   otel.collector.phoenixConfig.processors.filter/phoenix:
+#     traces:
+#       span:
+#         - 'not(IsMatch(instrumentation_scope.name, "^openinference"))'
+#
+#   # Add a logs pipeline (in base config):
+#   otel.collector.config.service.pipelines.logs/app:
+#     receivers: [otlp]
+#     processors: [memory_limiter, batch]
+#     exporters: [debug]
+#
+#   # Disable a preset entirely:
+#   otel.collector.phoenixConfig: {}
+#
+# Note: helm deep-merges maps but REPLACES arrays. When overriding
+# a section that contains arrays (e.g. service.extensions, pipeline
+# receivers/processors/exporters), provide the full array.
+#
 otel:
   collector:
+    image:
+      repository: otel/opentelemetry-collector-contrib
+      tag: "0.122.1"
     service: otel-collector.kagenti-system.svc.cluster.local
     port: 4317
+    # Base collector configuration rendered as the ConfigMap base.yaml.
+    # Override any key via values files or --set flags.
+    config:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+      exporters:
+        debug:
+          verbosity: detailed
+      processors:
+        memory_limiter:
+          check_interval: 1s
+          limit_mib: 1000
+        batch: {}
+      extensions:
+        health_check: {}
+      service:
+        extensions: [health_check]
+        pipelines: {}
+    # Default pipeline preset - auto-merged when neither phoenix nor mlflow
+    # is enabled. Sends all traces to the debug exporter.
+    defaultConfig:
+      service:
+        pipelines:
+          traces/default:
+            receivers: [otlp]
+            processors: [memory_limiter, batch]
+            exporters: [debug]
+    # Component-specific config presets. Auto-merged into config when the
+    # corresponding component is enabled. Override to customize, or set
+    # to empty map {} to disable auto-merge for a specific component.
+    phoenixConfig:
+      exporters:
+        otlp/phoenix:
+          endpoint: phoenix:4317
+          tls:
+            insecure: true
+      processors:
+        filter/phoenix:
+          traces:
+            span:
+              - 'IsMatch(name, "^a2a\\..*")'
+        transform/genai_to_openinference:
+          trace_statements:
+            - context: span
+              statements:
+                - set(attributes["llm.model_name"], attributes["gen_ai.request.model"]) where attributes["gen_ai.request.model"] != nil
+                - set(attributes["llm.model_name"], attributes["gen_ai.response.model"]) where attributes["gen_ai.response.model"] != nil and attributes["llm.model_name"] == nil
+                - set(attributes["llm.token_count.prompt"], attributes["gen_ai.usage.input_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil
+                - set(attributes["llm.token_count.completion"], attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.output_tokens"] != nil
+                - set(attributes["llm.token_count.total"], attributes["gen_ai.usage.input_tokens"] + attributes["gen_ai.usage.output_tokens"]) where attributes["gen_ai.usage.input_tokens"] != nil and attributes["gen_ai.usage.output_tokens"] != nil
+                - set(attributes["llm.provider"], attributes["gen_ai.system"]) where attributes["gen_ai.system"] != nil
+                - set(attributes["llm.system"], attributes["gen_ai.system"]) where attributes["gen_ai.system"] != nil
+                - set(attributes["llm.invocation_parameters"], Concat(["{\"temperature\":", Concat([attributes["gen_ai.request.temperature"], "}"], "")], "")) where attributes["gen_ai.request.temperature"] != nil
+      service:
+        pipelines:
+          traces/phoenix:
+            receivers: [otlp]
+            processors: [memory_limiter, filter/phoenix, transform/genai_to_openinference, batch]
+            exporters: [otlp/phoenix]
+    mlflowConfig:
+      exporters:
+        otlphttp/mlflow:
+          traces_endpoint: http://mlflow:5000/v1/traces
+          tls:
+            insecure: true
+          headers:
+            x-mlflow-experiment-id: "0"
+          retry_on_failure:
+            enabled: true
+            initial_interval: 5s
+            max_interval: 30s
+            max_elapsed_time: 300s
+          sending_queue:
+            enabled: true
+            num_consumers: 2
+            queue_size: 1000
+      processors:
+        filter/mlflow:
+          traces:
+            span:
+              - 'IsMatch(name, "^a2a\\..*")'
+      service:
+        pipelines:
+          traces/mlflow:
+            receivers: [otlp]
+            processors: [memory_limiter, filter/mlflow, batch]
+            exporters: [debug, otlphttp/mlflow]
+    # MLflow OAuth extension config - auto-merged when mlflow.auth.enabled
+    mlflowAuthConfig:
+      extensions:
+        oauth2client/mlflow:
+          client_id: ${env:MLFLOW_CLIENT_ID}
+          client_secret: ${env:MLFLOW_CLIENT_SECRET}
+          token_url: ${env:KEYCLOAK_TOKEN_URL}
+          scopes: ["openid"]
+          timeout: 10s
+      service:
+        extensions: [health_check, oauth2client/mlflow]
 
 httpGateway:
   name: http
@@ -161,6 +313,7 @@ containerRegistry:
     type: ClusterIP
     port: 5000
     targetPort: 5000
+    # nodePort: 30500  # Set when type is NodePort
 
   env:
     otelTracesExporter: "none"
@@ -194,6 +347,19 @@ mcpInspector:
 #  Phoenix Configuration
 # ------------------------------------------------------------------
 phoenix:
+  image:
+    repository: arizephoenix/phoenix
+    tag: "version-8.32.1"
+  # Database backend: "postgres" (default) or "sqlite"
+  database:
+    type: postgres
+    # SQLite settings (used when type: sqlite)
+    # sqlite:
+    #   path: /mnt/data/phoenix.db
+  # Extra environment variables to inject into the Phoenix container
+  # extraEnvVars:
+  #   - name: PHOENIX_ENABLE_AUTH
+  #     value: "false"
   auth:
     # Enable Keycloak OAuth2 authentication for Phoenix dashboard
     # Set to true in ocp_values.yaml for production deployments

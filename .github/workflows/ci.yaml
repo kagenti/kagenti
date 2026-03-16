@@ -117,3 +117,41 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+  chart-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4
+        with:
+          version: v3.20.1
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git
+
+      - name: Build chart dependencies
+        run: helm dependency build charts/kagenti-deps
+
+      - name: Run chart unit tests
+        run: helm unittest charts/kagenti-deps
+
+      - name: Install kubeconform
+        run: |
+          ARCH=$(dpkg --print-architecture)
+          curl -sSL "https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-${ARCH}.tar.gz" \
+            | tar xz -C /usr/local/bin kubeconform
+
+      - name: Validate rendered templates with kubeconform
+        run: |
+          helm template test charts/kagenti-deps \
+            --set openshift=false \
+            --set components.spire.enabled=false \
+            | kubeconform -strict -summary \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              -ignore-missing-schemas

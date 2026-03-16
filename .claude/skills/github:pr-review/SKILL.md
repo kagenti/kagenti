@@ -85,6 +85,27 @@ If checks are failing, delegate to `ci:status` for detailed analysis.
 gh pr view <number> --json commits --jq '.commits[] | "\(.oid[:7]) \(.messageHeadline)"'
 ```
 
+### 1.5 Sync Local Repo (CRITICAL)
+
+**Before verifying ANY PR claims against local source files**, fetch the latest upstream:
+
+```bash
+# Determine the target repo and sync
+cd <local-clone-path>
+git fetch upstream main
+```
+
+> **Anti-pattern**: Reading local files without fetching first. The PR diff comes from
+> GitHub (up-to-date), but local files may be days behind. This mismatch causes
+> false negatives — flagging correct version claims as wrong.
+
+When verifying claims (versions, file existence, code patterns), always use:
+
+```bash
+# Verify against upstream/main, NOT local working tree
+git show upstream/main:<path-to-file>
+```
+
 ## Phase 2: Analyze Changes
 
 Use a subagent to categorize the diff by area and produce a summary.
@@ -103,6 +124,10 @@ The summary tells us which review criteria to apply in Phase 3 (only check areas
 ## Phase 3: Review Checklist
 
 Apply Kagenti-specific review criteria **only for areas the PR touches**.
+
+> **Reminder**: When verifying version numbers, file paths, or code claims in the PR,
+> use `git show upstream/main:<file>` — never trust the local working tree without
+> fetching first (see §1.5).
 
 ### 3.1 Commit Conventions
 
@@ -255,20 +280,20 @@ After user approves, post the review via GitHub API.
 ### 5.1 Post Review with Inline Comments
 
 ```bash
-# Build the review payload
-# For each inline comment: path, line (in the diff), body
+# Build the review payload as JSON (gh api does NOT support array params via -f)
+# For each inline comment: path, line (in the file on HEAD side), body
 # event: APPROVE, REQUEST_CHANGES, or COMMENT
 
-gh api repos/{owner}/{repo}/pulls/<number>/reviews \
-  --method POST \
-  -f body="Review summary text..." \
-  -f event="COMMENT" \
-  -f 'comments[0][path]=path/to/file.py' \
-  -f 'comments[0][line]=42' \
-  -f 'comments[0][body]=Comment text...' \
-  -f 'comments[1][path]=charts/values.yaml' \
-  -f 'comments[1][line]=15' \
-  -f 'comments[1][body]=Another comment...'
+cat <<'EOF' | gh api repos/{owner}/{repo}/pulls/<number>/reviews --method POST --input -
+{
+  "event": "COMMENT",
+  "body": "Review summary text...",
+  "comments": [
+    {"path": "path/to/file.py", "line": 42, "body": "Comment text..."},
+    {"path": "charts/values.yaml", "line": 15, "body": "Another comment..."}
+  ]
+}
+EOF
 ```
 
 > **Note**: `gh api` is NOT auto-approved. The user will be prompted to approve
@@ -308,6 +333,46 @@ For very large PRs, focus the review on:
 
 For PRs from forks, `gh pr diff` still works but branch checkout may not.
 Use the diff file for all analysis.
+
+### Cross-repo reviews
+
+When reviewing PRs on repos other than `kagenti/kagenti` (e.g. `kagenti-extensions`):
+
+1. Ensure the repo is cloned locally (check `~/.repos/` or sibling directories)
+2. `cd` into the local clone before verifying claims
+3. `git fetch upstream main` to sync with the remote
+4. Use `git show upstream/main:<path>` for all source verification
+
+The `--repo` flag works with `gh pr` commands, but local file verification
+requires being in the correct repo directory.
+
+### Stale local checkout (anti-pattern)
+
+**Symptom**: PR claims a version/fact. You check the local file and it disagrees.
+You flag it as wrong. The PR author says it's correct.
+
+**Cause**: Your local `main` is behind `upstream/main`. The PR was based on the
+latest upstream, which has newer dependency versions.
+
+**Fix**: Always run `git fetch upstream main` and use `git show upstream/main:<file>`
+before cross-referencing PR claims against source files. See §1.5.
+
+### gh api array parameters
+
+The `gh api` CLI does not support array parameters via `-f 'comments[0][path]=...'`.
+Use JSON input instead:
+
+```bash
+cat <<'EOF' | gh api repos/{owner}/{repo}/pulls/<number>/reviews --method POST --input -
+{
+  "event": "COMMENT",
+  "body": "Review summary...",
+  "comments": [
+    {"path": "file.py", "line": 42, "body": "Comment text..."}
+  ]
+}
+EOF
+```
 
 ## Related Skills
 

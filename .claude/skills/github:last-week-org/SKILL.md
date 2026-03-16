@@ -80,6 +80,10 @@ Agent(subagent_type='Explore'):
 
 No local checkout. Use gathered JSON data only.
 
+**IMPORTANT**: When rendering issue/PR numbers for non-kagenti repos, always use
+fully-qualified references: `kagenti/<repo>#N` (e.g., `kagenti/kagenti-extensions#42`).
+Bare `#N` references auto-link to kagenti/kagenti when the report is posted there.
+
 1. **Issue Triage**: Read `open-issues.json`. Group by labels. Flag stale issues (>30 days no update). Note issues linked to PRs.
 2. **PR Status**: Read `open-prs.json`. Check CI/review status from JSON. Flag PRs waiting >7 days for review.
 3. **CI Health**: Read `ci-runs.json`. Count pass/fail. Flag any failures on main.
@@ -92,15 +96,15 @@ Present each active repo as:
 
 ### Merged PRs (N)
 | # | Title | Author | Merged |
-...
+| kagenti/<repo>#N | ... | ... | ... |
 
 ### Open PRs (N)
 | # | Title | Author | CI | Review | Health |
-...
+| kagenti/<repo>#N | ... | ... | ... | ... | ... |
 
 ### Open Issues (N)
 | # | Title | Labels | Age | Status |
-...
+| kagenti/<repo>#N | ... | ... | ... | ... |
 
 ### CI Health
 - Main branch: X/Y passed (Z%)

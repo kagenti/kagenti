@@ -55,61 +55,10 @@ spec:
     spec:
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.3.3
-          args: ["start"]
+          image: {{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}
+          args: [{{ if .Values.keycloak.database.enabled }}"start"{{ else }}"start-dev"{{ end }}]
           env:
-            - name: KC_BOOTSTRAP_ADMIN_USERNAME
-              value: "admin"
-            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
-              value: "admin"
-            # In a production environment, add a TLS certificate to Keycloak to either end-to-end encrypt the traffic between
-            # the client or Keycloak, or to encrypt the traffic between your proxy and Keycloak.
-            # Respect the proxy headers forwarded by the reverse proxy
-            # In a production environment, verify which proxy type you are using, and restrict access to Keycloak
-            # from other sources than your proxy if you continue to use proxy headers.
-            # Envoy/Istio requires "forwarded"
-            - name: KC_PROXY_HEADERS
-              value: "forwarded"
-            - name: KC_HTTP_ENABLED
-              value: "true"
-            # In this explorative setup, no strict hostname is set.
-            # For production environments, set a hostname for a secure setup.
-            - name: KC_HOSTNAME_STRICT
-              value: "false"
-            - name: KC_HOSTNAME
-              value: "http://keycloak.{{ .Values.domain }}:8080/"
-            - name: KC_HEALTH_ENABLED
-              value: "true"
-            - name: "KC_CACHE"
-              value: "ispn"
-            # Passing the Pod's IP primary address to the JGroups clustering as this is required in IPv6 only setups
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-            # Instruct JGroups which DNS hostname to use to discover other Keycloak nodes
-            # Needs to be unique for each Keycloak cluster
-            - name: JAVA_OPTS_APPEND
-              value: "-Djgroups.bind.address=$(POD_IP)"
-            - name: "KC_DB_URL_DATABASE"
-              value: "keycloak"
-            - name: "KC_DB_URL_HOST"
-              value: "postgres"
-            - name: "KC_DB"
-              value: "postgres"
-            # In a production environment, use a secret to store username and password to the database
-            - name: "KC_DB_PASSWORD"
-              value: "keycloak"
-            - name: "KC_DB_USERNAME"
-              value: "keycloak"
-            - name: KC_DB_URL_PROPERTIES
-              value: "?sslmode=disable"
-            - name: KC_DB_POOL_INITIAL_SIZE
-              value: "5"
-            - name: KC_DB_POOL_MIN_SIZE
-              value: "5"
-            - name: KC_DB_POOL_MAX_SIZE
-              value: "20"
+            {{- include "kagenti.mergeEnvVars" (dict "defaults" (include "kagenti.keycloak.defaultEnv" . | fromYamlArray) "overrides" .Values.keycloak.extraEnvVars) | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
@@ -139,6 +88,7 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+{{- if .Values.keycloak.database.enabled }}
 ---
 # This is deployment of PostgreSQL with an ephemeral storage for testing: Once the Pod stops, the data is lost.
 # For a production setup, replace it with a database setup that persists your data.
@@ -162,7 +112,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: mirror.gcr.io/postgres:17
+          image: {{ .Values.keycloak.database.image.repository }}:{{ .Values.keycloak.database.image.tag }}
           env:
             - name: POSTGRES_USER
               value: "keycloak"
@@ -211,6 +161,7 @@ spec:
       port: 5432
       targetPort: 5432
   type: ClusterIP
+{{- end }}
 ---
 apiVersion: v1
 kind: Secret
@@ -220,7 +171,6 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: keycloak
-    app.kubernetes.io/instance: keycloak
 data:
   password: YWRtaW4=
   username: YWRtaW4=
@@ -262,3 +212,52 @@ spec:
             weight: 1
     {{- end }}
 {{- end}}
+
+{{/*
+Default env vars for the Keycloak container.
+extraEnvVars with the same name override these defaults.
+*/}}
+{{- define "kagenti.keycloak.defaultEnv" -}}
+- name: KC_BOOTSTRAP_ADMIN_USERNAME
+  value: "admin"
+- name: KC_BOOTSTRAP_ADMIN_PASSWORD
+  value: "admin"
+- name: KC_PROXY_HEADERS
+  value: "forwarded"
+- name: KC_HTTP_ENABLED
+  value: "true"
+- name: KC_HOSTNAME_STRICT
+  value: "false"
+- name: KC_HOSTNAME
+  value: {{ printf "http://keycloak.%s:8080/" .Values.domain | quote }}
+- name: KC_HEALTH_ENABLED
+  value: "true"
+- name: KC_CACHE
+  value: "ispn"
+- name: POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+- name: JAVA_OPTS_APPEND
+  value: "-Djgroups.bind.address=$(POD_IP)"
+{{- if .Values.keycloak.database.enabled }}
+- name: KC_DB_URL_DATABASE
+  value: "keycloak"
+- name: KC_DB_URL_HOST
+  value: "postgres"
+- name: KC_DB
+  value: "postgres"
+- name: KC_DB_PASSWORD
+  value: "keycloak"
+- name: KC_DB_USERNAME
+  value: "keycloak"
+- name: KC_DB_URL_PROPERTIES
+  value: "?sslmode=disable"
+- name: KC_DB_POOL_INITIAL_SIZE
+  value: "5"
+- name: KC_DB_POOL_MIN_SIZE
+  value: "5"
+- name: KC_DB_POOL_MAX_SIZE
+  value: "20"
+{{- end }}
+{{- end -}}

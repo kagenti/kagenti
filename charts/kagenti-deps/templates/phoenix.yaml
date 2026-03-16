@@ -32,6 +32,16 @@ spec:
         command:
         - python
         env:
+        {{- if eq ((.Values.phoenix).database).type "sqlite" }}
+        - name: PHOENIX_SQL_DATABASE_URL
+          value: "sqlite:///{{ (.Values.phoenix.database.sqlite).path | default "/mnt/data/phoenix.db" }}"
+        - name: PHOENIX_WORKING_DIR
+          value: /mnt/data
+        - name: PHOENIX_PORT
+          value: "6006"
+        - name: PHOENIX_GRPC_PORT
+          value: "4317"
+        {{- else }}
         - name: PHOENIX_POSTGRES_HOST
           value: postgres
         - name: PHOENIX_POSTGRES_PORT
@@ -60,7 +70,11 @@ spec:
           value: /mnt/data
         - name: PHOENIX_PORT
           value: "6006"
-        image: arizephoenix/phoenix:version-8.32.1
+        {{- end }}
+        {{- with .Values.phoenix.extraEnvVars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        image: {{ .Values.phoenix.image.repository }}:{{ .Values.phoenix.image.tag }}
         name: phoenix
         ports:
         - containerPort: 6006
