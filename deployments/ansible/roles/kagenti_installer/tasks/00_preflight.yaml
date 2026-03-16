@@ -3,42 +3,25 @@
 # before attempting to create a Kind cluster. Prevents hard-to-diagnose failures
 # like cert-manager crashes or Istio pods stuck pending due to insufficient resources.
 #
+# Uses JSON output (`--format '{{json .}}'`) instead of Go template field access
+# for portability across Docker, Podman, and Podman-as-Docker aliases.
+#
 # See: https://github.com/kagenti/kagenti/issues/724
+# Fix: https://github.com/kagenti/kagenti/issues/935
 
 - name: Preflight - Get container runtime info (Docker)
-  command: docker info --format "{{ '{{' }}.MemTotal{{ '}}' }},{{ '{{' }}.NCPU{{ '}}' }}"
-  register: docker_info
+  command: docker info --format '{{ "{{" }}json .{{ "}}" }}'
+  register: docker_info_json
   failed_when: false
   changed_when: false
   when:
     - create_kind_cluster | default(false)
     - not (enable_openshift | default(false))
     - container_engine | default('docker') == 'docker'
-
-- name: Preflight - Detect Podman masquerading as Docker
-  command: docker info --format "{{ '{{' }}.Host.MemTotal{{ '}}' }},{{ '{{' }}.Host.CPUs{{ '}}' }}"
-  register: docker_podman_compat_info
-  failed_when: false
-  changed_when: false
-  when:
-    - create_kind_cluster | default(false)
-    - not (enable_openshift | default(false))
-    - container_engine | default('docker') == 'docker'
-    - docker_info.rc | default(1) != 0
-
-- name: Preflight - Use Podman compat result when Docker format fails
-  set_fact:
-    docker_info: "{{ docker_podman_compat_info }}"
-  when:
-    - create_kind_cluster | default(false)
-    - not (enable_openshift | default(false))
-    - container_engine | default('docker') == 'docker'
-    - docker_info.rc | default(1) != 0
-    - docker_podman_compat_info.rc | default(1) == 0
 
 - name: Preflight - Get container runtime info (Podman)
-  command: podman info --format "{{ '{{' }}.Host.MemTotal{{ '}}' }},{{ '{{' }}.Host.CPUs{{ '}}' }}"
-  register: podman_info
+  command: podman info --format '{{ "{{" }}json .{{ "}}" }}'
+  register: podman_info_json
   failed_when: false
   changed_when: false
   when:
@@ -46,9 +29,9 @@
     - not (enable_openshift | default(false))
     - container_engine | default('docker') == 'podman'
 
-- name: Preflight - Set runtime info facts
+- name: Preflight - Set raw runtime result
   set_fact:
-    runtime_info: "{{ docker_info if (container_engine | default('docker')) == 'docker' else podman_info }}"
+    runtime_info_raw: "{{ docker_info_json if (container_engine | default('docker')) == 'docker' else podman_info_json }}"
   when:
     - create_kind_cluster | default(false)
     - not (enable_openshift | default(false))
@@ -58,20 +41,32 @@
     msg: >-
       Container runtime '{{ container_engine | default('docker') }}' is not available or not running.
       Please start {{ container_engine | default('docker') }} and try again.
-      Error: {{ runtime_info.stderr | default('unknown error') }}
+      Error: {{ runtime_info_raw.stderr | default('unknown error') }}
   when:
     - create_kind_cluster | default(false)
     - not (enable_openshift | default(false))
-    - runtime_info.rc | default(1) != 0
+    - runtime_info_raw.rc | default(1) != 0
 
-- name: Preflight - Parse container runtime resources
+- name: Preflight - Parse JSON output
   set_fact:
-    runtime_memory_bytes: "{{ (runtime_info.stdout | default('0,0')).split(',')[0] | int }}"
-    runtime_cpus: "{{ (runtime_info.stdout | default('0,0')).split(',')[1] | int }}"
+    runtime_json: "{{ runtime_info_raw.stdout | from_json }}"
   when:
     - create_kind_cluster | default(false)
     - not (enable_openshift | default(false))
-    - runtime_info.rc | default(1) == 0
+    - runtime_info_raw.rc | default(1) == 0
+
+# Docker uses top-level MemTotal/NCPU; Podman nests under .Host.
+# Podman's Docker compat API may return MemTotal=0 at the top level (defined
+# but zero), so `default()` won't trigger. Use `| int or` to fall through to
+# the Podman path when the Docker path returns 0.
+- name: Preflight - Extract resources from runtime info
+  set_fact:
+    runtime_memory_bytes: "{{ (runtime_json.MemTotal | default(0) | int) or (runtime_json.Host.MemTotal | default(0) | int) }}"
+    runtime_cpus: "{{ (runtime_json.NCPU | default(0) | int) or (runtime_json.Host.CPUs | default(0) | int) }}"
+  when:
+    - create_kind_cluster | default(false)
+    - not (enable_openshift | default(false))
+    - runtime_json is defined
 
 - name: Preflight - Calculate memory in GB
   set_fact:
