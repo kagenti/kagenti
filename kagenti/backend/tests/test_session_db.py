@@ -87,7 +87,7 @@ class TestCreatePool:
     async def test_no_retry_on_auth_error(self):
         """Pool creation should NOT retry on InvalidPasswordError."""
         with patch("app.services.session_db.asyncpg") as mock_asyncpg:
-            InvalidPasswordError = type("InvalidPasswordError", (Exception,), {})
+            InvalidPasswordError = type("InvalidPasswordError", (Exception,), {})  # noqa: N806
             mock_asyncpg.InvalidPasswordError = InvalidPasswordError
             mock_asyncpg.InvalidCatalogNameError = type("InvalidCatalogNameError", (Exception,), {})
             mock_asyncpg.create_pool = AsyncMock(side_effect=InvalidPasswordError("wrong password"))
@@ -104,7 +104,7 @@ class TestCreatePool:
     async def test_no_retry_on_catalog_error(self):
         """Pool creation should NOT retry on InvalidCatalogNameError."""
         with patch("app.services.session_db.asyncpg") as mock_asyncpg:
-            InvalidCatalogNameError = type("InvalidCatalogNameError", (Exception,), {})
+            InvalidCatalogNameError = type("InvalidCatalogNameError", (Exception,), {})  # noqa: N806
             mock_asyncpg.InvalidPasswordError = type("InvalidPasswordError", (Exception,), {})
             mock_asyncpg.InvalidCatalogNameError = InvalidCatalogNameError
             mock_asyncpg.create_pool = AsyncMock(

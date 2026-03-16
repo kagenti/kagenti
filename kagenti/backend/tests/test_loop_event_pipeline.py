@@ -373,7 +373,7 @@ class TestLoopEventPipelineAPI:
             sl = s_loops[lid]
             hl = h_loops[lid]
             assert sl["status"] == hl["status"], f"Status: {sl['status']} vs {hl['status']}"
-            assert len(sl["steps"]) == len(hl["steps"]), f"Step count differs"
+            assert len(sl["steps"]) == len(hl["steps"]), "Step count differs"
 
             for si in sl["steps"]:
                 ss = sl["steps"][si]

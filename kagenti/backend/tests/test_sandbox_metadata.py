@@ -167,7 +167,7 @@ class TestMetadataMergeLogic:
             ),
         ]
 
-        donor_metadata = {"title": "Should NOT Replace", "owner": "other-user"}
+        _donor_metadata = {"title": "Should NOT Replace", "owner": "other-user"}
 
         missing_meta = [s for s in items if not (s.metadata or {}).get("title")]
         # The item already has a title, so it should NOT be in missing_meta
