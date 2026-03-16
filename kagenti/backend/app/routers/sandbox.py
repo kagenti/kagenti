@@ -260,6 +260,46 @@ async def list_sessions(
                         if key not in s.metadata and key in donor:
                             s.metadata[key] = donor[key]
 
+            # Backfill: for sessions with NO title anywhere (e.g., created by
+            # direct A2A messages bypassing the backend), derive title from
+            # the first user message in history.
+            still_missing = [s for s in items if not (s.metadata or {}).get("title")]
+            if still_missing:
+                ctx_ids_2 = [s.context_id for s in still_missing]
+                hist_rows = await conn.fetch(
+                    "SELECT DISTINCT ON (context_id) context_id, history"
+                    " FROM tasks"
+                    " WHERE context_id = ANY($1)"
+                    "   AND history IS NOT NULL"
+                    " ORDER BY context_id, id ASC",
+                    ctx_ids_2,
+                )
+                for hr in hist_rows:
+                    hist = _parse_json_field(hr["history"])
+                    if hist and isinstance(hist, list):
+                        for msg in hist:
+                            if msg.get("role") == "user":
+                                parts = msg.get("parts", [])
+                                text = ""
+                                for p in parts:
+                                    if isinstance(p, dict) and p.get("kind") == "text":
+                                        text = p.get("text", "")
+                                        break
+                                if text:
+                                    target = next(
+                                        (
+                                            s
+                                            for s in still_missing
+                                            if s.context_id == hr["context_id"]
+                                        ),
+                                        None,
+                                    )
+                                    if target:
+                                        if target.metadata is None:
+                                            target.metadata = {}
+                                        target.metadata["title"] = text[:100]
+                                    break
+
     return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
 
 

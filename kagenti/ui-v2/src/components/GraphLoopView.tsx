@@ -111,23 +111,23 @@ const DEFAULT_TOPOLOGY: GraphTopology = {
     reporter:        { description: 'Final summary' },
   },
   edges: [
-    { from: '__start__',      to: 'router',          condition: null },
-    { from: 'router',         to: 'planner',         condition: 'plan' },
-    { from: 'router',         to: 'step_selector',   condition: 'resume' },
-    { from: 'planner',        to: 'planner_tools',   condition: 'has_tool_calls' },
-    { from: 'planner',        to: 'step_selector',   condition: 'no_tool_calls' },
-    { from: 'planner_tools',  to: 'planner',         condition: null },
-    { from: 'step_selector',  to: 'executor',        condition: null },
-    { from: 'executor',       to: 'tools',           condition: 'has_tool_calls' },
-    { from: 'executor',       to: 'reflector',       condition: 'no_tool_calls' },
-    { from: 'tools',          to: 'executor',        condition: null },
-    { from: 'reflector',      to: 'reflector_tools',  condition: 'has_tool_calls' },
-    { from: 'reflector',      to: 'reflector_route',  condition: 'no_tool_calls' },
-    { from: 'reflector_tools', to: 'reflector',       condition: null },
-    { from: 'reflector_route', to: 'step_selector',   condition: 'execute' },
-    { from: 'reflector_route', to: 'planner',         condition: 'replan' },
-    { from: 'reflector_route', to: 'reporter',        condition: 'done' },
-    { from: 'reporter',       to: '__end__',          condition: null },
+    { from: '__start__',      to: 'router',          condition: null, description: 'Entry' },
+    { from: 'router',         to: 'planner',         condition: 'plan', description: 'New session' },
+    { from: 'router',         to: 'step_selector',   condition: 'resume', description: 'Resume plan' },
+    { from: 'planner',        to: 'planner_tools',   condition: 'has_tool_calls', description: 'Read context' },
+    { from: 'planner',        to: 'step_selector',   condition: 'no_tool_calls', description: 'Plan ready' },
+    { from: 'planner_tools',  to: 'planner',         condition: null, description: 'Return results' },
+    { from: 'step_selector',  to: 'executor',        condition: null, description: 'Execute step' },
+    { from: 'executor',       to: 'tools',           condition: 'has_tool_calls', description: 'Run tools' },
+    { from: 'executor',       to: 'reflector',       condition: 'no_tool_calls', description: 'Step done' },
+    { from: 'tools',          to: 'executor',        condition: null, description: 'Return results' },
+    { from: 'reflector',      to: 'reflector_tools',  condition: 'has_tool_calls', description: 'Verify' },
+    { from: 'reflector',      to: 'reflector_route',  condition: 'no_tool_calls', description: 'Decide' },
+    { from: 'reflector_tools', to: 'reflector',       condition: null, description: 'Return results' },
+    { from: 'reflector_route', to: 'step_selector',   condition: 'execute', description: 'Continue' },
+    { from: 'reflector_route', to: 'planner',         condition: 'replan', description: 'Replan' },
+    { from: 'reflector_route', to: 'reporter',        condition: 'done', description: 'All done' },
+    { from: 'reporter',       to: '__end__',          condition: null, description: 'Report' },
   ],
 };
 
@@ -369,11 +369,15 @@ function buildTopologyGraph(
     const traversal = edgeCounts.get(edgeKey);
     const count = traversal?.count || 0;
 
+    // Show description (from graph card) with count, fall back to condition
+    const desc = (te as { description?: string }).description;
     let edgeLabel: string | undefined;
-    if (count > 0 && te.condition) {
-      edgeLabel = `${te.condition} (${count})`;
+    if (count > 0 && desc) {
+      edgeLabel = `${desc} (${count})`;
     } else if (count > 0) {
-      edgeLabel = `${count}`;
+      edgeLabel = `${count}x`;
+    } else if (desc) {
+      edgeLabel = desc;
     } else if (te.condition) {
       edgeLabel = te.condition;
     }
