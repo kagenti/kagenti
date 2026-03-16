@@ -516,7 +516,8 @@ export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, a
       ref={containerRef}
       data-testid="step-graph-view"
       style={{
-        height: Math.min(Math.max(400, totalNodes * 80 + 100), 1200),
+        height: '100%',
+        minHeight: Math.min(Math.max(400, totalNodes * 80 + 100), 1200),
         backgroundColor: '#0d1117',
         position: 'relative',
       }}

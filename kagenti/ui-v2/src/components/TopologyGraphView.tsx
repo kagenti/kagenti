@@ -920,7 +920,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
       ref={containerRef}
       data-testid="topology-graph-view"
       style={{
-        height: 600,
+        height: '100%',
         minHeight: 400,
         backgroundColor: COLOR_BG_CANVAS,
         position: 'relative',
