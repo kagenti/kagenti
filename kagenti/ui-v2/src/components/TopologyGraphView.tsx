@@ -28,6 +28,7 @@ import dagre from 'dagre';
 import type { AgentLoop } from '../types/agentLoop';
 import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge } from '../types/graphCard';
 import { countTools, formatTokens, formatDuration } from '../utils/loopFormatting';
+import { EVENT_CATALOG } from '../utils/loopBuilder';
 
 import '@xyflow/react/dist/style.css';
 
