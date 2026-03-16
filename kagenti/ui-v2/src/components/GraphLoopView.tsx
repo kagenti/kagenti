@@ -2,8 +2,8 @@
 // Licensed under the Apache License, Version 2.0
 
 /**
- * GraphLoopView — wrapper with subtab toggle between Step Graph, Topology,
- * and Event Flow views.
+ * GraphLoopView — wrapper with subtab toggle between Step Graph and Topology
+ * views.
  *
  * All sub-views render multi-message data across all loops in the session.
  * The wrapper provides:
@@ -15,11 +15,11 @@
 import React, { useMemo, useState } from 'react';
 import { StepGraphView } from './StepGraphView';
 import { TopologyGraphView } from './TopologyGraphView';
-import { EventSubtypeGraphView } from './EventSubtypeGraphView';
+
 import type { AgentLoop } from '../types/agentLoop';
 import type { AgentGraphCard } from '../types/graphCard';
 
-type GraphSubView = 'steps' | 'topology' | 'eventflow';
+type GraphSubView = 'steps' | 'topology';
 /** Node display mode:
  *  'nodes' = color-coded by role (planning, execution, evaluation, output)
  *  'events' = show event types each node emits (planner_output, tool_call, etc.) */
@@ -276,7 +276,7 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
       {/* Subtab toggle bar + fullscreen */}
       <div style={{ ...TOGGLE_BAR_STYLE, justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: 8 }}>
-          {/* View toggle: Step Graph / Topology / Event Flow */}
+          {/* View toggle: Step Graph / Topology */}
           <div style={{ display: 'flex', gap: 0 }}>
             <button
               data-testid="graph-toggle-steps"
@@ -295,53 +295,41 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               style={{
                 ...toggleBtnStyle(subView === 'topology'),
                 borderLeft: 'none',
-              }}
-            >
-              Topology
-            </button>
-            <button
-              data-testid="graph-toggle-eventflow"
-              onClick={() => setSubView('eventflow')}
-              style={{
-                ...toggleBtnStyle(subView === 'eventflow'),
-                borderLeft: 'none',
                 borderTopRightRadius: 4,
                 borderBottomRightRadius: 4,
               }}
             >
-              Event Flow
+              Topology
             </button>
           </div>
-          {/* Event detail toggle: Nodes / Events (only for Step Graph and Topology) */}
-          {subView !== 'eventflow' && (
-            <div style={{ display: 'flex', gap: 0 }}>
-              <button
-                data-testid="graph-toggle-types"
-                onClick={() => setEventDetail('nodes')}
-                style={{
-                  ...toggleBtnStyle(eventDetail === 'nodes'),
-                  borderTopLeftRadius: 4,
-                  borderBottomLeftRadius: 4,
-                  fontSize: 11,
-                }}
-              >
-                Nodes
-              </button>
-              <button
-                data-testid="graph-toggle-subtypes"
-                onClick={() => setEventDetail('events')}
-                style={{
-                  ...toggleBtnStyle(eventDetail === 'events'),
-                  borderLeft: 'none',
-                  borderTopRightRadius: 4,
-                  borderBottomRightRadius: 4,
-                  fontSize: 11,
-                }}
-              >
-                Events
-              </button>
-            </div>
-          )}
+          {/* Event detail toggle: Nodes / Events */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            <button
+              data-testid="graph-toggle-types"
+              onClick={() => setEventDetail('nodes')}
+              style={{
+                ...toggleBtnStyle(eventDetail === 'nodes'),
+                borderTopLeftRadius: 4,
+                borderBottomLeftRadius: 4,
+                fontSize: 11,
+              }}
+            >
+              Nodes
+            </button>
+            <button
+              data-testid="graph-toggle-subtypes"
+              onClick={() => setEventDetail('events')}
+              style={{
+                ...toggleBtnStyle(eventDetail === 'events'),
+                borderLeft: 'none',
+                borderTopRightRadius: 4,
+                borderBottomRightRadius: 4,
+                fontSize: 11,
+              }}
+            >
+              Events
+            </button>
+          </div>
         </div>
         <button
           data-testid="graph-fullscreen-toggle"
@@ -388,9 +376,6 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
           )}
           {subView === 'topology' && (
             <TopologyGraphView loop={primaryLoop} allLoops={filteredLoops} graphCard={graphCard} eventDetail={eventDetail} />
-          )}
-          {subView === 'eventflow' && (
-            <EventSubtypeGraphView allLoops={loops} selectedLoopId={selectedLoopId} />
           )}
         </div>
       </div>

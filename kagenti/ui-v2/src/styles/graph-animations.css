@@ -1,13 +1,12 @@
 /* Copyright 2025 IBM Corp.
  * Licensed under the Apache License, Version 2.0
  *
- * Graph streaming animations for StepGraphView, TopologyGraphView,
- * and EventSubtypeGraphView.
+ * Graph streaming animations for StepGraphView and TopologyGraphView.
  */
 
 @keyframes node-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
-  50% { box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.3); }
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+  50% { box-shadow: 0 0 16px 6px rgba(59, 130, 246, 0.4); }
   100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
 
@@ -19,16 +18,19 @@
 /* Active node: currently being processed */
 .graph-node-active {
   animation: node-pulse 1.5s ease-in-out infinite;
+  outline: 2px solid rgba(59, 130, 246, 0.8);
+  outline-offset: 2px;
+  z-index: 10;
 }
 
-/* Visited node: already processed */
+/* Visited node: already processed — keep normal appearance */
 .graph-node-visited {
-  opacity: 0.7;
+  opacity: 1;
 }
 
-/* Inactive node: not yet reached */
+/* Inactive node: not yet reached — keep normal appearance */
 .graph-node-inactive {
-  opacity: 0.4;
+  opacity: 1;
 }
 
 /* Active edge: data currently flowing */
@@ -38,8 +40,8 @@
   stroke-width: 3;
 }
 
-/* Visited edge: already traversed */
+/* Visited edge: already traversed — normal appearance */
 .graph-edge-visited .react-flow__edge-path {
   stroke-width: 2;
-  opacity: 0.6;
+  opacity: 1;
 }
