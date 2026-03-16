@@ -45,8 +45,14 @@ _sandbox_modules_loaded = False
 if settings.kagenti_feature_flag_sandbox:
     try:
         from app.routers import (
-            sandbox, sandbox_deploy, sandbox_files, token_usage,
-            sidecar, events, models, llm_keys,
+            sandbox,
+            sandbox_deploy,
+            sandbox_files,
+            token_usage,
+            sidecar,
+            events,
+            models,
+            llm_keys,
         )
         from app.services.session_db import close_all_pools
 

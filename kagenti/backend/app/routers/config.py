@@ -18,6 +18,7 @@ class FeatureFlagsResponse(BaseModel):
     integrations: bool
     triggers: bool
 
+
 router = APIRouter(prefix="/config", tags=["config"])
 
 
