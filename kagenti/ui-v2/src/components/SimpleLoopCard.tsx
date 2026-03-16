@@ -115,18 +115,18 @@ export const SimpleLoopCard: React.FC<SimpleLoopCardProps> = React.memo(({ loop 
           }}
         >
           <span style={{ fontSize: '0.9em', width: 14, textAlign: 'center' }}>
-            {expanded ? '\u25bc' : '\u25b6'}
+            {expanded ? '[-]' : '[+]'}
           </span>
           {isActive && <Spinner size="sm" aria-label="running" />}
           {loop.status === 'done' && <CheckCircleIcon style={{ color: 'var(--pf-v5-global--success-color--100)', fontSize: '0.9em' }} />}
           {loop.status === 'failed' && <TimesCircleIcon style={{ color: 'var(--pf-v5-global--danger-color--100)', fontSize: '0.9em' }} />}
           <span>
             {loop.plan.length} step{loop.plan.length !== 1 ? 's' : ''}
-            {' \u00b7 '}
+            {' | '}
             {tools} tool call{tools !== 1 ? 's' : ''}
-            {' \u00b7 '}
+            {' | '}
             {duration}
-            {tokens > 0 && <>{' \u00b7 '}{tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens} tokens</>}
+            {tokens > 0 && <>{' | '}{tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens} tokens</>}
           </span>
         </div>
 

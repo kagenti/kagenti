@@ -347,7 +347,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                         cursor: 'pointer',
                       }}
                     >
-                      {expandedParents.has(session.context_id) ? '\u25BE' : '\u25B8'}{' '}
+                      {expandedParents.has(session.context_id) ? '[-]' : '[+]'}{' '}
                       {childCount} sub-session{childCount > 1 ? 's' : ''}
                     </div>
                   )}

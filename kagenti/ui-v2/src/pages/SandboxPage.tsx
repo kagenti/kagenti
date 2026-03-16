@@ -643,7 +643,7 @@ const CollapsedTurn: React.FC<{
                 userSelect: 'none',
               }}
             >
-              {expanded ? '\u25bc' : '\u25b6'} {collapsible.length} step{collapsible.length !== 1 ? 's' : ''}
+              {expanded ? '[-]' : '[+]'} {collapsible.length} step{collapsible.length !== 1 ? 's' : ''}
             </div>
 
             {expanded && (

@@ -228,7 +228,7 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
             marginBottom: expanded ? 8 : 0,
           }}
         >
-          {expanded ? '\u25bc' : '\u25b6'} {loop.totalSteps || loop.plan.length || loop.steps.length} step{(loop.totalSteps || loop.plan.length || loop.steps.length) !== 1 ? 's' : ''}{loop.nodeVisits > 0 && <>{' · '}<Badge isRead data-testid="node-visits-badge" title={`Total graph node visits: ${loop.nodeVisits}`} style={{ backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>{loop.nodeVisits}</Badge></>}
+          {expanded ? '[-]' : '[+]'} {loop.totalSteps || loop.plan.length || loop.steps.length} step{(loop.totalSteps || loop.plan.length || loop.steps.length) !== 1 ? 's' : ''}{loop.nodeVisits > 0 && <>{' · '}<Badge isRead data-testid="node-visits-badge" title={`Total graph node visits: ${loop.nodeVisits}`} style={{ backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>{loop.nodeVisits}</Badge></>}
         </div>
 
         {/* Expanded reasoning details */}

@@ -80,9 +80,9 @@ export const LoopSummaryBar: React.FC<LoopSummaryBarProps> = ({ loop, expanded, 
         <StatusIcon status={loop.status} />
         <span style={{ color: '#6a6e73' }}>
           {tools} tool{tools !== 1 ? 's' : ''}
-          {' \u00b7 '}
+          {' | '}
           {tokens} tokens
-          {' \u00b7 '}
+          {' | '}
         </span>
         <span style={{ color: sl.color, fontWeight: 500 }}>{sl.text}</span>
       </div>
@@ -108,7 +108,7 @@ export const LoopSummaryBar: React.FC<LoopSummaryBarProps> = ({ loop, expanded, 
             color: 'var(--pf-v5-global--Color--200)',
           }}
         >
-          {expanded ? '\u25bc' : '\u25b6'} Details
+          {expanded ? '[-]' : '[+]'} Details
         </span>
       </div>
     </div>

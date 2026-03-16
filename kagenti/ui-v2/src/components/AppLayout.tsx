@@ -263,21 +263,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                       onClick={() => handleThemeChange('auto')}
                       description="Follow system preference"
                     >
-                      System default {mode === 'auto' && '✓'}
+                      System default {mode === 'auto' && '*'}
                     </DropdownItem>
                     <DropdownItem
                       key="light"
                       icon={<SunIcon />}
                       onClick={() => handleThemeChange('light')}
                     >
-                      Light {mode === 'light' && '✓'}
+                      Light {mode === 'light' && '*'}
                     </DropdownItem>
                     <DropdownItem
                       key="dark"
                       icon={<MoonIcon />}
                       onClick={() => handleThemeChange('dark')}
                     >
-                      Dark {mode === 'dark' && '✓'}
+                      Dark {mode === 'dark' && '*'}
                     </DropdownItem>
                   </DropdownList>
                 </Dropdown>

@@ -242,10 +242,10 @@ const StepDetail: React.FC<{ step: AgentLoopStep; loop: AgentLoop; onDrillDown: 
                 }}
               >
                 <span style={{ color: statusColor(result?.status), fontSize: 14 }}>
-                  {result?.status === 'success' ? '\u2713' : result?.status === 'error' ? '\u2717' : '\u25b6'}
+                  {result?.status === 'success' ? '[ok]' : result?.status === 'error' ? '[err]' : '[...]'}
                 </span>
                 <span style={{ color: '#ccc', fontWeight: 500, fontSize: 12 }}>{tc.name || 'unknown'}</span>
-                <span style={{ marginLeft: 'auto', color: '#666', fontSize: 11 }}>\u25b6</span>
+                <span style={{ marginLeft: 'auto', color: '#666', fontSize: 11 }}>{'>'}</span>
               </div>
             );
           })}
@@ -268,7 +268,7 @@ const StepDetail: React.FC<{ step: AgentLoopStep; loop: AgentLoop; onDrillDown: 
             >
               <span style={{ color: '#b388ff', fontSize: 12, fontWeight: 500 }}>Iteration {t.iteration}</span>
               <span style={{ color: '#888', fontSize: 11 }}>{((t.prompt_tokens || 0) + (t.completion_tokens || 0)).toLocaleString()} tokens</span>
-              <span style={{ marginLeft: 'auto', color: '#666', fontSize: 11 }}>\u25b6</span>
+              <span style={{ marginLeft: 'auto', color: '#666', fontSize: 11 }}>{'>'}</span>
             </div>
           ))}
         </div>
@@ -290,7 +290,7 @@ const StepDetail: React.FC<{ step: AgentLoopStep; loop: AgentLoop; onDrillDown: 
             >
               <span style={{ color: '#58a6ff', fontSize: 12, fontWeight: 500 }}>Step {mr.micro_step || j + 1}</span>
               <span style={{ color: '#888', fontSize: 11 }}>{mr.next_action}</span>
-              <span style={{ marginLeft: 'auto', color: '#666', fontSize: 11 }}>\u25b6</span>
+              <span style={{ marginLeft: 'auto', color: '#666', fontSize: 11 }}>{'>'}</span>
             </div>
           ))}
         </div>
@@ -321,7 +321,7 @@ const ToolDetail: React.FC<{ step: AgentLoopStep; toolIndex: number; onDrillDown
         <span style={{ fontWeight: 600, color: '#ccc', fontSize: 14 }}>{tc.name || 'unknown'}</span>
         {result && (
           <span style={{ color: statusColor(result.status) }}>
-            {result.status === 'success' ? '\u2713 success' : result.status === 'error' ? '\u2717 error' : result.status || 'pending'}
+            {result.status === 'success' ? '[ok] success' : result.status === 'error' ? '[err] error' : result.status || 'pending'}
           </span>
         )}
       </div>
@@ -341,7 +341,7 @@ const ToolDetail: React.FC<{ step: AgentLoopStep; toolIndex: number; onDrillDown
           style={{ marginBottom: 12, cursor: 'pointer' }}
         >
           <div style={{ fontSize: 11, color: '#888', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-            Result <span style={{ color: '#666' }}>\u25b6</span>
+            Result <span style={{ color: '#666' }}>{'>'}</span>
           </div>
           <pre style={{
             margin: 0, padding: 8, borderRadius: 4, fontSize: 12, overflow: 'auto', maxHeight: 200,
@@ -395,7 +395,7 @@ const ThinkingDetail: React.FC<{ thinkings: ThinkingIteration[]; onDrillDown: (e
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
           <span style={{ color: '#b388ff', fontWeight: 500, fontSize: 12 }}>Iteration {t.iteration}</span>
-          <span style={{ color: '#888', fontSize: 11 }}>{((t.prompt_tokens || 0) + (t.completion_tokens || 0)).toLocaleString()} tokens \u25b6</span>
+          <span style={{ color: '#888', fontSize: 11 }}>{((t.prompt_tokens || 0) + (t.completion_tokens || 0)).toLocaleString()} tokens {'>'}</span>
         </div>
         <div style={{ color: '#999', fontSize: 12 }}>{(t.reasoning || '').substring(0, 120)}{(t.reasoning || '').length > 120 ? '...' : ''}</div>
       </div>
@@ -570,14 +570,14 @@ export const GraphDetailPanel: React.FC<GraphDetailPanelProps> = ({ loop, nodeId
             fontSize: 16, cursor: canGoLeft ? 'pointer' : 'default', padding: '2px 6px',
           }}
         >
-          \u25c0
+          {'<'}
         </button>
 
         {/* Breadcrumb */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', fontSize: 12 }}>
           {navStack.map((entry, i) => (
             <React.Fragment key={i}>
-              {i > 0 && <span style={{ color: '#555' }}>\u203a</span>}
+              {i > 0 && <span style={{ color: '#555' }}>{'/'}</span>}
               <span
                 onClick={i < navStack.length - 1 ? () => goToBreadcrumb(i) : undefined}
                 style={{
@@ -603,7 +603,7 @@ export const GraphDetailPanel: React.FC<GraphDetailPanelProps> = ({ loop, nodeId
             fontSize: 16, cursor: canGoRight ? 'pointer' : 'default', padding: '2px 6px',
           }}
         >
-          \u25b6
+          {'>'}
         </button>
 
         {/* Close */}
@@ -615,7 +615,7 @@ export const GraphDetailPanel: React.FC<GraphDetailPanelProps> = ({ loop, nodeId
             fontSize: 12, cursor: 'pointer', padding: '2px 8px', borderRadius: 3,
           }}
         >
-          \u2716
+          x
         </button>
       </div>
 
