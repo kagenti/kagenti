@@ -15,10 +15,10 @@ import type { AgentLoop } from '../types/agentLoop';
 import type { AgentGraphCard } from '../types/graphCard';
 
 type GraphSubView = 'steps' | 'topology';
-/** Event grouping level matching agent graph card terminology:
- *  'categories' = 7 high-level (reasoning, execution, tool_output, decision, terminal, meta, interaction)
- *  'event_types' = 12 specific (planner_output, tool_call, reflector_decision, etc.) */
-type EventDetail = 'categories' | 'event_types';
+/** Node display mode:
+ *  'nodes' = color-coded by role (planning, execution, evaluation, output)
+ *  'events' = show event types each node emits (planner_output, tool_call, etc.) */
+type EventDetail = 'nodes' | 'events';
 
 export interface GraphLoopViewProps {
   /** Primary loop (backward-compatible). */
@@ -53,7 +53,7 @@ function toggleBtnStyle(active: boolean): React.CSSProperties {
 
 export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, allLoops, graphCard }) => {
   const [subView, setSubView] = useState<GraphSubView>('steps');
-  const [eventDetail, setEventDetail] = useState<EventDetail>('categories');
+  const [eventDetail, setEventDetail] = useState<EventDetail>('nodes');
 
   // Stabilize loops array
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
@@ -128,32 +128,32 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               Topology
             </button>
           </div>
-          {/* Event detail toggle: Types / Event Types */}
+          {/* Event detail toggle: Types / Events */}
           <div style={{ display: 'flex', gap: 0 }}>
             <button
               data-testid="graph-toggle-types"
-              onClick={() => setEventDetail('categories')}
+              onClick={() => setEventDetail('nodes')}
               style={{
-                ...toggleBtnStyle(eventDetail === 'categories'),
+                ...toggleBtnStyle(eventDetail === 'nodes'),
                 borderTopLeftRadius: 4,
                 borderBottomLeftRadius: 4,
                 fontSize: 11,
               }}
             >
-              Categories
+              Nodes
             </button>
             <button
               data-testid="graph-toggle-subtypes"
-              onClick={() => setEventDetail('event_types')}
+              onClick={() => setEventDetail('events')}
               style={{
-                ...toggleBtnStyle(eventDetail === 'event_types'),
+                ...toggleBtnStyle(eventDetail === 'events'),
                 borderLeft: 'none',
                 borderTopRightRadius: 4,
                 borderBottomRightRadius: 4,
                 fontSize: 11,
               }}
             >
-              Event Types
+              Events
             </button>
           </div>
         </div>

@@ -49,7 +49,7 @@ const NODE_STYLES: Record<ExtendedNodeType, { bg: string; border: string; color:
 };
 
 // ---------------------------------------------------------------------------
-// Category colors (for 'categories' mode)
+// Category colors (for 'nodes' mode)
 // ---------------------------------------------------------------------------
 
 type EventCategory = 'reasoning' | 'execution' | 'tool_output' | 'decision' | 'terminal' | 'meta' | 'interaction';
@@ -153,14 +153,14 @@ function buildLoopGraph(
   loop: AgentLoop,
   prefix: string,
   messageIdx: number | null,
-  eventDetail: 'categories' | 'event_types',
+  eventDetail: 'nodes' | 'events',
 ): { nodes: Node[]; edges: Edge[]; firstNodeId: string | null; lastNodeId: string | null } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   let prevNodeId: string | null = null;
   let firstNodeId: string | null = null;
 
-  if (eventDetail === 'categories') {
+  if (eventDetail === 'nodes') {
     // ---- Categories mode: merge consecutive same-category steps ----
     interface MergedGroup {
       category: EventCategory;
@@ -424,7 +424,7 @@ function buildLoopGraph(
 // Build multi-message graph: connect last node of loop N to first of N+1
 // ---------------------------------------------------------------------------
 
-function buildMultiLoopGraph(loops: AgentLoop[], eventDetail: 'categories' | 'event_types'): { nodes: Node[]; edges: Edge[]; totalNodes: number; allNodeIds: string[] } {
+function buildMultiLoopGraph(loops: AgentLoop[], eventDetail: 'nodes' | 'events'): { nodes: Node[]; edges: Edge[]; totalNodes: number; allNodeIds: string[] } {
   const allNodes: Node[] = [];
   const allEdges: Edge[] = [];
   let prevLastNodeId: string | null = null;
@@ -486,10 +486,10 @@ export interface StepGraphViewProps {
   /** All loops in the session for multi-message mode. */
   allLoops?: AgentLoop[];
   /** Event detail level: 'types' shows node categories, 'subtypes' shows individual events. */
-  eventDetail?: 'categories' | 'event_types';
+  eventDetail?: 'nodes' | 'events';
 }
 
-export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, allLoops, eventDetail = 'categories' }) => {
+export const StepGraphView: React.FC<StepGraphViewProps> = React.memo(({ loop, allLoops, eventDetail = 'nodes' }) => {
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);

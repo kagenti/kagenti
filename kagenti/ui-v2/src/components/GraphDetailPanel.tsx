@@ -66,16 +66,94 @@ function parseNodeId(nodeId: string): NavEntry | null {
   if (stepMatch) {
     return { type: 'step', label: `Step ${parseInt(stepMatch[1])}`, stepIndex: parseInt(stepMatch[1]) };
   }
-  // cat-{index} (category mode) — map to first step in the group
+  // cat-{index} (category mode) — groupIndex stored, resolved in findStep
   const catMatch = stripped.match(/^cat-(\d+)$/);
   if (catMatch) {
-    return { type: 'step', label: `Category ${parseInt(catMatch[1]) + 1}`, stepIndex: parseInt(catMatch[1]) };
+    // Use negative offset to signal this is a group index, resolved by findStepForCatGroup
+    return { type: 'step', label: `Category ${parseInt(catMatch[1]) + 1}`, stepIndex: -(parseInt(catMatch[1]) + 1) };
   }
-  return null;
+  // Topology node IDs (e.g., "planner", "executor", "reflector") — no step index
+  // Use a sentinel stepIndex of -9999 and store the node name via label
+  return { type: 'step', label: nodeId, stepIndex: -9999 };
 }
 
+/**
+ * Map topology node names to the event types / node types they represent.
+ * Used to find steps matching a topology node click.
+ */
+const TOPO_NODE_TO_TYPES: Record<string, { nodeTypes: string[]; eventTypes: string[] }> = {
+  router:          { nodeTypes: [], eventTypes: ['router'] },
+  planner:         { nodeTypes: ['planner', 'replanner'], eventTypes: ['planner_output', 'replanner_output'] },
+  planner_tools:   { nodeTypes: [], eventTypes: ['tool_call', 'tool_result'] },
+  step_selector:   { nodeTypes: [], eventTypes: ['executor_step', 'step_selector'] },
+  executor:        { nodeTypes: ['executor'], eventTypes: ['thinking', 'micro_reasoning'] },
+  tools:           { nodeTypes: [], eventTypes: ['tool_call', 'tool_result'] },
+  reflector:       { nodeTypes: ['reflector'], eventTypes: ['reflector_decision'] },
+  reflector_tools: { nodeTypes: [], eventTypes: ['tool_call', 'tool_result'] },
+  reflector_route: { nodeTypes: [], eventTypes: ['reflector_decision'] },
+  reporter:        { nodeTypes: ['reporter'], eventTypes: ['reporter_output'] },
+};
+
 function findStep(loop: AgentLoop, stepIndex: number): AgentLoopStep | undefined {
-  return loop.steps.find((s) => s.index === stepIndex);
+  // Positive index: direct step lookup
+  if (stepIndex >= 0) {
+    return loop.steps.find((s) => s.index === stepIndex);
+  }
+  // Negative index from cat-N: resolve category group
+  if (stepIndex > -9999) {
+    const groupIdx = -(stepIndex + 1); // cat-0 -> groupIdx 0
+    return findStepForCatGroup(loop, groupIdx);
+  }
+  // -9999: topology node — handled separately in the component
+  return undefined;
+}
+
+/** Recompute category groups (same logic as StepGraphView) and return the first step of groupIdx. */
+function findStepForCatGroup(loop: AgentLoop, groupIdx: number): AgentLoopStep | undefined {
+  let currentGroup = -1;
+  let prevCat = '';
+  for (const step of loop.steps) {
+    const cat = stepCategorySimple(step);
+    if (cat !== prevCat) {
+      currentGroup++;
+      prevCat = cat;
+    }
+    if (currentGroup === groupIdx) return step;
+  }
+  return undefined;
+}
+
+/** Simple category lookup matching StepGraphView's stepCategory. */
+function stepCategorySimple(step: AgentLoopStep): string {
+  if (step.eventType) {
+    // Use the same EVENT_CATALOG mapping as loopBuilder
+    const CATS: Record<string, string> = {
+      planner_output: 'reasoning', replanner_output: 'reasoning',
+      executor_step: 'reasoning', thinking: 'reasoning', micro_reasoning: 'reasoning',
+      tool_call: 'execution', tool_result: 'tool_output',
+      reflector_decision: 'decision', router: 'decision', step_selector: 'decision',
+      reporter_output: 'terminal', budget: 'meta', budget_update: 'meta',
+    };
+    if (CATS[step.eventType]) return CATS[step.eventType];
+  }
+  const nt = step.nodeType;
+  if (nt === 'planner' || nt === 'replanner' || nt === 'executor') return 'reasoning';
+  if (nt === 'reflector') return 'decision';
+  if (nt === 'reporter') return 'terminal';
+  return 'reasoning';
+}
+
+/** Find the most recent step matching a topology node name. */
+function findStepForTopoNode(loop: AgentLoop, topoNodeId: string): AgentLoopStep | undefined {
+  const mapping = TOPO_NODE_TO_TYPES[topoNodeId];
+  if (!mapping) return undefined;
+  // Search from last to first to get the most recent matching step
+  for (let i = loop.steps.length - 1; i >= 0; i--) {
+    const step = loop.steps[i];
+    if (step.eventType && mapping.eventTypes.includes(step.eventType)) return step;
+    if (step.nodeType && mapping.nodeTypes.includes(step.nodeType)) return step;
+  }
+  return undefined;
 }
 
 function statusColor(status?: string): string {
@@ -396,7 +474,12 @@ export const GraphDetailPanel: React.FC<GraphDetailPanelProps> = ({ loop, nodeId
   }, [nodeId]);
 
   const currentEntry = navStack[navStack.length - 1];
-  const currentStep = currentEntry ? findStep(loop, currentEntry.stepIndex) : undefined;
+  // For topology nodes (stepIndex === -9999), try to find a matching step
+  const currentStep = currentEntry
+    ? (currentEntry.stepIndex === -9999
+      ? findStepForTopoNode(loop, currentEntry.label)
+      : findStep(loop, currentEntry.stepIndex))
+    : undefined;
 
   // Sibling navigation
   const currentSiblingIdx = siblingNodeIds.indexOf(nodeId);
@@ -439,13 +522,17 @@ export const GraphDetailPanel: React.FC<GraphDetailPanelProps> = ({ loop, nodeId
     return () => window.removeEventListener('keydown', handler);
   }, [goLeft, goRight, navStack.length, onClose]);
 
-  if (!currentEntry || !currentStep) return null;
+  if (!currentEntry) return null;
 
-  // Build label for the current step
-  const nt = inferNodeType(currentStep);
-  const rootLabel = nt === 'executor' && currentStep.planStep != null
-    ? `Step ${currentStep.planStep + 1}`
-    : nt;
+  // Build label for the current step (or use the entry label as fallback)
+  const rootLabel = currentStep
+    ? (() => {
+        const nt = inferNodeType(currentStep);
+        return nt === 'executor' && currentStep.planStep != null
+          ? `Step ${currentStep.planStep + 1}`
+          : nt;
+      })()
+    : currentEntry.label;
 
   return (
     <div
@@ -541,23 +628,45 @@ export const GraphDetailPanel: React.FC<GraphDetailPanelProps> = ({ loop, nodeId
 
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-        {currentEntry.type === 'step' && (
-          <StepDetail step={currentStep} loop={loop} onDrillDown={drillDown} />
-        )}
-        {currentEntry.type === 'tool' && currentEntry.subIndex != null && (
-          <ToolDetail step={currentStep} toolIndex={currentEntry.subIndex} onDrillDown={drillDown} />
-        )}
-        {currentEntry.type === 'tool-result' && currentEntry.subIndex != null && (
-          <ToolResultDetail step={currentStep} toolIndex={currentEntry.subIndex} />
-        )}
-        {currentEntry.type === 'thinking' && currentStep.thinkings && (
-          <ThinkingDetail thinkings={currentStep.thinkings} onDrillDown={drillDown} stepIndex={currentStep.index} />
-        )}
-        {currentEntry.type === 'thinking-iter' && currentEntry.subIndex != null && currentStep.thinkings && (
-          <ThinkingIterDetail thinking={currentStep.thinkings[currentEntry.subIndex]} />
-        )}
-        {currentEntry.type === 'micro' && currentEntry.subIndex != null && currentStep.microReasonings && (
-          <MicroDetail micro={currentStep.microReasonings[currentEntry.subIndex]} />
+        {currentStep ? (
+          <>
+            {currentEntry.type === 'step' && (
+              <StepDetail step={currentStep} loop={loop} onDrillDown={drillDown} />
+            )}
+            {currentEntry.type === 'tool' && currentEntry.subIndex != null && (
+              <ToolDetail step={currentStep} toolIndex={currentEntry.subIndex} onDrillDown={drillDown} />
+            )}
+            {currentEntry.type === 'tool-result' && currentEntry.subIndex != null && (
+              <ToolResultDetail step={currentStep} toolIndex={currentEntry.subIndex} />
+            )}
+            {currentEntry.type === 'thinking' && currentStep.thinkings && (
+              <ThinkingDetail thinkings={currentStep.thinkings} onDrillDown={drillDown} stepIndex={currentStep.index} />
+            )}
+            {currentEntry.type === 'thinking-iter' && currentEntry.subIndex != null && currentStep.thinkings && (
+              <ThinkingIterDetail thinking={currentStep.thinkings[currentEntry.subIndex]} />
+            )}
+            {currentEntry.type === 'micro' && currentEntry.subIndex != null && currentStep.microReasonings && (
+              <MicroDetail micro={currentStep.microReasonings[currentEntry.subIndex]} />
+            )}
+          </>
+        ) : (
+          /* Fallback: no step data found — show basic node info */
+          <div style={{ fontSize: 13, color: '#888' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
+                color: '#fff', backgroundColor: '#455a64',
+              }}>
+                {currentEntry.label}
+              </span>
+            </div>
+            <div style={{ color: '#666', fontSize: 12 }}>
+              No step data available for this node yet.
+            </div>
+            <div style={{ color: '#555', fontSize: 11, marginTop: 8 }}>
+              Node ID: {nodeId}
+            </div>
+          </div>
         )}
       </div>
     </div>

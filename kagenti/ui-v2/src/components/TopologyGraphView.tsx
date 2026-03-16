@@ -19,6 +19,7 @@ import {
   ReactFlow,
   type Node,
   type Edge,
+  type NodeMouseHandler,
   Position,
   Background,
   Controls,
@@ -29,6 +30,7 @@ import type { AgentLoop } from '../types/agentLoop';
 import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge } from '../types/graphCard';
 import { countTools, formatTokens, formatDuration } from '../utils/loopFormatting';
 import { EVENT_CATALOG } from '../utils/loopBuilder';
+import { GraphDetailPanel } from './GraphDetailPanel';
 
 import '@xyflow/react/dist/style.css';
 
@@ -169,6 +171,34 @@ const CATEGORY_BADGE_COLORS: Record<string, string> = {
   terminal:    '#ce93d8',
   meta:        '#78909c',
   interaction: '#a1887f',
+};
+
+/**
+ * Static mapping from topology node name to its PRIMARY category.
+ * Used in 'nodes' mode to color-code nodes by role.
+ */
+const TOPO_NODE_CATEGORY: Record<string, string> = {
+  router:          'decision',
+  planner:         'reasoning',
+  planner_tools:   'execution',
+  step_selector:   'decision',
+  executor:        'reasoning',
+  tools:           'execution',
+  reflector:       'decision',
+  reflector_tools: 'execution',
+  reflector_route: 'decision',
+  reporter:        'terminal',
+};
+
+/** Category-based node colors for the topology view (categories mode). */
+const CATEGORY_NODE_COLORS: Record<string, { bg: string; border: string }> = {
+  reasoning:   { bg: '#0d3868', border: '#58a6ff' },
+  execution:   { bg: '#1b4332', border: '#4caf50' },
+  tool_output: { bg: '#1a1a2e', border: '#888' },
+  decision:    { bg: '#4a2800', border: '#ff9800' },
+  terminal:    { bg: '#3a1050', border: '#ce93d8' },
+  meta:        { bg: '#263238', border: '#78909c' },
+  interaction: { bg: '#3e2723', border: '#a1887f' },
 };
 
 /**
@@ -366,7 +396,7 @@ function buildTopologyGraph(
   topology: GraphTopology,
   activeNode: string | null,
   edgeCounts: Map<string, EdgeTraversalInfo>,
-  eventDetail: 'categories' | 'event_types',
+  eventDetail: 'nodes' | 'events',
   eventCounts: Map<string, Map<string, number>>,
   eventCatalog: Record<string, { category: string; description: string }>,
   eventNodeMap: Record<string, string[]>,
@@ -400,12 +430,12 @@ function buildTopologyGraph(
   }
 
   // Pre-compute per-node event info for badges
-  // For 'categories' mode: collect unique categories for each topo node, with total event counts
-  // For 'event_types' mode: collect event type names that map to each topo node
+  // For 'nodes' mode: collect unique categories for each topo node, with total event counts
+  // For 'events' mode: collect event type names that map to each topo node
   const nodeCategoryInfo = new Map<string, { category: string; count: number }[]>();
   const nodeEventTypeInfo = new Map<string, string[]>();
 
-  if (eventDetail === 'categories') {
+  if (eventDetail === 'nodes') {
     // Aggregate observed event types into categories per topology node
     for (const [topoNodeId, evtMap] of eventCounts) {
       const catCounts = new Map<string, number>();
@@ -434,12 +464,18 @@ function buildTopologyGraph(
 
   // Add topology nodes
   for (const [nodeId, nodeDef] of Object.entries(topology.nodes)) {
-    const colors = getNodeColors(nodeId);
     const isActive = nodeId === activeNode;
 
-    // Build badge content based on eventDetail mode
+    // In categories mode: color-code by primary category
+    // In event_types mode: use default topology node colors
+    let colors: { bg: string; border: string };
     let badgeContent: React.ReactNode = null;
-    if (eventDetail === 'categories') {
+
+    if (eventDetail === 'nodes') {
+      const primaryCat = TOPO_NODE_CATEGORY[nodeId];
+      colors = primaryCat ? (CATEGORY_NODE_COLORS[primaryCat] || getNodeColors(nodeId)) : getNodeColors(nodeId);
+
+      // Show category badge with count
       const cats = nodeCategoryInfo.get(nodeId);
       if (cats && cats.length > 0) {
         badgeContent = (
@@ -462,32 +498,31 @@ function buildTopologyGraph(
             ))}
           </div>
         );
+      } else if (primaryCat) {
+        // No observed events yet, still show the category label
+        badgeContent = (
+          <div style={{ marginTop: 3, fontSize: 9, color: CATEGORY_BADGE_COLORS[primaryCat] || '#888', fontWeight: 600, textTransform: 'uppercase' as const }}>
+            {primaryCat}
+          </div>
+        );
       }
     } else {
-      // event_types mode: show which event types this node emits
+      // event_types mode: default node colors, show event type labels below description
+      colors = getNodeColors(nodeId);
       const evtTypes = nodeEventTypeInfo.get(nodeId);
       if (evtTypes && evtTypes.length > 0) {
-        // Show observed counts if available
         const observed = eventCounts.get(nodeId);
         badgeContent = (
-          <div style={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap', marginTop: 3 }}>
+          <div style={{ marginTop: 4, fontSize: 10, color: '#aaa', lineHeight: '16px' }}>
             {evtTypes.map((et) => {
               const count = observed?.get(et) || 0;
               return (
-                <span
-                  key={et}
-                  style={{
-                    fontSize: 9,
-                    padding: '1px 4px',
-                    borderRadius: 3,
-                    backgroundColor: count > 0 ? 'rgba(88, 166, 255, 0.25)' : 'rgba(255,255,255,0.08)',
-                    color: count > 0 ? COLOR_ACCENT_BLUE : COLOR_TEXT_TERTIARY,
-                    fontWeight: count > 0 ? 600 : 400,
-                    lineHeight: '14px',
-                  }}
-                >
+                <div key={et} style={{
+                  color: count > 0 ? COLOR_ACCENT_BLUE : COLOR_TEXT_TERTIARY,
+                  fontWeight: count > 0 ? 600 : 400,
+                }}>
                   {et}{count > 0 ? ` (${count})` : ''}
-                </span>
+                </div>
               );
             })}
           </div>
@@ -514,6 +549,7 @@ function buildTopologyGraph(
         borderRadius: 8,
         padding: '8px 12px',
         minWidth: 130,
+        cursor: 'pointer',
         ...(isActive ? {
           boxShadow: `0 0 12px rgba(79, 195, 247, 0.6)`,
         } : {}),
@@ -800,10 +836,10 @@ export interface TopologyGraphViewProps {
   /** Optional: graph card data for topology. Falls back to default sandbox-legion topology. */
   graphCard?: AgentGraphCard;
   /** Event detail level: 'types' shows node categories, 'subtypes' shows individual events. */
-  eventDetail?: 'categories' | 'event_types';
+  eventDetail?: 'nodes' | 'events';
 }
 
-export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({ loop, allLoops, graphCard, eventDetail = 'categories' }) => {
+export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({ loop, allLoops, graphCard, eventDetail = 'nodes' }) => {
   // Stabilize the loops array so downstream useMemo deps don't churn
   // when allLoops is not provided (avoids creating a new [loop] every render).
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
@@ -812,6 +848,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
   const [sidebarOpen, setSidebarOpen] = useState(loops.length > 1);
   const [selectedLoopId, setSelectedLoopId] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Determine which loop(s) contribute to the graph — memoized to avoid
@@ -880,6 +917,15 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
   }, []);
 
   const closeEdgePopup = useCallback(() => setHoveredEdge(null), []);
+
+  const onNodeClick: NodeMouseHandler = useCallback((_event, node) => {
+    // Don't open detail panel for pseudo-nodes
+    if (node.id === '__start__' || node.id === '__end__') return;
+    setSelectedNodeId(node.id);
+  }, []);
+
+  // All topology node IDs for sibling navigation in detail panel
+  const topoNodeIds = useMemo(() => Object.keys(topology.nodes), [topology.nodes]);
 
   // Show "waiting" when all loops are empty
   const allEmpty = useMemo(() => loops.every((l) => l.steps.length === 0), [loops]);
@@ -1027,6 +1073,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
           nodesConnectable={false}
           elementsSelectable
           onEdgeClick={onEdgeClick}
+          onNodeClick={onNodeClick}
           panOnDrag
           zoomOnScroll
         >
@@ -1044,6 +1091,17 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
             info={hoveredEdgeInfo}
             loops={loops}
             onClose={closeEdgePopup}
+          />
+        )}
+
+        {/* Detail panel for clicked topology node */}
+        {selectedNodeId && (
+          <GraphDetailPanel
+            loop={activeLoops[activeLoops.length - 1] || loop}
+            nodeId={selectedNodeId}
+            onClose={() => setSelectedNodeId(null)}
+            siblingNodeIds={topoNodeIds}
+            onNavigate={setSelectedNodeId}
           />
         )}
       </div>
