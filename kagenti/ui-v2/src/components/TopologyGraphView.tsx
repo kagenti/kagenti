@@ -784,23 +784,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
               {sidebarOpen ? '\u25c0 Hide' : '\u25b6 Messages'}
             </button>
           )}
-          <button
-            data-testid="graph-fullscreen-toggle"
-            title="Toggle fullscreen"
-            onClick={() => {
-              const el = document.querySelector('[data-testid="graph-loop-view"]');
-              if (el) {
-                if (document.fullscreenElement) {
-                  document.exitFullscreen();
-                } else {
-                  el.requestFullscreen();
-                }
-              }
-            }}
-            style={TOOLBAR_BTN_STYLE}
-          >
-            {'\u26f6'} Fullscreen
-          </button>
+          {/* Fullscreen button is in the wrapper (GraphLoopView) toggle bar */}
         </div>
 
         {/* Active node indicator badge */}

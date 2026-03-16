@@ -15,7 +15,10 @@ import type { AgentLoop } from '../types/agentLoop';
 import type { AgentGraphCard } from '../types/graphCard';
 
 type GraphSubView = 'steps' | 'topology';
-type EventDetail = 'types' | 'subtypes';
+/** Event grouping level matching agent graph card terminology:
+ *  'categories' = 7 high-level (reasoning, execution, tool_output, decision, terminal, meta, interaction)
+ *  'event_types' = 12 specific (planner_output, tool_call, reflector_decision, etc.) */
+type EventDetail = 'categories' | 'event_types';
 
 export interface GraphLoopViewProps {
   /** Primary loop (backward-compatible). */
@@ -50,7 +53,7 @@ function toggleBtnStyle(active: boolean): React.CSSProperties {
 
 export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, allLoops, graphCard }) => {
   const [subView, setSubView] = useState<GraphSubView>('steps');
-  const [eventDetail, setEventDetail] = useState<EventDetail>('types');
+  const [eventDetail, setEventDetail] = useState<EventDetail>('categories');
 
   // Stabilize loops array
   const loops = useMemo(() => allLoops || [loop], [allLoops, loop]);
@@ -82,6 +85,18 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
         marginBottom: 4,
         overflow: 'hidden',
         backgroundColor: '#0d1117',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 400,
+      }}
+      // Fullscreen: fill entire viewport
+      ref={(el) => {
+        if (el) {
+          const update = () => {
+            el.style.height = document.fullscreenElement === el ? '100vh' : 'auto';
+          };
+          el.onfullscreenchange = update;
+        }
       }}
     >
       {/* Subtab toggle bar + fullscreen */}
@@ -113,32 +128,32 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               Topology
             </button>
           </div>
-          {/* Event detail toggle: Types / Subtypes */}
+          {/* Event detail toggle: Types / Event Types */}
           <div style={{ display: 'flex', gap: 0 }}>
             <button
               data-testid="graph-toggle-types"
-              onClick={() => setEventDetail('types')}
+              onClick={() => setEventDetail('categories')}
               style={{
-                ...toggleBtnStyle(eventDetail === 'types'),
+                ...toggleBtnStyle(eventDetail === 'categories'),
                 borderTopLeftRadius: 4,
                 borderBottomLeftRadius: 4,
                 fontSize: 11,
               }}
             >
-              Event Types
+              Categories
             </button>
             <button
               data-testid="graph-toggle-subtypes"
-              onClick={() => setEventDetail('subtypes')}
+              onClick={() => setEventDetail('event_types')}
               style={{
-                ...toggleBtnStyle(eventDetail === 'subtypes'),
+                ...toggleBtnStyle(eventDetail === 'event_types'),
                 borderLeft: 'none',
                 borderTopRightRadius: 4,
                 borderBottomRightRadius: 4,
                 fontSize: 11,
               }}
             >
-              Subtypes
+              Event Types
             </button>
           </div>
         </div>
@@ -151,7 +166,17 @@ export const GraphLoopView: React.FC<GraphLoopViewProps> = React.memo(({ loop, a
               else el.requestFullscreen();
             }
           }}
-          style={{ ...toggleBtnStyle(false), borderRadius: 4, fontSize: 11 }}
+          style={{
+            padding: '4px 14px',
+            fontSize: 11,
+            fontWeight: 500,
+            color: '#58a6ff',
+            background: 'rgba(88, 166, 255, 0.08)',
+            border: '1px solid #58a6ff',
+            borderRadius: 4,
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
         >
           &#x26F6; Fullscreen
         </button>
