@@ -1,7 +1,7 @@
 // Copyright 2025 IBM Corp.
 // Licensed under the Apache License, Version 2.0
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   PageSection,
   Card,
@@ -793,11 +793,14 @@ export const SandboxPage: React.FC = () => {
     }, { replace: true });
   }, [setSearchParams]);
 
+  // Memoize full loop array for graph view multi-message mode
+  const allLoopsArray = useMemo(() => Array.from(agentLoops.values()), [agentLoops]);
+
   const renderLoopCard = useCallback((loop: AgentLoop, streaming: boolean) => {
     if (viewMode === 'simple') return <SimpleLoopCard key={loop.id} loop={loop} />;
-    if (viewMode === 'graph') return <GraphLoopView key={loop.id} loop={loop} />;
+    if (viewMode === 'graph') return <GraphLoopView key={loop.id} loop={loop} allLoops={allLoopsArray} />;
     return <AgentLoopCard key={loop.id} loop={loop} isStreaming={streaming} namespace={namespace} agentName={selectedAgent} />;
-  }, [viewMode, namespace, selectedAgent]);
+  }, [viewMode, namespace, selectedAgent, allLoopsArray]);
 
   // Keyboard shortcuts: Alt+1/2/3 for view modes
   useEffect(() => {
@@ -1244,12 +1247,12 @@ export const SandboxPage: React.FC = () => {
           try {
             const data = JSON.parse(line.slice(6));
 
-            // Track session from the streaming response
-            // Use ref to avoid stale closure (contextId may be stale after handleNewSession)
+            // Track session ID from SSE — DON'T call setContextId here!
+            // Setting contextId mid-stream triggers the hook's Effect 1 which
+            // wipes messages. Instead, save to ref + URL and set state in finally.
             if (data.session_id && !contextIdRef.current) {
-              setContextId(data.session_id);
               contextIdRef.current = data.session_id;
-              // Only add session param — preserve existing agent param from URL
+              // Update URL immediately (visual feedback, no state change)
               setSearchParams((prev) => {
                 const next = new URLSearchParams(prev);
                 next.set('session', data.session_id);
@@ -1569,6 +1572,11 @@ export const SandboxPage: React.FC = () => {
       sendInProgressRef.current = false;
       sessionDispatch({ type: 'SEND_DONE' });
       setStreamingContent('');
+      // Set contextId state AFTER SEND_DONE — deferred from streaming to avoid
+      // triggering Effect 1 mid-stream (which wipes messages).
+      if (contextIdRef.current && contextIdRef.current !== contextId) {
+        setContextId(contextIdRef.current);
+      }
       // SEND_DONE marks loops with finalAnswer as 'done', others as 'executing'.
     }
   };
@@ -1827,6 +1835,20 @@ export const SandboxPage: React.FC = () => {
                 const loopArray = Array.from(agentLoops.values());
                 const hasLoopCards = loopArray.length > 0;
                 const elements: React.ReactNode[] = [];
+
+                // In graph mode, render a single GraphLoopView with all loops
+                // instead of one per turn. The graph view has its own message sidebar.
+                if (viewMode === 'graph' && hasLoopCards) {
+                  const lastLoop = loopArray[loopArray.length - 1];
+                  elements.push(
+                    <GraphLoopView
+                      key="graph-topology-view"
+                      loop={lastLoop}
+                      allLoops={allLoopsArray}
+                    />
+                  );
+                  return elements;
+                }
 
                 // Render each turn, pairing with the corresponding loop card by position
                 turns.forEach((turn, idx) => {
