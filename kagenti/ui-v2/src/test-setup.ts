@@ -7,6 +7,8 @@
  * in the Node.js test environment.
  */
 
+export {}; // Make this file a module (required for top-level await)
+
 // Intercept .css requires at the Module level
 const Module = await import('module');
 const _origLoad = (Module as any).default._load;
