@@ -1855,8 +1855,26 @@ export const SandboxPage: React.FC = () => {
                   return elements;
                 }
 
-                // Render each turn, pairing with the corresponding loop card by position
+                // Pair user messages with loops by CONTENT MATCH, not position.
+                // This ensures the user message and its loop render together
+                // even during streaming when they arrive at different times.
+                const pairedLoopIds = new Set<string>();
+
                 turns.forEach((turn, idx) => {
+                  // Find matching loop by userMessage content
+                  let matchedLoop: AgentLoop | undefined;
+                  if (turn.user && hasLoopCards) {
+                    const userText = turn.user.content.trim();
+                    matchedLoop = loopArray.find(
+                      (l) => !pairedLoopIds.has(l.id) && l.userMessage && l.userMessage.trim() === userText
+                    );
+                    // Fallback: pair by position for history-loaded sessions
+                    if (!matchedLoop && idx < loopArray.length && !pairedLoopIds.has(loopArray[idx].id)) {
+                      matchedLoop = loopArray[idx];
+                    }
+                    if (matchedLoop) pairedLoopIds.add(matchedLoop.id);
+                  }
+
                   elements.push(
                     <React.Fragment key={turn.user?.id || `turn-${idx}`}>
                       {/* User message */}
@@ -1886,17 +1904,16 @@ export const SandboxPage: React.FC = () => {
                           }
                         />
                       )}
-                      {/* Loop card for this turn (paired by position) */}
-                      {hasLoopCards && idx < loopArray.length && renderLoopCard(loopArray[idx], isStreaming && idx === loopArray.length - 1)}
+                      {/* Loop card paired with this user message */}
+                      {matchedLoop && renderLoopCard(matchedLoop, isStreaming && matchedLoop === loopArray[loopArray.length - 1])}
                     </React.Fragment>,
                   );
                 });
 
-                // Render any remaining loop cards that exceed the number of turns
-                // (e.g. during history load when messages=[])
-                loopArray.slice(turns.length).forEach((loop, i) => {
+                // Render any unpaired loops (e.g. during streaming before user message is in messages array)
+                loopArray.filter((l) => !pairedLoopIds.has(l.id)).forEach((loop) => {
                   elements.push(
-                    <React.Fragment key={`loop-extra-${loop.id}`}>
+                    <React.Fragment key={`loop-unpaired-${loop.id}`}>
                       {loop.userMessage && (
                         <ChatBubble
                           msg={{
@@ -1911,7 +1928,7 @@ export const SandboxPage: React.FC = () => {
                           agentName={selectedAgent}
                         />
                       )}
-                      {renderLoopCard(loop, isStreaming && i === loopArray.length - turns.length - 1)}
+                      {renderLoopCard(loop, isStreaming && loop === loopArray[loopArray.length - 1])}
                     </React.Fragment>,
                   );
                 });
