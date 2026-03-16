@@ -1,0 +1,15 @@
+# Even with the org .github repo, workflows DO NOT automatically run in other repos.
+# This is a tiny trigger workflow in each repo.
+
+name: Kagenti Project Automation
+
+on:
+  issues:
+    types: [opened]
+
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  add:
+    uses: kagenti/.github/.github/workflows/add-to-project.yml@main
