@@ -2230,6 +2230,434 @@ _EVENT_CATEGORY_MAP: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Background event consumer — survives UI disconnects
+# ---------------------------------------------------------------------------
+
+# Registry of active consumers — keyed by (namespace, session_id)
+_active_consumers: dict[tuple[str, str], asyncio.Task] = {}
+
+_TERMINAL_STATES = frozenset({"completed", "failed", "canceled"})
+
+
+async def _background_event_consumer(
+    agent_url: str,
+    session_id: str,
+    namespace: str,
+    task_id: str,
+    message: str,
+    owner: str | None = None,
+    agent_name: str | None = None,
+    skill: str | None = None,
+) -> None:
+    """Background task: consume agent SSE events and persist to events table.
+
+    Independent of UI connection. Survives UI disconnects.
+    Reconnects automatically if agent SSE drops (exponential backoff, max 10 retries).
+    Stops when agent reaches terminal status (completed/failed/canceled).
+
+    Uses tasks/resubscribe to open its own SSE connection to the agent,
+    running in parallel with the UI proxy generator. The consumer ensures
+    ALL events are persisted to the events table and loop_events metadata
+    blob, even if the UI disconnects mid-stream.
+    """
+    _event_counter: int = 0
+    loop_events: list[dict] = []
+    _last_persisted_count: int = 0
+    _persist_bg_tasks: set[asyncio.Task] = set()
+    _max_reconnect = 10
+    _done_received = False
+
+    logger.info(
+        "BGConsumer: STARTED session=%s task=%s agent_url=%s",
+        session_id,
+        task_id,
+        agent_url,
+    )
+
+    async def _persist_event(parsed: dict) -> None:
+        """Persist a single loop event to the events table."""
+        nonlocal _event_counter
+        _event_counter += 1
+        evt_type = parsed.get("type", "")
+        t = asyncio.create_task(
+            _persist_event_row(
+                context_id=session_id,
+                task_id=task_id,
+                event_index=_event_counter,
+                event_type=evt_type,
+                event_category=_EVENT_CATEGORY_MAP.get(evt_type),
+                langgraph_node=parsed.get("langgraph_node"),
+                payload=parsed,
+                namespace=namespace,
+            )
+        )
+        _persist_bg_tasks.add(t)
+        t.add_done_callback(_persist_bg_tasks.discard)
+
+    async def _persist_loop_events_snapshot() -> None:
+        """Persist current loop_events snapshot to task metadata."""
+        nonlocal _last_persisted_count
+        if not loop_events:
+            return
+        _last_persisted_count = len(loop_events)
+        t = asyncio.create_task(
+            _persist_loop_events_incremental(
+                task_id,
+                list(loop_events),
+                namespace,
+            )
+        )
+        _persist_bg_tasks.add(t)
+        t.add_done_callback(_persist_bg_tasks.discard)
+
+    def _process_sse_line(line: str) -> str | None:
+        """Extract data payload from an SSE line. Returns None if not a data line."""
+        if line.startswith("data: "):
+            return line[6:]
+        return None
+
+    async def _process_events_from_status_message(status_message: str) -> bool:
+        """Parse loop events from a status message. Returns True if terminal."""
+        nonlocal _done_received
+        if not status_message:
+            return False
+
+        msg_lines = [ln.strip() for ln in status_message.split("\n") if ln.strip()]
+        for msg_line in msg_lines:
+            try:
+                parsed = json.loads(msg_line)
+                if isinstance(parsed, dict) and "loop_id" in parsed:
+                    evt_type = parsed.get("type", "")
+                    loop_events.append(parsed)
+
+                    # Persist to events table
+                    await _persist_event(parsed)
+
+                    # Incremental persist to loop_events metadata
+                    if _should_persist_incrementally(loop_events, _last_persisted_count, parsed):
+                        await _persist_loop_events_snapshot()
+
+                    logger.debug(
+                        "BGConsumer: event session=%s type=%s step=%s",
+                        session_id,
+                        evt_type,
+                        parsed.get("step", ""),
+                    )
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return False
+
+    async def _consume_stream(client: httpx.AsyncClient) -> bool:
+        """Open a tasks/resubscribe stream and consume events.
+
+        Returns True if [DONE] was received (terminal), False if stream
+        ended prematurely (needs reconnect).
+        """
+        nonlocal _done_received
+
+        resub_msg = {
+            "jsonrpc": "2.0",
+            "id": str(uuid4()),
+            "method": "tasks/resubscribe",
+            "params": {"id": task_id},
+        }
+
+        # First check if task is already terminal
+        try:
+            check_resp = await client.post(
+                agent_url,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": str(uuid4()),
+                    "method": "tasks/get",
+                    "params": {"id": task_id},
+                },
+            )
+            if check_resp.status_code == 200:
+                check_data = check_resp.json()
+                check_state = (
+                    check_data.get("result", {}).get("status", {}).get("state", "").lower()
+                )
+                if check_state in _TERMINAL_STATES:
+                    logger.info(
+                        "BGConsumer: task already %s — extracting events from history",
+                        check_state,
+                    )
+                    # Extract any events from task history we haven't seen
+                    history = check_data.get("result", {}).get("history", [])
+                    for msg in history:
+                        for part in msg.get("parts", []):
+                            text = part.get("text", "")
+                            await _process_events_from_status_message(text)
+
+                    _done_received = True
+                    return True
+        except Exception as exc:
+            logger.debug("BGConsumer: tasks/get check failed: %s", exc)
+
+        # Open resubscribe stream
+        async with client.stream(
+            "POST",
+            agent_url,
+            json=resub_msg,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+        ) as response:
+            if response.status_code != 200:
+                logger.warning(
+                    "BGConsumer: resubscribe returned %d for session=%s",
+                    response.status_code,
+                    session_id,
+                )
+                return False
+
+            logger.info(
+                "BGConsumer: connected to agent stream session=%s task=%s",
+                session_id,
+                task_id,
+            )
+            line_iter = response.aiter_lines().__aiter__()
+
+            while True:
+                try:
+                    line = await asyncio.wait_for(
+                        line_iter.__anext__(),
+                        timeout=30,  # longer timeout than UI — we're patient
+                    )
+                except asyncio.TimeoutError:
+                    continue  # just keep waiting
+                except StopAsyncIteration:
+                    logger.info(
+                        "BGConsumer: stream exhausted for session=%s",
+                        session_id,
+                    )
+                    return False  # stream ended without [DONE]
+
+                if not line:
+                    continue
+
+                data = _process_sse_line(line)
+                if data is None:
+                    continue
+
+                if data == "[DONE]":
+                    logger.info(
+                        "BGConsumer: [DONE] received for session=%s (%d events)",
+                        session_id,
+                        len(loop_events),
+                    )
+                    _done_received = True
+                    return True
+
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+
+                if "result" not in chunk:
+                    continue
+
+                result = chunk["result"]
+
+                # Process status messages containing loop events
+                if "status" in result:
+                    status = result["status"]
+                    if "message" in status and status["message"]:
+                        parts = status["message"].get("parts", [])
+                        status_message = _extract_text_from_parts(parts)
+                        await _process_events_from_status_message(status_message)
+
+        return False  # should not reach here
+
+    try:
+        # Small delay to let the initial message/stream POST establish
+        # the agent task before we try to resubscribe
+        await asyncio.sleep(1.0)
+
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=None, write=30.0, pool=None)
+        ) as client:
+            delay = 2.0
+            for attempt in range(1, _max_reconnect + 1):
+                try:
+                    done = await _consume_stream(client)
+                    if done:
+                        break
+                except (
+                    httpx.RequestError,
+                    httpx.ReadError,
+                    httpx.RemoteProtocolError,
+                ) as exc:
+                    logger.warning(
+                        "BGConsumer: connection error attempt %d/%d session=%s: %s",
+                        attempt,
+                        _max_reconnect,
+                        session_id,
+                        exc,
+                    )
+
+                if attempt < _max_reconnect:
+                    logger.info(
+                        "BGConsumer: reconnecting in %.1fs (attempt %d/%d) session=%s",
+                        delay,
+                        attempt,
+                        _max_reconnect,
+                        session_id,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, 60.0)
+                else:
+                    logger.warning(
+                        "BGConsumer: max reconnects reached for session=%s",
+                        session_id,
+                    )
+
+    except asyncio.CancelledError:
+        logger.info("BGConsumer: cancelled for session=%s", session_id)
+        raise
+    except Exception:
+        logger.warning(
+            "BGConsumer: unexpected error for session=%s",
+            session_id,
+            exc_info=True,
+        )
+    finally:
+        # Wait for any in-flight persist tasks
+        if _persist_bg_tasks:
+            logger.info(
+                "BGConsumer: waiting for %d persist tasks session=%s",
+                len(_persist_bg_tasks),
+                session_id,
+            )
+            await asyncio.gather(*_persist_bg_tasks, return_exceptions=True)
+
+        # Final persist of loop_events to task metadata
+        if loop_events and namespace:
+            try:
+                pool = await get_session_pool(namespace)
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow("SELECT metadata FROM tasks WHERE id = $1", task_id)
+                    if row:
+                        meta = _parse_json_field(row["metadata"]) or {}
+                        existing = meta.get("loop_events", [])
+                        # Only overwrite if we have more events
+                        if len(loop_events) >= len(existing):
+                            meta["loop_events"] = loop_events
+                            await conn.execute(
+                                "UPDATE tasks SET metadata = $1::json WHERE id = $2",
+                                json.dumps(meta),
+                                task_id,
+                            )
+                            logger.info(
+                                "BGConsumer: final persist %d events for session=%s",
+                                len(loop_events),
+                                session_id,
+                            )
+            except Exception as exc:
+                logger.warning(
+                    "BGConsumer: final persist failed session=%s: %s",
+                    session_id,
+                    exc,
+                )
+
+        # Update session status if we know the terminal state
+        if _done_received and namespace:
+            try:
+                pool = await get_session_pool(namespace)
+                async with pool.acquire() as conn:
+                    # Get final task status from agent
+                    has_reporter = any(e.get("type") == "reporter_output" for e in loop_events)
+                    terminal_status = "completed" if has_reporter else "working"
+
+                    # Update sessions table
+                    await conn.execute(
+                        "UPDATE sessions SET updated_at = NOW() WHERE context_id = $1",
+                        session_id,
+                    )
+                    logger.info(
+                        "BGConsumer: session status updated session=%s status=%s",
+                        session_id,
+                        terminal_status,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "BGConsumer: session status update failed session=%s: %s",
+                    session_id,
+                    exc,
+                )
+
+        logger.info(
+            "BGConsumer: FINISHED session=%s events=%d done=%s",
+            session_id,
+            len(loop_events),
+            _done_received,
+        )
+
+
+def _spawn_background_consumer(
+    agent_url: str,
+    session_id: str,
+    namespace: str,
+    task_id: str,
+    message: str,
+    owner: str | None = None,
+    agent_name: str | None = None,
+    skill: str | None = None,
+) -> asyncio.Task | None:
+    """Spawn a background event consumer for a session if one isn't already running.
+
+    Returns the Task if spawned, None if a consumer already exists.
+    """
+    key = (namespace, session_id)
+    existing = _active_consumers.get(key)
+    if existing is not None and not existing.done():
+        logger.info(
+            "BGConsumer: already active for session=%s — skipping spawn",
+            session_id,
+        )
+        return None
+
+    task = asyncio.create_task(
+        _background_event_consumer(
+            agent_url=agent_url,
+            session_id=session_id,
+            namespace=namespace,
+            task_id=task_id,
+            message=message,
+            owner=owner,
+            agent_name=agent_name,
+            skill=skill,
+        ),
+        name=f"bg-consumer-{session_id[:12]}",
+    )
+    _active_consumers[key] = task
+
+    def _cleanup(t: asyncio.Task) -> None:
+        _active_consumers.pop(key, None)
+        if t.cancelled():
+            logger.info("BGConsumer: task cancelled for session=%s", session_id)
+        elif t.exception():
+            logger.warning(
+                "BGConsumer: task failed for session=%s: %s",
+                session_id,
+                t.exception(),
+            )
+        else:
+            logger.info("BGConsumer: task completed for session=%s", session_id)
+
+    task.add_done_callback(_cleanup)
+
+    logger.info(
+        "BGConsumer: spawned for session=%s task=%s",
+        session_id,
+        task_id,
+    )
+    return task
+
+
 async def _persist_event_row(
     context_id: str,
     task_id: str,
@@ -2583,6 +3011,22 @@ async def _stream_sandbox_response(
                                     )
                                     _persist_bg_tasks.add(_t)
                                     _t.add_done_callback(_persist_bg_tasks.discard)
+
+                                # Spawn background consumer — ensures event
+                                # persistence survives UI disconnects. The
+                                # consumer uses tasks/resubscribe to open its
+                                # own independent SSE connection.
+                                if namespace:
+                                    _spawn_background_consumer(
+                                        agent_url=agent_url,
+                                        session_id=session_id,
+                                        namespace=namespace,
+                                        task_id=stream_task_id,
+                                        message=message,
+                                        owner=owner,
+                                        agent_name=agent_name,
+                                        skill=skill,
+                                    )
 
                         payload: dict = {"session_id": session_id}
                         if owner:
@@ -3452,6 +3896,20 @@ async def subscribe_session(
 
     agent_name = await _resolve_agent_name(namespace, session_id, None)
     agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+
+    # Ensure a background consumer is running for this session.
+    # On UI reconnect, the consumer may have already been spawned
+    # from the initial chat_stream — _spawn_background_consumer
+    # will skip if one is already active.
+    _spawn_background_consumer(
+        agent_url=agent_url,
+        session_id=session_id,
+        namespace=namespace,
+        task_id=task_id,
+        message="",  # not needed for resubscribe
+        owner=None,
+        agent_name=agent_name,
+    )
 
     return StreamingResponse(
         _subscribe_stream(agent_url, task_id, session_id, namespace),

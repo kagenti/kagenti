@@ -14,7 +14,7 @@
 
 import { useReducer, useEffect, useRef, useCallback, type Dispatch, type MutableRefObject } from 'react';
 import { sandboxService } from '../services/api';
-import { eventService, type TaskSummary } from '../services/eventService';
+import { eventService, eventRecordToLoopEvent, type TaskSummary } from '../services/eventService';
 import { useAuth } from '../contexts/AuthContext';
 import type { AgentLoop } from '../types/agentLoop';
 import type { LoopEvent } from '../utils/loopBuilder';
@@ -71,6 +71,8 @@ interface SessionState {
   /** Paginated task summaries for turn-block rendering. */
   taskSummaries: TaskSummary[];
   hasMoreTasks: boolean;
+  /** Highest event_index seen — used for gap-fill deduplication on reconnect. */
+  lastEventIndex: number;
 }
 
 /** Detect and filter out LangGraph intermediate status dumps and JSON loop events from history. */
@@ -100,6 +102,8 @@ type Action =
       hasMoreHistory: boolean;
       oldestIndex: number | null;
       isTerminal: boolean;
+      /** Highest event_index from loaded events (-1 if none). */
+      lastEventIndex?: number;
     }
   | { type: 'LOOP_EVENT'; event: LoopEvent; userMessage?: string }
   | { type: 'SUBSCRIBE_DONE' }
@@ -148,9 +152,17 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         recoveryAttempts: 0,
         taskSummaries: [],
         hasMoreTasks: false,
+        lastEventIndex: -1,
       };
 
-    case 'HISTORY_LOADED':
+    case 'HISTORY_LOADED': {
+      // Use explicit lastEventIndex from action, or compute from loop nodeVisits
+      let maxIdx = action.lastEventIndex ?? state.lastEventIndex;
+      if (maxIdx < 0) {
+        for (const loop of action.agentLoops.values()) {
+          if (loop.nodeVisits > maxIdx) maxIdx = loop.nodeVisits;
+        }
+      }
       return {
         ...state,
         phase: action.isTerminal ? 'LOADED' : 'SUBSCRIBING',
@@ -160,11 +172,18 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         oldestIndex: action.oldestIndex,
         error: null,
         recoveryAttempts: 0,
+        lastEventIndex: maxIdx,
       };
+    }
 
     case 'LOOP_EVENT': {
       const loopId = action.event.loop_id;
       if (!loopId) return state;
+      const eventIndex = action.event.event_index ?? state.lastEventIndex + 1;
+      // Deduplicate: skip events we've already seen (gap-fill overlap)
+      if (eventIndex <= state.lastEventIndex && action.event.event_index != null) {
+        return state;
+      }
       const next = new Map(state.agentLoops);
       let existing = next.get(loopId);
       if (!existing) {
@@ -174,7 +193,11 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         }
       }
       next.set(loopId, applyLoopEvent(existing, action.event));
-      return { ...state, agentLoops: next };
+      return {
+        ...state,
+        agentLoops: next,
+        lastEventIndex: Math.max(state.lastEventIndex, eventIndex),
+      };
     }
 
     case 'SUBSCRIBE_DONE': {
@@ -238,6 +261,7 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         recoveryAttempts: 0,
         taskSummaries: [],
         hasMoreTasks: false,
+        lastEventIndex: -1,
       };
 
     case 'SEND_STARTED':
@@ -356,19 +380,25 @@ interface FetchResult {
   hasMoreHistory: boolean;
   oldestIndex: number | null;
   isTerminal: boolean;
+  /** Highest event_index from loaded events (-1 if none). */
+  lastEventIndex: number;
 }
 
 /**
  * Fetch session detail + history page and build messages/loops.
  * Used by initial load, status-poll reload, and signal-gated reload.
+ *
+ * Tries the events table first (source of truth for reliable reconnect).
+ * Falls back to loop_events blob for backward compatibility with old sessions.
  */
 async function fetchAndBuildHistory(
   ns: string,
   ctxId: string,
 ): Promise<FetchResult> {
-  const [sessionDetail, historyPage] = await Promise.all([
+  const [sessionDetail, historyPage, eventsResult] = await Promise.all([
     sandboxService.getSession(ns, ctxId).catch(() => null),
     sandboxService.getHistory(ns, ctxId, { limit: INITIAL_HISTORY_LIMIT }).catch(() => null),
+    eventService.getSessionEvents(ns, ctxId, 0, 1000).catch(() => null),
   ]);
 
   let finalMessages: Message[] = [];
@@ -376,25 +406,70 @@ async function fetchAndBuildHistory(
   let hasMore = false;
   let oldest: number | null = null;
   let isTerminal = false;
+  let lastIdx = -1;
 
-  if (historyPage) {
+  // Determine terminal state from session/history
+  const taskState = historyPage?.task_state
+    || (sessionDetail?.status as Record<string, unknown> | undefined)?.state as string | undefined;
+  isTerminal = !!taskState && TERMINAL_STATES.has(taskState);
+
+  // Strategy 1: Build loops from events table (preferred — per-event, reliable)
+  if (eventsResult && eventsResult.events.length > 0) {
+    const loopEvents = eventsResult.events.map(eventRecordToLoopEvent);
+    finalLoops = buildAgentLoops(loopEvents);
+
+    // Track highest event_index for gap-fill
+    for (const evt of eventsResult.events) {
+      if (evt.event_index > lastIdx) lastIdx = evt.event_index;
+    }
+
+    // Pair user messages from history with loops
+    if (historyPage) {
+      const allMessages = historyPage.messages.map(toMessage);
+      hasMore = historyPage.has_more;
+      if (historyPage.messages.length > 0) {
+        oldest = historyPage.messages[0]._index ?? 0;
+      }
+      const loopArr = Array.from(finalLoops.values());
+      const { pairedLoops, unpairedMessages } = pairMessagesWithLoops(
+        allMessages.map((m) => ({ role: m.role, content: m.content, order: m.order })),
+        loopArr,
+      );
+      for (const paired of pairedLoops) {
+        finalLoops.set(paired.id, paired);
+      }
+      finalMessages = unpairedMessages.map((um, idx) => ({
+        id: `unpaired-${idx}`,
+        role: um.role as 'user' | 'assistant',
+        content: um.content,
+        timestamp: new Date(),
+        order: um.order,
+      }));
+    }
+
+    // If reporter_output event exists, session is complete
+    const hasReporter = eventsResult.events.some((e) => e.event_type === 'reporter_output');
+    if (hasReporter && !isTerminal) {
+      isTerminal = true;
+    }
+  } else if (historyPage) {
+    // Strategy 2: Fallback to loop_events blob (old sessions / events table empty)
     const allMessages = historyPage.messages.map(toMessage);
     hasMore = historyPage.has_more;
     if (historyPage.messages.length > 0) {
       oldest = historyPage.messages[0]._index ?? 0;
     }
 
-    // Determine terminal state
-    const taskState = historyPage.task_state
-      || (sessionDetail?.status as Record<string, unknown> | undefined)?.state as string | undefined;
-    isTerminal = !!taskState && TERMINAL_STATES.has(taskState);
-
-    // Build loops from events
     if (historyPage.loop_events && historyPage.loop_events.length > 0) {
       const events = historyPage.loop_events as unknown as LoopEvent[];
       finalLoops = buildAgentLoops(events);
 
-      // Pair user messages with loops
+      // Track highest event_index from loop_events
+      for (const evt of events) {
+        const idx = evt.event_index ?? 0;
+        if (idx > lastIdx) lastIdx = idx;
+      }
+
       const loopArr = Array.from(finalLoops.values());
       const { pairedLoops, unpairedMessages } = pairMessagesWithLoops(
         allMessages.map((m) => ({ role: m.role, content: m.content, order: m.order })),
@@ -411,7 +486,6 @@ async function fetchAndBuildHistory(
         order: um.order,
       }));
 
-      // If all loops have a final answer and session is not terminal, treat as loaded
       const hasComplete = Array.from(finalLoops.values()).some((l) => l.finalAnswer);
       if (hasComplete && !isTerminal) {
         isTerminal = true;
@@ -420,7 +494,7 @@ async function fetchAndBuildHistory(
       finalMessages = allMessages;
     }
   } else if (sessionDetail?.history) {
-    // Fallback: no history endpoint — use session detail
+    // Strategy 3: Fallback to raw session detail (very old sessions)
     const filtered = sessionDetail.history.filter((h: { role: string; parts?: Array<{ text?: string }> }) => {
       if (h.role === 'user') return true;
       const text = h.parts?.map((p: { text?: string }) => p.text).filter(Boolean).join('') || '';
@@ -431,7 +505,7 @@ async function fetchAndBuildHistory(
     isTerminal = true; // old-style sessions without loop events
   }
 
-  return { messages: finalMessages, agentLoops: finalLoops, hasMoreHistory: hasMore, oldestIndex: oldest, isTerminal };
+  return { messages: finalMessages, agentLoops: finalLoops, hasMoreHistory: hasMore, oldestIndex: oldest, isTerminal, lastEventIndex: lastIdx };
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +554,7 @@ export function useSessionLoader(
     recoveryAttempts: 0,
     taskSummaries: [],
     hasMoreTasks: false,
+    lastEventIndex: -1,
   });
 
   // Keep phaseRef in sync with state.phase (always current, no stale closures)
@@ -538,6 +613,7 @@ export function useSessionLoader(
           hasMoreHistory: result.hasMoreHistory,
           oldestIndex: result.oldestIndex,
           isTerminal: result.isTerminal,
+          lastEventIndex: result.lastEventIndex,
         });
       } catch (err) {
         if (cancelled) return;
@@ -549,6 +625,7 @@ export function useSessionLoader(
           hasMoreHistory: false,
           oldestIndex: null,
           isTerminal: true,
+          lastEventIndex: -1,
         });
       }
     })();
@@ -672,7 +749,7 @@ export function useSessionLoader(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase, contextId, namespace]);
 
-  // ----- Effect 3: RECOVERING phase → exponential backoff -----
+  // ----- Effect 3: RECOVERING phase → gap-fill from events table + backoff -----
   useEffect(() => {
     if (state.phase !== 'RECOVERING' || !contextId || !namespace) return;
 
@@ -695,31 +772,63 @@ export function useSessionLoader(
     const timer = setTimeout(async () => {
       if (cancelled) return;
       try {
-        const historyPage = await sandboxService.getHistory(namespace, contextId, {
-          limit: INITIAL_HISTORY_LIMIT,
-        });
+        // Gap-fill: fetch events from events table since lastEventIndex
+        const gapFromIndex = state.lastEventIndex >= 0 ? state.lastEventIndex + 1 : 0;
+        const [gapResult, sessionDetail] = await Promise.all([
+          eventService.getSessionEvents(namespace, contextId, gapFromIndex, 500).catch(() => null),
+          sandboxService.getSession(namespace, contextId).catch(() => null),
+        ]);
 
         if (cancelled) return;
 
-        const taskState = historyPage.task_state;
+        // Apply gap events to state via LOOP_EVENT dispatches
+        if (gapResult && gapResult.events.length > 0) {
+          for (const evt of gapResult.events) {
+            const loopEvent = eventRecordToLoopEvent(evt);
+            dispatch({ type: 'LOOP_EVENT', event: loopEvent });
+          }
+        }
+
+        // Determine terminal state
+        const taskState = (sessionDetail?.status as Record<string, unknown> | undefined)?.state as string | undefined;
         const isTerminal = !!taskState && TERMINAL_STATES.has(taskState);
 
-        // Rebuild loops from fresh events
-        let recoveredLoops = state.agentLoops;
-        if (historyPage.loop_events && historyPage.loop_events.length > 0) {
-          recoveredLoops = buildAgentLoops(historyPage.loop_events as unknown as LoopEvent[]);
-        }
+        // Check if reporter_output arrived in gap events
+        const hasReporter = gapResult?.events.some((e) => e.event_type === 'reporter_output') ?? false;
 
         dispatch({
           type: 'RECOVERY_RESULT',
-          isTerminal,
-          agentLoops: recoveredLoops,
+          isTerminal: isTerminal || hasReporter,
         });
       } catch {
         if (cancelled) return;
-        // Recovery fetch failed — re-dispatch SUBSCRIBE_ERROR to increment
-        // the attempt counter and schedule another retry.
-        dispatch({ type: 'SUBSCRIBE_ERROR' });
+        // Gap-fill failed — fall back to old method
+        try {
+          const historyPage = await sandboxService.getHistory(namespace, contextId, {
+            limit: INITIAL_HISTORY_LIMIT,
+          });
+
+          if (cancelled) return;
+
+          const taskState = historyPage.task_state;
+          const isTerminal = !!taskState && TERMINAL_STATES.has(taskState);
+
+          let recoveredLoops = state.agentLoops;
+          if (historyPage.loop_events && historyPage.loop_events.length > 0) {
+            recoveredLoops = buildAgentLoops(historyPage.loop_events as unknown as LoopEvent[]);
+          }
+
+          dispatch({
+            type: 'RECOVERY_RESULT',
+            isTerminal,
+            agentLoops: recoveredLoops,
+          });
+        } catch {
+          if (cancelled) return;
+          // Recovery fetch failed — re-dispatch SUBSCRIBE_ERROR to increment
+          // the attempt counter and schedule another retry.
+          dispatch({ type: 'SUBSCRIBE_ERROR' });
+        }
       }
     }, delay);
 
@@ -753,6 +862,7 @@ export function useSessionLoader(
               hasMoreHistory: result.hasMoreHistory,
               oldestIndex: result.oldestIndex,
               isTerminal: false, // Active session → subscribe
+              lastEventIndex: result.lastEventIndex,
             });
           } catch {
             // Re-fetch failed — stay in LOADING
@@ -789,6 +899,7 @@ export function useSessionLoader(
               hasMoreHistory: result.hasMoreHistory,
               oldestIndex: result.oldestIndex,
               isTerminal: result.isTerminal,
+              lastEventIndex: result.lastEventIndex,
             });
           } catch {
             // Reload failed — stay in current state

@@ -9,6 +9,7 @@
  */
 
 import { API_CONFIG } from './api';
+import type { LoopEvent } from '../utils/loopBuilder';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,22 +159,36 @@ export const eventService = {
 
   /**
    * Get paginated events for a session/task.
+   * When taskId is omitted, returns all events for the context.
    */
   async getEvents(
     namespace: string,
     contextId: string,
-    taskId: string,
+    taskId?: string,
     fromIndex: number = 0,
     limit: number = 100,
   ): Promise<PaginatedEvents> {
     const qs = new URLSearchParams();
     qs.set('context_id', contextId);
-    qs.set('task_id', taskId);
+    if (taskId) qs.set('task_id', taskId);
     qs.set('from_index', String(fromIndex));
     qs.set('limit', String(limit));
     return authedFetch<PaginatedEvents>(
       `${API_CONFIG.baseUrl}/sandbox/${encodeURIComponent(namespace)}/events?${qs}`,
     );
+  },
+
+  /**
+   * Get all events for a session context (across all tasks).
+   * Convenience wrapper around getEvents without a taskId filter.
+   */
+  async getSessionEvents(
+    namespace: string,
+    contextId: string,
+    fromIndex: number = 0,
+    limit: number = 500,
+  ): Promise<PaginatedEvents> {
+    return this.getEvents(namespace, contextId, undefined, fromIndex, limit);
   },
 
   /**
@@ -185,3 +200,23 @@ export const eventService = {
     );
   },
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert an EventRecord (from the events table) to the LoopEvent format
+ * used by loopBuilder. The payload IS the loop event data — the events
+ * table stores the full event JSON. We overlay event_index, event_type,
+ * and langgraph_node from the row-level columns for consistency.
+ */
+export function eventRecordToLoopEvent(record: EventRecord): LoopEvent {
+  const payload = record.payload as Record<string, unknown>;
+  return {
+    ...payload,
+    type: record.event_type,
+    loop_id: (payload.loop_id as string) || record.task_id,
+    event_index: record.event_index,
+  } as LoopEvent;
+}
