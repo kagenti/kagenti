@@ -3117,25 +3117,10 @@ async def _stream_sandbox_response(
                                             session_has_loops = True
                                             loop_events.append(parsed)
 
-                                            # -- Per-event persistence (events table) --
-                                            _event_counter += 1
-                                            if stream_task_id and namespace:
-                                                _t_evt = asyncio.create_task(
-                                                    _persist_event_row(
-                                                        context_id=session_id,
-                                                        task_id=stream_task_id,
-                                                        event_index=_event_counter,
-                                                        event_type=evt_type,
-                                                        event_category=_EVENT_CATEGORY_MAP.get(
-                                                            evt_type
-                                                        ),
-                                                        langgraph_node=parsed.get("langgraph_node"),
-                                                        payload=parsed,
-                                                        namespace=namespace,
-                                                    )
-                                                )
-                                                _persist_bg_tasks.add(_t_evt)
-                                                _t_evt.add_done_callback(_persist_bg_tasks.discard)
+                                            # Per-event persistence handled by background
+                                            # consumer (_background_event_consumer) —
+                                            # removed from SSE proxy to avoid duplicate
+                                            # event_index values in the events table.
 
                                             # -- Incremental persist --
                                             should_persist = _should_persist_incrementally(

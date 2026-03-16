@@ -1130,29 +1130,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
         display: 'flex',
       }}
     >
-      {/* Message sidebar (left) — only in multi-message mode */}
-      {loops.length > 1 && (
-        <div
-          data-testid="graph-message-sidebar"
-          style={{
-            width: sidebarOpen ? SIDEBAR_WIDTH : 0,
-            minWidth: sidebarOpen ? SIDEBAR_WIDTH : 0,
-            overflow: 'hidden',
-            transition: 'width 0.2s, min-width 0.2s',
-            borderRight: sidebarOpen ? `1px solid ${COLOR_BORDER_DARK}` : 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            flexShrink: 0,
-          }}
-        >
-          <MessageSidebar
-            loops={loops}
-            messageEntries={messageEntries}
-            selectedLoopId={selectedLoopId}
-            setSelectedLoopId={setSelectedLoopId}
-          />
-        </div>
-      )}
+      {/* Message sidebar provided by GraphLoopView wrapper */}
 
       {/* Main graph area */}
       <div style={{ flex: 1, position: 'relative' }}>
@@ -1165,17 +1143,7 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
           display: 'flex',
           gap: 4,
         }}>
-          {loops.length > 1 && (
-            <button
-              data-testid="graph-sidebar-toggle"
-              title={sidebarOpen ? 'Hide message sidebar' : 'Show message sidebar'}
-              onClick={() => setSidebarOpen((p) => !p)}
-              style={TOOLBAR_BTN_STYLE}
-            >
-              {sidebarOpen ? '<< Hide' : '>> Messages'}
-            </button>
-          )}
-          {/* Fullscreen button is in the wrapper (GraphLoopView) toggle bar */}
+          {/* Sidebar and fullscreen buttons are in the wrapper (GraphLoopView) */}
         </div>
 
         {/* Active node indicator badge */}
