@@ -26,9 +26,8 @@ import {
 } from '@xyflow/react';
 import dagre from 'dagre';
 import type { AgentLoop } from '../types/agentLoop';
-import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge, EventTypeDef } from '../types/graphCard';
+import type { AgentGraphCard, GraphTopology, GraphEdge as TopologyEdge } from '../types/graphCard';
 import { countTools, formatTokens, formatDuration } from '../utils/loopFormatting';
-import { EVENT_CATALOG } from '../utils/loopBuilder';
 
 import '@xyflow/react/dist/style.css';
 
@@ -368,7 +367,7 @@ function buildTopologyGraph(
   edgeCounts: Map<string, EdgeTraversalInfo>,
   eventDetail: 'categories' | 'event_types',
   eventCounts: Map<string, Map<string, number>>,
-  eventCatalog: Record<string, Pick<import('../types/graphCard').EventTypeDef, 'category' | 'description'>>,
+  eventCatalog: Record<string, Pick<EventTypeDef, 'category' | 'description'>>,
   eventNodeMap: Record<string, string[]>,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
@@ -833,11 +832,41 @@ export const TopologyGraphView: React.FC<TopologyGraphViewProps> = React.memo(({
     return latest ? getActiveTopoNode(latest) : null;
   }, [activeLoops]);
 
+  // Count events per topology node from active loops
+  const eventCounts = useMemo(
+    () => countEventsPerTopoNode(activeLoops),
+    [activeLoops],
+  );
+
+  // Build event catalog and node map (from graphCard or defaults)
+  const eventCatalogMemo = useMemo(() => {
+    if (graphCard?.event_catalog) {
+      // Convert EventTypeDef to the subset we need
+      const catalog: Record<string, Pick<EventTypeDef, 'category' | 'description'>> = {};
+      for (const [key, def] of Object.entries(graphCard.event_catalog)) {
+        catalog[key] = { category: def.category, description: def.description };
+      }
+      return catalog;
+    }
+    return EVENT_CATALOG;
+  }, [graphCard]);
+
+  const eventNodeMap = useMemo(() => {
+    if (graphCard?.event_catalog) {
+      const map: Record<string, string[]> = {};
+      for (const [evtType, def] of Object.entries(graphCard.event_catalog)) {
+        map[evtType] = def.langgraph_nodes;
+      }
+      return map;
+    }
+    return buildDefaultEventNodeMap();
+  }, [graphCard]);
+
   // Build the topology graph (dagre layout is the expensive part)
   const { nodes, edges } = useMemo(() => {
-    const raw = buildTopologyGraph(topology, activeNode, edgeCounts);
+    const raw = buildTopologyGraph(topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap);
     return applyDagreLayout(raw.nodes, raw.edges);
-  }, [topology, activeNode, edgeCounts]);
+  }, [topology, activeNode, edgeCounts, eventDetail, eventCounts, eventCatalogMemo, eventNodeMap]);
 
   // Message sidebar entries
   const messageEntries = useMemo(
