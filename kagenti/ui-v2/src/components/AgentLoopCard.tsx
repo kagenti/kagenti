@@ -148,12 +148,37 @@ export const AgentLoopCard: React.FC<AgentLoopCardProps> = ({ loop, isStreaming 
         {/* Final answer — always visible */}
         {loop.finalAnswer && (() => {
           const filtered = filterFinalAnswer(loop.finalAnswer);
+          // Extract file paths for badge rendering
+          const FILE_PATH_RE = /(?<!\w)(\/(?:workspace|data|repos|app|output|tmp)\/[\w./_-]+(?:\.\w+)?)/g;
+          const filePaths = filtered ? [...new Set(filtered.match(FILE_PATH_RE) || [])] : [];
           return filtered ? (
-            <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 8 }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {filtered}
-              </ReactMarkdown>
-            </div>
+            <>
+              <div className="sandbox-markdown" style={{ fontSize: '0.92em', marginBottom: 8 }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {filtered}
+                </ReactMarkdown>
+              </div>
+              {filePaths.length > 0 && (
+                <details style={{ marginBottom: 8, fontSize: '0.85em' }}>
+                  <summary style={{ cursor: 'pointer', color: 'var(--pf-v5-global--info-color--100)', fontWeight: 500 }}>
+                    Files ({filePaths.length})
+                  </summary>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4, padding: '4px 0' }}>
+                    {filePaths.slice(0, 10).map((fp) => {
+                      const name = fp.split('/').pop() || fp;
+                      return (
+                        <Badge key={fp} style={{ cursor: 'pointer', fontSize: '0.8em' }} title={fp}>
+                          {name}
+                        </Badge>
+                      );
+                    })}
+                    {filePaths.length > 10 && (
+                      <Badge style={{ fontSize: '0.8em' }}>+{filePaths.length - 10} more</Badge>
+                    )}
+                  </div>
+                </details>
+              )}
+            </>
           ) : null;
         })()}
 
