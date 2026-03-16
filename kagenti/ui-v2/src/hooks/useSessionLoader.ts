@@ -398,7 +398,7 @@ async function fetchAndBuildHistory(
   const [sessionDetail, historyPage, eventsResult] = await Promise.all([
     sandboxService.getSession(ns, ctxId).catch(() => null),
     sandboxService.getHistory(ns, ctxId, { limit: INITIAL_HISTORY_LIMIT }).catch(() => null),
-    eventService.getSessionEvents(ns, ctxId, 0, 1000).catch(() => null),
+    eventService.getSessionEvents(ns, ctxId, 0, 500).catch(() => null),
   ]);
 
   let finalMessages: Message[] = [];

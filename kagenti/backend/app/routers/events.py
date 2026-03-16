@@ -103,7 +103,7 @@ async def get_events(
     context_id: str = Query(..., description="Session context ID"),
     task_id: Optional[str] = Query(default=None, description="Filter by task ID"),
     from_index: int = Query(default=0, ge=0, description="Start from event_index"),
-    limit: int = Query(default=100, ge=1, le=500, description="Max events to return"),
+    limit: int = Query(default=100, ge=1, le=2000, description="Max events to return"),
     user: TokenData = Depends(get_required_user),
 ):
     """Get paginated events for a session/task.
