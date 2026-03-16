@@ -19,6 +19,49 @@
 
 ## What Beta-4 Must Do
 
+### P0: Reporter Node — Must Be Terminal, Clean Final Answer
+
+**Problem:** The reporter node emits a raw `respond_to_user(response="...")`
+tool call that renders as an ugly step in the UI instead of a clean final
+answer. Events appear AFTER the reporter (budget_update, node_transition
+to `__end__`), making it look non-terminal.
+
+**What should happen:**
+1. `reporter_output` event should be the LAST content event in the stream
+2. The reporter's `respond_to_user` tool call should be intercepted by
+   the serializer and converted to a `reporter_output` event with clean
+   `content` field (just the response text, no tool call syntax)
+3. No content events should appear after `reporter_output` (budget_update
+   and node_transition to `__end__` are meta events, OK to follow)
+4. The UI should render `reporter_output` as a markdown final answer with
+   file path links showing preview badges
+
+**Files to fix:**
+- `event_serializer.py` — in `_serialize_reporter()`, detect `respond_to_user`
+  tool calls and extract the `response` arg as `content` for `reporter_output`
+- `reasoning.py` — consider removing `respond_to_user` from reporter's tools
+  entirely (reporter should just produce text, not call tools)
+- `loopBuilder.ts` — `applyTerminalEvent()` should set `finalAnswer` from
+  the reporter_output content, ensuring it renders as markdown
+
+**Current behavior (broken):**
+```
+Step 5: reporter starts
+  [respond_to_user(response="The latest CI failures...")]  ← raw tool call
+  budget_update
+  node_transition: reporter → __end__
+```
+
+**Expected behavior:**
+```
+Step 5: reporter
+  Final Answer (markdown):
+    ## Root Cause Analysis
+    The latest CI failures for PR #860...
+    ### Files Touched
+    - [report.md](/workspace/.../report.md) [preview badge]
+```
+
 ### P0: Unified Turn Block Rendering
 
 **Problem:** Messages and agent loops are rendered separately. The
