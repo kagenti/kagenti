@@ -134,10 +134,17 @@ else
         --set "kagenti-webhook-chart.image.pullPolicy=Never" || true
 fi
 
-# Restart the webhook deployment to pick up the new image
-log_info "Restarting webhook deployment..."
-kubectl rollout restart deployment/kagenti-webhook -n "$NAMESPACE"
-kubectl rollout status deployment/kagenti-webhook -n "$NAMESPACE" --timeout=120s
+# Restart the webhook deployment to pick up the new image.
+# Use label selector so we find the right deployment regardless of fullnameOverride.
+WEBHOOK_DEPLOY=$(kubectl get deployments -n "$NAMESPACE" \
+    -l "app.kubernetes.io/name=kagenti-webhook-chart" -o name 2>/dev/null | head -1)
+if [ -n "$WEBHOOK_DEPLOY" ]; then
+    log_info "Restarting ${WEBHOOK_DEPLOY} in ${NAMESPACE}..."
+    kubectl rollout restart "$WEBHOOK_DEPLOY" -n "$NAMESPACE"
+    kubectl rollout status "$WEBHOOK_DEPLOY" -n "$NAMESPACE" --timeout=120s
+else
+    log_info "No webhook deployment found in ${NAMESPACE}, helm upgrade should handle the rollout"
+fi
 
 # Clean up
 rm -rf "$EXTENSIONS_DIR"
