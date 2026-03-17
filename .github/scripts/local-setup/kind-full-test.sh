@@ -269,6 +269,20 @@ else
 fi
 
 # ============================================================================
+# PHASE 2b: Rebuild webhook from custom extensions ref (if set)
+# The packaged webhook chart may use proxy-init:latest which can be
+# incompatible with the old webhook binary. Build from source to match.
+# ============================================================================
+KAGENTI_EXTENSIONS_REF="${KAGENTI_EXTENSIONS_REF:-main}"
+if [ -n "$KAGENTI_EXTENSIONS_REF" ] && [ "$RUN_INSTALL" = "true" ]; then
+    WEBHOOK_BUILD_SCRIPT="./.github/scripts/common/30-build-webhook-image.sh"
+    if [ -f "$WEBHOOK_BUILD_SCRIPT" ]; then
+        log_step "Rebuilding webhook from kagenti-extensions@${KAGENTI_EXTENSIONS_REF}..."
+        bash "$WEBHOOK_BUILD_SCRIPT" || log_step "Webhook rebuild skipped/failed (non-fatal)"
+    fi
+fi
+
+# ============================================================================
 # PHASE 3: Deploy Test Agents
 # ============================================================================
 
