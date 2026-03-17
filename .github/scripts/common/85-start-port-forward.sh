@@ -10,30 +10,19 @@ log_step "85" "Starting port-forward"
 # Port-forward weather-service (agent) to localhost:8000
 # ============================================================================
 
-# Wait for a ready weather-service pod (handles pod restarts, evictions, slow startup)
-log_info "Waiting for weather-service pod to be ready..."
-POD_NAME=""
-for i in {1..60}; do
-    # Re-query each iteration in case the pod was recreated
-    POD_NAME=$(kubectl get pod -n team1 -l app.kubernetes.io/name=weather-service \
-        --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+# Wait for weather-service deployment to be fully ready
+log_info "Waiting for weather-service deployment to be ready..."
+kubectl wait --for=condition=available --timeout=120s deployment/weather-service -n team1 || {
+    log_error "Weather-service deployment not available after 120s"
+    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service
+    kubectl get events -n team1 --sort-by='.lastTimestamp' --field-selector reason!=Pulling 2>/dev/null | tail -10
+    exit 1
+}
 
-    if [ -n "$POD_NAME" ]; then
-        # Pod exists and is Running — check if the app is actually ready
-        if kubectl exec -n team1 "$POD_NAME" -- curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
-            log_success "Weather-service app is ready in pod $POD_NAME"
-            break
-        fi
-    fi
-
-    if [ $i -eq 60 ]; then
-        log_error "Weather-service not ready after 60s"
-        kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service
-        kubectl get events -n team1 --sort-by='.lastTimestamp' --field-selector reason!=Pulling 2>/dev/null | tail -10
-        exit 1
-    fi
-    sleep 2
-done
+# Get pod name for port-forward
+POD_NAME=$(kubectl get pod -n team1 -l app.kubernetes.io/name=weather-service \
+    --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+log_success "Weather-service pod ready: $POD_NAME"
 
 log_info "Port-forwarding weather-service pod: $POD_NAME -> localhost:8000"
 
