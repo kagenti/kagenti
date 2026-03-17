@@ -29,7 +29,7 @@ allowedCapabilities:
   - NET_RAW
 defaultAddCapabilities: []
 requiredDropCapabilities:
-  - ALL
+  - MKNOD
 fsGroup:
   type: RunAsAny
 runAsUser:
@@ -47,4 +47,21 @@ volumes:
   - persistentVolumeClaim
   - projected
   - secret
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  ClusterRole granting "use" on the kagenti-authbridge SCC.
+#  OpenShift auto-creates ClusterRoles for built-in SCCs but may not do so
+#  reliably for custom SCCs. Create it explicitly so RoleBindings work.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:openshift:scc:kagenti-authbridge
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["kagenti-authbridge"]
+    verbs: ["use"]
 {{- end }}
