@@ -88,33 +88,73 @@ for i in $(seq 1 $MAX_RETRIES); do
     sleep $RETRY_DELAY
 done
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Dependency overrides — build from source before deploying agents.
+#
+# Ref formats supported:
+#   main                  — branch on upstream repo
+#   fix/my-branch         — feature branch
+#   pr/234                — PR head ref (works with forks)
+#   a5607f9               — commit SHA (7-40 hex chars)
+#
+# ── HARDCODED OVERRIDES ──
+# These override packaged chart dependencies that haven't released fixes yet.
+# Remove each entry after bumping the chart dependency to a version that
+# includes the fix.
+#
+# kagenti-extensions: proxy-init capabilities fix (extensions#242, not yet released)
+#   Chart dep: v0.4.0-alpha.5 (uses privileged:true, proxy-init:latest incompatible)
+#   Fix on main: uses NET_ADMIN/NET_RAW capabilities + DNAT (no privileged)
+#   Remove after: bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
+# ──────────────────────────────────────────────────────────────────────────────
+if [[ -z "${KAGENTI_DEP_BUILDS:-}" || "${KAGENTI_DEP_BUILDS:-}" == "[]" ]]; then
+    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+fi
+
 # Use hypershift-full-test.sh with whitelist mode (--include-X flags)
 # Note: CLUSTER_SUFFIX is set by the workflow (e.g., pr594), don't override it
 # Intentionally not using `exec` here because the oauth bootstrap step below
 # must run after deploy completes.
 #
-# Build custom webhook from kagenti-extensions main to pick up the
-# proxy-init capabilities fix (merged as kagenti-extensions#242).
-# TODO: Remove this default after bumping the webhook chart dependency version.
-KAGENTI_EXTENSIONS_REF="${KAGENTI_EXTENSIONS_REF:-main}"
+# When KAGENTI_DEP_BUILDS is set, split into three phases:
+#   1. Install platform (helm charts, CRDs, operators)
+#   2. Build dependency images from custom refs
+#   3. Deploy agents (uses the rebuilt images)
+if [[ -n "${KAGENTI_DEP_BUILDS:-}" && "${KAGENTI_DEP_BUILDS:-}" != "[]" ]]; then
+    echo "=================================================="
+    echo "  Dependency overrides (built from source):"
+    echo "$KAGENTI_DEP_BUILDS" | python3 -c "
+import json, sys
+for b in json.load(sys.stdin):
+    print(f\"    {b['repo']}@{b['ref']}\")
+" 2>/dev/null || echo "    ${KAGENTI_DEP_BUILDS}"
+    echo "=================================================="
 
-# When KAGENTI_EXTENSIONS_REF is set, split into two phases so we can build the
-# custom webhook image between platform install and agent deployment.
-if [[ -n "${KAGENTI_EXTENSIONS_REF:-}" ]]; then
-    echo "Custom extensions ref detected: ${KAGENTI_EXTENSIONS_REF}"
+    # Write to GitHub step summary if available
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        {
+            echo "### Dependency overrides (built from source)"
+            echo "$KAGENTI_DEP_BUILDS" | python3 -c "
+import json, sys
+for b in json.load(sys.stdin):
+    print(f\"- \`{b['repo']}\` @ \`{b['ref']}\`\")
+" 2>/dev/null || echo "- ${KAGENTI_DEP_BUILDS}"
+        } >> "$GITHUB_STEP_SUMMARY"
+    fi
+
     echo "Phase 1: Install platform..."
     "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
         --include-kagenti-install \
         --env ocp
 
-    echo "Phase 2: Build custom webhook from ${KAGENTI_EXTENSIONS_REF}..."
-    WEBHOOK_BUILD_SCRIPT="$REPO_ROOT/.github/scripts/common/30-build-webhook-image.sh"
-    if [[ -x "$WEBHOOK_BUILD_SCRIPT" ]]; then
-        "$WEBHOOK_BUILD_SCRIPT"
-    elif [[ -f "$WEBHOOK_BUILD_SCRIPT" ]]; then
-        bash "$WEBHOOK_BUILD_SCRIPT"
+    echo "Phase 2: Build dependencies from source..."
+    DEP_BUILD_SCRIPT="$REPO_ROOT/.github/scripts/common/31-build-deps-from-refs.sh"
+    if [[ -x "$DEP_BUILD_SCRIPT" ]]; then
+        "$DEP_BUILD_SCRIPT"
+    elif [[ -f "$DEP_BUILD_SCRIPT" ]]; then
+        bash "$DEP_BUILD_SCRIPT"
     else
-        echo "WARNING: $WEBHOOK_BUILD_SCRIPT not found; skipping custom webhook build"
+        echo "WARNING: $DEP_BUILD_SCRIPT not found; skipping dependency builds"
     fi
 
     echo "Phase 3: Deploy agents..."
