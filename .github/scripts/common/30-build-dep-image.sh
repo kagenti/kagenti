@@ -162,12 +162,22 @@ else
         --set "${DEP_HELM_SET}.pullPolicy=Never" || true
 fi
 
-# Restart the deployment to pick up the new image
+# Restart the deployment to pick up the new image.
+# Try exact name first, then fall back to finding any deployment in the namespace.
 DEPLOY_NAME="${DEP_IMAGE_NAME}"
 if kubectl get deployment "$DEPLOY_NAME" -n "$DEP_DEPLOY_NS" &>/dev/null; then
     log_info "Restarting deployment ${DEPLOY_NAME}..."
     kubectl rollout restart deployment/"$DEPLOY_NAME" -n "$DEP_DEPLOY_NS"
     kubectl rollout status deployment/"$DEPLOY_NAME" -n "$DEP_DEPLOY_NS" --timeout=120s
+else
+    FOUND_DEPLOY=$(kubectl get deployments -n "$DEP_DEPLOY_NS" -o name 2>/dev/null | head -1)
+    if [ -n "$FOUND_DEPLOY" ]; then
+        log_info "Restarting ${FOUND_DEPLOY} in ${DEP_DEPLOY_NS}..."
+        kubectl rollout restart "$FOUND_DEPLOY" -n "$DEP_DEPLOY_NS"
+        kubectl rollout status "$FOUND_DEPLOY" -n "$DEP_DEPLOY_NS" --timeout=120s
+    else
+        log_info "No deployment found in ${DEP_DEPLOY_NS}, helm upgrade handles the rollout"
+    fi
 fi
 
 # Clean up
