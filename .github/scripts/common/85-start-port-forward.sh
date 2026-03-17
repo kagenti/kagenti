@@ -10,28 +10,29 @@ log_step "85" "Starting port-forward"
 # Port-forward weather-service (agent) to localhost:8000
 # ============================================================================
 
-# Get pod name
-POD_NAME=$(kubectl get pod -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].metadata.name}')
+# Wait for a ready weather-service pod (handles pod restarts, evictions, slow startup)
+log_info "Waiting for weather-service pod to be ready..."
+POD_NAME=""
+for i in {1..60}; do
+    # Re-query each iteration in case the pod was recreated
+    POD_NAME=$(kubectl get pod -n team1 -l app.kubernetes.io/name=weather-service \
+        --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
-if [ -z "$POD_NAME" ]; then
-    log_error "No weather-service pod found"
-    kubectl get pods -n team1
-    exit 1
-fi
+    if [ -n "$POD_NAME" ]; then
+        # Pod exists and is Running — check if the app is actually ready
+        if kubectl exec -n team1 "$POD_NAME" -- curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
+            log_success "Weather-service app is ready in pod $POD_NAME"
+            break
+        fi
+    fi
 
-# Wait for the agent app to be ready inside the pod (not just pod Running)
-# The pod may be Running but the Python app (uvicorn) needs time to start
-log_info "Waiting for weather-service app to be ready in pod $POD_NAME..."
-for i in {1..30}; do
-    if kubectl exec -n team1 "$POD_NAME" -- curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
-        log_success "Weather-service app is ready"
-        break
+    if [ $i -eq 60 ]; then
+        log_error "Weather-service not ready after 60s"
+        kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service
+        kubectl get events -n team1 --sort-by='.lastTimestamp' --field-selector reason!=Pulling 2>/dev/null | tail -10
+        exit 1
     fi
-    if [ $i -eq 30 ]; then
-        log_error "Weather-service app not ready after 30s"
-        kubectl logs -n team1 "$POD_NAME" --tail=20
-    fi
-    sleep 1
+    sleep 2
 done
 
 log_info "Port-forwarding weather-service pod: $POD_NAME -> localhost:8000"
