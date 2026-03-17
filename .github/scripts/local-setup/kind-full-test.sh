@@ -269,6 +269,24 @@ else
 fi
 
 # ============================================================================
+# PHASE 2b: Build dependency overrides from source
+# The packaged chart deps may reference :latest images that are incompatible
+# with the old chart binaries. Build from source to match.
+# ============================================================================
+if [ -z "${KAGENTI_DEP_BUILDS:-}" ] || [ "${KAGENTI_DEP_BUILDS:-}" = "[]" ]; then
+    # Default: build webhook from extensions main (proxy-init fix not yet released)
+    # TODO: Remove after bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
+    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+fi
+if [ "${KAGENTI_DEP_BUILDS:-}" != "[]" ] && [ "$RUN_INSTALL" = "true" ]; then
+    DEP_BUILD_SCRIPT="./.github/scripts/common/31-build-deps-from-refs.sh"
+    if [ -f "$DEP_BUILD_SCRIPT" ]; then
+        log_step "Building dependency overrides from source..."
+        bash "$DEP_BUILD_SCRIPT" || log_step "Dependency builds skipped/failed (non-fatal)"
+    fi
+fi
+
+# ============================================================================
 # PHASE 3: Deploy Test Agents
 # ============================================================================
 
