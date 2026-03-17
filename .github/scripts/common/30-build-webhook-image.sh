@@ -135,9 +135,15 @@ else
 fi
 
 # Restart the webhook deployment to pick up the new image
-log_info "Restarting webhook deployment..."
-kubectl rollout restart deployment/kagenti-webhook -n "$NAMESPACE"
-kubectl rollout status deployment/kagenti-webhook -n "$NAMESPACE" --timeout=120s
+# The deployment name may vary depending on the helm chart's fullnameOverride
+WEBHOOK_DEPLOY=$(kubectl get deployments -n "$NAMESPACE" -o name 2>/dev/null | head -1)
+if [ -n "$WEBHOOK_DEPLOY" ]; then
+    log_info "Restarting ${WEBHOOK_DEPLOY} in ${NAMESPACE}..."
+    kubectl rollout restart "$WEBHOOK_DEPLOY" -n "$NAMESPACE"
+    kubectl rollout status "$WEBHOOK_DEPLOY" -n "$NAMESPACE" --timeout=120s
+else
+    log_info "No deployment found in ${NAMESPACE}, helm upgrade should handle the rollout"
+fi
 
 # Clean up
 rm -rf "$EXTENSIONS_DIR"
