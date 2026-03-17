@@ -51,7 +51,7 @@ jobs:
       pr_number: ${{ steps.pr-info.outputs.number }}
       pr_sha: ${{ steps.pr-info.outputs.sha }}
       cluster_suffix: ${{ steps.pr-info.outputs.cluster_suffix }}
-      extensions_ref: ${{ steps.parse-options.outputs.extensions_ref }}
+      dep_builds: ${{ steps.parse-options.outputs.dep_builds }}
     steps:
       - name: Check user write permission
         id: check-permission
@@ -100,14 +100,61 @@ jobs:
         shell: bash
         run: |
           COMMENT_BODY="${{ github.event.comment.body }}"
-          # Parse --extensions-ref <branch> from comment
-          # Usage: /run-e2e --extensions-ref fix/proxy-init-drop-privileged
-          if [[ "$COMMENT_BODY" =~ --extensions-ref[[:space:]]+([^[:space:]]+) ]]; then
-            echo "extensions_ref=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-            echo "Parsed extensions_ref: ${BASH_REMATCH[1]}"
-          else
-            echo "extensions_ref=" >> "$GITHUB_OUTPUT"
+          # Parse --build <org/repo>=<ref> flags from comment
+          # Supports multiple --build flags and both branch refs and pr/<number>
+          #
+          # Examples:
+          #   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
+          #   /run-e2e --build kagenti/kagenti-extensions=pr/234
+          #   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
+          #
+          # Also supports legacy --extensions-ref for backwards compatibility
+          #
+          # Allowed repos (security: only build from trusted orgs/repos):
+          ALLOWED_REPOS="kagenti/kagenti-extensions kagenti/kagenti-operator"
+
+          BUILDS="[]"
+
+          # Parse --build flags
+          while [[ "$COMMENT_BODY" =~ --build[[:space:]]+([^[:space:]]+) ]]; do
+            BUILD_SPEC="${BASH_REMATCH[1]}"
+            COMMENT_BODY="${COMMENT_BODY#*"${BASH_REMATCH[0]}"}"
+
+            REPO="${BUILD_SPEC%%=*}"
+            REF="${BUILD_SPEC#*=}"
+
+            if [[ -z "$REPO" || -z "$REF" || "$REPO" == "$REF" ]]; then
+              echo "::warning::Invalid --build format: ${BUILD_SPEC} (expected org/repo=ref)"
+              continue
+            fi
+
+            # Security: only allow known repos
+            if ! echo "$ALLOWED_REPOS" | grep -qw "$REPO"; then
+              echo "::warning::Repo not in allow list: ${REPO} (allowed: ${ALLOWED_REPOS})"
+              continue
+            fi
+
+            echo "Parsed build: repo=${REPO} ref=${REF}"
+            BUILDS=$(echo "$BUILDS" | python3 -c "
+          import json, sys
+          builds = json.load(sys.stdin)
+          builds.append({'repo': '$REPO', 'ref': '$REF'})
+          print(json.dumps(builds))
+          ")
+          done
+
+          # Legacy: --extensions-ref maps to kagenti/kagenti-extensions build
+          if [[ "${BUILDS}" == "[]" ]]; then
+            LEGACY_BODY="${{ github.event.comment.body }}"
+            if [[ "$LEGACY_BODY" =~ --extensions-ref[[:space:]]+([^[:space:]]+) ]]; then
+              REF="${BASH_REMATCH[1]}"
+              echo "Legacy --extensions-ref detected: ${REF}"
+              BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"'"${REF}"'"}]'
+            fi
           fi
+
+          echo "dep_builds=${BUILDS}" >> "$GITHUB_OUTPUT"
+          echo "Dependency builds: ${BUILDS}"
 
       - name: Add safe-to-test label
         if: steps.check-permission.outputs.check-result == 'true'
@@ -277,7 +324,7 @@ jobs:
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KAGENTI_EXTENSIONS_REF: ${{ needs.authorize.outputs.extensions_ref }}
+          KAGENTI_DEP_BUILDS: ${{ needs.authorize.outputs.dep_builds }}
 
       - name: Build ui-oauth-secret image from PR and restart job
         if: success()

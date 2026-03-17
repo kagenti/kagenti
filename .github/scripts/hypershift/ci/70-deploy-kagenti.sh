@@ -88,28 +88,64 @@ for i in $(seq 1 $MAX_RETRIES); do
     sleep $RETRY_DELAY
 done
 
-# Use hypershift-full-test.sh with whitelist mode (--include-X flags)
+# ── Default dependency builds ──
+# Build custom webhook from kagenti-extensions to pick up the proxy-init
+# capabilities fix (kagenti-extensions#234).
+# TODO: Remove this default after the fix is released in a new webhook chart version.
+if [[ -z "${KAGENTI_DEP_BUILDS:-}" || "${KAGENTI_DEP_BUILDS:-}" == "[]" ]]; then
+    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"fix/proxy-init-drop-privileged"}]'
+    echo "Using default dependency build: kagenti-extensions@fix/proxy-init-drop-privileged"
+fi
+
+# ── Deploy with dependency builds ──
+# When KAGENTI_DEP_BUILDS is set, split into three phases:
+#   1. Install platform (helm charts, CRDs, operators)
+#   2. Build dependency images from custom refs
+#   3. Deploy agents (uses the rebuilt images)
+#
+# Usage via /run-e2e comment:
+#   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
+#   /run-e2e --build kagenti/kagenti-extensions=pr/234
+#   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
+#
 # Note: CLUSTER_SUFFIX is set by the workflow (e.g., pr594), don't override it
 # Intentionally not using `exec` here because the oauth bootstrap step below
 # must run after deploy completes.
-#
-# When KAGENTI_EXTENSIONS_REF is set, split into two phases so we can build the
-# custom webhook image between platform install and agent deployment.
-if [[ -n "${KAGENTI_EXTENSIONS_REF:-}" ]]; then
-    echo "Custom extensions ref detected: ${KAGENTI_EXTENSIONS_REF}"
+if [[ -n "${KAGENTI_DEP_BUILDS:-}" && "${KAGENTI_DEP_BUILDS:-}" != "[]" ]]; then
+    echo "=================================================="
+    echo "  Custom dependency builds:"
+    echo "$KAGENTI_DEP_BUILDS" | python3 -c "
+import json, sys
+for b in json.load(sys.stdin):
+    print(f\"    {b['repo']}@{b['ref']}\")
+" 2>/dev/null || echo "    ${KAGENTI_DEP_BUILDS}"
+    echo "=================================================="
+
+    # Write to GitHub step summary if available
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        {
+            echo "### Custom dependency builds"
+            echo "$KAGENTI_DEP_BUILDS" | python3 -c "
+import json, sys
+for b in json.load(sys.stdin):
+    print(f\"- \`{b['repo']}\` @ \`{b['ref']}\`\")
+" 2>/dev/null || echo "- ${KAGENTI_DEP_BUILDS}"
+        } >> "$GITHUB_STEP_SUMMARY"
+    fi
+
     echo "Phase 1: Install platform..."
     "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
         --include-kagenti-install \
         --env ocp
 
-    echo "Phase 2: Build custom webhook from ${KAGENTI_EXTENSIONS_REF}..."
-    WEBHOOK_BUILD_SCRIPT="$REPO_ROOT/.github/scripts/common/30-build-webhook-image.sh"
-    if [[ -x "$WEBHOOK_BUILD_SCRIPT" ]]; then
-        "$WEBHOOK_BUILD_SCRIPT"
-    elif [[ -f "$WEBHOOK_BUILD_SCRIPT" ]]; then
-        bash "$WEBHOOK_BUILD_SCRIPT"
+    echo "Phase 2: Build dependencies from custom refs..."
+    DEP_BUILD_SCRIPT="$REPO_ROOT/.github/scripts/common/31-build-deps-from-refs.sh"
+    if [[ -x "$DEP_BUILD_SCRIPT" ]]; then
+        "$DEP_BUILD_SCRIPT"
+    elif [[ -f "$DEP_BUILD_SCRIPT" ]]; then
+        bash "$DEP_BUILD_SCRIPT"
     else
-        echo "WARNING: $WEBHOOK_BUILD_SCRIPT not found; skipping custom webhook build"
+        echo "WARNING: $DEP_BUILD_SCRIPT not found; skipping dependency builds"
     fi
 
     echo "Phase 3: Deploy agents..."
