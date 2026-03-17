@@ -97,6 +97,7 @@ flowchart TB
 |----------|-------------|
 | [Concepts](./concepts.md) | Core concepts: sessions, reasoning loops, event pipeline, graph card, sidecars |
 | [Quick Start](./quickstart.md) | Deploy a sandbox agent on Kind in 5 minutes |
+| [A2A Integration](./a2a-integration.md) | A2A protocol: proxied vs direct access, extensions, SDK version |
 | [Configuration](./configuration.md) | Feature flags, Helm values, environment variables |
 | [Security](./security.md) | Defense-in-depth layers, Landlock, composable profiles, Istio Ambient |
 | [Writing Agents](./agents.md) | Agent authoring: graph structure, tools, event serialization, graph card |
