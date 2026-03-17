@@ -93,6 +93,11 @@ done
 # Intentionally not using `exec` here because the oauth bootstrap step below
 # must run after deploy completes.
 #
+# Build custom webhook from kagenti-extensions branch to pick up the
+# proxy-init capabilities fix (kagenti-extensions#234).
+# TODO: Remove this default after the fix is released in a new webhook chart version.
+KAGENTI_EXTENSIONS_REF="${KAGENTI_EXTENSIONS_REF:-fix/proxy-init-drop-privileged}"
+
 # When KAGENTI_EXTENSIONS_REF is set, split into two phases so we can build the
 # custom webhook image between platform install and agent deployment.
 if [[ -n "${KAGENTI_EXTENSIONS_REF:-}" ]]; then
