@@ -33,10 +33,10 @@ on:
         description: 'Maximum parallel CI runs (slot count)'
         required: false
         default: '6'
-      extensions_ref:
-        description: 'kagenti-extensions branch to build webhook from (optional)'
+      dep_builds:
+        description: 'JSON array of dependency builds, e.g. [{"repo":"kagenti/kagenti-extensions","ref":"fix/branch"}]'
         required: false
-        default: ''
+        default: '[]'
 
 # Only allow one run per branch to avoid resource conflicts
 concurrency:
@@ -160,7 +160,7 @@ jobs:
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KAGENTI_EXTENSIONS_REF: ${{ inputs.extensions_ref }}
+          KAGENTI_DEP_BUILDS: ${{ inputs.dep_builds }}
 
       - name: Build ui-oauth-secret image from PR and restart job
         if: success()
