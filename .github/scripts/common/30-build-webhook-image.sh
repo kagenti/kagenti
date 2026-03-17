@@ -65,7 +65,7 @@ spec:
   strategy:
     type: Docker
     dockerStrategy:
-      dockerfilePath: kagenti-webhook/Dockerfile
+      dockerfilePath: Dockerfile
 EOF
 
     run_with_timeout 60 "until oc get buildconfig ${BUILD_NAME} -n ${BUILD_NS} &>/dev/null; do sleep 2; done" || {
@@ -75,7 +75,7 @@ EOF
 
     log_info "Starting OpenShift binary build from source..."
     OC_BUILD=$(oc start-build "$BUILD_NAME" -n "$BUILD_NS" \
-        --from-dir="$EXTENSIONS_DIR" --follow=false -o name 2>/dev/null || echo "")
+        --from-dir="$EXTENSIONS_DIR/kagenti-webhook" --follow=false -o name 2>/dev/null || echo "")
     if [ -z "$OC_BUILD" ]; then
         log_error "Failed to start webhook build"
         exit 1
