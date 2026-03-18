@@ -36,6 +36,9 @@ examples/
 .gitleaks.toml
 .pre-commit-config.yaml
 
+# Node modules (must not override npm install in Docker)
+**/node_modules/
+
 # Build artifacts
 *.egg-info/
 dist/
