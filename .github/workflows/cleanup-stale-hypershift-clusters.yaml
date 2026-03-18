@@ -79,13 +79,15 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
         env:
           KUBECONFIG: /home/runner/.kube/config
+          INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
+          INPUT_PATTERN: ${{ github.event.inputs.pattern }}
         run: |
           ARGS="--dry-run"
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+          if [ "$INPUT_VERBOSE" = "true" ]; then
             ARGS="$ARGS --verbose"
           fi
-          if [ -n "${{ github.event.inputs.pattern }}" ]; then
-            ARGS="$ARGS --pattern ${{ github.event.inputs.pattern }}"
+          if [ -n "$INPUT_PATTERN" ]; then
+            ARGS="$ARGS --pattern $INPUT_PATTERN"
           fi
           bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS
 
@@ -93,13 +95,15 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false'
         env:
           KUBECONFIG: /home/runner/.kube/config
+          INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
+          INPUT_PATTERN: ${{ github.event.inputs.pattern }}
         run: |
           ARGS="--apply"
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+          if [ "$INPUT_VERBOSE" = "true" ]; then
             ARGS="$ARGS --verbose"
           fi
-          if [ -n "${{ github.event.inputs.pattern }}" ]; then
-            ARGS="$ARGS --pattern ${{ github.event.inputs.pattern }}"
+          if [ -n "$INPUT_PATTERN" ]; then
+            ARGS="$ARGS --pattern $INPUT_PATTERN"
           fi
           bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS | tee /tmp/cleanup-output.log
 

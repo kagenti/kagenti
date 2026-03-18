@@ -117,25 +117,29 @@ jobs:
 
       - name: Package and push kagenti chart
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
+          chartVersion=$(echo "$REF_NAME" | cut -c 2-)
           chartPackageName="kagenti-${chartVersion}.tgz"
           cd ${{ env.CHARTS_PATH }}//kagenti
           echo "Fetching Helm chart dependencies..."
           helm dependency update
-          yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
+          yq e ".ui.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
 
       - name: Package and push kagenti-deps chart
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
+          chartVersion=$(echo "$REF_NAME" | cut -c 2-)
           chartPackageName="kagenti-deps-${chartVersion}.tgz"
           cd ${{ env.CHARTS_PATH }}//kagenti-deps
           echo "Fetching Helm chart dependencies..."
           helm dependency update
-          yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
+          yq e ".ui.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
 
