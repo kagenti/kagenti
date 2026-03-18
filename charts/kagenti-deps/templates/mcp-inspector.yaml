@@ -136,6 +136,7 @@ spec:
           args:
             - |
               # Patch the open package to prevent browser opening
+              # Stub for open v9+ (ESM). If the base image downgrades to v8 (CJS), this will need updating.
               OPEN_PKG="/app/node_modules/open/index.js"
               if [ -f "$OPEN_PKG" ]; then
                 cat > "$OPEN_PKG" << 'EOF'
@@ -149,6 +150,8 @@ spec:
               export const apps = {};
               EOF
                 echo "Patched open package to disable browser launching"
+              else
+                echo "WARNING: open package not found at $OPEN_PKG — browser patch skipped"
               fi
               # Start the application
               npm start
