@@ -15,7 +15,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
 
-DEP_BUILDS="${KAGENTI_DEP_BUILDS:-}"
+# Default: build webhook from extensions main (proxy-init fix not yet released)
+# TODO: Remove this default after bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
+if [ -z "${KAGENTI_DEP_BUILDS:-}" ] || [ "${KAGENTI_DEP_BUILDS:-}" = "[]" ]; then
+    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+fi
+
+DEP_BUILDS="${KAGENTI_DEP_BUILDS}"
 if [ -z "$DEP_BUILDS" ] || [ "$DEP_BUILDS" = "[]" ]; then
     log_info "No dependency builds requested (KAGENTI_DEP_BUILDS empty)"
     exit 0

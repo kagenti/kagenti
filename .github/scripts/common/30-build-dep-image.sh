@@ -144,54 +144,38 @@ EOF
     fi
 
     INTERNAL_REGISTRY="image-registry.openshift-image-registry.svc:5000"
-    INTERNAL_IMAGE="${INTERNAL_REGISTRY}/${DEP_DEPLOY_NS}/${DEP_IMAGE_NAME}"
-    log_info "Image available at: ${INTERNAL_IMAGE}:latest"
-
-    # Helm upgrade to override the image
-    log_info "Updating deployment with custom image..."
-    helm upgrade kagenti "$REPO_ROOT/charts/kagenti" -n kagenti-system \
-        --reuse-values --no-hooks \
-        --set "${DEP_HELM_SET}.repository=${INTERNAL_IMAGE}" \
-        --set "${DEP_HELM_SET}.tag=latest" \
-        --set "${DEP_HELM_SET}.pullPolicy=Always" || true
+    CUSTOM_IMAGE="${INTERNAL_REGISTRY}/${DEP_DEPLOY_NS}/${DEP_IMAGE_NAME}:latest"
+    log_info "Image available at: ${CUSTOM_IMAGE}"
 
 else
     # ── Kind / vanilla Kubernetes: local build + kind load ──
-    FULL_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}:local"
+    CUSTOM_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}:local"
 
-    log_info "Building image: ${FULL_IMAGE}"
-    docker build -t "${FULL_IMAGE}" \
+    log_info "Building image: ${CUSTOM_IMAGE}"
+    docker build -t "${CUSTOM_IMAGE}" \
         -f "${BUILD_CONTEXT}/Dockerfile" \
         "$BUILD_CONTEXT"
 
     CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
     log_info "Loading image into Kind cluster '${CLUSTER_NAME}'..."
-    kind load docker-image "${FULL_IMAGE}" --name "${CLUSTER_NAME}"
-
-    log_info "Updating deployment with custom image..."
-    helm upgrade kagenti "$REPO_ROOT/charts/kagenti" -n kagenti-system \
-        --reuse-values --no-hooks \
-        --set "${DEP_HELM_SET}.repository=ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}" \
-        --set "${DEP_HELM_SET}.tag=local" \
-        --set "${DEP_HELM_SET}.pullPolicy=Never" || true
+    kind load docker-image "${CUSTOM_IMAGE}" --name "${CLUSTER_NAME}"
 fi
 
-# Restart the deployment to pick up the new image.
-# Try exact name first, then fall back to finding any deployment in the namespace.
-DEPLOY_NAME="${DEP_IMAGE_NAME}"
-if kubectl get deployment "$DEPLOY_NAME" -n "$DEP_DEPLOY_NS" &>/dev/null; then
-    log_info "Restarting deployment ${DEPLOY_NAME}..."
-    kubectl rollout restart deployment/"$DEPLOY_NAME" -n "$DEP_DEPLOY_NS"
-    kubectl rollout status deployment/"$DEPLOY_NAME" -n "$DEP_DEPLOY_NS" --timeout=120s
+# Patch the deployment directly instead of helm upgrade.
+# Using helm upgrade --reuse-values can corrupt helm state and drop
+# resources like SCCs and RoleBindings when values are re-merged.
+FOUND_DEPLOY=$(kubectl get deployments -n "$DEP_DEPLOY_NS" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+if [ -n "$FOUND_DEPLOY" ]; then
+    PULL_POLICY="Always"
+    [[ "$IS_OPENSHIFT" != "true" ]] && PULL_POLICY="Never"
+    log_info "Patching deployment ${FOUND_DEPLOY} with image ${CUSTOM_IMAGE}..."
+    kubectl set image "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" \
+        manager="${CUSTOM_IMAGE}" 2>/dev/null || \
+    kubectl set image "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" \
+        "${DEP_IMAGE_NAME}=${CUSTOM_IMAGE}" 2>/dev/null || true
+    kubectl rollout status "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" --timeout=120s
 else
-    FOUND_DEPLOY=$(kubectl get deployments -n "$DEP_DEPLOY_NS" -o name 2>/dev/null | head -1)
-    if [ -n "$FOUND_DEPLOY" ]; then
-        log_info "Restarting ${FOUND_DEPLOY} in ${DEP_DEPLOY_NS}..."
-        kubectl rollout restart "$FOUND_DEPLOY" -n "$DEP_DEPLOY_NS"
-        kubectl rollout status "$FOUND_DEPLOY" -n "$DEP_DEPLOY_NS" --timeout=120s
-    else
-        log_info "No deployment found in ${DEP_DEPLOY_NS}, helm upgrade handles the rollout"
-    fi
+    log_info "No deployment found in ${DEP_DEPLOY_NS} — image will be used on next pod creation"
 fi
 
 # Clean up
