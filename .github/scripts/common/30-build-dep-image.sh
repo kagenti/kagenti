@@ -153,18 +153,31 @@ else
     # Use the GHCR path as the image name so it matches what the webhook
     # references (e.g., ghcr.io/kagenti/kagenti-extensions/proxy-init:latest).
     # Tag as both :local and :latest so the webhook's default reference works.
-    CUSTOM_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}:local"
-    LATEST_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}:latest"
+    BASE_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}"
+    CUSTOM_IMAGE="${BASE_IMAGE}:local"
 
     log_info "Building image: ${CUSTOM_IMAGE}"
-    docker build -t "${CUSTOM_IMAGE}" -t "${LATEST_IMAGE}" \
+    docker build -t "${CUSTOM_IMAGE}" \
         -f "${BUILD_CONTEXT}/${DEP_DOCKERFILE}" \
         "$BUILD_CONTEXT"
 
+    # Tag with :latest AND any version tags referenced by helm values.
+    # The webhook ConfigMap may pin images to a specific version (e.g., v0.4.0-alpha.8)
+    # that differs from the Go defaults (:latest). We tag with ALL referenced versions
+    # so the locally-built image is used regardless of which tag the webhook requests.
     CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
-    log_info "Loading image into Kind cluster '${CLUSTER_NAME}'..."
-    kind load docker-image "${CUSTOM_IMAGE}" --name "${CLUSTER_NAME}"
-    kind load docker-image "${LATEST_IMAGE}" --name "${CLUSTER_NAME}"
+    TAGS=("local" "latest")
+    PINNED_TAGS=$(grep -r "${BASE_IMAGE}:" "$REPO_ROOT/charts/kagenti/values.yaml" 2>/dev/null \
+        | sed "s|.*${BASE_IMAGE}:||" | tr -d '"' | tr -d "'" || true)
+    for tag in $PINNED_TAGS; do
+        TAGS+=("$tag")
+    done
+
+    for tag in "${TAGS[@]}"; do
+        docker tag "${CUSTOM_IMAGE}" "${BASE_IMAGE}:${tag}"
+        log_info "Loading ${BASE_IMAGE}:${tag} into Kind..."
+        kind load docker-image "${BASE_IMAGE}:${tag}" --name "${CLUSTER_NAME}"
+    done
 fi
 
 # Patch the deployment directly instead of helm upgrade.
