@@ -20,7 +20,7 @@ metadata:
         "createHttpRoute": false
       }
 spec:
-  serviceAccount: pipeline
+  # serviceAccount is set in the BuildRun, not here (Build v1beta1 strict decoding rejects it)
   source:
     type: Git
     git:
