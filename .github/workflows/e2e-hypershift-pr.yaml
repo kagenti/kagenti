@@ -97,64 +97,67 @@ jobs:
       - name: Parse command options
         id: parse-options
         if: steps.check-permission.outputs.check-result == 'true'
-        shell: bash
-        run: |
-          COMMENT_BODY="${{ github.event.comment.body }}"
-          # Parse --build <org/repo>=<ref> flags from comment
-          # Supports multiple --build flags and both branch refs and pr/<number>
-          #
-          # Examples:
-          #   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
-          #   /run-e2e --build kagenti/kagenti-extensions=pr/234
-          #   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
-          #
-          # Also supports legacy --extensions-ref for backwards compatibility
-          #
-          # Allowed repos (security: only build from trusted orgs/repos):
-          ALLOWED_REPOS="kagenti/kagenti-extensions kagenti/kagenti-operator"
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        with:
+          script: |
+            const commentBody = context.payload.comment.body;
+            console.log('Parsing comment:', commentBody);
 
-          BUILDS="[]"
+            // Allowed repos (security: only build from trusted orgs/repos)
+            const ALLOWED_REPOS = ['kagenti/kagenti-extensions', 'kagenti/kagenti-operator'];
+            // Allowed ref pattern: alphanumeric, dots, dashes, slashes, underscores
+            const REF_PATTERN = /^[\w.\-\/]+$/;
 
-          # Parse --build flags
-          while [[ "$COMMENT_BODY" =~ --build[[:space:]]+([^[:space:]]+) ]]; do
-            BUILD_SPEC="${BASH_REMATCH[1]}"
-            COMMENT_BODY="${COMMENT_BODY#*"${BASH_REMATCH[0]}"}"
+            const builds = [];
 
-            REPO="${BUILD_SPEC%%=*}"
-            REF="${BUILD_SPEC#*=}"
+            // Parse --build org/repo=ref flags
+            // Examples:
+            //   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
+            //   /run-e2e --build kagenti/kagenti-extensions=pr/234
+            //   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
+            const buildPattern = /--build\s+(\S+)/g;
+            let match;
+            while ((match = buildPattern.exec(commentBody)) !== null) {
+              const spec = match[1];
+              const eqIdx = spec.indexOf('=');
+              if (eqIdx === -1) {
+                core.warning(`Invalid --build format: ${spec} (expected org/repo=ref)`);
+                continue;
+              }
+              const repo = spec.substring(0, eqIdx);
+              const ref = spec.substring(eqIdx + 1);
 
-            if [[ -z "$REPO" || -z "$REF" || "$REPO" == "$REF" ]]; then
-              echo "::warning::Invalid --build format: ${BUILD_SPEC} (expected org/repo=ref)"
-              continue
-            fi
+              if (!ALLOWED_REPOS.includes(repo)) {
+                core.warning(`Repo not in allow list: ${repo} (allowed: ${ALLOWED_REPOS.join(', ')})`);
+                continue;
+              }
+              if (!REF_PATTERN.test(ref)) {
+                core.warning(`Invalid ref: ${ref}`);
+                continue;
+              }
 
-            # Security: only allow known repos
-            if ! echo "$ALLOWED_REPOS" | grep -qw "$REPO"; then
-              echo "::warning::Repo not in allow list: ${REPO} (allowed: ${ALLOWED_REPOS})"
-              continue
-            fi
+              console.log(`Parsed build: repo=${repo} ref=${ref}`);
+              builds.push({ repo, ref });
+            }
 
-            echo "Parsed build: repo=${REPO} ref=${REF}"
-            BUILDS=$(REPO="$REPO" REF="$REF" python3 -c "
-          import json, sys, os
-          builds = json.loads(sys.stdin.read())
-          builds.append({'repo': os.environ['REPO'], 'ref': os.environ['REF']})
-          print(json.dumps(builds))
-          " <<< "$BUILDS")
-          done
+            // Legacy: --extensions-ref maps to kagenti/kagenti-extensions build
+            if (builds.length === 0) {
+              const legacyMatch = commentBody.match(/--extensions-ref\s+(\S+)/);
+              if (legacyMatch) {
+                const ref = legacyMatch[1];
+                if (REF_PATTERN.test(ref)) {
+                  console.log(`Legacy --extensions-ref: ${ref}`);
+                  builds.push({ repo: 'kagenti/kagenti-extensions', ref });
+                } else {
+                  core.setFailed(`Invalid extensions-ref: ${ref}`);
+                  return;
+                }
+              }
+            }
 
-          # Legacy: --extensions-ref maps to kagenti/kagenti-extensions build
-          if [[ "${BUILDS}" == "[]" ]]; then
-            LEGACY_BODY="${{ github.event.comment.body }}"
-            if [[ "$LEGACY_BODY" =~ --extensions-ref[[:space:]]+([^[:space:]]+) ]]; then
-              REF="${BASH_REMATCH[1]}"
-              echo "Legacy --extensions-ref detected: ${REF}"
-              BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"'"${REF}"'"}]'
-            fi
-          fi
-
-          echo "dep_builds=${BUILDS}" >> "$GITHUB_OUTPUT"
-          echo "Dependency builds: ${BUILDS}"
+            const output = JSON.stringify(builds);
+            console.log('Dependency builds:', output);
+            core.setOutput('dep_builds', output);
 
       - name: Add safe-to-test label
         if: steps.check-permission.outputs.check-result == 'true'
