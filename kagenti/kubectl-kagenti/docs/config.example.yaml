@@ -1,0 +1,10 @@
+# Copy to ~/.config/kagenti/config.yaml (or $XDG_CONFIG_HOME/kagenti/config.yaml)
+#
+# If backend_url is omitted, the CLI uses your current kube context:
+#   1) OpenShift Route kagenti-api in kagenti-system (HTTPS)
+#   2) else Service kagenti-backend (http://kagenti-backend.kagenti-system.svc.cluster.local:8000)
+#
+# backend_url: https://kagenti-api.apps.example.com
+# backend_discovery: auto   # auto | route | service — use "service" to skip route
+# backend_namespace: kagenti-system
+# token_path: ~/.config/kagenti/token
