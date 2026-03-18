@@ -104,6 +104,7 @@ flowchart TB
 | [Writing Agents](./agents.md) | Agent authoring: graph structure, tools, event serialization, graph card |
 | [Multi-Framework Runtime](./multi-framework.md) | Framework adapters: LangGraph, OpenCode, Claude SDK, CrewAI, AG2 *(WIP)* |
 | [API Reference](./api-reference.md) | Backend routes: sandbox, sessions, events, deploy, sidecars, budget |
+| [TUI Integration](./tui.md) | Terminal client: agent chat, sessions, HITL, dev workflows, CI mode |
 | [Deployment](./deployment.md) | Manifests, platform base, database, budget proxy, deploy scripts |
 | [Troubleshooting](./troubleshooting.md) | Common issues, debugging, log locations |
 
