@@ -153,6 +153,19 @@ keycloak:
   autoBootstrapRealm: true
 
 # ------------------------------------------------------------------
+#  Kagenti Webhook Configuration
+# ------------------------------------------------------------------
+# Pin sidecar image tags to the webhook chart version to prevent
+# breakage when :latest is updated by newer kagenti-extensions builds.
+# These MUST be updated together with the chart version in Chart.yaml.
+kagenti-webhook-chart:
+  defaults:
+    images:
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/envoy-with-processor:v0.4.0-alpha.8
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.4.0-alpha.8
+      clientRegistration: ghcr.io/kagenti/kagenti-extensions/client-registration:v0.4.0-alpha.8
+
+# ------------------------------------------------------------------
 #  Kagenti Operator Configuration
 # ------------------------------------------------------------------
 kagenti-operator-chart:
