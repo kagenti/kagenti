@@ -107,8 +107,10 @@ done
 #   Fix on main: uses NET_ADMIN/NET_RAW capabilities + DNAT (no privileged)
 #   Remove after: bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
 # ──────────────────────────────────────────────────────────────────────────────
+# SHADOW TEST: skip dep builds entirely — use stock GHCR images
+# This isolates whether the dep rebuild from extensions@main is the cause of SCC failures
 if [[ -z "${KAGENTI_DEP_BUILDS:-}" || "${KAGENTI_DEP_BUILDS:-}" == "[]" ]]; then
-    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+    export KAGENTI_DEP_BUILDS='[]'
 fi
 
 # Use hypershift-full-test.sh with whitelist mode (--include-X flags)
