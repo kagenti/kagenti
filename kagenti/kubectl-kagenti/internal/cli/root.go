@@ -5,7 +5,9 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/kagenti/kagenti/kagenti/kubectl-kagenti/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +22,8 @@ var (
 	rootAllNamespaces      bool
 	rootOutput             string
 	rootBackendDiscovery   string
+	rootLogLevel           int
+	rootEnabledOnly        bool
 )
 
 // Execute runs the root command.
@@ -29,7 +33,7 @@ func Execute() error {
 		Short: "Kagenti platform CLI (kubectl/oc plugin)",
 		Long: `kubectl kagenti / oc kagenti — interact with the Kagenti control plane.
 
-Global flags apply to subcommands that list or format API resources (stories after RHAIENG-3805).
+Global flags scope list/describe commands (RHAIENG-3806 read path).
 
 Configuration:
   $XDG_CONFIG_HOME/kagenti/config.yaml (or ~/.config/kagenti/config.yaml)
@@ -51,8 +55,17 @@ Environment:
   KAGENTI_TOKEN              bearer JWT
   KAGENTI_TOKEN_PATH         path to JWT file
   KAGENTI_KEYCLOAK_URL      optional IdP base (browser login)
-  KAGENTI_OIDC_LOCAL_PORT   localhost callback port (default 8250)`,
+  KAGENTI_OIDC_LOCAL_PORT   localhost callback port (default 8250)
+
+  --loglevel=9 (or -v=9)    log each HTTP request start/end to stderr`,
 		SilenceUsage: true,
+		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+			lvl := rootLogLevel
+			if lvl == 0 {
+				_, _ = fmt.Sscanf(os.Getenv("KAGENTI_LOGLEVEL"), "%d", &lvl)
+			}
+			client.SetLogLevel(lvl)
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -61,8 +74,10 @@ Environment:
 	root.PersistentFlags().BoolVarP(&rootAllNamespaces, "all-namespaces", "A", false, "If true, operate across all namespaces")
 	root.PersistentFlags().StringVarP(&rootOutput, "output", "o", "", "Output format: json|yaml|wide (default: plain text)")
 	root.PersistentFlags().StringVar(&rootBackendDiscovery, "backend-discovery", "", "Discover API URL: auto (route then service), route, or service")
+	root.PersistentFlags().IntVarP(&rootLogLevel, "loglevel", "v", 0, "Log level: 9 = trace HTTP to stderr (same idea as kubectl -v=9). Overrides with KAGENTI_LOGLEVEL.")
+	root.PersistentFlags().BoolVar(&rootEnabledOnly, "enabled-only", true, "With -A, only namespaces labeled kagenti-enabled (default true). Use --enabled-only=false to scan all API-visible namespaces")
 
-	root.AddCommand(authCmd(), versionCmd())
+	root.AddCommand(authCmd(), versionCmd(), getCmd(), describeCmd(), mcpCmd())
 	return root.Execute()
 }
 

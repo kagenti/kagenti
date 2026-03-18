@@ -4,6 +4,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +25,7 @@ type UserInfo struct {
 func GetMe(baseURL, bearer string) (*UserInfo, int, error) {
 	baseURL = strings.TrimRight(baseURL, "/")
 	url := baseURL + "/api/v1/auth/me"
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -34,7 +35,7 @@ func GetMe(baseURL, bearer string) (*UserInfo, int, error) {
 	req.Header.Set("Accept", "application/json")
 
 	cli := &http.Client{Timeout: 30 * time.Second}
-	res, err := cli.Do(req)
+	res, err := tracedDo(req, cli)
 	if err != nil {
 		return nil, 0, err
 	}

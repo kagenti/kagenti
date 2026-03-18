@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -84,4 +85,24 @@ func run(ctx context.Context, bin string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("%s %v: %w: %s", bin, args, err, strings.TrimSpace(stderr.String()))
 	}
 	return out, nil
+}
+
+// CurrentNamespace returns the namespace from the current kube context (kubectl/oc).
+// If unset in kubeconfig, returns "default".
+func CurrentNamespace(ctx context.Context) (string, error) {
+	bin, err := LookPath(strings.TrimSpace(os.Getenv("KAGENTI_KUBECTL")))
+	if err != nil {
+		return "default", nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := run(ctx, bin, "config", "view", "--minify", "-o", "jsonpath={..namespace}")
+	if err != nil {
+		return "default", nil
+	}
+	ns := strings.TrimSpace(string(out))
+	if ns == "" {
+		return "default", nil
+	}
+	return ns, nil
 }

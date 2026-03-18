@@ -4,7 +4,7 @@
 
 **Monorepo path:** `kagenti/kubectl-kagenti/` (Go module `github.com/kagenti/kagenti/kagenti/kubectl-kagenti`). Releases may still ship from [akram/kubectl-kagenti](https://github.com/akram/kubectl-kagenti).
 
-Tracks **RHAIENG-3805** (foundation): Krew layout, global flags, config, `auth status`, stub `login`/`logout`.
+Tracks **RHAIENG-3805** (foundation) and **RHAIENG-3806** (read path: agents, describe, MCP list).
 
 ## Commands
 
@@ -15,12 +15,16 @@ Tracks **RHAIENG-3805** (foundation): Krew layout, global flags, config, `auth s
 | `kubectl kagenti auth status` | `GET /api/v1/auth/me` (use `--login` if no token) |
 | `kubectl kagenti auth logout` | Deletes token file |
 | `kubectl kagenti version` | Version / git commit |
+| `kubectl kagenti get agents` | `GET /api/v1/agents` (current context namespace; `-n` / `-A`) |
+| `kubectl kagenti describe agent NAME` | `GET /api/v1/agents/{namespace}/{name}` (`-o json` / `-o yaml` / default summary; `-o wide` adds spec) |
+| `kubectl kagenti mcp list` | `GET /api/v1/tools` (MCP tool servers; `-n` / `-A`) |
 
 ### Global flags (persistent)
 
-- `-n` / `--namespace` — reserved for future resource scope
-- `-A` / `--all-namespaces` — reserved for future use
-- `-o` / `--output` — `json`, `yaml`, or `wide` (e.g. `kubectl kagenti auth status -o json`)
+- `-n` / `--namespace` — scope for `get agents`, `describe agent`, `mcp list` (default: current kube context namespace)
+- `-A` / `--all-namespaces` — list agents/tools across namespaces from `GET /api/v1/namespaces` (**`--enabled-only` defaults true**: only `kagenti-enabled` namespaces). Use **`--enabled-only=false`** to scan every namespace the API can list (slower).
+- `-o` / `--output` — `json`, `yaml`, or `wide` (tables include extra columns when `wide`)
+- `--loglevel=9` / `-v=9` — log every API request to **stderr** before send and after response (`[kagenti] --> GET …` / `<-- 200 …`). If a call hangs, the last `-->` line is the stuck URL. Optional: `KAGENTI_LOGLEVEL=9` when flag is omitted.
 
 ## Configuration
 
@@ -133,6 +137,12 @@ kubectl krew install --manifest=deploy/krew/kagenti.yaml
 - [x] Help shows command tree
 - [x] `auth status` with valid JWT against configured backend
 - [x] `auth login` / `auth logout`; `auth status --login`
+
+## Acceptance (RHAIENG-3806)
+
+- [x] `get agents` with viewer token; `-A` uses kagenti-enabled namespaces by default (`--enabled-only=false` for full cluster scan)
+- [x] `describe agent <name>` (namespace from `-n` or current context)
+- [x] `mcp list` → `GET /api/v1/tools`
 
 ## License
 
