@@ -107,8 +107,9 @@ done
 #   Fix on main: uses NET_ADMIN/NET_RAW capabilities + DNAT (no privileged)
 #   Remove after: bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
 # ──────────────────────────────────────────────────────────────────────────────
+# SHADOW TEST: pin to extensions pre-#242 (before "remove privileged init")
 if [[ -z "${KAGENTI_DEP_BUILDS:-}" || "${KAGENTI_DEP_BUILDS:-}" == "[]" ]]; then
-    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"1a644f30"}]'
 fi
 
 # Use hypershift-full-test.sh with whitelist mode (--include-X flags)

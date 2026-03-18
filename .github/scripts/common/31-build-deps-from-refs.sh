@@ -17,8 +17,9 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 # Default: build webhook from extensions main (proxy-init fix not yet released)
 # TODO: Remove this default after bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
+# SHADOW TEST: pin to extensions pre-#242
 if [ -z "${KAGENTI_DEP_BUILDS:-}" ] || [ "${KAGENTI_DEP_BUILDS:-}" = "[]" ]; then
-    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
+    export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"1a644f30"}]'
 fi
 
 DEP_BUILDS="${KAGENTI_DEP_BUILDS}"
