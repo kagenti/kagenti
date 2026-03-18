@@ -206,6 +206,14 @@ spec:
                   key: master-key
                   optional: true
             {{- end }}
+            {{- if .Values.spire.trustDomain }}
+            - name: SPIRE_TRUST_DOMAIN
+              value: {{ .Values.spire.trustDomain | quote }}
+            {{- end }}
+            {{- if .Values.agentcard }}
+            - name: AGENTCARD_SIGNER_IMAGE
+              value: {{ .Values.agentcard.signerImage | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.ui.backend.resources | nindent 12 }}
           livenessProbe:
@@ -347,6 +355,9 @@ rules:
   - apiGroups: ["agent.kagenti.dev"]
     resources: ["agents"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["agent.kagenti.dev"]
+    resources: ["agentcards"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
   # Shipwright build resources for building agents and tools from source
   - apiGroups: ["shipwright.io"]
     resources: ["builds", "buildruns"]
@@ -357,9 +368,16 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # ConfigMaps, ServiceAccounts, Roles, RoleBindings for AgentCard signing lifecycle
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "create", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
