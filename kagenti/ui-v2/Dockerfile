@@ -23,29 +23,28 @@ RUN npm run build
 # Stage 2: Serve with nginx
 FROM nginx:1.29-alpine@sha256:f46cb72c7df02710e693e863a983ac42f6a9579058a59a35f1ae36c9958e4ce0
 
-# Copy nginx configuration
-COPY ui-v2/nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx configuration template
+COPY ui-v2/nginx.conf /etc/nginx/templates/default.conf.template
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Add non-root user for security
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup && \
-    chown -R appuser:appgroup /usr/share/nginx/html && \
-    chown -R appuser:appgroup /var/cache/nginx && \
-    chown -R appuser:appgroup /var/log/nginx && \
+# Cap worker processes to avoid OOM on high-core nodes
+RUN sed -i 's/worker_processes\s*auto/worker_processes 4/' /etc/nginx/nginx.conf
+
+# Make directories writable for arbitrary UIDs (OpenShift restricted SCC)
+RUN chmod -R g+rwx /var/cache/nginx /var/log/nginx /usr/share/nginx/html /etc/nginx/conf.d && \
     touch /var/run/nginx.pid && \
-    chown -R appuser:appgroup /var/run/nginx.pid
+    chmod g+rw /var/run/nginx.pid
 
 USER 1001
 
-# Expose port
+# OpenShift DNS ClusterIP default; override at deploy time for other platforms
+ENV DNS_RESOLVER="172.30.0.10"
+
 EXPOSE 8080
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
-# Run nginx
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/bin/sh", "-c", "envsubst '${DNS_RESOLVER}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
