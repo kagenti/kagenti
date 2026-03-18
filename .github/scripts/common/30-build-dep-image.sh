@@ -168,20 +168,21 @@ else
 fi
 
 # Patch the deployment directly instead of helm upgrade.
-# Using helm upgrade --reuse-values can corrupt helm state and drop
-# resources like SCCs and RoleBindings when values are re-merged.
-FOUND_DEPLOY=$(kubectl get deployments -n "$DEP_DEPLOY_NS" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-if [ -n "$FOUND_DEPLOY" ]; then
-    PULL_POLICY="Always"
-    [[ "$IS_OPENSHIFT" != "true" ]] && PULL_POLICY="Never"
-    log_info "Patching deployment ${FOUND_DEPLOY} with image ${CUSTOM_IMAGE}..."
-    kubectl set image "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" \
-        manager="${CUSTOM_IMAGE}" 2>/dev/null || \
-    kubectl set image "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" \
-        "${DEP_IMAGE_NAME}=${CUSTOM_IMAGE}" 2>/dev/null || true
-    kubectl rollout status "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" --timeout=120s
+# Skip for init container images (proxy-init) that have no deployment.
+if [ "${DEP_SKIP_PATCH:-false}" = "true" ]; then
+    log_info "Image-only build (no deployment to patch) — will be used on next pod creation"
 else
-    log_info "No deployment found in ${DEP_DEPLOY_NS} — image will be used on next pod creation"
+    FOUND_DEPLOY=$(kubectl get deployments -n "$DEP_DEPLOY_NS" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "$FOUND_DEPLOY" ]; then
+        log_info "Patching deployment ${FOUND_DEPLOY} with image ${CUSTOM_IMAGE}..."
+        kubectl set image "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" \
+            manager="${CUSTOM_IMAGE}" 2>/dev/null || \
+        kubectl set image "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" \
+            "${DEP_IMAGE_NAME}=${CUSTOM_IMAGE}" 2>/dev/null || true
+        kubectl rollout status "deployment/${FOUND_DEPLOY}" -n "$DEP_DEPLOY_NS" --timeout=120s
+    else
+        log_info "No deployment found in ${DEP_DEPLOY_NS} — image will be used on next pod creation"
+    fi
 fi
 
 # Clean up
