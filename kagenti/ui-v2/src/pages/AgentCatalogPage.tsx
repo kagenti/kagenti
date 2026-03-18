@@ -30,6 +30,7 @@ import {
   DropdownItem,
   MenuToggle,
   MenuToggleElement,
+  Tooltip,
 } from '@patternfly/react-core';
 import {
   Table,
@@ -44,6 +45,7 @@ import {
   PlusCircleIcon,
   EllipsisVIcon,
   ExclamationTriangleIcon,
+  ShieldAltIcon,
 } from '@patternfly/react-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -107,7 +109,7 @@ export const AgentCatalogPage: React.FC = () => {
     }
   };
 
-  const columns = ['Name', 'Description', 'Status', 'Labels', 'Workload', ''];
+  const columns = ['Name', 'Description', 'Status', 'Trust', 'Labels', 'Workload', ''];
 
   const renderWorkloadType = (workloadType: string | undefined) => {
     const type = workloadType || 'deployment';
@@ -119,6 +121,45 @@ export const AgentCatalogPage: React.FC = () => {
       color = 'gold';
     }
     return <Label color={color} isCompact>{label}</Label>;
+  };
+
+  const renderTrustBadges = (agent: Agent) => {
+    if (!agent.hasAgentCard) {
+      return <span style={{ color: 'var(--pf-v5-global--Color--200)' }}>N/A</span>;
+    }
+    if (agent.verified == null && agent.bound == null) {
+      return (
+        <Tooltip content="Waiting for operator to process">
+          <Label color="blue" isCompact>Pending</Label>
+        </Tooltip>
+      );
+    }
+    if (agent.verified === true && agent.bound === true) {
+      return (
+        <Tooltip content="Signature verified and identity bound">
+          <Label color="green" icon={<ShieldAltIcon />} isCompact>Trusted</Label>
+        </Tooltip>
+      );
+    }
+    return (
+      <LabelGroup>
+        {agent.verified === true && (
+          <Tooltip content="Signature verified but identity not yet bound">
+            <Label color="green" icon={<ShieldAltIcon />} isCompact>Verified</Label>
+          </Tooltip>
+        )}
+        {agent.verified === false && (
+          <Tooltip content="Signature not yet verified">
+            <Label color="red" isCompact>Unverified</Label>
+          </Tooltip>
+        )}
+        {agent.bound === false && (
+          <Tooltip content="Identity binding pending or failed">
+            <Label color="gold" isCompact>Not Bound</Label>
+          </Tooltip>
+        )}
+      </LabelGroup>
+    );
   };
 
   const renderStatusBadge = (status: string) => {
@@ -252,6 +293,7 @@ export const AgentCatalogPage: React.FC = () => {
                       {agent.description || 'No description'}
                     </Td>
                     <Td dataLabel="Status">{renderStatusBadge(agent.status)}</Td>
+                    <Td dataLabel="Trust">{renderTrustBadges(agent)}</Td>
                     <Td dataLabel="Labels">{renderLabels(agent)}</Td>
                     <Td dataLabel="Workload">{renderWorkloadType(agent.workloadType)}</Td>
                     <Td isActionCell>

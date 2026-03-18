@@ -52,6 +52,7 @@ import {
   DropdownItem,
   MenuToggle,
   MenuToggleElement,
+  Tooltip,
 } from '@patternfly/react-core';
 import {
   Table,
@@ -65,21 +66,15 @@ import {
   CubesIcon,
   ExternalLinkAltIcon,
   ExclamationTriangleIcon,
+  ShieldAltIcon,
+  CheckCircleIcon,
 } from '@patternfly/react-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import yaml from 'js-yaml';
 
 import { agentService, chatService, configService, shipwrightService, ShipwrightBuildInfo } from '@/services/api';
+import type { AgentCardStatus, StatusCondition } from '@/types';
 import { AgentChat } from '@/components/AgentChat';
-
-interface StatusCondition {
-  type: string;
-  status: string;
-  reason?: string;
-  message?: string;
-  lastTransitionTime?: string;
-  last_transition_time?: string; // snake_case from K8s API
-}
 
 interface AgentCardSkill {
   id: string;
@@ -104,6 +99,42 @@ interface AgentCard {
   skills?: AgentCardSkill[];
 }
 
+const SIGNING_STEPS = [
+  { key: 'svid', label: 'SVID Fetched' },
+  { key: 'signed', label: 'Card Signed' },
+  { key: 'verified', label: 'Verified' },
+  { key: 'bound', label: 'Bound' },
+];
+
+const SigningProgressIndicator: React.FC<{ status: AgentCardStatus }> = ({ status }) => {
+  const stepComplete = {
+    svid: status.synced === true,
+    signed: status.synced === true,
+    verified: status.verified === true,
+    bound: status.bound === true,
+  };
+
+  return (
+    <div className="kagenti-signing-progress">
+      {SIGNING_STEPS.map((step) => (
+        <div
+          key={step.key}
+          className={`kagenti-signing-step ${stepComplete[step.key as keyof typeof stepComplete] ? 'kagenti-signing-step--complete' : ''}`}
+        >
+          <div className="kagenti-signing-step__circle">
+            {stepComplete[step.key as keyof typeof stepComplete] ? (
+              <CheckCircleIcon style={{ fontSize: '12px' }} />
+            ) : (
+              <span>{SIGNING_STEPS.indexOf(step) + 1}</span>
+            )}
+          </div>
+          <span className="kagenti-signing-step__label">{step.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const AgentDetailPage: React.FC = () => {
   const { namespace, name } = useParams<{ namespace: string; name: string }>();
   const navigate = useNavigate();
@@ -113,6 +144,7 @@ export const AgentDetailPage: React.FC = () => {
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = React.useState('');
   const [actionsMenuOpen, setActionsMenuOpen] = React.useState(false);
+  const [isConditionsExpanded, setIsConditionsExpanded] = React.useState(false);
 
   const deleteMutation = useMutation({
     mutationFn: () => agentService.delete(namespace!, name!),
@@ -179,12 +211,39 @@ export const AgentDetailPage: React.FC = () => {
   const agentReadyStatus = agent?.readyStatus;
   const isAgentReady = agentReadyStatus === 'Ready' || agentReadyStatus === 'Progressing';
 
-  // Fetch agent card if agent is ready
-  const { data: agentCard, isLoading: isAgentCardLoading } = useQuery<AgentCard>({
+  // Fetch agent card if agent is ready; fall back to CR status card data
+  const { data: agentCardDirect, isLoading: isAgentCardDirectLoading } = useQuery<AgentCard>({
     queryKey: ['agentCard', namespace, name],
     queryFn: () => chatService.getAgentCard(namespace!, name!),
     enabled: !!namespace && !!name && isAgentReady,
+    retry: false,
   });
+
+  const { data: agentCardStatus, isLoading: isAgentCardStatusLoading } = useQuery<AgentCardStatus | null>({
+    queryKey: ['agentCardStatus', namespace, name],
+    queryFn: () => agentService.getAgentCardStatus(namespace!, name!),
+    enabled: !!namespace && !!name,
+  });
+
+  const agentCard: AgentCard | undefined = React.useMemo(() => {
+    if (agentCardDirect) return agentCardDirect;
+    const c = agentCardStatus?.card;
+    if (!c) return undefined;
+    return {
+      name: (c.name as string) || name || '',
+      description: c.description as string | undefined,
+      version: (c.version as string) || 'unknown',
+      url: (c.url as string) || '',
+      protocolVersion: c.protocolVersion as string | undefined,
+      preferredTransport: c.preferredTransport as string | undefined,
+      capabilities: c.capabilities as { streaming?: boolean } | undefined,
+      defaultInputModes: c.defaultInputModes as string[] | undefined,
+      defaultOutputModes: c.defaultOutputModes as string[] | undefined,
+      skills: c.skills as AgentCardSkill[] | undefined,
+    };
+  }, [agentCardDirect, agentCardStatus?.card, name]);
+
+  const isAgentCardLoading = isAgentCardDirectLoading && !agentCard;
 
   // Check if an HTTPRoute/Route exists for this agent
   const { data: routeStatusData } = useQuery({
@@ -334,6 +393,20 @@ export const AgentDetailPage: React.FC = () => {
               {readyStatus || (isReady ? 'Ready' : 'Not Ready')}
             </Label>
           </SplitItem>
+          {agentCardStatus?.verified === true && (
+            <SplitItem style={{ marginLeft: 4 }}>
+              <Tooltip content="Signature cryptographically verified against the SPIRE trust bundle">
+                <Label color="green" icon={<ShieldAltIcon />}>Verified</Label>
+              </Tooltip>
+            </SplitItem>
+          )}
+          {agentCardStatus?.verified === false && (
+            <SplitItem style={{ marginLeft: 4 }}>
+              <Tooltip content="Signature verification failed. Check operator logs for details.">
+                <Label color="red">Unverified</Label>
+              </Tooltip>
+            </SplitItem>
+          )}
           <SplitItem isFilled />
           <SplitItem>
             <Flex>
@@ -508,6 +581,186 @@ export const AgentDetailPage: React.FC = () => {
                         </>
                       )}
                     </DescriptionList>
+                  </CardBody>
+                </Card>
+              </GridItem>
+
+              {/* Trust & Identity */}
+              <GridItem md={12}>
+                <Card>
+                  <CardTitle>Trust &amp; Identity</CardTitle>
+                  <CardBody>
+                    {isAgentCardStatusLoading ? (
+                      <Spinner size="md" aria-label="Loading trust status" />
+                    ) : !agentCardStatus?.found ? (
+                      <Alert variant="info" title="No AgentCard found" isInline>
+                        The operator creates AgentCards automatically for agents with discovery labels.
+                        Trust and verification status will appear here once an AgentCard is synced.
+                      </Alert>
+                    ) : (
+                      <>
+                        <SigningProgressIndicator status={agentCardStatus} />
+
+                        <Grid hasGutter>
+                          <GridItem md={6}>
+                            <Text component={TextVariants.h4} style={{ marginBottom: '8px' }}>Verification Status</Text>
+                            <DescriptionList isCompact isHorizontal>
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Card Synced</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  {agentCardStatus.synced === true ? (
+                                    <Tooltip content="The operator has successfully fetched and processed the agent's signed card">
+                                      <Label color="green" isCompact>Synced</Label>
+                                    </Tooltip>
+                                  ) : agentCardStatus.synced === false ? (
+                                    <Tooltip content="Sync failed. The operator could not fetch the signed card from the ConfigMap.">
+                                      <Label color="orange" isCompact>Not Synced</Label>
+                                    </Tooltip>
+                                  ) : (
+                                    <Tooltip content="Waiting for the operator to sync the agent card">
+                                      <Label color="blue" isCompact>Pending</Label>
+                                    </Tooltip>
+                                  )}
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Signature Verified</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  {agentCardStatus.verified === true ? (
+                                    <Tooltip content={agentCardStatus.verificationDetails || "Signature cryptographically verified against the SPIRE trust bundle"}>
+                                      <Label color="green" icon={<ShieldAltIcon />} isCompact>Verified</Label>
+                                    </Tooltip>
+                                  ) : agentCardStatus.verified === false ? (
+                                    <Tooltip content={agentCardStatus.verificationDetails || "Signature verification failed. Check operator logs."}>
+                                      <Label color="red" isCompact>Unverified</Label>
+                                    </Tooltip>
+                                  ) : (
+                                    <Tooltip content="Waiting for the operator to verify the signature">
+                                      <Label color="blue" isCompact>Pending</Label>
+                                    </Tooltip>
+                                  )}
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Identity Bound</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  {agentCardStatus.bound === true ? (
+                                    <Tooltip content={agentCardStatus.bindingMessage || "SPIFFE identity matches the expected trust domain and service account"}>
+                                      <Label color="green" isCompact>Bound</Label>
+                                    </Tooltip>
+                                  ) : agentCardStatus.bound === false ? (
+                                    <Tooltip content={agentCardStatus.bindingMessage || "Identity binding failed. Check the trust domain configuration."}>
+                                      <Label color="gold" isCompact>Not Bound</Label>
+                                    </Tooltip>
+                                  ) : (
+                                    <Tooltip content="Waiting for the operator to check identity binding">
+                                      <Label color="blue" isCompact>Pending</Label>
+                                    </Tooltip>
+                                  )}
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                            </DescriptionList>
+                          </GridItem>
+
+                          <GridItem md={6}>
+                            <Text component={TextVariants.h4} style={{ marginBottom: '8px' }}>Identity Details</Text>
+                            <DescriptionList isCompact isHorizontal>
+                              {agentCardStatus.trustDomain && (
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>Trust Domain</DescriptionListTerm>
+                                  <DescriptionListDescription>{agentCardStatus.trustDomain}</DescriptionListDescription>
+                                </DescriptionListGroup>
+                              )}
+                              {agentCardStatus.spiffeId && (
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>SPIFFE ID</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    <code style={{ fontSize: '0.85em', wordBreak: 'break-all' }}>{agentCardStatus.spiffeId}</code>
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                              )}
+                              {agentCardStatus.cardId && (
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>Card ID</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    <code style={{ fontSize: '0.85em', wordBreak: 'break-all' }}>
+                                      {agentCardStatus.cardId}
+                                    </code>
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                              )}
+                              {agentCardStatus.lastSyncTime && (
+                                <DescriptionListGroup>
+                                  <DescriptionListTerm>Last Sync</DescriptionListTerm>
+                                  <DescriptionListDescription>
+                                    {new Date(agentCardStatus.lastSyncTime).toLocaleString()}
+                                  </DescriptionListDescription>
+                                </DescriptionListGroup>
+                              )}
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Network Policy</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  <Label
+                                    color={
+                                      agentCardStatus.networkPolicyState === 'permissive' ? 'green'
+                                      : agentCardStatus.networkPolicyState === 'restrictive' ? 'red'
+                                      : 'grey'
+                                    }
+                                    isCompact
+                                  >
+                                    {agentCardStatus.networkPolicyState || 'none'}
+                                  </Label>
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                            </DescriptionList>
+                          </GridItem>
+                        </Grid>
+
+                        {agentCardStatus.conditions && agentCardStatus.conditions.length > 0 && (
+                          <ExpandableSection
+                            toggleText={isConditionsExpanded ? 'Hide Conditions' : `Show Conditions (${agentCardStatus.conditions.length})`}
+                            isExpanded={isConditionsExpanded}
+                            onToggle={() => setIsConditionsExpanded(!isConditionsExpanded)}
+                            style={{ marginTop: '16px' }}
+                          >
+                            <Table variant="compact" aria-label="AgentCard conditions">
+                              <Thead>
+                                <Tr>
+                                  <Th>Type</Th>
+                                  <Th>Status</Th>
+                                  <Th>Reason</Th>
+                                  <Th>Message</Th>
+                                  <Th>Last Transition</Th>
+                                </Tr>
+                              </Thead>
+                              <Tbody>
+                                {[...agentCardStatus.conditions].sort((a, b) => {
+                                  const order: Record<string, number> = { Synced: 0, SignatureVerified: 1, Bound: 2, Ready: 3 };
+                                  return (order[a.type] ?? 99) - (order[b.type] ?? 99);
+                                }).map((cond, idx) => (
+                                  <Tr key={idx}>
+                                    <Td>{cond.type}</Td>
+                                    <Td>
+                                      <Label color={cond.status === 'True' ? 'green' : 'red'} isCompact>
+                                        {cond.status}
+                                      </Label>
+                                    </Td>
+                                    <Td>{cond.reason || '-'}</Td>
+                                    <Td>{cond.message || '-'}</Td>
+                                    <Td>
+                                      {cond.lastTransitionTime
+                                        ? new Date(cond.lastTransitionTime).toLocaleString()
+                                        : '-'}
+                                    </Td>
+                                  </Tr>
+                                ))}
+                              </Tbody>
+                            </Table>
+                          </ExpandableSection>
+                        )}
+
+                      </>
+                    )}
                   </CardBody>
                 </Card>
               </GridItem>

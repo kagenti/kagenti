@@ -24,6 +24,37 @@ export interface Agent {
   labels: AgentLabels;
   workloadType?: WorkloadType;
   createdAt?: string;
+  hasAgentCard?: boolean;
+  verified?: boolean;
+  bound?: boolean;
+}
+
+export interface StatusCondition {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+  last_transition_time?: string;
+}
+
+export interface AgentCardStatus {
+  found: boolean;
+  verified?: boolean;
+  bound?: boolean;
+  synced?: boolean;
+  spiffeId?: string;
+  expectedSpiffeId?: string;
+  trustDomain?: string;
+  signatureKeyId?: string;
+  lastSyncTime?: string;
+  cardId?: string;
+  networkPolicyState?: 'permissive' | 'restrictive' | 'none';
+  conditions?: StatusCondition[];
+  card?: Record<string, unknown>;
+  bindingReason?: string;
+  bindingMessage?: string;
+  verificationDetails?: string;
 }
 
 /**
