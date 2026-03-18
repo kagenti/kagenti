@@ -193,6 +193,113 @@ first (AuthBridge sidecar), falls back to 8000 (direct).
 
 ---
 
+## The Content Format Gap
+
+A2A defines **how agents communicate** (JSON-RPC, SSE, task lifecycle) but
+is **intentionally agnostic about what they say**. This is both a strength
+and a gap that AgentGraphCard fills.
+
+### What A2A Prescribes
+
+A2A streaming sends two event types carrying `Part` content:
+
+```mermaid
+flowchart TB
+    subgraph stream["SSE Stream"]
+        TSU["TaskStatusUpdateEvent<br/><small>task_id, context_id,<br/>status.message.parts[]</small>"]
+        TAU["TaskArtifactUpdateEvent<br/><small>task_id, context_id,<br/>artifact.parts[]</small>"]
+    end
+
+    subgraph part["Part (oneof content)"]
+        text["text: string<br/><small>Free-form. No schema.<br/>Plain text, markdown,<br/>JSON, anything.</small>"]
+        data["data: Value<br/><small>Structured JSON.<br/>No required schema.</small>"]
+        raw["raw: bytes / url: string<br/><small>Binary or file reference</small>"]
+    end
+
+    stream --> part
+```
+
+The `Part.text` field is a free-form string. A2A says nothing about what
+goes inside. There is **no type discriminator, no schema, no content
+contract**. The optional `media_type` is a hint, not enforced.
+
+### The Problem
+
+A client receiving a `Part.text` has no way to know what it contains:
+
+```mermaid
+flowchart LR
+    subgraph agents["Two Different Agents"]
+        OurAgent["Instrumented Agent<br/><small>Sends: {\"type\":\"tool_call\",<br/>\"name\":\"shell\",\"args\":\"ls\"}</small>"]
+        ExtAgent["External Agent<br/><small>Sends: I found 3 issues<br/>in the codebase...</small>"]
+    end
+
+    subgraph client["Client Receives Part.text"]
+        Q{"Is this JSON?<br/>What schema?<br/>How to render?"}
+    end
+
+    OurAgent --> Q
+    ExtAgent --> Q
+    Q --> Problem["Without prior knowledge<br/>of the agent's event format,<br/>the client can only show raw text"]
+```
+
+A2A provides the **transport** but not the **content contract**. The client
+must already know the agent's event schema to render structured reasoning
+(tool calls, plan steps, reflector decisions, graph views).
+
+### How AgentGraphCard Fills the Gap
+
+```mermaid
+flowchart TB
+    subgraph step1["1. Discovery"]
+        Fetch["Fetch agent card"]
+        Check{"Has extension<br/>urn:kagenti:agent-graph-card:v1?"}
+        FetchGC["Fetch graph card endpoint"]
+        PlainMode["Plain A2A mode<br/>(render as chat)"]
+    end
+
+    subgraph step2["2. Content Contract"]
+        Catalog["event_catalog<br/><small>12 event types, 7 categories<br/>fields + debug_fields per type</small>"]
+        Topo["topology<br/><small>nodes, edges, entry_node<br/>for graph visualization</small>"]
+    end
+
+    subgraph step3["3. Structured Rendering"]
+        Parse["Parse Part.text as JSON"]
+        Match["Match 'type' field<br/>against event_catalog"]
+        Render["Category-specific rendering:<br/>loop cards, tool calls,<br/>graph views, decision badges"]
+    end
+
+    Fetch --> Check
+    Check -->|"yes"| FetchGC --> Catalog & Topo
+    Check -->|"no"| PlainMode
+    Catalog --> Parse --> Match --> Render
+```
+
+The graph card is a **self-describing content contract** that tells clients:
+- What event types exist (`event_catalog` with 12 types)
+- What category each belongs to (reasoning, execution, tool_output, decision, terminal, meta, interaction)
+- What fields each event has (with types and descriptions)
+- How the agent's processing graph looks (`topology` with nodes + edges)
+- Which common fields appear on every event (type, loop_id, event_index, node_visit, model, tokens)
+
+Without the graph card, a client can only show raw text. With it, a client
+can render rich UI: graph views, loop cards, tool call panels, budget tracking.
+
+### Two-Tier Rendering
+
+This creates a natural two-tier model for any A2A client:
+
+| Agent Type | Detection | Rendering |
+|-----------|-----------|-----------|
+| **Instrumented** (has graph card) | `urn:kagenti:agent-graph-card:v1` in agent card extensions | Graph views, loop cards, step rendering, topology DAG |
+| **Plain A2A** (no graph card) | Extension absent | Chat bubbles with status badges |
+
+Both types get: sessions, task lifecycle, multi-turn via `context_id`.
+Instrumented agents additionally get: structured event rendering, graph
+visualization, event persistence with categories.
+
+---
+
 ## A2A Extensions
 
 ### Registered Extensions
