@@ -300,6 +300,66 @@ visualization, event persistence with categories.
 
 ---
 
+## Event Data Format — TextPart vs DataPart
+
+### Current: JSON Strings in TextPart (v0)
+
+Today, EVENT_CATALOG events are serialized as NDJSON strings and wrapped in
+`TextPart`. This means structured data is **double-encoded** (JSON inside JSON):
+
+```json
+{"parts": [{"kind": "text", "text": "{\"type\":\"tool_call\",\"name\":\"shell\"}"}]}
+```
+
+The backend must split by `\n`, `json.loads()` each line, and check for
+`loop_id` to distinguish events from plain text. This is fragile and adds
+~30% wire overhead from JSON escaping.
+
+### Planned: Structured DataPart (v1)
+
+A2A SDK has `DataPart(data=dict)` — a native structured JSON container.
+Each event becomes a separate Part with no string encoding:
+
+```json
+{"parts": [
+  {"kind": "data", "data": {"type": "tool_call", "name": "shell", "event_index": 5}},
+  {"kind": "data", "data": {"type": "tool_result", "name": "shell", "output": "..."}},
+  {"kind": "text", "text": "Executed shell command ls -la"}
+]}
+```
+
+**DataParts** carry structured events for instrumented clients.
+**TextPart** carries a human-readable summary for plain A2A clients.
+Both in the same message — backward compatible.
+
+| Approach | Wire Size | Parsing | Type Safety |
+|----------|----------|---------|-------------|
+| TextPart + NDJSON (current) | ~3KB/event | Manual split + json.loads | None |
+| DataPart (planned) | ~2KB/event | `get_data_parts()` from SDK | `kind == "data"` discriminator |
+| Protobuf via gRPC (future) | ~400B/event | Generated stubs | Compile-time from .proto |
+
+### Transport: SSE vs gRPC
+
+A2A v1.0 supports both JSON-RPC/SSE and gRPC/protobuf. We use SSE today.
+
+| Dimension | SSE (current) | gRPC (future option) |
+|-----------|--------------|---------------------|
+| Browser support | Native (`fetch`) | Needs grpc-web proxy or Connect |
+| Wire size | ~2-5KB/event (JSON) | ~400B/event (protobuf binary) |
+| Debugging | Easy (curl, dev tools) | Harder (grpcurl, binary) |
+| Schema | None (runtime) | Compile-time from .proto |
+| Infrastructure | Nothing extra | Envoy or Connect runtime |
+| React support | Native | `@connectrpc/connect-web` (mature) |
+
+**Recommendation:** Switch to DataPart now (small change, 33% savings).
+Define protobuf schema for EVENT_CATALOG (type safety from .proto).
+Evaluate gRPC only when session history transfer exceeds ~1000 events.
+
+See [detailed design](../plans/2026-03-17-a2a-integration-design.md#7-textpart-vs-datapart--should-we-switch)
+for migration code examples and protobuf schema design.
+
+---
+
 ## A2A Extensions
 
 ### Registered Extensions
