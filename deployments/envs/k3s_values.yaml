@@ -1,0 +1,104 @@
+# Kagenti K3s / Rancher Desktop installation configuration
+#
+# Differences from dev_values.yaml (Kind):
+# - metricsServer disabled (K3s has built-in metrics-server)
+# - create_kind_cluster disabled (K3s is managed externally)
+# - kind_images_preload disabled (no kind load mechanism)
+
+####################################################################
+# kagenti-deps
+####################################################################
+gatewayApi:
+  enabled: true
+
+certManager:
+  enabled: true
+
+tekton:
+  enabled: true
+
+shipwright:
+  enabled: true
+
+kiali:
+  enabled: true
+
+charts:
+  ####################################################################
+  # kagenti-deps
+  ####################################################################
+  kagenti-deps:
+    enabled: true
+    values:
+      openshift: false
+      components:
+        keycloak:
+          enabled: true
+        otel:
+          enabled: true
+        mlflow:
+          enabled: false  # Disabled - requires full OTEL instrumentation
+        mcpInspector:
+          enabled: true
+        metricsServer:
+          enabled: false  # K3s has built-in metrics-server
+        containerRegistry:
+          enabled: true
+        ingressGateway:
+          enabled: true
+        kiali:
+          enabled: true
+        spire:
+          enabled: true
+
+  ####################################################################
+  # kagenti
+  ####################################################################
+  kagenti:
+    enabled: true
+    values:
+      openshift: false
+      components:
+        agentNamespaces:
+          enabled: true
+        platformOperator:
+          enabled: true
+        kagentiOperator:
+          enabled: false  # Disabled to avoid ConfigMap collision with platformOperator
+        ui:
+          enabled: true
+        # additional artifacts required by MCP gateway
+        mcpGateway:
+          enabled: true
+      # configs
+      ui:
+        auth:
+          enabled: true
+      # Disable MLflow auth job since MLflow component is disabled in kagenti-deps
+      mlflow:
+        auth:
+          enabled: false
+
+  ####################################################################
+  # istio  - required for the ingress gateway
+  ####################################################################
+  istio:
+    enabled: true
+
+  ####################################################################
+  # mcp-gateway
+  ####################################################################
+  mcpGateway:
+    enabled: true
+
+  ####################################################################
+  # spire
+  ####################################################################
+  spire:
+    enabled: true
+
+# K3s cluster is managed externally (Rancher Desktop)
+create_kind_cluster: false
+kind_images_preload: false
+# docker or podman (Rancher Desktop uses moby/docker)
+container_engine: docker
