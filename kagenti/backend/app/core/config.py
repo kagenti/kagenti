@@ -52,6 +52,16 @@ class Settings(BaseSettings):
     crd_version: str = "v1alpha1"
     agents_plural: str = "agents"
 
+    # AgentCard signing settings
+    # Pin to a release tag once CI publishes to GHCR (kagenti/kagenti-operator#234)
+    agentcard_signer_image: str = "ghcr.io/kagenti/agentcard-signer:latest"
+    agentcard_sign_timeout: str = "30s"
+    agentcard_signer_cpu_request: str = "10m"
+    agentcard_signer_cpu_limit: str = "100m"
+    agentcard_signer_mem_request: str = "32Mi"
+    agentcard_signer_mem_limit: str = "64Mi"
+    spire_trust_domain: str = ""
+
     # Shipwright build settings
     shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
     shipwright_default_timeout: str = "15m"

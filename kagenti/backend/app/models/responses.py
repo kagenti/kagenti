@@ -27,12 +27,46 @@ class AgentSummary(BaseModel):
     labels: ResourceLabels
     workloadType: Optional[str] = None
     createdAt: Optional[str] = None
+    hasAgentCard: bool = False
+    verified: Optional[bool] = None
+    bound: Optional[bool] = None
 
 
 class AgentListResponse(BaseModel):
     """Response for listing agents."""
 
     items: List[AgentSummary]
+
+
+class AgentCardCondition(BaseModel):
+    """A single condition from AgentCard status."""
+
+    type: str
+    status: str
+    reason: Optional[str] = None
+    message: Optional[str] = None
+    lastTransitionTime: Optional[str] = None
+
+
+class AgentCardStatusResponse(BaseModel):
+    """Response for AgentCard verification and identity status."""
+
+    found: bool = False
+    verified: Optional[bool] = None
+    bound: Optional[bool] = None
+    synced: Optional[bool] = None
+    spiffeId: Optional[str] = None
+    expectedSpiffeId: Optional[str] = None
+    trustDomain: Optional[str] = None
+    signatureKeyId: Optional[str] = None
+    lastSyncTime: Optional[str] = None
+    cardId: Optional[str] = None
+    networkPolicyState: Optional[str] = None
+    conditions: Optional[List[AgentCardCondition]] = None
+    card: Optional[dict] = None
+    bindingReason: Optional[str] = None
+    bindingMessage: Optional[str] = None
+    verificationDetails: Optional[str] = None
 
 
 class ToolSummary(BaseModel):
