@@ -1,7 +1,7 @@
 // Copyright 2025 IBM Corp.
 // Licensed under the Apache License, Version 2.0
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isValidEnvVarName, isValidContainerImage, isValidImageTag } from '../utils/validation';
 import {
@@ -34,9 +34,9 @@ import {
   Radio,
 } from '@patternfly/react-core';
 import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { toolService, ShipwrightBuildConfig } from '@/services/api';
+import { configService, toolService, ShipwrightBuildConfig } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { EnvImportModal, EnvVar } from '@/components/EnvImportModal';
 import { BuildStrategySelector } from '@/components/BuildStrategySelector';
@@ -59,8 +59,9 @@ const TOOL_EXAMPLES = [
   { value: 'mcp/cloud_storage_tool', label: 'Cloud Storage Tool' },
 ];
 
-const REGISTRY_OPTIONS = [
-  { value: 'local', label: 'Local Registry (In-Cluster)', url: 'registry.cr-system.svc.cluster.local:5000' },
+const KIND_DEFAULT_INTERNAL_REGISTRY = 'registry.cr-system.svc.cluster.local:5000';
+
+const EXTERNAL_REGISTRY_OPTIONS = [
   { value: 'quay', label: 'Quay.io', url: 'quay.io' },
   { value: 'dockerhub', label: 'Docker Hub', url: 'docker.io' },
   { value: 'github', label: 'GitHub Container Registry', url: 'ghcr.io' },
@@ -81,6 +82,20 @@ interface ServicePort {
 
 export const ImportToolPage: React.FC = () => {
   const navigate = useNavigate();
+
+  const { data: dashboardConfig } = useQuery({
+    queryKey: ['dashboards'],
+    queryFn: () => configService.getDashboards(),
+  });
+  const localRegistryUrl =
+    dashboardConfig?.internalRegistryUrl?.trim() || KIND_DEFAULT_INTERNAL_REGISTRY;
+  const registryOptions = useMemo(
+    () => [
+      { value: 'local', label: 'Local Registry (In-Cluster)', url: localRegistryUrl },
+      ...EXTERNAL_REGISTRY_OPTIONS,
+    ],
+    [localRegistryUrl],
+  );
 
   // Deployment method
   const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>('source');
@@ -209,7 +224,7 @@ export const ImportToolPage: React.FC = () => {
 
   // Build registry URL from configuration
   const getRegistryUrl = () => {
-    const registry = REGISTRY_OPTIONS.find((r) => r.value === registryType);
+    const registry = registryOptions.find((r) => r.value === registryType);
     if (!registry) return '';
     if (registryType === 'local') {
       return registry.url;
@@ -640,7 +655,7 @@ export const ImportToolPage: React.FC = () => {
                       value={registryType}
                       onChange={(_e, value) => setRegistryType(value)}
                     >
-                      {REGISTRY_OPTIONS.map((registry) => (
+                      {registryOptions.map((registry) => (
                         <FormSelectOption
                           key={registry.value}
                           value={registry.value}

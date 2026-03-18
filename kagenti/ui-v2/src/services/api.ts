@@ -602,6 +602,7 @@ export interface DashboardConfig {
   mcpProxy: string;
   keycloakConsole: string;
   domainName: string;
+  internalRegistryUrl?: string;
 }
 
 /**

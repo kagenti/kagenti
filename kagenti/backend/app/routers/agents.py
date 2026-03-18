@@ -51,7 +51,6 @@ from app.core.constants import (
     SHIPWRIGHT_BUILDS_PLURAL,
     SHIPWRIGHT_BUILDRUNS_PLURAL,
     SHIPWRIGHT_CLUSTER_BUILD_STRATEGIES_PLURAL,
-    DEFAULT_INTERNAL_REGISTRY,
     # Workload type constants
     WORKLOAD_TYPE_DEPLOYMENT,
     WORKLOAD_TYPE_STATEFULSET,
@@ -1780,7 +1779,7 @@ def _build_agent_shipwright_build_manifest(
     that converts CreateAgentRequest to the shared function's parameters.
     """
     # Determine registry URL
-    registry_url = request.registryUrl or DEFAULT_INTERNAL_REGISTRY
+    registry_url = request.registryUrl or settings.internal_container_image_registry_url
 
     # Build source config
     source_config = BuildSourceConfig(

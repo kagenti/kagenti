@@ -1,4 +1,6 @@
 {{- if and .Values.components.ui.enabled }}
+{{- $defaultInternalReg := ternary "image-registry.openshift-image-registry.svc.cluster.local:5000" "registry.cr-system.svc.cluster.local:5000" .Values.openshift }}
+{{- $internalReg := .Values.ui.internalContainerImageRegistryUrl | default $defaultInternalReg }}
 {{- if not .Values.openshift }}
 # ConfigMap for dashboard URLs (non-OpenShift only)
 # In OpenShift, this ConfigMap is created by the ui-routes-job
@@ -21,6 +23,7 @@ data:
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
   MCP_PROXY_FULL_ADDRESS: "http://mcp-proxy.{{ .Values.ui.domainName }}:8080"
   KEYCLOAK_CONSOLE_URL: "http://keycloak.{{ .Values.ui.domainName }}:8080/admin/{{ .Values.keycloak.realm }}/console/"
+  INTERNAL_CONTAINER_IMAGE_REGISTRY_URL: {{ $internalReg | quote }}
 ---
 {{- end }}
 # Backend Service Account
@@ -147,6 +150,12 @@ spec:
                   name: "{{ .Values.ui.configmap }}"
                   key: "KEYCLOAK_CONSOLE_URL"
                   optional: {{ (not .Values.openshift) }}
+            - name: INTERNAL_CONTAINER_IMAGE_REGISTRY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: "{{ .Values.ui.configmap }}"
+                  key: "INTERNAL_CONTAINER_IMAGE_REGISTRY_URL"
+                  optional: true
             {{- if .Values.uiOAuthSecret.useServiceAccountCA }}
             - name: SSL_CERT_FILE
               valueFrom:

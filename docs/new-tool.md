@@ -88,7 +88,7 @@ You can override the strategy in the "Build Configuration" section if needed.
 
 #### Registry Configuration
 
-- **Registry URL**: Where to push the built image (e.g., `registry.cr-system.svc.cluster.local:5000` for internal, `quay.io/myorg` for external)
+- **Registry URL**: Where to push the built image. The UI default comes from `GET /api/v1/config/dashboards` (`internalRegistryUrl`, sourced from `kagenti-ui-config` / `INTERNAL_CONTAINER_IMAGE_REGISTRY_URL`). Kind: `registry.cr-system.svc.cluster.local:5000`; OpenShift FQDN: `image-registry.openshift-image-registry.svc.cluster.local:5000`. External example: `quay.io/myorg`.
 - **Registry Secret**: Name of the Kubernetes Secret containing registry credentials (required for external registries)
 - **Image Tag**: Version tag for the image (default: `v0.0.1`)
 

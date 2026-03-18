@@ -72,6 +72,8 @@ ui:
   # Backend API external access
   api:
     hostname: kagenti-api.localtest.me
+  # In-cluster registry FQDN (empty = Kind vs OpenShift default in chart / CM)
+  internalContainerImageRegistryUrl: ""
   # Backend configuration
   backend:
     image: ghcr.io/kagenti/kagenti/backend

@@ -9,8 +9,10 @@ import re
 from functools import lru_cache
 from typing import List, Optional
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_KIND_DEFAULT_INTERNAL_REGISTRY = "registry.cr-system.svc.cluster.local:5000"
 
 
 class Settings(BaseSettings):
@@ -38,6 +40,12 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:8080",
     ]
+
+    @field_validator("internal_container_image_registry_url", mode="after")
+    @classmethod
+    def _internal_registry_non_empty(cls, v: str) -> str:
+        s = (v or "").strip()
+        return s if s else _KIND_DEFAULT_INTERNAL_REGISTRY
 
     @model_validator(mode="after")
     def _add_domain_cors_origin(self) -> "Settings":
@@ -76,6 +84,9 @@ class Settings(BaseSettings):
     mcp_inspector_url: str = ""
     mcp_proxy_full_address: str = ""
     keycloak_console_url: str = ""
+
+    # From kagenti-ui-config (INTERNAL_CONTAINER_IMAGE_REGISTRY_URL)
+    internal_container_image_registry_url: str = _KIND_DEFAULT_INTERNAL_REGISTRY
 
     # Authentication settings - from kagenti-ui-oauth-secret
     enable_auth: bool = False  # Set to True to enable Keycloak auth

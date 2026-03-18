@@ -105,7 +105,7 @@ Once running, access the OpenAPI documentation:
 - `POST /api/v1/chat/{namespace}/{name}/stream` - Stream chat with A2A agent (Server-Sent Events)
 
 ### Configuration
-- `GET /api/v1/config/dashboards` - Get dashboard URLs for observability tools (Phoenix, Kiali, MCP Inspector, Keycloak)
+- `GET /api/v1/config/dashboards` - Dashboard URLs (Phoenix, Kiali, MCP Inspector, Keycloak) and `internalRegistryUrl` from `kagenti-ui-config`
 
 ## Environment Variables
 
@@ -113,6 +113,7 @@ Once running, access the OpenAPI documentation:
 |----------|---------|-------------|
 | `DEBUG` | `false` | Enable debug mode |
 | `DOMAIN_NAME` | `localtest.me` | Domain for service URLs |
+| `INTERNAL_CONTAINER_IMAGE_REGISTRY_URL` | (from CM; default Kind FQDN if unset) | In-cluster registry; set in `kagenti-ui-config` by Helm |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | Allowed CORS origins |
 
 ## Docker

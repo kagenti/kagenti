@@ -44,7 +44,6 @@ from app.core.constants import (
     SHIPWRIGHT_CRD_VERSION,
     SHIPWRIGHT_BUILDS_PLURAL,
     SHIPWRIGHT_BUILDRUNS_PLURAL,
-    DEFAULT_INTERNAL_REGISTRY,
     # SPIRE identity constants
     KAGENTI_SPIRE_LABEL,
     KAGENTI_SPIRE_ENABLED_VALUE,
@@ -446,7 +445,7 @@ def _build_tool_shipwright_build_manifest(
     that converts CreateToolRequest to the shared function's parameters.
     """
     # Determine registry URL
-    registry_url = request.registryUrl or DEFAULT_INTERNAL_REGISTRY
+    registry_url = request.registryUrl or settings.internal_container_image_registry_url
 
     # Build source config
     source_config = BuildSourceConfig(

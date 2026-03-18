@@ -24,8 +24,8 @@ async def get_dashboard_config() -> DashboardConfigResponse:
     Get dashboard URLs for observability tools.
 
     Returns URLs for Phoenix (traces), Kiali (network), MCP Inspector/Proxy,
-    and Keycloak console. URLs are read from environment variables that are
-    populated from the kagenti-ui-config ConfigMap.
+    Keycloak console, and in-cluster registry (Import / Shipwright). Values
+    come from environment variables populated from kagenti-ui-config.
     """
     domain = settings.domain_name
 
@@ -39,4 +39,5 @@ async def get_dashboard_config() -> DashboardConfigResponse:
             or f"{settings.effective_keycloak_url}/admin/{settings.effective_keycloak_realm}/console/"
         ),
         domainName=domain,
+        internalRegistryUrl=settings.internal_container_image_registry_url,
     )

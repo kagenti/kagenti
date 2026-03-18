@@ -17,6 +17,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.core.config import settings
 from app.core.constants import (
     APP_KUBERNETES_IO_CREATED_BY,
     APP_KUBERNETES_IO_NAME,
@@ -76,8 +77,10 @@ def select_build_strategy(registry_url: str, requested_strategy: Optional[str] =
     Returns:
         The build strategy name to use
     """
+    reg = registry_url.rstrip("/")
+    configured = settings.internal_container_image_registry_url.rstrip("/")
     is_internal_registry = (
-        registry_url == DEFAULT_INTERNAL_REGISTRY or "svc.cluster.local" in registry_url
+        reg == DEFAULT_INTERNAL_REGISTRY or reg == configured or "svc.cluster.local" in registry_url
     )
 
     # If a strategy was explicitly requested, use it unless it's secure for internal registry

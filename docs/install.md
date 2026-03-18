@@ -158,6 +158,17 @@ Note: The wrapper provides convenience features (path resolution for env/secret 
 >
 > Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](local-models.md) for setup details.
 
+### In-cluster image registry (`kagenti-ui-config`)
+
+The ConfigMap **`kagenti-ui-config`** includes **`INTERNAL_CONTAINER_IMAGE_REGISTRY_URL`** (set by the Helm chart). The backend reads it via environment variables and exposes the value as **`internalRegistryUrl`** on `GET /api/v1/config/dashboards` for the Import Agent/Tool UI.
+
+| Platform | Default FQDN |
+|----------|----------------|
+| Kind (`openshift: false`) | `registry.cr-system.svc.cluster.local:5000` |
+| OpenShift (`openshift: true`) | `image-registry.openshift-image-registry.svc.cluster.local:5000` |
+
+On OpenShift, use the **fully qualified** internal registry hostname (`.svc.cluster.local`), not the short `*.svc` form. Override with Helm value **`ui.internalContainerImageRegistryUrl`**. See [issue #975](https://github.com/kagenti/kagenti/issues/975).
+
 ### Pre-Installation Steps
 
 #### 1. Remove Cert Manager (if installed)

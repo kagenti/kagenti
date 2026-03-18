@@ -42,12 +42,16 @@ class TestDashboardConfigPhoenixToggle:
                 mock_settings.domain_name = "localtest.me"
                 mock_settings.effective_keycloak_url = "http://keycloak.localtest.me:8080"
                 mock_settings.effective_keycloak_realm = "kagenti"
+                mock_settings.internal_container_image_registry_url = (
+                    "registry.cr-system.svc.cluster.local:5000"
+                )
 
                 response = client.get("/api/v1/config/dashboards")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["traces"] == ""
                 assert "phoenix" not in data["traces"]
+                assert data["internalRegistryUrl"] == "registry.cr-system.svc.cluster.local:5000"
 
     def test_traces_dashboard_url_non_empty(self, client):
         """When TRACES_DASHBOARD_URL is set, it should be returned."""
@@ -63,8 +67,15 @@ class TestDashboardConfigPhoenixToggle:
                 mock_settings.domain_name = "localtest.me"
                 mock_settings.effective_keycloak_url = "http://keycloak.localtest.me:8080"
                 mock_settings.effective_keycloak_realm = "kagenti"
+                mock_settings.internal_container_image_registry_url = (
+                    "image-registry.openshift-image-registry.svc.cluster.local:5000"
+                )
 
                 response = client.get("/api/v1/config/dashboards")
                 assert response.status_code == 200
                 data = response.json()
                 assert data["traces"] == phoenix_url
+                assert (
+                    data["internalRegistryUrl"]
+                    == "image-registry.openshift-image-registry.svc.cluster.local:5000"
+                )

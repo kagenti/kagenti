@@ -75,6 +75,7 @@ class DashboardConfigResponse(BaseModel):
     mcpProxy: str
     keycloakConsole: str
     domainName: str
+    internalRegistryUrl: str = ""
 
 
 class MCPToolInfo(BaseModel):
