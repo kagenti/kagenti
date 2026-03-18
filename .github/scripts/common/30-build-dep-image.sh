@@ -33,7 +33,8 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 : "${DEP_CONTEXT:?DEP_CONTEXT is required (subdirectory with Dockerfile)}"
 : "${DEP_IMAGE_NAME:?DEP_IMAGE_NAME is required (e.g., kagenti-webhook)}"
 : "${DEP_DEPLOY_NS:?DEP_DEPLOY_NS is required (e.g., kagenti-webhook-system)}"
-: "${DEP_HELM_SET:?DEP_HELM_SET is required (e.g., kagenti-webhook-chart.image)}"
+# Optional
+DEP_DOCKERFILE="${DEP_DOCKERFILE:-Dockerfile}"
 
 log_step "30" "Building ${DEP_IMAGE_NAME} from ${DEP_REPO}@${DEP_REF}"
 
@@ -107,7 +108,7 @@ spec:
   strategy:
     type: Docker
     dockerStrategy:
-      dockerfilePath: Dockerfile
+      dockerfilePath: ${DEP_DOCKERFILE}
 EOF
 
     run_with_timeout 60 "until oc get buildconfig ${DEP_IMAGE_NAME} -n ${DEP_DEPLOY_NS} &>/dev/null; do sleep 2; done" || {
@@ -149,16 +150,21 @@ EOF
 
 else
     # ── Kind / vanilla Kubernetes: local build + kind load ──
+    # Use the GHCR path as the image name so it matches what the webhook
+    # references (e.g., ghcr.io/kagenti/kagenti-extensions/proxy-init:latest).
+    # Tag as both :local and :latest so the webhook's default reference works.
     CUSTOM_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}:local"
+    LATEST_IMAGE="ghcr.io/${DEP_REPO}/${DEP_IMAGE_NAME}:latest"
 
     log_info "Building image: ${CUSTOM_IMAGE}"
-    docker build -t "${CUSTOM_IMAGE}" \
-        -f "${BUILD_CONTEXT}/Dockerfile" \
+    docker build -t "${CUSTOM_IMAGE}" -t "${LATEST_IMAGE}" \
+        -f "${BUILD_CONTEXT}/${DEP_DOCKERFILE}" \
         "$BUILD_CONTEXT"
 
     CLUSTER_NAME="${KIND_CLUSTER_NAME:-kagenti}"
     log_info "Loading image into Kind cluster '${CLUSTER_NAME}'..."
     kind load docker-image "${CUSTOM_IMAGE}" --name "${CLUSTER_NAME}"
+    kind load docker-image "${LATEST_IMAGE}" --name "${CLUSTER_NAME}"
 fi
 
 # Patch the deployment directly instead of helm upgrade.

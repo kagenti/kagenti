@@ -47,6 +47,19 @@ build_dep() {
             DEP_DEPLOY_NS="kagenti-webhook-system" \
             DEP_HELM_SET="kagenti-webhook-chart.image" \
             bash "$SCRIPT_DIR/30-build-dep-image.sh"
+
+            # Also build the proxy-init image — the webhook references it
+            # by tag (proxy-init:latest). We must build and load it so the
+            # init container uses the version matching the webhook binary.
+            log_info "Building proxy-init from ${repo}@${ref}"
+            DEP_REPO="$repo" \
+            DEP_REF="$ref" \
+            DEP_CONTEXT="AuthBridge/AuthProxy" \
+            DEP_IMAGE_NAME="proxy-init" \
+            DEP_DEPLOY_NS="kagenti-webhook-system" \
+            DEP_HELM_SET="_unused" \
+            DEP_DOCKERFILE="Dockerfile.init" \
+            bash "$SCRIPT_DIR/30-build-dep-image.sh"
             ;;
         kagenti/kagenti-operator)
             log_info "Building kagenti-operator from ${repo}@${ref}"
