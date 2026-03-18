@@ -92,4 +92,32 @@ for b in builds:
     build_dep "$repo" "$ref"
 done
 
+# On OpenShift: patch the webhook ConfigMap to use internal registry images.
+# The ConfigMap stores image refs that the webhook uses for sidecar injection.
+# Without this, the webhook would reference GHCR images instead of our builds.
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    INTERNAL_REGISTRY="image-registry.openshift-image-registry.svc:5000"
+    WH_NS="kagenti-webhook-system"
+    CM_NAME=$(kubectl get configmap -n "$WH_NS" -l app.kubernetes.io/component=platform-defaults -o name 2>/dev/null | head -1)
+    if [ -n "$CM_NAME" ]; then
+        log_info "Patching webhook ConfigMap with internal registry images..."
+        kubectl get "$CM_NAME" -n "$WH_NS" -o json | python3 -c "
+import json, sys, yaml
+cm = json.load(sys.stdin)
+config = yaml.safe_load(cm['data'].get('config.yaml', '{}')) or {}
+images = config.setdefault('images', {})
+reg = '${INTERNAL_REGISTRY}/${WH_NS}'
+images['proxyInit'] = f'{reg}/proxy-init:latest'
+images['envoyProxy'] = f'{reg}/kagenti-webhook:latest'
+cm['data']['config.yaml'] = yaml.dump(config, default_flow_style=False)
+print(json.dumps(cm))
+" | kubectl apply -f - 2>/dev/null && log_success "ConfigMap patched" || log_info "ConfigMap patch skipped (not found or not applicable)"
+        # Restart webhook to pick up new config
+        kubectl rollout restart deployment -n "$WH_NS" 2>/dev/null || true
+        kubectl rollout status deployment -n "$WH_NS" --timeout=120s 2>/dev/null || true
+    else
+        log_info "No webhook ConfigMap found — webhook will use compiled defaults"
+    fi
+fi
+
 log_success "All dependency builds complete"
