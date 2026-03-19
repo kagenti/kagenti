@@ -103,6 +103,8 @@ flowchart TB
 | [Security](./security.md) | Defense-in-depth layers, Landlock, composable profiles, Istio Ambient |
 | [Zero-Secret Agents](./zero-secret-agents.md) | Three pillars: Budget Proxy + AuthBridge + Vault = no leaked secrets |
 | [Sandboxing Models](./sandboxing-models.md) | Isolation spectrum: minimal to maximum, use cases, three non-negotiable pillars |
+| [Sandboxing Layers](./sandboxing-layers.md) | Technical reference: OS, runtime, container, network layer details |
+| [Use Cases](./use-cases.md) | Agent types: coding, DevOps, tool-calling, multi-agent — profiles & skills |
 | [Writing Agents](./agents.md) | Agent authoring: graph structure, tools, event serialization, graph card |
 | [Multi-Framework Runtime](./multi-framework.md) | Framework adapters: LangGraph, OpenCode, Claude SDK, CrewAI, AG2 *(WIP)* |
 | [API Reference](./api-reference.md) | Backend routes: sandbox, sessions, events, deploy, sidecars, budget |
