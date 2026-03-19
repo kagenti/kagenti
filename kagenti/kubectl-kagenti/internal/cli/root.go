@@ -33,7 +33,7 @@ func Execute() error {
 		Short: "Kagenti platform CLI (kubectl/oc plugin)",
 		Long: `kubectl kagenti / oc kagenti — interact with the Kagenti control plane.
 
-Global flags scope list/describe commands (RHAIENG-3806 read path).
+Global flags scope list/describe/deploy/build (3806 read path, 3807 deploy + Shipwright).
 
 Configuration:
   $XDG_CONFIG_HOME/kagenti/config.yaml (or ~/.config/kagenti/config.yaml)
@@ -77,7 +77,7 @@ Environment:
 	root.PersistentFlags().IntVarP(&rootLogLevel, "loglevel", "v", 0, "Log level: 9 = trace HTTP to stderr (same idea as kubectl -v=9). Overrides with KAGENTI_LOGLEVEL.")
 	root.PersistentFlags().BoolVar(&rootEnabledOnly, "enabled-only", true, "With -A, only namespaces labeled kagenti-enabled (default true). Use --enabled-only=false to scan all API-visible namespaces")
 
-	root.AddCommand(authCmd(), versionCmd(), getCmd(), describeCmd(), mcpCmd())
+	root.AddCommand(authCmd(), versionCmd(), getCmd(), describeCmd(), mcpCmd(), deployCmd(), buildCmd())
 	return root.Execute()
 }
 
