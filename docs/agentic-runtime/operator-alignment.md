@@ -64,6 +64,59 @@ flowchart TB
 | **AgentCard** | Indexes `/.well-known/agent-card.json` from agents | Complete |
 | **AgentRuntime** | Declarative sidecar injection + config | **Not yet implemented** (#862) |
 
+## What the Agentic Runtime Deploys Today
+
+### Per-Namespace Resources (created by deploy script)
+
+| Resource | Type | Purpose |
+|----------|------|---------|
+| `postgres-sessions` | StatefulSet + Service + PVC | Two databases: `sessions` (session/event/checkpoint tables) and `llm_budget` (call tracking + limits) |
+| `postgres-sessions-secret` | Secret | Connection strings for both databases |
+| `llm-budget-proxy` | Deployment + Service | Per-session token enforcement (HTTP 402) |
+| `authbridge-config` | ConfigMap | Keycloak token URL, issuer, audience |
+| `envoy-config` | ConfigMap | Envoy listener config for AuthBridge sidecar |
+| `litellm-virtual-keys` | Secret | Per-namespace LLM API key |
+
+### Per-Agent Resources (created by deploy script per variant)
+
+| Resource | Type | Purpose |
+|----------|------|---------|
+| Agent Deployment | Deployment | Agent pod (1 replica, workspace volume) |
+| Agent Service | Service | ClusterIP on port 8000 |
+| Egress Proxy | Deployment + Service | **Optional** — Squid domain allowlist (only for hardened/restricted profiles) |
+| Route | Route (OpenShift only) | External access with TLS edge termination |
+
+### Database Schemas (auto-created at startup, not by scripts)
+
+Each component creates its own tables — **the agent deploys its own DB schema**:
+
+| Component | Database | Tables Created | Created By |
+|-----------|----------|---------------|------------|
+| **Backend** | `sessions` | `sessions`, `events` | Auto-migration on backend startup |
+| **A2A SDK** | `sessions` | `tasks` | `DatabaseTaskStore` on first task |
+| **Agent (LangGraph)** | `sessions` | `langgraph_checkpoint`, `langgraph_checkpoint_blobs`, `langgraph_writes` | `AsyncPostgresSaver.setup()` on agent startup |
+| **Budget Proxy** | `llm_budget` | `llm_calls`, `budget_limits` | Auto-migration on proxy startup |
+
+This means **8 tables across 2 databases** are auto-created by 4 different
+components. No manual schema management. The operator needs to be aware that
+agents bring their own schema — it's not just a pod, it's a pod that
+provisions database tables on startup.
+
+### Per-Session Resources (created at runtime by agent)
+
+| Resource | Location | Purpose |
+|----------|----------|---------|
+| Workspace directory | `/workspace/{context_id}/` | Per-session file isolation |
+| Workspace subdirs | `scripts/`, `data/`, `repos/`, `output/` | Organized workspace |
+| Context metadata | `.context.json` | Created timestamp, TTL, disk usage |
+| Checkpoint rows | `langgraph_checkpoint` table | LangGraph state snapshots for session resume |
+
+### Skills (loaded at agent startup)
+
+Agents clone skill repos from `SKILL_REPOS` env var at startup. Skills
+are git repositories containing prompts, tools, and workflow definitions.
+This is agent-side and doesn't need operator support.
+
 ## What the Agentic Runtime Adds (Not in Operator)
 
 | Component | How It's Managed Today | Where It Should Live |
@@ -71,12 +124,16 @@ flowchart TB
 | Composable security (L4-L7) | `sandbox_profile.py` (Python, backend) | AgentRuntime CR `spec.security` |
 | PostgreSQL per namespace | `76-deploy-sandbox-agents.sh` (script) | Namespace CR or AgentRuntime controller |
 | LLM Budget Proxy per namespace | `76-deploy-sandbox-agents.sh` (script) | Namespace CR or AgentRuntime controller |
-| Egress Proxy per agent | `sandbox_profile.py` (script) | AgentRuntime CR `spec.security.egress` |
+| Egress Proxy per agent | `sandbox_profile.py` (optional, per profile) | AgentRuntime CR `spec.security.egressProxy` |
+| Agent DB schema (checkpoints) | Agent auto-creates tables on startup | Agent-side (stay — operator doesn't need to manage) |
+| Budget DB schema | Budget proxy auto-creates tables on startup | Budget proxy side (stay) |
+| Session DB schema | Backend auto-creates tables on startup | Backend side (stay) |
+| Workspace directories | Agent creates per-session at runtime | Agent-side (stay) |
 | Feature flags | Helm values → backend env → UI config | Helm values (stay) |
 | Agent import wizard | Backend REST API → kubectl | Backend → creates Agent CR |
 | Event serialization | Agent-side `FrameworkEventSerializer` | Agent-side (stay) |
 | AgentGraphCard | Agent-side `/.well-known/agent-graph-card.json` | AgentCard CR could index it |
-| Session DB schema | Backend auto-migration on startup | Stay (backend concern) |
+| Skills loading | Agent clones git repos at startup | Agent-side (stay) |
 
 ---
 
