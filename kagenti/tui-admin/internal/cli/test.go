@@ -144,7 +144,7 @@ Supports dependency overrides for testing unreleased versions.`,
 			}
 
 			// Phase 2-N: Run pipeline
-			repoRoot, err := runner.FindRepoRoot()
+			repoRoot, err := ctx.getRepoRoot()
 			if err != nil {
 				return err
 			}
@@ -160,7 +160,7 @@ Supports dependency overrides for testing unreleased versions.`,
 
 			phases := runner.PlatformPhases(platform)
 			envMap := map[string]string{"KAGENTI_ENV": env}
-			r := runner.New()
+			r := ctx.getRunner()
 			results := r.RunPhases(context.Background(), repoRoot, phases, envMap)
 
 			// Summary
