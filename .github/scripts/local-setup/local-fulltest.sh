@@ -263,6 +263,18 @@ if [ "$RUN_CREATE" = "true" ]; then
             # Traefik conflicts with our Istio ingress gateway on port 80/443.
             # Scale it down rather than uninstalling to allow easy re-enable.
             kubectl --context rancher-desktop -n kube-system scale deploy traefik --replicas=0 2>/dev/null || true
+
+            log_step "Configuring in-cluster registry mirror..."
+            # K3s kubelet resolves image registry DNS outside CoreDNS, so it can't
+            # reach registry.cr-system.svc.cluster.local. We configure a K3s registry
+            # mirror that maps the cluster DNS name to the registry's ClusterIP.
+            # This requires a K3s restart to take effect, but we only do it if the
+            # config doesn't already exist.
+            if ! rdctl shell -- test -f /etc/rancher/k3s/registries.yaml 2>/dev/null; then
+                log_step "Creating K3s registries.yaml (will restart K3s after platform install)..."
+                export K3S_REGISTRY_NEEDS_RESTART=true
+            fi
+
             log_step "Cluster ready"
             ;;
         minikube)
@@ -315,6 +327,54 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     log_step "Waiting for platform to be ready..."
     ./.github/scripts/common/40-wait-platform-ready.sh
+
+    # K3s/Rancher Desktop with moby: configure Docker daemon to access the
+    # in-cluster container registry. The Docker daemon runs on the VM host and
+    # can't resolve cluster-internal DNS. We add /etc/hosts entry + insecure
+    # registry config + K3s registries.yaml mirror.
+    if [ "$K8S_RUNTIME" = "rancher-desktop" ]; then
+        REGISTRY_IP=$(kubectl get svc -n cr-system registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+        if [ -n "$REGISTRY_IP" ]; then
+            log_step "Configuring K3s + Docker registry access (ClusterIP: $REGISTRY_IP)..."
+
+            # 1. Add DNS entry so Docker daemon can resolve the registry hostname
+            if ! rdctl shell -- grep -q "registry.cr-system.svc.cluster.local" /etc/hosts 2>/dev/null; then
+                rdctl shell -- sudo sh -c "echo '${REGISTRY_IP} registry.cr-system.svc.cluster.local' >> /etc/hosts"
+            fi
+
+            # 2. Configure K3s containerd registry mirror
+            rdctl shell -- sudo tee /etc/rancher/k3s/registries.yaml > /dev/null <<REGEOF
+mirrors:
+  "registry.cr-system.svc.cluster.local:5000":
+    endpoint:
+      - "http://${REGISTRY_IP}:5000"
+configs:
+  "registry.cr-system.svc.cluster.local:5000":
+    tls:
+      insecure_skip_verify: true
+REGEOF
+
+            # 3. Configure Docker daemon insecure registries
+            rdctl shell -- sudo sh -c "cat > /etc/docker/daemon.json" <<DJEOF
+{
+  "min-api-version": "1.41",
+  "features": { "containerd-snapshotter": true },
+  "insecure-registries": ["registry.cr-system.svc.cluster.local:5000", "${REGISTRY_IP}:5000"]
+}
+DJEOF
+
+            # 4. Restart Docker + K3s to apply all config
+            log_step "Restarting Docker + K3s to apply registry config..."
+            rdctl shell -- sudo rc-service docker restart 2>/dev/null || true
+            sleep 3
+            rdctl shell -- sudo rc-service k3s restart 2>/dev/null || true
+            for i in {1..30}; do
+                if kubectl get nodes &>/dev/null; then break; fi
+                sleep 2
+            done
+            log_step "K3s + Docker restarted with registry config"
+        fi
+    fi
 
     log_step "Installing Ollama..."
     ./.github/scripts/common/50-install-ollama.sh || true
