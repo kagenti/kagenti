@@ -70,7 +70,11 @@ flowchart TB
 
 ## Deployed Structure (Controller-Managed)
 
-What a fully controller-managed agent namespace looks like:
+**Diagram 1: Namespace layout** — What a fully controller-managed agent
+namespace looks like. Shows which resources are managed by AgentRuntime CR
+(agent pod with sidecars, optional egress proxy), which are per-namespace
+infra (PostgreSQL, budget proxy, secrets), and which controllers manage what
+from their respective system namespaces.
 
 ```mermaid
 flowchart TB
@@ -116,45 +120,132 @@ flowchart TB
 
 ## Database Access Model
 
-Who can access what — isolation boundaries per database and table:
+### Current State: Shared User, Single Schema
+
+**Diagram 2: Current DB access** — All components connect as the same
+`kagenti` user with full access to all tables. No DB-level isolation
+between agents.
 
 ```mermaid
 flowchart TB
-    subgraph pg["postgres-sessions StatefulSet (port 5432)"]
-        subgraph sessions_db["Database: sessions"]
-            T_sessions["sessions table<br/><small>Written by: Backend<br/>Read by: Backend, UI</small>"]
-            T_events["events table<br/><small>Written by: Backend (consumer)<br/>Read by: Backend, UI</small>"]
-            T_tasks["tasks table<br/><small>Written by: A2A SDK (in agent)<br/>Read by: Backend</small>"]
-            T_ckpt["langgraph_checkpoint<br/><small>Written by: Agent<br/>Read by: Agent only</small>"]
-            T_blobs["langgraph_checkpoint_blobs<br/><small>Written by: Agent<br/>Read by: Agent only</small>"]
-            T_writes["langgraph_writes<br/><small>Written by: Agent<br/>Read by: Agent only</small>"]
+    subgraph pg["postgres-sessions.team1 (port 5432)"]
+        subgraph sessions_db["Database: sessions — Schema: public"]
+            T_sessions["public.sessions"]
+            T_events["public.events"]
+            T_tasks["public.tasks"]
+            T_ckpt["public.langgraph_checkpoint"]
+            T_blobs["public.langgraph_checkpoint_blobs"]
+            T_writes["public.langgraph_writes"]
         end
 
-        subgraph budget_db["Database: llm_budget"]
-            T_calls["llm_calls<br/><small>Written by: Budget Proxy<br/>Read by: Budget Proxy, Backend</small>"]
-            T_limits["budget_limits<br/><small>Written by: Budget Proxy (defaults)<br/>Read by: Budget Proxy</small>"]
+        subgraph budget_db["Database: llm_budget — Schema: public"]
+            T_calls["public.llm_calls"]
+            T_limits["public.budget_limits"]
         end
     end
 
-    Backend["Backend<br/><small>kagenti-system</small>"]
-    Consumer["Background Consumer<br/><small>asyncio.Task in backend</small>"]
-    AgentPod["Agent Pod<br/><small>team1</small>"]
-    BudgetProxy["Budget Proxy<br/><small>team1</small>"]
+    User_K["DB User: kagenti<br/><small>Password: postgres-sessions-secret<br/>FULL ACCESS to all tables</small>"]
 
-    Backend -->|"upsert"| T_sessions
-    Consumer -->|"INSERT"| T_events
-    AgentPod -->|"checkpoint writes"| T_ckpt & T_blobs & T_writes
-    AgentPod -->|"task CRUD (A2A SDK)"| T_tasks
-    BudgetProxy -->|"INSERT per LLM call"| T_calls
-    BudgetProxy -->|"read limits"| T_limits
-    Backend -->|"read usage"| T_calls
+    User_K --> sessions_db
+    User_K --> budget_db
+
+    Backend["Backend"] -->|"user: kagenti"| User_K
+    Agent["Agent"] -->|"user: kagenti"| User_K
+    BudgetProxy["Budget Proxy"] -->|"user: kagenti"| User_K
 ```
 
-**Current:** All components use the same `kagenti` DB user with full access
-to all tables in their database. Application-level isolation only.
+**Problem:** A compromised agent can read sessions from other agents,
+read budget limits, and even modify event records. No DB-level isolation.
 
-**Target:** Schema-per-agent with scoped DB users (see
-[deployment.md](./deployment.md) — Current vs Target Schema Isolation).
+### Target State: Schema-Per-Agent, Scoped Users
+
+**Diagram 3: Target DB access** — Each agent gets its own PostgreSQL
+schema (`{namespace}_{agent_name}`) and DB user (`kagenti_{agent}`).
+Platform tables stay in `public` schema. Agents can only access their own
+schema + read their own rows in `public.sessions` via Row-Level Security.
+
+```mermaid
+flowchart TB
+    subgraph pg2["postgres-sessions.team1 (port 5432)"]
+        subgraph sessions_db2["Database: sessions"]
+            subgraph schema_shared["Schema: public (platform-owned)"]
+                S_sessions["sessions<br/><small>Owner: kagenti_backend</small>"]
+                S_events["events<br/><small>Owner: kagenti_backend</small>"]
+            end
+
+            subgraph schema_legion["Schema: team1_sandbox_legion"]
+                L_tasks["tasks<br/><small>Owner: kagenti_legion</small>"]
+                L_ckpt["langgraph_checkpoint<br/><small>Owner: kagenti_legion</small>"]
+                L_blobs["langgraph_checkpoint_blobs<br/><small>Owner: kagenti_legion</small>"]
+                L_writes["langgraph_writes<br/><small>Owner: kagenti_legion</small>"]
+            end
+
+            subgraph schema_rca["Schema: team1_rca_agent"]
+                R_tasks["tasks<br/><small>Owner: kagenti_rca</small>"]
+                R_ckpt["langgraph_checkpoint<br/><small>Owner: kagenti_rca</small>"]
+            end
+        end
+
+        subgraph budget_db2["Database: llm_budget"]
+            subgraph schema_budget["Schema: public"]
+                B_calls["llm_calls<br/><small>Owner: kagenti_budget</small>"]
+                B_limits["budget_limits<br/><small>Owner: kagenti_budget</small>"]
+            end
+        end
+    end
+
+    subgraph users["DB Users (scoped GRANT)"]
+        U_backend["kagenti_backend<br/><small>sessions: RW public.sessions, public.events<br/>llm_budget: READ public.llm_calls</small>"]
+        U_legion["kagenti_legion<br/><small>sessions: RW team1_sandbox_legion.*<br/>READ public.sessions (own context_id only via RLS)</small>"]
+        U_rca["kagenti_rca<br/><small>sessions: RW team1_rca_agent.*<br/>READ public.sessions (own context_id only via RLS)</small>"]
+        U_budget["kagenti_budget<br/><small>llm_budget: RW public.*</small>"]
+    end
+
+    U_backend --> schema_shared
+    U_legion --> schema_legion
+    U_rca --> schema_rca
+    U_budget --> schema_budget
+```
+
+### Schema Naming Convention
+
+| Component | Schema Name | Pattern |
+|-----------|------------|---------|
+| Platform (backend) | `public` | Fixed |
+| Agent `sandbox-legion` in `team1` | `team1_sandbox_legion` | `{namespace}_{agent_name}` |
+| Agent `rca-agent` in `team1` | `team1_rca_agent` | `{namespace}_{agent_name}` |
+| Agent `sandbox-legion` in `team2` | `team2_sandbox_legion` | `{namespace}_{agent_name}` |
+| Budget proxy | `public` (in `llm_budget` DB) | Fixed |
+
+### DB User Access Matrix
+
+| DB User | Created By | Sessions DB Access | LLM Budget DB Access |
+|---------|-----------|-------------------|---------------------|
+| `kagenti_backend` | Helm chart | `public.sessions` RW, `public.events` RW | `public.llm_calls` READ |
+| `kagenti_{agent}` | Wizard / AgentRuntime controller | `{ns}_{agent}.*` RW, `public.sessions` READ (RLS: own context_id) | None |
+| `kagenti_budget` | Deploy script / controller | None | `public.*` RW |
+
+**How agents are scoped:**
+- Each agent's `search_path` is set to its own schema: `SET search_path TO team1_sandbox_legion`
+- Agent's checkpoint/task tables are in its own schema — invisible to other agents
+- Agent can READ `public.sessions` but only rows matching its own `context_id` (via Row-Level Security)
+- Agent **cannot** read other agents' checkpoints, tasks, or events
+
+**How users are created:**
+- **Current:** Helm chart creates single `kagenti` user
+- **Target:** Import wizard (or AgentRuntime controller) creates per-agent user with `CREATE ROLE kagenti_{agent} WITH LOGIN PASSWORD '...'` and `GRANT` on the agent's schema
+- Password stored in a per-agent Secret: `{agent}-db-secret`
+- With Vault (Pillar 3): dynamic credentials replace static passwords
+
+### Migration Path
+
+| Phase | Schema | Users | Isolation |
+|-------|--------|-------|-----------|
+| **Current** | Single `public` per database | Single `kagenti` user | Application-level (context_id filtering) |
+| **Phase 1** | Create `{ns}_{agent}` schemas | Single `kagenti` user with search_path | Schema-level (tables separated) |
+| **Phase 2** | Same | Per-agent `kagenti_{agent}` users with GRANT | User-level (GRANT scoping) |
+| **Phase 3** | Same | Same + Row-Level Security on `public.sessions` | Row-level (RLS policies) |
+| **Phase 4** | Same | Vault dynamic credentials (1h TTL per pod) | Credential-level (ephemeral, auto-revoked) |
 
 ## What the Agentic Runtime Deploys Today
 
