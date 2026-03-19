@@ -41,10 +41,12 @@ USER 1001
 
 # OpenShift DNS ClusterIP default; override at deploy time for other platforms
 ENV DNS_RESOLVER="172.30.0.10"
+# Backend service FQDN; nginx resolver bypasses /etc/resolv.conf search domains
+ENV BACKEND_HOST="kagenti-backend.kagenti-system.svc.cluster.local"
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
-CMD ["/bin/sh", "-c", "envsubst '${DNS_RESOLVER}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "envsubst '${DNS_RESOLVER} ${BACKEND_HOST}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

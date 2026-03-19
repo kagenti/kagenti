@@ -737,8 +737,8 @@ export const AgentDetailPage: React.FC = () => {
                                 {[...agentCardStatus.conditions].sort((a, b) => {
                                   const order: Record<string, number> = { Synced: 0, SignatureVerified: 1, Bound: 2, Ready: 3 };
                                   return (order[a.type] ?? 99) - (order[b.type] ?? 99);
-                                }).map((cond, idx) => (
-                                  <Tr key={idx}>
+                                }).map((cond) => (
+                                  <Tr key={cond.type}>
                                     <Td>{cond.type}</Td>
                                     <Td>
                                       <Label color={cond.status === 'True' ? 'green' : 'red'} isCompact>
