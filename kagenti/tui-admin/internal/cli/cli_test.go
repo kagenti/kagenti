@@ -71,3 +71,71 @@ func TestClusterSubcommands(t *testing.T) {
 		}
 	}
 }
+
+func TestAllRootSubcommands(t *testing.T) {
+	t.Parallel()
+	cmd := NewRootCmd()
+
+	subs := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		subs[sub.Name()] = true
+	}
+
+	expected := []string{"version", "cluster", "run", "test"}
+	for _, name := range expected {
+		if !subs[name] {
+			t.Errorf("missing root subcommand: %s", name)
+		}
+	}
+}
+
+func TestClusterCreateFlags(t *testing.T) {
+	t.Parallel()
+	cmd := NewRootCmd()
+
+	var createCmd *cobra.Command
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "cluster" {
+			for _, csub := range sub.Commands() {
+				if csub.Name() == "create" {
+					createCmd = csub
+					break
+				}
+			}
+		}
+	}
+	if createCmd == nil {
+		t.Fatal("cluster create command not found")
+	}
+
+	flags := []string{"platform", "name"}
+	for _, name := range flags {
+		if createCmd.Flags().Lookup(name) == nil {
+			t.Errorf("missing flag: --%s", name)
+		}
+	}
+}
+
+func TestRunInstallFlags(t *testing.T) {
+	t.Parallel()
+	cmd := NewRootCmd()
+
+	var installCmd *cobra.Command
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "run" {
+			for _, rsub := range sub.Commands() {
+				if rsub.Name() == "install" {
+					installCmd = rsub
+					break
+				}
+			}
+		}
+	}
+	if installCmd == nil {
+		t.Fatal("run install command not found")
+	}
+
+	if installCmd.Flags().Lookup("env") == nil {
+		t.Error("missing --env flag on run install")
+	}
+}
