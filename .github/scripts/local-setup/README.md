@@ -1,8 +1,67 @@
 # Local Testing & Deployment Scripts
 
-Scripts for deploying and testing the Kagenti platform on Kind, OpenShift, or HyperShift.
+Scripts for deploying and testing the Kagenti platform on Kind, K3s, OpenShift, or HyperShift.
 
 All commands run from the **repo root** (no cd to other directories).
+
+## `kagenti-admin` CLI (Recommended)
+
+`kagenti-admin` is a Go CLI that replaces the shell-script workflows with structured commands. It wraps the same scripts under the hood but provides a unified interface for cluster lifecycle, platform deployment, and E2E testing.
+
+**Install** (from repo root):
+
+```bash
+cd kagenti/tui-admin && go build -o kagenti-admin . && mv kagenti-admin /usr/local/bin/
+```
+
+### Cluster Lifecycle
+
+```bash
+kagenti-admin cluster create --platform kind     # Create Kind cluster
+kagenti-admin cluster create --platform k3s      # Prepare K3s (Rancher Desktop)
+kagenti-admin cluster list                        # List all clusters (Kind, K3s, HyperShift)
+kagenti-admin cluster use <name>                  # Switch kubectl context
+kagenti-admin cluster destroy <name>              # Destroy cluster
+```
+
+### Full Test Pipeline
+
+```bash
+kagenti-admin test --platform kind                              # Full test on Kind
+kagenti-admin test --platform kind --skip-cluster-destroy       # Keep cluster
+kagenti-admin test --platform k3s --build-core                  # K3s + build deps
+kagenti-admin test --build kagenti/kagenti-extensions=pr/242    # Specific dep override
+kagenti-admin test --auto --platform kind --build-core          # CI mode
+```
+
+### Run Individual Phases
+
+```bash
+kagenti-admin run install                    # Install platform (Helm + Ansible)
+kagenti-admin run install --env k3s          # K3s environment values
+kagenti-admin run deploy-agents              # Deploy weather-tool + weather-service
+kagenti-admin run e2e                        # Run E2E tests only
+kagenti-admin run all                        # Full pipeline on current cluster
+```
+
+### Old vs New Comparison
+
+| Task | Shell Scripts | `kagenti-admin` |
+|------|-------------|-----------------|
+| Create Kind cluster | `kind/create-cluster.sh` | `cluster create --platform kind` |
+| Create K3s cluster | Manual: start RD, fix mounts | `cluster create --platform k3s` |
+| List clusters | `kind get clusters` + manual | `cluster list` |
+| Full test | `kind-full-test.sh --skip-cluster-destroy` | `test --platform kind --skip-cluster-destroy` |
+| Test + build deps | Not supported | `test --build-core` |
+| Deploy agents only | Run 4 scripts | `run deploy-agents` |
+| Run E2E only | Run 3 scripts | `run e2e` |
+| CI pipeline | Custom workflow YAML | `test --auto --build-core` |
+
+---
+
+## Shell Scripts (Legacy)
+
+The shell scripts below still work and are called by `kagenti-admin` under the hood.
 
 ## Quick Start Commands
 
