@@ -118,6 +118,35 @@ jobs:
       - name: Build
         run: go build ./...
 
+  tui-admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: kagenti/tui-admin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5
+        with:
+          go-version-file: kagenti/tui-admin/go.mod
+          cache-dependency-path: kagenti/tui-admin/go.sum
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        # Placeholder: will run real tests once kagenti/tui-admin exists on main
+        run: echo "tui-admin tests will run after rebase"
+
+      - name: Build
+        # Placeholder: will build once kagenti/tui-admin exists on main
+        run: echo "tui-admin build will run after rebase"
+
   chart-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
