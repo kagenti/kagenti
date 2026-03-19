@@ -11,40 +11,37 @@ log_step "70" "Configuring dockerhost service"
 # The IP must be reachable from inside pods for Ollama access.
 DOCKER_HOST_IP=""
 
-case "${K8S_RUNTIME:-kind}" in
-    kind)
-        log_info "Kind runtime: using Docker 'kind' network gateway"
-        DOCKER_HOST_IP=$(docker network inspect kind | jq -r '.[].IPAM.Config[] | select(.Gateway != null) | .Gateway' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-        ;;
-    rancher-desktop)
-        log_info "Rancher Desktop runtime: discovering host IP from pod network"
-        # Rancher Desktop runs K3s in a Lima VM. Pods reach the macOS host
-        # via the VM's default gateway. We probe it from inside a pod.
-        DOCKER_HOST_IP=$(kubectl run --rm -i --restart=Never --image=busybox:1.36 detect-gw-$RANDOM \
-            --timeout=30s -- sh -c "ip route | grep default | awk '{print \$3}'" 2>/dev/null | tr -d '[:space:]' || true)
+# Strategy: resolve host.docker.internal from inside a pod. This is the standard
+# Docker Desktop / Rancher Desktop DNS name that resolves to the host machine.
+# On macOS, the Docker bridge gateway IP (172.18.0.1) is NOT reachable from pods
+# because Docker runs in a VM — only host.docker.internal works reliably.
+#
+# Security note: We only expose port 11434 (Ollama) via the EndpointSlice.
+# A NetworkPolicy should be applied to restrict which pods can access it.
+# This pattern is for LOCAL DEV ONLY — production uses LiteLLM with API keys.
 
-        if [ -z "$DOCKER_HOST_IP" ] || ! echo "$DOCKER_HOST_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-            log_warn "Gateway probe failed, trying node ExternalIP..."
+log_info "Resolving host IP via host.docker.internal..."
+DOCKER_HOST_IP=$(kubectl run --rm -i --restart=Never --image=busybox:1.36 detect-host-$RANDOM \
+    --timeout=30s -- sh -c "nslookup host.docker.internal 2>/dev/null | grep -A1 'Name:' | grep 'Address:' | awk '{print \$2}'" 2>/dev/null | tr -d '[:space:]' || true)
+
+# Fallback strategies per runtime if host.docker.internal didn't resolve
+if [ -z "$DOCKER_HOST_IP" ] || ! echo "$DOCKER_HOST_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    log_warn "host.docker.internal not available, trying runtime-specific fallback..."
+    case "${K8S_RUNTIME:-kind}" in
+        kind)
+            DOCKER_HOST_IP=$(docker network inspect kind 2>/dev/null | jq -r '.[].IPAM.Config[] | select(.Gateway != null) | .Gateway' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            ;;
+        rancher-desktop)
             DOCKER_HOST_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' 2>/dev/null)
-        fi
-
-        if [ -z "$DOCKER_HOST_IP" ] || ! echo "$DOCKER_HOST_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-            log_warn "ExternalIP not found, using node InternalIP as fallback..."
-            DOCKER_HOST_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null)
-        fi
-        ;;
-    minikube)
-        log_info "Minikube runtime: using minikube ip"
-        DOCKER_HOST_IP=$(minikube ip 2>/dev/null)
-        ;;
-    *)
-        log_info "Unknown runtime: trying Docker 'kind' network, then node IP"
-        DOCKER_HOST_IP=$(docker network inspect kind 2>/dev/null | jq -r '.[].IPAM.Config[] | select(.Gateway != null) | .Gateway' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
-        if [ -z "$DOCKER_HOST_IP" ]; then
+            ;;
+        minikube)
+            DOCKER_HOST_IP=$(minikube ip 2>/dev/null)
+            ;;
+        *)
             DOCKER_HOST_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || true)
-        fi
-        ;;
-esac
+            ;;
+    esac
+fi
 
 if [ -z "$DOCKER_HOST_IP" ] || [ "$DOCKER_HOST_IP" = "null" ]; then
     log_error "Could not determine Docker host IP for runtime: ${K8S_RUNTIME:-unknown}"
@@ -81,9 +78,26 @@ metadata:
   namespace: team1
 spec:
   clusterIP: None
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dockerhost-egress
+  namespace: team1
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: ${DOCKER_HOST_IP}/32
+    ports:
+    - port: 11434
+      protocol: TCP
 EOF
 
 kubectl get service dockerhost -n team1
 kubectl get endpointslice dockerhost -n team1
 
-log_success "Dockerhost configured"
+log_success "Dockerhost configured (host IP: ${DOCKER_HOST_IP}, port 11434 only)"
