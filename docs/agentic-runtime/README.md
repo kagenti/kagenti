@@ -101,6 +101,7 @@ flowchart TB
 | [Pluggable Architecture](./pluggability.md) | 9 pluggable layers, contracts, standards landscape (AG-UI, MCP, OTel) |
 | [Configuration](./configuration.md) | Feature flags, Helm values, environment variables |
 | [Security](./security.md) | Defense-in-depth layers, Landlock, composable profiles, Istio Ambient |
+| [Zero-Secret Agents](./zero-secret-agents.md) | Three pillars: Budget Proxy + AuthBridge + Vault = no leaked secrets |
 | [Writing Agents](./agents.md) | Agent authoring: graph structure, tools, event serialization, graph card |
 | [Multi-Framework Runtime](./multi-framework.md) | Framework adapters: LangGraph, OpenCode, Claude SDK, CrewAI, AG2 *(WIP)* |
 | [API Reference](./api-reference.md) | Backend routes: sandbox, sessions, events, deploy, sidecars, budget |

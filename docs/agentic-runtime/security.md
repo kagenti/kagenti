@@ -4,6 +4,15 @@ The Agentic Runtime uses a defense-in-depth model with 8 composable security
 layers. Layers L1-L3 and L8 are always on. Layers L4-L7 are toggles exposed
 through the import wizard.
 
+**Key milestone: [Zero-Secret Agents](./zero-secret-agents.md)** — three pillars
+eliminate all long-lived secrets from agent containers:
+1. **LLM Budget Proxy** (shipped) — agent has no LLM API keys
+2. **AuthBridge sidecar** (shipped) — agent has no service tokens
+3. **Vault integration** (planned) — agent has no database passwords
+
+When complete, a compromised agent cannot exfiltrate any credential usable
+beyond its own budget-bounded, time-limited session.
+
 ---
 
 ## Defense-in-Depth Layers
