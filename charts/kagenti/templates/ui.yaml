@@ -286,6 +286,11 @@ spec:
         - name: frontend
           image: "{{ .Values.ui.frontend.image }}:{{ .Values.ui.frontend.tag }}"
           imagePullPolicy: IfNotPresent
+          env:
+            - name: DNS_RESOLVER
+              value: {{ .Values.ui.frontend.dnsResolver | default "172.30.0.10" | quote }}
+            - name: BACKEND_HOST
+              value: "kagenti-backend.{{ .Values.ui.namespace }}.svc.cluster.local"
           ports:
             - name: http
               containerPort: 8080
