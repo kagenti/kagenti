@@ -5,6 +5,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,17 +35,23 @@ type Info struct {
 
 // Manager handles cluster lifecycle operations.
 type Manager struct {
-	Runner *runner.Runner
+	Runner runner.Executor
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
-// NewManager creates a cluster manager.
+// NewManager creates a cluster manager with default stdout/stderr.
 func NewManager() *Manager {
-	return &Manager{Runner: runner.New()}
+	return &Manager{
+		Runner: runner.New(),
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}
 }
 
 // Detect identifies the current cluster platform from kubectl context.
 func (m *Manager) Detect(ctx context.Context) (Platform, error) {
-	result, err := m.Runner.Kubectl(ctx, "config", "current-context")
+	result, err := m.Runner.RunSilent(ctx, "kubectl", "config", "current-context")
 	if err != nil {
 		return "", fmt.Errorf("no kubectl context: %w", err)
 	}
@@ -82,7 +89,7 @@ func (m *Manager) Destroy(ctx context.Context, info *Info) error {
 	case PlatformKind:
 		return m.destroyKind(ctx, info.Name)
 	case PlatformK3s, PlatformRancherDesktop:
-		fmt.Fprintln(m.Runner.Stdout, "K3s cluster is managed by Rancher Desktop. Use: rdctl kubernetes reset")
+		fmt.Fprintln(m.Stdout, "K3s cluster is managed by Rancher Desktop. Use: rdctl kubernetes reset")
 		return nil
 	case PlatformHyperShift:
 		return fmt.Errorf("hypershift cluster destruction not yet implemented in TUI; use: ./.github/scripts/hypershift/destroy-cluster.sh")
@@ -186,13 +193,12 @@ func (m *Manager) List(ctx context.Context) ([]Info, error) {
 // Use sets the kubectl context to the given cluster.
 func (m *Manager) Use(ctx context.Context, info *Info) error {
 	if info.Kubeconfig != "" {
-		fmt.Fprintf(m.Runner.Stdout, "export KUBECONFIG=%s\n", info.Kubeconfig)
+		fmt.Fprintf(m.Stdout, "export KUBECONFIG=%s\n", info.Kubeconfig)
 		os.Setenv("KUBECONFIG", info.Kubeconfig)
-		m.Runner.Kubeconfig = info.Kubeconfig
 		return nil
 	}
 	if info.Context != "" {
-		_, err := m.Runner.Kubectl(ctx, "config", "use-context", info.Context)
+		_, err := m.Runner.RunSilent(ctx, "kubectl", "config", "use-context", info.Context)
 		return err
 	}
 	return fmt.Errorf("cluster %q has no context or kubeconfig", info.Name)

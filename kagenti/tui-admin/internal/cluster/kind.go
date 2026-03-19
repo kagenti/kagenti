@@ -23,7 +23,7 @@ func (m *Manager) createKind(ctx context.Context, name string) (*Info, error) {
 	if err == nil {
 		for _, existing := range strings.Split(result.Stdout, "\n") {
 			if strings.TrimSpace(existing) == name {
-				fmt.Fprintf(m.Runner.Stdout, "Kind cluster %q already exists\n", name)
+				fmt.Fprintf(m.Stdout, "Kind cluster %q already exists\n", name)
 				return &Info{
 					Name:     name,
 					Platform: PlatformKind,
@@ -36,7 +36,7 @@ func (m *Manager) createKind(ctx context.Context, name string) (*Info, error) {
 
 	// Find the Kind config file relative to repo root
 	configPath := "deployments/ansible/kind/kind-config-registry.yaml"
-	fmt.Fprintf(m.Runner.Stdout, "Creating Kind cluster %q...\n", name)
+	fmt.Fprintf(m.Stdout, "Creating Kind cluster %q...\n", name)
 
 	_, err = m.Runner.Run(ctx, "kind", "create", "cluster",
 		"--name", name,
@@ -53,7 +53,7 @@ func (m *Manager) createKind(ctx context.Context, name string) (*Info, error) {
 		Status:   "ready",
 	}
 
-	fmt.Fprintf(m.Runner.Stdout, "Kind cluster %q created (context: %s)\n", name, info.Context)
+	fmt.Fprintf(m.Stdout, "Kind cluster %q created (context: %s)\n", name, info.Context)
 	return info, nil
 }
 
@@ -63,12 +63,12 @@ func (m *Manager) destroyKind(ctx context.Context, name string) error {
 		name = "kagenti"
 	}
 
-	fmt.Fprintf(m.Runner.Stdout, "Deleting Kind cluster %q...\n", name)
+	fmt.Fprintf(m.Stdout, "Deleting Kind cluster %q...\n", name)
 	_, err := m.Runner.Run(ctx, "kind", "delete", "cluster", "--name", name)
 	if err != nil {
 		return fmt.Errorf("kind delete cluster: %w", err)
 	}
 
-	fmt.Fprintf(m.Runner.Stdout, "Kind cluster %q deleted\n", name)
+	fmt.Fprintf(m.Stdout, "Kind cluster %q deleted\n", name)
 	return nil
 }

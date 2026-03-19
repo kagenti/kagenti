@@ -15,14 +15,14 @@ func (m *Manager) prepareK3s(ctx context.Context) (*Info, error) {
 	}
 
 	// Verify cluster is running
-	result, err := m.Runner.Kubectl(ctx, "--context", "rancher-desktop", "get", "nodes", "--no-headers")
+	result, err := m.Runner.RunSilent(ctx, "kubectl", "--context", "rancher-desktop", "get", "nodes", "--no-headers")
 	if err != nil {
 		return nil, fmt.Errorf("rancher Desktop K3s cluster not running: %w\nStart Rancher Desktop first", err)
 	}
-	fmt.Fprintf(m.Runner.Stdout, "K3s node: %s\n", result.Stdout)
+	fmt.Fprintf(m.Stdout, "K3s node: %s\n", result.Stdout)
 
 	// Fix mount propagation for Istio CNI
-	fmt.Fprintln(m.Runner.Stdout, "Preparing VM for Istio...")
+	fmt.Fprintln(m.Stdout, "Preparing VM for Istio...")
 	m.Runner.RunSilent(ctx, "rdctl", "shell", "--", "sudo", "mount", "--make-shared", "/run")
 
 	// Fix inotify limits
@@ -30,8 +30,8 @@ func (m *Manager) prepareK3s(ctx context.Context) (*Info, error) {
 	m.Runner.RunSilent(ctx, "rdctl", "shell", "--", "sudo", "sysctl", "-w", "fs.inotify.max_user_watches=524288")
 
 	// Disable Traefik (Istio Gateway replaces it)
-	fmt.Fprintln(m.Runner.Stdout, "Disabling Traefik (Istio Gateway replaces it)...")
-	m.Runner.Kubectl(ctx, "--context", "rancher-desktop", "-n", "kube-system", "scale", "deploy", "traefik", "--replicas=0")
+	fmt.Fprintln(m.Stdout, "Disabling Traefik (Istio Gateway replaces it)...")
+	m.Runner.RunSilent(ctx, "kubectl", "--context", "rancher-desktop", "-n", "kube-system", "scale", "deploy", "traefik", "--replicas=0")
 
 	info := &Info{
 		Name:     "rancher-desktop",
@@ -47,7 +47,7 @@ func (m *Manager) prepareK3s(ctx context.Context) (*Info, error) {
 // Must be called after the registry service is deployed (post-platform-install).
 func (m *Manager) ConfigureK3sRegistry(ctx context.Context, registryIP string) error {
 	if registryIP == "" {
-		result, err := m.Runner.Kubectl(ctx, "get", "svc", "-n", "cr-system", "registry",
+		result, err := m.Runner.RunSilent(ctx, "kubectl", "get", "svc", "-n", "cr-system", "registry",
 			"-o", "jsonpath={.spec.clusterIP}")
 		if err != nil {
 			return fmt.Errorf("registry service not found: %w", err)
@@ -55,7 +55,7 @@ func (m *Manager) ConfigureK3sRegistry(ctx context.Context, registryIP string) e
 		registryIP = result.Stdout
 	}
 
-	fmt.Fprintf(m.Runner.Stdout, "Configuring K3s registry mirror (ClusterIP: %s)...\n", registryIP)
+	fmt.Fprintf(m.Stdout, "Configuring K3s registry mirror (ClusterIP: %s)...\n", registryIP)
 
 	// 1. Add DNS entry for Docker daemon
 	m.Runner.RunSilent(ctx, "rdctl", "shell", "--", "sudo", "sh", "-c",
@@ -86,19 +86,19 @@ configs:
 		fmt.Sprintf("cat > /etc/docker/daemon.json << 'EOF'\n%sEOF", daemonJSON))
 
 	// 4. Restart Docker + K3s
-	fmt.Fprintln(m.Runner.Stdout, "Restarting Docker + K3s to apply registry config...")
+	fmt.Fprintln(m.Stdout, "Restarting Docker + K3s to apply registry config...")
 	m.Runner.RunSilent(ctx, "rdctl", "shell", "--", "sudo", "rc-service", "docker", "restart")
 	time.Sleep(3 * time.Second)
 	m.Runner.RunSilent(ctx, "rdctl", "shell", "--", "sudo", "rc-service", "k3s", "restart")
 
 	// Wait for K3s to come back
 	for i := 0; i < 30; i++ {
-		if _, err := m.Runner.Kubectl(ctx, "get", "nodes"); err == nil {
+		if _, err := m.Runner.RunSilent(ctx, "kubectl", "get", "nodes"); err == nil {
 			break
 		}
 		time.Sleep(2 * time.Second)
 	}
 
-	fmt.Fprintln(m.Runner.Stdout, "K3s + Docker restarted with registry config")
+	fmt.Fprintln(m.Stdout, "K3s + Docker restarted with registry config")
 	return nil
 }
