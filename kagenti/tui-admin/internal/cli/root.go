@@ -31,6 +31,8 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(
 		newVersionCmd(),
 		newClusterCmd(ctx),
+		newRunCmd(ctx),
+		newTestCmd(ctx),
 	)
 
 	return root
