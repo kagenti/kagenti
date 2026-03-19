@@ -29,10 +29,9 @@ flowchart TB
         end
 
         subgraph operator["CR Path (Operator)"]
-            O1["Agent CR"]
-            O2["Controller creates Deployment + Service"]
+            O1["AgentRuntime CR<br/><small>targetRef → Deployment</small>"]
+            O2["Controller applies labels"]
             O3["AgentCard CR indexes agent card"]
-            O4["AgentBuild CR builds images"]
             O1 --> O2
             O3 -.-> O2
         end
@@ -40,16 +39,16 @@ flowchart TB
 
     subgraph target["Target: Unified CR Path"]
         direction TB
-        T1["AgentRuntime CR"]
-        T2["Agent CR (or Deployment)"]
+        T1["Developer Deployment<br/><small>(clean, no kagenti labels)</small>"]
+        T2["AgentRuntime CR<br/><small>targetRef → Deployment</small>"]
         T3["Controller manages labels + infra"]
         T4["Webhook injects sidecars"]
         T5["AgentCard indexes card + graph card"]
 
-        T1 -->|"targetRef"| T2
-        T1 --> T3
+        T2 -->|"targetRef"| T1
+        T2 --> T3
         T3 -->|"labels"| T4
-        T5 -.->|"fetches"| T2
+        T5 -.->|"fetches"| T1
     end
 ```
 
@@ -59,10 +58,103 @@ flowchart TB
 
 | CRD | Purpose | Status |
 |-----|---------|--------|
-| **Agent** | Deployment wrapper (podTemplateSpec, imageSource, replicas, servicePorts) | Complete |
-| **AgentBuild** | Source-to-image via Tekton pipelines | Complete |
+| **AgentRuntime** | Declarative sidecar injection + config. `targetRef` points to a standard Deployment. | [Phase 1 PR](https://github.com/kagenti/kagenti-operator/pull/218) |
 | **AgentCard** | Indexes `/.well-known/agent-card.json` from agents | Complete |
-| **AgentRuntime** | Declarative sidecar injection + config | **Not yet implemented** (#862) |
+| **AgentBuild** | Source-to-image via Tekton pipelines | Complete |
+
+> **Note:** The [consolidated design (PR #770)](https://github.com/kagenti/kagenti/pull/770)
+> establishes that **AgentRuntime CR targets standard Deployments**.
+> Developers deploy a clean Deployment and create an AgentRuntime CR with
+> `targetRef` pointing to it. The controller applies labels, the webhook
+> injects sidecars. Developer manifests stay clean.
+
+## Deployed Structure (Controller-Managed)
+
+What a fully controller-managed agent namespace looks like:
+
+```mermaid
+flowchart TB
+    subgraph ns["team1 namespace"]
+        subgraph managed_by_cr["Managed by AgentRuntime CR"]
+            subgraph pod["sandbox-legion Pod"]
+                AB_S["AuthBridge sidecars<br/><small>envoy-proxy :15123/:15124<br/>spiffe-helper<br/>client-registration<br/>(injected by webhook)</small>"]
+                Agent["Agent Container :8000<br/><small>LangGraph reasoning loop<br/>auto-creates checkpoint tables</small>"]
+            end
+
+            EgressDep["Egress Proxy (optional)<br/><small>Squid :3128<br/>domain allowlist</small>"]
+        end
+
+        subgraph namespace_infra["Per-Namespace Infra (script/Helm today, controller future)"]
+            PG["postgres-sessions<br/><small>StatefulSet :5432<br/>2 databases</small>"]
+            BP["llm-budget-proxy<br/><small>Deployment :8080<br/>auto-creates budget tables</small>"]
+            Secrets["Secrets<br/><small>postgres-sessions-secret<br/>litellm-virtual-keys</small>"]
+            CMs["ConfigMaps<br/><small>authbridge-config<br/>envoy-config</small>"]
+        end
+
+        subgraph card["Managed by AgentCard CR"]
+            AC["AgentCard CR<br/><small>indexes agent-card.json<br/>+ graph-card.json (planned)</small>"]
+        end
+    end
+
+    subgraph webhook_ns["kagenti-webhook-system"]
+        Webhook["Webhook Controller<br/><small>Injects sidecars into<br/>labeled pods</small>"]
+    end
+
+    subgraph operator_ns["kagenti-operator-system"]
+        RuntimeCtrl2["AgentRuntime Controller<br/><small>Applies labels + config-hash<br/>to PodTemplateSpec</small>"]
+        CardCtrl2["AgentCard Controller<br/><small>Fetches card from agent</small>"]
+    end
+
+    RuntimeCtrl2 -->|"labels + hash"| pod
+    Webhook -->|"injects sidecars"| pod
+    CardCtrl2 -->|"GET /.well-known/"| Agent
+    Agent -->|"asyncpg"| PG
+    BP -->|"asyncpg"| PG
+    Agent -->|"HTTP"| BP
+    Agent -->|"HTTP_PROXY"| EgressDep
+```
+
+## Database Access Model
+
+Who can access what — isolation boundaries per database and table:
+
+```mermaid
+flowchart TB
+    subgraph pg["postgres-sessions StatefulSet (port 5432)"]
+        subgraph sessions_db["Database: sessions"]
+            T_sessions["sessions table<br/><small>Written by: Backend<br/>Read by: Backend, UI</small>"]
+            T_events["events table<br/><small>Written by: Backend (consumer)<br/>Read by: Backend, UI</small>"]
+            T_tasks["tasks table<br/><small>Written by: A2A SDK (in agent)<br/>Read by: Backend</small>"]
+            T_ckpt["langgraph_checkpoint<br/><small>Written by: Agent<br/>Read by: Agent only</small>"]
+            T_blobs["langgraph_checkpoint_blobs<br/><small>Written by: Agent<br/>Read by: Agent only</small>"]
+            T_writes["langgraph_writes<br/><small>Written by: Agent<br/>Read by: Agent only</small>"]
+        end
+
+        subgraph budget_db["Database: llm_budget"]
+            T_calls["llm_calls<br/><small>Written by: Budget Proxy<br/>Read by: Budget Proxy, Backend</small>"]
+            T_limits["budget_limits<br/><small>Written by: Budget Proxy (defaults)<br/>Read by: Budget Proxy</small>"]
+        end
+    end
+
+    Backend["Backend<br/><small>kagenti-system</small>"]
+    Consumer["Background Consumer<br/><small>asyncio.Task in backend</small>"]
+    AgentPod["Agent Pod<br/><small>team1</small>"]
+    BudgetProxy["Budget Proxy<br/><small>team1</small>"]
+
+    Backend -->|"upsert"| T_sessions
+    Consumer -->|"INSERT"| T_events
+    AgentPod -->|"checkpoint writes"| T_ckpt & T_blobs & T_writes
+    AgentPod -->|"task CRUD (A2A SDK)"| T_tasks
+    BudgetProxy -->|"INSERT per LLM call"| T_calls
+    BudgetProxy -->|"read limits"| T_limits
+    Backend -->|"read usage"| T_calls
+```
+
+**Current:** All components use the same `kagenti` DB user with full access
+to all tables in their database. Application-level isolation only.
+
+**Target:** Schema-per-agent with scoped DB users (see
+[deployment.md](./deployment.md) — Current vs Target Schema Isolation).
 
 ## What the Agentic Runtime Deploys Today
 
@@ -130,7 +222,7 @@ This is agent-side and doesn't need operator support.
 | Session DB schema | Backend auto-creates tables on startup | Backend side (stay) |
 | Workspace directories | Agent creates per-session at runtime | Agent-side (stay) |
 | Feature flags | Helm values → backend env → UI config | Helm values (stay) |
-| Agent import wizard | Backend REST API → kubectl | Backend → creates Agent CR |
+| Agent import wizard | Backend REST API → kubectl | Backend → creates Deployment + AgentRuntime CR |
 | Event serialization | Agent-side `FrameworkEventSerializer` | Agent-side (stay) |
 | AgentGraphCard | Agent-side `/.well-known/agent-graph-card.json` | AgentCard CR could index it |
 | Skills loading | Agent clones git repos at startup | Agent-side (stay) |
@@ -149,26 +241,28 @@ flowchart LR
     end
 
     subgraph target_deploy["Target"]
-        AgentCR["Agent CR"] --> Controller["Agent Controller"]
-        Controller --> Deployment2["Creates Deployment"]
-        WizardCR["Import Wizard API"] --> AgentCR
+        Dep2["Deployment<br/>(clean manifest)"]
+        ARCR["AgentRuntime CR<br/>targetRef → Deployment"]
+        Controller["AgentRuntime Controller<br/>applies labels + hash"]
+        WizardCR["Import Wizard API"] --> Dep2
+        WizardCR --> ARCR
+        ARCR --> Controller
     end
 
     today_deploy --> |"migrate"| target_deploy
 ```
 
 **Today:** Scripts and the backend import wizard create raw Kubernetes
-Deployments. The operator has an `Agent` CRD that does the same thing
-declaratively, but the Agentic Runtime doesn't use it.
+Deployments with manual `kagenti.io/*` labels.
 
-**Target:** The import wizard should create `Agent` CRs. The operator
-controller creates the Deployment, Service, and RBAC. The backend
-watches Agent CRs for discovery instead of DNS-based resolution.
+**Target:** The import wizard creates a clean Deployment (no kagenti labels)
+plus an AgentRuntime CR with `targetRef` pointing to it. The controller
+applies labels and config-hash, the webhook injects sidecars.
 
 **Changes needed:**
-- Backend import wizard: `POST /sandbox/{ns}/create` → creates Agent CR
-- Backend agent discovery: watch Agent CRs (or continue DNS, both work)
-- Deploy scripts: create Agent CRs instead of raw Deployments
+- Backend import wizard: `POST /sandbox/{ns}/create` → creates Deployment + AgentRuntime CR
+- Deploy scripts: create Deployments + AgentRuntime CRs
+- Backend agent discovery: watch AgentCard CRs (or continue DNS, both work)
 
 ### 2. AuthBridge Injection
 
@@ -344,16 +438,16 @@ graph card endpoint, and cache it in the AgentCard status.
 | `deployment.md` | Add CR-based deployment path alongside scripts |
 | `security.md` | Show AgentRuntime CR as declarative security config |
 | `configuration.md` | Add AgentRuntime CR as config mechanism |
-| `agents.md` | Show Agent CRD as deployment target |
+| `agents.md` | Show Deployment + AgentRuntime CRD as deployment target |
 | `quickstart.md` | Keep script path (quickest for Kind dev) |
 
 ### Code Changes (Future)
 
 | Component | Change | Priority |
 |-----------|--------|----------|
-| Import wizard | Create Agent CR instead of raw Deployment | P1 |
+| Import wizard | Create Deployment + AgentRuntime CR instead of raw Deployment | P1 |
 | Backend agent discovery | Watch Agent/AgentCard CRs (optional, DNS still works) | P2 |
-| Deploy scripts | Create Agent CRs + AgentRuntime CRs | P1 |
+| Deploy scripts | Create Deployments + AgentRuntime CRs | P1 |
 | `sandbox_profile.py` | Move logic to AgentRuntime controller (Go) | P2 |
 | TUI `kagenti team create` | Create AgentNamespace CR (if Option C) | P2 |
 
@@ -369,15 +463,14 @@ flowchart TB
         Provision["Provision namespace<br/>(TUI or Helm)"]
     end
 
-    subgraph crs["Custom Resources"]
-        AgentCR["Agent CR<br/><small>podTemplateSpec, imageSource,<br/>replicas, servicePorts</small>"]
-        RuntimeCR["AgentRuntime CR<br/><small>targetRef, security profile,<br/>identity, trace, LLM config</small>"]
+    subgraph workloads["Workloads"]
+        Dep["Deployment<br/><small>Clean manifest,<br/>no kagenti labels</small>"]
+        RuntimeCR["AgentRuntime CR<br/><small>targetRef → Deployment<br/>security, identity, trace</small>"]
         CardCR["AgentCard CR<br/><small>indexes agent-card.json<br/>+ agent-graph-card.json</small>"]
     end
 
     subgraph controllers["Controllers"]
-        AgentCtrl["Agent Controller<br/><small>Creates Deployment,<br/>Service, RBAC</small>"]
-        RuntimeCtrl["AgentRuntime Controller<br/><small>Applies labels,<br/>provisions infra</small>"]
+        RuntimeCtrl["AgentRuntime Controller<br/><small>Applies labels + hash,<br/>provisions infra</small>"]
         CardCtrl["AgentCard Controller<br/><small>Fetches + caches<br/>agent/graph cards</small>"]
     end
 
@@ -395,11 +488,12 @@ flowchart TB
         UI2["UI / TUI<br/><small>Renders based on<br/>graph card from CR</small>"]
     end
 
-    Deploy --> AgentCR
+    Deploy --> Dep
+    Deploy --> RuntimeCR
     Config --> RuntimeCR
     Provision --> Infra
 
-    AgentCR --> AgentCtrl --> Pod
+    RuntimeCR -->|"targetRef"| Dep
     RuntimeCR --> RuntimeCtrl
     RuntimeCtrl -->|"labels"| Pod
     RuntimeCtrl -->|"provisions"| Infra
@@ -419,7 +513,7 @@ flowchart TB
 | **#862 Phase 1** | AgentRuntime CRD + controller for label management | Operator team |
 | **#862 Phase 2** | Webhook coordination (inject at Pod CREATE) | Extensions team |
 | **Post-#862** | Add `spec.security` to AgentRuntime for composable layers | Both teams |
-| **Post-#862** | Import wizard creates Agent CRs, not raw Deployments | Agentic Runtime team |
+| **Post-#862** | Import wizard creates Deployment + AgentRuntime CR | Agentic Runtime team |
 | **Post-#862** | AgentCard controller indexes graph cards | Operator team |
 | **Post-#862** | Namespace provisioning (Helm or AgentNamespace CRD) | Platform team |
 | **Post-#862** | `sandbox_profile.py` logic moves to AgentRuntime controller | Both teams |
