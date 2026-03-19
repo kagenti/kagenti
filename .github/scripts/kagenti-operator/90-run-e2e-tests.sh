@@ -67,11 +67,16 @@ eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS -m \"not observability\" --junit-
 }
 
 # Phase 2: Run ONLY observability tests (validates traffic patterns from phase 1)
-# These tests check Kiali for Istio config issues, traffic errors, and mTLS compliance
-log_info "Phase 2: Running observability tests (Kiali validation)"
-eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS -m \"observability\" --junit-xml=../test-results/e2e-observability-results.xml" || {
-    log_error "Observability tests (phase 2) failed"
-    exit 1
-}
+# Skip if no observability components are deployed (Phoenix, MLflow, Kiali)
+OBSERVABILITY_PODS=$(kubectl get pods -n kagenti-system -l "app in (phoenix,mlflow,kiali)" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+if [ "$OBSERVABILITY_PODS" -gt 0 ]; then
+    log_info "Phase 2: Running observability tests ($OBSERVABILITY_PODS observability pods found)"
+    eval "$PYTEST_CMD $PYTEST_TARGETS $PYTEST_OPTS -m \"observability\" --junit-xml=../test-results/e2e-observability-results.xml" || {
+        log_error "Observability tests (phase 2) failed"
+        exit 1
+    }
+else
+    log_info "Phase 2: Skipping observability tests (no Phoenix/MLflow/Kiali pods running)"
+fi
 
 log_success "Backend E2E tests passed (both phases)"
