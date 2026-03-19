@@ -150,18 +150,9 @@ func (inst *Installer) WaitReady(ctx context.Context) error {
 	return nil
 }
 
-// ConfigureDockerhost sets up the dockerhost service for Ollama access.
-func (inst *Installer) ConfigureDockerhost(ctx context.Context) error {
-	// This still uses the shell script for now because it involves
-	// complex networking detection (host.docker.internal resolution from pods).
-	// TODO: Rewrite in Go with client-go pod exec.
-	script := filepath.Join(inst.RepoRoot, ".github", "scripts", "common", "70-configure-dockerhost.sh")
-	if _, err := os.Stat(script); err != nil {
-		fmt.Fprintln(inst.Stdout, "Dockerhost script not found, skipping")
-		return nil
-	}
-	return execCommand(ctx, inst.Stdout, "bash", script)
-}
+// ConfigureDockerhost is now in dockerhost.go — native Go implementation
+// that discovers host IP via host.docker.internal and creates EndpointSlice
+// + Service + NetworkPolicy without shelling out to scripts.
 
 // execCommand runs a command with stdout/stderr piped.
 func execCommand(ctx context.Context, w io.Writer, name string, args ...string) error {
