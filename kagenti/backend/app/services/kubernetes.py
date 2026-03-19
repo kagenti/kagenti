@@ -433,7 +433,7 @@ class KubernetesService:
             raise
 
     # -------------------------------------------------------------------------
-    # ServiceAccount Operations
+    # ServiceAccount CRUD Operations
     # -------------------------------------------------------------------------
 
     def create_service_account(self, namespace: str, body: dict) -> dict:

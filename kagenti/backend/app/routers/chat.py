@@ -60,13 +60,16 @@ class ChatResponse(BaseModel):
     is_complete: bool = True
 
 
-def _resolve_service_clusterip(name: str, namespace: str) -> Optional[str]:
+async def _resolve_service_clusterip(name: str, namespace: str) -> Optional[str]:
     """Look up a K8s service's clusterIP and port via the API server directly.
 
     Uses the in-cluster service account token and KUBERNETES_SERVICE_HOST env
     var so this works even when cluster DNS (UDP) is unreliable.
+
+    Uses httpx.AsyncClient to avoid blocking the event loop.
     """
-    import json as _json, os, ssl, urllib.request as _req
+    import os
+    import ssl
 
     host = os.environ.get("KUBERNETES_SERVICE_HOST")
     port = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
@@ -76,13 +79,14 @@ def _resolve_service_clusterip(name: str, namespace: str) -> Optional[str]:
     if not host or not os.path.exists(token_path):
         return None
     try:
-        with open(token_path) as f:
+        with open(token_path, encoding="utf-8") as f:
             token = f.read()
-        ctx = ssl.create_default_context(cafile=ca_path)
+        ssl_ctx = ssl.create_default_context(cafile=ca_path)
         url = f"https://{host}:{port}/api/v1/namespaces/{namespace}/services/{name}"
-        req = _req.Request(url, headers={"Authorization": f"Bearer {token}"})
-        resp = _req.urlopen(req, timeout=5, context=ctx)
-        svc = _json.loads(resp.read())
+        async with httpx.AsyncClient(verify=ssl_ctx, timeout=5.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+            resp.raise_for_status()
+            svc = resp.json()
         cluster_ip = svc.get("spec", {}).get("clusterIP")
         ports = svc.get("spec", {}).get("ports", [])
         if not cluster_ip or not ports:
@@ -94,14 +98,14 @@ def _resolve_service_clusterip(name: str, namespace: str) -> Optional[str]:
         return None
 
 
-def _get_agent_url(name: str, namespace: str) -> str:
+async def _get_agent_url(name: str, namespace: str) -> str:
     """Get the URL for an A2A agent.
 
     In-cluster: resolves the service clusterIP via the K8s API (avoids DNS),
     falling back to DNS-based URL if the lookup fails.
     """
     if settings.is_running_in_cluster:
-        resolved = _resolve_service_clusterip(name, namespace)
+        resolved = await _resolve_service_clusterip(name, namespace)
         if resolved:
             return resolved
         return f"http://{name}.{namespace}.svc.cluster.local:{DEFAULT_IN_CLUSTER_PORT}"
@@ -124,7 +128,7 @@ async def get_agent_card(
 
     The agent card describes the agent's capabilities, skills, and metadata.
     """
-    agent_url = _get_agent_url(name, namespace)
+    agent_url = await _get_agent_url(name, namespace)
     card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
 
     try:
@@ -198,7 +202,7 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = _get_agent_url(name, namespace)
+    agent_url = await _get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload
@@ -543,7 +547,7 @@ async def stream_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = _get_agent_url(name, namespace)
+    agent_url = await _get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present

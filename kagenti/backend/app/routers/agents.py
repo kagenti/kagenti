@@ -2245,87 +2245,144 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
     }
 
 
+def _cleanup_signing_resource(
+    kube: KubernetesService, namespace: str, kind: str, resource_name: str
+) -> None:
+    """Best-effort cleanup of a single signing resource (ignores 404)."""
+    try:
+        if kind == "ServiceAccount":
+            kube.delete_service_account(namespace=namespace, name=resource_name)
+        elif kind == "ConfigMap":
+            kube.delete_configmap(namespace=namespace, name=resource_name)
+        elif kind == "Role":
+            kube.delete_role(namespace=namespace, name=resource_name)
+        elif kind == "RoleBinding":
+            kube.delete_role_binding(namespace=namespace, name=resource_name)
+        logger.info(f"Rolled back {kind} '{resource_name}' in {namespace}")
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning(f"Failed to roll back {kind} '{resource_name}': {e.reason}")
+
+
 def _create_signing_resources(
     kube: KubernetesService,
     name: str,
     namespace: str,
     request: "CreateAgentRequest",
 ) -> None:
-    """Create ConfigMap and ServiceAccount required for AgentCard signing.
-    Must be called BEFORE workload creation."""
+    """Create ConfigMap, ServiceAccount, Role, and RoleBinding for AgentCard signing.
+
+    Must be called BEFORE workload creation. On failure, any partially-created
+    resources are cleaned up to avoid orphans.
+    """
     port = DEFAULT_IN_CLUSTER_PORT
     if request.servicePorts and len(request.servicePorts) > 0:
         port = request.servicePorts[0].targetPort
 
-    sa_body = {
-        "apiVersion": "v1",
-        "kind": "ServiceAccount",
-        "metadata": {"name": f"{name}-sa", "namespace": namespace},
-    }
-    try:
-        kube.create_service_account(namespace=namespace, body=sa_body)
-        logger.info(f"Created ServiceAccount '{name}-sa' in namespace '{namespace}'")
-    except ApiException as e:
-        if e.status == 409:
-            logger.info(f"ServiceAccount '{name}-sa' already exists, reusing")
-        else:
-            raise
+    created: list[tuple[str, str]] = []
 
-    card_json = json.dumps({
-        "name": name,
-        "description": f"Agent '{name}'",
-        "url": f"http://{name}.{namespace}.svc.cluster.local:{port}",
-        "version": "1.0.0",
-        "capabilities": {"streaming": False, "pushNotifications": False},
-        "defaultInputModes": ["text/plain"],
-        "defaultOutputModes": ["text/plain"],
-        "skills": [],
-    })
-    cm_body = {
-        "apiVersion": "v1",
-        "kind": "ConfigMap",
-        "metadata": {"name": f"{name}-card-unsigned", "namespace": namespace},
-        "data": {"agent.json": card_json},
-    }
     try:
-        kube.create_configmap(namespace=namespace, body=cm_body)
-        logger.info(f"Created ConfigMap '{name}-card-unsigned' in namespace '{namespace}'")
-    except ApiException as e:
-        if e.status == 409:
-            logger.info(f"ConfigMap '{name}-card-unsigned' already exists, reusing")
-        else:
-            raise
+        sa_body = {
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {"name": f"{name}-sa", "namespace": namespace},
+        }
+        try:
+            kube.create_service_account(namespace=namespace, body=sa_body)
+            logger.info(f"Created ServiceAccount '{name}-sa' in namespace '{namespace}'")
+            created.append(("ServiceAccount", f"{name}-sa"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info(f"ServiceAccount '{name}-sa' already exists, reusing")
+            else:
+                raise
 
-    role_body = {
-        "apiVersion": "rbac.authorization.k8s.io/v1",
-        "kind": "Role",
-        "metadata": {"name": f"{name}-card-writer", "namespace": namespace},
-        "rules": [{"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get", "create", "update"]}],
-    }
-    try:
-        kube.create_role(namespace=namespace, body=role_body)
-        logger.info(f"Created Role '{name}-card-writer' in namespace '{namespace}'")
-    except ApiException as e:
-        if e.status == 409:
-            logger.info(f"Role '{name}-card-writer' already exists, reusing")
-        else:
-            raise
+        card_json = json.dumps(
+            {
+                "name": name,
+                "description": f"Agent '{name}'",
+                "url": f"http://{name}.{namespace}.svc.cluster.local:{port}",
+                "version": "1.0.0",
+                "capabilities": {"streaming": False, "pushNotifications": False},
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
+                "skills": [],
+            }
+        )
+        cm_body = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": f"{name}-card-unsigned", "namespace": namespace},
+            "data": {"agent.json": card_json},
+        }
+        try:
+            kube.create_configmap(namespace=namespace, body=cm_body)
+            logger.info(f"Created ConfigMap '{name}-card-unsigned' in namespace '{namespace}'")
+            created.append(("ConfigMap", f"{name}-card-unsigned"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info(f"ConfigMap '{name}-card-unsigned' already exists, reusing")
+            else:
+                raise
 
-    rolebinding_body = {
-        "apiVersion": "rbac.authorization.k8s.io/v1",
-        "kind": "RoleBinding",
-        "metadata": {"name": f"{name}-card-writer", "namespace": namespace},
-        "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": f"{name}-card-writer"},
-        "subjects": [{"kind": "ServiceAccount", "name": f"{name}-sa", "namespace": namespace}],
-    }
-    try:
-        kube.create_role_binding(namespace=namespace, body=rolebinding_body)
-        logger.info(f"Created RoleBinding '{name}-card-writer' in namespace '{namespace}'")
-    except ApiException as e:
-        if e.status == 409:
-            logger.info(f"RoleBinding '{name}-card-writer' already exists, reusing")
-        else:
-            raise
+        unsigned_cm = f"{name}-card-unsigned"
+        signed_cm = f"{name}-card-signed"
+        role_body = {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": {"name": f"{name}-card-writer", "namespace": namespace},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "resourceNames": [unsigned_cm, signed_cm],
+                    "verbs": ["get", "update"],
+                },
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "verbs": ["create"],
+                },
+            ],
+        }
+        try:
+            kube.create_role(namespace=namespace, body=role_body)
+            logger.info(f"Created Role '{name}-card-writer' in namespace '{namespace}'")
+            created.append(("Role", f"{name}-card-writer"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info(f"Role '{name}-card-writer' already exists, reusing")
+            else:
+                raise
+
+        rolebinding_body = {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "RoleBinding",
+            "metadata": {"name": f"{name}-card-writer", "namespace": namespace},
+            "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Role",
+                "name": f"{name}-card-writer",
+            },
+            "subjects": [{"kind": "ServiceAccount", "name": f"{name}-sa", "namespace": namespace}],
+        }
+        try:
+            kube.create_role_binding(namespace=namespace, body=rolebinding_body)
+            logger.info(f"Created RoleBinding '{name}-card-writer' in namespace '{namespace}'")
+            created.append(("RoleBinding", f"{name}-card-writer"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info(f"RoleBinding '{name}-card-writer' already exists, reusing")
+            else:
+                raise
+
+    except Exception:
+        logger.error(
+            f"Signing resource creation failed for '{name}', rolling back {len(created)} resource(s)"
+        )
+        for kind, resource_name in reversed(created):
+            _cleanup_signing_resource(kube, namespace, kind, resource_name)
+        raise
 
 
 def _inject_signing_into_manifest(manifest: dict, name: str) -> None:
@@ -2335,6 +2392,13 @@ def _inject_signing_into_manifest(manifest: dict, name: str) -> None:
     signed card both to a shared emptyDir volume and to a Kubernetes ConfigMap
     (``{name}-card-signed``).  The operator reads the ConfigMap directly,
     falling back to HTTP fetch for agents that don't use signing.
+
+    ``istio.io/dataplane-mode=none`` disables Istio ambient mesh for this pod.
+    This is required because the SPIRE CSI driver volume (``csi.spiffe.io``)
+    conflicts with Istio ambient's ztunnel-based traffic capture — the
+    init-container needs direct access to the SPIRE agent socket before the
+    mesh dataplane is ready. Without this label the init-container hangs
+    waiting for a socket that ztunnel intercepts.
     """
     pod_spec = manifest["spec"]["template"]["spec"]
     pod_labels = manifest["spec"]["template"]["metadata"].setdefault("labels", {})
@@ -2342,37 +2406,51 @@ def _inject_signing_into_manifest(manifest: dict, name: str) -> None:
 
     pod_spec["serviceAccountName"] = f"{name}-sa"
 
-    pod_spec.setdefault("initContainers", []).append({
-        "name": "sign-agentcard",
-        "image": AGENTCARD_SIGNER_IMAGE,
-        "imagePullPolicy": "Always",
-        "env": [
-            {"name": "SPIFFE_ENDPOINT_SOCKET", "value": "unix:///run/spire/agent-sockets/spire-agent.sock"},
-            {"name": "UNSIGNED_CARD_PATH", "value": "/etc/agentcard/agent.json"},
-            {"name": "AGENT_CARD_PATH", "value": "/app/.well-known/agent-card.json"},
-            {"name": "SIGN_TIMEOUT", "value": AGENTCARD_SIGN_TIMEOUT},
-            {"name": "AGENT_NAME", "value": name},
-            {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}}},
-        ],
-        "volumeMounts": [
-            {"name": "spire-agent-socket", "mountPath": "/run/spire/agent-sockets", "readOnly": True},
-            {"name": "unsigned-card", "mountPath": "/etc/agentcard", "readOnly": True},
-            {"name": "signed-card", "mountPath": "/app/.well-known"},
-        ],
-        "securityContext": {
-            "runAsNonRoot": True,
-            "readOnlyRootFilesystem": True,
-            "allowPrivilegeEscalation": False,
-            "capabilities": {"drop": ["ALL"]},
-        },
-        "resources": AGENTCARD_SIGNER_RESOURCES,
-    })
+    pod_spec.setdefault("initContainers", []).append(
+        {
+            "name": "sign-agentcard",
+            "image": AGENTCARD_SIGNER_IMAGE,
+            "imagePullPolicy": "Always",
+            "env": [
+                {
+                    "name": "SPIFFE_ENDPOINT_SOCKET",
+                    "value": "unix:///run/spire/agent-sockets/spire-agent.sock",
+                },
+                {"name": "UNSIGNED_CARD_PATH", "value": "/etc/agentcard/agent.json"},
+                {"name": "AGENT_CARD_PATH", "value": "/app/.well-known/agent-card.json"},
+                {"name": "SIGN_TIMEOUT", "value": AGENTCARD_SIGN_TIMEOUT},
+                {"name": "AGENT_NAME", "value": name},
+                {
+                    "name": "POD_NAMESPACE",
+                    "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}},
+                },
+            ],
+            "volumeMounts": [
+                {
+                    "name": "spire-agent-socket",
+                    "mountPath": "/run/spire/agent-sockets",
+                    "readOnly": True,
+                },
+                {"name": "unsigned-card", "mountPath": "/etc/agentcard", "readOnly": True},
+                {"name": "signed-card", "mountPath": "/app/.well-known"},
+            ],
+            "securityContext": {
+                "runAsNonRoot": True,
+                "readOnlyRootFilesystem": True,
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+            },
+            "resources": AGENTCARD_SIGNER_RESOURCES,
+        }
+    )
 
-    pod_spec.setdefault("volumes", []).extend([
-        {"name": "spire-agent-socket", "csi": {"driver": "csi.spiffe.io", "readOnly": True}},
-        {"name": "unsigned-card", "configMap": {"name": f"{name}-card-unsigned"}},
-        {"name": "signed-card", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}},
-    ])
+    pod_spec.setdefault("volumes", []).extend(
+        [
+            {"name": "spire-agent-socket", "csi": {"driver": "csi.spiffe.io", "readOnly": True}},
+            {"name": "unsigned-card", "configMap": {"name": f"{name}-card-unsigned"}},
+            {"name": "signed-card", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}},
+        ]
+    )
 
     pod_spec["containers"][0].setdefault("volumeMounts", []).append(
         {"name": "signed-card", "mountPath": "/app/.well-known", "readOnly": True}
@@ -2399,9 +2477,8 @@ async def _schedule_identity_binding_patch(
         return
 
     import asyncio
-    import time
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _do_patch():
         card_name = f"{name}-deployment-card"
@@ -2420,6 +2497,8 @@ async def _schedule_identity_binding_patch(
                 break
             except ApiException as e:
                 if e.status == 404 and attempt < 9:
+                    import time
+
                     time.sleep(3)
                     continue
                 break
@@ -2457,10 +2536,14 @@ async def _schedule_identity_binding_patch(
                     plural=AGENTCARD_PLURAL,
                     body=card_body,
                 )
-                logger.info(f"Created AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})")
+                logger.info(
+                    f"Created AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})"
+                )
             except ApiException as e:
                 if e.status == 409:
-                    logger.info(f"AgentCard '{card_name}' appeared concurrently, will patch instead")
+                    logger.info(
+                        f"AgentCard '{card_name}' appeared concurrently, will patch instead"
+                    )
                 else:
                     logger.error(f"Failed to create AgentCard '{card_name}': {e}")
                     return
@@ -2483,11 +2566,13 @@ async def _schedule_identity_binding_patch(
                 name=card_name,
                 body=patch_body,
             )
-            logger.info(f"Patched AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})")
+            logger.info(
+                f"Patched AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})"
+            )
         except ApiException as e:
             logger.error(f"Failed to patch AgentCard '{card_name}' with identity binding: {e}")
 
-    loop.run_in_executor(None, _do_patch)
+    await loop.run_in_executor(None, _do_patch)
 
 
 def _build_deployment_manifest(
@@ -2548,6 +2633,7 @@ def _build_deployment_manifest(
 
     if request.startCommand:
         import shlex
+
         container_spec["command"] = shlex.split(request.startCommand)
 
     manifest = {
@@ -3016,7 +3102,11 @@ async def create_agent(
             if request.createHttpRoute:
                 message += " HTTPRoute will be created after the build completes."
 
-        if request.signingEnabled and request.spireEnabled and request.workloadType != WORKLOAD_TYPE_JOB:
+        if (
+            request.signingEnabled
+            and request.spireEnabled
+            and request.workloadType != WORKLOAD_TYPE_JOB
+        ):
             await _schedule_identity_binding_patch(kube, request.name, request.namespace)
         return CreateAgentResponse(
             success=True,
