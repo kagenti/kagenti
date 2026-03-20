@@ -56,8 +56,11 @@ func NewRootCmdWithContext(ctx *AdminContext) *cobra.Command {
 		newVersionCmd(),
 		newPreflightCmd(ctx),
 		newClusterCmd(ctx),
+		newStatusCmd(ctx),
 		newRunCmd(ctx),
 		newTestCmd(ctx),
+		newLogsCmd(ctx),
+		newRolloutCmd(ctx),
 	)
 
 	return root

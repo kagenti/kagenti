@@ -1,0 +1,6 @@
+# Custom agent/deployment configs — user-specific, not committed
+# Place YAML files here for kagenti-admin deploy --config <file>
+*
+!.gitkeep
+!.gitignore
+!README.md

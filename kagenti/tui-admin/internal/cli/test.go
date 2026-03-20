@@ -218,5 +218,69 @@ Supports dependency overrides for testing unreleased versions.`,
 	cmd.Flags().BoolVar(&skipDestroy, "skip-cluster-destroy", false, "Keep cluster after test")
 	cmd.Flags().StringVar(&clusterName, "name", "kagenti", "Cluster name (Kind only)")
 
+	// Test type subcommands with --filter
+	cmd.AddCommand(
+		newTestTypeCmd(ctx, "unit", "Run backend unit tests", "kagenti/backend", "uv run pytest tests/ -v"),
+		newTestTypeCmd(ctx, "e2e", "Run backend E2E tests", "kagenti", "uv run pytest tests/e2e/ -v -m 'not observability'"),
+		newTestTypeCmd(ctx, "ui", "Run Playwright UI tests", "kagenti/ui-v2", "npx playwright test"),
+		newTestTypeCmd(ctx, "agent", "Run agent conversation tests", "kagenti", "uv run pytest tests/e2e/common/test_agent_conversation.py -v"),
+		newTestTypeCmd(ctx, "observability", "Run observability tests (Kiali/Phoenix)", "kagenti", "uv run pytest tests/e2e/ -v -m 'observability'"),
+		newTestTypeCmd(ctx, "all", "Run all test suites", "kagenti", ""),
+	)
+
+	return cmd
+}
+
+// newTestTypeCmd creates a subcommand for a specific test type with --filter support.
+func newTestTypeCmd(ctx *AdminContext, name, short, workDir, baseCmd string) *cobra.Command {
+	var filter string
+
+	cmd := &cobra.Command{
+		Use:   name,
+		Short: short,
+		Example: fmt.Sprintf("  kagenti-admin test %s\n  kagenti-admin test %s --filter \"pattern\"", name, name),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repoRoot, err := ctx.getRepoRoot()
+			if err != nil {
+				return err
+			}
+
+			testCmd := baseCmd
+			if filter != "" {
+				switch name {
+				case "ui":
+					testCmd = fmt.Sprintf("npx playwright test --grep \"%s\"", filter)
+				case "unit", "e2e", "agent", "observability":
+					testCmd += fmt.Sprintf(" -k \"%s\"", filter)
+				}
+			}
+
+			if name == "all" {
+				// Run all test suites in sequence
+				suites := []struct{ name, dir, cmd string }{
+					{"unit", "kagenti/backend", "uv run pytest tests/ -v"},
+					{"e2e", "kagenti", "uv run pytest tests/e2e/ -v -m 'not observability'"},
+					{"ui", "kagenti/ui-v2", "npx playwright test"},
+				}
+				for _, s := range suites {
+					fmt.Fprintf(cmd.OutOrStdout(), "\n=== %s tests ===\n", s.name)
+					r := ctx.getRunner()
+					fullCmd := fmt.Sprintf("cd %s/%s && %s", repoRoot, s.dir, s.cmd)
+					if _, err := r.Run(context.Background(), "bash", "-c", fullCmd); err != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "%s tests failed: %v\n", s.name, err)
+					}
+				}
+				return nil
+			}
+
+			r := ctx.getRunner()
+			fullCmd := fmt.Sprintf("cd %s/%s && %s", repoRoot, workDir, testCmd)
+			fmt.Fprintf(cmd.OutOrStdout(), "Running: %s\n\n", testCmd)
+			_, err = r.Run(context.Background(), "bash", "-c", fullCmd)
+			return err
+		},
+	}
+
+	cmd.Flags().StringVar(&filter, "filter", "", "Test filter pattern (pytest -k or playwright --grep)")
 	return cmd
 }
