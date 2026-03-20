@@ -6,6 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	helmclient "github.com/kagenti/kagenti/kagenti/tui-admin/internal/helm"
+	k8sclient "github.com/kagenti/kagenti/kagenti/tui-admin/internal/k8s"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestCreateSecrets(t *testing.T) {
@@ -106,6 +111,67 @@ func TestExecCommandOutput(t *testing.T) {
 	}
 	if out != "captured\n" {
 		t.Errorf("got %q", out)
+	}
+}
+
+func TestWaitReadyNoClient(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	inst := &Installer{Stdout: &buf, K8s: nil}
+
+	err := inst.WaitReady(context.Background())
+	if err != nil {
+		t.Fatalf("should not error with nil k8s: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("No k8s client")) {
+		t.Error("should log 'No k8s client'")
+	}
+}
+
+func TestWaitReadyWithFakeClient(t *testing.T) {
+	t.Parallel()
+	// Use a fake k8s client — WaitForNamespace will timeout on empty namespaces
+	// but WaitReady should not error (it logs warnings)
+	k8sFake := &k8sclient.Client{Clientset: fake.NewSimpleClientset()}
+
+	var buf bytes.Buffer
+	inst := &Installer{Stdout: &buf, K8s: k8sFake}
+
+	// Use a short context to avoid long waits
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := inst.WaitReady(ctx)
+	if err != nil {
+		t.Fatalf("WaitReady should not error (logs warnings): %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("Waiting for")) {
+		t.Error("should log 'Waiting for'")
+	}
+}
+
+func TestInstallPlatformNoScript(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	var buf bytes.Buffer
+	// Create env values so ResolveEnvValues works
+	envDir := filepath.Join(dir, "deployments", "envs")
+	os.MkdirAll(envDir, 0o755)
+	os.WriteFile(filepath.Join(envDir, "dev_values.yaml"), []byte("charts: {}"), 0o644)
+
+	inst := &Installer{
+		RepoRoot: dir,
+		Env:      "dev",
+		Stdout:   &buf,
+		Helm:     &helmclient.MockClient{},
+	}
+
+	err := inst.InstallPlatform(context.Background())
+	if err == nil {
+		t.Error("should fail when installer script not found")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("Installing platform")) {
+		t.Error("should log installing")
 	}
 }
 

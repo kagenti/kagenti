@@ -13,27 +13,32 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 )
 
-// Client wraps the Helm SDK for chart operations.
+// Interface defines operations for Helm chart management.
+type Interface interface {
+	InstallOrUpgrade(name, chartPath, namespace string, values map[string]interface{}) (*release.Release, error)
+	Uninstall(name, namespace string) error
+	List(namespace string) ([]*release.Release, error)
+}
+
+// Client wraps the Helm SDK for chart operations. Implements Interface.
 type Client struct {
 	Settings   *cli.EnvSettings
 	Stdout     io.Writer
 	Kubeconfig string
 }
 
-// NewClient creates a Helm client. If kubeconfig is empty, uses default.
+// Ensure Client implements Interface.
+var _ Interface = (*Client)(nil)
+
+// NewClient creates a Helm client.
 func NewClient(kubeconfig string) *Client {
 	settings := cli.New()
 	if kubeconfig != "" {
 		settings.KubeConfig = kubeconfig
 	}
-	return &Client{
-		Settings:   settings,
-		Stdout:     os.Stdout,
-		Kubeconfig: kubeconfig,
-	}
+	return &Client{Settings: settings, Stdout: os.Stdout, Kubeconfig: kubeconfig}
 }
 
-// actionConfig creates a Helm action.Configuration for a namespace.
 func (c *Client) actionConfig(namespace string) (*action.Configuration, error) {
 	cfg := new(action.Configuration)
 	if err := cfg.Init(c.Settings.RESTClientGetter(), namespace, "secret", func(format string, v ...interface{}) {
@@ -51,26 +56,21 @@ func (c *Client) InstallOrUpgrade(name, chartPath, namespace string, values map[
 		return nil, err
 	}
 
-	// Check if release exists
 	hist := action.NewHistory(cfg)
 	hist.Max = 1
-	_, err = hist.Run(name)
-	if err == nil {
-		// Release exists — upgrade
+	if _, err = hist.Run(name); err == nil {
 		return c.upgrade(cfg, name, chartPath, namespace, values)
 	}
-
-	// Release doesn't exist — install
 	return c.install(cfg, name, chartPath, namespace, values)
 }
 
 func (c *Client) install(cfg *action.Configuration, name, chartPath, namespace string, values map[string]interface{}) (*release.Release, error) {
-	install := action.NewInstall(cfg)
-	install.ReleaseName = name
-	install.Namespace = namespace
-	install.CreateNamespace = true
-	install.Wait = true
-	install.Timeout = 5 * time.Minute
+	i := action.NewInstall(cfg)
+	i.ReleaseName = name
+	i.Namespace = namespace
+	i.CreateNamespace = true
+	i.Wait = true
+	i.Timeout = 5 * time.Minute
 
 	chart, err := loader.Load(chartPath)
 	if err != nil {
@@ -78,7 +78,7 @@ func (c *Client) install(cfg *action.Configuration, name, chartPath, namespace s
 	}
 
 	fmt.Fprintf(c.Stdout, "Installing %s in %s...\n", name, namespace)
-	rel, err := install.Run(chart, values)
+	rel, err := i.Run(chart, values)
 	if err != nil {
 		return nil, fmt.Errorf("helm install %s: %w", name, err)
 	}
@@ -88,10 +88,10 @@ func (c *Client) install(cfg *action.Configuration, name, chartPath, namespace s
 }
 
 func (c *Client) upgrade(cfg *action.Configuration, name, chartPath, namespace string, values map[string]interface{}) (*release.Release, error) {
-	upgrade := action.NewUpgrade(cfg)
-	upgrade.Namespace = namespace
-	upgrade.Wait = true
-	upgrade.Timeout = 5 * time.Minute
+	u := action.NewUpgrade(cfg)
+	u.Namespace = namespace
+	u.Wait = true
+	u.Timeout = 5 * time.Minute
 
 	chart, err := loader.Load(chartPath)
 	if err != nil {
@@ -99,7 +99,7 @@ func (c *Client) upgrade(cfg *action.Configuration, name, chartPath, namespace s
 	}
 
 	fmt.Fprintf(c.Stdout, "Upgrading %s in %s...\n", name, namespace)
-	rel, err := upgrade.Run(name, chart, values)
+	rel, err := u.Run(name, chart, values)
 	if err != nil {
 		return nil, fmt.Errorf("helm upgrade %s: %w", name, err)
 	}
@@ -115,10 +115,8 @@ func (c *Client) Uninstall(name, namespace string) error {
 		return err
 	}
 
-	uninstall := action.NewUninstall(cfg)
 	fmt.Fprintf(c.Stdout, "Uninstalling %s from %s...\n", name, namespace)
-	_, err = uninstall.Run(name)
-	if err != nil {
+	if _, err = action.NewUninstall(cfg).Run(name); err != nil {
 		return fmt.Errorf("helm uninstall %s: %w", name, err)
 	}
 
@@ -133,7 +131,33 @@ func (c *Client) List(namespace string) ([]*release.Release, error) {
 		return nil, err
 	}
 
-	list := action.NewList(cfg)
-	list.AllNamespaces = namespace == ""
-	return list.Run()
+	l := action.NewList(cfg)
+	l.AllNamespaces = namespace == ""
+	return l.Run()
+}
+
+// MockClient is a test double for helm.Interface.
+type MockClient struct {
+	InstallCalls []string
+	Releases     []*release.Release
+	Err          error
+}
+
+var _ Interface = (*MockClient)(nil)
+
+func (m *MockClient) InstallOrUpgrade(name, chartPath, namespace string, values map[string]interface{}) (*release.Release, error) {
+	m.InstallCalls = append(m.InstallCalls, name)
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	rel := &release.Release{Name: name, Namespace: namespace}
+	return rel, nil
+}
+
+func (m *MockClient) Uninstall(name, namespace string) error {
+	return m.Err
+}
+
+func (m *MockClient) List(namespace string) ([]*release.Release, error) {
+	return m.Releases, m.Err
 }

@@ -16,7 +16,7 @@ import (
 
 // Installer orchestrates the Kagenti platform installation.
 type Installer struct {
-	Helm     *helmclient.Client
+	Helm     helmclient.Interface
 	K8s      *k8sclient.Client
 	RepoRoot string
 	Env      string // dev, k3s, ocp
@@ -93,53 +93,41 @@ kagenti:
 }
 
 // InstallPlatform installs all Helm charts via the Ansible installer.
-// This is the current bridge — it calls the Ansible installer.
-// Future: replace with direct Helm SDK calls per chart.
+// Bridge to Ansible — will be replaced with direct Helm SDK calls.
 func (inst *Installer) InstallPlatform(ctx context.Context) error {
-	// For now, delegate to Ansible. This will be replaced in the next phase
-	// with direct Helm SDK calls for each chart.
-	fmt.Fprintln(inst.Stdout, "Installing platform via Ansible (will be replaced with native Helm in next phase)...")
+	fmt.Fprintln(inst.Stdout, "Installing platform via Ansible...")
 
-	// Load values to determine what to install
 	values, err := helmclient.ResolveEnvValues(inst.RepoRoot, inst.Env)
 	if err != nil {
 		return fmt.Errorf("load env values: %w", err)
 	}
 
-	// Log what will be installed
 	if charts, ok := values["charts"].(map[string]interface{}); ok {
 		for name, v := range charts {
 			if chartCfg, ok := v.(map[string]interface{}); ok {
-				enabled, _ := chartCfg["enabled"].(bool)
-				if enabled {
+				if enabled, _ := chartCfg["enabled"].(bool); enabled {
 					fmt.Fprintf(inst.Stdout, "  Chart: %s (enabled)\n", name)
 				}
 			}
 		}
 	}
 
-	// Call the Ansible installer (bridge to existing scripts)
-	// TODO: Replace with direct Helm SDK calls
 	installerScript := filepath.Join(inst.RepoRoot, "deployments", "ansible", "run-install.sh")
 	if _, err := os.Stat(installerScript); err != nil {
 		return fmt.Errorf("installer script not found: %s", installerScript)
 	}
 
-	// Use exec to run the installer
 	cmd := fmt.Sprintf("cd %s && PATH=/opt/homebrew/opt/helm@3/bin:$PATH ./deployments/ansible/run-install.sh --env %s", inst.RepoRoot, inst.Env)
 	return execCommand(ctx, inst.Stdout, "bash", "-c", cmd)
 }
 
 // WaitReady waits for all platform components to be ready.
 func (inst *Installer) WaitReady(ctx context.Context) error {
-	namespaces := []string{
-		"kagenti-system",
-		"keycloak",
-		"istio-system",
-		"cert-manager",
+	if inst.K8s == nil {
+		fmt.Fprintln(inst.Stdout, "No k8s client, skipping wait")
+		return nil
 	}
-
-	for _, ns := range namespaces {
+	for _, ns := range []string{"kagenti-system", "keycloak", "istio-system", "cert-manager"} {
 		fmt.Fprintf(inst.Stdout, "Waiting for %s...\n", ns)
 		if err := inst.K8s.WaitForNamespace(ctx, ns, 5*time.Minute); err != nil {
 			fmt.Fprintf(inst.Stdout, "Warning: %s not fully ready: %v\n", ns, err)
@@ -149,10 +137,6 @@ func (inst *Installer) WaitReady(ctx context.Context) error {
 	}
 	return nil
 }
-
-// ConfigureDockerhost is now in dockerhost.go — native Go implementation
-// that discovers host IP via host.docker.internal and creates EndpointSlice
-// + Service + NetworkPolicy without shelling out to scripts.
 
 // execCommand runs a command with stdout/stderr piped.
 func execCommand(ctx context.Context, w io.Writer, name string, args ...string) error {
