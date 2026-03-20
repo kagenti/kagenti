@@ -227,7 +227,7 @@ class KubernetesService:
                 body=body,
             )
         except ApiException as e:
-            logger.error(f"Error patching {plural}/{name} in {namespace}: {e}")
+            logger.error("Error patching %s/%s in %s: %s", plural, name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
@@ -418,7 +418,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating ConfigMap in {namespace}: {e}")
+            logger.error("Error creating ConfigMap in %s: %s", namespace, e)
             raise
 
     def delete_configmap(self, namespace: str, name: str) -> None:
@@ -429,7 +429,7 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting ConfigMap {name} in {namespace}: {e}")
+            logger.error("Error deleting ConfigMap %s in %s: %s", name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
@@ -445,7 +445,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating ServiceAccount in {namespace}: {e}")
+            logger.error("Error creating ServiceAccount in %s: %s", namespace, e)
             raise
 
     def delete_service_account(self, namespace: str, name: str) -> None:
@@ -456,7 +456,7 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting ServiceAccount {name} in {namespace}: {e}")
+            logger.error("Error deleting ServiceAccount %s in %s: %s", name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
@@ -472,7 +472,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating Role in {namespace}: {e}")
+            logger.error("Error creating Role in %s: %s", namespace, e)
             raise
 
     def delete_role(self, namespace: str, name: str) -> None:
@@ -483,7 +483,7 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting Role {name} in {namespace}: {e}")
+            logger.error("Error deleting Role %s in %s: %s", name, namespace, e)
             raise
 
     def create_role_binding(self, namespace: str, body: dict) -> dict:
@@ -495,7 +495,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating RoleBinding in {namespace}: {e}")
+            logger.error("Error creating RoleBinding in %s: %s", namespace, e)
             raise
 
     def delete_role_binding(self, namespace: str, name: str) -> None:
@@ -506,7 +506,7 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting RoleBinding {name} in {namespace}: {e}")
+            logger.error("Error deleting RoleBinding %s in %s: %s", name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------

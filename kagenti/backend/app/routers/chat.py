@@ -8,6 +8,7 @@ Provides endpoints for chatting with A2A agents using the Agent-to-Agent protoco
 """
 
 import logging
+import re
 from typing import Optional, List
 from uuid import uuid4
 
@@ -19,6 +20,8 @@ from pydantic import BaseModel
 from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
 from app.core.config import settings
 from app.core.constants import DEFAULT_IN_CLUSTER_PORT, DEFAULT_OFF_CLUSTER_PORT
+
+_DNS_LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -68,6 +71,10 @@ async def _resolve_service_clusterip(name: str, namespace: str) -> Optional[str]
 
     Uses httpx.AsyncClient to avoid blocking the event loop.
     """
+    if not _DNS_LABEL_RE.match(name) or not _DNS_LABEL_RE.match(namespace):
+        logger.warning("Invalid DNS label in service lookup: name=%s namespace=%s", name, namespace)
+        return None
+
     import os
     import ssl
 

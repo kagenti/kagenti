@@ -674,7 +674,7 @@ async def list_agents(
                     agentcard_lookup[target_name] = ac
         except ApiException as e:
             if e.status not in (404, 403):
-                logger.warning(f"Failed to list AgentCards: {e.reason}")
+                logger.warning("Failed to list AgentCards: %s", e.reason)
 
         for agent in agents:
             ac = agentcard_lookup.get(agent.name)
@@ -716,7 +716,7 @@ async def get_agentcard_status(
         )
     except ApiException as e:
         if e.status not in (404, 403):
-            logger.warning(f"Failed to list AgentCards: {e.reason}")
+            logger.warning("Failed to list AgentCards: %s", e.reason)
         return AgentCardStatusResponse(found=False)
 
     matched = None
@@ -960,7 +960,7 @@ async def delete_agent(
         if e.status == 404:
             pass
         else:
-            logger.warning(f"Failed to delete ConfigMap '{name}-card-unsigned': {e.reason}")
+            logger.warning("Failed to delete ConfigMap '%s-card-unsigned': %s", name, e.reason)
 
     # Delete signing ServiceAccount (if exists)
     try:
@@ -970,7 +970,7 @@ async def delete_agent(
         if e.status == 404:
             pass
         else:
-            logger.warning(f"Failed to delete ServiceAccount '{name}-sa': {e.reason}")
+            logger.warning("Failed to delete ServiceAccount '%s-sa': %s", name, e.reason)
 
     # Delete signing RBAC Role (if exists)
     try:
@@ -980,7 +980,7 @@ async def delete_agent(
         if e.status == 404:
             pass
         else:
-            logger.warning(f"Failed to delete Role '{name}-card-writer': {e.reason}")
+            logger.warning("Failed to delete Role '%s-card-writer': %s", name, e.reason)
 
     # Delete signing RBAC RoleBinding (if exists)
     try:
@@ -990,7 +990,7 @@ async def delete_agent(
         if e.status == 404:
             pass
         else:
-            logger.warning(f"Failed to delete RoleBinding '{name}-card-writer': {e.reason}")
+            logger.warning("Failed to delete RoleBinding '%s-card-writer': %s", name, e.reason)
 
     # Delete signed card ConfigMap (if exists)
     try:
@@ -1000,7 +1000,7 @@ async def delete_agent(
         if e.status == 404:
             pass
         else:
-            logger.warning(f"Failed to delete ConfigMap '{name}-card-signed': {e.reason}")
+            logger.warning("Failed to delete ConfigMap '%s-card-signed': %s", name, e.reason)
 
     # Delete AgentCard CRs matching this agent by targetRef.name
     try:
@@ -1027,10 +1027,10 @@ async def delete_agent(
                     messages.append(f"AgentCard '{ac_name}' deleted")
                 except ApiException as e:
                     if e.status != 404:
-                        logger.warning(f"Failed to delete AgentCard '{ac_name}': {e.reason}")
+                        logger.warning("Failed to delete AgentCard '%s': %s", ac_name, e.reason)
     except ApiException as e:
         if e.status not in (404, 403):
-            logger.warning(f"Failed to list AgentCards for cleanup: {e.reason}")
+            logger.warning("Failed to list AgentCards for cleanup: %s", e.reason)
 
     # Legacy cleanup: Delete the Agent CR if it exists
     try:
@@ -2258,10 +2258,10 @@ def _cleanup_signing_resource(
             kube.delete_role(namespace=namespace, name=resource_name)
         elif kind == "RoleBinding":
             kube.delete_role_binding(namespace=namespace, name=resource_name)
-        logger.info(f"Rolled back {kind} '{resource_name}' in {namespace}")
+        logger.info("Rolled back %s '%s' in %s", kind, resource_name, namespace)
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Failed to roll back {kind} '{resource_name}': {e.reason}")
+            logger.warning("Failed to roll back %s '%s': %s", kind, resource_name, e.reason)
 
 
 def _create_signing_resources(
@@ -2289,11 +2289,11 @@ def _create_signing_resources(
         }
         try:
             kube.create_service_account(namespace=namespace, body=sa_body)
-            logger.info(f"Created ServiceAccount '{name}-sa' in namespace '{namespace}'")
+            logger.info("Created ServiceAccount '%s-sa' in namespace '%s'", name, namespace)
             created.append(("ServiceAccount", f"{name}-sa"))
         except ApiException as e:
             if e.status == 409:
-                logger.info(f"ServiceAccount '{name}-sa' already exists, reusing")
+                logger.info("ServiceAccount '%s-sa' already exists, reusing", name)
             else:
                 raise
 
@@ -2317,11 +2317,15 @@ def _create_signing_resources(
         }
         try:
             kube.create_configmap(namespace=namespace, body=cm_body)
-            logger.info(f"Created ConfigMap '{name}-card-unsigned' in namespace '{namespace}'")
+            logger.info(
+                "Created ConfigMap '%s-card-unsigned' in namespace '%s'",
+                name,
+                namespace,
+            )
             created.append(("ConfigMap", f"{name}-card-unsigned"))
         except ApiException as e:
             if e.status == 409:
-                logger.info(f"ConfigMap '{name}-card-unsigned' already exists, reusing")
+                logger.info("ConfigMap '%s-card-unsigned' already exists, reusing", name)
             else:
                 raise
 
@@ -2347,11 +2351,11 @@ def _create_signing_resources(
         }
         try:
             kube.create_role(namespace=namespace, body=role_body)
-            logger.info(f"Created Role '{name}-card-writer' in namespace '{namespace}'")
+            logger.info("Created Role '%s-card-writer' in namespace '%s'", name, namespace)
             created.append(("Role", f"{name}-card-writer"))
         except ApiException as e:
             if e.status == 409:
-                logger.info(f"Role '{name}-card-writer' already exists, reusing")
+                logger.info("Role '%s-card-writer' already exists, reusing", name)
             else:
                 raise
 
@@ -2368,17 +2372,23 @@ def _create_signing_resources(
         }
         try:
             kube.create_role_binding(namespace=namespace, body=rolebinding_body)
-            logger.info(f"Created RoleBinding '{name}-card-writer' in namespace '{namespace}'")
+            logger.info(
+                "Created RoleBinding '%s-card-writer' in namespace '%s'",
+                name,
+                namespace,
+            )
             created.append(("RoleBinding", f"{name}-card-writer"))
         except ApiException as e:
             if e.status == 409:
-                logger.info(f"RoleBinding '{name}-card-writer' already exists, reusing")
+                logger.info("RoleBinding '%s-card-writer' already exists, reusing", name)
             else:
                 raise
 
     except Exception:
         logger.error(
-            f"Signing resource creation failed for '{name}', rolling back {len(created)} resource(s)"
+            "Signing resource creation failed for '%s', rolling back %s resource(s)",
+            name,
+            len(created),
         )
         for kind, resource_name in reversed(created):
             _cleanup_signing_resource(kube, namespace, kind, resource_name)
@@ -2504,7 +2514,10 @@ async def _schedule_identity_binding_patch(
                 break
 
         if not card_found:
-            logger.info(f"AgentCard '{card_name}' not auto-created, creating with identity binding")
+            logger.info(
+                "AgentCard '%s' not auto-created, creating with identity binding",
+                card_name,
+            )
             card_body = {
                 "apiVersion": f"{AGENTCARD_CRD_GROUP}/{AGENTCARD_CRD_VERSION}",
                 "kind": "AgentCard",
@@ -2545,7 +2558,7 @@ async def _schedule_identity_binding_patch(
                         f"AgentCard '{card_name}' appeared concurrently, will patch instead"
                     )
                 else:
-                    logger.error(f"Failed to create AgentCard '{card_name}': {e}")
+                    logger.error("Failed to create AgentCard '%s': %s", card_name, e)
                     return
             else:
                 return
@@ -2570,7 +2583,11 @@ async def _schedule_identity_binding_patch(
                 f"Patched AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})"
             )
         except ApiException as e:
-            logger.error(f"Failed to patch AgentCard '{card_name}' with identity binding: {e}")
+            logger.error(
+                "Failed to patch AgentCard '%s' with identity binding: %s",
+                card_name,
+                e,
+            )
 
     await loop.run_in_executor(None, _do_patch)
 
