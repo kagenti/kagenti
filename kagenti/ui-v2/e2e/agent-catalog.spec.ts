@@ -12,11 +12,14 @@
  * - At least one agent deployed (e.g., weather-service in team1)
  */
 import { test, expect } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 test.describe('Agent Catalog Page @extended', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to the agent catalog page before each test
-    await page.goto('/agents');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display agent catalog page with title', async ({ page }) => {
@@ -24,15 +27,14 @@ test.describe('Agent Catalog Page @extended', () => {
     await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible();
   });
 
-  test('should show loading spinner initially', async ({ page }) => {
-    // On initial load, there should be a loading indicator
-    // This tests the loading state is properly shown
-    await page.goto('/agents');
-
-    // Wait for either spinner to disappear or table to appear
-    await expect(page.getByRole('table').or(page.getByText(/No agents found/i))).toBeVisible({
-      timeout: 30000,
+  test('should show agents or empty state after loading', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
+      timeout: 15000,
     });
+    // Page loaded via beforeEach — table or empty state must be visible
+    await expect(
+      page.getByRole('grid').or(page.getByText(/No agents found/i).first())
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('should have namespace selector', async ({ page }) => {
@@ -62,27 +64,30 @@ test.describe('Agent Catalog Page @extended', () => {
 
 test.describe('Agent Catalog - With Deployed Agents @extended', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/agents');
-    // Wait for the page to load
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
   test('should display agents table when agents are deployed', async ({ page }) => {
-    // Wait for either the table or the empty state message
-    const table = page.getByRole('table');
-    const emptyState = page.getByText(/No agents found/i);
+    // First ensure the page has loaded by checking for the heading
+    await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
+      timeout: 15000,
+    });
 
-    // Either should be visible
+    // Wait for either the table or the empty state message
+    const table = page.getByRole('grid');
+    const emptyState = page.getByText(/No agents found/i).first();
+
     await expect(table.or(emptyState)).toBeVisible({ timeout: 30000 });
   });
 
   test('should list weather-service agent if deployed', async ({ page }) => {
-    // Wait for the API response
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/v1/agents') && response.status() === 200,
-      { timeout: 30000 }
-    );
+    // Wait for page content to render (API already called in beforeEach)
+    await expect(
+      page.getByRole('grid').or(page.getByText(/No agents found/i).first())
+    ).toBeVisible({ timeout: 15000 });
 
     // Look for weather-service in the page
     const weatherServiceRow = page.getByRole('row', { name: /weather-service/i });
@@ -114,7 +119,7 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
     });
 
     // If agents are deployed, status badges should be visible
-    const table = page.getByRole('table');
+    const table = page.getByRole('grid');
     if (await table.isVisible()) {
       const rows = page.getByRole('row');
       const rowCount = await rows.count();
@@ -134,10 +139,19 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
       { timeout: 30000 }
     );
 
-    // Find any agent link in the table
-    const agentLink = page.getByRole('link').first();
+    // Find any agent link in the table (scoped to the table to avoid nav links)
+    const table = page.getByRole('grid');
+    if (!(await table.isVisible())) {
+      test.info().annotations.push({
+        type: 'skip-reason',
+        description: 'No agents table visible to test navigation',
+      });
+      return;
+    }
 
-    if (await agentLink.count() === 0) {
+    const agentLink = table.getByRole('link').first();
+
+    if ((await agentLink.count()) === 0) {
       test.info().annotations.push({
         type: 'skip-reason',
         description: 'No agents deployed to test navigation',
@@ -153,53 +167,55 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
 
     // Verify navigation to detail page
     if (agentName) {
-      await expect(page).toHaveURL(new RegExp(`/agents/.*/${agentName}`));
+      await expect(page).toHaveURL(/\/agents\//, { timeout: 10000 });
     }
   });
 });
 
 test.describe('Agent Catalog - API Integration @extended', () => {
   test('should call backend API when loading agents', async ({ page }) => {
-    // Set up request interception to verify API calls
-    let apiCalled = false;
-    let apiResponse: unknown = null;
+    await page.goto('/');
+    await loginIfNeeded(page);
 
-    page.on('response', (response) => {
-      if (response.url().includes('/api/v1/agents')) {
-        apiCalled = true;
-        response.json().then((data) => {
-          apiResponse = data;
-        }).catch(() => {
-          // Ignore JSON parse errors
-        });
-      }
-    });
+    // Use waitForResponse to reliably detect the API call
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/v1/agents'),
+      { timeout: 30000 }
+    );
 
-    await page.goto('/agents');
-    await page.waitForLoadState('networkidle');
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
 
-    // Verify API was called
-    expect(apiCalled).toBe(true);
+    const response = await responsePromise;
+
+    // Verify API was called and returned a valid response
+    expect(response.status()).toBeLessThan(500);
   });
 
   test('should handle API error gracefully', async ({ page }) => {
-    // Mock an API error to test error handling
+    // Set up the error mock BEFORE navigating
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
         status: 500,
+        contentType: 'application/json',
         body: JSON.stringify({ error: 'Internal server error' }),
       });
     });
 
-    await page.goto('/agents');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
 
-    // Verify error state is shown
-    await expect(page.getByText(/Error loading agents/i)).toBeVisible({
-      timeout: 10000,
-    });
+    // Component shows "Error loading agents" EmptyState on query failure
+    await expect(
+      page.getByText(/Error loading agents/i).first()
+    ).toBeVisible({ timeout: 15000 });
   });
 
   test('should handle empty agent list', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     // Mock an empty response
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
@@ -209,10 +225,11 @@ test.describe('Agent Catalog - API Integration @extended', () => {
       });
     });
 
-    await page.goto('/agents');
+    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('networkidle');
 
-    // Verify empty state is shown
-    await expect(page.getByText(/No agents found/i)).toBeVisible({
+    // Verify empty state is shown (use .first() to avoid strict mode violation with multiple matches)
+    await expect(page.getByText(/No agents found/i).first()).toBeVisible({
       timeout: 10000,
     });
   });

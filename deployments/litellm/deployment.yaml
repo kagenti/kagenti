@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: kagenti-system
+  labels:
+    app.kubernetes.io/name: litellm-proxy
+    app.kubernetes.io/component: model-gateway
+    app.kubernetes.io/part-of: kagenti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm-proxy
+        app.kubernetes.io/component: model-gateway
+        istio.io/dataplane-mode: ambient
+        istio.io/use-waypoint: waypoint
+    spec:
+      serviceAccountName: litellm-proxy
+      containers:
+      - name: litellm
+        # TODO: Build a custom LiteLLM image that relocates Prisma cache from
+        # /root/.cache to a non-root path, so we can drop the anyuid SCC.
+        # Upstream issue: Prisma binaries are baked at build time under /root/.cache
+        # and are only readable by root. On OpenShift with restricted SCC, the
+        # arbitrary UID cannot read these binaries. Options:
+        #   1. Custom Dockerfile: COPY --chown=1001 /root/.cache /home/litellm/.cache
+        #   2. Upstream PR to litellm to use a non-root user in Dockerfile
+        #   3. Init container that copies binaries to an emptyDir with world-read
+        image: ghcr.io/berriai/litellm-database:main-v1.63.14-stable
+        args:
+        - --config
+        - /app/config.yaml
+        - --port
+        - "4000"
+        ports:
+        - containerPort: 4000
+          name: http
+          protocol: TCP
+        env:
+        - name: LITELLM_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litellm-proxy-secret
+              key: master-key
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: litellm-proxy-secret
+              key: database-url
+        - name: STORE_MODEL_IN_DB
+          value: "True"
+        - name: LITELLM_LOG
+          value: "DEBUG"
+        envFrom:
+        - secretRef:
+            name: litellm-model-keys
+        volumeMounts:
+        - name: config
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+          readOnly: true
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: 4000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health/liveliness
+            port: 4000
+          initialDelaySeconds: 45
+          periodSeconds: 30
+          timeoutSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: litellm-config

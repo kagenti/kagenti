@@ -16,9 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
+from app.core.auth import require_roles, get_required_user, ROLE_VIEWER, ROLE_OPERATOR, TokenData
 from app.core.config import settings
-from app.utils.routes import get_agent_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -58,12 +57,31 @@ class ChatResponse(BaseModel):
     content: str
     session_id: str
     is_complete: bool = True
+    username: Optional[str] = None
+
+
+def _get_agent_url(name: str, namespace: str, port: int = 8080) -> str:
+    """Get the URL for an A2A agent.
+
+    Returns different URL formats based on deployment context:
+    - In-cluster: http://{name}.{namespace}.svc.cluster.local:{port}
+    - Off-cluster (local dev): http://{name}.{namespace}.{domain}:{port}
+
+    TODO: Port should be discovered from the K8s Service spec instead of
+    hardcoded. Agents deployed via the wizard use port 8000 (direct),
+    while agents with AuthBridge sidecar use port 8080 (envoy proxy).
+    The proper fix is to query the Service port for the agent name.
+    """
+    if settings.is_running_in_cluster:
+        return f"http://{name}.{namespace}.svc.cluster.local:{port}"
+    else:
+        domain = settings.domain_name
+        return f"http://{name}.{namespace}.{domain}:{port}"
 
 
 @router.get(
     "/{namespace}/{name}/agent-card",
     response_model=AgentCardResponse,
-    dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_agent_card(
     namespace: str,
@@ -74,13 +92,22 @@ async def get_agent_card(
 
     The agent card describes the agent's capabilities, skills, and metadata.
     """
-    agent_url = get_agent_url(name, namespace)
+    # Try port 8080 first (AuthBridge agents), fallback to 8000 (direct agents)
+    # TODO: discover port from K8s Service spec
+    agent_url = _get_agent_url(name, namespace, port=8080)
     card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(card_url)
-            response.raise_for_status()
+            try:
+                response = await client.get(card_url)
+                response.raise_for_status()
+            except (httpx.ConnectError, httpx.HTTPStatusError):
+                # Fallback to port 8000 (sandbox agents without AuthBridge)
+                agent_url = _get_agent_url(name, namespace, port=8000)
+                card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
+                response = await client.get(card_url)
+                response.raise_for_status()
             card_data = response.json()
 
             # Parse capabilities
@@ -138,6 +165,7 @@ async def send_message(
     name: str,
     request: ChatRequest,
     http_request: Request,
+    user: TokenData = Depends(get_required_user),
 ) -> ChatResponse:
     """
     Send a message to an A2A agent and get the response.
@@ -148,7 +176,8 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = get_agent_url(name, namespace)
+    # TODO: discover port from K8s Service. Try 8080 (AuthBridge), fallback 8000 (direct)
+    agent_url = _get_agent_url(name, namespace, port=8080)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload
@@ -208,6 +237,7 @@ async def send_message(
                 content=content or "No response from agent",
                 session_id=session_id,
                 is_complete=True,
+                username=user.username,
             )
 
     except httpx.HTTPStatusError as e:
@@ -276,7 +306,11 @@ def _extract_text_from_parts(parts: list) -> str:
 
 
 async def _stream_a2a_response(
-    agent_url: str, message: str, session_id: str, authorization: Optional[str] = None
+    agent_url: str,
+    message: str,
+    session_id: str,
+    authorization: Optional[str] = None,
+    username: Optional[str] = None,
 ):
     """Generator for streaming A2A responses with event metadata."""
     import json
@@ -329,7 +363,10 @@ async def _stream_a2a_response(
                         data = line[6:]
                         if data == "[DONE]":
                             logger.info("Received [DONE] signal from agent")
-                            yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+                            done_payload = {"done": True, "session_id": session_id}
+                            if username:
+                                done_payload["username"] = username
+                            yield f"data: {json.dumps(done_payload)}\n\n"
                             break
 
                         try:
@@ -338,12 +375,22 @@ async def _stream_a2a_response(
                             if "result" in chunk:
                                 logger.info(f"Result keys: {list(chunk['result'].keys())}")
 
+                            # Fan out event to sidecar manager
+                            try:
+                                from app.services.sidecar_manager import get_sidecar_manager
+
+                                get_sidecar_manager().fan_out_event(session_id, chunk)
+                            except Exception:
+                                pass  # Sidecar fan-out is best-effort
+
                             if "result" not in chunk:
                                 logger.info("Skipping chunk - no 'result' field")
                                 continue
 
                             result = chunk["result"]
                             payload = {"session_id": session_id}
+                            if username:
+                                payload["username"] = username
 
                             # TaskArtifactUpdateEvent
                             if "artifact" in result:
@@ -381,8 +428,16 @@ async def _stream_a2a_response(
                                     parts = status["message"].get("parts", [])
                                     status_message = _extract_text_from_parts(parts)
 
+                                # Detect HITL (Human-in-the-Loop) requests
+                                event_type = "status"
+                                if state == "INPUT_REQUIRED":
+                                    event_type = "hitl_request"
+                                    logger.info(
+                                        f"HITL request detected: taskId={result.get('taskId')}"
+                                    )
+
                                 payload["event"] = {
-                                    "type": "status",
+                                    "type": event_type,
                                     "taskId": result.get("taskId", ""),
                                     "state": state,
                                     "final": is_final,
@@ -477,6 +532,7 @@ async def stream_message(
     name: str,
     request: ChatRequest,
     http_request: Request,
+    user: TokenData = Depends(get_required_user),
 ):
     """
     Send a message to an A2A agent and stream the response.
@@ -487,14 +543,15 @@ async def stream_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = get_agent_url(name, namespace)
+    # TODO: discover port from K8s Service. Try 8080 (AuthBridge), fallback 8000 (direct)
+    agent_url = _get_agent_url(name, namespace, port=8080)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present
     authorization = http_request.headers.get("Authorization")
 
     return StreamingResponse(
-        _stream_a2a_response(agent_url, request.message, session_id, authorization),
+        _stream_a2a_response(agent_url, request.message, session_id, authorization, user.username),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

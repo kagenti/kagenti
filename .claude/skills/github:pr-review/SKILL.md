@@ -47,8 +47,8 @@ comments, and posts a GitHub review after user approval.
 PR diffs can be very large. **Always redirect diff output to files and analyze with subagents.**
 
 ```bash
-export LOG_DIR=/tmp/kagenti/review/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-review}"
+mkdir -p "$LOG_DIR"
 ```
 
 Small output OK inline: `gh pr checks`, `gh pr view --json` (metadata only).

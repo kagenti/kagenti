@@ -34,8 +34,8 @@ Iterative development workflow using CI as the test environment. Commit changes,
 
 ```bash
 # Session-scoped log directory — use worktree name to avoid collisions
-export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+mkdir -p "$LOG_DIR"
 ```
 
 ### Key Patterns
@@ -490,7 +490,7 @@ After **3+ failed CI iterations**, consider switching to `tdd:hypershift` for re
 
 ```bash
 # Check if cluster exists for current worktree
-WORKTREE=$(basename $(git rev-parse --show-toplevel))
+WORKTREE=$(basename "${WORKSPACE_DIR:-$(pwd)}")
 ls ~/clusters/hcp/kagenti-hypershift-custom-*/auth/kubeconfig 2>/dev/null
 ```
 

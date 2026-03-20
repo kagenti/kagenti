@@ -1,0 +1,148 @@
+# Kagenti Agent Sandbox Template — with Squid Proxy Sidecar (Phase 2)
+#
+# Security layers:
+#   C16: read-only root, caps dropped, non-root, no SA token, seccomp
+#   C5:  Squid proxy sidecar — domain allowlist (LLM API, pypi, GitHub only)
+#   C6:  Agent never has direct egress — all traffic goes through proxy
+#
+# The proxy sidecar runs alongside the agent container. The agent's
+# HTTP_PROXY/HTTPS_PROXY point to localhost:3128 (the proxy).
+# The NetworkPolicy allows the agent to reach only DNS + the proxy.
+# The proxy has unrestricted egress to forward allowed domains.
+#
+# Domains can be customized via ALLOWED_DOMAINS env var on the proxy container.
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: kagenti-agent-sandbox
+  namespace: team1
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/component: agent-sandbox
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      # Agent container — all egress via proxy
+      - name: agent
+        image: python:3.11-slim
+        command:
+        - sh
+        - -c
+        - |
+          echo "Installing nono-py for Landlock..."
+          pip install --target=/tmp/pip-packages --quiet --no-cache-dir nono-py 2>/dev/null
+          export PYTHONPATH=/tmp/pip-packages:$PYTHONPATH
+          echo "Sandbox agent starting with Landlock enforcement"
+          exec python3 nono_launcher.py python3 agent_server.py
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: HTTP_PROXY
+          value: "http://localhost:3128"
+        - name: HTTPS_PROXY
+          value: "http://localhost:3128"
+        - name: http_proxy
+          value: "http://localhost:3128"
+        - name: https_proxy
+          value: "http://localhost:3128"
+        - name: NO_PROXY
+          value: "localhost,127.0.0.1,.svc,.cluster.local"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+      # Squid proxy sidecar — domain allowlist enforcement
+      # Proxy is the security boundary (not the secured workload), so it gets
+      # a writable filesystem for Squid cache/logs/pid files.
+      - name: proxy
+        image: image-registry.openshift-image-registry.svc:5000/agent-sandbox-system/sandbox-proxy:latest
+        ports:
+        - containerPort: 3128
+          protocol: TCP
+        env:
+        - name: ALLOWED_DOMAINS
+          value: ".anthropic.com,.openai.com,.pypi.org,.pythonhosted.org,.github.com,.githubusercontent.com"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: proxy-tmp
+          mountPath: /tmp
+        - name: proxy-var
+          mountPath: /var/spool/squid
+        - name: proxy-log
+          mountPath: /var/log/squid
+        - name: proxy-run
+          mountPath: /var/run/squid
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - name: proxy-tmp
+        emptyDir: {}
+      - name: proxy-var
+        emptyDir: {}
+      - name: proxy-log
+        emptyDir: {}
+      - name: proxy-run
+        emptyDir: {}
+
+  # NetworkPolicy: pod can reach DNS + external HTTPS/HTTP only
+  # Since proxy is a sidecar (same pod, shared localhost), no inter-container policy needed.
+  # The pod-level NetworkPolicy restricts what the pod can reach externally.
+  # OVN-Kubernetes on OpenShift requires explicit namespaceSelector for DNS egress.
+  networkPolicy:
+    ingress: []
+    egress:
+    # DNS — must target openshift-dns namespace explicitly (OVN-K requirement)
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 5353
+    # Allow proxy to reach external domains (HTTPS/HTTP)
+    - ports:
+      - protocol: TCP
+        port: 443
+      - protocol: TCP
+        port: 80

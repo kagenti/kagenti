@@ -1,0 +1,5 @@
+# Legion agent dependencies (on top of platform_base)
+langgraph>=0.2.55
+langchain-community>=0.3.9
+langchain-openai>=0.3.7
+langgraph-checkpoint-postgres>=2.0.0

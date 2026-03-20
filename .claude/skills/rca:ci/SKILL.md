@@ -14,8 +14,9 @@ can dump thousands of lines into context. ALL CI log analysis MUST happen in sub
 
 ```bash
 # Session-scoped log directory
-export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+# Works in both Claude Code (local) and sandbox agent (container)
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**
@@ -209,11 +210,32 @@ Escalate when:
 rca:ci inconclusive? → Create cluster → rca:hypershift
 ```
 
+## gh CLI Flag Reference (use ONLY these — do NOT invent flags)
+
+### `gh run list`
+Valid: `--branch <name>`, `--status <state>`, `--event <type>`, `--limit <n>`,
+       `--workflow <name>`, `--json <fields>`, `--commit <sha>`
+INVALID (do NOT use): `--head`, `--head-ref`, `--pr`, `--pull-request`
+To filter by PR: use `gh pr checks <pr-number>` or `--branch <pr-branch-name>`
+
+### `gh run view <run_id>`
+Valid: `--log`, `--log-failed`, `--job <id>`, `--web`
+Always redirect large output: `gh run view <id> --log-failed > $LOG_DIR/ci.log`
+
+### `gh pr`
+- `gh pr checks <number>` — CI status for a specific PR
+- `gh pr view <number> --json checks` — JSON CI check data
+- `gh pr list --state open|closed|merged`
+
+### If a flag fails
+Run `gh <command> --help` to see valid flags. Do NOT guess.
+
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| List failed runs | `gh run list --status failure` |
+| List failed runs | `gh run list --status failure --limit 5` |
+| CI for specific PR | `gh pr checks <pr-number>` |
 | View failed logs | `gh run view <id> --log-failed` |
 | Download artifacts | `gh run download <id>` |
 | Open in browser | `gh run view <id> --web` |

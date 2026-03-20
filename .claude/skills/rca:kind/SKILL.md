@@ -12,8 +12,8 @@ Root cause analysis workflow for failures on local Kind clusters.
 **All diagnostic commands MUST redirect output to files.**
 
 ```bash
-export LOG_DIR=/tmp/kagenti/rca/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-rca}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**

@@ -101,8 +101,8 @@ This gate runs once per session, not on every iteration.
 
 ```bash
 # Session-scoped log directory — use worktree name to avoid collisions
-export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+mkdir -p "$LOG_DIR"
 ```
 
 ### Log Analysis Rule

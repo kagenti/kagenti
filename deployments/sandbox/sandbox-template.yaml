@@ -1,0 +1,84 @@
+# Kagenti Agent Sandbox Template
+# Phase 1: Container hardening defaults (C16) + Pod lifecycle (C1) + Runtime isolation placeholder (C2)
+#
+# Security hardening:
+#   - Read-only root filesystem
+#   - All capabilities dropped
+#   - Non-root user (OpenShift namespace UID range)
+#   - No privilege escalation
+#   - No service account token auto-mount
+#   - Default-deny NetworkPolicy (DNS egress only)
+#
+# gVisor RuntimeClass is commented out until installed on cluster nodes.
+# Uncomment runtimeClassName when gVisor is available.
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: kagenti-agent-sandbox
+  namespace: team1
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/component: agent-sandbox
+    spec:
+      # Uncomment when gVisor RuntimeClass is installed on cluster nodes:
+      # runtimeClassName: gvisor
+      automountServiceAccountToken: false
+      # UIDs are assigned from the namespace range by OpenShift SCC.
+      # Do not hardcode runAsUser/runAsGroup/fsGroup on OpenShift.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: agent
+        image: python:3.11-slim
+        command:
+        - sh
+        - -c
+        - |
+          echo "Installing nono-py for Landlock..."
+          pip install --target=/tmp/pip-packages --quiet --no-cache-dir nono-py 2>/dev/null
+          export PYTHONPATH=/tmp/pip-packages:$PYTHONPATH
+          echo "Sandbox agent starting with Landlock enforcement"
+          exec python3 nono_launcher.py python3 agent_server.py
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+
+  # Default-deny NetworkPolicy
+  # Only allows DNS egress for name resolution.
+  # Phase 2 will add egress rules for LLM API, pypi, and GitHub API via Squid proxy.
+  networkPolicy:
+    ingress: []
+    egress:
+    - ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53

@@ -45,7 +45,10 @@ if [ -z "${KEYCLOAK_USER:-}" ]; then
     log_info "Keycloak user: $KC_USER"
 fi
 if [ -z "${KEYCLOAK_PASSWORD:-}" ]; then
-    KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+    # Try demo realm test user password first (kagenti-test-users secret)
+    # then fall back to master realm admin (keycloak-initial-admin secret)
+    KC_PASS=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || \
+              kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
     export KEYCLOAK_PASSWORD="$KC_PASS"
     log_info "Keycloak password: ${KC_PASS:0:4}..."
 fi
@@ -67,8 +70,22 @@ if [ -n "${PLAYWRIGHT_GREP_INVERT:-}" ]; then
     log_info "Playwright tag filter: --grep-invert '$PLAYWRIGHT_GREP_INVERT'"
 fi
 
-log_info "Running Playwright E2E tests..."
-CI=true npx playwright test --reporter=list,html "${GREP_ARGS[@]}" 2>&1 || {
+# Determine which test suites to run.
+# Start with agent-chat (always present). Add sandbox tests if the sandbox
+# spec exists (only in the sandbox-agent branch).
+TEST_SPECS="agent-chat"
+if [ -f "e2e/sandbox.spec.ts" ]; then
+    TEST_SPECS="$TEST_SPECS sandbox"
+    log_info "Sandbox tests detected — including sandbox.spec.ts"
+fi
+if [ -f "e2e/sandbox-sidecars.spec.ts" ]; then
+    TEST_SPECS="$TEST_SPECS sandbox-sidecars"
+    log_info "Sidecar tests detected — including sandbox-sidecars.spec.ts"
+fi
+
+# Run Playwright tests
+log_info "Running Playwright E2E tests: $TEST_SPECS"
+CI=true npx playwright test $TEST_SPECS --reporter=list,html "${GREP_ARGS[@]}" 2>&1 || {
     log_error "Playwright UI tests failed"
 
     if [ -d playwright-report ]; then

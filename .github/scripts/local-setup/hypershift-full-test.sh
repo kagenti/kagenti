@@ -171,12 +171,14 @@ REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 # Parse arguments - track both include and skip flags
 INCLUDE_CREATE=false
 INCLUDE_INSTALL=false
+INCLUDE_AGENT_SANDBOX=false
 INCLUDE_AGENTS=false
 INCLUDE_TEST=false
 INCLUDE_UI_TESTS=false
 INCLUDE_DESTROY=false
 SKIP_CREATE=false
 SKIP_INSTALL=false
+SKIP_AGENT_SANDBOX=false
 SKIP_AGENTS=false
 SKIP_TEST=false
 SKIP_UI_TESTS=false
@@ -209,6 +211,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --include-kagenti-install)
             INCLUDE_INSTALL=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-agent-sandbox)
+            INCLUDE_AGENT_SANDBOX=true
             WHITELIST_MODE=true
             HAS_PHASE_FLAGS=true
             shift
@@ -251,6 +259,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-kagenti-install)
             SKIP_INSTALL=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-agent-sandbox)
+            SKIP_AGENT_SANDBOX=true
             HAS_PHASE_FLAGS=true
             shift
             ;;
@@ -336,6 +349,7 @@ fi
 if [ "$WHITELIST_MODE" = "true" ]; then
     RUN_CREATE=$INCLUDE_CREATE
     RUN_INSTALL=$INCLUDE_INSTALL
+    RUN_AGENT_SANDBOX=$INCLUDE_AGENT_SANDBOX
     RUN_AGENTS=$INCLUDE_AGENTS
     RUN_TEST=$INCLUDE_TEST
     RUN_UI_TESTS=$INCLUDE_UI_TESTS
@@ -346,6 +360,7 @@ else
     # Note: kagenti-uninstall defaults to false in blacklist mode (opt-in)
     RUN_CREATE=true
     RUN_INSTALL=true
+    RUN_AGENT_SANDBOX=true
     RUN_AGENTS=true
     RUN_TEST=true
     RUN_UI_TESTS=true
@@ -353,6 +368,7 @@ else
     RUN_DESTROY=true
     [ "$SKIP_CREATE" = "true" ] && RUN_CREATE=false
     [ "$SKIP_INSTALL" = "true" ] && RUN_INSTALL=false
+    [ "$SKIP_AGENT_SANDBOX" = "true" ] && RUN_AGENT_SANDBOX=false
     [ "$SKIP_AGENTS" = "true" ] && RUN_AGENTS=false
     [ "$SKIP_TEST" = "true" ] && RUN_TEST=false
     [ "$SKIP_UI_TESTS" = "true" ] && RUN_UI_TESTS=false
@@ -951,6 +967,22 @@ fi
 if [ "$RUN_INSTALL" = "true" ]; then
     log_phase "PHASE 2: Install Kagenti Platform"
 
+    # Auto-detect Helm v3 when v4 is the default
+    if command -v helm >/dev/null 2>&1; then
+        helm_major=$(helm version --short 2>/dev/null | grep -oE '^v([0-9]+)' | tr -d 'v')
+        if [ "$helm_major" = "4" ]; then
+            # Look for helm@3 from Homebrew
+            HELM3_PATH="/opt/homebrew/opt/helm@3/bin"
+            if [ -x "$HELM3_PATH/helm" ]; then
+                export PATH="$HELM3_PATH:$PATH"
+                log_step "Helm v4 detected — using Helm v3 from $HELM3_PATH ($(helm version --short 2>/dev/null))"
+            else
+                log_error "Helm v4 detected but helm@3 not found. Install with: brew install helm@3"
+                exit 1
+            fi
+        fi
+    fi
+
     if [ "$CLEAN_KAGENTI" = "true" ]; then
         log_step "Uninstalling Kagenti (--clean-kagenti)..."
         ./deployments/ansible/cleanup-install.sh || true
@@ -968,8 +1000,48 @@ if [ "$RUN_INSTALL" = "true" ]; then
     log_step "Waiting for CRDs..."
     ./.github/scripts/kagenti-operator/41-wait-crds.sh
 
+
+    log_step "Applying pipeline template..."
+    ./.github/scripts/kagenti-operator/42-apply-pipeline-template.sh
+
+    log_step "Fixing Keycloak admin (RHBK operator workaround)..."
+    ./.github/scripts/kagenti-operator/36-fix-keycloak-admin.sh
+
+    log_step "Creating test users in Keycloak (admin, dev-user, ns-admin)..."
+    ./kagenti/auth/create-test-users.sh
+
+    # Deploy LiteLLM proxy (model gateway + virtual keys)
+    if [ -f "$MAIN_REPO_ROOT/.env.maas" ] || [ -f "$REPO_ROOT/.env.maas" ]; then
+        log_step "Deploying LiteLLM proxy..."
+        ./.github/scripts/kagenti-operator/38-deploy-litellm.sh
+    else
+        log_warn "Skipping LiteLLM — .env.maas not found (agents will need manual LLM secret)"
+    fi
 else
     log_phase "PHASE 2: Skipping Kagenti Installation"
+fi
+
+# ============================================================================
+# PHASE 2.1: Build platform images from source (backend, UI)
+# ============================================================================
+
+if [ "$RUN_INSTALL" = "true" ]; then
+    log_phase "PHASE 2.1: Build Platform Images from Source"
+    log_step "Building backend and UI from current branch..."
+    ./.github/scripts/kagenti-operator/37-build-platform-images.sh
+fi
+
+# ============================================================================
+# PHASE 2.5: Deploy Agent-Sandbox Controller
+# ============================================================================
+
+if [ "$RUN_AGENT_SANDBOX" = "true" ]; then
+    log_phase "PHASE 2.5: Deploy Agent-Sandbox Controller"
+
+    log_step "Deploying agent-sandbox controller..."
+    ./.github/scripts/kagenti-operator/35-deploy-agent-sandbox.sh
+else
+    log_phase "PHASE 2.5: Skipping Agent-Sandbox Controller"
 fi
 
 # ============================================================================
@@ -987,6 +1059,9 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    log_step "Deploying sandbox agents..."
+    ./.github/scripts/kagenti-operator/76-deploy-sandbox-agents.sh
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
@@ -1041,11 +1116,48 @@ if [ "$RUN_TEST" = "true" ]; then
         export KEYCLOAK_VERIFY_SSL="false"
     fi
 
+    # Get sandbox variant URLs from routes (if not already set)
+    for _variant in legion hardened basic restricted; do
+        _env_var="SANDBOX_${_variant^^}_URL"
+        _route_name="sandbox-${_variant}"
+        if [ -z "${!_env_var:-}" ]; then
+            _route_host=$(oc get route -n team1 "${_route_name}" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+            if [ -n "$_route_host" ]; then
+                export "${_env_var}=https://${_route_host}"
+                log_step "Found ${_route_name} route: ${!_env_var}"
+            else
+                log_warn "${_route_name} route not found — tests will use in-cluster DNS"
+            fi
+        fi
+    done
+
     # Set config file based on environment
     export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
 
+    # Set up LiteLLM test env vars (port-forward to litellm proxy)
+    if kubectl get svc litellm-proxy -n kagenti-system &>/dev/null; then
+        LITELLM_PF_PORT=14000
+        lsof -ti:${LITELLM_PF_PORT} 2>/dev/null | xargs kill 2>/dev/null || true
+        kubectl port-forward -n kagenti-system svc/litellm-proxy \
+            "${LITELLM_PF_PORT}:4000" &>/tmp/litellm-test-pf.log &
+        LITELLM_PF_PID=$!
+        sleep 3
+        export LITELLM_PROXY_URL="http://localhost:${LITELLM_PF_PORT}"
+        export LITELLM_MASTER_KEY=$(kubectl get secret litellm-proxy-secret -n kagenti-system \
+            -o jsonpath='{.data.master-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        export LITELLM_VIRTUAL_KEY=$(kubectl get secret litellm-virtual-keys -n team1 \
+            -o jsonpath='{.data.api-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        log_step "LITELLM_PROXY_URL: $LITELLM_PROXY_URL (PID: $LITELLM_PF_PID)"
+    else
+        log_warn "LiteLLM proxy not deployed — litellm tests will be skipped"
+    fi
+
     log_step "AGENT_URL: $AGENT_URL"
     log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
+    log_step "SANDBOX_LEGION_URL: ${SANDBOX_LEGION_URL:-not set}"
+    log_step "SANDBOX_HARDENED_URL: ${SANDBOX_HARDENED_URL:-not set}"
+    log_step "SANDBOX_BASIC_URL: ${SANDBOX_BASIC_URL:-not set}"
+    log_step "SANDBOX_RESTRICTED_URL: ${SANDBOX_RESTRICTED_URL:-not set}"
     log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
 
     # Export pytest filter options if specified

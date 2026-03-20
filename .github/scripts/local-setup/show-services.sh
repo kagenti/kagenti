@@ -2,14 +2,16 @@
 # Show Services Script - Display all Kagenti services, URLs, and credentials
 #
 # Usage:
-#   ./.github/scripts/local-setup/show-services.sh [--verbose] [cluster-suffix]
+#   ./.github/scripts/local-setup/show-services.sh [--verbose] [--reveal] [cluster-suffix]
 #
-# Default: compact view with clickable links
+# Default: compact view with clickable links, passwords masked
 # --verbose: full detailed view with pod status, logs commands, infrastructure
+# --reveal:  show actual passwords (default: ********)
 #
 # Examples:
 #   # HyperShift - source .env file first to set MANAGED_BY_TAG
 #   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh
+#   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh --reveal
 #   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh --verbose
 #   source .env.$MANAGED_BY_TAG && ./.github/scripts/local-setup/show-services.sh mlflow
 #
@@ -20,12 +22,23 @@ set -euo pipefail
 
 # Parse flags
 VERBOSE=false
+REVEAL=false
 for arg in "$@"; do
     case "$arg" in
         --verbose|-v) VERBOSE=true ;;
+        --reveal) REVEAL=true ;;
         *) CLUSTER_SUFFIX="$arg" ;;
     esac
 done
+
+# Mask passwords unless --reveal is passed
+show_pass() {
+    if [ "$REVEAL" = "true" ]; then
+        echo "$1"
+    else
+        echo "********"
+    fi
+}
 
 # Colors
 RED=$'\033[0;31m'
@@ -152,10 +165,23 @@ APP_PASS="$KC_ADMIN_PASS"
 KUBEADMIN_PASS=""
 if [ "$ENV_TYPE" = "hypershift" ]; then
     KUBEADMIN_PASS_FILE="$(dirname "$KUBECONFIG")/kubeadmin-password"
-    [ -f "$KUBEADMIN_PASS_FILE" ] && KUBEADMIN_PASS=$(cat "$KUBEADMIN_PASS_FILE")
+    if [ -f "$KUBEADMIN_PASS_FILE" ]; then
+        KUBEADMIN_PASS=$(cat "$KUBEADMIN_PASS_FILE")
+    else
+        # Try fetching from hosted cluster secret on management cluster
+        MGMT_KUBECONFIG="${MGMT_KUBECONFIG:-$HOME/.kube/kagenti-team-mgmt.kubeconfig}"
+        if [ -f "$MGMT_KUBECONFIG" ]; then
+            KUBEADMIN_PASS=$(KUBECONFIG="$MGMT_KUBECONFIG" $CLI get secret -n "clusters-${CLUSTER_NAME}" kubeadmin-password \
+                -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        fi
+    fi
 elif [ "$ENV_TYPE" = "openshift" ]; then
     KUBEADMIN_PASS=$($CLI get secret -n kube-system kubeadmin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 fi
+
+# LiteLLM credentials
+LITELLM_MASTER_KEY=$($CLI get secret -n kagenti-system litellm-proxy-secret -o jsonpath='{.data.master-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+LITELLM_TEAM1_KEY=$($CLI get secret -n team1 litellm-virtual-keys -o jsonpath='{.data.api-key}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
 # =============================================================================
 # COMPACT VIEW (default)
@@ -166,11 +192,23 @@ if [ "$VERBOSE" = "false" ]; then
     echo -e "${CYAN}Kagenti Services${NC} - ${CLUSTER_NAME}"
     echo ""
 
-    # Credentials
-    echo -e "${GREEN}Kagenti UI & MLflow:${NC}  ${APP_USER} / ${APP_PASS}  ${DIM}(master realm)${NC}"
-    echo -e "${GREEN}Keycloak Admin:${NC}       ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}  ${DIM}(master realm)${NC}"
+    # Credentials — master realm
+    echo -e "${GREEN}Keycloak Admin:${NC}       ${KC_ADMIN_USER} / $(show_pass "$KC_ADMIN_PASS")  ${DIM}(master realm)${NC}"
     if [ -n "$KUBEADMIN_PASS" ]; then
-        echo -e "${GREEN}kubeadmin:${NC}            kubeadmin / ${KUBEADMIN_PASS}"
+        echo -e "${GREEN}kubeadmin:${NC}            kubeadmin / $(show_pass "$KUBEADMIN_PASS")"
+    fi
+    echo ""
+
+    # Demo realm users — read passwords from kagenti-test-users secret
+    DEMO_ADMIN_PASS=$($CLI get secret -n keycloak kagenti-test-users -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "admin")
+    DEMO_DEV_PASS=$($CLI get secret -n keycloak kagenti-test-users -o jsonpath='{.data.dev-user-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "dev-user")
+    DEMO_NS_PASS=$($CLI get secret -n keycloak kagenti-test-users -o jsonpath='{.data.ns-admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "ns-admin")
+    echo -e "${GREEN}Demo Realm Users${NC}  ${DIM}(for Kagenti UI, MLflow login)${NC}"
+    echo -e "  admin      / $(show_pass "$DEMO_ADMIN_PASS")      ${DIM}role: admin${NC}"
+    echo -e "  dev-user   / $(show_pass "$DEMO_DEV_PASS")   ${DIM}role: developer${NC}"
+    echo -e "  ns-admin   / $(show_pass "$DEMO_NS_PASS")   ${DIM}role: ns-admin${NC}"
+    if [ "$REVEAL" = "false" ]; then
+        echo -e "  ${DIM}Use --reveal to show passwords${NC}"
     fi
     echo ""
 
@@ -233,8 +271,19 @@ if [ "$VERBOSE" = "false" ]; then
         echo -e "  $(link "$AGENT_URL" "$AGENT_URL")"
     fi
 
+    # LiteLLM (internal only — no external route, use port-forward)
+    if [ -n "$LITELLM_MASTER_KEY" ]; then
+        echo -e "${MAGENTA}LiteLLM Proxy${NC}  ${DIM}(internal only)${NC}"
+        echo -e "  $(link "http://localhost:4000/ui" "http://localhost:4000/ui")  ${DIM}after port-forward${NC}"
+        echo -e "  ${DIM}Port-forward:${NC} $CLI port-forward -n kagenti-system svc/litellm 4000:4000"
+        echo -e "  ${DIM}Master key:${NC}   $(show_pass "$LITELLM_MASTER_KEY")  ${DIM}(login to UI)${NC}"
+        if [ -n "$LITELLM_TEAM1_KEY" ]; then
+            echo -e "  ${DIM}Team1 key:${NC}    $(show_pass "$LITELLM_TEAM1_KEY")  ${DIM}(agent API key)${NC}"
+        fi
+    fi
+
     echo ""
-    echo -e "${DIM}Run with --verbose for full details (status, logs, infrastructure)${NC}"
+    echo -e "${DIM}Run with --verbose for full details | --reveal to show passwords${NC}"
     echo ""
     exit 0
 fi
@@ -278,13 +327,22 @@ echo -e "${CYAN}        (Services using Keycloak - use credentials below)       
 echo "##########################################################################"
 echo ""
 
-echo -e "${GREEN}App Login (Kagenti UI & MLflow):${NC} ${YELLOW}(master realm)${NC}"
-echo "  Username: ${APP_USER}"
-echo "  Password: ${APP_PASS}"
-echo ""
 echo -e "${GREEN}Keycloak Admin:${NC} ${YELLOW}(master realm - admin console only)${NC}"
 echo "  Username: ${KC_ADMIN_USER}"
-echo "  Password: ${KC_ADMIN_PASS}"
+echo "  Password: $(show_pass "$KC_ADMIN_PASS")"
+echo ""
+
+echo -e "${GREEN}Demo Realm Users:${NC} ${YELLOW}(for Kagenti UI, MLflow, API login)${NC}"
+echo "  ┌──────────────┬──────────────┬─────────────┐"
+echo "  │ Username     │ Password     │ Role        │"
+echo "  ├──────────────┼──────────────┼─────────────┤"
+printf "  │ %-12s │ %-12s │ %-11s │\n" "admin" "$(show_pass "$DEMO_ADMIN_PASS")" "admin"
+printf "  │ %-12s │ %-12s │ %-11s │\n" "dev-user" "$(show_pass "$DEMO_DEV_PASS")" "developer"
+printf "  │ %-12s │ %-12s │ %-11s │\n" "ns-admin" "$(show_pass "$DEMO_NS_PASS")" "ns-admin"
+echo "  └──────────────┴──────────────┴─────────────┘"
+if [ "$REVEAL" = "false" ]; then
+    echo -e "  ${DIM}Use --reveal to show passwords${NC}"
+fi
 echo ""
 
 echo "---------------------------------------------------------------------------"
@@ -354,7 +412,7 @@ if [ "$ENV_TYPE" = "hypershift" ] || [ "$ENV_TYPE" = "openshift" ]; then
 
     echo -e "${GREEN}Credentials:${NC} ${YELLOW}(sensitive - do not share)${NC}"
     echo "  Username: kubeadmin"
-    echo "  Password: ${KUBEADMIN_PASS:-N/A}"
+    echo "  Password: $(show_pass "${KUBEADMIN_PASS:-N/A}")"
     echo ""
 
     echo "---------------------------------------------------------------------------"
@@ -502,8 +560,26 @@ echo -e "${BLUE}Service:${NC}      postgres-kc.keycloak.svc.cluster.local:5432"
 POSTGRES_USER=$($CLI get secret -n keycloak keycloak-db-secret -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 POSTGRES_PASS=$($CLI get secret -n keycloak keycloak-db-secret -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 echo -e "${BLUE}Username:${NC}     ${POSTGRES_USER}"
-echo -e "${BLUE}Password:${NC}     ${POSTGRES_PASS}"
+echo -e "${BLUE}Password:${NC}     $(show_pass "$POSTGRES_PASS")"
 echo -e "${BLUE}Database:${NC}     keycloak"
+echo ""
+
+echo "---------------------------------------------------------------------------"
+echo -e "${MAGENTA}LiteLLM Proxy (LLM Gateway)${NC}"
+echo "---------------------------------------------------------------------------"
+LITELLM_STATUS=$($CLI get pods -n kagenti-system -l app=litellm -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "Not Found")
+echo -e "${BLUE}Status:${NC}       $LITELLM_STATUS"
+echo -e "${BLUE}Service:${NC}      litellm.kagenti-system.svc.cluster.local:4000"
+echo -e "${BLUE}Access:${NC}       ${DIM}Internal only — no external route${NC}"
+echo -e "${BLUE}Port-forward:${NC} $CLI port-forward -n kagenti-system svc/litellm 4000:4000"
+echo -e "${BLUE}UI:${NC}           $(link "http://localhost:4000/ui" "http://localhost:4000/ui")  ${DIM}(after port-forward)${NC}"
+if [ -n "$LITELLM_MASTER_KEY" ]; then
+    echo -e "${BLUE}Master Key:${NC}   $(show_pass "$LITELLM_MASTER_KEY")  ${DIM}(login to LiteLLM UI)${NC}"
+fi
+if [ -n "$LITELLM_TEAM1_KEY" ]; then
+    echo -e "${BLUE}Team1 Key:${NC}   $(show_pass "$LITELLM_TEAM1_KEY")  ${DIM}(agent API key)${NC}"
+fi
+echo -e "${BLUE}Auth:${NC}         Master key for admin UI, virtual keys for agent API"
 echo ""
 
 echo "========================================================================="

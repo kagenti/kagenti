@@ -26,5 +26,14 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
+    css: false,
+    setupFiles: ['./src/test-setup.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    exclude: ['e2e/**', 'node_modules/**', 'src/pages/**/*.spec.ts'],
+    server: {
+      deps: {
+        inline: [/@patternfly/, /@xyflow/],
+      },
+    },
   },
 });

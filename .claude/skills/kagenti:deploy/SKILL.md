@@ -12,8 +12,8 @@ This skill guides you through deploying or redeploying the Kagenti Kind cluster 
 **Deploy scripts produce hundreds of lines.** Always redirect to files:
 
 ```bash
-export LOG_DIR=/tmp/kagenti/deploy/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-deploy}"
+mkdir -p "$LOG_DIR"
 
 # Pattern: redirect deploy output
 ./.github/scripts/local-setup/kind-full-test.sh ... > $LOG_DIR/deploy.log 2>&1; echo "EXIT:$?"

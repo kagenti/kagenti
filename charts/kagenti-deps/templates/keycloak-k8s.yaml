@@ -81,6 +81,10 @@ spec:
               port: 9000
             periodSeconds: 10
             failureThreshold: 3
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
           resources:
             limits:
               cpu: 500m
@@ -163,17 +167,29 @@ spec:
   type: ClusterIP
 {{- end }}
 ---
+{{- $secretName := "keycloak-initial-admin" }}
+{{- $ns := .Values.keycloak.namespace }}
+{{- $existingSecret := (lookup "v1" "Secret" $ns $secretName) }}
+{{- $adminUser := "admin" }}
+{{- $adminPass := "" }}
+{{- if $existingSecret }}
+  {{- /* Preserve existing password across upgrades */ -}}
+  {{- $adminPass = (index $existingSecret.data "password" | b64dec) }}
+{{- else }}
+  {{- /* Generate a random 16-char password on first install */ -}}
+  {{- $adminPass = (randAlphaNum 16) }}
+{{- end }}
 apiVersion: v1
 kind: Secret
 metadata:
-  name: keycloak-initial-admin
-  namespace: {{ .Values.keycloak.namespace }}
+  name: {{ $secretName }}
+  namespace: {{ $ns }}
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
     app: keycloak
 data:
-  password: YWRtaW4=
-  username: YWRtaW4=
+  password: {{ $adminPass | b64enc | quote }}
+  username: {{ $adminUser | b64enc | quote }}
 type: kubernetes.io/basic-auth
 ---
 apiVersion: gateway.networking.k8s.io/v1

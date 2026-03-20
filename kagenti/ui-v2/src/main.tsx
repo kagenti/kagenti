@@ -12,6 +12,7 @@ import { AuthProvider, ThemeProvider } from './contexts';
 // PatternFly styles
 import '@patternfly/react-core/dist/styles/base.css';
 import './styles/global.css';
+import './styles/graph-animations.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

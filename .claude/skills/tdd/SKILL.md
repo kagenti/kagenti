@@ -320,8 +320,8 @@ and being re-read on every subsequent turn.
 
 ```bash
 # Session-scoped log directory — ALWAYS set before running commands
-export LOG_DIR=/tmp/kagenti/tdd/$WORKTREE   # or $(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+mkdir -p "$LOG_DIR"
 ```
 
 **Rules:**

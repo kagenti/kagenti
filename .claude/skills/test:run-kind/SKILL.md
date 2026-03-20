@@ -12,8 +12,8 @@ description: Run E2E tests on local Kind cluster
 **Test output MUST go to files.** Test runs produce hundreds of lines.
 
 ```bash
-export LOG_DIR=/tmp/kagenti/tdd/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-tdd}"
+mkdir -p "$LOG_DIR"
 
 # Pattern: redirect test output
 command > $LOG_DIR/test-run.log 2>&1; echo "EXIT:$?"
