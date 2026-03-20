@@ -1,0 +1,144 @@
+name: Cleanup Zombie HyperShift Clusters
+
+on:
+  # Scheduled cleanup daily at 3pm GMT (15:00 UTC)
+  schedule:
+    - cron: '0 15 * * *'
+
+  # Manual trigger with configurable options
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: 'Max cluster age in hours (clusters older than this will be cleaned)'
+        required: false
+        type: string
+        default: '6'
+      dry_run:
+        description: 'Dry run (show what would be deleted without actually deleting)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write  # For creating audit trail issues
+
+jobs:
+  cleanup-ci:
+    name: Cleanup CI Zombies
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hours for long-running deletions
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          # Install OpenShift CLI
+          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz
+          tar -xzf openshift-client-linux.tar.gz
+          sudo mv oc kubectl /usr/local/bin/
+          oc version --client
+
+          # Install jq and AWS CLI
+          sudo apt-get update && sudo apt-get install -y jq awscli
+
+      - name: Setup CI management cluster kubeconfig
+        env:
+          KUBECONFIG_BASE64: ${{ secrets.KUBECONFIG_HCP_CI_MGMT }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/kagenti-hypershift-ci-mgmt.kubeconfig
+          chmod 600 ~/.kube/kagenti-hypershift-ci-mgmt.kubeconfig
+          export KUBECONFIG=~/.kube/kagenti-hypershift-ci-mgmt.kubeconfig
+          oc whoami --show-server
+
+      - name: Setup AWS credentials (CI)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_CI }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_CI }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
+          echo "AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
+
+      - name: Run zombie cleanup (Scheduled)
+        if: github.event_name == 'schedule'
+        env:
+          KUBECONFIG: /home/runner/.kube/kagenti-hypershift-ci-mgmt.kubeconfig
+          MANAGED_BY_TAG: kagenti-hypershift-ci
+        run: |
+          MAX_CLUSTER_AGE_HOURS=6 ./.github/scripts/hypershift/cleanup-zombies.sh --force | tee /tmp/cleanup-ci-output.log
+
+      - name: Run zombie cleanup (Manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          KUBECONFIG: /home/runner/.kube/kagenti-hypershift-ci-mgmt.kubeconfig
+          MANAGED_BY_TAG: kagenti-hypershift-ci
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "false" ]; then
+            ARGS="--force"
+          fi
+          MAX_CLUSTER_AGE_HOURS=${{ github.event.inputs.max_age_hours }} ./.github/scripts/hypershift/cleanup-zombies.sh $ARGS | tee /tmp/cleanup-ci-output.log
+
+      - name: Upload cleanup logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cleanup-ci-logs-${{ github.run_id }}
+          path: /tmp/cleanup-ci-output.log
+          retention-days: 90
+
+      - name: Create audit issue
+        if: (github.event_name == 'schedule' || github.event.inputs.dry_run == 'false') && success()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const logContent = fs.readFileSync('/tmp/cleanup-ci-output.log', 'utf8');
+
+            // Extract zombie count from summary
+            const summaryMatch = logContent.match(/Zombies Found:\s+(\d+)/);
+            const cleanedMatch = logContent.match(/Cleaned:\s+(\d+)/);
+            const failedMatch = logContent.match(/Failed:\s+(\d+)/);
+
+            const zombiesFound = summaryMatch ? summaryMatch[1] : '0';
+            const cleaned = cleanedMatch ? cleanedMatch[1] : '0';
+            const failed = failedMatch ? failedMatch[1] : '0';
+
+            if (parseInt(zombiesFound) > 0) {
+              const timestamp = new Date().toISOString();
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[Auto-Cleanup] CI Zombies - ${zombiesFound} found, ${cleaned} cleaned - ${timestamp}`,
+                body: `## Automated Zombie Cleanup (CI)
+
+            **Environment:** kagenti-hypershift-ci
+            **Timestamp:** ${timestamp}
+            **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+
+            ### Summary
+            - **Zombies Found:** ${zombiesFound}
+            - **Successfully Cleaned:** ${cleaned}
+            - **Failed:** ${failed}
+
+            ### What was cleaned
+            - Orphaned HostedClusters (>6h old)
+            - Orphaned VPCs
+            - Orphaned OIDC providers
+            - Orphaned Elastic IPs
+            - Orphaned Route53 hosted zones
+
+            **Logs:** Check workflow artifacts for detailed cleanup logs.
+
+            ---
+            _This issue was created automatically by the HyperShift zombie cleanup workflow._
+            `,
+                labels: ['infrastructure', 'automated-cleanup', 'hypershift', 'ci']
+              });
+            }
