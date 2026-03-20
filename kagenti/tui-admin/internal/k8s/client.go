@@ -16,7 +16,7 @@ import (
 
 // Client wraps the Kubernetes client-go for cluster operations.
 type Client struct {
-	Clientset *kubernetes.Clientset
+	Clientset kubernetes.Interface
 }
 
 // NewClient creates a Kubernetes client from KUBECONFIG or default config.
