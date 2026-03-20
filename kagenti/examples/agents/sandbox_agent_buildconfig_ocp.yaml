@@ -18,7 +18,7 @@ spec:
     type: Git
     git:
       uri: https://github.com/Ladas/agent-examples.git
-      ref: feat/sandbox-agent
+      ref: feat/stream1-sandbox-agent
     contextDir: a2a/sandbox_agent
     sourceSecret:
       name: github-shipwright-secret

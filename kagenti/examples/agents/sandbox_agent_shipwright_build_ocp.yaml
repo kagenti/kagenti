@@ -16,7 +16,7 @@ spec:
     type: Git
     git:
       url: https://github.com/ladas/agent-examples
-      revision: feat/sandbox-agent
+      revision: feat/stream1-sandbox-agent
       cloneSecret: github-shipwright-secret
     contextDir: a2a/sandbox_agent
   strategy:
