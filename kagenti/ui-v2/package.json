@@ -19,7 +19,7 @@
     "@patternfly/react-icons": "^5.4.0",
     "@patternfly/react-styles": "^5.4.0",
     "@patternfly/react-table": "^5.4.0",
-    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-query": "^5.94.5",
     "js-yaml": "^4.1.0",
     "keycloak-js": "~25.0.6",
     "react": "^18.3.1",
