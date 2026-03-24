@@ -9,7 +9,10 @@
 #    - client-registration (sidecar): Keycloak registration (UID 1000)
 #
 #  This SCC grants exactly the permissions needed — no privileged mode.
-#  Bound to agent SAs via RoleBinding in agent-namespaces.yaml.
+#  Bound to agent namespaces via the `groups` field below.
+#  Note: RBAC RoleBindings for SCC `use` verb are insufficient on some
+#  OpenShift versions — the SCC admission controller requires direct
+#  groups/users on the SCC object itself.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -17,6 +20,10 @@ metadata:
   name: kagenti-authbridge
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
+groups:
+{{- range $.Values.agentNamespaces }}
+  - system:serviceaccounts:{{ . }}
+{{- end }}
 allowHostDirVolumePlugin: false
 allowHostIPC: false
 allowHostNetwork: false
@@ -29,7 +36,7 @@ allowedCapabilities:
   - NET_RAW
 defaultAddCapabilities: []
 requiredDropCapabilities:
-  - ALL
+  - MKNOD
 fsGroup:
   type: RunAsAny
 runAsUser:
@@ -38,6 +45,11 @@ seLinuxContext:
   type: MustRunAs
 supplementalGroups:
   type: RunAsAny
+# TODO: Replace '*' with explicit profiles once webhook seccomp behavior is stable.
+# Track in kagenti-extensions — the webhook should declare which profiles it needs.
+seccompProfiles:
+  - runtime/default
+  - '*'
 volumes:
   - configMap
   - csi
@@ -47,4 +59,21 @@ volumes:
   - persistentVolumeClaim
   - projected
   - secret
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  ClusterRole granting "use" on the kagenti-authbridge SCC.
+#  OpenShift auto-creates ClusterRoles for built-in SCCs but may not do so
+#  reliably for custom SCCs. Create it explicitly so RoleBindings work.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:openshift:scc:kagenti-authbridge
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["kagenti-authbridge"]
+    verbs: ["use"]
 {{- end }}

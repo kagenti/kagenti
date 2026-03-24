@@ -17,6 +17,7 @@ For general questions, feedback, or to reach the maintainer team:
 * **Morgan Foster** (@usize)
 * **Ladislav Smola** (@Ladas)
 * **Gloire Rubambiza** (@rubambiza)
+* **Varsha Prasad Narsing** (@varshaprasad96)
 
 ## Module-Specific Maintainers
 

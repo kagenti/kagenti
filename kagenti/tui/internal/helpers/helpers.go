@@ -12,7 +12,6 @@ import (
 )
 
 // LLMPresetEnvVars returns environment variables for a given LLM environment preset.
-// These match the "environments" ConfigMap entries deployed by the Helm chart.
 func LLMPresetEnvVars(preset, modelOverride string) []api.EnvVar {
 	secretRef := func(secretName, key string) *api.EnvVarSource {
 		return &api.EnvVarSource{

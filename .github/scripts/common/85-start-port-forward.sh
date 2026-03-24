@@ -10,34 +10,26 @@ log_step "85" "Starting port-forward"
 # Port-forward weather-service (agent) to localhost:8000
 # ============================================================================
 
-# Get pod name
-POD_NAME=$(kubectl get pod -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].metadata.name}')
-
-if [ -z "$POD_NAME" ]; then
-    log_error "No weather-service pod found"
-    kubectl get pods -n team1
+# Wait for weather-service deployment to be fully ready (no pending rollouts)
+log_info "Waiting for weather-service deployment rollout to complete..."
+kubectl rollout status deployment/weather-service -n team1 --timeout=120s || {
+    log_error "Weather-service rollout not complete after 120s"
+    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service
+    kubectl get events -n team1 --sort-by='.lastTimestamp' --field-selector reason!=Pulling 2>/dev/null | tail -10
     exit 1
-fi
+}
 
-# Wait for the agent app to be ready inside the pod (not just pod Running)
-# The pod may be Running but the Python app (uvicorn) needs time to start
-log_info "Waiting for weather-service app to be ready in pod $POD_NAME..."
-for i in {1..30}; do
-    if kubectl exec -n team1 "$POD_NAME" -- curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
-        log_success "Weather-service app is ready"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        log_error "Weather-service app not ready after 30s"
-        kubectl logs -n team1 "$POD_NAME" --tail=20
-    fi
-    sleep 1
-done
+# Brief settle time — allow any cascading rollouts (webhook re-injection) to trigger
+sleep 5
 
-log_info "Port-forwarding weather-service pod: $POD_NAME -> localhost:8000"
+# Re-check rollout after settle (catches cascading rollouts from webhook restart)
+kubectl rollout status deployment/weather-service -n team1 --timeout=60s 2>/dev/null || true
 
-# Start port-forward in background
-kubectl port-forward -n team1 pod/$POD_NAME 8000:8000 > /tmp/port-forward-agent.log 2>&1 &
+log_info "Port-forwarding weather-service service -> localhost:8000"
+
+# Use service-based port-forward (follows selector to current pod)
+# Service port is 8080 (targetPort: 8000 on agent container)
+kubectl port-forward -n team1 svc/weather-service 8000:8080 > /tmp/port-forward-agent.log 2>&1 &
 AGENT_PORT_FORWARD_PID=$!
 
 if [ "$IS_CI" = true ]; then
@@ -46,14 +38,21 @@ else
     echo $AGENT_PORT_FORWARD_PID > /tmp/port-forward-agent.pid
 fi
 
-# Wait for port-forward to be ready
-for _ in {1..10}; do
-    if curl -s http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
-        log_success "Agent port-forward is ready (localhost:8000)"
+# Wait for port-forward to be ready (AuthBridge sidecars need time to initialize)
+AGENT_READY=false
+for i in {1..30}; do
+    if curl -s --max-time 2 http://localhost:8000/.well-known/agent-card.json >/dev/null 2>&1; then
+        log_success "Agent port-forward is ready (localhost:8000) after ${i}s"
+        AGENT_READY=true
         break
     fi
     sleep 1
 done
+if [ "$AGENT_READY" = false ]; then
+    log_error "Agent port-forward not ready after 30s — tests may fail"
+    log_info "Pod status:"
+    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service --no-headers 2>/dev/null || true
+fi
 
 # ============================================================================
 # Port-forward Keycloak to localhost:8081

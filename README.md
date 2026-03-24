@@ -119,6 +119,10 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
+# Check out the latest stable release (recommended)
+# Find the current version at https://github.com/kagenti/kagenti/releases/latest
+git checkout v0.5.0
+
 # Copy and configure secrets
 cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
 # Edit deployments/envs/.secret_values.yaml with your values
@@ -126,6 +130,11 @@ cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.y
 # Run the Ansible-based installer
 deployments/ansible/run-install.sh --env dev
 ```
+
+> **Tip:** To find the latest stable version from the command line:
+> ```bash
+> git tag --list 'v*' --sort=-v:refname | grep -v -E '(alpha|rc)' | head -1
+> ```
 
 Use `deployments/ansible/run-install.sh --help` for options. For more detailed installation instructions including OpenShift refer to [Installation Guide](./docs/install.md).
 
@@ -144,6 +153,8 @@ From the UI you can:
 - Deploy MCP tools directly from source
 - Test agents interactively
 - Monitor traces and network traffic
+
+To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](https://github.com/kagenti/kagenti-extensions/blob/main/AuthBridge/demos/weather-agent/demo-ui.md)** — the recommended getting-started tutorial that walks you through deploying an agent and tool via the UI and chatting with it end-to-end. For more demos, see the [full demo list](./docs/demos/README.md).
 
 ## Documentation
 

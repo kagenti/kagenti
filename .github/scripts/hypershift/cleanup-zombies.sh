@@ -379,75 +379,6 @@ fi
 cleanup_orphaned_vpcs
 
 # ============================================================================
-# Find Orphaned IAM Roles
-# ============================================================================
-
-cleanup_orphaned_iam_roles() {
-    log_section "Checking for orphaned IAM roles"
-
-    # Get all IAM roles matching our prefix
-    local iam_roles=$(aws iam list-roles \
-        --query "Roles[?contains(RoleName, '${MANAGED_BY_TAG}')].RoleName" \
-        --output text 2>/dev/null || echo "")
-
-    if [ -z "$iam_roles" ]; then
-        log_info "No IAM roles found with prefix: ${MANAGED_BY_TAG}"
-        return 0
-    fi
-
-    # Get all active HostedClusters
-    local active_clusters=$(oc get hostedclusters -n clusters \
-        -o jsonpath='{range .items[?(@.metadata.name)]}{.metadata.name}{"\n"}{end}' 2>/dev/null || echo "")
-
-    local role_count=0
-    for role in $iam_roles; do
-        # Extract cluster name from role (format: <cluster-name>-<role-suffix>)
-        # Examples: kagenti-hypershift-custom-test2-worker-role -> kagenti-hypershift-custom-test2
-        local cluster_name=$(echo "$role" | sed -E 's/-(worker-role|control-plane-operator|cloud-controller|node-pool|aws-ebs-csi-driver-controller|cloud-network-config-controller|openshift-image-registry|openshift-ingress)$//')
-
-        # Check if HostedCluster exists
-        if ! echo "$active_clusters" | grep -q "^${cluster_name}$"; then
-            log_zombie "Orphaned IAM role: $role (cluster: $cluster_name)"
-            ((role_count++)) || true
-
-            if [ "$DRY_RUN" = false ]; then
-                log_info "Deleting IAM role: $role"
-                # Detach policies, remove from instance profiles, delete
-                aws iam list-attached-role-policies --role-name "$role" \
-                    --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null | \
-                    xargs -r -n1 aws iam detach-role-policy --role-name "$role" --policy-arn 2>/dev/null || true
-
-                aws iam list-role-policies --role-name "$role" \
-                    --query 'PolicyNames[*]' --output text 2>/dev/null | \
-                    xargs -r -n1 aws iam delete-role-policy --role-name "$role" --policy-name 2>/dev/null || true
-
-                aws iam list-instance-profiles-for-role --role-name "$role" \
-                    --query 'InstanceProfiles[*].InstanceProfileName' --output text 2>/dev/null | \
-                    xargs -r -I {} aws iam remove-role-from-instance-profile --instance-profile-name {} --role-name "$role" 2>/dev/null || true
-
-                aws iam list-instance-profiles-for-role --role-name "$role" \
-                    --query 'InstanceProfiles[*].InstanceProfileName' --output text 2>/dev/null | \
-                    xargs -r -n1 aws iam delete-instance-profile --instance-profile-name 2>/dev/null || true
-
-                if aws iam delete-role --role-name "$role" 2>/dev/null; then
-                    log_success "Deleted IAM role: $role"
-                    ((CLEANED_COUNT++))
-                else
-                    log_error "Failed to delete IAM role: $role"
-                    ((FAILED_COUNT++))
-                fi
-            fi
-        fi
-    done
-
-    if [ "$role_count" -eq 0 ]; then
-        log_info "No orphaned IAM roles found"
-    else
-        log_warn "Found $role_count orphaned IAM role(s)"
-    fi
-}
-
-# ============================================================================
 # Find Orphaned OIDC Providers
 # ============================================================================
 
@@ -646,7 +577,7 @@ cleanup_orphaned_route53() {
 }
 
 # Call all orphan cleanup functions
-cleanup_orphaned_iam_roles
+# NOTE: IAM role cleanup is intentionally NOT included because HCP manages IAM roles
 cleanup_orphaned_oidc
 cleanup_orphaned_eips
 cleanup_orphaned_route53

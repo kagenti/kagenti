@@ -12,8 +12,8 @@ Monitor running CI pipelines and report results. Creates task items for each CI 
 **CI log downloads MUST go to files.** Status checks (`gh pr checks`) are small and OK inline.
 
 ```bash
-export LOG_DIR=/tmp/kagenti/ci/$(basename $(git rev-parse --show-toplevel))
-mkdir -p $LOG_DIR
+export LOG_DIR="${LOG_DIR:-${WORKSPACE_DIR:-/tmp}/kagenti-ci}"
+mkdir -p "$LOG_DIR"
 
 # When downloading logs after completion:
 gh run view <run-id> --log-failed > $LOG_DIR/ci-run-<run-id>.log 2>&1; echo "EXIT:$?"

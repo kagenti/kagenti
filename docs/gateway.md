@@ -118,7 +118,7 @@ The Slack tool can be installed as usual.
 
 ### Keycloak Setup
 
-Make sure to run `set_up_demo.py` only after the Slack Agent and Tool are installed.
+Make sure to run `kagenti/demo-setup/keycloak-config/slack/set_up_slack_demo.py` only after the Slack Agent and Tool are installed.
 
 Now, we need to obtain an access token the MCP Broker can use to initialize with the Slack MCP server to list available tools.
 

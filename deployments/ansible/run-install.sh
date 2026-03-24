@@ -94,6 +94,7 @@ while [[ $# -gt 0 ]]; do
         minimal) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values_minimal.yaml") ;;
         auth) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values_minimal_auth.yaml") ;;
         ocp) ENV_FILES+=("$SCRIPT_DIR/../envs/ocp_values.yaml") ;;
+        ocp-minimal) ENV_FILES+=("$SCRIPT_DIR/../envs/ocp_minimal_values.yaml") ;;
         *) echo "Unknown env: $1" >&2; exit 2 ;;
       esac
       shift
@@ -242,13 +243,34 @@ if [[ "$(uname)" == "Darwin" ]]; then
   fi
 fi
 
+# Ensure UTF-8 locale is set for Ansible (required by Ansible)
+# This is especially important in WSL environments where locale may not be inherited properly
+# Respect existing UTF-8 locales, but fix non-UTF-8 ones (like C or POSIX)
+if [[ "${LC_ALL:-}" != *.UTF-8 && "${LC_ALL:-}" != *.utf8 ]]; then
+  # LC_ALL is not UTF-8 (or unset), check LANG
+  if [[ "${LANG:-}" == *.UTF-8 || "${LANG:-}" == *.utf8 ]]; then
+    # LANG is UTF-8, use it for LC_ALL
+    export LC_ALL="${LANG}"
+  else
+    # Neither is UTF-8, default to en_US.UTF-8
+    export LANG="en_US.UTF-8"
+    export LC_ALL="en_US.UTF-8"
+  fi
+else
+  # LC_ALL is already UTF-8, ensure LANG is also UTF-8
+  if [[ "${LANG:-}" != *.UTF-8 && "${LANG:-}" != *.utf8 ]]; then
+    export LANG="${LC_ALL}"
+  fi
+fi
+
 # Enable task timing — shows duration of each task in the output
 export ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks
 
 # Call ansible-playbook via the 'uv' wrapper when available so uv manages deps/venv.
 # Fall back to ansible-playbook if uv is not present.
 if command -v uv >/dev/null 2>&1; then
-  ANSIBLE_CMD=(uv run ansible-playbook -i localhost, -c local "$PLAYBOOK")
+  # Pass locale environment variables explicitly to uv run to ensure Ansible receives them
+  ANSIBLE_CMD=(env LANG="${LANG}" LC_ALL="${LC_ALL}" uv run ansible-playbook -i localhost, -c local "$PLAYBOOK")
 else
   echo "WARNING: 'uv' not found in PATH; falling back to 'ansible-playbook'. To use uv ensure it's installed and on PATH." >&2
   ANSIBLE_CMD=(ansible-playbook -i localhost, -c local "$PLAYBOOK")

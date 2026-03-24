@@ -5,7 +5,7 @@
       "Read(file:/tmp/kagenti/**)",
       "Edit(file:/tmp/kagenti/**)",
       "Write(file:/tmp/kagenti/**)",
-      "Bash(mkdir -p /tmp/kagenti:*)",
+      "Bash(mkdir -p /tmp/kagenti*)",
 
       "Edit(file:.claude/**)",
       "Write(file:.claude/**)",
@@ -123,6 +123,12 @@
       "Bash(.github/scripts/local-setup/hypershift-full-test.sh:*)",
       "Bash(.github/scripts/local-setup/kind-full-test.sh:*)",
 
+      "Bash(./.github/scripts/kagenti-operator/*)",
+      "Bash(.github/scripts/kagenti-operator/*)",
+      "Bash(export LOG_DIR=*:*)",
+      "Bash(kill *:*)",
+      "Bash(sleep *:*)",
+
       "Bash(kubectl apply:*)",
       "Bash(kubectl delete pod:*)",
       "Bash(kubectl delete deployment:*)",
@@ -236,8 +242,10 @@
     "k8s:logs": { "path": ".claude/skills/k8s:logs/SKILL.md" },
     "k8s:pods": { "path": ".claude/skills/k8s:pods/SKILL.md" },
     "kagenti": { "path": ".claude/skills/kagenti/SKILL.md" },
+    "kagenti:agent": { "path": ".claude/skills/kagenti:agent/SKILL.md" },
     "kagenti:deploy": { "path": ".claude/skills/kagenti:deploy/SKILL.md" },
     "kagenti:operator": { "path": ".claude/skills/kagenti:operator/SKILL.md" },
+    "kagenti:weather-demo": { "path": ".claude/skills/kagenti:weather-demo/SKILL.md" },
     "kagenti:ui-debug": { "path": ".claude/skills/kagenti:ui-debug/SKILL.md" },
     "kind": { "path": ".claude/skills/kind/SKILL.md" },
     "kind:cluster": { "path": ".claude/skills/kind:cluster/SKILL.md" },

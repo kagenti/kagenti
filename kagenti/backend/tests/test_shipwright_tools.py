@@ -164,8 +164,8 @@ class TestToolBuildManifestGeneration:
         build_arg_values = [
             arg.get("value") if isinstance(arg, dict) else arg for arg in build_args
         ]
-        assert "BUILD_ENV=production" in build_arg_values
-        assert "VERSION=2.0.0" in build_arg_values
+        assert "--build-arg=BUILD_ENV=production" in build_arg_values
+        assert "--build-arg=VERSION=2.0.0" in build_arg_values
 
     def test_tool_build_manifest_stores_tool_config(self):
         """Test that tool config is stored in Build annotations."""

@@ -266,3 +266,19 @@ def create_route_for_agent_or_tool(
         create_openshift_route(kube, name, namespace, service_name, service_port)
     else:
         create_httproute(kube, name, namespace, service_name, service_port)
+
+
+def get_agent_url(name: str, namespace: str) -> str:
+    """Get the URL for an A2A agent.
+
+    Returns different URL formats based on deployment context:
+    - In-cluster: http://{name}.{namespace}.svc.cluster.local:8080
+    - Off-cluster (local dev): http://{name}.{namespace}.{domain}:8080
+    """
+    if settings.is_running_in_cluster:
+        # In-cluster: use Kubernetes service DNS
+        return f"http://{name}.{namespace}.svc.cluster.local:8080"
+    else:
+        # Off-cluster: use external domain (e.g., localtest.me)
+        domain = settings.domain_name
+        return f"http://{name}.{namespace}.{domain}:8080"

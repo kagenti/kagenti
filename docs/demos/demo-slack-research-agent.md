@@ -81,14 +81,14 @@ To log in and import agents you can use the [default credentials](../install.md#
 
 1. Navigate to [Import New Agent](http://kagenti-ui.localtest.me:8080/Import_New_Agent#import-new-agent) in the Kagenti UI.
 2. In the **Select Namespace to Deploy Agent** drop-down, choose the `<namespace>` where you'd like to deploy the agent. (These namespaces are defined in your `.env` file.)
-3. Under [**Select Environment Variable Sets**](http://kagenti-ui.localtest.me:8080/Import_New_Agent#select-environment-variable-sets), select:
+3. Under **Environment Variables**, configure the required env vars. You can import `.env` files from the agent examples repo or add them manually:
 
-   - `mcp-slack`
-   - `slack-researcher-config`
-   - `slack-researcher-auth-config`
-   - `ollama` or `openai`
+   - **LLM settings**: Import `.env.openai` or `.env.ollama`, or manually set `LLM_API_BASE`, `LLM_API_KEY`, and `LLM_MODEL`
+   - **MCP Slack URL**: `MCP_URL` = `http://mcp-slack-tool-proxy:8000/mcp`
+   - **Researcher config**: `EXTRA_HEADERS` = `{}`, `MODEL_TEMPERATURE` = `0`, `MAX_PLAN_STEPS` = `6`, `SERVICE_PORT` = `8000`, `LOG_LEVEL` = `INFO`
+   - **Auth config**: `CLIENT_SECRET` (from `kagenti-keycloak-client-secret` secret), `ISSUER`, `JWKS_URI`, `AUDIENCE` — see the [auth demo README](../../kagenti/auth/auth_demo/README.md) for values
 
-4. Depending on the LLM provider you need to do a following:
+4. Depending on the LLM provider you need to do the following:
 
    - If using `ollama`, note that it uses `granite3.3:8b`, so you may need to run locally:
 
@@ -125,9 +125,9 @@ To deploy the Slack Tool using Shipwright:
 1. Navigate to [Import New Tool](http://kagenti-ui.localtest.me:8080/Import_New_Tool#import-new-tool) in the UI.
 2. Select the same `<namespace>` as used for the agent.
 3. Select "Build from source" as the deployment method.
-4. In the **Select Environment Variable Sets** section, select:
-   - `mcp-slack-config`
-   - `mcp-slack-auth-config`
+4. Under **Environment Variables**, configure the required env vars for the tool:
+   - **Slack config**: `SLACK_BOT_TOKEN` (from `slack-secret` secret)
+   - **Auth config**: `ISSUER`, `JWKS_URI`, `AUDIENCE`, `ADMIN_SLACK_BOT_TOKEN` (from `slack-secret` secret), `ADMIN_SCOPE_NAME` = `slack-full-access`
 5. Use the same source repository:
    <https://github.com/kagenti/agent-examples>
 6. Choose the `main` branch or your preferred branch.
@@ -147,7 +147,7 @@ Now that the agent and tool have been deployed, the Keycloak Administrator must 
 ### Set up Python environment
 
 ```console
-cd kagenti/auth/auth_demo/
+cd kagenti/demo-setup/keycloak-config/slack/
 python -m venv venv
 ```
 
@@ -173,7 +173,7 @@ Now run the configuration script:
 python set_up_slack_demo.py
 ```
 
-For more information about the configuration script check the [detailed README.md](../../kagenti/auth/auth_demo/README.md) file.
+For more information about the configuration script check the [detailed README.md](../../kagenti/demo-setup/keycloak-config/slack/README.md) file.
 
 ### Enable Token exchange for the agent
 

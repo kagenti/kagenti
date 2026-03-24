@@ -53,6 +53,21 @@ Read totals from `org-summary.json` and present:
 
 Order repos by activity (most merged PRs + new issues first).
 
+### Linking Convention (ALL phases)
+
+**IMPORTANT**: All issue and PR references in the report MUST use absolute GitHub URLs,
+not shorthand references like `#N` or `kagenti/<repo>#N`. Shorthand references are
+ambiguous when the report is posted as a GitHub issue — GitHub auto-links them relative
+to the repo where the issue lives.
+
+Use this format for **every** repo, including kagenti itself:
+- Issues: `[kagenti/<repo>#N](https://github.com/kagenti/<repo>/issues/N)`
+- PRs: `[kagenti/<repo>#N](https://github.com/kagenti/<repo>/pull/N)`
+
+Examples:
+- `[kagenti/kagenti#960](https://github.com/kagenti/kagenti/issues/960)`
+- `[kagenti/kagenti-extensions#239](https://github.com/kagenti/kagenti-extensions/pull/239)`
+
 ### Phase 2: Deep Dive per Active Repo
 
 For each repo classified as `active` in org-summary.json, analyze in order of activity level.
@@ -80,9 +95,7 @@ Agent(subagent_type='Explore'):
 
 No local checkout. Use gathered JSON data only.
 
-**IMPORTANT**: When rendering issue/PR numbers for non-kagenti repos, always use
-fully-qualified references: `kagenti/<repo>#N` (e.g., `kagenti/kagenti-extensions#42`).
-Bare `#N` references auto-link to kagenti/kagenti when the report is posted there.
+Use absolute URLs for all references (see [Linking Convention](#linking-convention-all-phases) above).
 
 1. **Issue Triage**: Read `open-issues.json`. Group by labels. Flag stale issues (>30 days no update). Note issues linked to PRs.
 2. **PR Status**: Read `open-prs.json`. Check CI/review status from JSON. Flag PRs waiting >7 days for review.
@@ -96,15 +109,15 @@ Present each active repo as:
 
 ### Merged PRs (N)
 | # | Title | Author | Merged |
-| kagenti/<repo>#N | ... | ... | ... |
+| [kagenti/\<repo\>#N](https://github.com/kagenti/\<repo\>/pull/N) | ... | ... | ... |
 
 ### Open PRs (N)
 | # | Title | Author | CI | Review | Health |
-| kagenti/<repo>#N | ... | ... | ... | ... | ... |
+| [kagenti/\<repo\>#N](https://github.com/kagenti/\<repo\>/pull/N) | ... | ... | ... | ... | ... |
 
 ### Open Issues (N)
 | # | Title | Labels | Age | Status |
-| kagenti/<repo>#N | ... | ... | ... | ... |
+| [kagenti/\<repo\>#N](https://github.com/kagenti/\<repo\>/issues/N) | ... | ... | ... | ... |
 
 ### CI Health
 - Main branch: X/Y passed (Z%)

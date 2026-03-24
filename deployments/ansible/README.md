@@ -36,6 +36,9 @@ deployments/ansible/run-install.sh --env minimal
 # OpenShift / OCP
 deployments/ansible/run-install.sh --env ocp
 
+# Podman users: set container_engine to avoid concurrent pull failures
+deployments/ansible/run-install.sh --env dev --preload --extra-vars '{"container_engine": "podman"}'
+
 # Pass extra ansible-playbook args after `--`
 deployments/ansible/run-install.sh --env dev -- --check --tags debug_vars
 ```
@@ -90,6 +93,9 @@ Important variables you can override (via `-e` / `--extra-vars`):
    attempt to create a Kind cluster (default from `default_values.yaml`).
 - `kind_cluster_name`, `kind_images_preload`, `container_engine`, `kind_config`,
    `kind_config_registry`, `preload_images_file` - Kind-related knobs (see `default_values.yaml`).
+  > **Note:** If `docker` on your system is actually Podman (e.g., aliased via
+  > `alias docker=podman`), set `container_engine: podman`. This ensures images
+  > are pulled sequentially, avoiding SSH connection failures through the Podman VM.
 
 Notes on overrides: pass extra-vars as JSON to avoid shell quoting issues. For
 example:
@@ -205,9 +211,9 @@ charts:
     values:
       ui:
         frontend:
-          tag: "v0.5.0"  # Replace with your desired version
+          tag: "v0.5.1"  # Replace with your desired version
         backend:
-          tag: "v0.5.0"  # Replace with your desired version
+          tag: "v0.5.1"  # Replace with your desired version
 
 ## Notes / tips
 - Chart paths referenced in the values are relative to the `deployments/ansible`

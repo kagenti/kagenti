@@ -30,6 +30,7 @@ spec:
         kagenti.io/framework: LangGraph
         app.kubernetes.io/name: weather-service
     spec:
+      serviceAccountName: weather-service
       containers:
       - name: agent
         image: image-registry.openshift-image-registry.svc:5000/team1/weather-service:v0.0.1

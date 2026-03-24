@@ -99,7 +99,7 @@ export const ToolCatalogPage: React.FC = () => {
   };
 
   const handleDeleteConfirm = () => {
-    if (toolToDelete && deleteConfirmText === toolToDelete.name) {
+    if (toolToDelete && deleteConfirmText.trim() === toolToDelete.name) {
       deleteMutation.mutate({
         namespace: toolToDelete.namespace,
         name: toolToDelete.name,
@@ -308,7 +308,7 @@ export const ToolCatalogPage: React.FC = () => {
             isLoading={deleteMutation.isPending}
             isDisabled={
               deleteMutation.isPending ||
-              deleteConfirmText !== toolToDelete?.name
+              deleteConfirmText.trim() !== toolToDelete?.name
             }
           >
             Delete

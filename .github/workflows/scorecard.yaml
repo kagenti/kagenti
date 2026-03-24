@@ -3,9 +3,15 @@
 # Measures repository security posture and provides recommendations.
 # Results are uploaded to GitHub Security tab and OpenSSF Scorecard API.
 #
-# NOTE: Scorecard only works on 'schedule' and 'push' triggers, NOT 'pull_request'
-# This is a GitHub/Scorecard limitation for result publishing.
-# See: https://github.com/ossf/scorecard-action#workflow-restrictions
+# Triggers:
+# - schedule/push: Full analysis with result publishing to OpenSSF API
+# - pull_request: Analysis only — catches Dangerous-Workflow (script
+#   injection) before merge. Publishing disabled (no OIDC on PRs).
+#
+# TODO: pull_request trigger is experimental per Scorecard docs.
+#   If it causes issues (fork PRs, permissions), disable pull_request
+#   and rely on actionlint in security-scans.yaml for PR coverage.
+#   See: https://github.com/ossf/scorecard-action#workflow-restrictions
 #
 # Token Requirements:
 # - No external tokens needed
@@ -22,6 +28,9 @@ on:
     - cron: '0 6 * * 1'
   # Run on push to main
   push:
+    branches: [main]
+  # Run on PRs to catch Dangerous-Workflow before merge
+  pull_request:
     branches: [main]
   # Allow manual trigger
   workflow_dispatch:
@@ -50,8 +59,8 @@ jobs:
         with:
           results_file: scorecard.sarif
           results_format: sarif
-          # Publish results to OpenSSF API (enables badge)
-          publish_results: true
+          # Only publish to OpenSSF API on push/schedule (not PRs — no OIDC token)
+          publish_results: ${{ github.event_name != 'pull_request' }}
 
       - name: Upload SARIF to Security tab
         uses: github/codeql-action/upload-sarif@0d579ffd059c29b07949a3cce3983f0780820c98  # v4

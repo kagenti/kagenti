@@ -5,6 +5,7 @@ import { Routes, Route } from 'react-router-dom';
 
 import { AppLayout } from './components/AppLayout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { useFeatureFlags } from './hooks/useFeatureFlags';
 import { HomePage } from './pages/HomePage';
 import { AgentCatalogPage } from './pages/AgentCatalogPage';
 import { AgentDetailPage } from './pages/AgentDetailPage';
@@ -22,8 +23,10 @@ import { AdminPage } from './pages/AdminPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 function App() {
+  const features = useFeatureFlags();
+
   return (
-    <AppLayout>
+    <AppLayout features={features}>
       <Routes>
         {/* Public route - accessible to everyone */}
         <Route path="/" element={<HomePage />} />

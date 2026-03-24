@@ -452,6 +452,26 @@ jobs:
   # Phase D: Advanced Security
   # ============================================================================
 
+  # GitHub Actions Workflow Lint (actionlint)
+  # Catches script injection (${{ github.event.* }} in run: blocks),
+  # invalid workflow syntax, and other workflow issues.
+  # Fails on critical issues (expression injection = critical).
+  actionlint:
+    name: Workflow Lint (actionlint)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@0d952c597ef8459f634d7145b0b044a9699e5e43  # v1.71.0
+        with:
+          fail_on_error: true
+          # Only report issues on lines changed in the PR (not pre-existing)
+          filter_mode: diff_context
+          reporter: github-pr-review
+
   # CodeQL - Free for public repositories on GitHub.com
   # License: https://github.com/github/codeql/blob/main/LICENSE
   # "If the Open Source Codebase is hosted and maintained on GitHub.com,

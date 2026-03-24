@@ -5,81 +5,72 @@ source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
 source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
-log_step "74" "Deploying weather-service agent via Shipwright + Deployment"
-
-# ============================================================================
-# Step 1: Build the weather-service image using Shipwright
-# ============================================================================
+log_step "74" "Deploying weather-service agent"
 
 # IS_OPENSHIFT is set by env-detect.sh (sourced above)
 # It checks for OpenShift-specific APIs, not just "oc whoami" which works on any cluster
+
+# ============================================================================
+# Step 1: Build the weather-service image (OpenShift only)
+# On Kind, the deployment manifest references ghcr.io directly — no build needed.
+# ============================================================================
+
 if [ "$IS_OPENSHIFT" = "true" ]; then
     log_info "Using OpenShift Shipwright files with internal registry"
-else
-    log_info "Using Kind Shipwright files"
-fi
 
-# Clean up previous Build to avoid conflicts
-kubectl delete build weather-service -n team1 --ignore-not-found 2>/dev/null || true
-sleep 2
-log_info "Creating Shipwright Build..."
-if [ "$IS_OPENSHIFT" = "true" ]; then
+    # Clean up previous Build to avoid conflicts
+    kubectl delete build weather-service -n team1 --ignore-not-found 2>/dev/null || true
+    sleep 2
+    log_info "Creating Shipwright Build..."
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build_ocp.yaml"
-else
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_build.yaml"
-fi
 
-# Wait for Shipwright Build to be registered (with retry loop)
-# Use full API group to avoid confusion with OpenShift legacy builds
-run_with_timeout 60 'until kubectl get builds.shipwright.io weather-service -n team1 &> /dev/null; do sleep 2; done' || {
-    log_error "Shipwright Build not found after 60 seconds"
-    log_info "Available Shipwright Builds in team1:"
-    kubectl get builds.shipwright.io -n team1 2>&1 || echo "  (none or error)"
-    log_info "Available ClusterBuildStrategies:"
-    kubectl get clusterbuildstrategies.shipwright.io 2>&1 || echo "  (none or error)"
-    log_info "Recent Events in team1:"
-    kubectl get events -n team1 --sort-by='.lastTimestamp' 2>&1 | tail -20 || echo "  (none)"
-    exit 1
-}
-log_info "Shipwright Build created"
+    # Wait for Shipwright Build to be registered (with retry loop)
+    # Use full API group to avoid confusion with OpenShift legacy builds
+    run_with_timeout 60 'until kubectl get builds.shipwright.io weather-service -n team1 &> /dev/null; do sleep 2; done' || {
+        log_error "Shipwright Build not found after 60 seconds"
+        log_info "Available Shipwright Builds in team1:"
+        kubectl get builds.shipwright.io -n team1 2>&1 || echo "  (none or error)"
+        log_info "Available ClusterBuildStrategies:"
+        kubectl get clusterbuildstrategies.shipwright.io 2>&1 || echo "  (none or error)"
+        log_info "Recent Events in team1:"
+        kubectl get events -n team1 --sort-by='.lastTimestamp' 2>&1 | tail -20 || echo "  (none)"
+        exit 1
+    }
+    log_info "Shipwright Build created"
 
-# Create BuildRun to trigger the build
-log_info "Triggering BuildRun..."
-BUILDRUN_NAME=$(kubectl create -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_buildrun.yaml" -o jsonpath='{.metadata.name}')
-log_info "BuildRun created: $BUILDRUN_NAME"
+    # Create BuildRun to trigger the build
+    log_info "Triggering BuildRun..."
+    BUILDRUN_NAME=$(kubectl create -f "$REPO_ROOT/kagenti/examples/agents/weather_agent_shipwright_buildrun.yaml" -o jsonpath='{.metadata.name}')
+    log_info "BuildRun created: $BUILDRUN_NAME"
 
-# Wait for BuildRun to complete
-log_info "Waiting for BuildRun to complete (this may take a few minutes)..."
-run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buildrun/$BUILDRUN_NAME -n team1" || {
-    log_error "BuildRun did not succeed"
+    # Wait for BuildRun to complete
+    log_info "Waiting for BuildRun to complete (this may take a few minutes)..."
+    run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buildrun/$BUILDRUN_NAME -n team1" || {
+        log_error "BuildRun did not succeed"
 
-    # Get BuildRun status for debugging
-    log_info "BuildRun status:"
-    kubectl get buildrun "$BUILDRUN_NAME" -n team1 -o yaml
+        # Get BuildRun status for debugging
+        log_info "BuildRun status:"
+        kubectl get buildrun "$BUILDRUN_NAME" -n team1 -o yaml
 
-    # Check if the failure is just sidecar cleanup (image may still be built)
-    FAILURE_REASON=$(kubectl get buildrun "$BUILDRUN_NAME" -n team1 -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || echo "")
-    if [ "$FAILURE_REASON" = "TaskRunStopSidecarFailed" ]; then
-        log_info "BuildRun failed due to sidecar cleanup issue, checking if image was built..."
+        # Check if the failure is just sidecar cleanup (image may still be built)
+        FAILURE_REASON=$(kubectl get buildrun "$BUILDRUN_NAME" -n team1 -o jsonpath='{.status.conditions[?(@.type=="Succeeded")].reason}' 2>/dev/null || echo "")
+        if [ "$FAILURE_REASON" = "TaskRunStopSidecarFailed" ]; then
+            log_info "BuildRun failed due to sidecar cleanup issue, checking if image was built..."
 
-        # Check if image exists in registry (build may have actually succeeded)
-        if [ "$IS_OPENSHIFT" = "true" ]; then
             IMAGE_EXISTS=$(kubectl get imagestreamtag weather-service:v0.0.1 -n team1 2>/dev/null && echo "yes" || echo "no")
-        else
-            # For Kind, check if we can pull the image tag info
-            IMAGE_EXISTS=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="step-build-and-push")].state.terminated.exitCode}' 2>/dev/null || echo "")
-            if [ "$IMAGE_EXISTS" = "0" ]; then
-                IMAGE_EXISTS="yes"
-            else
-                IMAGE_EXISTS="no"
-            fi
-        fi
 
-        if [ "$IMAGE_EXISTS" = "yes" ]; then
-            log_info "Image was built successfully despite sidecar cleanup failure. Proceeding..."
+            if [ "$IMAGE_EXISTS" = "yes" ]; then
+                log_info "Image was built successfully despite sidecar cleanup failure. Proceeding..."
+            else
+                log_error "Image not found in registry. Build actually failed."
+                log_info "Build pod logs:"
+                BUILD_POD=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
+                if [ -n "$BUILD_POD" ]; then
+                    kubectl logs -n team1 "$BUILD_POD" --all-containers=true || true
+                fi
+                exit 1
+            fi
         else
-            log_error "Image not found in registry. Build actually failed."
-            # Get build pod logs
             log_info "Build pod logs:"
             BUILD_POD=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
             if [ -n "$BUILD_POD" ]; then
@@ -87,18 +78,12 @@ run_with_timeout 600 "kubectl wait --for=condition=Succeeded --timeout=600s buil
             fi
             exit 1
         fi
-    else
-        # Get build pod logs for other failures
-        log_info "Build pod logs:"
-        BUILD_POD=$(kubectl get pods -n team1 -l build.shipwright.io/name=weather-service --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || echo "")
-        if [ -n "$BUILD_POD" ]; then
-            kubectl logs -n team1 "$BUILD_POD" --all-containers=true || true
-        fi
-        exit 1
-    fi
-}
+    }
 
-log_success "BuildRun completed successfully"
+    log_success "BuildRun completed successfully"
+else
+    log_info "Using ghcr.io image for Kind — skipping Shipwright build"
+fi
 
 # ============================================================================
 # Step 2: Deploy using standard Kubernetes Deployment + Service
@@ -107,10 +92,8 @@ log_success "BuildRun completed successfully"
 
 log_info "Creating Deployment and Service..."
 
-# Clean up any operator-created deployment to apply our version
-# (the operator may auto-create a Deployment from the Shipwright Build)
-kubectl delete deployment weather-service -n team1 --ignore-not-found 2>/dev/null || true
-sleep 2
+# Create ServiceAccount (required by webhook for correct SPIFFE ID derivation)
+kubectl create serviceaccount weather-service -n team1 --dry-run=client -o yaml | kubectl apply -f -
 
 # Apply Deployment manifest (use OCP-specific file with correct registry on OpenShift)
 if [ "$IS_OPENSHIFT" = "true" ]; then
@@ -121,27 +104,6 @@ fi
 
 # Apply Service manifest
 kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_service.yaml"
-
-# Wait for Deployment to be created
-run_with_timeout 60 'kubectl get deployment weather-service -n team1 &> /dev/null' || {
-    log_error "Deployment not created"
-    kubectl get deployments -n team1
-    exit 1
-}
-
-# Wait for Deployment to be available
-kubectl wait --for=condition=available --timeout=300s deployment/weather-service -n team1 || {
-    log_error "Deployment not available"
-    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service
-    kubectl get events -n team1 --sort-by='.lastTimestamp'
-    exit 1
-}
-
-# Verify Service exists
-kubectl get service weather-service -n team1 || {
-    log_error "Service not found"
-    exit 1
-}
 
 log_success "Weather-service deployed via Deployment + Service (operator-independent)"
 

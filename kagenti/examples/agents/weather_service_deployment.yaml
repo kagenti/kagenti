@@ -31,9 +31,10 @@ spec:
         kagenti.io/framework: LangGraph
         app.kubernetes.io/name: weather-service
     spec:
+      serviceAccountName: weather-service
       containers:
       - name: agent
-        image: registry.cr-system.svc.cluster.local:5000/weather-service:v0.0.1
+        image: ghcr.io/kagenti/agent-examples/weather_service:latest
         imagePullPolicy: Always
         env:
         - name: PORT

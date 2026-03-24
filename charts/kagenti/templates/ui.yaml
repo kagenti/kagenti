@@ -114,6 +114,13 @@ spec:
                   optional: true
             - name: ENABLE_AUTH
               value: "{{ .Values.ui.auth.enabled }}"
+            # Feature flags
+            - name: KAGENTI_FEATURE_FLAG_SANDBOX
+              value: "{{ .Values.featureFlags.sandbox }}"
+            - name: KAGENTI_FEATURE_FLAG_INTEGRATIONS
+              value: "{{ .Values.featureFlags.integrations }}"
+            - name: KAGENTI_FEATURE_FLAG_TRIGGERS
+              value: "{{ .Values.featureFlags.triggers }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             # Dashboard URLs from ConfigMap (populated by ui-routes-job)
@@ -191,6 +198,14 @@ spec:
                   name: kagenti-ui-oauth-secret
                   key: SCOPE
                   optional: true
+            {{- if .Values.featureFlags.sandbox }}
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-proxy-secret
+                  key: master-key
+                  optional: true
+            {{- end }}
           resources:
             {{- toYaml .Values.ui.backend.resources | nindent 12 }}
           livenessProbe:
@@ -348,6 +363,21 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
+  {{- if .Values.featureFlags.sandbox }}
+  # Sandbox-specific: create pods, exec, logs, and mutate configmaps/secrets/PVCs
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/log"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "patch", "delete"]
+  {{- end }}
   # Deployments, StatefulSets and Services for managing workloads
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets"]
@@ -359,12 +389,29 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # ServiceAccounts — ensure_service_account() creates a dedicated SA so the
+  # webhook's SPIFFE identity uses the workload name (see kagenti#959)
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "create"]
+  {{- if .Values.featureFlags.sandbox }}
+  # PersistentVolumeClaims for agent workspace storage (sandbox)
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "patch", "delete"]
+  {{- end }}
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["httproutes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if .Values.featureFlags.integrations }}
+  # Integration CRDs for repository integrations
+  - apiGroups: ["kagenti.io"]
+    resources: ["integrations", "integrations/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

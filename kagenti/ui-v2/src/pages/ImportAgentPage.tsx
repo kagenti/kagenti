@@ -62,6 +62,7 @@ const FRAMEWORKS = [
 
 const REGISTRY_OPTIONS = [
   { value: 'local', label: 'Local Registry (In-Cluster)', url: 'registry.cr-system.svc.cluster.local:5000' },
+  { value: 'openshift', label: 'OpenShift Internal Registry', url: 'image-registry.openshift-image-registry.svc:5000' },
   { value: 'quay', label: 'Quay.io', url: 'quay.io' },
   { value: 'dockerhub', label: 'Docker Hub', url: 'docker.io' },
   { value: 'github', label: 'GitHub Container Registry', url: 'ghcr.io' },

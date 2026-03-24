@@ -85,7 +85,7 @@ keycloak:
   # Internal Keycloak URL for OAuth secret jobs
   url: http://keycloak-service.keycloak:8080
   publicUrl: http://keycloak.localtest.me:8080
-  realm: demo
+  realm: kagenti
   httpRoute:
     annotations: {}
     parentRefs:

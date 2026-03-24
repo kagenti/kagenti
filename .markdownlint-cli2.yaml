@@ -1,0 +1,50 @@
+# markdownlint-cli2 configuration
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+#
+# Strategy: disable rules that fire on pre-existing docs, keep rules that
+# catch real structural issues in new content. Re-enable iteratively as
+# existing files are cleaned up.
+
+config:
+  # --- Rules disabled for pre-existing doc patterns ---
+
+  MD001: false  # Heading increment (6) — docs skip heading levels intentionally
+  MD004: false  # Unordered list style (23) — mixed asterisk/dash across docs
+  MD005: false  # Inconsistent list indentation (5) — various indent styles
+  MD007: false  # Unordered list indentation (292) — existing docs use 3-space indent
+  MD009: false  # Trailing spaces (48) — widespread across docs
+  MD010: false  # Hard tabs (2)
+  MD012: false  # Multiple consecutive blank lines (27)
+  MD013: false  # Line length — many existing docs have long lines
+  MD014: false  # Dollar signs before commands (1) — used in shell examples
+  MD022: false  # Headings should be surrounded by blank lines
+  MD025: false  # Multiple top-level headings (3) — some docs have multiple H1s
+  MD026: false  # Trailing punctuation in headings (e.g., "4.18 → 4.19")
+  MD029: false  # Ordered list prefix style (16) — docs use sequential numbering
+  MD031: false  # Fenced code blocks should be surrounded by blank lines
+  MD032: false  # Lists should be surrounded by blank lines
+  MD033: false  # Inline HTML — used for <details>/<summary>, <br>, <img> tags
+  MD034: false  # Bare URLs (16) — common in docs for quick links
+  MD036: false  # Emphasis as heading (122) — used for figure captions throughout
+  MD040: false  # Fenced code blocks should have a language specified
+  MD041: false  # First line should be H1 — files may start with frontmatter or badges
+  MD045: false  # Images should have alt text (1)
+  MD046: false  # Code block style (1) — mixed fenced/indented
+  MD047: false  # Files should end with single newline (5)
+  MD051: false  # Link fragments should be valid (3)
+  MD058: false  # Tables should be surrounded by blank lines (1)
+  MD059: false  # Descriptive link text (1)
+  MD060: false  # Table column count
+
+  # --- Rules kept enabled (catch real issues in new content) ---
+  # MD024 — duplicate headings (siblings only)
+  MD024:
+    siblings_only: true
+
+# Ignore generated and vendored content
+ignores:
+  - "node_modules/**"
+  - "venv/**"
+  - "**/vendor/**"
+  - "charts/**"
+  - ".claude/**"

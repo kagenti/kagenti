@@ -102,103 +102,6 @@ type: kubernetes.io/dockerconfigjson
 data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
 ---
-# ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for Environment Variables in Namespace: {{ . }}
-# ——————————————————————————————————————————————————————————————————————————————
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: environments
-  namespace: {{ . }}
-  labels:
-    {{- include "kagenti.labels" $root | nindent 4 }}
-data:
-  ollama: |
-    [
-      {"name": "LLM_API_BASE", "value": "http://host.docker.internal:11434/v1"},
-      {"name": "LLM_API_KEY", "value": "dummy"},
-      {"name": "LLM_MODEL", "value": "llama3.2:3b-instruct-fp16"}
-    ]
-  openai: |
-    [
-      {
-        "name": "OPENAI_API_KEY",
-        "valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}
-      },
-      {
-        "name": "LLM_API_KEY",
-        "valueFrom": {"secretKeyRef": {"name": "openai-secret", "key": "apikey"}}
-      },
-      {"name": "LLM_API_BASE", "value": "https://llama-4-scout-17b-16e-w4a16-maas-apicast-production.apps.prod.rhoai.rh-aiservices-bu.com:443/v1"},
-      {"name": "LLM_MODEL", "value": "llama-4-scout-17b-16e-w4a16"}
-    ]
-  mcp-weather: |
-    [
-      {"name": "MCP_URL", "value": "http://mcp-weather-tool-proxy:8000/mcp"}
-    ]
-  mcp-slack: |
-    [
-      {"name": "MCP_URL", "value": "http://mcp-slack-tool-proxy:8000/mcp"}
-    ]
-  slack-researcher-config: |
-    [
-      {"name": "EXTRA_HEADERS", "value": "{}"},
-      {"name": "MODEL_TEMPERATURE", "value": "0"},
-      {"name": "MAX_PLAN_STEPS", "value": "6"},
-      {"name": "SERVICE_PORT", "value": "8000"},
-      {"name": "LOG_LEVEL", "value": "INFO"}
-    ]
-  slack-researcher-auth-config: |
-    [
-      {
-        "name": "CLIENT_SECRET",
-        "valueFrom": {"secretKeyRef": {"name": "kagenti-keycloak-client-secret", "key": "client-secret"}}
-      },
-      {
-        "name": "ISSUER",
-        "value": "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-      },
-      {
-        "name": "JWKS_URI",
-        "value": "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
-      },
-      {
-        "name": "AUDIENCE",
-        "value": "{{ $root.Values.agentOAuthSecret.spiffePrefix }}/slack-researcher"
-      }
-    ]
-  mcp-slack-config: |
-    [
-      {
-        "name": "SLACK_BOT_TOKEN",
-        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "bot-token"}}
-      }
-    ]
-  mcp-slack-auth-config: |
-    [
-      {
-        "name": "ISSUER",
-        "value": "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-      },
-      {
-        "name": "JWKS_URI",
-        "value": "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/{{ $root.Values.keycloak.realm }}/protocol/openid-connect/certs"
-      },
-      {
-        "name": "AUDIENCE",
-        "value": "{{ $root.Values.agentOAuthSecret.spiffePrefix }}/slack-tool"
-      },
-      {
-        "name": "ADMIN_SLACK_BOT_TOKEN",
-        "valueFrom": {"secretKeyRef": {"name": "slack-secret", "key": "admin-bot-token"}}
-      },
-      {
-        "name": "ADMIN_SCOPE_NAME",
-        "value": "slack-full-access"
-      }
-    ]
-  SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
----
 {{- if not $root.Values.keycloak.adminExistingSecret }}
 # ——————————————————————————————————————————————————————————————————————————————
 #  Secret for Keycloak Admin Credentials in Namespace: {{ . }}
@@ -237,6 +140,7 @@ data:
   # Set explicitly when the internal KEYCLOAK_URL differs from the frontend URL
   # that appears in token "iss" claims (split-horizon DNS).
   ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}

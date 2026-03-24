@@ -5,6 +5,7 @@ This guide covers installation on both local Kind clusters and OpenShift environ
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
+  - [macOS Quick Start (New Machine)](#macos-quick-start-new-machine)
 - [Kind Installation (Local Development)](#kind-installation-local-development)
 - [OpenShift Installation](#openshift-installation)
 - [Accessing the UI](#accessing-the-ui)
@@ -23,6 +24,42 @@ This guide covers installation on both local Kind clusters and OpenShift environ
 | kubectl | ≥1.32.1 | Kubernetes CLI |
 | [Helm](https://helm.sh/docs/intro/install/) | ≥3.18.0, <4 | Package manager for Kubernetes |
 | git | ≥2.48.0 | Cloning repositories |
+
+### macOS Quick Start (New Machine)
+
+If you're setting up a brand-new Mac, install all prerequisites at once with [Homebrew](https://brew.sh):
+
+```bash
+# Install Homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install required tools
+brew install git kind kubectl helm@3 ansible uv python
+
+# Verify Helm version meets the ≥3.18.0 requirement above
+helm version
+
+# Container runtime — pick one:
+brew install podman    # recommended for macOS
+# or: brew install --cask docker   # Docker Desktop
+
+# If using Podman, create and start a machine with sufficient resources:
+podman machine init --memory 18432 --cpus 4
+podman machine start
+```
+
+Then set up a Python virtual environment for the installer:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+> **Tip:** After configuring your secrets (see [Quick Start](#quick-start) below), you can
+> run the full installation in one command:
+> ```bash
+> deployments/ansible/run-install.sh --env dev --preload --extra-vars '{"container_engine": "podman"}'
+> ```
 
 ### Kind-Specific Requirements
 
@@ -85,6 +122,20 @@ deployments/ansible/run-install.sh --env dev
 > ```bash
 > deployments/ansible/run-install.sh --env dev --preload
 > ```
+
+#### Podman Users
+
+If you use **Podman** (or have `docker` aliased to `podman`, which is common on macOS), set `container_engine` to `podman` so the installer pulls images sequentially and avoids SSH connection failures through the Podman VM:
+
+```bash
+deployments/ansible/run-install.sh --env dev --preload --extra-vars '{"container_engine": "podman"}'
+```
+
+Alternatively, edit your environment values file (`deployments/envs/dev_values.yaml`) and change:
+
+```yaml
+container_engine: podman
+```
 
 The Ansible-based installer will create a Kind cluster (when appropriate) and deploy platform components.
 
@@ -280,19 +331,6 @@ For MCP Inspector, also accept the proxy certificate:
 ```bash
 echo "https://$(kubectl get route mcp-proxy -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
 ```
-
-### MCP Inspector Configuration
-
-When opening the MCP inspector on a new installation through the **MCP Gateway** tab, the default settings do not include the inspector proxy address, causing connection failures.
-
-1. Navigate to **Configuration**.
-2. Set the **Connection Type** to `via proxy`.
-3. Set **Inspector Proxy Address** based on your environment:
-   - **Kind**: `http://mcp-proxy.localtest.me:8080`
-   - **OpenShift**: The URL output by the proxy certificate command above.
-4. Click **Test connection** to verify it is working.
-
-*Note: These settings are persisted in your browser and only need to be configured once per browser installation.*
 
 ### Default Credentials
 

@@ -20,6 +20,7 @@ from kubernetes.client import ApiException
 from pydantic import BaseModel, field_validator
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
+from app.utils.routes import get_agent_url
 from app.core.constants import (
     CRD_GROUP,
     CRD_VERSION,
@@ -43,6 +44,7 @@ from app.core.constants import (
     DEFAULT_RESOURCE_LIMITS,
     DEFAULT_RESOURCE_REQUESTS,
     DEFAULT_ENV_VARS,
+    AGENT_ENDPOINT,
     # Shipwright constants
     SHIPWRIGHT_CRD_GROUP,
     SHIPWRIGHT_CRD_VERSION,
@@ -1858,6 +1860,9 @@ def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
         List of environment variable dictionaries.
     """
     env_vars = list(DEFAULT_ENV_VARS)
+    env_vars.append(
+        {"name": AGENT_ENDPOINT, "value": get_agent_url(request.name, request.namespace)}
+    )
     if request.envVars:
         for ev in request.envVars:
             if ev.value is not None:

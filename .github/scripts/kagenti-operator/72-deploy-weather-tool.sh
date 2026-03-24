@@ -12,9 +12,12 @@ if [ "$IS_OPENSHIFT" = "true" ]; then
     WEATHER_TOOL_IMAGE="image-registry.openshift-image-registry.svc:5000/team1/weather-tool:v0.0.1"
     log_info "Using OpenShift internal registry: $WEATHER_TOOL_IMAGE"
 else
-    WEATHER_TOOL_IMAGE="registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1"
-    log_info "Using Kind registry: $WEATHER_TOOL_IMAGE"
+    WEATHER_TOOL_IMAGE="ghcr.io/kagenti/agent-examples/weather_tool:latest"
+    log_info "Using ghcr.io image: $WEATHER_TOOL_IMAGE"
 fi
+
+# Create ServiceAccount (required by webhook for correct SPIFFE ID derivation)
+kubectl create serviceaccount weather-tool -n team1 --dry-run=client -o yaml | kubectl apply -f -
 
 # Create Deployment
 cat <<DEPLOYMENT_EOF | kubectl apply -f -
@@ -47,6 +50,7 @@ spec:
         kagenti.io/framework: Python
         app.kubernetes.io/name: weather-tool
     spec:
+      serviceAccountName: weather-tool
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -137,13 +141,4 @@ spec:
       protocol: TCP
 SERVICE_EOF
 
-# Wait for deployment to be available
-wait_for_deployment "weather-tool" "team1" 300 || {
-    log_error "Weather-tool deployment not ready"
-    kubectl get deployment weather-tool -n team1
-    kubectl describe deployment weather-tool -n team1
-    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-tool
-    exit 1
-}
-
-log_success "Weather-tool deployed successfully via Deployment + Service"
+log_success "Weather-tool deployed (not waiting for pods — use kubectl wait if needed)"

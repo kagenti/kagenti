@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
 from app.core.config import settings
+from app.utils.routes import get_agent_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -59,22 +60,6 @@ class ChatResponse(BaseModel):
     is_complete: bool = True
 
 
-def _get_agent_url(name: str, namespace: str) -> str:
-    """Get the URL for an A2A agent.
-
-    Returns different URL formats based on deployment context:
-    - In-cluster: http://{name}.{namespace}.svc.cluster.local:8080
-    - Off-cluster (local dev): http://{name}.{namespace}.{domain}:8080
-    """
-    if settings.is_running_in_cluster:
-        # In-cluster: use Kubernetes service DNS
-        return f"http://{name}.{namespace}.svc.cluster.local:8080"
-    else:
-        # Off-cluster: use external domain (e.g., localtest.me)
-        domain = settings.domain_name
-        return f"http://{name}.{namespace}.{domain}:8080"
-
-
 @router.get(
     "/{namespace}/{name}/agent-card",
     response_model=AgentCardResponse,
@@ -89,7 +74,7 @@ async def get_agent_card(
 
     The agent card describes the agent's capabilities, skills, and metadata.
     """
-    agent_url = _get_agent_url(name, namespace)
+    agent_url = get_agent_url(name, namespace)
     card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
 
     try:
@@ -163,7 +148,7 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = _get_agent_url(name, namespace)
+    agent_url = get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload
@@ -502,7 +487,7 @@ async def stream_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = _get_agent_url(name, namespace)
+    agent_url = get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present

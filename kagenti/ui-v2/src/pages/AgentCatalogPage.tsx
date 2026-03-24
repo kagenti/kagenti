@@ -99,7 +99,7 @@ export const AgentCatalogPage: React.FC = () => {
   };
 
   const handleDeleteConfirm = () => {
-    if (agentToDelete && deleteConfirmText === agentToDelete.name) {
+    if (agentToDelete && deleteConfirmText.trim() === agentToDelete.name) {
       deleteMutation.mutate({
         namespace: agentToDelete.namespace,
         name: agentToDelete.name,
@@ -316,7 +316,7 @@ export const AgentCatalogPage: React.FC = () => {
             isLoading={deleteMutation.isPending}
             isDisabled={
               deleteMutation.isPending ||
-              deleteConfirmText !== agentToDelete?.name
+              deleteConfirmText.trim() !== agentToDelete?.name
             }
           >
             Delete

@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # Default is False since agents now use standard Kubernetes workloads (Deployments, StatefulSets, Jobs)
     enable_legacy_agent_crd: bool = False
 
+    # Feature flags — all experimental features default to disabled
+    kagenti_feature_flag_sandbox: bool = False
+    kagenti_feature_flag_integrations: bool = False
+    kagenti_feature_flag_triggers: bool = False
+
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"
     enabled_namespace_label_key: str = "kagenti-enabled"

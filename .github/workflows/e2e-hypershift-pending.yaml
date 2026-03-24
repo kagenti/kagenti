@@ -25,6 +25,7 @@ on:
       - 'kagenti/ui-v2/package-lock.json'
 
 permissions:
+  contents: read
   statuses: write
 
 jobs:

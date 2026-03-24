@@ -5,6 +5,9 @@ on:
   push:
     tags:
     - 'v*'
+    # Trigger on PR merges to main
+    branches:
+    - main
   # Allows also to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -80,6 +83,9 @@ jobs:
           images: ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}
           tags: |
             type=ref,event=tag
+            type=sha,prefix={{branch}}-,enable=${{ github.ref_type != 'tag' }}
+            # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
+            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
 
       - name: Wait before retry
         if: steps.meta.outcome == 'failure'
@@ -95,6 +101,9 @@ jobs:
           images: ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}
           tags: |
             type=ref,event=tag
+            type=sha,prefix={{branch}}-,enable=${{ github.ref_type != 'tag' }}
+            # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
+            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
 
       - name: Build and push ${{ matrix.image_config.name }}
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294  # v7.0.0
@@ -106,25 +115,56 @@ jobs:
           tags: ${{ steps.meta_retry.outputs.tags || steps.meta.outputs.tags }}
           labels: ${{ steps.meta_retry.outputs.labels || steps.meta.outputs.labels }}
 
+  package-charts:
+    # Package and push Helm charts once, after all images are built.
+    # This avoids the previous issue where chart packaging ran inside the
+    # build matrix (6 times concurrently) and could race on helm push.
+    needs: build-and-push
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Package and push kagenti chart
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
+          chartVersion=$(echo "$REF_NAME" | cut -c 2-)
           chartPackageName="kagenti-${chartVersion}.tgz"
-          cd ${{ env.CHARTS_PATH }}//kagenti
+          cd ${{ env.CHARTS_PATH }}/kagenti
           echo "Fetching Helm chart dependencies..."
           helm dependency update
-          yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
+          yq e ".ui.frontend.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".ui.backend.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".uiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".agentOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".apiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
 
       - name: Package and push kagenti-deps chart
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          chartVersion=$(echo ${{ github.ref_name }} | cut -c 2-)
+          chartVersion=$(echo "$REF_NAME" | cut -c 2-)
           chartPackageName="kagenti-deps-${chartVersion}.tgz"
-          cd ${{ env.CHARTS_PATH }}//kagenti-deps
+          cd ${{ env.CHARTS_PATH }}/kagenti-deps
           echo "Fetching Helm chart dependencies..."
           helm dependency update
-          yq e ".ui.tag = \"${{ github.ref_name }}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
-

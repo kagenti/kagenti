@@ -24,7 +24,7 @@ Usage:
 Environment Variables:
     MLFLOW_TRACKING_URI: MLflow server URL (required)
     KEYCLOAK_URL: Keycloak server URL (required)
-    KEYCLOAK_REALM: Keycloak realm (default: demo)
+    KEYCLOAK_REALM: Keycloak realm (default: kagenti)
     CLIENT_ID: OAuth client ID for MLflow access
     CLIENT_SECRET: OAuth client secret
     NAMESPACES: Comma-separated list of namespaces to create experiments for
@@ -179,7 +179,7 @@ def main():
     # Get configuration from environment
     mlflow_url = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
     keycloak_url = os.environ.get("KEYCLOAK_URL")
-    keycloak_realm = os.environ.get("KEYCLOAK_REALM", "demo")
+    keycloak_realm = os.environ.get("KEYCLOAK_REALM", "kagenti")
     client_id = os.environ.get("CLIENT_ID", "mlflow")
     client_secret = os.environ.get("CLIENT_SECRET")
     namespaces_str = os.environ.get("NAMESPACES", "team1,team2")

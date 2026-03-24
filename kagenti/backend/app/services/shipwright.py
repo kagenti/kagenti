@@ -208,7 +208,7 @@ def build_shipwright_build_manifest(
         manifest["spec"]["paramValues"].append(
             {
                 "name": "build-args",
-                "values": [{"value": arg} for arg in build_config.buildArgs],
+                "values": [{"value": f"--build-arg={arg}"} for arg in build_config.buildArgs],
             }
         )
 

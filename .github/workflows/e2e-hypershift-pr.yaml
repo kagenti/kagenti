@@ -51,7 +51,7 @@ jobs:
       pr_number: ${{ steps.pr-info.outputs.number }}
       pr_sha: ${{ steps.pr-info.outputs.sha }}
       cluster_suffix: ${{ steps.pr-info.outputs.cluster_suffix }}
-      extensions_ref: ${{ steps.parse-options.outputs.extensions_ref }}
+      dep_builds: ${{ steps.parse-options.outputs.dep_builds }}
     steps:
       - name: Check user write permission
         id: check-permission
@@ -97,17 +97,67 @@ jobs:
       - name: Parse command options
         id: parse-options
         if: steps.check-permission.outputs.check-result == 'true'
-        shell: bash
-        run: |
-          COMMENT_BODY="${{ github.event.comment.body }}"
-          # Parse --extensions-ref <branch> from comment
-          # Usage: /run-e2e --extensions-ref fix/proxy-init-drop-privileged
-          if [[ "$COMMENT_BODY" =~ --extensions-ref[[:space:]]+([^[:space:]]+) ]]; then
-            echo "extensions_ref=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-            echo "Parsed extensions_ref: ${BASH_REMATCH[1]}"
-          else
-            echo "extensions_ref=" >> "$GITHUB_OUTPUT"
-          fi
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8
+        with:
+          script: |
+            const commentBody = context.payload.comment.body;
+            console.log('Parsing comment:', commentBody);
+
+            // Allowed repos (security: only build from trusted orgs/repos)
+            const ALLOWED_REPOS = ['kagenti/kagenti-extensions', 'kagenti/kagenti-operator'];
+            // Allowed ref pattern: alphanumeric, dots, dashes, slashes, underscores
+            const REF_PATTERN = /^[\w.\-\/]+$/;
+
+            const builds = [];
+
+            // Parse --build org/repo=ref flags
+            // Examples:
+            //   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
+            //   /run-e2e --build kagenti/kagenti-extensions=pr/234
+            //   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
+            const buildPattern = /--build\s+(\S+)/g;
+            let match;
+            while ((match = buildPattern.exec(commentBody)) !== null) {
+              const spec = match[1];
+              const eqIdx = spec.indexOf('=');
+              if (eqIdx === -1) {
+                core.warning(`Invalid --build format: ${spec} (expected org/repo=ref)`);
+                continue;
+              }
+              const repo = spec.substring(0, eqIdx);
+              const ref = spec.substring(eqIdx + 1);
+
+              if (!ALLOWED_REPOS.includes(repo)) {
+                core.warning(`Repo not in allow list: ${repo} (allowed: ${ALLOWED_REPOS.join(', ')})`);
+                continue;
+              }
+              if (!REF_PATTERN.test(ref)) {
+                core.warning(`Invalid ref: ${ref}`);
+                continue;
+              }
+
+              console.log(`Parsed build: repo=${repo} ref=${ref}`);
+              builds.push({ repo, ref });
+            }
+
+            // Legacy: --extensions-ref maps to kagenti/kagenti-extensions build
+            if (builds.length === 0) {
+              const legacyMatch = commentBody.match(/--extensions-ref\s+(\S+)/);
+              if (legacyMatch) {
+                const ref = legacyMatch[1];
+                if (REF_PATTERN.test(ref)) {
+                  console.log(`Legacy --extensions-ref: ${ref}`);
+                  builds.push({ repo: 'kagenti/kagenti-extensions', ref });
+                } else {
+                  core.setFailed(`Invalid extensions-ref: ${ref}`);
+                  return;
+                }
+              }
+            }
+
+            const output = JSON.stringify(builds);
+            console.log('Dependency builds:', output);
+            core.setOutput('dep_builds', output);
 
       - name: Add safe-to-test label
         if: steps.check-permission.outputs.check-result == 'true'
@@ -277,7 +327,7 @@ jobs:
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          KAGENTI_EXTENSIONS_REF: ${{ needs.authorize.outputs.extensions_ref }}
+          KAGENTI_DEP_BUILDS: ${{ needs.authorize.outputs.dep_builds }}
 
       - name: Build ui-oauth-secret image from PR and restart job
         if: success()

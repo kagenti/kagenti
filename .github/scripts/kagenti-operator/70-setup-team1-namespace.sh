@@ -34,6 +34,16 @@ if [ "$IS_OPENSHIFT" = "true" ]; then
     # Grant workloads access to pull images from internal registry
     log_info "Granting image pull access for OpenShift..."
     oc policy add-role-to-user system:image-puller system:serviceaccount:team1:default -n team1 || true
+
+    # Grant image push access to the pipeline SA for Shipwright builds.
+    # The Pipelines Operator normally does this automatically, but its
+    # namespace reconciliation is asynchronous and may not complete before
+    # Shipwright builds start.  Granting it here ensures the pipeline SA
+    # can authenticate to the internal registry before any BuildRun runs.
+    log_info "Granting image push (image-builder) access to pipeline SA for Shipwright builds..."
+    # Create the pipeline SA first in case the Pipelines Operator hasn't reconciled yet
+    kubectl create serviceaccount pipeline -n team1 --dry-run=client -o yaml | kubectl apply -f - || true
+    oc policy add-role-to-user system:image-builder system:serviceaccount:team1:pipeline -n team1 || true
 fi
 
 log_success "team1 namespace is ready"

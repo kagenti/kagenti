@@ -96,10 +96,10 @@
           profile: ambient
           meshConfig:
             extensionProviders:
-            - name: otel-tracing
-              opentelemetry:
-                service: "{{ charts['kagenti-deps']['values']['otel']['collector']['service'] }}"
-                port: "{{ charts['kagenti-deps']['values']['otel']['collector']['port'] }}"
+              - name: otel-tracing
+                opentelemetry:
+                  service: "{{ charts['kagenti-deps']['values']['otel']['collector']['service'] }}"
+                  port: "{{ charts['kagenti-deps']['values']['otel']['collector']['port'] }}"
       register: istiod_result
       retries: 5
       delay: 30
@@ -156,18 +156,18 @@
 #
 - name: Install cert manager and wait for start
   block:
-  - name: Install cert-manager
-    kubernetes.core.k8s:
-      state: present
-      src: "https://github.com/cert-manager/cert-manager/releases/download/{{certManager.version}}/cert-manager.yaml"
-    register: cert_manager_result
-    retries: 3
-    delay: 15
-    until: cert_manager_result is not failed
+    - name: Install cert-manager
+      kubernetes.core.k8s:
+        state: present
+        src: "https://github.com/cert-manager/cert-manager/releases/download/{{certManager.version}}/cert-manager.yaml"
+      register: cert_manager_result
+      retries: 3
+      delay: 15
+      until: cert_manager_result is not failed
 
-  - name: Wait for cert manager webhook to start
-    command: >-
-      kubectl wait --for=condition=Available deployment -n cert-manager cert-manager-webhook --timeout=120s
+    - name: Wait for cert manager webhook to start
+      command: >-
+        kubectl wait --for=condition=Available deployment -n cert-manager cert-manager-webhook --timeout=120s
   when: (certManager.enabled | default(false)) and not (enable_openshift | default(false)) and not (skip_cert_manager | default(false))
 
 #
@@ -687,7 +687,6 @@
         - ocp_version is not defined or (ocp_version | trim | length == 0)
         - (charts['kagenti-deps'].values.components.spire.enabled | default(false)) | bool
 
-
     - name: Check if SPIRE/ZTWIM operator is already installed
       shell: >-
         kubectl get csv -n zero-trust-workload-identity-manager -o json 2>/dev/null |
@@ -824,14 +823,14 @@
 
 - name: Label kagenti-system namespace for shared gateway access
   kubernetes.core.k8s:
-      api_version: v1
-      kind: Namespace
-      name: "{{ (charts['kagenti-deps'] | default({})).get('namespace', 'kagenti-system') }}"
-      definition:
-        metadata:
-          labels:
-            shared-gateway-access: "true"
-      merge_type: strategic-merge
+    api_version: v1
+    kind: Namespace
+    name: "{{ (charts['kagenti-deps'] | default({})).get('namespace', 'kagenti-system') }}"
+    definition:
+      metadata:
+        labels:
+          shared-gateway-access: "true"
+    merge_type: strategic-merge
   when:
     - (charts['kagenti-deps'] | default({})).get('enabled', false) | bool
     - (charts['kagenti-deps'] | default({})).get('chart') is defined
@@ -998,156 +997,6 @@
     - skip_cert_manager_operator | default(false)
     - cert_manager_existing_check.rc == 0
 
-# TODO: Move TektonConfig patching to kagenti-operator.
-# Shipwright (managed by OpenShift Builds operator) depends on TektonConfig
-# being correctly configured. The operator should reconcile TektonConfig:
-# 1. Watch for TektonConfig creation (detect TektonConfig CRD)
-# 2. Patch SCC defaults and set pipeline.set-security-context: true
-# 3. Re-patch after upgrades if the config is reset
-# For now, we patch it in the installer as a workaround.
-#
-# IMPORTANT: On HyperShift clusters, TektonConfig may be created without
-# proper SCC defaults (spec.platforms.openshift.scc is empty), causing the
-# Tekton operator to crash with nil pointer dereference in rbac.go.
-# We MUST patch the SCC configuration BEFORE waiting for Shipwright, because
-# Shipwright depends on TektonConfig being ready.
-- name: Patch TektonConfig for OpenShift build permissions
-  block:
-    - name: Wait for TektonConfig to exist
-      command: kubectl get tektonconfig config
-      register: tektonconfig_check
-      retries: 30
-      delay: 10
-      until: tektonconfig_check.rc == 0
-      changed_when: false
-
-    # On HyperShift clusters, TektonConfig may be created with empty
-    # spec.platforms.openshift, causing operator crash. Check and patch early.
-    - name: Check if TektonConfig has SCC defaults
-      command: kubectl get tektonconfig config -o jsonpath='{.spec.platforms.openshift.scc.default}'
-      register: tektonconfig_scc_check
-      failed_when: false
-      changed_when: false
-
-    - name: Patch TektonConfig SCC defaults for HyperShift clusters
-      kubernetes.core.k8s:
-        api_version: operator.tekton.dev/v1alpha1
-        kind: TektonConfig
-        name: config
-        definition:
-          spec:
-            platforms:
-              openshift:
-                scc:
-                  default: "pipelines-scc"
-        merge_type: merge
-      retries: 5
-      delay: 10
-      register: tektonconfig_scc_patch
-      until: tektonconfig_scc_patch is not failed
-      when: tektonconfig_scc_check.stdout | default('') | length == 0
-
-    - name: Wait for Tekton operator to recover after SCC patch
-      pause:
-        seconds: 10
-      when: tektonconfig_scc_check.stdout | default('') | length == 0
-
-    - name: Wait for Tekton operator webhook to be ready
-      command: >-
-        kubectl rollout status deployment/tekton-operator-webhook
-        -n openshift-operators --timeout=120s
-      register: tekton_webhook_ready
-      retries: 5
-      delay: 10
-      until: tekton_webhook_ready.rc == 0
-      changed_when: false
-      failed_when: false
-
-    - name: Patch TektonConfig to set security context and pruner
-      kubernetes.core.k8s:
-        api_version: operator.tekton.dev/v1alpha1
-        kind: TektonConfig
-        name: config
-        definition:
-          spec:
-            pipeline:
-              set-security-context: true
-            # Pruner configuration is required by newer Tekton versions.
-            # Without spec.pruner.resources, the webhook validation fails with:
-            # "validation failed: missing field(s): spec.pruner.resources"
-            pruner:
-              resources:
-                - taskrun
-                - pipelinerun
-              keep: 100
-              schedule: "0 8 * * *"
-        merge_type: merge
-      retries: 5
-      delay: 15
-      register: tektonconfig_patch
-      until: tektonconfig_patch is not failed
-
-    # Wait for TektonConfig to become fully Ready before proceeding.
-    # OpenShift Builds operator depends on TektonConfig being ready before
-    # it will deploy Shipwright components. Without this wait, the Builds
-    # operator will be stuck in a retry loop waiting for Tekton.
-    - name: Wait for TektonConfig to be Ready
-      block:
-        - name: Wait for TektonConfig Ready condition
-          command: >-
-            kubectl get tektonconfig config
-            -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
-          register: tektonconfig_ready_status
-          retries: 90
-          delay: 10
-          until: tektonconfig_ready_status.stdout == "True"
-          changed_when: false
-      rescue:
-        - name: Get TektonConfig full status for debugging
-          command: kubectl get tektonconfig config -o yaml
-          register: tektonconfig_full_status
-          failed_when: false
-
-        - name: Get Tekton operator pod status
-          command: kubectl get pods -n openshift-operators -l app=tekton-operator -o wide
-          register: tekton_operator_pods
-          failed_when: false
-
-        - name: Get Tekton operator logs
-          shell: kubectl logs -n openshift-operators -l app=tekton-operator --tail=100 2>&1 || echo "No logs available"
-          register: tekton_operator_logs
-          failed_when: false
-
-        - name: Get Tekton pipelines controller status
-          command: kubectl get pods -n openshift-pipelines -o wide
-          register: tekton_pipelines_pods
-          failed_when: false
-
-        - name: Display TektonConfig failure diagnostics
-          debug:
-            msg: |
-              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-              TektonConfig Failed to Become Ready
-              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-              TEKTONCONFIG STATUS:
-              {{ tektonconfig_full_status.stdout | default('unable to get status') }}
-
-              TEKTON OPERATOR PODS:
-              {{ tekton_operator_pods.stdout | default('unable to get pods') }}
-
-              TEKTON OPERATOR LOGS (last 100 lines):
-              {{ tekton_operator_logs.stdout | default('no logs') }}
-
-              TEKTON PIPELINES PODS:
-              {{ tekton_pipelines_pods.stdout | default('unable to get pods') }}
-              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-        - name: Fail with TektonConfig error
-          fail:
-            msg: "TektonConfig did not become Ready after 15 minutes. See diagnostics above."
-  when: enable_openshift | default(false)
-
 # Wait for OpenShift Builds operator to be ready.
 # The operator is installed via OLM subscription in kagenti-deps.
 # The OpenShiftBuild operand CR is created via Helm hook (post-install).
@@ -1229,6 +1078,36 @@
           This may indicate the Helm hook did not run or the operand was created by another source.
           Check: kubectl get openshiftbuild cluster -o yaml
       when: openshiftbuild_shipwright_state.stdout != "Enabled"
+
+    # TODO: Remove once kagenti-operator TektonConfigReconciler handles this reliably.
+    # PR #1046 moved TektonConfig SCC patching to the operator, but on HyperShift
+    # the operator reconciler doesn't patch fast enough — TektonConfig stays Unknown
+    # and Shipwright never deploys. Restore minimal SCC patch as a workaround.
+    # See: https://github.com/kagenti/kagenti/pull/1024
+    - name: Ensure TektonConfig SCC defaults are set (HyperShift workaround)
+      kubernetes.core.k8s:
+        api_version: operator.tekton.dev/v1alpha1
+        kind: TektonConfig
+        name: config
+        definition:
+          spec:
+            platforms:
+              openshift:
+                scc:
+                  default: "pipelines-scc"
+            pipeline:
+              set-security-context: true
+        merge_type: merge
+      retries: 5
+      delay: 10
+      register: tektonconfig_scc_patch
+      until: tektonconfig_scc_patch is not failed
+      failed_when: false
+
+    - name: Wait for Tekton operator to reconcile after SCC patch
+      pause:
+        seconds: 10
+      when: tektonconfig_scc_patch is changed
 
     # The Ready condition might be True before Shipwright is fully deployed.
     # Wait explicitly for Shipwright deployments to be ready.
@@ -1489,7 +1368,7 @@
   when:
     - enable_openshift | default(false)
     - (charts['kagenti-deps'] | default({})).get('values', {}).get('components', {}).get('istio', {}).get('enabled', false) | bool
-    - not (rhoai.enabled | default(false))  # RHOAI 3.x uses gateway-only Istio, no CA conflict
+    - not (rhoai.enabled | default(false)) # RHOAI 3.x uses gateway-only Istio, no CA conflict
 
 #
 #  Setup DNS for registry in kind
@@ -1529,11 +1408,11 @@
     wait: false
     timeout: "{{ helm_wait_timeout }}s"
     values: >-
-         {{ (((charts['mcpGateway'] | default({})).get('values')) | default({}))
-          | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
-          | combine((((secret_values.get('charts', {}) | default({})).get('mcpGateway', {}) ).get('values', {})) , recursive=True)
-          | combine((secret_values.get('global', {}) | default({})), recursive=True)
-          | combine({'openshift': enable_openshift}, recursive=True) }}
+      {{ (((charts['mcpGateway'] | default({})).get('values')) | default({}))
+       | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
+       | combine((((secret_values.get('charts', {}) | default({})).get('mcpGateway', {}) ).get('values', {})) , recursive=True)
+       | combine((secret_values.get('global', {}) | default({})), recursive=True)
+       | combine({'openshift': enable_openshift}, recursive=True) }}
   register: mcp_gateway_result
   retries: 3
   delay: 15
@@ -1591,68 +1470,137 @@
 
 - name: Install/upgrade Kagenti chart and print instructions
   block:
-  # Delete old OAuth secret jobs BEFORE Helm install to allow fresh job creation.
-  # Jobs are immutable, so Helm can't update them - we must delete first.
-  - name: Delete old kagenti-ui-oauth-secret-job before Helm install
-    kubernetes.core.k8s:
-      state: absent
-      api_version: batch/v1
-      kind: Job
-      name: kagenti-ui-oauth-secret-job
-      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
-    failed_when: false
+    # Delete old OAuth secret jobs BEFORE Helm install to allow fresh job creation.
+    # Jobs are immutable, so Helm can't update them - we must delete first.
+    - name: Delete old kagenti-ui-oauth-secret-job before Helm install
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: kagenti-ui-oauth-secret-job
+        namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
+      failed_when: false
 
-  - name: Delete old kagenti-agent-oauth-secret-job before Helm install
-    kubernetes.core.k8s:
-      state: absent
-      api_version: batch/v1
-      kind: Job
-      name: kagenti-agent-oauth-secret-job
-      namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
-    failed_when: false
+    - name: Delete old kagenti-agent-oauth-secret-job before Helm install
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: kagenti-agent-oauth-secret-job
+        namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
+      failed_when: false
 
-  # On HyperShift/OpenShift clusters, verify API server stability before Helm install.
-  # HyperShift control planes can become transiently unavailable during heavy load.
-  - name: Verify OpenShift API server is responsive before Helm install
-    command: >-
-      kubectl get --raw /healthz
-    register: api_health_check
-    retries: 30
-    delay: 10
-    until: api_health_check.rc == 0 and 'ok' in api_health_check.stdout
-    changed_when: false
-    when: enable_openshift | default(false)
+    # On HyperShift/OpenShift clusters, verify API server stability before Helm install.
+    # HyperShift control planes can become transiently unavailable during heavy load.
+    - name: Verify OpenShift API server is responsive before Helm install
+      command: >-
+        kubectl get --raw /healthz
+      register: api_health_check
+      retries: 30
+      delay: 10
+      until: api_health_check.rc == 0 and 'ok' in api_health_check.stdout
+      changed_when: false
+      when: enable_openshift | default(false)
 
-  # Helm install with retries for HyperShift/OpenShift API transient issues.
-  # HyperShift control planes can become temporarily unavailable during heavy load.
-  - name: Install/upgrade Kagenti chart
-    kubernetes.core.helm:
-      release_name: "{{ (charts['kagenti'] | default({})).get('release_name', 'kagenti') }}"
-      chart_ref: "{{ (charts['kagenti'] | default({})).get('chart') }}"
-      chart_repo_url: "{{ (charts['kagenti'] | default({})).get('repo_url', omit) }}"
-      kubeconfig: ""
-      release_namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
-      state: present
-      create_namespace: false
-      wait: true
-      timeout: "{{ helm_wait_timeout }}s"
-      values: >-
-        {{ (((charts['kagenti'] | default({})).get('values')) | default({}))
-          | combine({'ui': {'frontend': {'tag': kagenti_latest_tag}, 'backend': {'tag': kagenti_latest_tag}}}, recursive=True)
-          | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
-          | combine((((secret_values.get('charts', {}) | default({})).get('kagenti', {}) ).get('values', {})) , recursive=True)
-          | combine((secret_values.get('global', {}) | default({})), recursive=True)
-          | combine({'openshift': enable_openshift}, recursive=True)
-          | combine((kagenti_openshift_overrides | default({})), recursive=True) }}
-      values_files: >
-        {{ (((charts['kagenti'] | default({}))['values_files'] | default([])) | list)
-        }}
-    # Retry on transient API failures (common on HyperShift during control plane churn)
-    retries: 3
-    delay: 30
-    register: kagenti_helm_result
-    until: kagenti_helm_result is succeeded
+    # Helm install with retries for HyperShift/OpenShift API transient issues.
+    # HyperShift control planes can become temporarily unavailable during heavy load.
+    - name: Install/upgrade Kagenti chart
+      kubernetes.core.helm:
+        release_name: "{{ (charts['kagenti'] | default({})).get('release_name', 'kagenti') }}"
+        chart_ref: "{{ (charts['kagenti'] | default({})).get('chart') }}"
+        chart_repo_url: "{{ (charts['kagenti'] | default({})).get('repo_url', omit) }}"
+        kubeconfig: ""
+        release_namespace: "{{ (charts['kagenti'] | default({})).get('namespace', 'kagenti-system') }}"
+        state: present
+        create_namespace: false
+        wait: true
+        timeout: "{{ helm_wait_timeout }}s"
+        values: >-
+          {{ (((charts['kagenti'] | default({})).get('values')) | default({}))
+            | combine({'ui': {'frontend': {'tag': kagenti_latest_tag}, 'backend': {'tag': kagenti_latest_tag}}}, recursive=True)
+            | combine((global_values_merged | default({}) | dict2items | rejectattr('key', 'in', ['charts', 'gatewayApi', 'certManager', 'tekton', 'shipwright', 'kiali', 'secrets', 'values_files', 'create_kind_cluster', 'kind_cluster_name', 'kind_images_preload', 'container_engine', 'kind_config', 'kind_config_registry', 'preload_images_file']) | list | items2dict), recursive=True)
+            | combine((((secret_values.get('charts', {}) | default({})).get('kagenti', {}) ).get('values', {})) , recursive=True)
+            | combine((secret_values.get('global', {}) | default({})), recursive=True)
+            | combine({'openshift': enable_openshift}, recursive=True)
+            | combine((kagenti_openshift_overrides | default({})), recursive=True) }}
+        values_files: >
+          {{ (((charts['kagenti'] | default({}))['values_files'] | default([])) | list)
+          }}
+      # Retry on transient API failures (common on HyperShift during control plane churn)
+      retries: 3
+      delay: 30
+      register: kagenti_helm_result
+      until: kagenti_helm_result is succeeded
 
   when:
-  - (charts['kagenti'] | default({})).get('enabled', false) | bool
-  - (charts['kagenti'] | default({})).get('chart') is defined
+    - (charts['kagenti'] | default({})).get('enabled', false) | bool
+    - (charts['kagenti'] | default({})).get('chart') is defined
+
+# TektonConfig patching (set-security-context, SCC defaults, pruner) is now
+# handled by kagenti-operator's TektonConfigReconciler. The operator is deployed
+# as part of the kagenti chart above, so we wait for TektonConfig to be Ready
+# after the chart install, giving the operator time to reconcile.
+- name: Wait for TektonConfig to be Ready on OpenShift
+  block:
+    - name: Wait for TektonConfig to exist
+      command: kubectl get tektonconfig config
+      register: tektonconfig_check
+      retries: 30
+      delay: 10
+      until: tektonconfig_check.rc == 0
+      changed_when: false
+
+    - name: Wait for TektonConfig Ready condition
+      command: >-
+        kubectl get tektonconfig config
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: tektonconfig_ready_status
+      retries: 90
+      delay: 10
+      until: tektonconfig_ready_status.stdout == "True"
+      changed_when: false
+  rescue:
+    - name: Get TektonConfig full status for debugging
+      command: kubectl get tektonconfig config -o yaml
+      register: tektonconfig_full_status
+      failed_when: false
+
+    - name: Get Tekton operator pod status
+      command: kubectl get pods -n openshift-operators -l app=tekton-operator -o wide
+      register: tekton_operator_pods
+      failed_when: false
+
+    - name: Get Tekton operator logs
+      shell: kubectl logs -n openshift-operators -l app=tekton-operator --tail=100 2>&1 || echo "No logs available"
+      register: tekton_operator_logs
+      failed_when: false
+
+    - name: Get Tekton pipelines controller status
+      command: kubectl get pods -n openshift-pipelines -o wide
+      register: tekton_pipelines_pods
+      failed_when: false
+
+    - name: Display TektonConfig failure diagnostics
+      debug:
+        msg: |
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          TektonConfig Failed to Become Ready
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          TEKTONCONFIG STATUS:
+          {{ tektonconfig_full_status.stdout | default('unable to get status') }}
+
+          TEKTON OPERATOR PODS:
+          {{ tekton_operator_pods.stdout | default('unable to get pods') }}
+
+          TEKTON OPERATOR LOGS (last 100 lines):
+          {{ tekton_operator_logs.stdout | default('no logs') }}
+
+          TEKTON PIPELINES PODS:
+          {{ tekton_pipelines_pods.stdout | default('unable to get pods') }}
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    - name: Fail with TektonConfig error
+      fail:
+        msg: "TektonConfig did not become Ready after 15 minutes. See diagnostics above."
+  when: enable_openshift | default(false)

@@ -36,6 +36,26 @@
     - docker_info.rc | default(1) != 0
     - docker_podman_compat_info.rc | default(1) == 0
 
+- name: Preflight - Podman-as-Docker override
+  block:
+    - name: Preflight - Override container_engine when Podman masquerades as Docker
+      set_fact:
+        container_engine: podman
+
+    - name: Preflight - Warn about Podman-as-Docker override
+      debug:
+        msg: >-
+          Detected 'docker' is actually Podman (docker info failed but Podman format succeeded).
+          Overriding container_engine to 'podman' to use sequential image pulls and avoid
+          SSH connection failures. To silence this warning, set container_engine: podman
+          in your values file.
+  when:
+    - create_kind_cluster | default(false)
+    - not (enable_openshift | default(false))
+    - container_engine | default('docker') == 'docker'
+    - docker_podman_compat_info is defined
+    - docker_podman_compat_info.rc | default(1) == 0
+
 - name: Preflight - Get container runtime info (Podman)
   command: podman info --format "{{ '{{' }}.Host.MemTotal{{ '}}' }},{{ '{{' }}.Host.CPUs{{ '}}' }}"
   register: podman_info

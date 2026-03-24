@@ -229,7 +229,7 @@ class TestWeatherAgentConversation:
     """Test weather-service agent with MCP weather-tool (works with both operators)."""
 
     @pytest.mark.asyncio
-    async def test_agent_simple_query(self):
+    async def test_agent_simple_query(self, keycloak_agent_token):
         """
         Test agent can process a simple query using A2A protocol.
 
@@ -242,6 +242,12 @@ class TestWeatherAgentConversation:
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
         ssl_verify = _get_ssl_context()
 
+        # On OpenShift, traffic goes through AuthBridge (envoy sidecar) which
+        # requires a valid Bearer token from the kagenti Keycloak realm.
+        headers = {}
+        if keycloak_agent_token:
+            headers["Authorization"] = f"Bearer {keycloak_agent_token}"
+
         # Connect using ClientFactory (replaces deprecated A2AClient)
         # TODO: Should the agent card return the public route URL instead of
         #   the internal bind address (0.0.0.0:8000)? The A2A spec says the
@@ -249,7 +255,9 @@ class TestWeatherAgentConversation:
         #   1. Agent reads its own route hostname and sets card.url
         #   2. A proxy/gateway rewrites the card URL on the fly
         #   3. Clients override as we do here (current workaround)
-        httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
+        httpx_client = httpx.AsyncClient(
+            timeout=120.0, verify=ssl_verify, headers=headers
+        )
         config = ClientConfig(httpx_client=httpx_client)
         try:
             from a2a.client.card_resolver import A2ACardResolver
@@ -370,7 +378,9 @@ class TestWeatherAgentConversation:
 
     @pytest.mark.openshift_only
     @pytest.mark.asyncio
-    async def test_agent_multiturn_conversation(self, test_session_id):
+    async def test_agent_multiturn_conversation(
+        self, test_session_id, keycloak_agent_token
+    ):
         """
         Test multi-turn conversation maintains consistent session/context ID.
 
@@ -385,6 +395,11 @@ class TestWeatherAgentConversation:
         agent_url = os.getenv("AGENT_URL", "http://localhost:8000")
         ssl_verify = _get_ssl_context()
 
+        # AuthBridge Bearer token (see test_agent_simple_query for details)
+        headers = {}
+        if keycloak_agent_token:
+            headers["Authorization"] = f"Bearer {keycloak_agent_token}"
+
         context_id = test_session_id
         logger.debug("Multi-turn conversation test; session/context ID: %s", context_id)
 
@@ -395,7 +410,9 @@ class TestWeatherAgentConversation:
         ]
 
         # Connect using ClientFactory (override card URL for external access)
-        httpx_client = httpx.AsyncClient(timeout=120.0, verify=ssl_verify)
+        httpx_client = httpx.AsyncClient(
+            timeout=120.0, verify=ssl_verify, headers=headers
+        )
         config = ClientConfig(httpx_client=httpx_client)
         try:
             from a2a.client.card_resolver import A2ACardResolver

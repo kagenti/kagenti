@@ -1,6 +1,6 @@
 # Images pre-pulled on the host and loaded into Kind for faster startup.
 # Keep versions in sync with:
-#   - deployments/ansible/default_values.yaml       (istio, shipwright)
+#   - deployments/ansible/default_values.yaml       (istio, shipwright, cert-manager)
 #   - charts/kagenti/values.yaml                    (ui-v2, backend, kagenti-operator)
 #   - charts/kagenti-deps/templates/                (phoenix, otel-collector, keycloak)
 #   - deployments/ansible/roles/.../04_install_shipwright.yaml (buildah)
@@ -14,9 +14,12 @@ docker.io/nginxinc/nginx-unprivileged:1.29.1-alpine
 docker.io/prom/prometheus:v3.5.0
 otel/opentelemetry-collector-contrib:0.122.1
 quay.io/containers/buildah:v1.37.5
+quay.io/jetstack/cert-manager-cainjector:v1.17.2
+quay.io/jetstack/cert-manager-controller:v1.17.2
+quay.io/jetstack/cert-manager-webhook:v1.17.2
 quay.io/keycloak/keycloak:26.3.3
 ghcr.io/shipwright-io/build/shipwright-build-controller:v0.14.0
 ghcr.io/shipwright-io/build/shipwright-build-webhook:v0.14.0
-ghcr.io/kagenti/kagenti/ui-v2:v0.5.0-alpha.10
+ghcr.io/kagenti/kagenti/ui-v2:v0.5.0-alpha.11
 ghcr.io/kagenti/kagenti-operator/kagenti-operator:0.2.0-alpha.19
-ghcr.io/kagenti/kagenti/backend:v0.5.0-alpha.10
+ghcr.io/kagenti/kagenti/backend:v0.5.0-alpha.11

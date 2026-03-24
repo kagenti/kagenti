@@ -56,6 +56,11 @@ Smaller pull requests are typically easier to review and merge than larger ones.
 
 See the [making PR](./docs/dev-guide.md#making-a-pr) document for detailed instructions.
 
+## Releasing
+
+Maintainers: see the [Releasing Guide](./docs/releasing.md) for how to create
+tags, pre-releases, and stable (GA) releases across the Kagenti organization.
+
 ## Contributing Documentation
 
 Documentation improvements are always welcome! When contributing documentation, please follow these guidelines:

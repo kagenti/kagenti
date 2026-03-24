@@ -6,7 +6,7 @@ Registers custom markers and provides shared fixtures.
 
 import base64
 import os
-from typing import Dict
+from typing import Dict, Optional
 
 import pytest
 import requests
@@ -186,3 +186,91 @@ def keycloak_token(keycloak_admin_credentials) -> Dict[str, str]:
             f"Keycloak URL: {keycloak_base_url}\n"
             f"Hint: Set KEYCLOAK_URL env var to your Keycloak endpoint"
         )
+
+
+def _keycloak_ssl_verify() -> "bool | str":
+    """Return the ``verify`` parameter for requests to the Keycloak endpoint.
+
+    Prefers an explicit CA bundle, then fetches the cluster root CA from
+    kube-root-ca.crt.  Falls back to the default system CA store.
+    Never returns ``False``.
+    """
+    if os.environ.get("KEYCLOAK_CA_BUNDLE"):
+        return os.environ["KEYCLOAK_CA_BUNDLE"]
+    if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() == "false":
+        from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
+
+        ca_path = _fetch_openshift_ingress_ca()
+        if ca_path:
+            return ca_path
+    return True
+
+
+@pytest.fixture(scope="session")
+def keycloak_agent_token(k8s_client) -> Optional[str]:
+    """
+    Acquire a Bearer token from the kagenti realm for authenticating
+    to agents via AuthBridge.
+
+    Reads credentials from the ``kagenti-test-user`` secret (created/
+    updated by ``87-setup-test-credentials.sh`` or the agent-oauth-secret
+    Helm Job) and acquires a token via Direct Access Grant.
+
+    Returns:
+        Access token string, or None if the secret is absent.
+    """
+    import time
+
+    secret = None
+    for attempt in range(12):
+        try:
+            secret = k8s_client.read_namespaced_secret(
+                name="kagenti-test-user", namespace="keycloak"
+            )
+            break
+        except ApiException:
+            if attempt < 11:
+                time.sleep(5)
+
+    if secret is None:
+        print(
+            "\n[keycloak_agent_token] kagenti-test-user secret not found "
+            "in keycloak namespace after 60s — agent auth will be skipped"
+        )
+        return None
+
+    username = base64.b64decode(secret.data["username"]).decode("utf-8")
+    password = base64.b64decode(secret.data["password"]).decode("utf-8")
+    realm = base64.b64decode(secret.data["realm"]).decode("utf-8")
+
+    keycloak_base_url = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
+    token_url = f"{keycloak_base_url}/realms/{realm}/protocol/openid-connect/token"
+    verify_ssl = _keycloak_ssl_verify()
+
+    try:
+        response = requests.post(
+            token_url,
+            data={
+                "grant_type": "password",
+                "client_id": "admin-cli",
+                "username": username,
+                "password": password,
+            },
+            timeout=10,
+            verify=verify_ssl,
+        )
+        if response.status_code == 200:
+            token = response.json()["access_token"]
+            print(
+                f"\n[keycloak_agent_token] Acquired token for realm={realm} "
+                f"user={username} (token length={len(token)})"
+            )
+            return token
+        print(
+            f"\n[keycloak_agent_token] Token request failed: "
+            f"HTTP {response.status_code} — {response.text[:200]}"
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"\n[keycloak_agent_token] Token request error: {e}")
+
+    return None

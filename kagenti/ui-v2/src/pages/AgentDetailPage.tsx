@@ -128,7 +128,7 @@ export const AgentDetailPage: React.FC = () => {
   };
 
   const handleDeleteConfirm = () => {
-    if (deleteConfirmText === name) {
+    if (deleteConfirmText.trim() === name) {
       deleteMutation.mutate();
     }
   };
@@ -1027,7 +1027,7 @@ export const AgentDetailPage: React.FC = () => {
             variant="danger"
             onClick={handleDeleteConfirm}
             isLoading={deleteMutation.isPending}
-            isDisabled={deleteMutation.isPending || deleteConfirmText !== name}
+            isDisabled={deleteMutation.isPending || deleteConfirmText.trim() !== name}
           >
             Delete
           </Button>,

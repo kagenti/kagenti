@@ -23,16 +23,14 @@ Kagenti agents use three environment variables to configure their LLM backend:
 | `LLM_API_KEY` | API key | `dummy` (Ollama ignores this) | Your OpenAI API key |
 | `LLM_MODEL` | Model identifier | `qwen2.5:3b` | `gpt-4o-mini-2024-07-18` |
 
-When deploying agents through the Kagenti UI, you select an **environment variable set** (`ollama` or `openai`) that populates these values automatically. No code changes are needed to switch between backends.
+When deploying agents through the Kagenti UI or TUI, you select an LLM preset (`ollama` or `openai`) that populates these values automatically. No code changes are needed to switch between backends.
 
 ## How It Works
 
-Kagenti pre-configures two environment variable sets in each agent namespace via a ConfigMap:
+Kagenti provides two ways to configure LLM environment variables when deploying agents:
 
-- **`ollama`** - Points to a local Ollama instance with a default model
-- **`openai`** - Points to the OpenAI API using credentials from the `openai-secret`
-
-These are defined in the `environments` ConfigMap (see `charts/kagenti/templates/agent-namespaces.yaml`). When you import an agent through the UI, you choose which environment set to apply.
+- **UI (ui-v2)**: Import a `.env` file (e.g. `.env.openai` or `.env.ollama`) from GitHub, or manually add env vars in the deploy form.
+- **TUI**: Select the `openai` or `ollama` preset, which injects the appropriate env vars directly into the deployment spec.
 
 ---
 
@@ -139,19 +137,11 @@ Deploy Ollama as a Kubernetes Deployment within the cluster so agents can reach 
    kubectl exec -n kagenti-system deploy/ollama -- ollama pull qwen2.5:3b
    ```
 
-3. **Update the `ollama` environment set** to point to the in-cluster service. Edit the `environments` ConfigMap in each agent namespace (e.g., `team1`):
-
-   ```bash
-   kubectl edit configmap environments -n team1
-   ```
-
-   Change the `LLM_API_BASE` value from `http://host.docker.internal:11434/v1` to:
+3. **Configure the agent's `LLM_API_BASE`** to point to the in-cluster service. When deploying an agent via the UI or TUI, set `LLM_API_BASE` to:
 
    ```
    http://ollama.kagenti-system.svc.cluster.local:11434/v1
    ```
-
-   Or override via Helm values when installing the chart. See [Customizing the Ollama Endpoint](#customizing-the-ollama-endpoint) below.
 
 ### Option 2: Use an External Ollama Server
 
@@ -182,16 +172,13 @@ For production OpenShift deployments, consider:
 
 ### Customizing the Ollama Endpoint
 
-The default `ollama` environment set points to `http://host.docker.internal:11434/v1`, which works for Kind but not for OpenShift. After deploying Kagenti, update the `environments` ConfigMap in each agent namespace to point to your Ollama service:
+The default `ollama` preset points to `http://host.docker.internal:11434/v1`, which works for Kind but not for OpenShift. When deploying agents on OpenShift, set `LLM_API_BASE` to the in-cluster Ollama service URL:
 
-```bash
-# For each agent namespace (e.g., team1, team2)
-kubectl get configmap environments -n team1 -o yaml | \
-  sed 's|http://host.docker.internal:11434/v1|http://ollama.kagenti-system.svc.cluster.local:11434/v1|' | \
-  kubectl apply -f -
+```
+http://ollama.kagenti-system.svc.cluster.local:11434/v1
 ```
 
-This updates `LLM_API_BASE` so agents in that namespace reach the in-cluster Ollama service. Repeat for each agent namespace.
+You can set this via the UI (add it as an env var when deploying the agent) or the TUI (use `--env LLM_API_BASE=http://ollama.kagenti-system.svc.cluster.local:11434/v1`).
 
 ---
 
@@ -249,7 +236,7 @@ Then check the host gateway IP:
 docker network inspect kind | grep Gateway
 ```
 
-Update the `LLM_API_BASE` in the ConfigMap to use that gateway IP.
+Set `LLM_API_BASE` to use that gateway IP when deploying the agent.
 
 ### Model too slow or out of memory
 
@@ -261,7 +248,7 @@ Update the `LLM_API_BASE` in the ConfigMap to use that gateway IP.
 
 **Symptom**: Agent tries to call OpenAI instead of Ollama (or vice versa).
 
-**Fix**: When importing an agent in the Kagenti UI, verify you selected the correct environment variable set (`ollama` or `openai`). You can check the running pod's environment:
+**Fix**: When deploying an agent, verify you selected the correct LLM preset (`ollama` or `openai`) or imported the correct `.env` file. You can check the running pod's environment:
 
 ```bash
 kubectl exec -n team1 <agent-pod> -- env | grep LLM_

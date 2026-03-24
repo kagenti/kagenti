@@ -266,8 +266,8 @@ class TestBuildShipwrightBuildManifest:
         )
         assert build_args_param is not None
         assert len(build_args_param["values"]) == 2
-        assert build_args_param["values"][0]["value"] == "PYTHON_VERSION=3.11"
-        assert build_args_param["values"][1]["value"] == "DEBUG=false"
+        assert build_args_param["values"][0]["value"] == "--build-arg=PYTHON_VERSION=3.11"
+        assert build_args_param["values"][1]["value"] == "--build-arg=DEBUG=false"
 
     def test_build_manifest_with_custom_timeout(self):
         """Test build manifest with custom timeout."""

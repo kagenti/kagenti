@@ -1,0 +1,134 @@
+# Kagenti minimal installation configuration for OpenShift
+# no UI (frontend + backend)
+# Use this for deployments that integrate with Kagenti without the standalone UI.
+# For full standalone deployment with UI, use ocp_values.yaml instead.
+#
+# Usage: ./deployments/ansible/run-install.sh --env ocp-minimal
+#
+# Disable Kind cluster creation - we're deploying to an existing OpenShift cluster
+create_kind_cluster: false
+
+# ⚠️  IMPORTANT VERSION REQUIREMENTS ⚠️
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SPIRE/ZTWIM (Zero Trust Workload Identity Manager) requires OpenShift 4.19+
+#
+# If your cluster is running OCP < 4.19:
+#   - Set components.spire.enabled to 'false' in kagenti-deps section (line 36)
+#   - The Ansible installer will auto-detect and disable SPIRE on older versions
+#   - See docs/ocp/openshift-install.md for upgrade instructions
+#
+# To check your OpenShift version:
+#   oc version
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+charts:
+  ####################################################################
+  # kagenti-deps
+  ####################################################################
+  kagenti-deps:
+    enabled: true
+    values:
+      openshift: true
+      components:
+        mcpInspector:
+          enabled: true
+        istio:
+          enabled: true
+        kiali:
+          enabled: true
+        keycloak:
+          enabled: true
+        otel:
+          enabled: true
+        phoenix:
+          enabled: false
+        mlflow:
+          enabled: true
+        spire:
+          # ⚠️  REQUIRES OpenShift 4.19 or higher
+          # The ZTWIM (Zero Trust Workload Identity Manager) operator is only available on OCP 4.19+
+          # For OCP < 4.19: Set this to 'false' or the Ansible installer will auto-disable it
+          enabled: true  # Use ZTWIM operator for OCP 4.19+
+        tekton:
+          enabled: true
+        shipwright:
+          enabled: true
+          # Skip Helm hook for OpenShiftBuild operand - Ansible creates it after CRD is ready
+          # This is needed on HyperShift/fresh installs where the CRD doesn't exist yet
+          skipOpenShiftBuildOperand: true
+        certManager:
+          enabled: true
+        rhoai:
+          enabled: true
+        gatewayApi:
+          enabled: false
+      # MLflow authentication - requires Keycloak OAuth2
+      mlflow:
+        auth:
+          enabled: true  # Require authentication for MLflow access
+
+  ####################################################################
+  # kagenti
+  ####################################################################
+  kagenti:
+    enabled: true
+    values:
+      openshift: true
+      components:
+        agentNamespaces:
+          enabled: true
+        platformOperator:
+          enabled: true
+        # Enable platformWebhook for SPIFFE identity injection
+        # Works with ZTWIM operator on OCP 4.19+ via SpiffeCSIDriver
+        # Injects: spiffe-helper sidecar, kagenti-client-registration init container
+        platformWebhook:
+          enabled: true
+        ui:
+          enabled: false
+        # additional artifacts required by MCP gateway
+        mcpGateway:
+          enabled: true
+        istio:
+          enabled: false
+        phoenix:
+          enabled: false
+      # configs
+      mlflow:
+        auth:
+          enabled: true  # Override chart default (false) for OCP
+      ui:
+        auth:
+          enabled: true
+      uiOAuthSecret:
+        # for a OCP with self-signed certs for routes it should be true.
+        # for a OCP with CA-signed certs for routes it should be false.
+        useServiceAccountCA: true
+      keycloak:
+        url: http://keycloak-service.keycloak:8080
+      agentNamespaces:
+        - team1
+        - team2
+
+  ####################################################################
+  # mcp-gateway chart
+  ####################################################################
+  mcpGateway:
+    enabled: true
+
+  ####################################################################
+  # spire - On OpenShift, ZTWIM operator is used (configured in kagenti-deps)
+  # Helm-based SPIRE is automatically skipped on OpenShift
+  ####################################################################
+  spire:
+    enabled: false  # Helm SPIRE disabled; ZTWIM operator used via kagenti-deps
+
+####################################################################
+# RHOAI (Red Hat OpenShift AI)
+####################################################################
+rhoai:
+  enabled: true
+  profile: minimal    # minimal or full
+  channel: fast-3.x
+  kserve_mode: raw    # raw (no mesh needed) or serverless (deprecated)
+  scale_down: false    # Scale RHOAI operator/dashboard to 1 replica (test/dev clusters only)

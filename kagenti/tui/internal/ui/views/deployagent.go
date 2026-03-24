@@ -277,7 +277,7 @@ func (v *DeployAgentView) buildForm() {
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("LLM Environment").
-				Description("Injects env vars from the 'environments' ConfigMap in the namespace").
+				Description("Injects LLM provider env vars into the agent deployment").
 				Options(
 					huh.NewOption("OpenAI (from openai-secret)", "openai"),
 					huh.NewOption("Ollama (local)", "ollama"),

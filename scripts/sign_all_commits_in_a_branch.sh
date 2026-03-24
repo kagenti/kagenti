@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
 # Sign all commits in current branch that are ahead of upstream/main.
-# This adds both sign-off (-s) and GPG signature (-S) to each commit,
+# Adds sign-off (-s) and optionally GPG signature (-S) to each commit,
 # and replaces any Co-Authored-By trailers with Assisted-By.
 #
-# Usage: ./scripts/sign_all_commits_in_a_branch.sh [upstream-ref]
+# Usage: ./scripts/sign_all_commits_in_a_branch.sh [upstream-ref] [--no-gpg] [--yes]
 #
 # Default upstream-ref: upstream/main
+# --no-gpg: skip GPG signing (DCO sign-off only, no password prompt)
+# --yes/-y: skip confirmation prompt (for automation)
 #
 
 set -euo pipefail
@@ -18,8 +20,31 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Get the upstream reference (default: upstream/main)
-UPSTREAM_REF="${1:-upstream/main}"
+# Parse arguments
+GPG_SIGN="-S"
+AUTO_YES=false
+UPSTREAM_REF="upstream/main"
+POSITIONAL_SET=false
+for arg in "$@"; do
+    case "$arg" in
+        --no-gpg) GPG_SIGN="--no-gpg-sign" ;;
+        --yes|-y) AUTO_YES=true ;;
+        -*)
+            echo -e "${RED}Error: Unknown flag '$arg'${NC}"
+            echo "Usage: $0 [upstream-ref] [--no-gpg] [--yes]"
+            exit 1
+            ;;
+        *)
+            if [ "$POSITIONAL_SET" = "true" ]; then
+                echo -e "${RED}Error: Only one positional argument (upstream-ref) allowed${NC}"
+                echo "Usage: $0 [upstream-ref] [--no-gpg] [--yes]"
+                exit 1
+            fi
+            UPSTREAM_REF="$arg"
+            POSITIONAL_SET=true
+            ;;
+    esac
+done
 
 # Verify the upstream ref exists
 if ! git rev-parse --verify "$UPSTREAM_REF" >/dev/null 2>&1; then
@@ -55,9 +80,13 @@ echo -e "${GREEN}Will sign each commit and replace Co-Authored-By trailers with:
 echo "  $ASSISTED_BY"
 echo ""
 
-# Prompt for confirmation
-echo -ne "${YELLOW}Run this? [y/N]: ${NC}"
-read -r REPLY
+# Prompt for confirmation (skip with --yes/-y)
+if [ "$AUTO_YES" = "true" ]; then
+    REPLY="y"
+else
+    echo -ne "${YELLOW}Run this? [y/N]: ${NC}"
+    read -r REPLY
+fi
 
 if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
     echo -e "${RED}Cancelled.${NC}"
@@ -83,8 +112,10 @@ fi
 COMMIT_COUNT=$(git rev-list --count "$UPSTREAM_REF"..HEAD)
 echo ""
 echo -e "${BLUE}Step 2/2: Signing $COMMIT_COUNT commits...${NC}"
+# --no-verify: safe here because we're amending existing commits (adding trailers),
+# not creating new content. Pre-commit hooks would reject the amend due to unstaged changes.
 git rebase "HEAD~${COMMIT_COUNT}" \
-    --exec 'git commit --amend --no-verify --no-edit -s -S'
+    --exec "git commit --amend --no-verify --no-edit -s $GPG_SIGN"
 
 echo ""
 echo -e "${GREEN}Done! All $COMMIT_COUNT commits have been signed and trailers updated.${NC}"

@@ -319,7 +319,7 @@ Each agent namespace receives:
 
 | Resource | Purpose |
 |----------|---------|
-| `environments` ConfigMap | 8 environment presets (ollama, openai, mcp-weather, etc.) |
+| `authbridge-config` ConfigMap | AuthBridge + SPIRE configuration |
 | `github-token-secret` | GitHub credentials |
 | `github-shipwright-secret` | Build authentication |
 | `ghcr-secret` | GHCR registry pull |
