@@ -100,6 +100,16 @@ fi
 START_SECONDS=$SECONDS
 
 # ---------------------------------------------------------------------------
+# MLflow DSC check — RHOAI-managed MLflow is not removed by this cleanup
+# ---------------------------------------------------------------------------
+_dsc_mlflow_state=$($KUBECTL get datasciencecluster \
+  -o jsonpath='{.items[0].spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
+if [ "$_dsc_mlflow_state" = "Managed" ]; then
+  log_info "MLflow is Managed by RHOAI DSC — will not be removed by this cleanup"
+  echo ""
+fi
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

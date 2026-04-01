@@ -5,7 +5,7 @@
 # Installs the Kagenti stack (SPIRE, cert-manager, Keycloak, operator, webhook,
 # MCP Gateway) on an OpenShift cluster. Run this BEFORE setup.sh --with-a2a.
 # Prometheus/Kiali are disabled. UI/backend installed by default (use --skip-ui to disable).
-# MLflow/Shipwright disabled (not needed).
+# MLflow/Shipwright disabled by default. Use --mlflow to enable MLflow via RHOAI DSC.
 #
 # Usage:
 #   ./scripts/ocp/setup-kagenti.sh                              # Auto-clones kagenti main to ~/.cache/kagenti
@@ -14,6 +14,7 @@
 #   ./scripts/ocp/setup-kagenti.sh --realm nerc                 # Custom Keycloak realm (default: kagenti)
 #   ./scripts/ocp/setup-kagenti.sh --skip-ovn-patch             # Skip OVN gateway patch
 #   ./scripts/ocp/setup-kagenti.sh --skip-mcp-gateway           # Skip MCP Gateway install
+#   ./scripts/ocp/setup-kagenti.sh --mlflow                     # Enable MLflow via RHOAI DSC (pre-flight check required)
 #
 # Prerequisites:
 #   - oc / kubectl with cluster-admin
@@ -39,6 +40,9 @@ SKIP_UI=false
 SHOW_SECRETS=false
 MCP_GATEWAY_VERSION="0.5.1"
 DRY_RUN=false
+DISABLE_MLFLOW=true
+MLFLOW_DSC_NAMESPACE="${MLFLOW_DSC_NAMESPACE:-redhat-ods-applications}"
+MLFLOW_TRACKING_URI=""
 
 # Colors
 RED='\033[0;31m'
@@ -61,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --skip-ovn-patch)     SKIP_OVN_PATCH=true; shift ;;
     --skip-mcp-gateway)   SKIP_MCP_GATEWAY=true; shift ;;
     --skip-ui)            SKIP_UI=true; shift ;;
+    --mlflow)             DISABLE_MLFLOW=false; shift ;;
     --show-secrets)       SHOW_SECRETS=true; shift ;;
     --mcp-gateway-version) MCP_GATEWAY_VERSION="$2"; shift 2 ;;
     --dry-run)            DRY_RUN=true; shift ;;
@@ -74,6 +79,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --skip-ovn-patch          Skip OVN gateway routing patch"
       echo "  --skip-mcp-gateway        Skip MCP Gateway installation"
       echo "  --skip-ui                 Skip Kagenti UI and backend installation"
+      echo "  --mlflow                  Enable MLflow via RHOAI DSC (requires Managed mlflowoperator in DSC; default: disabled)"
       echo "  --show-secrets            Print Keycloak admin credentials to stdout (omitted by default for CI safety)"
       echo "  --mcp-gateway-version VER MCP Gateway chart version (default: $MCP_GATEWAY_VERSION)"
       echo "  --dry-run                 Show commands without executing"
@@ -192,6 +198,68 @@ if [ ! -d "$KAGENTI_REPO/charts/kagenti-deps" ] || [ ! -d "$KAGENTI_REPO/charts/
   exit 1
 fi
 log_success "Kagenti repo: $KAGENTI_SOURCE"
+echo ""
+
+# ============================================================================
+# MLflow DSC pre-flight
+# ============================================================================
+_check_dsc_mlflow_ready() {
+  if $DISABLE_MLFLOW; then return; fi
+  if $DRY_RUN; then
+    echo "  [dry-run] check DataScienceCluster MLflow readiness"
+    return 0
+  fi
+
+  log_info "Checking MLflow DSC readiness..."
+
+  if ! $KUBECTL get datasciencecluster &>/dev/null; then
+    log_error "No DataScienceCluster found — is RHOAI installed?"
+    exit 1
+  fi
+
+  local dsc_mgmt
+  dsc_mgmt=$($KUBECTL get datasciencecluster \
+    -o jsonpath='{.items[0].spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
+  if [ "$dsc_mgmt" != "Managed" ]; then
+    log_error "mlflowoperator is not Managed in the DataScienceCluster (managementState: '${dsc_mgmt:-unset}')"
+    log_error "Set spec.components.mlflowoperator.managementState=Managed in the DSC, or omit --mlflow."
+    exit 1
+  fi
+
+  # Check the MLflow operator controller pod is running
+  local operator_running
+  operator_running=$($KUBECTL get pods -n "$MLFLOW_DSC_NAMESPACE" \
+    --field-selector=status.phase=Running -o name 2>/dev/null \
+    | grep -c "mlflow-operator" || echo 0)
+  if [ "$operator_running" -eq 0 ]; then
+    log_error "MLflow operator pod not running in '$MLFLOW_DSC_NAMESPACE' — wait for RHOAI to finish reconciling."
+    exit 1
+  fi
+
+  # Look for deployed MLflow tracking server instances (MLflow CRs)
+  local mlflow_crs mlflow_cr_ns mlflow_cr_name
+  mlflow_crs=$($KUBECTL get mlflows -A --no-headers 2>/dev/null || echo "")
+  if [ -z "$mlflow_crs" ]; then
+    log_warn "MLflow operator is Managed and running, but no MLflow tracking server instance found"
+    log_warn "Create an 'MLflow' CR (mlflows.mlflow.opendatahub.io) to deploy a tracking server"
+    log_success "MLflow DSC operator ready — skipping tracking URI detection"
+    return 0
+  fi
+
+  mlflow_cr_ns=$(echo "$mlflow_crs"  | awk 'NR==1{print $1}')
+  mlflow_cr_name=$(echo "$mlflow_crs" | awk 'NR==1{print $2}')
+
+  local mlflow_svc
+  mlflow_svc=$($KUBECTL get svc -n "$mlflow_cr_ns" \
+    -o name 2>/dev/null | grep -i mlflow | grep -v operator | head -1 | sed 's|service/||' || echo "")
+  if [ -n "$mlflow_svc" ]; then
+    MLFLOW_TRACKING_URI="http://${mlflow_svc}.${mlflow_cr_ns}.svc.cluster.local:5000"
+    log_success "MLflow DSC ready — operator running; tracking server: $mlflow_cr_ns/$mlflow_cr_name; URI: $MLFLOW_TRACKING_URI"
+  else
+    log_success "MLflow DSC ready — operator running; tracking server: $mlflow_cr_ns/$mlflow_cr_name (service not detected; tracking URI unset)"
+  fi
+}
+_check_dsc_mlflow_ready
 echo ""
 
 # ============================================================================
@@ -676,6 +744,12 @@ log_info "Keycloak: realm=$KC_REALM namespace=$KC_NAMESPACE"
 
 run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL apply -f -
 
+# Build MLflow helm flags: auth always disabled; pass DSC tracking URI when --mlflow is set
+MLFLOW_HELM_FLAGS=(--set mlflow.auth.enabled=false)
+if ! $DISABLE_MLFLOW && [ -n "$MLFLOW_TRACKING_URI" ]; then
+  MLFLOW_HELM_FLAGS+=(--set "mlflow.trackingUri=${MLFLOW_TRACKING_URI}")
+fi
+
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
   -f "$SECRETS_FILE" \
@@ -684,7 +758,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \
   --set mlflowOAuthSecret.useServiceAccountCA=false \
-  --set mlflow.auth.enabled=false \
+  "${MLFLOW_HELM_FLAGS[@]}" \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}"
 
