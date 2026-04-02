@@ -247,8 +247,8 @@ class TestSecretDefaults:
         sandbox_deploy = pytest.importorskip(
             "app.routers.sandbox_deploy", reason="sandbox_deploy module not available"
         )
-        DEFAULT_LLM_SECRET = sandbox_deploy.DEFAULT_LLM_SECRET
-        DEFAULT_LLM_SECRET_KEY = sandbox_deploy.DEFAULT_LLM_SECRET_KEY
+        default_secret = sandbox_deploy.DEFAULT_LLM_SECRET
+        default_key = sandbox_deploy.DEFAULT_LLM_SECRET_KEY
 
-        assert DEFAULT_LLM_SECRET == "litellm-virtual-keys"
-        assert DEFAULT_LLM_SECRET_KEY == "api-key"
+        assert default_secret == "litellm-virtual-keys"
+        assert default_key == "api-key"
