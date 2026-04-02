@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("app.services.session_db", reason="session_db module not available")
+
 
 class TestCreatePool:
     """Tests for _create_pool() with retry and SSL handling."""

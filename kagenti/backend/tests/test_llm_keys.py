@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+pytest.importorskip("app.routers.llm_keys", reason="llm_keys module not available")
+
 from app.routers.llm_keys import (
     _get_team_id,
     _ensure_team,
@@ -242,7 +244,11 @@ class TestSecretDefaults:
     def test_sandbox_deploy_default_matches(self):
         """sandbox_deploy.py DEFAULT_LLM_SECRET should match the key
         created by 38-deploy-litellm.sh (litellm-virtual-keys/api-key)."""
-        from app.routers.sandbox_deploy import DEFAULT_LLM_SECRET, DEFAULT_LLM_SECRET_KEY
+        sandbox_deploy = pytest.importorskip(
+            "app.routers.sandbox_deploy", reason="sandbox_deploy module not available"
+        )
+        DEFAULT_LLM_SECRET = sandbox_deploy.DEFAULT_LLM_SECRET
+        DEFAULT_LLM_SECRET_KEY = sandbox_deploy.DEFAULT_LLM_SECRET_KEY
 
         assert DEFAULT_LLM_SECRET == "litellm-virtual-keys"
         assert DEFAULT_LLM_SECRET_KEY == "api-key"

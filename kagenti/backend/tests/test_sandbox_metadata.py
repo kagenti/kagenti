@@ -20,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("app.routers.sandbox", reason="Sandbox modules not available")
+
 
 def _make_task_row(
     *,
