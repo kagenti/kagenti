@@ -2973,6 +2973,12 @@ async def create_agent(
         f"createHttpRoute={request.createHttpRoute}"
     )
     try:
+        if request.signingEnabled and not settings.kagenti_feature_flag_agentcard_signing:
+            raise HTTPException(
+                status_code=400,
+                detail="AgentCard signing is not enabled. Set KAGENTI_FEATURE_FLAG_AGENTCARD_SIGNING=true to enable.",
+            )
+
         # Create signing resources BEFORE workload (must exist for pod scheduling)
         if request.signingEnabled and request.workloadType != WORKLOAD_TYPE_JOB:
             _create_signing_resources(kube, request.name, request.namespace, request)

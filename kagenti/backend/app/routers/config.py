@@ -17,6 +17,7 @@ class FeatureFlagsResponse(BaseModel):
     sandbox: bool
     integrations: bool
     triggers: bool
+    agentcardSigning: bool
 
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -33,6 +34,7 @@ async def get_feature_flags() -> FeatureFlagsResponse:
         sandbox=settings.kagenti_feature_flag_sandbox,
         integrations=settings.kagenti_feature_flag_integrations,
         triggers=settings.kagenti_feature_flag_triggers,
+        agentcardSigning=settings.kagenti_feature_flag_agentcard_signing,
     )
 
 

@@ -8,12 +8,14 @@ export interface FeatureFlags {
   sandbox: boolean;
   integrations: boolean;
   triggers: boolean;
+  agentcardSigning: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
   sandbox: false,
   integrations: false,
   triggers: false,
+  agentcardSigning: false,
 };
 
 let cachedFlags: FeatureFlags | null = null;
@@ -35,6 +37,7 @@ export function useFeatureFlags(): FeatureFlags {
           sandbox: data.sandbox === true,
           integrations: data.integrations === true,
           triggers: data.triggers === true,
+          agentcardSigning: data.agentcardSigning === true,
         };
         cachedFlags = validated;
         setFlags(validated);

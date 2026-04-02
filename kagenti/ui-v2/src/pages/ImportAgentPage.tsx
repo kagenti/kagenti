@@ -37,6 +37,7 @@ import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
 import { useMutation } from '@tanstack/react-query';
 
 import { agentService, ShipwrightBuildConfig } from '@/services/api';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { EnvImportModal } from '@/components/EnvImportModal';
 import { BuildStrategySelector } from '@/components/BuildStrategySelector';
@@ -99,6 +100,7 @@ interface ServicePort {
 
 export const ImportAgentPage: React.FC = () => {
   const navigate = useNavigate();
+  const features = useFeatureFlags();
 
   // Deployment method
   const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>('source');
@@ -1013,38 +1015,49 @@ export const ImportAgentPage: React.FC = () => {
                     />
                   </FormGroup>
 
-                  <FormGroup fieldId="signingEnabled" style={{ marginTop: '4px', marginLeft: '24px' }}>
-                    <Checkbox
-                      id="signingEnabled"
-                      label="Enable AgentCard signing"
-                      isChecked={signingEnabled}
-                      onChange={(_e, checked) => {
-                        setSigningEnabled(checked);
-                        if (checked && !spireEnabled) {
-                          setSpireEnabled(true);
-                          setSpireAutoEnabled(true);
-                        }
-                      }}
-                      description="Signs the agent card with SPIRE X.509-SVID at startup. Requires SPIRE and a ClusterSPIFFEID."
-                    />
-                  </FormGroup>
+                  {/* TODO: Allow pasting custom AgentCard JSON (see PR #1038 review) */}
+                  {features.agentcardSigning && (
+                    <>
+                      <FormGroup fieldId="signingEnabled" style={{ marginTop: '4px', marginLeft: '24px' }}>
+                        <Checkbox
+                          id="signingEnabled"
+                          label="Enable AgentCard signing"
+                          isChecked={signingEnabled}
+                          onChange={(_e, checked) => {
+                            setSigningEnabled(checked);
+                            if (checked && !spireEnabled) {
+                              setSpireEnabled(true);
+                              setSpireAutoEnabled(true);
+                            }
+                          }}
+                          description="Signs the agent card with SPIRE X.509-SVID at startup. Requires SPIRE and a ClusterSPIFFEID."
+                        />
+                      </FormGroup>
 
-                  {spireAutoEnabled && (
-                    <Alert
-                      variant="info"
-                      title="SPIRE identity has been automatically enabled (required for signing)."
-                      isInline
-                      isPlain
-                      style={{ marginTop: '8px', marginLeft: '24px' }}
-                    />
-                  )}
+                      {spireAutoEnabled && (
+                        <Alert
+                          variant="info"
+                          title="SPIRE identity has been automatically enabled (required for signing)."
+                          isInline
+                          isPlain
+                          style={{ marginTop: '8px', marginLeft: '24px' }}
+                        />
+                      )}
 
-                  {signingEnabled && (
-                    <Alert variant="info" title="SPIRE Prerequisites" isInline style={{ marginTop: '12px' }}>
-                      AgentCard signing requires: (1) SPIRE installed on the cluster, (2) a
-                      ClusterSPIFFEID matching kagenti.io/type=agent pods, and (3) the target
-                      namespace labeled with agentcard=true.
-                    </Alert>
+                      {signingEnabled && (
+                        <>
+                          <Alert variant="warning" title="Experimental Feature" isInline style={{ marginTop: '12px' }}>
+                            This serves a static agent card that will <strong>overwrite</strong> the card
+                            the agent would normally serve. Intended for testing only.
+                          </Alert>
+                          <Alert variant="info" title="SPIRE Prerequisites" isInline style={{ marginTop: '8px' }}>
+                            AgentCard signing requires: (1) SPIRE installed on the cluster, (2) a
+                            ClusterSPIFFEID matching kagenti.io/type=agent pods, and (3) the target
+                            namespace labeled with agentcard=true.
+                          </Alert>
+                        </>
+                      )}
+                    </>
                   )}
                 </CardBody>
               </Card>

@@ -51,11 +51,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Agent } from '@/types';
 import { agentService } from '@/services/api';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 
 export const AgentCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const features = useFeatureFlags();
   const [namespace, setNamespace] = useState<string>('team1');
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
@@ -109,7 +111,9 @@ export const AgentCatalogPage: React.FC = () => {
     }
   };
 
-  const columns = ['Name', 'Description', 'Status', 'Trust', 'Labels', 'Workload', ''];
+  const columns = features.agentcardSigning
+    ? ['Name', 'Description', 'Status', 'Trust', 'Labels', 'Workload', '']
+    : ['Name', 'Description', 'Status', 'Labels', 'Workload', ''];
 
   const renderWorkloadType = (workloadType: string | undefined) => {
     const type = workloadType || 'deployment';
@@ -125,7 +129,11 @@ export const AgentCatalogPage: React.FC = () => {
 
   const renderTrustBadges = (agent: Agent) => {
     if (!agent.hasAgentCard) {
-      return <span style={{ color: 'var(--pf-v5-global--Color--200)' }}>N/A</span>;
+      return (
+        <Tooltip content="AgentCard signing not enabled for this agent">
+          <Label color="grey" isCompact>Disabled</Label>
+        </Tooltip>
+      );
     }
     if (agent.verified == null && agent.bound == null) {
       return (
@@ -293,7 +301,9 @@ export const AgentCatalogPage: React.FC = () => {
                       {agent.description || 'No description'}
                     </Td>
                     <Td dataLabel="Status">{renderStatusBadge(agent.status)}</Td>
-                    <Td dataLabel="Trust">{renderTrustBadges(agent)}</Td>
+                    {features.agentcardSigning && (
+                      <Td dataLabel="Trust">{renderTrustBadges(agent)}</Td>
+                    )}
                     <Td dataLabel="Labels">{renderLabels(agent)}</Td>
                     <Td dataLabel="Workload">{renderWorkloadType(agent.workloadType)}</Td>
                     <Td isActionCell>

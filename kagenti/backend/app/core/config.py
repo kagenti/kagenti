@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # AgentCard signing settings
     # Pin to a release tag once CI publishes to GHCR (kagenti/kagenti-operator#234)
-    agentcard_signer_image: str = "ghcr.io/kagenti/agentcard-signer:latest"
+    agentcard_signer_image: str = "ghcr.io/kagenti/kagenti-operator/agentcard-signer:latest"
     agentcard_sign_timeout: str = "30s"
     agentcard_signer_cpu_request: str = "10m"
     agentcard_signer_cpu_limit: str = "100m"
@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     kagenti_feature_flag_sandbox: bool = False
     kagenti_feature_flag_integrations: bool = False
     kagenti_feature_flag_triggers: bool = False
+    kagenti_feature_flag_agentcard_signing: bool = False
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"
