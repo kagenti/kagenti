@@ -2999,13 +2999,17 @@ async def parse_env_file(request: ParseEnvRequest) -> ParseEnvResponse:
     env_vars = []
     warnings = []
 
-    lines = request.content.strip().split("\n")
+    lines = request.content.splitlines()
 
     for line_num, line in enumerate(lines, 1):
         # Skip empty lines and comments
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+
+        # Strip inline comments (e.g. KEY=value # comment)
+        if " #" in line:
+            line = line[: line.index(" #")].rstrip()
 
         # Parse KEY=VALUE
         if "=" not in line:
