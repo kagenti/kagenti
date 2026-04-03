@@ -95,14 +95,7 @@ class TestParseEnvCount:
 
     def test_comments_and_blank_lines_not_counted(self, client):
         """Comments and blank lines must not inflate the variable count."""
-        content = (
-            "# This is a comment\n"
-            "\n"
-            "KEY1=value1\n"
-            "# another comment\n"
-            "\n"
-            "KEY2=value2\n"
-        )
+        content = "# This is a comment\n\nKEY1=value1\n# another comment\n\nKEY2=value2\n"
         result = parse(client, content)
         assert len(result["envVars"]) == 2
 
@@ -141,9 +134,7 @@ class TestParseEnvCount:
     def test_commented_out_variable_not_counted(self, client):
         """A commented-out KEY=VALUE line must not be counted as a variable."""
         content = (
-            "ACTIVE_KEY=active_value\n"
-            "# COMMENTED_KEY=commented_value\n"
-            "ANOTHER_KEY=another_value\n"
+            "ACTIVE_KEY=active_value\n# COMMENTED_KEY=commented_value\nANOTHER_KEY=another_value\n"
         )
         result = parse(client, content)
         assert len(result["envVars"]) == 2
@@ -160,8 +151,8 @@ class TestParseEnvCount:
     def test_value_from_json(self, client):
         """valueFrom JSON format produces exactly one variable."""
         content = (
-            "SECRET_KEY='{\"valueFrom\": {\"secretKeyRef\": "
-            "{\"name\": \"my-secret\", \"key\": \"apikey\"}}}'\n"
+            'SECRET_KEY=\'{"valueFrom": {"secretKeyRef": '
+            '{"name": "my-secret", "key": "apikey"}}}\'\n'
         )
         result = parse(client, content)
         assert len(result["envVars"]) == 1
