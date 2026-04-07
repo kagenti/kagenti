@@ -40,6 +40,7 @@ import pytest
 UI_URL = os.environ.get("KAGENTI_UI_URL", "")
 KC_USER = os.environ.get("KEYCLOAK_USER", "admin")
 KC_PASSWORD = os.environ.get("KEYCLOAK_PASSWORD", "")
+VERIFY_SSL = os.environ.get("VERIFY_SSL", "false").lower() == "true"
 NAMESPACE = "team1"
 AGENT_NAME = "sandbox-legion"
 
@@ -86,7 +87,7 @@ def get_keycloak_token() -> str:
                     "username": KC_USER,
                     "password": KC_PASSWORD,
                 },
-                verify=False,
+                verify=VERIFY_SSL,
                 timeout=10,
             )
             if resp.status_code == 200:
@@ -113,7 +114,7 @@ def send_streaming_message(token: str, context_id: str, message: str) -> list[di
     """Send a message via streaming API, collect all loop events."""
     loop_events: list[dict] = []
 
-    with httpx.Client(timeout=180, verify=False) as client:
+    with httpx.Client(timeout=180, verify=VERIFY_SSL) as client:
         with client.stream(
             "POST",
             api_url(f"/sandbox/{NAMESPACE}/chat/stream"),
@@ -151,7 +152,7 @@ def get_history(token: str, context_id: str) -> dict:
     resp = httpx.get(
         api_url(f"/sandbox/{NAMESPACE}/sessions/{context_id}/history?limit=50"),
         headers={"Authorization": f"Bearer {token}"},
-        verify=False,
+        verify=VERIFY_SSL,
         timeout=15,
     )
     resp.raise_for_status()

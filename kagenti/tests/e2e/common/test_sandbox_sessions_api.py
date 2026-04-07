@@ -31,6 +31,8 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
+VERIFY_SSL = os.environ.get("VERIFY_SSL", "false").lower() == "true"
+
 
 def _get_backend_url() -> str:
     """Get the Kagenti backend URL.
@@ -136,7 +138,7 @@ def _get_auth_headers() -> dict:
 
     verify_ssl: bool | str = True
     if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() == "false":
-        verify_ssl = False
+        verify_ssl = VERIFY_SSL
     elif os.environ.get("KEYCLOAK_CA_BUNDLE"):
         verify_ssl = os.environ["KEYCLOAK_CA_BUNDLE"]
 
@@ -186,7 +188,7 @@ def _check_sandbox_api_available() -> bool:
     headers = _get_auth_headers()
     # Use verify=False at module-import time (SSL helpers defined later in file)
     ssl_env = os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower()
-    ssl_verify = False if ssl_env in ("false", "0", "no") else True
+    ssl_verify = VERIFY_SSL if ssl_env in ("false", "0", "no") else True
     try:
         resp = httpx.get(
             f"{url}/api/v1/sandbox/team1/sessions",
@@ -252,7 +254,7 @@ def _get_ssl_context():
     # Honour KEYCLOAK_VERIFY_SSL=false — disable SSL verification entirely
     # (needed on HyperShift clusters with self-signed ingress certs).
     if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() in ("false", "0", "no"):
-        return False
+        return VERIFY_SSL
 
     if not _is_openshift_from_config():
         return True
@@ -265,9 +267,10 @@ def _get_ssl_context():
         # Fallback: disable verification when the CA cannot be obtained
         # (e.g. HyperShift clusters where the ingress CA configmap is absent).
         logger.warning(
-            "Could not fetch OpenShift ingress CA — falling back to verify=False"
+            "Could not fetch OpenShift ingress CA — falling back to VERIFY_SSL=%s",
+            VERIFY_SSL,
         )
-        return False
+        return VERIFY_SSL
     return ssl.create_default_context(cafile=ca_path)
 
 
