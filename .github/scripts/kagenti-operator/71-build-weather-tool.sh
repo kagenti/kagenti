@@ -63,9 +63,16 @@ else
     kubectl delete builds.shipwright.io weather-tool -n team1 --ignore-not-found 2>/dev/null || true
     sleep 2
 
-    # Apply build manifest
+    # Apply build manifest (override branch via AGENT_EXAMPLES_BRANCH env var)
     log_info "Creating Shipwright Build..."
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml"
+    AGENT_EXAMPLES_BRANCH="${AGENT_EXAMPLES_BRANCH:-main}"
+    if [ "$AGENT_EXAMPLES_BRANCH" != "main" ]; then
+        log_info "Using agent-examples branch: $AGENT_EXAMPLES_BRANCH"
+        sed "s|revision: main|revision: $AGENT_EXAMPLES_BRANCH|" \
+            "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml" | kubectl apply -f -
+    else
+        kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml"
+    fi
 
     # Wait for Shipwright Build to be registered
     run_with_timeout 60 'until kubectl get builds.shipwright.io weather-tool -n team1 &> /dev/null; do sleep 2; done' || {
