@@ -30,6 +30,7 @@ import {
   DropdownItem,
   MenuToggle,
   MenuToggleElement,
+  Tooltip,
 } from '@patternfly/react-core';
 import {
   Table,
@@ -44,17 +45,20 @@ import {
   PlusCircleIcon,
   EllipsisVIcon,
   ExclamationTriangleIcon,
+  ShieldAltIcon,
 } from '@patternfly/react-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Agent } from '@/types';
 import { agentService } from '@/services/api';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { SandboxWizard } from '@/components/SandboxWizard';
 
 export const AgentCatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const features = useFeatureFlags();
   const [namespace, setNamespace] = useState<string>('team1');
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
@@ -116,7 +120,9 @@ export const AgentCatalogPage: React.FC = () => {
     }
   };
 
-  const columns = ['Name', 'Description', 'Status', 'Labels', 'Workload', ''];
+  const columns = features.agentcardSigning
+    ? ['Name', 'Description', 'Status', 'Trust', 'Labels', 'Workload', '']
+    : ['Name', 'Description', 'Status', 'Labels', 'Workload', ''];
 
   const renderWorkloadType = (workloadType: string | undefined) => {
     const type = workloadType || 'deployment';
@@ -128,6 +134,49 @@ export const AgentCatalogPage: React.FC = () => {
       color = 'gold';
     }
     return <Label color={color} isCompact>{label}</Label>;
+  };
+
+  const renderTrustBadges = (agent: Agent) => {
+    if (!agent.hasAgentCard) {
+      return (
+        <Tooltip content="AgentCard signing not enabled for this agent">
+          <Label color="grey" isCompact>Disabled</Label>
+        </Tooltip>
+      );
+    }
+    if (agent.verified == null && agent.bound == null) {
+      return (
+        <Tooltip content="Waiting for operator to process">
+          <Label color="blue" isCompact>Pending</Label>
+        </Tooltip>
+      );
+    }
+    if (agent.verified === true && agent.bound === true) {
+      return (
+        <Tooltip content="Signature verified and identity bound">
+          <Label color="green" icon={<ShieldAltIcon />} isCompact>Trusted</Label>
+        </Tooltip>
+      );
+    }
+    return (
+      <LabelGroup>
+        {agent.verified === true && (
+          <Tooltip content="Signature verified but identity not yet bound">
+            <Label color="green" icon={<ShieldAltIcon />} isCompact>Verified</Label>
+          </Tooltip>
+        )}
+        {agent.verified === false && (
+          <Tooltip content="Signature not yet verified">
+            <Label color="red" isCompact>Unverified</Label>
+          </Tooltip>
+        )}
+        {agent.bound === false && (
+          <Tooltip content="Identity binding pending or failed">
+            <Label color="gold" isCompact>Not Bound</Label>
+          </Tooltip>
+        )}
+      </LabelGroup>
+    );
   };
 
   const renderStatusBadge = (status: string) => {
@@ -261,6 +310,9 @@ export const AgentCatalogPage: React.FC = () => {
                       {agent.description || 'No description'}
                     </Td>
                     <Td dataLabel="Status">{renderStatusBadge(agent.status)}</Td>
+                    {features.agentcardSigning && (
+                      <Td dataLabel="Trust">{renderTrustBadges(agent)}</Td>
+                    )}
                     <Td dataLabel="Labels">{renderLabels(agent)}</Td>
                     <Td dataLabel="Workload">{renderWorkloadType(agent.workloadType)}</Td>
                     <Td isActionCell>

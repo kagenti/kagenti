@@ -971,6 +971,74 @@ code {
   color: #151515 !important;
 }
 
+/* Ensure label icons align vertically with text */
+.pf-v5-c-label__icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* AgentCard signing progress indicator */
+.kagenti-signing-progress {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 16px;
+  padding: 12px 0;
+}
+
+.kagenti-signing-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+.kagenti-signing-step__circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  margin-bottom: 6px;
+  border: 2px solid var(--pf-v5-global--Color--200);
+  background-color: var(--pf-v5-global--BackgroundColor--100);
+  color: var(--pf-v5-global--Color--200);
+}
+
+.kagenti-signing-step--complete .kagenti-signing-step__circle {
+  background-color: #3e8635;
+  border-color: #3e8635;
+  color: #ffffff;
+}
+
+.kagenti-signing-step__label {
+  font-size: 11px;
+  color: var(--pf-v5-global--Color--200);
+  text-align: center;
+}
+
+.kagenti-signing-step--complete .kagenti-signing-step__label {
+  color: var(--pf-v5-global--Color--100);
+  font-weight: 500;
+}
+
+.kagenti-signing-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: calc(50% + 16px);
+  width: calc(100% - 32px);
+  height: 2px;
+  background-color: var(--pf-v5-global--Color--200);
+}
+
+.kagenti-signing-step--complete:not(:last-child)::after {
+  background-color: #3e8635;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .kagenti-chat-message {

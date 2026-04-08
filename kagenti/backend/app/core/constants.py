@@ -12,6 +12,24 @@ CRD_GROUP = settings.crd_group
 CRD_VERSION = settings.crd_version
 AGENTS_PLURAL = settings.agents_plural
 
+# AgentCard CRD Definitions
+AGENTCARD_CRD_GROUP = settings.crd_group
+AGENTCARD_CRD_VERSION = settings.crd_version
+AGENTCARD_PLURAL = "agentcards"
+AGENTCARD_SIGNER_IMAGE = settings.agentcard_signer_image
+AGENTCARD_SIGN_TIMEOUT = settings.agentcard_sign_timeout
+AGENTCARD_SIGNER_RESOURCES = {
+    "requests": {
+        "cpu": settings.agentcard_signer_cpu_request,
+        "memory": settings.agentcard_signer_mem_request,
+    },
+    "limits": {
+        "cpu": settings.agentcard_signer_cpu_limit,
+        "memory": settings.agentcard_signer_mem_limit,
+    },
+}
+SPIRE_TRUST_DOMAIN = settings.spire_trust_domain
+
 # Labels - Keys
 KAGENTI_TYPE_LABEL = settings.kagenti_type_label
 KAGENTI_PROTOCOL_LABEL = settings.kagenti_protocol_label  # deprecated; use PROTOCOL_LABEL_PREFIX

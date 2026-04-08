@@ -8,6 +8,7 @@ Provides endpoints for chatting with A2A agents using the Agent-to-Agent protoco
 """
 
 import logging
+import re
 from typing import Optional, List
 from uuid import uuid4
 
@@ -18,7 +19,9 @@ from pydantic import BaseModel
 
 from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
 from app.core.config import settings
-from app.utils.routes import get_agent_url
+from app.core.constants import DEFAULT_IN_CLUSTER_PORT, DEFAULT_OFF_CLUSTER_PORT
+
+_DNS_LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -60,6 +63,64 @@ class ChatResponse(BaseModel):
     is_complete: bool = True
 
 
+async def _resolve_service_clusterip(name: str, namespace: str) -> Optional[str]:
+    """Look up a K8s service's clusterIP and port via the API server directly.
+
+    Uses the in-cluster service account token and KUBERNETES_SERVICE_HOST env
+    var so this works even when cluster DNS (UDP) is unreliable.
+
+    Uses httpx.AsyncClient to avoid blocking the event loop.
+    """
+    if not _DNS_LABEL_RE.match(name) or not _DNS_LABEL_RE.match(namespace):
+        logger.warning("Invalid DNS label in service lookup: name=%s namespace=%s", name, namespace)
+        return None
+
+    import os
+    import ssl
+
+    host = os.environ.get("KUBERNETES_SERVICE_HOST")
+    port = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+    token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+    if not host or not os.path.exists(token_path):
+        return None
+    try:
+        with open(token_path, encoding="utf-8") as f:
+            token = f.read()
+        ssl_ctx = ssl.create_default_context(cafile=ca_path)
+        url = f"https://{host}:{port}/api/v1/namespaces/{namespace}/services/{name}"
+        async with httpx.AsyncClient(verify=ssl_ctx, timeout=5.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+            resp.raise_for_status()
+            svc = resp.json()
+        cluster_ip = svc.get("spec", {}).get("clusterIP")
+        ports = svc.get("spec", {}).get("ports", [])
+        if not cluster_ip or not ports:
+            return None
+        svc_port = ports[0]["port"]
+        return f"http://{cluster_ip}:{svc_port}"
+    except Exception as exc:
+        logger.debug("K8s service lookup failed for %s/%s: %s", name, namespace, exc)
+        return None
+
+
+async def _get_agent_url(name: str, namespace: str) -> str:
+    """Get the URL for an A2A agent.
+
+    In-cluster: resolves the service clusterIP via the K8s API (avoids DNS),
+    falling back to DNS-based URL if the lookup fails.
+    """
+    if settings.is_running_in_cluster:
+        resolved = await _resolve_service_clusterip(name, namespace)
+        if resolved:
+            return resolved
+        return f"http://{name}.{namespace}.svc.cluster.local:{DEFAULT_IN_CLUSTER_PORT}"
+    else:
+        domain = settings.domain_name
+        return f"http://{name}.{namespace}.{domain}:{DEFAULT_OFF_CLUSTER_PORT}"
+
+
 @router.get(
     "/{namespace}/{name}/agent-card",
     response_model=AgentCardResponse,
@@ -74,7 +135,7 @@ async def get_agent_card(
 
     The agent card describes the agent's capabilities, skills, and metadata.
     """
-    agent_url = get_agent_url(name, namespace)
+    agent_url = await _get_agent_url(name, namespace)
     card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
 
     try:
@@ -148,7 +209,7 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = get_agent_url(name, namespace)
+    agent_url = await _get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload
@@ -186,8 +247,14 @@ async def send_message(
             content = ""
             if "result" in result:
                 result_data = result["result"]
-                # Handle Task response
-                if "status" in result_data and "message" in result_data.get("status", {}):
+                # Handle Task response with artifacts (A2A SDK agents)
+                if "artifacts" in result_data:
+                    for artifact in result_data["artifacts"]:
+                        for part in artifact.get("parts", []):
+                            if isinstance(part, dict) and "text" in part:
+                                content += part["text"]
+                # Handle Task response with status.message
+                elif "status" in result_data and "message" in result_data.get("status", {}):
                     parts = result_data["status"]["message"].get("parts", [])
                     for part in parts:
                         if isinstance(part, dict) and "text" in part:
@@ -487,7 +554,7 @@ async def stream_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = get_agent_url(name, namespace)
+    agent_url = await _get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present

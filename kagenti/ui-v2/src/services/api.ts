@@ -8,6 +8,7 @@
 import type {
   Agent,
   AgentDetail,
+  AgentCardStatus,
   Tool,
   ToolDetail,
   ApiListResponse,
@@ -224,12 +225,25 @@ export const agentService = {
     authBridgeEnabled?: boolean;
     // SPIRE identity
     spireEnabled?: boolean;
+    // AgentCard signing
+    signingEnabled?: boolean;
     shipwrightConfig?: ShipwrightBuildConfig;
   }): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
     return apiFetch('/agents', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  async getAgentCardStatus(namespace: string, name: string): Promise<AgentCardStatus | null> {
+    try {
+      return await apiFetch<AgentCardStatus>(
+        `/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/agentcard`
+      );
+    } catch (error) {
+      console.warn('Failed to fetch AgentCard status:', error);
+      return null;
+    }
   },
 
   async parseEnvFile(content: string): Promise<{

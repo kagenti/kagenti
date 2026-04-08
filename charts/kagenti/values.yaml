@@ -8,6 +8,7 @@ featureFlags:
   sandbox: false
   integrations: false
   triggers: false
+  agentcardSigning: false
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
@@ -70,6 +71,9 @@ ui:
   frontend:
     image: ghcr.io/kagenti/kagenti/ui-v2
     tag: latest
+    # DNS resolver IP for nginx upstream resolution.
+    # OpenShift: 172.30.0.10 (default), Kind/vanilla K8s: 10.96.0.10
+    dnsResolver: "172.30.0.10"
     resources:
       limits:
         cpu: 100m
@@ -287,3 +291,13 @@ mlflowOAuthSecret:
 # ------------------------------------------------------------------
 spire:
   enabled: true
+  # SPIRE trust domain (required for AgentCard identity binding)
+  trustDomain: ""
+
+# ------------------------------------------------------------------
+#  AgentCard configs
+# ------------------------------------------------------------------
+agentcard:
+  # Init-container image used to sign agent cards with SPIRE SVIDs.
+  # Pin to a release tag once CI publishes to GHCR (kagenti/kagenti-operator#234).
+  signerImage: "ghcr.io/kagenti/kagenti-operator/agentcard-signer:latest"

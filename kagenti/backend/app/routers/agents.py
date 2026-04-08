@@ -68,11 +68,21 @@ from app.core.constants import (
     DEFAULT_KEYCLOAK_REALM,
     DEFAULT_SPIFFE_HELPER_CONF,
     DEFAULT_ENVOY_YAML,
+    # AgentCard constants
+    AGENTCARD_CRD_GROUP,
+    AGENTCARD_CRD_VERSION,
+    AGENTCARD_PLURAL,
+    AGENTCARD_SIGNER_IMAGE,
+    AGENTCARD_SIGN_TIMEOUT,
+    AGENTCARD_SIGNER_RESOURCES,
+    SPIRE_TRUST_DOMAIN,
 )
 from app.core.config import settings
 from app.models.responses import (
     AgentSummary,
     AgentListResponse,
+    AgentCardCondition,
+    AgentCardStatusResponse,
     ResourceLabels,
     DeleteResponse,
 )
@@ -222,6 +232,8 @@ class CreateAgentRequest(BaseModel):
     authBridgeEnabled: bool = True
     # SPIRE identity (spiffe-helper sidecar injection)
     spireEnabled: bool = False
+    # AgentCard signing (init-container + unsigned card ConfigMap)
+    signingEnabled: bool = False
 
     # Shipwright build configuration
     shipwrightConfig: Optional[ShipwrightBuildConfig] = None
@@ -647,6 +659,33 @@ async def list_agents(
                 if e.status not in (404, 403):
                     logger.warning(f"Failed to list legacy Agent CRDs: {e.reason}")
 
+        # Enrich with AgentCard verification status
+        agentcard_lookup: Dict[str, dict] = {}
+        try:
+            agentcards = kube.list_custom_resources(
+                group=AGENTCARD_CRD_GROUP,
+                version=AGENTCARD_CRD_VERSION,
+                namespace=namespace,
+                plural=AGENTCARD_PLURAL,
+            )
+            for ac in agentcards:
+                target_name = ac.get("spec", {}).get("targetRef", {}).get("name")
+                if target_name:
+                    agentcard_lookup[target_name] = ac
+        except ApiException as e:
+            if e.status not in (404, 403):
+                logger.warning("Failed to list AgentCards: %s", e.reason)
+
+        for agent in agents:
+            ac = agentcard_lookup.get(agent.name)
+            if ac:
+                agent.hasAgentCard = True
+                ac_status = ac.get("status", {})
+                agent.verified = ac_status.get("validSignature")
+                binding = ac_status.get("bindingStatus")
+                if binding:
+                    agent.bound = binding.get("bound")
+
         return AgentListResponse(items=agents)
 
     except ApiException as e:
@@ -656,6 +695,90 @@ async def list_agents(
                 detail="Permission denied. Check RBAC configuration.",
             )
         raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+
+@router.get(
+    "/{namespace}/{name}/agentcard",
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def get_agentcard_status(
+    namespace: str,
+    name: str,
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> AgentCardStatusResponse:
+    """Get AgentCard verification and identity status for an agent."""
+    try:
+        agentcards = kube.list_custom_resources(
+            group=AGENTCARD_CRD_GROUP,
+            version=AGENTCARD_CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTCARD_PLURAL,
+        )
+    except ApiException as e:
+        if e.status not in (404, 403):
+            logger.warning("Failed to list AgentCards: %s", e.reason)
+        return AgentCardStatusResponse(found=False)
+
+    matched = None
+    for ac in agentcards:
+        target_ref = ac.get("spec", {}).get("targetRef", {})
+        if target_ref.get("name") == name:
+            matched = ac
+            break
+
+    if not matched:
+        return AgentCardStatusResponse(found=False)
+
+    status = matched.get("status", {})
+    spec = matched.get("spec", {})
+    binding = status.get("bindingStatus") or {}
+    identity_binding = spec.get("identityBinding") or {}
+
+    synced = None
+    for cond in status.get("conditions", []):
+        if cond.get("type") == "Synced":
+            synced = cond.get("status") == "True"
+            break
+
+    verified = status.get("validSignature")
+    network_policy = "none"
+    if verified is True:
+        network_policy = "permissive"
+    elif identity_binding.get("enforceMode") == "strict" and verified is not True:
+        network_policy = "restrictive"
+
+    conditions = None
+    raw_conditions = status.get("conditions")
+    if raw_conditions:
+        conditions = [
+            AgentCardCondition(
+                type=c.get("type", ""),
+                status=c.get("status", ""),
+                reason=c.get("reason"),
+                message=c.get("message"),
+                lastTransitionTime=c.get("lastTransitionTime"),
+            )
+            for c in raw_conditions
+        ]
+
+    return AgentCardStatusResponse(
+        found=True,
+        verified=verified,
+        bound=binding.get("bound"),
+        synced=synced,
+        spiffeId=status.get("signatureSpiffeId"),
+        expectedSpiffeId=status.get("expectedSpiffeID"),
+        trustDomain=identity_binding.get("trustDomain"),
+        signatureKeyId=status.get("signatureKeyId"),
+        lastSyncTime=status.get("lastSyncTime"),
+        cardId=status.get("cardId"),
+        networkPolicyState=network_policy,
+        conditions=conditions,
+        card=status.get("card"),
+        bindingReason=binding.get("reason"),
+        bindingMessage=binding.get("message"),
+        verificationDetails=status.get("signatureVerificationDetails"),
+    )
 
 
 @router.get("/{namespace}/{name}", dependencies=[Depends(require_roles(ROLE_VIEWER))])
@@ -828,6 +951,86 @@ async def delete_agent(
             pass
         else:
             logger.warning(f"Failed to delete Service '{name}': {e.reason}")
+
+    # Delete signing ConfigMap (if exists)
+    try:
+        kube.delete_configmap(namespace=namespace, name=f"{name}-card-unsigned")
+        messages.append(f"ConfigMap '{name}-card-unsigned' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            pass
+        else:
+            logger.warning("Failed to delete ConfigMap '%s-card-unsigned': %s", name, e.reason)
+
+    # Delete signing ServiceAccount (if exists)
+    try:
+        kube.delete_service_account(namespace=namespace, name=f"{name}-sa")
+        messages.append(f"ServiceAccount '{name}-sa' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            pass
+        else:
+            logger.warning("Failed to delete ServiceAccount '%s-sa': %s", name, e.reason)
+
+    # Delete signing RBAC Role (if exists)
+    try:
+        kube.delete_role(namespace=namespace, name=f"{name}-card-writer")
+        messages.append(f"Role '{name}-card-writer' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            pass
+        else:
+            logger.warning("Failed to delete Role '%s-card-writer': %s", name, e.reason)
+
+    # Delete signing RBAC RoleBinding (if exists)
+    try:
+        kube.delete_role_binding(namespace=namespace, name=f"{name}-card-writer")
+        messages.append(f"RoleBinding '{name}-card-writer' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            pass
+        else:
+            logger.warning("Failed to delete RoleBinding '%s-card-writer': %s", name, e.reason)
+
+    # Delete signed card ConfigMap (if exists)
+    try:
+        kube.delete_configmap(namespace=namespace, name=f"{name}-card-signed")
+        messages.append(f"ConfigMap '{name}-card-signed' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            pass
+        else:
+            logger.warning("Failed to delete ConfigMap '%s-card-signed': %s", name, e.reason)
+
+    # Delete AgentCard CRs matching this agent by targetRef.name
+    try:
+        agentcards = kube.list_custom_resources(
+            group=AGENTCARD_CRD_GROUP,
+            version=AGENTCARD_CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTCARD_PLURAL,
+        )
+        for ac in agentcards:
+            target_name = ac.get("spec", {}).get("targetRef", {}).get("name")
+            if target_name == name:
+                ac_name = ac.get("metadata", {}).get("name")
+                if not ac_name:
+                    continue
+                try:
+                    kube.delete_custom_resource(
+                        group=AGENTCARD_CRD_GROUP,
+                        version=AGENTCARD_CRD_VERSION,
+                        namespace=namespace,
+                        plural=AGENTCARD_PLURAL,
+                        name=ac_name,
+                    )
+                    messages.append(f"AgentCard '{ac_name}' deleted")
+                except ApiException as e:
+                    if e.status != 404:
+                        logger.warning("Failed to delete AgentCard '%s': %s", ac_name, e.reason)
+    except ApiException as e:
+        if e.status not in (404, 403):
+            logger.warning("Failed to list AgentCards for cleanup: %s", e.reason)
 
     # Legacy cleanup: Delete the Agent CR if it exists
     try:
@@ -1905,6 +2108,7 @@ def _build_agent_shipwright_build_manifest(
         "workloadType": request.workloadType,  # Store workload type for finalization
         "authBridgeEnabled": request.authBridgeEnabled,
         "spireEnabled": request.spireEnabled,
+        "signingEnabled": request.signingEnabled,
     }
     # Add env vars if present
     if request.envVars:
@@ -2047,6 +2251,353 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
     }
 
 
+def _cleanup_signing_resource(
+    kube: KubernetesService, namespace: str, kind: str, resource_name: str
+) -> None:
+    """Best-effort cleanup of a single signing resource (ignores 404)."""
+    try:
+        if kind == "ServiceAccount":
+            kube.delete_service_account(namespace=namespace, name=resource_name)
+        elif kind == "ConfigMap":
+            kube.delete_configmap(namespace=namespace, name=resource_name)
+        elif kind == "Role":
+            kube.delete_role(namespace=namespace, name=resource_name)
+        elif kind == "RoleBinding":
+            kube.delete_role_binding(namespace=namespace, name=resource_name)
+        logger.info("Rolled back %s '%s' in %s", kind, resource_name, namespace)
+    except ApiException as e:
+        if e.status != 404:
+            logger.warning("Failed to roll back %s '%s': %s", kind, resource_name, e.reason)
+
+
+def _create_signing_resources(
+    kube: KubernetesService,
+    name: str,
+    namespace: str,
+    request: "CreateAgentRequest",
+) -> None:
+    """Create ConfigMap, ServiceAccount, Role, and RoleBinding for AgentCard signing.
+
+    Must be called BEFORE workload creation. On failure, any partially-created
+    resources are cleaned up to avoid orphans.
+    """
+    port = DEFAULT_IN_CLUSTER_PORT
+    if request.servicePorts and len(request.servicePorts) > 0:
+        port = request.servicePorts[0].targetPort
+
+    created: list[tuple[str, str]] = []
+
+    try:
+        sa_body = {
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {"name": f"{name}-sa", "namespace": namespace},
+        }
+        try:
+            kube.create_service_account(namespace=namespace, body=sa_body)
+            logger.info("Created ServiceAccount '%s-sa' in namespace '%s'", name, namespace)
+            created.append(("ServiceAccount", f"{name}-sa"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info("ServiceAccount '%s-sa' already exists, reusing", name)
+            else:
+                raise
+
+        card_json = json.dumps(
+            {
+                "name": name,
+                "description": f"Agent '{name}'",
+                "url": f"http://{name}.{namespace}.svc.cluster.local:{port}",
+                "version": "1.0.0",
+                "capabilities": {"streaming": False, "pushNotifications": False},
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
+                "skills": [],
+            }
+        )
+        cm_body = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": f"{name}-card-unsigned", "namespace": namespace},
+            "data": {"agent.json": card_json},
+        }
+        try:
+            kube.create_configmap(namespace=namespace, body=cm_body)
+            logger.info(
+                "Created ConfigMap '%s-card-unsigned' in namespace '%s'",
+                name,
+                namespace,
+            )
+            created.append(("ConfigMap", f"{name}-card-unsigned"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info("ConfigMap '%s-card-unsigned' already exists, reusing", name)
+            else:
+                raise
+
+        unsigned_cm = f"{name}-card-unsigned"
+        signed_cm = f"{name}-card-signed"
+        role_body = {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": {"name": f"{name}-card-writer", "namespace": namespace},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "resourceNames": [unsigned_cm, signed_cm],
+                    "verbs": ["get", "update"],
+                },
+                {
+                    "apiGroups": [""],
+                    "resources": ["configmaps"],
+                    "verbs": ["create"],
+                },
+            ],
+        }
+        try:
+            kube.create_role(namespace=namespace, body=role_body)
+            logger.info("Created Role '%s-card-writer' in namespace '%s'", name, namespace)
+            created.append(("Role", f"{name}-card-writer"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info("Role '%s-card-writer' already exists, reusing", name)
+            else:
+                raise
+
+        rolebinding_body = {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "RoleBinding",
+            "metadata": {"name": f"{name}-card-writer", "namespace": namespace},
+            "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Role",
+                "name": f"{name}-card-writer",
+            },
+            "subjects": [{"kind": "ServiceAccount", "name": f"{name}-sa", "namespace": namespace}],
+        }
+        try:
+            kube.create_role_binding(namespace=namespace, body=rolebinding_body)
+            logger.info(
+                "Created RoleBinding '%s-card-writer' in namespace '%s'",
+                name,
+                namespace,
+            )
+            created.append(("RoleBinding", f"{name}-card-writer"))
+        except ApiException as e:
+            if e.status == 409:
+                logger.info("RoleBinding '%s-card-writer' already exists, reusing", name)
+            else:
+                raise
+
+    except Exception:
+        logger.error(
+            "Signing resource creation failed for '%s', rolling back %s resource(s)",
+            name,
+            len(created),
+        )
+        for kind, resource_name in reversed(created):
+            _cleanup_signing_resource(kube, namespace, kind, resource_name)
+        raise
+
+
+def _inject_signing_into_manifest(manifest: dict, name: str) -> None:
+    """Inject signing init-container, volumes, and mounts.
+
+    The init-container signs the agent card using a SPIFFE SVID and writes the
+    signed card both to a shared emptyDir volume and to a Kubernetes ConfigMap
+    (``{name}-card-signed``).  The operator reads the ConfigMap directly,
+    falling back to HTTP fetch for agents that don't use signing.
+
+    ``istio.io/dataplane-mode=none`` disables Istio ambient mesh for this pod.
+    This is required because the SPIRE CSI driver volume (``csi.spiffe.io``)
+    conflicts with Istio ambient's ztunnel-based traffic capture — the
+    init-container needs direct access to the SPIRE agent socket before the
+    mesh dataplane is ready. Without this label the init-container hangs
+    waiting for a socket that ztunnel intercepts.
+    """
+    pod_spec = manifest["spec"]["template"]["spec"]
+    pod_labels = manifest["spec"]["template"]["metadata"].setdefault("labels", {})
+    pod_labels["istio.io/dataplane-mode"] = "none"
+
+    pod_spec["serviceAccountName"] = f"{name}-sa"
+
+    pod_spec.setdefault("initContainers", []).append(
+        {
+            "name": "sign-agentcard",
+            "image": AGENTCARD_SIGNER_IMAGE,
+            "imagePullPolicy": "Always",
+            "env": [
+                {
+                    "name": "SPIFFE_ENDPOINT_SOCKET",
+                    "value": "unix:///run/spire/agent-sockets/spire-agent.sock",
+                },
+                {"name": "UNSIGNED_CARD_PATH", "value": "/etc/agentcard/agent.json"},
+                {"name": "AGENT_CARD_PATH", "value": "/app/.well-known/agent-card.json"},
+                {"name": "SIGN_TIMEOUT", "value": AGENTCARD_SIGN_TIMEOUT},
+                {"name": "AGENT_NAME", "value": name},
+                {
+                    "name": "POD_NAMESPACE",
+                    "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}},
+                },
+            ],
+            "volumeMounts": [
+                {
+                    "name": "spire-agent-socket",
+                    "mountPath": "/run/spire/agent-sockets",
+                    "readOnly": True,
+                },
+                {"name": "unsigned-card", "mountPath": "/etc/agentcard", "readOnly": True},
+                {"name": "signed-card", "mountPath": "/app/.well-known"},
+            ],
+            "securityContext": {
+                "runAsNonRoot": True,
+                "readOnlyRootFilesystem": True,
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+            },
+            "resources": AGENTCARD_SIGNER_RESOURCES,
+        }
+    )
+
+    pod_spec.setdefault("volumes", []).extend(
+        [
+            {"name": "spire-agent-socket", "csi": {"driver": "csi.spiffe.io", "readOnly": True}},
+            {"name": "unsigned-card", "configMap": {"name": f"{name}-card-unsigned"}},
+            {"name": "signed-card", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}},
+        ]
+    )
+
+    pod_spec["containers"][0].setdefault("volumeMounts", []).append(
+        {"name": "signed-card", "mountPath": "/app/.well-known", "readOnly": True}
+    )
+
+
+async def _schedule_identity_binding_patch(
+    kube: KubernetesService,
+    name: str,
+    namespace: str,
+) -> None:
+    """Ensure AgentCard exists with identity binding.
+
+    The operator's sync controller normally auto-creates the AgentCard when it
+    detects the Deployment. We poll briefly for it to appear. If it doesn't
+    (e.g. due to RBAC issues in the sync controller), we create it ourselves
+    so that identity binding is always configured.
+
+    Runs blocking K8s API calls in a thread pool executor to avoid blocking
+    the event loop.
+    """
+    if not SPIRE_TRUST_DOMAIN:
+        logger.warning("SPIRE_TRUST_DOMAIN not set, skipping identity binding patch")
+        return
+
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+
+    def _do_patch():
+        card_name = f"{name}-deployment-card"
+        card_found = False
+
+        for attempt in range(10):
+            try:
+                kube.get_custom_resource(
+                    group=AGENTCARD_CRD_GROUP,
+                    version=AGENTCARD_CRD_VERSION,
+                    namespace=namespace,
+                    plural=AGENTCARD_PLURAL,
+                    name=card_name,
+                )
+                card_found = True
+                break
+            except ApiException as e:
+                if e.status == 404 and attempt < 9:
+                    import time
+
+                    time.sleep(3)
+                    continue
+                break
+
+        if not card_found:
+            logger.info(
+                "AgentCard '%s' not auto-created, creating with identity binding",
+                card_name,
+            )
+            card_body = {
+                "apiVersion": f"{AGENTCARD_CRD_GROUP}/{AGENTCARD_CRD_VERSION}",
+                "kind": "AgentCard",
+                "metadata": {
+                    "name": card_name,
+                    "namespace": namespace,
+                    "labels": {
+                        "app.kubernetes.io/name": name,
+                        "app.kubernetes.io/managed-by": "kagenti-operator",
+                    },
+                },
+                "spec": {
+                    "syncPeriod": "30s",
+                    "targetRef": {
+                        "apiVersion": "apps/v1",
+                        "kind": "Deployment",
+                        "name": name,
+                    },
+                    "identityBinding": {
+                        "trustDomain": SPIRE_TRUST_DOMAIN,
+                    },
+                },
+            }
+            try:
+                kube.create_custom_resource(
+                    group=AGENTCARD_CRD_GROUP,
+                    version=AGENTCARD_CRD_VERSION,
+                    namespace=namespace,
+                    plural=AGENTCARD_PLURAL,
+                    body=card_body,
+                )
+                logger.info(
+                    f"Created AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})"
+                )
+            except ApiException as e:
+                if e.status == 409:
+                    logger.info(
+                        f"AgentCard '{card_name}' appeared concurrently, will patch instead"
+                    )
+                else:
+                    logger.error("Failed to create AgentCard '%s': %s", card_name, e)
+                    return
+            else:
+                return
+
+        patch_body = {
+            "spec": {
+                "identityBinding": {
+                    "trustDomain": SPIRE_TRUST_DOMAIN,
+                }
+            }
+        }
+        try:
+            kube.patch_custom_resource(
+                group=AGENTCARD_CRD_GROUP,
+                version=AGENTCARD_CRD_VERSION,
+                namespace=namespace,
+                plural=AGENTCARD_PLURAL,
+                name=card_name,
+                body=patch_body,
+            )
+            logger.info(
+                f"Patched AgentCard '{card_name}' with identity binding (trustDomain: {SPIRE_TRUST_DOMAIN})"
+            )
+        except ApiException as e:
+            logger.error(
+                "Failed to patch AgentCard '%s' with identity binding: %s",
+                card_name,
+                e,
+            )
+
+    await loop.run_in_executor(None, _do_patch)
+
+
 def _build_deployment_manifest(
     request: "CreateAgentRequest",
     image: str,
@@ -2080,6 +2631,34 @@ def _build_deployment_manifest(
     if request.servicePorts and len(request.servicePorts) > 0:
         container_port = request.servicePorts[0].targetPort
 
+    container_spec: dict = {
+        "name": "agent",
+        "image": image,
+        "imagePullPolicy": DEFAULT_IMAGE_POLICY,
+        "resources": {
+            "limits": DEFAULT_RESOURCE_LIMITS,
+            "requests": DEFAULT_RESOURCE_REQUESTS,
+        },
+        "env": env_vars,
+        "ports": [
+            {
+                "name": "http",
+                "containerPort": container_port,
+                "protocol": "TCP",
+            },
+        ],
+        "volumeMounts": [
+            {"name": "cache", "mountPath": "/app/.cache"},
+            {"name": "marvin", "mountPath": "/.marvin"},
+            {"name": "shared-data", "mountPath": "/shared"},
+        ],
+    }
+
+    if request.startCommand:
+        import shlex
+
+        container_spec["command"] = shlex.split(request.startCommand)
+
     manifest = {
         "apiVersion": "apps/v1",
         "kind": "Deployment",
@@ -2098,35 +2677,11 @@ def _build_deployment_manifest(
                 "metadata": {
                     "labels": {
                         **labels,
-                        # Pod-specific labels can be added here
                     },
                 },
                 "spec": {
                     "serviceAccountName": request.name,
-                    "containers": [
-                        {
-                            "name": "agent",
-                            "image": image,
-                            "imagePullPolicy": DEFAULT_IMAGE_POLICY,
-                            "resources": {
-                                "limits": DEFAULT_RESOURCE_LIMITS,
-                                "requests": DEFAULT_RESOURCE_REQUESTS,
-                            },
-                            "env": env_vars,
-                            "ports": [
-                                {
-                                    "name": "http",
-                                    "containerPort": container_port,
-                                    "protocol": "TCP",
-                                },
-                            ],
-                            "volumeMounts": [
-                                {"name": "cache", "mountPath": "/app/.cache"},
-                                {"name": "marvin", "mountPath": "/.marvin"},
-                                {"name": "shared-data", "mountPath": "/shared"},
-                            ],
-                        }
-                    ],
+                    "containers": [container_spec],
                     "volumes": [
                         {"name": "cache", "emptyDir": {}},
                         {"name": "marvin", "emptyDir": {}},
@@ -2424,6 +2979,16 @@ async def create_agent(
         f"createHttpRoute={request.createHttpRoute}"
     )
     try:
+        if request.signingEnabled and not settings.kagenti_feature_flag_agentcard_signing:
+            raise HTTPException(
+                status_code=400,
+                detail="AgentCard signing is not enabled. Set KAGENTI_FEATURE_FLAG_AGENTCARD_SIGNING=true to enable.",
+            )
+
+        # Create signing resources BEFORE workload (must exist for pod scheduling)
+        if request.signingEnabled and request.workloadType != WORKLOAD_TYPE_JOB:
+            _create_signing_resources(kube, request.name, request.namespace, request)
+
         if request.deploymentMethod == "image":
             # Deploy from existing container image
             if not request.containerImage:
@@ -2450,6 +3015,8 @@ async def create_agent(
                     request=request,
                     image=request.containerImage,
                 )
+                if request.signingEnabled:
+                    _inject_signing_into_manifest(workload_manifest, request.name)
                 kube.create_deployment(
                     namespace=request.namespace,
                     body=workload_manifest,
@@ -2462,6 +3029,8 @@ async def create_agent(
                     request=request,
                     image=request.containerImage,
                 )
+                if request.signingEnabled:
+                    _inject_signing_into_manifest(workload_manifest, request.name)
                 kube.create_statefulset(
                     namespace=request.namespace,
                     body=workload_manifest,
@@ -2562,6 +3131,12 @@ async def create_agent(
             if request.createHttpRoute:
                 message += " HTTPRoute will be created after the build completes."
 
+        if (
+            request.signingEnabled
+            and request.spireEnabled
+            and request.workloadType != WORKLOAD_TYPE_JOB
+        ):
+            await _schedule_identity_binding_patch(kube, request.name, request.namespace)
         return CreateAgentResponse(
             success=True,
             name=request.name,
@@ -2807,8 +3382,9 @@ async def finalize_shipwright_build(
             # Convert stored dict format back to ServicePort objects
             final_service_ports = [ServicePort(**sp) for sp in stored_config["servicePorts"]]
 
-        # Propagate SPIRE identity setting from stored config
+        # Propagate SPIRE identity and signing settings from stored config
         final_spire_enabled = stored_config.get("spireEnabled", False)
+        final_signing_enabled = stored_config.get("signingEnabled", False)
 
         # Step 3: Create workload + Service with the built image
         # Build a CreateAgentRequest-like object for manifest builders
@@ -2826,6 +3402,7 @@ async def finalize_shipwright_build(
             createHttpRoute=final_create_route,
             authBridgeEnabled=final_auth_bridge,
             spireEnabled=final_spire_enabled,
+            signingEnabled=final_signing_enabled,
         )
 
         # Ensure a dedicated ServiceAccount exists so the webhook's
@@ -2840,6 +3417,10 @@ async def finalize_shipwright_build(
                 spire_enabled=final_spire_enabled,
             )
 
+        # Create signing resources BEFORE workload (must exist for pod scheduling)
+        if agent_request.signingEnabled and final_workload_type != WORKLOAD_TYPE_JOB:
+            _create_signing_resources(kube, name, namespace, agent_request)
+
         # Create workload based on workloadType
         if final_workload_type == WORKLOAD_TYPE_DEPLOYMENT:
             workload_manifest = _build_deployment_manifest(
@@ -2847,6 +3428,8 @@ async def finalize_shipwright_build(
                 image=container_image,
                 shipwright_build_name=name,
             )
+            if agent_request.signingEnabled:
+                _inject_signing_into_manifest(workload_manifest, name)
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
                 {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
@@ -2865,6 +3448,8 @@ async def finalize_shipwright_build(
                 image=container_image,
                 shipwright_build_name=name,
             )
+            if agent_request.signingEnabled:
+                _inject_signing_into_manifest(workload_manifest, name)
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
                 {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}

@@ -37,6 +37,7 @@ import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
 import { useMutation } from '@tanstack/react-query';
 
 import { agentService, ShipwrightBuildConfig } from '@/services/api';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { EnvImportModal } from '@/components/EnvImportModal';
 import { BuildStrategySelector } from '@/components/BuildStrategySelector';
@@ -106,6 +107,7 @@ interface ServicePort {
 
 export const ImportAgentPage: React.FC = () => {
   const navigate = useNavigate();
+  const features = useFeatureFlags();
 
   // Deployment method
   const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>('source');
@@ -171,6 +173,17 @@ export const ImportAgentPage: React.FC = () => {
   const [authBridgeEnabled, setAuthBridgeEnabled] = useState(true);
   // SPIRE identity
   const [spireEnabled, setSpireEnabled] = useState(false);
+  // AgentCard signing
+  const [signingEnabled, setSigningEnabled] = useState(false);
+  // Feedback when signing auto-enables SPIRE
+  const [spireAutoEnabled, setSpireAutoEnabled] = useState(false);
+
+  React.useEffect(() => {
+    if (spireAutoEnabled) {
+      const timer = setTimeout(() => setSpireAutoEnabled(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [spireAutoEnabled]);
 
   // Validation state
   const [validated, setValidated] = useState<Record<string, 'success' | 'error' | 'default'>>({});
@@ -460,6 +473,7 @@ export const ImportAgentPage: React.FC = () => {
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
+        signingEnabled,
         // Shipwright build configuration (always enabled)
         shipwrightConfig,
       });
@@ -486,6 +500,7 @@ export const ImportAgentPage: React.FC = () => {
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
+        signingEnabled,
       });
     }
   };
@@ -976,26 +991,83 @@ export const ImportAgentPage: React.FC = () => {
                 />
               </FormGroup>
 
-              {/* AuthBridge Sidecar Injection */}
-              <FormGroup fieldId="authBridgeEnabled">
-                <Checkbox
-                  id="authBridgeEnabled"
-                  label="Enable AuthBridge sidecar injection"
-                  isChecked={authBridgeEnabled}
-                  onChange={(_e, checked) => setAuthBridgeEnabled(checked)}
-                  description="When enabled, the webhook injects AuthBridge sidecars (envoy-proxy, go-processor, client-registration) into the agent pod for token exchange."
-              />
-              </FormGroup>
+              <Divider style={{ margin: '24px 0' }} />
 
-              {/* SPIRE Identity */}
-              <FormGroup fieldId="spireEnabled">
-                <Checkbox
-                  id="spireEnabled"
-                  label="Enable SPIRE identity (spiffe-helper sidecar)"
-                  isChecked={spireEnabled}
-                  onChange={(_e, checked) => setSpireEnabled(checked)}
-                />
-              </FormGroup>
+              <Title headingLevel="h3" size="md" style={{ marginBottom: '16px' }}>
+                Security &amp; Identity
+              </Title>
+
+              <Card isFlat style={{ marginTop: '8px' }}>
+                <CardBody>
+                  <FormGroup fieldId="authBridgeEnabled">
+                    <Checkbox
+                      id="authBridgeEnabled"
+                      label="Enable AuthBridge sidecar injection"
+                      isChecked={authBridgeEnabled}
+                      onChange={(_e, checked) => setAuthBridgeEnabled(checked)}
+                      description="Injects AuthBridge sidecars (envoy-proxy, go-processor, client-registration) into the agent pod for token exchange."
+                    />
+                  </FormGroup>
+
+                  <FormGroup fieldId="spireEnabled" style={{ marginTop: '12px' }}>
+                    <Checkbox
+                      id="spireEnabled"
+                      label="Enable SPIRE identity (spiffe-helper sidecar)"
+                      isChecked={spireEnabled}
+                      onChange={(_e, checked) => {
+                        setSpireEnabled(checked);
+                        if (!checked) setSigningEnabled(false);
+                      }}
+                      description="Mounts a SPIRE CSI volume and requests an X.509-SVID for the agent's service account."
+                    />
+                  </FormGroup>
+
+                  {/* TODO: Allow pasting custom AgentCard JSON (see PR #1038 review) */}
+                  {features.agentcardSigning && (
+                    <>
+                      <FormGroup fieldId="signingEnabled" style={{ marginTop: '4px', marginLeft: '24px' }}>
+                        <Checkbox
+                          id="signingEnabled"
+                          label="Enable AgentCard signing"
+                          isChecked={signingEnabled}
+                          onChange={(_e, checked) => {
+                            setSigningEnabled(checked);
+                            if (checked && !spireEnabled) {
+                              setSpireEnabled(true);
+                              setSpireAutoEnabled(true);
+                            }
+                          }}
+                          description="Signs the agent card with SPIRE X.509-SVID at startup. Requires SPIRE and a ClusterSPIFFEID."
+                        />
+                      </FormGroup>
+
+                      {spireAutoEnabled && (
+                        <Alert
+                          variant="info"
+                          title="SPIRE identity has been automatically enabled (required for signing)."
+                          isInline
+                          isPlain
+                          style={{ marginTop: '8px', marginLeft: '24px' }}
+                        />
+                      )}
+
+                      {signingEnabled && (
+                        <>
+                          <Alert variant="warning" title="Experimental Feature" isInline style={{ marginTop: '12px' }}>
+                            This serves a static agent card that will <strong>overwrite</strong> the card
+                            the agent would normally serve. Intended for testing only.
+                          </Alert>
+                          <Alert variant="info" title="SPIRE Prerequisites" isInline style={{ marginTop: '8px' }}>
+                            AgentCard signing requires: (1) SPIRE installed on the cluster, (2) a
+                            ClusterSPIFFEID matching kagenti.io/type=agent pods, and (3) the target
+                            namespace labeled with agentcard=true.
+                          </Alert>
+                        </>
+                      )}
+                    </>
+                  )}
+                </CardBody>
+              </Card>
 
               {/* Pod Configuration */}
               <ExpandableSection

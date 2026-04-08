@@ -29,6 +29,7 @@ class KubernetesService:
         self._core_api: Optional[kubernetes.client.CoreV1Api] = None
         self._apps_api: Optional[kubernetes.client.AppsV1Api] = None
         self._batch_api: Optional[kubernetes.client.BatchV1Api] = None
+        self._rbac_api: Optional[kubernetes.client.RbacAuthorizationV1Api] = None
 
     def _load_config(self) -> kubernetes.client.ApiClient:
         """Load Kubernetes configuration (in-cluster or kubeconfig)."""
@@ -73,6 +74,13 @@ class KubernetesService:
         if self._batch_api is None:
             self._batch_api = kubernetes.client.BatchV1Api(self.api_client)
         return self._batch_api
+
+    @property
+    def rbac_api(self) -> kubernetes.client.RbacAuthorizationV1Api:
+        """Get RbacAuthorizationV1Api client for Roles and RoleBindings."""
+        if self._rbac_api is None:
+            self._rbac_api = kubernetes.client.RbacAuthorizationV1Api(self.api_client)
+        return self._rbac_api
 
     def is_running_in_cluster(self) -> bool:
         """Check if running inside a Kubernetes cluster."""
@@ -197,6 +205,29 @@ class KubernetesService:
             )
         except ApiException as e:
             logger.error(f"Error creating {plural} in {namespace}: {e}")
+            raise
+
+    def patch_custom_resource(
+        self,
+        group: str,
+        version: str,
+        namespace: str,
+        plural: str,
+        name: str,
+        body: dict,
+    ) -> dict:
+        """Patch a custom resource using merge-patch."""
+        try:
+            return self.custom_api.patch_namespaced_custom_object(
+                group=group,
+                version=version,
+                namespace=namespace,
+                plural=plural,
+                name=name,
+                body=body,
+            )
+        except ApiException as e:
+            logger.error("Error patching %s/%s in %s: %s", plural, name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
@@ -372,6 +403,110 @@ class KubernetesService:
             )
         except ApiException as e:
             logger.error(f"Error deleting Service {name} in {namespace}: {e}")
+            raise
+
+    # -------------------------------------------------------------------------
+    # ConfigMap Operations
+    # -------------------------------------------------------------------------
+
+    def create_configmap(self, namespace: str, body: dict) -> dict:
+        """Create a ConfigMap in the specified namespace."""
+        try:
+            result = self.core_api.create_namespaced_config_map(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error("Error creating ConfigMap in %s: %s", namespace, e)
+            raise
+
+    def delete_configmap(self, namespace: str, name: str) -> None:
+        """Delete a ConfigMap by name."""
+        try:
+            self.core_api.delete_namespaced_config_map(
+                name=name,
+                namespace=namespace,
+            )
+        except ApiException as e:
+            logger.error("Error deleting ConfigMap %s in %s: %s", name, namespace, e)
+            raise
+
+    # -------------------------------------------------------------------------
+    # ServiceAccount CRUD Operations
+    # -------------------------------------------------------------------------
+
+    def create_service_account(self, namespace: str, body: dict) -> dict:
+        """Create a ServiceAccount in the specified namespace."""
+        try:
+            result = self.core_api.create_namespaced_service_account(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error("Error creating ServiceAccount in %s: %s", namespace, e)
+            raise
+
+    def delete_service_account(self, namespace: str, name: str) -> None:
+        """Delete a ServiceAccount by name."""
+        try:
+            self.core_api.delete_namespaced_service_account(
+                name=name,
+                namespace=namespace,
+            )
+        except ApiException as e:
+            logger.error("Error deleting ServiceAccount %s in %s: %s", name, namespace, e)
+            raise
+
+    # -------------------------------------------------------------------------
+    # RBAC Operations (Roles and RoleBindings)
+    # -------------------------------------------------------------------------
+
+    def create_role(self, namespace: str, body: dict) -> dict:
+        """Create a Role in the specified namespace."""
+        try:
+            result = self.rbac_api.create_namespaced_role(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error("Error creating Role in %s: %s", namespace, e)
+            raise
+
+    def delete_role(self, namespace: str, name: str) -> None:
+        """Delete a Role by name."""
+        try:
+            self.rbac_api.delete_namespaced_role(
+                name=name,
+                namespace=namespace,
+            )
+        except ApiException as e:
+            logger.error("Error deleting Role %s in %s: %s", name, namespace, e)
+            raise
+
+    def create_role_binding(self, namespace: str, body: dict) -> dict:
+        """Create a RoleBinding in the specified namespace."""
+        try:
+            result = self.rbac_api.create_namespaced_role_binding(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            logger.error("Error creating RoleBinding in %s: %s", namespace, e)
+            raise
+
+    def delete_role_binding(self, namespace: str, name: str) -> None:
+        """Delete a RoleBinding by name."""
+        try:
+            self.rbac_api.delete_namespaced_role_binding(
+                name=name,
+                namespace=namespace,
+            )
+        except ApiException as e:
+            logger.error("Error deleting RoleBinding %s in %s: %s", name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
