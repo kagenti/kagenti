@@ -55,6 +55,8 @@ jobs:
 
       - name: Create secret values file for CI
         run: bash .github/scripts/common/20-create-secrets.sh
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Run Ansible installer (dev mode with kagenti-operator)
         run: bash .github/scripts/kagenti-operator/30-run-installer.sh
