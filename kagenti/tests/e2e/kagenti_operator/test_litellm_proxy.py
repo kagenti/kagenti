@@ -20,6 +20,11 @@ LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL", "http://localhost:14000")
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 LITELLM_VIRTUAL_KEY = os.getenv("LITELLM_VIRTUAL_KEY", "")
 
+pytestmark = pytest.mark.skipif(
+    not LITELLM_MASTER_KEY,
+    reason="LITELLM_MASTER_KEY not set — LiteLLM proxy not deployed",
+)
+
 
 @pytest.fixture(scope="module")
 def master_client():
