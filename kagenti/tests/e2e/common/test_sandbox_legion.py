@@ -16,6 +16,9 @@ import os
 import pathlib
 
 import pytest
+
+pytest.importorskip("a2a.client", reason="a2a package not available")
+
 import httpx
 import yaml
 from uuid import uuid4

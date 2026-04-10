@@ -50,14 +50,11 @@ spec:
         - name: MCP_URL
           value: "http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
         - name: LLM_API_BASE
-          value: "https://litellm-prod.apps.maas.redhatworkshops.io/v1"
+          value: "http://dockerhost:11434/v1"
         - name: LLM_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: openai-secret
-              key: apikey
+          value: "dummy"
         - name: LLM_MODEL
-          value: "llama-scout-17b"
+          value: "qwen2.5:3b"
         - name: GITHUB_SECRET_NAME
           value: "github-token-secret"
         ports:
