@@ -27,7 +27,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "httpx>=0.27.0",
     "ruff>=0.6.0",
-    "pylint>=3.0.0",
+    "pylint>=4.0.5",
 ]
 
 [build-system]
