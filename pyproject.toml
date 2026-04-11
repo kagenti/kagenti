@@ -38,7 +38,7 @@ test = [
     "pyasn1>=0.6.3",  # Minimum version for CVE-2026-23490, CVE-2026-30922 fixes
 
     # HTTP requests
-    "requests>=2.31.0",
+    "requests>=2.33.1",
     "httpx>=0.24.0",  # For A2A client
 
     # A2A protocol client
