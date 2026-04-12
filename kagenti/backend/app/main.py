@@ -30,21 +30,23 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
         return response
 
 
-from app.core.config import settings
-from app.routers import (
+from app.core.config import settings  # pylint: disable=wrong-import-position
+from app.routers import (  # pylint: disable=wrong-import-position
     agents,
     tools,
     namespaces,
     config,
     auth,
     chat,
+    shipwright,
 )
 
-# Conditionally import feature-flagged modules
+# Conditionally import feature-flagged modules.
+# pylint: disable=wrong-import-position,no-name-in-module,import-error
 _sandbox_modules_loaded = False
 if settings.kagenti_feature_flag_sandbox:
     try:
-        from app.routers import (
+        from app.routers import (  # noqa: E402
             sandbox,
             sandbox_deploy,
             sandbox_files,
@@ -54,7 +56,7 @@ if settings.kagenti_feature_flag_sandbox:
             models,
             llm_keys,
         )
-        from app.services.session_db import close_all_pools
+        from app.services.session_db import close_all_pools  # noqa: E402
 
         _sandbox_modules_loaded = True
     except ImportError:
@@ -65,7 +67,7 @@ if settings.kagenti_feature_flag_sandbox:
 _triggers_modules_loaded = False
 if settings.kagenti_feature_flag_triggers:
     try:
-        from app.routers import sandbox_trigger
+        from app.routers import sandbox_trigger  # noqa: E402
 
         _triggers_modules_loaded = True
     except ImportError:
@@ -76,13 +78,14 @@ if settings.kagenti_feature_flag_triggers:
 _integrations_modules_loaded = False
 if settings.kagenti_feature_flag_integrations:
     try:
-        from app.routers import integrations
+        from app.routers import integrations  # noqa: E402
 
         _integrations_modules_loaded = True
     except ImportError:
         logging.getLogger(__name__).warning(
             "INTEGRATIONS flag enabled but integration modules not installed — skipping"
         )
+# pylint: enable=wrong-import-position,no-name-in-module,import-error
 
 # Configure logging
 logging.basicConfig(
@@ -125,12 +128,12 @@ async def lifespan(app: FastAPI):
 
     # Shutdown sandbox services (only if enabled and loaded)
     if _sandbox_modules_loaded:
-        from app.services.sidecar_manager import get_sidecar_manager
+        from app.services.sidecar_manager import get_sidecar_manager  # pylint: disable=import-error,no-name-in-module
 
         await get_sidecar_manager().shutdown()
 
         # Close session DB pools
-        await close_all_pools()
+        await close_all_pools()  # pylint: disable=used-before-assignment
 
     logger.info("Shutting down Kagenti Backend API")
 
@@ -164,8 +167,11 @@ app.include_router(agents.router, prefix="/api/v1")
 app.include_router(tools.router, prefix="/api/v1")
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
+app.include_router(shipwright.router, prefix="/api/v1")
 
-# Feature-flagged routers — sandbox
+# Feature-flagged routers (variables are assigned inside try/except blocks above;
+# pylint cannot track that _*_modules_loaded guards their usage).
+# pylint: disable=used-before-assignment
 if _sandbox_modules_loaded:
     app.include_router(sandbox.router, prefix="/api/v1")
     app.include_router(sandbox_deploy.router, prefix="/api/v1")
@@ -177,15 +183,14 @@ if _sandbox_modules_loaded:
     app.include_router(llm_keys.router, prefix="/api/v1")
     logger.info("Feature flag SANDBOX enabled — sandbox routes registered")
 
-# Feature-flagged routers — triggers
 if _triggers_modules_loaded:
     app.include_router(sandbox_trigger.router, prefix="/api/v1")
     logger.info("Feature flag TRIGGERS enabled — trigger routes registered")
 
-# Feature-flagged routers — integrations
 if _integrations_modules_loaded:
     app.include_router(integrations.router, prefix="/api/v1")
     logger.info("Feature flag INTEGRATIONS enabled — integration routes registered")
+# pylint: enable=used-before-assignment
 
 
 @app.get("/health", tags=["health"])

@@ -11,13 +11,14 @@ import re
 import socket
 import ipaddress
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+import kubernetes.client
 from kubernetes.client import ApiException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.utils.routes import get_agent_url
@@ -25,6 +26,7 @@ from app.core.constants import (
     CRD_GROUP,
     CRD_VERSION,
     AGENTS_PLURAL,
+    AGENTRUNTIMES_PLURAL,
     KAGENTI_TYPE_LABEL,
     PROTOCOL_LABEL_PREFIX,
     KAGENTI_FRAMEWORK_LABEL,
@@ -63,6 +65,18 @@ from app.core.constants import (
     # SPIRE identity constants
     KAGENTI_SPIRE_LABEL,
     KAGENTI_SPIRE_ENABLED_VALUE,
+    # Per-sidecar injection labels
+    KAGENTI_ENVOY_PROXY_INJECT_LABEL,
+    KAGENTI_SPIFFE_HELPER_INJECT_LABEL,
+    KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL,
+    # Port exclusion annotations
+    KAGENTI_OUTBOUND_PORTS_EXCLUDE,
+    KAGENTI_INBOUND_PORTS_EXCLUDE,
+    # AuthBridge ConfigMap defaults
+    DEFAULT_KEYCLOAK_INTERNAL_URL,
+    DEFAULT_KEYCLOAK_REALM,
+    DEFAULT_SPIFFE_HELPER_CONF,
+    DEFAULT_ENVOY_YAML,
 )
 from app.core.config import settings
 from app.models.responses import (
@@ -72,7 +86,7 @@ from app.models.responses import (
     DeleteResponse,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.routes import create_route_for_agent_or_tool, route_exists
+from app.utils.routes import create_route_for_agent_or_tool, detect_platform, route_exists
 from app.models.shipwright import (
     ResourceType,
     ShipwrightBuildConfig,
@@ -81,6 +95,7 @@ from app.models.shipwright import (
     BuildStatusCondition,
     ClusterBuildStrategyInfo,
     ClusterBuildStrategiesResponse,
+    ShipwrightBuildListResponse,
     ShipwrightBuildStatusResponse,
     ShipwrightBuildRunStatusResponse,
     ResourceConfigFromBuild,
@@ -97,6 +112,15 @@ from app.services.shipwright import (
     get_output_image_from_buildrun,
     resolve_clone_secret,
 )
+from app.services.shipwright_builds import collect_kagenti_shipwright_builds
+
+
+class OutboundRoute(BaseModel):
+    """A single outbound token exchange route for authproxy-routes ConfigMap."""
+
+    host: str = Field(..., min_length=1)
+    target_audience: str = Field(..., min_length=1)
+    token_scopes: str = "openid"
 
 
 class SecretKeyRef(BaseModel):
@@ -215,6 +239,21 @@ class CreateAgentRequest(BaseModel):
     authBridgeEnabled: bool = True
     # SPIRE identity (spiffe-helper sidecar injection)
     spireEnabled: bool = False
+
+    # Per-sidecar injection controls (None = use webhook defaults)
+    envoyProxyInject: Optional[bool] = None
+    spiffeHelperInject: Optional[bool] = None
+    clientRegistrationInject: Optional[bool] = None
+
+    # Port exclusion annotations
+    outboundPortsExclude: Optional[str] = None
+    inboundPortsExclude: Optional[str] = None
+
+    # AuthBridge config overrides (authbridge-config ConfigMap)
+    defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
+
+    # Outbound routing rules (authproxy-routes ConfigMap)
+    outboundRoutes: Optional[List["OutboundRoute"]] = None
 
     # Shipwright build configuration
     shipwrightConfig: Optional[ShipwrightBuildConfig] = None
@@ -775,6 +814,7 @@ async def delete_agent(
     This deletes:
     - Deployment, StatefulSet, or Job (whichever exists)
     - Service
+    - HTTPRoute (if exists)
     - Shipwright Build CR (if exists)
     - Shipwright BuildRun CRs (if exist)
     - Legacy: Agent CR (if exists, for backward compatibility)
@@ -821,6 +861,39 @@ async def delete_agent(
             pass
         else:
             logger.warning(f"Failed to delete Service '{name}': {e.reason}")
+
+    # Delete the HTTPRoute (if exists)
+    try:
+        kube.delete_custom_resource(
+            group="gateway.networking.k8s.io",
+            version="v1",
+            namespace=namespace,
+            plural="httproutes",
+            name=name,
+        )
+        messages.append(f"HTTPRoute '{name}' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            # HTTPRoute doesn't exist, that's fine
+            pass
+        else:
+            logger.warning(f"Failed to delete HTTPRoute '{name}': {e.reason}")
+
+    # Delete the AgentRuntime CR (if exists)
+    try:
+        kube.delete_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            name=name,
+        )
+        messages.append(f"AgentRuntime '{name}' deleted")
+    except ApiException as e:
+        if e.status == 404:
+            pass
+        else:
+            logger.warning("Failed to delete AgentRuntime '%s': %s", name, e.reason)
 
     # Legacy cleanup: Delete the Agent CR if it exists
     try:
@@ -1468,6 +1541,45 @@ async def list_build_strategies(
 
 
 @router.get(
+    "/shipwright-builds",
+    response_model=ShipwrightBuildListResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def list_agent_shipwright_builds(
+    namespace: str = Query(
+        default="",
+        description="Kubernetes namespace (required unless all_namespaces=true)",
+    ),
+    all_namespaces: bool = Query(
+        default=False,
+        alias="allNamespaces",
+        description="If true, list builds in all kagenti-enabled namespaces",
+    ),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> ShipwrightBuildListResponse:
+    """List Shipwright Build resources for agents only (kagenti.io/type=agent)."""
+    namespaces_to_scan: List[str] = []
+    if all_namespaces:
+        namespaces_to_scan = kube.list_enabled_namespaces()
+    else:
+        if not namespace or not namespace.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="namespace query parameter is required (or use allNamespaces=true)",
+            )
+        namespaces_to_scan = [namespace.strip()]
+
+    try:
+        items = collect_kagenti_shipwright_builds(
+            kube, namespaces_to_scan, RESOURCE_TYPE_AGENT, logger
+        )
+    except ApiException as e:
+        raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+    return ShipwrightBuildListResponse(items=items)
+
+
+@router.get(
     "/{namespace}/{name}/shipwright-build",
     response_model=ShipwrightBuildStatusResponse,
     dependencies=[Depends(require_roles(ROLE_VIEWER))],
@@ -1770,6 +1882,131 @@ async def get_shipwright_build_info(
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
+def _ensure_authbridge_configmaps(
+    kube: KubernetesService,
+    namespace: str,
+    spire_enabled: bool = False,
+) -> None:
+    """Ensure the 3 ConfigMaps required by AuthBridge sidecars exist.
+
+    Creates each ConfigMap only if it does not already exist, so user
+    customizations (e.g. pointing at a different Keycloak server) are
+    preserved on subsequent agent deploys.
+
+    The ConfigMaps match what the Helm chart creates in
+    charts/kagenti/templates/agent-namespaces.yaml:
+      - authbridge-config: Keycloak URLs for go-processor / client-registration
+      - envoy-config: Envoy proxy listeners and ext-proc integration
+      - spiffe-helper-config: SPIFFE workload API socket paths and SVID output
+    """
+    keycloak_url = settings.keycloak_url or DEFAULT_KEYCLOAK_INTERNAL_URL
+    realm = settings.effective_keycloak_realm or DEFAULT_KEYCLOAK_REALM
+    # ISSUER must use the public/external URL because it must match the
+    # "iss" claim in JWT tokens issued by Keycloak (split-horizon DNS).
+    issuer = f"{settings.effective_keycloak_url}/realms/{realm}"
+
+    # 1. authbridge-config
+    kube.ensure_configmap(
+        namespace=namespace,
+        name="authbridge-config",
+        data={
+            "KEYCLOAK_URL": keycloak_url,
+            "KEYCLOAK_REALM": realm,
+            "ISSUER": issuer,
+            "SPIRE_ENABLED": "true" if spire_enabled else "false",
+        },
+    )
+
+    # 2. envoy-config
+    kube.ensure_configmap(
+        namespace=namespace,
+        name="envoy-config",
+        data={"envoy.yaml": DEFAULT_ENVOY_YAML},
+    )
+
+    # 3. spiffe-helper-config
+    kube.ensure_configmap(
+        namespace=namespace,
+        name="spiffe-helper-config",
+        data={"helper.conf": DEFAULT_SPIFFE_HELPER_CONF},
+    )
+
+    logger.info(f"Ensured AuthBridge ConfigMaps in namespace '{namespace}'")
+
+
+def _ensure_authproxy_routes(
+    kube: KubernetesService,
+    namespace: str,
+    routes: List["OutboundRoute"],
+) -> None:
+    """Create or update the authproxy-routes ConfigMap with outbound token exchange rules."""
+    import yaml as _yaml
+
+    # AuthProxy go-processor expects a YAML list at file root (static.go), not {"routes": [...]}.
+    routes_list = [r.model_dump() for r in routes]
+    kube.upsert_configmap(
+        namespace=namespace,
+        name="authproxy-routes",
+        data={"routes.yaml": _yaml.dump(routes_list, default_flow_style=False)},
+    )
+    logger.info(
+        "Upserted authproxy-routes ConfigMap in namespace '%s' with %d route(s)",
+        namespace,
+        len(routes),
+    )
+
+
+def _ensure_authbridge_scc_rolebinding(
+    kube: KubernetesService,
+    namespace: str,
+) -> None:
+    """On OpenShift, ensure the AuthBridge SCC RoleBinding exists.
+
+    AuthBridge sidecars need NET_ADMIN/NET_RAW capabilities, RunAsAny UIDs,
+    and CSI volumes that OpenShift's default restricted-v2 SCC blocks.
+    The Helm chart creates the ``kagenti-authbridge`` SCC and its ClusterRole;
+    this function creates the per-namespace RoleBinding that grants it to all
+    service accounts in the namespace.
+
+    On non-OpenShift clusters this is a no-op.  If the ClusterRole doesn't
+    exist (SCC not installed), a warning is logged and the function returns
+    without error — the agent will still be created, but pods may fail with
+    SCC errors until the SCC is installed.
+    """
+    if detect_platform(kube) != "openshift":
+        return
+
+    cluster_role_name = "system:openshift:scc:kagenti-authbridge"
+
+    # Verify the ClusterRole exists (implies the SCC was installed)
+    try:
+        kube.rbac_api.read_cluster_role(name=cluster_role_name)
+    except ApiException as e:
+        if e.status == 404:
+            logger.warning(
+                "ClusterRole '%s' not found. "
+                "The kagenti-authbridge SCC may not be installed. "
+                "Agent pods may fail with SCC errors. "
+                "Install via: helm upgrade kagenti charts/kagenti --set openshift=true",
+                cluster_role_name,
+            )
+            return
+        raise
+
+    kube.ensure_rolebinding(
+        namespace=namespace,
+        name="agent-authbridge-scc",
+        cluster_role_name=cluster_role_name,
+        subjects=[
+            kubernetes.client.V1Subject(
+                kind="Group",
+                api_group="rbac.authorization.k8s.io",
+                name=f"system:serviceaccounts:{namespace}",
+            ),
+        ],
+    )
+
+
 def _build_agent_shipwright_build_manifest(
     request: CreateAgentRequest, clone_secret_name: Optional[str] = None
 ) -> dict:
@@ -1807,7 +2044,18 @@ def _build_agent_shipwright_build_manifest(
         "workloadType": request.workloadType,  # Store workload type for finalization
         "authBridgeEnabled": request.authBridgeEnabled,
         "spireEnabled": request.spireEnabled,
+        "envoyProxyInject": request.envoyProxyInject,
+        "spiffeHelperInject": request.spiffeHelperInject,
+        "clientRegistrationInject": request.clientRegistrationInject,
     }
+    if request.outboundRoutes:
+        resource_config["outboundRoutes"] = [r.model_dump() for r in request.outboundRoutes]
+    if request.outboundPortsExclude:
+        resource_config["outboundPortsExclude"] = request.outboundPortsExclude
+    if request.inboundPortsExclude:
+        resource_config["inboundPortsExclude"] = request.inboundPortsExclude
+    if request.defaultOutboundPolicy:
+        resource_config["defaultOutboundPolicy"] = request.defaultOutboundPolicy
     # Add env vars if present
     if request.envVars:
         resource_config["envVars"] = [ev.model_dump(exclude_none=True) for ev in request.envVars]
@@ -1860,8 +2108,14 @@ def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
         List of environment variable dictionaries.
     """
     env_vars = list(DEFAULT_ENV_VARS)
+    service_port = (
+        request.servicePorts[0].port if request.servicePorts else DEFAULT_OFF_CLUSTER_PORT
+    )
     env_vars.append(
-        {"name": AGENT_ENDPOINT, "value": get_agent_url(request.name, request.namespace)}
+        {
+            "name": AGENT_ENDPOINT,
+            "value": get_agent_url(request.name, request.namespace, service_port),
+        }
     )
     if request.envVars:
         for ev in request.envVars:
@@ -1924,7 +2178,24 @@ def _build_common_labels(
     # SPIRE identity label (triggers spiffe-helper sidecar injection by kagenti-webhook)
     if request.spireEnabled:
         labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
+    # Per-sidecar injection labels (opt-out for envoy/spiffe, opt-in for client-registration)
+    if request.envoyProxyInject is False:
+        labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
+    if request.spiffeHelperInject is False:
+        labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
+    if request.clientRegistrationInject is True:
+        labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
     return labels
+
+
+def _build_common_annotations(request: "CreateAgentRequest") -> Dict[str, str]:
+    """Build pod template annotations for port exclusions and other webhook directives."""
+    annotations: Dict[str, str] = {}
+    if request.outboundPortsExclude:
+        annotations[KAGENTI_OUTBOUND_PORTS_EXCLUDE] = request.outboundPortsExclude
+    if request.inboundPortsExclude:
+        annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = request.inboundPortsExclude
+    return annotations
 
 
 def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
@@ -1941,6 +2212,64 @@ def _build_selector_labels(request: "CreateAgentRequest") -> Dict[str, str]:
         KAGENTI_TYPE_LABEL: RESOURCE_TYPE_AGENT,
         APP_KUBERNETES_IO_NAME: request.name,
     }
+
+
+def _build_agentruntime_manifest(
+    name: str,
+    namespace: str,
+    workload_type: str,
+    agent_type: str = RESOURCE_TYPE_AGENT,
+) -> dict:
+    """Build an AgentRuntime CR manifest for the given workload."""
+    kind_map = {
+        WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
+        WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
+    }
+    return {
+        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "kind": "AgentRuntime",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": {
+                KAGENTI_TYPE_LABEL: agent_type,
+                APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+            },
+        },
+        "spec": {
+            "type": agent_type,
+            "targetRef": {
+                "apiVersion": "apps/v1",
+                "kind": kind_map.get(workload_type, "Deployment"),
+                "name": name,
+            },
+        },
+    }
+
+
+def _ensure_agentruntime(
+    kube: "KubernetesService",
+    name: str,
+    namespace: str,
+    workload_type: str,
+    agent_type: str = RESOURCE_TYPE_AGENT,
+) -> None:
+    """Create an AgentRuntime CR for the workload. Skip if it already exists."""
+    manifest = _build_agentruntime_manifest(name, namespace, workload_type, agent_type)
+    try:
+        kube.create_custom_resource(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=namespace,
+            plural=AGENTRUNTIMES_PLURAL,
+            body=manifest,
+        )
+        logger.info("Created AgentRuntime '%s' in namespace '%s'", name, namespace)
+    except ApiException as e:
+        if e.status == 409:
+            logger.info("AgentRuntime '%s' already exists in namespace '%s'", name, namespace)
+        else:
+            logger.warning("Failed to create AgentRuntime '%s': %s", name, e.reason)
 
 
 def _build_deployment_manifest(
@@ -1994,8 +2323,8 @@ def _build_deployment_manifest(
                 "metadata": {
                     "labels": {
                         **labels,
-                        # Pod-specific labels can be added here
                     },
+                    "annotations": _build_common_annotations(request),
                 },
                 "spec": {
                     "serviceAccountName": request.name,
@@ -2150,6 +2479,7 @@ def _build_statefulset_manifest(
                     "labels": {
                         **labels,
                     },
+                    "annotations": _build_common_annotations(request),
                 },
                 "spec": {
                     "serviceAccountName": request.name,
@@ -2248,6 +2578,7 @@ def _build_job_manifest(
                     "labels": {
                         **labels,
                     },
+                    "annotations": _build_common_annotations(request),
                 },
                 "spec": {
                     "serviceAccountName": request.name,
@@ -2332,6 +2663,33 @@ async def create_agent(
             # SPIFFE identity uses the workload name, not the ReplicaSet hash.
             kube.ensure_service_account(namespace=request.namespace, name=request.name)
 
+            # Ensure AuthBridge ConfigMaps exist in the target namespace
+            if request.authBridgeEnabled:
+                _ensure_authbridge_configmaps(
+                    kube=kube,
+                    namespace=request.namespace,
+                    spire_enabled=request.spireEnabled,
+                )
+                if request.outboundRoutes:
+                    _ensure_authproxy_routes(
+                        kube=kube,
+                        namespace=request.namespace,
+                        routes=request.outboundRoutes,
+                    )
+                if request.defaultOutboundPolicy:
+                    extra_config = {
+                        "DEFAULT_OUTBOUND_POLICY": request.defaultOutboundPolicy,
+                    }
+                    kube.upsert_configmap(
+                        namespace=request.namespace,
+                        name="authbridge-config",
+                        data=extra_config,
+                    )
+
+            # On OpenShift, ensure the AuthBridge SCC RoleBinding exists
+            if request.authBridgeEnabled:
+                _ensure_authbridge_scc_rolebinding(kube=kube, namespace=request.namespace)
+
             # Create workload based on workloadType
             if request.workloadType == WORKLOAD_TYPE_DEPLOYMENT:
                 workload_manifest = _build_deployment_manifest(
@@ -2376,6 +2734,15 @@ async def create_agent(
                     body=service_manifest,
                 )
                 logger.info(f"Created Service '{request.name}' in namespace '{request.namespace}'")
+
+            # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
+            if request.workloadType != WORKLOAD_TYPE_JOB:
+                _ensure_agentruntime(
+                    kube=kube,
+                    name=request.name,
+                    namespace=request.namespace,
+                    workload_type=request.workloadType,
+                )
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
 
@@ -2488,6 +2855,13 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     createHttpRoute: Optional[bool] = None
     authBridgeEnabled: Optional[bool] = None
     imagePullSecret: Optional[str] = None
+    envoyProxyInject: Optional[bool] = None
+    spiffeHelperInject: Optional[bool] = None
+    clientRegistrationInject: Optional[bool] = None
+    outboundRoutes: Optional[List[OutboundRoute]] = None
+    outboundPortsExclude: Optional[str] = None
+    inboundPortsExclude: Optional[str] = None
+    defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
 
 
 @router.post(
@@ -2698,6 +3072,47 @@ async def finalize_shipwright_build(
         # Propagate SPIRE identity setting from stored config
         final_spire_enabled = stored_config.get("spireEnabled", False)
 
+        # Port exclusion and advanced config
+        final_outbound_ports_exclude = (
+            request.outboundPortsExclude
+            if request.outboundPortsExclude is not None
+            else stored_config.get("outboundPortsExclude")
+        )
+        final_inbound_ports_exclude = (
+            request.inboundPortsExclude
+            if request.inboundPortsExclude is not None
+            else stored_config.get("inboundPortsExclude")
+        )
+        final_default_outbound_policy = (
+            request.defaultOutboundPolicy
+            if request.defaultOutboundPolicy is not None
+            else stored_config.get("defaultOutboundPolicy")
+        )
+        # Outbound routing rules
+        final_outbound_routes = None
+        stored_routes = stored_config.get("outboundRoutes")
+        if request.outboundRoutes is not None:
+            final_outbound_routes = request.outboundRoutes
+        elif stored_routes:
+            final_outbound_routes = [OutboundRoute(**r) for r in stored_routes]
+
+        # Per-sidecar injection controls
+        final_envoy_proxy_inject = (
+            request.envoyProxyInject
+            if request.envoyProxyInject is not None
+            else stored_config.get("envoyProxyInject")
+        )
+        final_spiffe_helper_inject = (
+            request.spiffeHelperInject
+            if request.spiffeHelperInject is not None
+            else stored_config.get("spiffeHelperInject")
+        )
+        final_client_registration_inject = (
+            request.clientRegistrationInject
+            if request.clientRegistrationInject is not None
+            else stored_config.get("clientRegistrationInject")
+        )
+
         # Step 3: Create workload + Service with the built image
         # Build a CreateAgentRequest-like object for manifest builders
         agent_request = CreateAgentRequest(
@@ -2714,11 +3129,36 @@ async def finalize_shipwright_build(
             createHttpRoute=final_create_route,
             authBridgeEnabled=final_auth_bridge,
             spireEnabled=final_spire_enabled,
+            envoyProxyInject=final_envoy_proxy_inject,
+            spiffeHelperInject=final_spiffe_helper_inject,
+            clientRegistrationInject=final_client_registration_inject,
+            outboundRoutes=final_outbound_routes,
+            outboundPortsExclude=final_outbound_ports_exclude,
+            inboundPortsExclude=final_inbound_ports_exclude,
+            defaultOutboundPolicy=final_default_outbound_policy,
         )
 
         # Ensure a dedicated ServiceAccount exists so the webhook's
         # SPIFFE identity uses the workload name, not the ReplicaSet hash.
         kube.ensure_service_account(namespace=namespace, name=name)
+
+        # Ensure AuthBridge ConfigMaps exist in the target namespace
+        if final_auth_bridge:
+            _ensure_authbridge_configmaps(
+                kube=kube,
+                namespace=namespace,
+                spire_enabled=final_spire_enabled,
+            )
+            if final_outbound_routes:
+                _ensure_authproxy_routes(
+                    kube=kube,
+                    namespace=namespace,
+                    routes=final_outbound_routes,
+                )
+
+        # On OpenShift, ensure the AuthBridge SCC RoleBinding exists
+        if final_auth_bridge:
+            _ensure_authbridge_scc_rolebinding(kube=kube, namespace=namespace)
 
         # Create workload based on workloadType
         if final_workload_type == WORKLOAD_TYPE_DEPLOYMENT:
@@ -2785,6 +3225,17 @@ async def finalize_shipwright_build(
             )
             kube.create_service(namespace=namespace, body=service_manifest)
             logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+
+        # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
+        # Only for agents — tools don't need sidecar injection
+        resource_type = build_labels.get(KAGENTI_TYPE_LABEL, RESOURCE_TYPE_AGENT)
+        if final_workload_type != WORKLOAD_TYPE_JOB and resource_type == RESOURCE_TYPE_AGENT:
+            _ensure_agentruntime(
+                kube=kube,
+                name=name,
+                namespace=namespace,
+                workload_type=final_workload_type,
+            )
 
         message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."
 

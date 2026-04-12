@@ -20,6 +20,15 @@ from app.core.constants import ENABLED_NAMESPACE_LABEL_KEY, ENABLED_NAMESPACE_LA
 logger = logging.getLogger(__name__)
 
 
+def _sanitize(value: str) -> str:
+    """Strip newlines and control characters to prevent log injection (CWE-117).
+
+    Uses str.replace for \n and \r which CodeQL recognizes as a sanitizer,
+    plus strips other control characters.
+    """
+    return value.replace("\n", "").replace("\r", "").replace("\x00", "")
+
+
 class KubernetesService:
     """Service class for Kubernetes API interactions."""
 
@@ -29,6 +38,7 @@ class KubernetesService:
         self._core_api: Optional[kubernetes.client.CoreV1Api] = None
         self._apps_api: Optional[kubernetes.client.AppsV1Api] = None
         self._batch_api: Optional[kubernetes.client.BatchV1Api] = None
+        self._rbac_api: Optional[kubernetes.client.RbacAuthorizationV1Api] = None
 
     def _load_config(self) -> kubernetes.client.ApiClient:
         """Load Kubernetes configuration (in-cluster or kubeconfig)."""
@@ -73,6 +83,13 @@ class KubernetesService:
         if self._batch_api is None:
             self._batch_api = kubernetes.client.BatchV1Api(self.api_client)
         return self._batch_api
+
+    @property
+    def rbac_api(self) -> kubernetes.client.RbacAuthorizationV1Api:
+        """Get RbacAuthorizationV1Api client for Roles and RoleBindings."""
+        if self._rbac_api is None:
+            self._rbac_api = kubernetes.client.RbacAuthorizationV1Api(self.api_client)
+        return self._rbac_api
 
     def is_running_in_cluster(self) -> bool:
         """Check if running inside a Kubernetes cluster."""
@@ -229,6 +246,108 @@ class KubernetesService:
                 raise
 
     # -------------------------------------------------------------------------
+    # ConfigMap Operations
+    # -------------------------------------------------------------------------
+
+    def ensure_configmap(
+        self, namespace: str, name: str, data: dict, labels: Optional[dict] = None
+    ) -> None:
+        """Create a ConfigMap if it does not already exist.
+
+        This is idempotent — if the ConfigMap already exists it is left unchanged
+        so that user customizations are preserved.
+        """
+        try:
+            self.core_api.read_namespaced_config_map(name=name, namespace=namespace)
+            logger.debug(f"ConfigMap '{name}' already exists in {namespace}")
+        except ApiException as e:
+            if e.status == 404:
+                cm = kubernetes.client.V1ConfigMap(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=name,
+                        namespace=namespace,
+                        labels=labels or {"kagenti.io/managed-by": "kagenti-api"},
+                    ),
+                    data=data,
+                )
+                self.core_api.create_namespaced_config_map(namespace=namespace, body=cm)
+                logger.info("Created ConfigMap '%s' in %s", name, namespace)
+            else:
+                logger.error(f"Error checking ConfigMap '{name}' in {namespace}: {e}")
+                raise
+
+    def upsert_configmap(
+        self, namespace: str, name: str, data: dict, labels: Optional[dict] = None
+    ) -> None:
+        """Create or update a ConfigMap (create if missing, merge data keys if exists)."""
+        cm_labels = labels or {"kagenti.io/managed-by": "kagenti-api"}
+        try:
+            existing = self.core_api.read_namespaced_config_map(name=name, namespace=namespace)
+            existing.data = {**(existing.data or {}), **data}
+            existing.metadata.labels = (existing.metadata.labels or {}) | cm_labels
+            self.core_api.replace_namespaced_config_map(
+                name=name, namespace=namespace, body=existing
+            )
+            logger.info("Updated existing ConfigMap")
+        except ApiException as e:
+            if e.status == 404:
+                cm = kubernetes.client.V1ConfigMap(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=name,
+                        namespace=namespace,
+                        labels=cm_labels,
+                    ),
+                    data=data,
+                )
+                self.core_api.create_namespaced_config_map(namespace=namespace, body=cm)
+                logger.info("Created new ConfigMap")
+            else:
+                logger.error("Error upserting ConfigMap")
+                raise
+
+    # -------------------------------------------------------------------------
+    # RoleBinding Operations
+    # -------------------------------------------------------------------------
+
+    def ensure_rolebinding(
+        self,
+        namespace: str,
+        name: str,
+        cluster_role_name: str,
+        subjects: list,
+        labels: Optional[dict] = None,
+    ) -> None:
+        """Create a RoleBinding if it does not already exist."""
+        # Sanitize for logging (CWE-117 / CodeQL Log Injection).
+        # Kubernetes names are already constrained to [a-z0-9-.] but CodeQL
+        # cannot verify that statically.
+        safe_name = name.replace("\n", "").replace("\r", "")
+        safe_ns = namespace.replace("\n", "").replace("\r", "")
+        try:
+            self.rbac_api.read_namespaced_role_binding(name=name, namespace=namespace)
+            logger.debug("RoleBinding '%s' already exists in %s", safe_name, safe_ns)
+        except ApiException as e:
+            if e.status == 404:
+                rb = kubernetes.client.V1RoleBinding(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=name,
+                        namespace=namespace,
+                        labels=labels or {"kagenti.io/managed-by": "kagenti-api"},
+                    ),
+                    role_ref=kubernetes.client.V1RoleRef(
+                        api_group="rbac.authorization.k8s.io",
+                        kind="ClusterRole",
+                        name=cluster_role_name,
+                    ),
+                    subjects=subjects,
+                )
+                self.rbac_api.create_namespaced_role_binding(namespace=namespace, body=rb)
+                logger.info("Created RoleBinding '%s' in %s", safe_name, safe_ns)
+            else:
+                logger.error("Error checking RoleBinding '%s' in %s: %s", safe_name, safe_ns, e)
+                raise
+
+    # -------------------------------------------------------------------------
     # Deployment Operations
     # -------------------------------------------------------------------------
 
@@ -334,13 +453,95 @@ class KubernetesService:
 
     def delete_service(self, namespace: str, name: str) -> None:
         """Delete a Service by name."""
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
         try:
             self.core_api.delete_namespaced_service(
                 name=name,
                 namespace=namespace,
             )
+        except ApiException:
+            raise
+
+    # -------------------------------------------------------------------------
+    # Secret Operations
+    # -------------------------------------------------------------------------
+
+    def create_secret(
+        self,
+        namespace: str,
+        name: str,
+        string_data: dict,
+        labels: Optional[dict] = None,
+    ) -> dict:
+        """Create an Opaque Secret with the provided string data.
+
+        If the secret already exists (409 Conflict), updates it in place.
+        """
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
+        metadata = kubernetes.client.V1ObjectMeta(name=name, labels=labels)
+        body = kubernetes.client.V1Secret(
+            api_version="v1",
+            kind="Secret",
+            metadata=metadata,
+            string_data=string_data,
+        )
+        try:
+            result = self.core_api.create_namespaced_secret(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error deleting Service {name} in {namespace}: {e}")
+            if e.status == 409:
+                result = self.core_api.patch_namespaced_secret(
+                    name=name,
+                    namespace=namespace,
+                    body=body,
+                )
+                return result.to_dict()
+            raise
+
+    # -------------------------------------------------------------------------
+    # ConfigMap Operations
+    # -------------------------------------------------------------------------
+
+    def create_configmap(
+        self,
+        namespace: str,
+        name: str,
+        data: dict,
+        labels: Optional[dict] = None,
+    ) -> dict:
+        """Create a ConfigMap with the provided data.
+
+        If the ConfigMap already exists (409 Conflict), updates it in place.
+        """
+        namespace = _sanitize(namespace)
+        name = _sanitize(name)
+        metadata = kubernetes.client.V1ObjectMeta(name=name, labels=labels)
+        body = kubernetes.client.V1ConfigMap(
+            api_version="v1",
+            kind="ConfigMap",
+            metadata=metadata,
+            data=data,
+        )
+        try:
+            result = self.core_api.create_namespaced_config_map(
+                namespace=namespace,
+                body=body,
+            )
+            return result.to_dict()
+        except ApiException as e:
+            if e.status == 409:
+                # ConfigMap already exists — patch it
+                result = self.core_api.patch_namespaced_config_map(
+                    name=name,
+                    namespace=namespace,
+                    body=body,
+                )
+                return result.to_dict()
             raise
 
     # -------------------------------------------------------------------------

@@ -22,6 +22,8 @@ from kubernetes.client.rest import ApiException
 
 from keycloak import KeycloakAdmin, KeycloakPostError
 
+from kagenti.auth.shared_utils import get_session_lifetime_payload
+
 # Import common utilities
 from common import (
     get_optional_env as _get_optional_env,
@@ -220,15 +222,34 @@ class KeycloakSetup:
         return False
 
     def create_realm(self):
+        session_lifetimes = get_session_lifetime_payload()
+        realm_payload = {
+            "realm": self.realm_name,
+            "enabled": True,
+            **session_lifetimes,
+        }
+
         try:
-            self.keycloak_admin.create_realm(
-                payload={"realm": self.realm_name, "enabled": True}, skip_exists=False
+            self.keycloak_admin.create_realm(payload=realm_payload, skip_exists=False)
+            typer.echo(
+                f'Created realm "{self.realm_name}" with session lifetimes: '
+                f"{session_lifetimes}"
             )
-            typer.echo(f'Created realm "{self.realm_name}"')
         except KeycloakPostError as e:
-            # Keycloak returns 409 if the realm already exists
+            # Keycloak returns 409 if the realm already exists — update it
+            # instead. The update is idempotent so concurrent job pods are safe.
             if hasattr(e, "response_code") and e.response_code == 409:
-                typer.echo(f'Realm "{self.realm_name}" already exists')
+                typer.echo(
+                    f'Realm "{self.realm_name}" already exists, '
+                    f"updating session lifetimes"
+                )
+                try:
+                    self.keycloak_admin.update_realm(self.realm_name, realm_payload)
+                except Exception as update_err:
+                    typer.echo(
+                        f'Warning: failed to update realm "{self.realm_name}": '
+                        f"{update_err}. Session lifetimes may not be configured."
+                    )
             else:
                 typer.echo(f'Failed to create realm "{self.realm_name}": {e}')
         except Exception as e:

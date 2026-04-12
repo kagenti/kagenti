@@ -1,0 +1,120 @@
+# PostgreSQL StatefulSet for sandbox agent session persistence.
+# Each agent namespace gets its own Postgres instance so sessions are
+# scoped and isolated per team.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-sessions-secret
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: session-store
+type: Opaque
+stringData:
+  host: postgres-sessions.team1
+  port: "5432"
+  database: sessions
+  username: kagenti
+  password: kagenti-sessions-dev
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-sessions
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: session-store
+spec:
+  serviceName: postgres-sessions
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-sessions
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-sessions
+        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/component: session-store
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: registry.redhat.io/rhel9/postgresql-16:1-123
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 5432
+          name: postgres
+          protocol: TCP
+        env:
+        - name: POSTGRESQL_DATABASE
+          value: sessions
+        - name: POSTGRESQL_USER
+          value: kagenti
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/pgsql/data
+        - name: tmp
+          mountPath: /tmp
+        - name: run
+          mountPath: /var/run/postgresql
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: run
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-sessions
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: session-store
+spec:
+  selector:
+    app.kubernetes.io/name: postgres-sessions
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  clusterIP: None

@@ -15,11 +15,19 @@ else
     log_info "Using Kind/Kubernetes Shipwright Build"
 fi
 
+AGENT_EXAMPLES_BRANCH="${AGENT_EXAMPLES_BRANCH:-main}"
+
 if [ "$IS_OPENSHIFT" = "true" ]; then
     # OpenShift: Use BuildConfig (native OpenShift builds)
     # This avoids Tekton pipeline issues on OpenShift
 
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/mcpservers/weather_tool_buildconfig.yaml"
+    if [ "$AGENT_EXAMPLES_BRANCH" != "main" ]; then
+        log_info "Using agent-examples branch: $AGENT_EXAMPLES_BRANCH"
+        sed "s|ref: main|ref: $AGENT_EXAMPLES_BRANCH|" \
+            "$REPO_ROOT/kagenti/examples/mcpservers/weather_tool_buildconfig.yaml" | kubectl apply -f -
+    else
+        kubectl apply -f "$REPO_ROOT/kagenti/examples/mcpservers/weather_tool_buildconfig.yaml"
+    fi
 
     # Wait for BuildConfig to exist
     run_with_timeout 60 'until kubectl get buildconfig weather-tool -n team1 &> /dev/null; do sleep 2; done' || {
@@ -65,7 +73,13 @@ else
 
     # Apply build manifest
     log_info "Creating Shipwright Build..."
-    kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml"
+    if [ "$AGENT_EXAMPLES_BRANCH" != "main" ]; then
+        log_info "Using agent-examples branch: $AGENT_EXAMPLES_BRANCH"
+        sed "s|revision: main|revision: $AGENT_EXAMPLES_BRANCH|" \
+            "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml" | kubectl apply -f -
+    else
+        kubectl apply -f "$REPO_ROOT/kagenti/examples/tools/weather_tool_shipwright_build.yaml"
+    fi
 
     # Wait for Shipwright Build to be registered
     run_with_timeout 60 'until kubectl get builds.shipwright.io weather-tool -n team1 &> /dev/null; do sleep 2; done' || {

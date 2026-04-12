@@ -171,6 +171,38 @@ These are fine without redirection (produce <5 lines):
 | `helm template` | 500+ lines | Redirect + subagent |
 | `oc start-build --follow` | 100+ lines | Redirect + subagent |
 
+## Feature Flags (REQUIRED)
+
+All new features MUST be gated behind a feature flag, **disabled by default**.
+No exceptions — even if the feature "seems small." This keeps `main` shippable
+and lets us decouple merge velocity from release readiness.
+
+### Rules
+
+1. **Always off by default.** The flag must default to `False` / `off`.
+2. **Use the canonical mechanism.** Flags live in `kagenti/backend/app/core/config.py`
+   as `kagenti_feature_flag_<name>: bool = False` and are exposed to the frontend
+   via the `GET /api/config/features` endpoint (see `app/routers/config.py`).
+3. **Guard at the module boundary.** Feature-flagged modules are conditionally
+   imported in `app/main.py`. Follow the existing pattern (try/except with
+   warning on ImportError).
+4. **Document the flag.** Add a one-line comment in `config.py` explaining what
+   the flag controls.
+
+### Current flags
+
+| Flag | Controls |
+|------|----------|
+| `kagenti_feature_flag_sandbox` | Sandboxed agent runtime UI and APIs |
+| `kagenti_feature_flag_integrations` | Third-party integration endpoints |
+| `kagenti_feature_flag_triggers` | Event-driven trigger system |
+
+### TODO
+
+We need a canonical **global feature-flag context** that makes all flags
+accessible in a single object throughout the codebase (backend, frontend, Helm
+values, operator). Track this in a dedicated issue.
+
 ## Code Style
 
 - Python 3.11+, `uv` package manager

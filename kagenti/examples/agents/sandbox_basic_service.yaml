@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox-basic
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: sandbox-basic
+spec:
+  selector:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: sandbox-basic
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http

@@ -101,9 +101,9 @@ jobs:
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: '1.23'
+          go-version: '1.24'
           cache: false  # No go.sum at repo root; hcp CLI builds in /tmp
 
       - name: Build hcp CLI from source
@@ -271,9 +271,9 @@ jobs:
           OCP_VERSION: ${{ env.OCP_VERSION }}
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: '1.23'
+          go-version: '1.24'
           cache: false  # No go.sum at repo root; hcp CLI builds in /tmp
 
       - name: Build hcp CLI from source

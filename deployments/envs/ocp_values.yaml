@@ -70,6 +70,10 @@ charts:
     enabled: true
     values:
       openshift: true
+      featureFlags:
+        sandbox: true
+        integrations: true
+        triggers: true
       components:
         agentNamespaces:
           enabled: true

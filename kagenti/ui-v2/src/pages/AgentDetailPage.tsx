@@ -302,13 +302,14 @@ export const AgentDetailPage: React.FC = () => {
   // If route check fails or is loading, default to false (in-cluster URL is safer default)
   const hasRoute = routeStatusData?.hasRoute ?? false;
 
-  // Determine the appropriate URL based on route existence
-  // External URL: http://{name}.{namespace}.{domainName}:8080 (via HTTPRoute)
-  // In-cluster URL: http://{name}.{namespace}.svc.cluster.local:8000
+  // Prefer the real URL from the agent card or derive from the actual Service port.
+  // Fall back to convention defaults (8080 external, 8000 in-cluster) when neither is available.
+  const servicePort = serviceInfo?.ports?.[0]?.port;
   const domainName = dashboardConfig?.domainName || 'localtest.me';
-  const agentUrl = hasRoute
-    ? `http://${name}.${namespace}.${domainName}:8080`
-    : `http://${name}.${namespace}.svc.cluster.local:8000`;
+  const agentUrl = agentCard?.url
+    || (hasRoute
+      ? `http://${name}.${namespace}.${domainName}:${servicePort || 8080}`
+      : `http://${name}.${namespace}.svc.cluster.local:${servicePort || 8000}`);
 
   return (
     <>

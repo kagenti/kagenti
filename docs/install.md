@@ -350,7 +350,7 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ## Keycloak Admin Credentials for Agent Namespaces
 
-The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/AuthBridge) client-registration sidecar needs Keycloak admin credentials to automatically register agents as OAuth2 clients. These credentials are stored in a Kubernetes Secret called `keycloak-admin-secret` in each agent namespace.
+The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/AuthBridge) stack (separate sidecars or a single [combined `authbridge` container](authbridge-combined-sidecar.md)) needs Keycloak admin credentials for automatic OAuth2 client registration. These credentials are stored in a Kubernetes Secret called `keycloak-admin-secret` in each agent namespace.
 
 ### Automatic Provisioning
 

@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     crd_group: str = "agent.kagenti.dev"
     crd_version: str = "v1alpha1"
     agents_plural: str = "agents"
+    agentruntimes_plural: str = "agentruntimes"
 
     # Shipwright build settings
     shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
@@ -69,6 +70,9 @@ class Settings(BaseSettings):
     kagenti_feature_flag_sandbox: bool = False
     kagenti_feature_flag_integrations: bool = False
     kagenti_feature_flag_triggers: bool = False
+    kagenti_feature_flag_sidecars: bool = (
+        False  # sidecar agents (looper, hallucination, context guardian)
+    )
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"

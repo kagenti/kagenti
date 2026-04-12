@@ -2,7 +2,8 @@ import logging
 import sys
 from typing import Dict
 from keycloak import KeycloakAdmin
-from kagenti.auth.shared_utils import register_client
+from keycloak.exceptions import KeycloakPostError
+from kagenti.auth.shared_utils import register_client, get_session_lifetime_payload
 from kubernetes import client, dynamic
 from kubernetes.client import api_client
 
@@ -33,6 +34,12 @@ DEFAULT_ADMIN_PASSWORD_KEY = "password"
 OAUTH_REDIRECT_PATH = "/"
 OAUTH_SCOPE = "openid profile email"
 SERVICE_ACCOUNT_CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+DEFAULT_DEMO_USERS = ("bob", "alice")
+DEFAULT_DEMO_PASSWORDS = ("kagenti1", "kagenti2")
+DEFAULT_DEMO_PASSWORD_OVERRIDE_ENV_VARS = (
+    "KEYCLOAK_DEMO1_PASSWORD",
+    "KEYCLOAK_DEMO2_PASSWORD",
+)
 
 
 class ConfigurationError(Exception):
@@ -271,21 +278,43 @@ def main() -> None:
             logger.info(
                 f"AUTO_BOOTSTRAP_REALM is enabled; ensuring realm '{keycloak_realm}' exists"
             )
+            session_lifetimes = get_session_lifetime_payload()
+            realm_payload = {
+                "realm": keycloak_realm,
+                "enabled": True,
+                "registrationAllowed": False,
+                **session_lifetimes,
+            }
+
             try:
-                existing_realms = keycloak_admin.get_realms()
-                if not any(r["realm"] == keycloak_realm for r in existing_realms):
-                    keycloak_admin.create_realm(
-                        payload={
-                            "realm": keycloak_realm,
-                            "enabled": True,
-                            "registrationAllowed": False,
-                        }
-                    )
-                    logger.info(f"Created Keycloak realm '{keycloak_realm}'")
-                else:
+                # Create-first, catch-409: avoids the TOCTOU race of
+                # get_realms → create when multiple job pods run concurrently.
+                keycloak_admin.create_realm(payload=realm_payload)
+                logger.info(
+                    f"Created Keycloak realm '{keycloak_realm}' with session "
+                    f"lifetimes: {session_lifetimes}"
+                )
+            except KeycloakPostError as e:
+                if hasattr(e, "response_code") and e.response_code == 409:
                     logger.info(
-                        f"Realm '{keycloak_realm}' already exists, skipping creation"
+                        f"Realm '{keycloak_realm}' already exists, "
+                        f"updating session lifetimes"
                     )
+                    try:
+                        keycloak_admin.update_realm(keycloak_realm, realm_payload)
+                    except Exception as update_err:
+                        logger.warning(
+                            f"Failed to update realm '{keycloak_realm}': "
+                            f"{update_err}. Session lifetimes may not be configured."
+                        )
+                else:
+                    logger.error(
+                        f"Failed to bootstrap realm '{keycloak_realm}': {e}. "
+                        "Ensure the Keycloak admin has realm-management permissions, "
+                        "or set AUTO_BOOTSTRAP_REALM=false if the realm is "
+                        "pre-provisioned."
+                    )
+                    raise
             except Exception as e:
                 logger.error(
                     f"Failed to bootstrap realm '{keycloak_realm}': {e}. "
@@ -406,6 +435,46 @@ def main() -> None:
                     f"in realm '{keycloak_realm}' after bootstrap — "
                     f"cannot proceed"
                 )
+
+            # Create demo users for testing.
+            # These get no realm-admin client role.
+            for i, demo_username in enumerate(DEFAULT_DEMO_USERS):
+                try:
+                    existing = keycloak_admin.get_users(
+                        {"username": demo_username, "exact": True}
+                    )
+                    if not existing:
+                        keycloak_admin.create_user(
+                            {
+                                "username": demo_username,
+                                "enabled": True,
+                                "email": f"{demo_username}@localtest.me",
+                                "emailVerified": True,
+                                "firstName": demo_username.capitalize(),
+                                "lastName": "User",
+                                "credentials": [
+                                    {
+                                        "type": "password",
+                                        "value": get_optional_env(
+                                            DEFAULT_DEMO_PASSWORD_OVERRIDE_ENV_VARS[i],
+                                            DEFAULT_DEMO_PASSWORDS[i],
+                                        ),
+                                        "temporary": False,
+                                    }
+                                ],
+                            }
+                        )
+                        logger.info(
+                            f"Created demo user '{demo_username}' "
+                            f"in realm '{keycloak_realm}'"
+                        )
+                    else:
+                        logger.info(
+                            f"Demo user '{demo_username}' already exists "
+                            f"in realm '{keycloak_realm}', skipping"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to create demo user '{demo_username}': {e}")
 
         elif keycloak_realm != DEFAULT_KEYCLOAK_REALM:
             logger.info(

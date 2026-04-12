@@ -154,7 +154,8 @@ spec:
             ALLOWED_HOSTS="$ROUTE_HOST,$ALLOWED_HOSTS"
           fi
           {{- else }}
-          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow:5000,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}:5000,mlflow.{{ .Release.Namespace }}.svc.cluster.local,mlflow.{{ .Release.Namespace }}.svc.cluster.local:5000,localhost,127.0.0.1"
+          ALLOWED_HOSTS="mlflow.{{ .Values.domain | default "localtest.me" }}:*,mlflow:*,mlflow.{{ .Release.Namespace }}:5000,mlflow.{{ .Release.Namespace }}.svc.cluster.local:5000,localhost:*,127.0.0.1:*"
+          ALLOWED_HOSTS="$ALLOWED_HOSTS,mlflow.{{ .Values.domain | default "localtest.me" }},mlflow,mlflow.{{ .Release.Namespace }},mlflow.{{ .Release.Namespace }}.svc.cluster.local,localhost,127.0.0.1"
           {{- end }}
           {{- if .Values.mlflow.auth.enabled }}
           # Set MLflow config via environment variables (used by mlflow_oidc_auth.app)

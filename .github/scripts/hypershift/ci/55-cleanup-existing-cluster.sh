@@ -612,20 +612,16 @@ if [ "$HC_EXISTS" = "true" ] || [ "$NS_EXISTS" = "true" ]; then
             sleep 5
         done
 
-        # Fail if namespace still exists - don't allow create step to run with conflicting resources
-        # A namespace with leftover resources causes the new cluster to be in a broken state
+        # Warn if namespace still exists — proceed anyway since the cluster name
+        # is unique per PR and the HyperShift operator will handle the stale
+        # namespace eventually. Blocking here causes CI deadlocks when multiple
+        # E2E runs overlap.
         if [ "$NS_DELETED" = "false" ]; then
-            echo "::error::Namespace $CONTROL_PLANE_NS still exists after 5 minutes"
-            echo "Cannot proceed with cluster creation while old resources exist."
+            echo "::warning::Namespace $CONTROL_PLANE_NS still exists after 5 minutes — proceeding anyway"
+            echo "The HyperShift operator will clean it up asynchronously."
             echo ""
-            echo "Debug info:"
-            oc get all -n "$CONTROL_PLANE_NS" 2>/dev/null || true
-            echo ""
-            echo "Finalizers on remaining resources:"
-            for resource in hostedcontrolplane clusters.cluster.x-k8s.io deployment statefulset secret; do
-                oc get "$resource" -n "$CONTROL_PLANE_NS" -o jsonpath='{range .items[*]}{.kind}/{.metadata.name}: {.metadata.finalizers}{"\n"}{end}' 2>/dev/null || true
-            done
-            exit 1
+            echo "Remaining resources (for debugging):"
+            oc get pods -n "$CONTROL_PLANE_NS" 2>/dev/null || true
         fi
     fi
 

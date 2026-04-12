@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Dict, Any
+import os
+from typing import Dict, Any, Optional
 
 from keycloak import KeycloakAdmin, KeycloakPostError
 
@@ -15,6 +16,23 @@ class KeycloakOperationError(Exception):
     """Raised when Keycloak operations fail."""
 
     pass
+
+
+def get_session_lifetime_payload() -> Dict[str, int]:
+    """Return Keycloak realm session lifetime settings from environment.
+
+    Reads KEYCLOAK_SSO_SESSION_IDLE, KEYCLOAK_SSO_SESSION_MAX, and
+    KEYCLOAK_ACCESS_TOKEN_LIFESPAN with dev-friendly defaults.
+    """
+
+    def _env_int(key: str, default: str) -> int:
+        return int(os.environ.get(key, default))
+
+    return {
+        "ssoSessionIdleTimeout": _env_int("KEYCLOAK_SSO_SESSION_IDLE", "604800"),
+        "ssoSessionMaxLifespan": _env_int("KEYCLOAK_SSO_SESSION_MAX", "2592000"),
+        "accessTokenLifespan": _env_int("KEYCLOAK_ACCESS_TOKEN_LIFESPAN", "1800"),
+    }
 
 
 def register_client(

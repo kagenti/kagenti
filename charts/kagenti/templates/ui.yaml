@@ -347,6 +347,10 @@ rules:
   - apiGroups: ["agent.kagenti.dev"]
     resources: ["agents"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # AgentRuntime CRs trigger sidecar injection by the AuthBridge webhook
+  - apiGroups: ["agent.kagenti.dev"]
+    resources: ["agentruntimes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Shipwright build resources for building agents and tools from source
   - apiGroups: ["shipwright.io"]
     resources: ["builds", "buildruns"]
@@ -357,9 +361,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # ConfigMaps: list/get for reads; create/update/patch for AuthBridge finalize
+  # (authbridge-config, envoy-config, spiffe-helper-config, authproxy-routes merge)
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "create", "update", "patch"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]

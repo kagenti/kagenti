@@ -81,20 +81,38 @@ not concatenated (e.g. service.extensions).
 {{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.phoenixConfig) -}}
 {{- $hasComponentPipeline = true -}}
 {{- end -}}
-{{- if and $.Values.components.mlflow.enabled $.Values.otel.collector.mlflowConfig -}}
+{{- $mlflowEnabled := or $.Values.components.mlflow.enabled ($.Values.otel.mlflow).enabled -}}
+{{- if and $mlflowEnabled $.Values.otel.collector.mlflowConfig -}}
 {{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.mlflowConfig) -}}
 {{- $hasComponentPipeline = true -}}
 {{- end -}}
 {{- if and (not $hasComponentPipeline) $.Values.otel.collector.defaultConfig -}}
 {{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.defaultConfig) -}}
 {{- end -}}
-{{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled $.Values.otel.collector.mlflowAuthConfig -}}
+{{- if and $mlflowEnabled $.Values.mlflow.auth.enabled $.Values.otel.collector.mlflowAuthConfig -}}
 {{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.mlflowAuthConfig) -}}
 {{- end -}}
 {{- if and $.Values.openshift (get (get ($config) "extensions" | default dict) "oauth2client/mlflow") -}}
 {{- $_ := set (index $config "extensions" "oauth2client/mlflow") "tls" (dict "ca_file" "/etc/pki/ingress-ca/ingress-ca.pem") -}}
 {{- end -}}
-{{- if and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled -}}
+{{- $rhoaiMlflow := ($.Values.otel.mlflow).enabled | default false -}}
+{{- if and $.Values.openshift $rhoaiMlflow -}}
+{{- $mlflowExp := dig "exporters" "otlphttp/mlflow" dict $config -}}
+{{- if $mlflowExp -}}
+{{- $_ := set $mlflowExp "tls" (dict "ca_file" "/etc/pki/service-ca/service-ca.pem") -}}
+{{- end -}}
+{{- if $.Values.otel.collector.rhoaiMlflowAuthConfig -}}
+{{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.rhoaiMlflowAuthConfig) -}}
+{{- end -}}
+{{- if $mlflowExp -}}
+{{- $_ := set $mlflowExp "auth" (dict "authenticator" "bearertokenauth/mlflow") -}}
+{{- $headers := $mlflowExp.headers | default dict -}}
+{{- $_ := set $headers "x-mlflow-workspace" ($.Values.otel.mlflow).workspace -}}
+{{- $_ := set $headers "x-mlflow-experiment-id" (($.Values.otel.mlflow).experimentId | toString) -}}
+{{- $_ := set $mlflowExp "headers" $headers -}}
+{{- end -}}
+{{- end -}}
+{{- if and $mlflowEnabled $.Values.mlflow.auth.enabled (not $rhoaiMlflow) -}}
 {{- $mlflowExporter := index $config "exporters" "otlphttp/mlflow" | default dict -}}
 {{- $_ := set $mlflowExporter "auth" (dict "authenticator" "oauth2client/mlflow") -}}
 {{- end -}}

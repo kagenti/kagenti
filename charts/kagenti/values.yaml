@@ -19,8 +19,6 @@ components:
     enabled: true
   agentOperator:
     enabled: true
-  platformWebhook:
-    enabled: true
   ui:
     enabled: true
   istio:
@@ -160,33 +158,42 @@ keycloak:
   publicUrl: http://keycloak.localtest.me:8080
   realm: kagenti
   autoBootstrapRealm: true
+  # Session/token lifetimes for long-running dev clusters (e.g. Kind).
+  # Keycloak defaults (30min idle, 10h max) cause "Signature has expired"
+  # errors after a few hours. These values extend lifetimes for dev use.
+  #
+  # ⚠️  PRODUCTION WARNING: These defaults are intentionally permissive for
+  # developer convenience. For production deployments, override with values
+  # appropriate for your security policy (e.g. 30min idle, 8h max session).
+  # Long-lived sessions increase the window for token theft/session hijacking.
+  sessionLifetimes:
+    # SSO Session Idle timeout in seconds (default: 7 days)
+    # Keycloak default is 1800 (30 min)
+    ssoSessionIdle: 604800
+    # SSO Session Max lifespan in seconds (default: 30 days)
+    # Keycloak default is 36000 (10 hours)
+    ssoSessionMax: 2592000
+    # Access token lifespan in seconds (default: 30 min)
+    # Keycloak default is 300 (5 min)
+    accessTokenLifespan: 1800
 
 # ------------------------------------------------------------------
-#  Kagenti Webhook Configuration
-# ------------------------------------------------------------------
-# Pin sidecar image tags to the webhook chart version to prevent
-# breakage when :latest is updated by newer kagenti-extensions builds.
-# These MUST be updated together with the chart version in Chart.yaml.
-kagenti-webhook-chart:
-  defaults:
-    images:
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/envoy-with-processor:v0.4.0-alpha.9
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.4.0-alpha.9
-      clientRegistration: ghcr.io/kagenti/kagenti-extensions/client-registration:v0.4.0-alpha.9
-
-# ------------------------------------------------------------------
-#  Kagenti Operator Configuration
+#  Kagenti Operator Configuration (includes AuthBridge webhook)
 # ------------------------------------------------------------------
 kagenti-operator-chart:
   controllerManager:
     container:
+      cmd: /manager
       image:
-        tag: 0.2.0-alpha.22
+        tag: 0.2.0-alpha.24
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
       - "--health-probe-bind-address=:8081"
       - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
+      - "--config-path=/etc/kagenti/config.yaml"
+      - "--feature-gates-path=/etc/kagenti/feature-gates/feature-gates.yaml"
+      - "--enable-client-registration=true"
       resources:
         limits:
           cpu: 150m
@@ -194,6 +201,13 @@ kagenti-operator-chart:
         requests:
           cpu: 50m
           memory: 128Mi
+  # Pin sidecar image tags injected by the AuthBridge webhook.
+  defaults:
+    images:
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/envoy-with-processor:v0.4.0-alpha.10
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.4.0-alpha.10
+      spiffeHelper: ghcr.io/kagenti/kagenti-extensions/spiffe-helper:v0.4.0-alpha.10
+      clientRegistration: ghcr.io/kagenti/kagenti-extensions/client-registration:v0.4.0-alpha.10
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration

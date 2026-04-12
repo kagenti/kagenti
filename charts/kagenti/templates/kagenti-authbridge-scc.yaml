@@ -3,16 +3,17 @@
 #  Custom SCC for AuthBridge sidecars in agent namespaces.
 #
 #  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods:
-#    - proxy-init (init): iptables traffic interception (needs NET_ADMIN/NET_RAW, root)
-#    - envoy-proxy (sidecar): Envoy for auth token injection (UID 1337)
-#    - spiffe-helper (sidecar): SPIRE identity (UID 1000)
-#    - client-registration (sidecar): Keycloak registration (UID 1000)
+#    - proxy-init (init): iptables interception (needs NET_ADMIN/NET_RAW, root, non-privileged)
+#    - envoy-proxy (sidecar): Envoy for auth token injection (requests UID 1337)
+#    - spiffe-helper (sidecar): SPIRE identity (UBI image, no hardcoded UID)
+#    - client-registration (sidecar): Keycloak registration (no hardcoded UID)
 #
-#  This SCC grants exactly the permissions needed — no privileged mode.
+#  This SCC grants the minimum permissions needed for AuthBridge sidecars:
+#    - proxy-init needs root + NET_ADMIN/NET_RAW capabilities (not privileged mode)
+#    - envoy-proxy requests UID 1337 (for iptables exclusion coordination)
+#    - spiffe-helper and client-registration run as image-default UIDs (no override)
+#  RunAsAny is required because proxy-init needs root and envoy needs UID 1337.
 #  Bound to agent namespaces via the `groups` field below.
-#  Note: RBAC RoleBindings for SCC `use` verb are insufficient on some
-#  OpenShift versions — the SCC admission controller requires direct
-#  groups/users on the SCC object itself.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -29,7 +30,9 @@ allowHostIPC: false
 allowHostNetwork: false
 allowHostPID: false
 allowHostPorts: false
+# proxy-init uses NET_ADMIN/NET_RAW capabilities (not privileged mode).
 allowPrivilegedContainer: false
+# proxy-init needs privilege escalation for iptables; other sidecars set false.
 allowPrivilegeEscalation: true
 allowedCapabilities:
   - NET_ADMIN
@@ -45,11 +48,8 @@ seLinuxContext:
   type: MustRunAs
 supplementalGroups:
   type: RunAsAny
-# TODO: Replace '*' with explicit profiles once webhook seccomp behavior is stable.
-# Track in kagenti-extensions — the webhook should declare which profiles it needs.
 seccompProfiles:
   - runtime/default
-  - '*'
 volumes:
   - configMap
   - csi

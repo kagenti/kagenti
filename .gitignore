@@ -188,5 +188,12 @@ test-results/
 
 # TUI binary
 kagenti/tui/bin/
+# kubectl-kagenti plugin binary (build locally; do not commit)
+kagenti/kubectl-kagenti/kubectl-kagenti
 # Orchestration target repos (cloned, not committed)
 .repos/
+
+# Local CodeQL (.github/scripts/run-codeql-python-local.sh)
+.codeql-db-python/
+.codeql-analyze-python.log
+.codeql-results-python.sarif

@@ -1,0 +1,1073 @@
+// Copyright 2025 IBM Corp.
+// Licensed under the Apache License, Version 2.0
+
+/**
+ * LoopDetail — expandable detail section for an AgentLoopCard.
+ *
+ * Renders:
+ * - Plan section: numbered list of plan steps, current step highlighted
+ * - Step sections: header, tool calls, tool results for each completed step
+ * - Reflection section: assessment + decision (if present)
+ */
+
+import React, { useState } from 'react';
+import { Badge, Spinner } from '@patternfly/react-core';
+import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
+import type { AgentLoop, AgentLoopStep, MicroReasoning, ThinkingIteration, NodeType } from '../types/agentLoop';
+import PromptInspector from './PromptInspector';
+import { FilePreviewModal } from './FilePreviewModal';
+import { inferNodeType, NODE_COLORS } from '../utils/loopFormatting';
+
+// ---------------------------------------------------------------------------
+// Graph node badge
+// ---------------------------------------------------------------------------
+
+const NodeBadge: React.FC<{ nodeType: NodeType }> = ({ nodeType }) => {
+  const info = NODE_COLORS[nodeType];
+  return (
+    <span
+      title={`Graph node: ${info.label}`}
+      style={{
+        display: 'inline-block',
+        padding: '1px 6px',
+        borderRadius: 3,
+        fontSize: '0.78em',
+        fontWeight: 600,
+        color: '#fff',
+        backgroundColor: info.bg,
+        marginRight: 6,
+        lineHeight: 1.5,
+        verticalAlign: 'middle',
+      }}
+    >
+      {info.label}
+    </span>
+  );
+};
+
+interface LoopDetailProps {
+  loop: AgentLoop;
+  namespace?: string;
+  agentName?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Plan section
+// ---------------------------------------------------------------------------
+
+// PlanSection removed — plan is rendered in AgentLoopCard (always visible).
+
+// ---------------------------------------------------------------------------
+// Prompt block (expandable — shows system prompt + message history)
+// ---------------------------------------------------------------------------
+
+interface PromptMessage { role: string; preview: string }
+
+const PromptBlock: React.FC<{ systemPrompt?: string; promptMessages?: PromptMessage[]; onOpenInspector?: (title: string, data: Partial<AgentLoopStep>) => void }> = ({ systemPrompt, promptMessages, onOpenInspector }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!systemPrompt && (!promptMessages || promptMessages.length === 0)) return null;
+
+  const msgCount = promptMessages?.length || 0;
+  const preview = systemPrompt
+    ? `${systemPrompt.substring(0, 80).replace(/\n/g, ' ')}...`
+    : `${msgCount} messages`;
+
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: '3px solid #475569',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontWeight: 600, cursor: 'pointer', userSelect: 'none' }} onClick={() => setExpanded(!expanded)}>
+          {expanded ? '[-]' : '[+]'} Prompt <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', fontSize: '0.85em' }}>({preview})</span>
+        </div>
+        {onOpenInspector && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenInspector('Prompt Details', { systemPrompt, promptMessages } as Partial<AgentLoopStep>); }}
+            style={{ background: 'none', border: '1px solid #555', color: '#888', fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer' }}
+          >
+            Fullscreen
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 6 }}>
+          {systemPrompt && (
+            <pre style={{ margin: '4px 0', padding: 8, backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)', color: 'var(--pf-v5-global--Color--light-100)', borderRadius: 4, fontSize: '0.85em', overflow: 'auto', maxHeight: 300, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {systemPrompt}
+            </pre>
+          )}
+          {promptMessages && promptMessages.length > 0 && promptMessages.map((msg, i) => (
+            <div key={i} style={{ margin: '2px 0', padding: '4px 8px', borderLeft: `2px solid ${msg.role === 'system' ? '#475569' : msg.role === 'tool' ? '#2e7d32' : '#0066cc'}`, fontSize: '0.85em' }}>
+              <span style={{ fontWeight: 600, fontSize: '0.8em', color: 'var(--pf-v5-global--Color--200)' }}>{msg.role}</span>
+              <pre style={{ margin: '4px 0 0', padding: 6, backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)', color: 'var(--pf-v5-global--Color--light-100)', borderRadius: 4, fontSize: '0.85em', overflow: 'auto', maxHeight: 200, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {msg.preview}
+              </pre>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// NestedCollapsible removed — PromptBlock now opens PromptInspector popup
+
+// ---------------------------------------------------------------------------
+// Reasoning block (expandable, like ToolCallBlock)
+// ---------------------------------------------------------------------------
+
+const ReasoningBlock: React.FC<{ reasoning: string }> = ({ reasoning }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: '3px solid #7c3aed',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+        cursor: 'pointer',
+      }}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div style={{ fontWeight: 600 }}>
+        {expanded ? '[-]' : '[+]'} Reasoning
+      </div>
+      {expanded && (
+        <pre
+          style={{
+            margin: '4px 0',
+            padding: 8,
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+            color: 'var(--pf-v5-global--Color--light-100)',
+            borderRadius: 4,
+            fontSize: '0.9em',
+            overflow: 'auto',
+            maxHeight: 300,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {reasoning}
+        </pre>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Thinking block — collapsible list of thinking iterations
+// ---------------------------------------------------------------------------
+
+const ThinkingBlock: React.FC<{
+  thinkings: ThinkingIteration[];
+  onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning | ThinkingIteration) => void;
+}> = ({ thinkings, onOpenInspector }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!thinkings || thinkings.length === 0) return null;
+
+  const totalTokens = thinkings.reduce(
+    (sum, t) => sum + (t.prompt_tokens || 0) + (t.completion_tokens || 0), 0,
+  );
+  const lastThinking = thinkings[thinkings.length - 1];
+  const summary = lastThinking.reasoning?.substring(0, 150) || '';
+
+  return (
+    <div
+      style={{
+        margin: '6px 0', padding: '8px 12px',
+        backgroundColor: '#1a1a2e', borderRadius: '4px',
+        borderLeft: '3px solid #b388ff', fontSize: '13px',
+      }}
+    >
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setExpanded(!expanded)}
+        data-testid="thinking-header"
+      >
+        <span style={{ color: '#b388ff', fontWeight: 'bold', fontSize: '12px', userSelect: 'text' }}>
+          {expanded ? '[-]' : '[+]'} Thinking
+          <span style={{ color: '#888', fontWeight: 'normal', marginLeft: '8px', fontSize: '11px' }}>
+            · {thinkings.length} iteration{thinkings.length !== 1 ? 's' : ''} · {totalTokens.toLocaleString()} tokens
+          </span>
+        </span>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {lastThinking.model && (
+            <span style={{ fontSize: '11px', color: '#666' }}>{lastThinking.model}</span>
+          )}
+        </div>
+      </div>
+
+      {!expanded && summary && (
+        <p style={{ margin: '4px 0 0', color: '#999', fontSize: '12px', fontStyle: 'italic' }}>
+          &quot;{summary}{summary.length >= 150 ? '...' : ''}&quot;
+        </p>
+      )}
+
+      {expanded && thinkings.map((t, idx) => (
+        <div
+          key={idx}
+          style={{
+            margin: '4px 0', padding: '6px 10px',
+            background: '#12122a', borderRadius: '3px',
+            borderLeft: '2px solid rgba(179, 136, 255, 0.3)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+            <span style={{ color: '#b388ff', fontWeight: 600, opacity: 0.8 }}>
+              Thinking {t.iteration}
+            </span>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ color: '#666', fontSize: '11px' }}>
+                {((t.prompt_tokens || 0) + (t.completion_tokens || 0)).toLocaleString()} tokens
+              </span>
+              {onOpenInspector && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpenInspector(`Thinking ${t.iteration}`, t); }}
+                  style={{
+                    background: 'none', border: '1px solid #555', color: '#888',
+                    fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
+                  }}
+                >
+                  Prompt
+                </button>
+              )}
+            </div>
+          </div>
+          {t.reasoning && (
+            <p style={{ margin: '3px 0 0', color: '#bbb', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: 1.4 }}>
+              {t.reasoning.substring(0, 500)}{t.reasoning.length > 500 ? '...' : ''}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Tool call / result rendering (matches SandboxPage ToolCallStep pattern)
+// ---------------------------------------------------------------------------
+
+/** One-line preview of tool args */
+function toolArgsPreview(args: unknown): string {
+  if (!args) return '';
+  const s = typeof args === 'string' ? args : JSON.stringify(args);
+  return s.replace(/[\n\r]+/g, ' ').substring(0, 80);
+}
+
+/**
+ * Determine whether a tool result represents a failure.
+ *
+ * Many successful commands (git, curl, wget) write progress/info to stderr,
+ * so the presence of "STDERR:" alone does NOT indicate failure.
+ *
+ * Strategy:
+ * 1. If an explicit exit code is found (e.g. "exit code: 0"), use that.
+ * 2. If no exit code, look for real error indicators (but NOT "stderr" by itself).
+ * 3. Default to success (not failed) — let the content speak for itself.
+ */
+function isToolResultError(output: string | undefined): boolean {
+  if (!output) return false;
+
+  // Check for explicit exit code patterns (case-insensitive)
+  const exitCodeMatch = output.match(/exit[\s_-]*code[:\s]+(\d+)/i)
+    || output.match(/exited[\s]+with[\s]+(\d+)/i)
+    || output.match(/return[\s_-]*code[:\s]+(\d+)/i);
+  if (exitCodeMatch) {
+    return exitCodeMatch[1] !== '0';
+  }
+
+  // No exit code found — check for real error indicators
+  // Exclude "stderr" as a keyword; many successful commands use stderr for progress
+  return /\b(error|fail(ed|ure)?|denied|permission denied|not found|traceback|exception)\b/i.test(output);
+}
+
+/** One-line preview of tool output, with workspace paths as badges. */
+function toolOutputPreview(output: string | undefined): React.ReactNode {
+  if (!output) return '(no output)';
+  const first = output.split('\n')[0].substring(0, 120);
+  const hasError = isToolResultError(output);
+  const prefix = hasError ? '[ERROR] ' : '';
+
+  // Check for workspace paths in the preview text
+  const re = new RegExp(WORKSPACE_PATH_RE.source, 'g');
+  const match = re.exec(first);
+  if (match) {
+    const relPath = match[2];
+    const fileName = relPath.split('/').pop() || relPath;
+    const before = first.slice(0, match.index);
+    const after = first.slice(re.lastIndex, 80);
+    return (
+      <>
+        {prefix}{before}
+        <Badge isRead style={{ fontSize: '0.85em', verticalAlign: 'baseline' }} title={match[0]}>
+          {fileName}
+        </Badge>
+        {after}
+      </>
+    );
+  }
+
+  const text = first.substring(0, 80);
+  return `${prefix}${text}`;
+}
+
+const ToolCallBlock: React.FC<{ call: AgentLoopStep['toolCalls'][number]; hasResult?: boolean; resultError?: boolean }> = ({ call, hasResult, resultError }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const label = call.name || 'unknown';
+  const preview = toolArgsPreview(call.args);
+  const pending = hasResult === false;
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: `3px solid ${resultError ? 'var(--pf-v5-global--danger-color--100)' : pending ? 'var(--pf-v5-global--warning-color--100)' : 'var(--pf-v5-global--info-color--100)'}`,
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+        cursor: 'pointer',
+      }}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+        {expanded ? '[-]' : '[+]'} Tool Call: {label}
+        {pending && <Spinner size="sm" aria-label="running" style={{ marginLeft: 6 }} />}
+        {hasResult && !resultError && <CheckCircleIcon style={{ color: 'var(--pf-v5-global--success-color--100)', marginLeft: 6, fontSize: '0.9em' }} />}
+        {resultError && <TimesCircleIcon style={{ color: 'var(--pf-v5-global--danger-color--100)', marginLeft: 6, fontSize: '0.9em' }} />}
+        {!expanded && preview && (
+          <span style={{ fontWeight: 400, color: 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
+            {preview}{preview.length >= 80 ? '...' : ''}
+          </span>
+        )}
+      </div>
+      {expanded && (
+        <pre
+          style={{
+            margin: '4px 0',
+            padding: 8,
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+            color: 'var(--pf-v5-global--Color--light-100)',
+            borderRadius: 4,
+            fontSize: '0.9em',
+            overflow: 'auto',
+          }}
+        >
+          {label}({typeof call.args === 'string' ? call.args : JSON.stringify(call.args, null, 2)})
+        </pre>
+      )}
+    </div>
+  );
+};
+
+const statusIcon = (status?: string) => {
+  switch (status) {
+    case 'error': return '[ERROR]';
+    case 'timeout': return '[TIMEOUT]';
+    case 'success': return '[OK]';
+    default: return '[...]';
+  }
+};
+
+/** Regex to detect workspace file paths in tool output.
+ *  Captures: group 0 = full path, group 1 = context_id, group 2 = relative path */
+const WORKSPACE_PATH_RE = /\/workspace\/([a-f0-9]+)\/((?:output|repos|data|scripts)\/[^\s"']+)/g;
+
+/** Render tool output with workspace paths as clickable badges. */
+function renderOutputWithFileLinks(
+  output: string,
+  onFileClick?: (relPath: string, contextId: string) => void,
+): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  const re = new RegExp(WORKSPACE_PATH_RE.source, 'g');
+  let match: RegExpExecArray | null;
+  let keyIdx = 0;
+  while ((match = re.exec(output)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(output.slice(lastIndex, match.index));
+    }
+    const contextId = match[1];
+    const relPath = match[2];
+    const fileName = relPath.split('/').pop() || relPath;
+    parts.push(
+      <Badge
+        key={`flink-${keyIdx++}`}
+        data-testid="workspace-file-link"
+        style={{
+          cursor: 'pointer',
+          fontSize: '0.85em',
+          verticalAlign: 'baseline',
+        }}
+        onClick={(e: React.MouseEvent) => {
+          e.stopPropagation();
+          onFileClick?.(relPath, contextId);
+        }}
+      >
+        {fileName}
+      </Badge>
+    );
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex === 0) return output;
+  if (lastIndex < output.length) {
+    parts.push(output.slice(lastIndex));
+  }
+  return <>{parts}</>;
+}
+
+interface ToolResultBlockProps {
+  result: AgentLoopStep['toolResults'][number];
+  namespace?: string;
+  agentName?: string;
+}
+
+const ToolResultBlock: React.FC<ToolResultBlockProps> = ({ result, namespace, agentName }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [previewFile, setPreviewFile] = useState<{ path: string; contextId: string } | null>(null);
+
+  const preview = toolOutputPreview(result.output);
+  const hasError = result.status === 'error' || isToolResultError(result.output);
+
+  const handleFileClick = (relPath: string, contextId: string) => {
+    setPreviewFile({ path: relPath, contextId });
+  };
+
+  return (
+    <div
+      style={{
+        margin: '4px 0',
+        padding: '6px 10px',
+        borderLeft: `3px solid ${hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--success-color--100)'}`,
+        backgroundColor: hasError ? 'rgba(201, 25, 11, 0.08)' : 'var(--pf-v5-global--BackgroundColor--200)',
+        borderRadius: '0 4px 4px 0',
+        fontSize: '0.85em',
+        cursor: 'pointer',
+      }}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div style={{ fontWeight: 600 }}>
+        <span style={{ marginRight: 4 }}>{statusIcon(result.status)}</span>
+        {expanded ? '[-]' : '[+]'} Result: {result.name || 'unknown'}
+        {!expanded && (
+          <span style={{ fontWeight: 400, color: hasError ? 'var(--pf-v5-global--danger-color--100)' : 'var(--pf-v5-global--Color--200)', marginLeft: 8, fontSize: '0.9em' }}>
+            {preview}
+          </span>
+        )}
+      </div>
+      {expanded && (
+        <pre
+          style={{
+            margin: '4px 0',
+            padding: 8,
+            backgroundColor: 'var(--pf-v5-global--BackgroundColor--dark-300)',
+            color: 'var(--pf-v5-global--Color--light-100)',
+            borderRadius: 4,
+            fontSize: '0.9em',
+            overflow: 'auto',
+            maxHeight: 200,
+          }}
+        >
+          {renderOutputWithFileLinks(result.output || '(no output)', namespace ? handleFileClick : undefined)}
+        </pre>
+      )}
+      {previewFile && namespace && agentName && (
+        <FilePreviewModal
+          filePath={previewFile.path}
+          namespace={namespace}
+          agentName={agentName}
+          contextId={previewFile.contextId}
+          isOpen={!!previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Step section
+// ---------------------------------------------------------------------------
+
+const StepStatusIcon: React.FC<{ status: AgentLoopStep['status'] }> = ({ status }) => {
+  if (status === 'running') {
+    return <Spinner size="sm" aria-label="running" style={{ marginLeft: 6 }} />;
+  }
+  if (status === 'done') {
+    return (
+      <CheckCircleIcon
+        style={{ color: 'var(--pf-v5-global--success-color--100)', marginLeft: 6, fontSize: '0.9em' }}
+      />
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <TimesCircleIcon
+        style={{ color: 'var(--pf-v5-global--danger-color--100)', marginLeft: 6, fontSize: '0.9em' }}
+      />
+    );
+  }
+  return null;
+};
+
+function formatStepTokens(step: AgentLoopStep): string {
+  const total = step.tokens.prompt + step.tokens.completion;
+  if (total >= 1000) return (total / 1000).toFixed(1) + 'k';
+  return String(total);
+}
+
+const StepSection: React.FC<{ step: AgentLoopStep; total: number; loopCurrentStep?: number; loopModel?: string; namespace?: string; agentName?: string; hideHeader?: boolean; onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void }> = ({ step, total, loopCurrentStep, loopModel, namespace, agentName, hideHeader, onOpenInspector }) => {
+  const showModelBadge = step.model && step.model !== loopModel;
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      {/* Step header — hidden when rendered inside CollapsibleStepSection */}
+      {!hideHeader && <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          fontSize: '0.84em',
+          fontWeight: 600,
+          color: 'var(--pf-v5-global--Color--100)',
+          marginBottom: 4,
+          flexWrap: 'wrap',
+        }}
+      >
+        {/* Index badge (event_index) */}
+        {step.index != null && <Badge isRead data-testid="step-visit-badge" title={`Event index: ${step.index}`} style={{ marginRight: 4, backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)' }}>{step.index}</Badge>}
+        {/* Node type + step badge with description as hover title */}
+        {(() => {
+          const nt = inferNodeType(step);
+          const planStep = step.planStep ?? loopCurrentStep;
+          let desc = step.description || '';
+          desc = desc.replace(/^Step\s+\d+[:/]?\s*/i, '').trim();
+          if (desc === 'Tool execution') desc = '';
+
+          // Build label: "executor Step 2/5" or just "planner" / "reflector" / "reporter"
+          let label: string = nt;
+          if (nt === 'executor' && planStep != null) {
+            label = `${nt} Step ${planStep + 1}${total > 0 ? `/${total}` : ''}`;
+          }
+
+          const info = NODE_COLORS[nt];
+          return (
+            <span
+              title={desc || label}
+              style={{
+                display: 'inline-block',
+                padding: '1px 6px',
+                borderRadius: 3,
+                fontSize: '0.78em',
+                fontWeight: 600,
+                color: '#fff',
+                backgroundColor: info.bg,
+                marginRight: 6,
+                lineHeight: 1.5,
+                verticalAlign: 'middle',
+                cursor: desc ? 'help' : 'default',
+              }}
+              data-testid="step-node-badge"
+            >
+              {label}
+            </span>
+          );
+        })()}
+        {showModelBadge && (
+          <span
+            title={`Model override: ${step.model} (loop default: ${loopModel})`}
+            style={{
+              display: 'inline-block',
+              padding: '1px 5px',
+              borderRadius: 3,
+              fontSize: '0.75em',
+              fontWeight: 500,
+              color: 'var(--pf-v5-global--Color--200)',
+              backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+              border: '1px solid var(--pf-v5-global--BorderColor--100)',
+              marginLeft: 6,
+              verticalAlign: 'middle',
+            }}
+          >
+            {step.model}
+          </span>
+        )}
+        {step.tokens.prompt + step.tokens.completion > 0 && (
+          <span style={{ fontWeight: 400, fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}>
+            &middot; {formatStepTokens(step)} tokens
+          </span>
+        )}
+        {step.updatedAt && (
+          <span
+            title={`Created: ${step.createdAt || '?'}\nUpdated: ${step.updatedAt}`}
+            style={{ fontWeight: 400, fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 8 }}
+          >
+            &middot; {new Date(step.updatedAt).toLocaleTimeString()}
+          </span>
+        )}
+        <StepStatusIcon status={step.status} />
+        {onOpenInspector && (step.systemPrompt || step.promptMessages) && (
+          <button
+            onClick={() => onOpenInspector(`${step.eventType || step.nodeType || 'Step'} ${step.index}`, step)}
+            style={{
+              background: 'none', border: '1px solid #555', color: '#888',
+              fontSize: '11px', padding: '2px 6px', borderRadius: '3px',
+              cursor: 'pointer', marginLeft: '8px',
+            }}
+            title="View full prompt and response"
+          >
+            Prompt
+          </button>
+        )}
+      </div>}
+
+      {/* Prompt — system prompt + messages sent to LLM */}
+      <PromptBlock systemPrompt={step.systemPrompt} promptMessages={step.promptMessages} onOpenInspector={onOpenInspector} />
+
+      {/* Reasoning / LLM response (expandable for all node types) */}
+      {step.reasoning && <ReasoningBlock reasoning={step.reasoning} />}
+      {!step.reasoning && step.description && step.description.length > 60 && (
+        <ReasoningBlock reasoning={step.description} />
+      )}
+
+      {/* Files touched — shown on reporter steps */}
+      {step.filesTouched && step.filesTouched.length > 0 && (
+        <div style={{ margin: '6px 0' }}>
+          <div style={{ fontSize: '0.78em', color: 'var(--pf-v5-global--Color--200)', marginBottom: 4 }}>
+            Files ({step.filesTouched.length})
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {step.filesTouched.slice(0, 15).map((file, i) => (
+              <span
+                key={i}
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  borderRadius: 3,
+                  fontSize: '0.75em',
+                  fontFamily: 'monospace',
+                  color: 'var(--pf-v5-global--Color--100)',
+                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                  border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  userSelect: 'text',
+                }}
+                title={file}
+              >
+                {file}
+              </span>
+            ))}
+            {step.filesTouched.length > 15 && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  borderRadius: 3,
+                  fontSize: '0.75em',
+                  color: 'var(--pf-v5-global--Color--200)',
+                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                }}
+              >
+                +{step.filesTouched.length - 15} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tool calls paired with results, interleaved with micro-reasoning.
+          Micro-reasoning N appears BEFORE tool pair N (it decided the action):
+          micro_reasoning[0] → tool_call[0] → result[0] → micro_reasoning[1] → tool_call[1] → result[1] ...
+      */}
+      {(() => {
+        const usedResults = new Set<number>();
+        const mrs = step.microReasonings || [];
+        return step.toolCalls.map((tc, i) => {
+          // First try call_id match
+          let matchedResult = step.toolResults.find(
+            (tr, idx) => !usedResults.has(idx) && tr.call_id && tr.call_id === tc.call_id
+          );
+          let matchedIdx = matchedResult ? step.toolResults.indexOf(matchedResult) : -1;
+
+          // Fall back to positional, then name-based
+          if (!matchedResult) {
+            matchedResult = step.toolResults[i] && !usedResults.has(i) ? step.toolResults[i] : undefined;
+            matchedIdx = matchedResult ? i : -1;
+          }
+          if (!matchedResult) {
+            matchedIdx = step.toolResults.findIndex(
+              (tr, idx) => !usedResults.has(idx) && tr.name === tc.name,
+            );
+            matchedResult = matchedIdx >= 0 ? step.toolResults[matchedIdx] : undefined;
+          }
+          if (matchedResult && matchedIdx >= 0) usedResults.add(matchedIdx);
+
+          const hasResult = !!matchedResult || step.status === 'done' || step.status === 'failed';
+          const resultError = !!matchedResult && isToolResultError(matchedResult?.output);
+          // Find micro-reasoning that precedes this tool call (it decided this action)
+          const mr = mrs.find(m => m.micro_step === i + 1) || mrs[i];
+          // Find thinking iterations for this micro-reasoning
+          const allThinkings = step.thinkings || [];
+          const thinkingCount = mr?.thinking_count || 0;
+          // Slice thinkings: each micro-reasoning "owns" thinking_count iterations
+          // They arrive in order, so we compute the offset from previous micro-reasonings
+          let thinkingOffset = 0;
+          for (let j = 0; j < i; j++) {
+            const prevMr = mrs.find(m => m.micro_step === j + 1) || mrs[j];
+            thinkingOffset += prevMr?.thinking_count || 0;
+          }
+          const thinkingsForMr = thinkingCount > 0
+            ? allThinkings.slice(thinkingOffset, thinkingOffset + thinkingCount)
+            : [];
+          return (
+            <React.Fragment key={`tool-group-${i}`}>
+              {/* Thinking iterations before micro-reasoning */}
+              {thinkingsForMr.length > 0 && (
+                <ThinkingBlock thinkings={thinkingsForMr} onOpenInspector={onOpenInspector} />
+              )}
+              {mr && (
+                <div style={{
+                  margin: '8px 0', padding: '8px 12px',
+                  backgroundColor: '#1a1a2e', borderRadius: '4px',
+                  borderLeft: '3px solid #58a6ff', fontSize: '13px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '12px', userSelect: 'text' }}>
+                      Micro-reasoning {(mr.micro_step || i + 1)}
+                      {(mr.prompt_tokens || mr.completion_tokens) && (
+                        <span style={{ color: '#888', fontWeight: 'normal', marginLeft: '8px', fontSize: '11px' }}>
+                          · {((mr.prompt_tokens || 0) + (mr.completion_tokens || 0)).toLocaleString()} tokens
+                        </span>
+                      )}
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {mr.thinking_count ? (
+                        <span title={`${mr.thinking_count} thinking iteration${mr.thinking_count !== 1 ? 's' : ''} before this micro-reasoning`} style={{
+                          display: 'inline-block', padding: '1px 6px', borderRadius: '3px',
+                          fontSize: '0.78em', fontWeight: 600, userSelect: 'text',
+                          background: 'rgba(179,136,255,0.2)', color: '#b388ff',
+                          border: '1px solid rgba(179,136,255,0.3)',
+                        }}>
+                          {mr.thinking_count} thinking
+                        </span>
+                      ) : null}
+                      {mr.model && (
+                        <span style={{ fontSize: '11px', color: '#666' }}>{mr.model}</span>
+                      )}
+                      {onOpenInspector && (
+                        <button
+                          onClick={() => onOpenInspector(`Micro-reasoning ${mr.micro_step || i + 1}`, mr)}
+                          style={{
+                            background: 'none', border: '1px solid #555', color: '#888',
+                            fontSize: '11px', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer',
+                          }}
+                        >
+                          Prompt
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {mr.reasoning && (
+                    <p style={{ margin: '4px 0 0', color: '#ccc', whiteSpace: 'pre-wrap' }}>
+                      {mr.reasoning.substring(0, 500)}{mr.reasoning.length > 500 ? '...' : ''}
+                    </p>
+                  )}
+                </div>
+              )}
+              <div style={{ marginLeft: 4, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)', paddingLeft: 8 }}>
+                <ToolCallBlock call={tc} hasResult={hasResult} resultError={resultError} />
+                {matchedResult && <ToolResultBlock result={matchedResult} namespace={namespace} agentName={agentName} />}
+              </div>
+            </React.Fragment>
+          );
+        });
+      })()}
+      {/* Orphan results (no matching call) */}
+      {step.toolResults.filter((_tr, idx) => idx >= step.toolCalls.length).map((tr, i) => (
+        <ToolResultBlock key={`orphan-result-${i}`} result={tr} namespace={namespace} agentName={agentName} />
+      ))}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Collapsible step wrapper — groups each step as a collapsible section
+// ---------------------------------------------------------------------------
+
+/** Compute summary counts for tool calls in a step. */
+function stepSummary(step: AgentLoopStep): { total: number; success: number; errors: number } {
+  const total = step.toolCalls.length;
+  let errors = 0;
+  let success = 0;
+  for (const tr of step.toolResults) {
+    if (tr.status === 'error' || isToolResultError(tr.output)) {
+      errors++;
+    } else {
+      success++;
+    }
+  }
+  // Results not yet received count as neither success nor error
+  return { total, success, errors };
+}
+
+const CollapsibleStepSection: React.FC<{
+  step: AgentLoopStep;
+  total: number;
+  loopCurrentStep?: number;
+  loopModel?: string;
+  namespace?: string;
+  agentName?: string;
+  onOpenInspector?: (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => void;
+}> = ({ step, total, loopCurrentStep, loopModel, namespace, agentName, onOpenInspector }) => {
+  const [expanded, setExpanded] = useState(false);
+  const nt = inferNodeType(step);
+  const info = NODE_COLORS[nt];
+  const { total: tcTotal, success, errors } = stepSummary(step);
+  const hasMicro = (step.microReasonings || []).length > 0;
+  const thinkingCount = (step.thinkings || []).length;
+
+  // Build summary text
+  const summaryParts: string[] = [];
+  if (tcTotal > 0) {
+    summaryParts.push(`${tcTotal} tool call${tcTotal !== 1 ? 's' : ''}`);
+    if (success > 0) summaryParts.push(`${success} success`);
+    if (errors > 0) summaryParts.push(`${errors} error${errors !== 1 ? 's' : ''}`);
+  }
+  if (thinkingCount > 0) {
+    summaryParts.push(`${thinkingCount} thinking`);
+  }
+  if (hasMicro) {
+    summaryParts.push(`${step.microReasonings!.length} reasoning`);
+  }
+  if (step.reasoning) {
+    summaryParts.push('reasoning');
+  }
+  const summaryText = summaryParts.join(', ');
+
+  return (
+    <div style={{ marginBottom: 6 }}>
+      {/* Collapsible header — shifted left for visual hierarchy */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 8px',
+          marginLeft: -6,
+          marginRight: -2,
+          borderRadius: 4,
+          cursor: 'pointer',
+          userSelect: 'none',
+          fontSize: '0.84em',
+          fontWeight: 600,
+          color: 'var(--pf-v5-global--Color--100)',
+          backgroundColor: expanded ? 'var(--pf-v5-global--BackgroundColor--200)' : 'transparent',
+          transition: 'background-color 0.15s',
+        }}
+        data-testid="collapsible-step-header"
+      >
+        <span style={{ fontSize: '0.85em', width: 14, textAlign: 'center', flexShrink: 0 }}>
+          {expanded ? '[-]' : '[+]'}
+        </span>
+        {/* Index badge */}
+        {step.index != null && (
+          <Badge isRead title={`Event index: ${step.index}`} style={{ fontSize: '0.82em', backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)', color: 'var(--pf-v5-global--Color--100)', userSelect: 'text', cursor: 'text' }}>
+            {step.index}
+          </Badge>
+        )}
+        {/* Step number badge (blue, for executor steps) */}
+        {nt === 'executor' && (step.planStep ?? loopCurrentStep) != null && (
+          <Badge title={`Plan step ${((step.planStep ?? loopCurrentStep)! + 1)} of ${total || '?'}`} style={{ fontSize: '0.78em', userSelect: 'text', cursor: 'text' }}>
+            Step {((step.planStep ?? loopCurrentStep)! + 1)}{total > 0 ? `/${total}` : ''}
+          </Badge>
+        )}
+        {/* Node type badge */}
+        <span
+          title={`Graph node: ${info.label}`}
+          style={{
+            display: 'inline-block',
+            padding: '1px 6px',
+            borderRadius: 3,
+            fontSize: '0.78em',
+            fontWeight: 600,
+            color: '#fff',
+            backgroundColor: info.bg,
+            lineHeight: 1.5,
+            userSelect: 'text',
+            cursor: 'text',
+          }}
+        >
+          {info.label}
+        </span>
+        {/* Status icon */}
+        <StepStatusIcon status={step.status} />
+        {/* Summary counts */}
+        {summaryText && (
+          <span style={{ fontWeight: 400, fontSize: '0.88em', color: 'var(--pf-v5-global--Color--200)', marginLeft: 4, userSelect: 'text', cursor: 'text' }}>
+            {summaryText}
+          </span>
+        )}
+        {/* Error count badge */}
+        {errors > 0 && (
+          <Badge title={`${errors} tool call${errors !== 1 ? 's' : ''} returned errors`} style={{ fontSize: '0.78em', backgroundColor: 'var(--pf-v5-global--danger-color--100)', color: '#fff' }}>
+            {errors} err
+          </Badge>
+        )}
+      </div>
+
+      {/* Expanded content — sub-items indented relative to header */}
+      {expanded && (
+        <div style={{ marginLeft: 8, paddingLeft: 8, borderLeft: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+          <StepSection
+            step={step}
+            total={total}
+            loopCurrentStep={loopCurrentStep}
+            loopModel={loopModel}
+            namespace={namespace}
+            agentName={agentName}
+            hideHeader
+            onOpenInspector={onOpenInspector}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Replan section (expandable, shows revised plans after reflector triggers replan)
+// ---------------------------------------------------------------------------
+
+const ReplanSection: React.FC<{ replans: AgentLoop['replans'] }> = ({ replans }) => {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  if (!replans || replans.length === 0) return null;
+
+  return (
+    <>
+      {replans.map((rp, idx) => (
+        <div key={idx} style={{ marginBottom: 8 }}>
+          <div
+            style={{ fontWeight: 600, fontSize: '0.85em', marginBottom: 4, color: 'var(--pf-v5-global--Color--100)', cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+          >
+            <NodeBadge nodeType="replanner" />
+            {expandedIdx === idx ? '[-]' : '[+]'} Replan (iteration {rp.iteration + 1}): {rp.steps.length} step{rp.steps.length !== 1 ? 's' : ''}
+          </div>
+          {expandedIdx === idx && (
+            <ol style={{ margin: 0, paddingLeft: 22, fontSize: '0.83em', lineHeight: 1.7 }}>
+              {rp.steps.map((step, i) => (
+                <li key={i} style={{ color: 'var(--pf-v5-global--Color--200)' }}>{step}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+      ))}
+    </>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
+
+export const LoopDetail: React.FC<LoopDetailProps> = ({ loop, namespace, agentName }) => {
+  const [inspectorData, setInspectorData] = useState<{
+    isOpen: boolean;
+    title: string;
+    systemPrompt?: string;
+    promptMessages?: Array<{ role: string; preview: string }>;
+    boundTools?: Array<{ name: string; description?: string }>;
+    response?: string;
+    model?: string;
+    promptTokens?: number;
+    completionTokens?: number;
+  } | null>(null);
+
+  const openInspector = (title: string, data: Partial<AgentLoopStep> | MicroReasoning) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = data as any;
+    const isMicro = d.type === 'micro_reasoning';
+    setInspectorData({
+      isOpen: true,
+      title,
+      systemPrompt: isMicro ? d.system_prompt : d.systemPrompt,
+      promptMessages: isMicro ? d.prompt_messages : d.promptMessages,
+      boundTools: d.boundTools || d.bound_tools || [],
+      response: typeof (d.llmResponse || d.llm_response) === 'object'
+        ? JSON.stringify(d.llmResponse || d.llm_response, null, 2)
+        : (d.llmResponse || d.llm_response || d.reasoning || d.assessment || d.content || ''),
+      model: d.model,
+      promptTokens: isMicro ? d.prompt_tokens : d.tokens?.prompt,
+      completionTokens: isMicro ? d.completion_tokens : d.tokens?.completion,
+    });
+  };
+
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--pf-v5-global--BorderColor--100)',
+        marginTop: 10,
+        paddingTop: 10,
+      }}
+    >
+      {/* Plan is rendered in AgentLoopCard (always visible). Skip here to avoid duplication. */}
+      <ReplanSection replans={loop.replans} />
+
+      {loop.steps.filter((step) => !step.hidden).map((step) => (
+        <CollapsibleStepSection key={step.index} step={step} total={loop.totalSteps} loopCurrentStep={loop.currentStep} loopModel={loop.model} namespace={namespace} agentName={agentName} onOpenInspector={openInspector} />
+      ))}
+
+      {/* Streaming indicator — shows when agent is still working */}
+      {(loop.status === 'executing' || loop.status === 'planning' || loop.status === 'reflecting') && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', marginTop: 4,
+          borderLeft: '3px solid var(--pf-v5-global--info-color--100)',
+          backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+          borderRadius: '0 4px 4px 0', fontSize: '0.85em',
+          color: 'var(--pf-v5-global--Color--200)',
+        }}>
+          <span style={{
+            display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+            backgroundColor: 'var(--pf-v5-global--info-color--100)',
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }} />
+          Agent is {loop.status === 'planning' ? 'planning' : loop.status === 'reflecting' ? 'reflecting' : 'working'}...
+          {loop.budget?.tokensUsed ? ` (${(loop.budget.tokensUsed / 1000).toFixed(1)}K tokens)` : ''}
+          <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+        </div>
+      )}
+
+      {inspectorData && (
+        <PromptInspector
+          isOpen={inspectorData.isOpen}
+          onClose={() => setInspectorData(null)}
+          title={inspectorData.title}
+          systemPrompt={inspectorData.systemPrompt}
+          promptMessages={inspectorData.promptMessages}
+          boundTools={inspectorData.boundTools}
+          response={inspectorData.response}
+          model={inspectorData.model}
+          promptTokens={inspectorData.promptTokens}
+          completionTokens={inspectorData.completionTokens}
+        />
+      )}
+    </div>
+  );
+};

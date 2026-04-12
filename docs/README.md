@@ -16,6 +16,12 @@ Kagenti is built on existing open-source cloud-native technologies.
 ## Demos and Tutorials
 
 For a complete list of available demos and tutorials, see the [Demos Documentation](./demos/README.md).
+## Vision & Use Cases
+
+- [Use Cases](./user-stories.md) — Platform-wide scenarios organized by persona: deployment, governance, observability, identity, developer experience, and more.
+- [Use Case Types](./use-case-types.md) — Taxonomy of agent operational models the platform supports (read-only insight, synchronous task, async task, monitoring, event-driven).
+- [Personas and Roles](../PERSONAS_AND_ROLES.md) — The people who use and operate Kagenti.
+
 ## Core Concepts
 
 Through this incubation project, we have identified several core components: 

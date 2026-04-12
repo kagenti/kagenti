@@ -204,6 +204,9 @@ type CreateAgentRequest struct {
 	CreateHTTPRoute  bool          `json:"createHttpRoute"`
 	AuthBridgeEnabled bool         `json:"authBridgeEnabled"`
 	SpireEnabled     bool          `json:"spireEnabled"`
+	EnvoyProxyInject          *bool `json:"envoyProxyInject,omitempty"`
+	SpiffeHelperInject        *bool `json:"spiffeHelperInject,omitempty"`
+	ClientRegistrationInject  *bool `json:"clientRegistrationInject,omitempty"`
 }
 
 // CreateAgentResponse is the response after creating an agent.
@@ -234,6 +237,9 @@ type CreateToolRequest struct {
 	CreateHTTPRoute  bool          `json:"createHttpRoute"`
 	AuthBridgeEnabled bool         `json:"authBridgeEnabled"`
 	SpireEnabled     bool          `json:"spireEnabled"`
+	EnvoyProxyInject          *bool `json:"envoyProxyInject,omitempty"`
+	SpiffeHelperInject        *bool `json:"spiffeHelperInject,omitempty"`
+	ClientRegistrationInject  *bool `json:"clientRegistrationInject,omitempty"`
 }
 
 // CreateToolResponse is the response after creating a tool.

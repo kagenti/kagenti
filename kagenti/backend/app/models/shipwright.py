@@ -77,6 +77,27 @@ class ClusterBuildStrategiesResponse(BaseModel):
     strategies: List[ClusterBuildStrategyInfo]
 
 
+class ShipwrightBuildListItem(BaseModel):
+    """Summary of one Shipwright Build CR (Kagenti agent or tool pipeline)."""
+
+    name: str
+    namespace: str
+    resourceType: str = ""  # "agent" or "tool" from kagenti.io/type label
+    registered: bool = False
+    strategy: str = ""
+    gitUrl: str = ""
+    gitRevision: str = ""
+    contextDir: str = ""
+    outputImage: str = ""
+    creationTimestamp: Optional[str] = None
+
+
+class ShipwrightBuildListResponse(BaseModel):
+    """List of Kagenti-associated Shipwright Build resources."""
+
+    items: List[ShipwrightBuildListItem]
+
+
 class ShipwrightBuildStatusResponse(BaseModel):
     """Response containing Shipwright Build status information."""
 

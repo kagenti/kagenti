@@ -72,6 +72,9 @@ Once running, access the OpenAPI documentation:
 ### Namespaces
 - `GET /api/v1/namespaces` - List available Kubernetes namespaces (with optional `enabled_only` filter)
 
+### Shipwright (CLI / automation)
+- `GET /api/v1/shipwright/builds` - List Kagenti Shipwright builds (`namespace` or `allNamespaces`; query `for`: `agents`, `tools`, or `all` — default `all`)
+
 ### Agents
 - `GET /api/v1/agents` - List all agents across namespaces
 - `GET /api/v1/agents/{namespace}/{name}` - Get specific agent details
@@ -79,6 +82,7 @@ Once running, access the OpenAPI documentation:
 - `DELETE /api/v1/agents/{namespace}/{name}` - Delete agent
 - `POST /api/v1/agents` - Create new agent (supports deployment from image or source code via Shipwright)
 - `GET /api/v1/agents/build-strategies` - List available ClusterBuildStrategy resources
+- `GET /api/v1/agents/shipwright-builds` - List Shipwright builds for agents only (`namespace` or `allNamespaces`)
 - `GET /api/v1/agents/{namespace}/{name}/shipwright-build` - Get Shipwright build status
 - `GET /api/v1/agents/{namespace}/{name}/shipwright-buildrun` - Get latest Shipwright BuildRun status
 - `POST /api/v1/agents/{namespace}/{name}/shipwright-buildrun` - Trigger new Shipwright BuildRun
@@ -89,6 +93,7 @@ Once running, access the OpenAPI documentation:
 
 ### Tools
 - `GET /api/v1/tools` - List all MCP tools across namespaces
+- `GET /api/v1/tools/shipwright-builds` - List Shipwright builds for tools only (`namespace` or `allNamespaces`)
 - `GET /api/v1/tools/{namespace}/{name}` - Get specific tool details
 - `GET /api/v1/tools/{namespace}/{name}/route-status` - Check HTTPRoute/Route status for tool
 - `DELETE /api/v1/tools/{namespace}/{name}` - Delete tool

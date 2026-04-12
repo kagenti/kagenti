@@ -6,7 +6,9 @@
   (SpireServer, SpireAgent, SpiffeCSIDriver, SpireOIDCDiscoveryProvider) can be configured.
 
   This CR defines the cluster-wide SPIRE configuration including trust domain and cluster name.
-  The individual operands reference this configuration.
+  The individual operands inherit trustDomain and clusterName from this parent CR —
+  those fields must NOT be set on the child operands (SpireServer, SpireAgent, etc.)
+  as their CRDs do not include them on OCP 4.19.
 */}}
 apiVersion: operator.openshift.io/v1alpha1
 kind: ZeroTrustWorkloadIdentityManager
@@ -51,14 +53,14 @@ metadata:
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  trustDomain: {{ .Values.spire.trustDomain }}
-  clusterName: agent-platform
+  # trustDomain and clusterName are inherited from the ZeroTrustWorkloadIdentityManager CR
   caSubject:
     commonName: {{ .Values.spire.trustDomain }}
     country: "US"
     organization: "RH"
   persistence:
-    type: pvc
+    # type: pvc was removed — the OCP 4.19 ZTWIM CRD does not include this field;
+    # the operator defaults to pvc when omitted.
     size: "5Gi"
     accessMode: ReadWriteOnce
   datastore:
@@ -80,8 +82,7 @@ metadata:
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  trustDomain: {{ .Values.spire.trustDomain }}
-  clusterName: agent-platform
+  # trustDomain and clusterName are inherited from the ZeroTrustWorkloadIdentityManager CR
   nodeAttestor:
     k8sPSATEnabled: "true"
   workloadAttestors:
@@ -100,7 +101,8 @@ metadata:
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  trustDomain: {{ .Values.spire.trustDomain }}
-  agentSocketName: 'spire-agent.sock'
+  # trustDomain is inherited from the ZeroTrustWorkloadIdentityManager CR
+  # OCP 4.19 ZTWIM CRD replaced agentSocketName with csiDriverName
+  csiDriverName: csi.spiffe.io
   jwtIssuer: "https://oidc-discovery-provider.{{.Values.spire.trustDomain}}"
 {{- end }}

@@ -12,7 +12,8 @@ import React, {
 } from 'react';
 import Keycloak from 'keycloak-js';
 
-import { setTokenGetter } from '@/services/api';
+import { setTokenGetter, setTokenForceRefresher } from '@/services/api';
+import { setEventServiceTokenGetter } from '@/services/eventService';
 
 import { keycloakRedirectUri } from './keycloakRedirectUri';
 
@@ -178,7 +179,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           pkceMethod: 'S256',
           enableLogging: true, // Enable Keycloak adapter logging
           flow: 'standard', // Use standard authorization code flow
-          redirectUri,
+          // Do NOT set redirectUri — let Keycloak default to window.location.href
+          // so users return to the page they were on (e.g. /sandbox/files/...).
+          // Setting redirect_uri to "/" causes deep links to redirect to root.
         }).catch((initError) => {
           console.error('Keycloak init rejected with error:', initError);
 
@@ -351,10 +354,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [isEnabled]);
 
-  // Register token getter with API service
+  // Force-refresh token, bypassing cache (for 401 retry, issue #1009)
+  const forceRefreshToken = useCallback(async (): Promise<string | null> => {
+    if (!isEnabled) return null;
+
+    const keycloak = keycloakRef.current;
+    if (!keycloak || !keycloak.authenticated) return null;
+
+    try {
+      // Pass -1 to force refresh regardless of current token validity
+      await keycloak.updateToken(-1);
+      const freshToken = keycloak.token || null;
+      if (freshToken) {
+        sessionStorage.setItem('kagenti_access_token', freshToken);
+        setToken(freshToken);
+      }
+      return freshToken;
+    } catch {
+      console.error('Force token refresh failed');
+      return null;
+    }
+  }, [isEnabled]);
+
+  // Register token getter and force-refresher with API service
   useEffect(() => {
     setTokenGetter(getToken);
-  }, [getToken]);
+    setTokenForceRefresher(forceRefreshToken);
+    setEventServiceTokenGetter(getToken);
+  }, [getToken, forceRefreshToken]);
 
   const value = useMemo(
     () => ({

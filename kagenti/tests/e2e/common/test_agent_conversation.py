@@ -30,8 +30,12 @@ from a2a.types import (
 
 # LLM responses can be flaky (empty/null content from the model).
 # Retry the query up to this many times before failing.
-_LLM_QUERY_MAX_ATTEMPTS = 3
-_LLM_QUERY_RETRY_DELAY_S = 5
+# TODO: Replace with sandbox agent tests that have built-in tool call
+# retry and exponential backoff at the agent/platform level (sandbox.py
+# SSE reconnection, looper sidecar auto-continue). The basic weather
+# agent has no resilience — it fails immediately on external API errors.
+_LLM_QUERY_MAX_ATTEMPTS = 5
+_LLM_QUERY_RETRY_DELAY_S = 10
 
 # Import CA certificate fetching from conftest
 from kagenti.tests.e2e.conftest import (
@@ -226,7 +230,18 @@ async def _send_and_collect_response(client, user_message, context_id=None):
 
 
 class TestWeatherAgentConversation:
-    """Test weather-service agent with MCP weather-tool (works with both operators)."""
+    """Test weather-service agent with MCP weather-tool (works with both operators).
+
+    These tests depend on the external Open-Meteo API (api.open-meteo.com).
+    They may fail in CI due to network restrictions, rate limiting, or API
+    outages — the basic weather agent has no built-in tool call retry.
+
+    TODO: Replace these tests with sandbox agent tests once the sandbox
+    backend is merged. The sandbox agent has built-in resilience:
+    - SSE reconnection with exponential backoff (sandbox.py)
+    - Looper sidecar for auto-continue on transient failures
+    - Tool call errors are retried at the agent framework level
+    """
 
     @pytest.mark.asyncio
     async def test_agent_simple_query(self, keycloak_agent_token):
@@ -286,9 +301,20 @@ class TestWeatherAgentConversation:
 
             if last_result["task_failed"]:
                 error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
-                # Retry on transient MCP connectivity failures — the weather-tool
-                # pod may still be initializing when the test starts.
-                if "Cannot connect" in error_text and attempt < _LLM_QUERY_MAX_ATTEMPTS:
+                # Retry on transient failures — the weather-tool pod may still
+                # be initializing, or the LLM/tool may return transient errors.
+                _TRANSIENT_ERRORS = (
+                    "Cannot connect",
+                    "Expecting value",
+                    "Error calling tool",
+                    "timed out",
+                    "Read timed out",
+                    "ConnectionPool",
+                )
+                if (
+                    any(err in error_text for err in _TRANSIENT_ERRORS)
+                    and attempt < _LLM_QUERY_MAX_ATTEMPTS
+                ):
                     logger.warning(
                         "MCP connectivity error on attempt %d/%d, retrying in %ds...\n  %s",
                         attempt,

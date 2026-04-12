@@ -246,7 +246,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up Helm
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
         with:
           version: 'v3.14.0'
 
@@ -433,6 +433,8 @@ jobs:
           skip-dirs: 'kagenti/examples'
           # Use .trivyignore for documented exceptions (base images, CI RBAC)
           trivyignores: '.trivyignore'
+          # Use trivy.yaml for trusted registries and other config
+          trivy-config: 'trivy.yaml'
           # Fail on misconfigurations in production code
           exit-code: '1'
           format: 'table'
@@ -465,7 +467,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@0d952c597ef8459f634d7145b0b044a9699e5e43  # v1.71.0
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
         with:
           fail_on_error: true
           # Only report issues on lines changed in the PR (not pre-existing)
@@ -486,17 +488,17 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98  # v4
+        uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13  # v4
         with:
           languages: python
           # Use security-extended queries for more thorough analysis
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@0d579ffd059c29b07949a3cce3983f0780820c98  # v4
+        uses: github/codeql-action/autobuild@c10b8064de6f491fea524254123dbe5e09572f13  # v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98  # v4
+        uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13  # v4
         with:
           category: "/language:python"
 

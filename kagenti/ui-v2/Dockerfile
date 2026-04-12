@@ -2,17 +2,15 @@
 # Licensed under the Apache License, Version 2.0
 
 # Stage 1: Build the React application
-FROM node:25-alpine@sha256:5209bcaca9836eb3448b650396213dbe9d9a34d31840c2ae1f206cb2986a8543 AS builder
+FROM node:25-alpine@sha256:ad82ecad30371c43f4057aaa4800a8ed88f9446553a2d21323710c7b937177fc AS builder
 
 WORKDIR /app
 
 # Copy package files
 COPY ui-v2/package.json ./
-# Note: If using npm, use package-lock.json instead
-# COPY package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY ui-v2/ .
@@ -21,7 +19,7 @@ COPY ui-v2/ .
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:1.29-alpine@sha256:f46cb72c7df02710e693e863a983ac42f6a9579058a59a35f1ae36c9958e4ce0
+FROM nginx:1.29-alpine@sha256:e7257f1ef28ba17cf7c248cb8ccf6f0c6e0228ab9c315c152f9c203cd34cf6d1
 
 # Copy nginx configuration
 COPY ui-v2/nginx.conf /etc/nginx/conf.d/default.conf

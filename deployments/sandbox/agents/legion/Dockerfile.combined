@@ -1,0 +1,45 @@
+# Combined Dockerfile for platform base + Legion agent
+# For production, these would be separate images (base → legion)
+# For validation, we combine them to avoid multi-image build complexity
+
+FROM python:3.12-slim-bookworm@sha256:31c0807da611e2e377a2e9b566ad4eb038ac5a5838cbbbe6f2262259b5dc77a0
+
+# System tools for sandboxed execution
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install --no-cache-dir uv==0.7.12
+
+WORKDIR /app
+
+# Install platform base dependencies
+COPY platform_base/requirements.txt /app/platform-requirements.txt
+RUN uv pip install --system --no-cache -r /app/platform-requirements.txt
+
+# Install Legion-specific dependencies
+COPY agents/legion/requirements.txt /app/legion-requirements.txt
+RUN uv pip install --system --no-cache -r /app/legion-requirements.txt
+
+# Copy platform base modules
+COPY platform_base/ /app/platform_base/
+
+# Copy Legion agent code
+COPY agents/legion/ /app/legion/
+
+# Copy config files
+COPY agents/legion/settings.json /app/settings.json
+COPY agents/legion/sources.json /app/sources.json
+
+# Create workspace and set permissions for OCP arbitrary UIDs
+RUN mkdir -p /workspace && chown -R 1001:0 /app /workspace && chmod -R g+w /app /workspace
+USER 1001
+
+ENV AGENT_MODULE=legion.plugin \
+    AGENT_NAME=sandbox-legion-platform \
+    PYTHONPATH=/app
+
+EXPOSE 8000
+
+CMD ["python", "-m", "platform_base.entrypoint"]

@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isValidEnvVarName, isValidContainerImage, isValidImageTag } from '../utils/validation';
+import { newRouteRowId } from '../utils/routeRowId';
 import {
   PageSection,
   Title,
@@ -49,14 +50,19 @@ const PROTOCOLS = [
 // Example MCP tool subfolders
 const TOOL_EXAMPLES = [
   { value: '', label: 'Select an example...' },
-  { value: 'mcp/weather_tool', label: 'Weather Tool' },
+  // These examples correspond to the samples in https://github.com/kagenti/agent-examples/tree/main/mcp
+  // We use the suffix "server" rather than "Tool" because each
+  // example MCP server may offer multiple tools.
+  { value: 'mcp/appworld_apis', label: 'AppWorld MCP server' },
+  { value: 'mcp/cloud_storage_tool', label: 'Cloud Storage Tool' },
   { value: 'mcp/flight_tool', label: 'Flight Tool' },
   { value: 'mcp/github_tool', label: 'GitHub Tool' },
   { value: 'mcp/image_tool', label: 'Image Tool' },
   { value: 'mcp/movie_tool', label: 'Movie Tool' },
   { value: 'mcp/reservation_tool', label: 'Reservation Tool' },
+  { value: 'mcp/shopping_tool', label: 'Shopping MCP server' },
   { value: 'mcp/slack_tool', label: 'Slack Tool' },
-  { value: 'mcp/cloud_storage_tool', label: 'Cloud Storage Tool' },
+  { value: 'mcp/weather_tool', label: 'Weather Tool' },
 ];
 
 const REGISTRY_OPTIONS = [
@@ -124,7 +130,7 @@ export const ImportToolPage: React.FC = () => {
 
   // Pod configuration
   const [servicePorts, setServicePorts] = useState<ServicePort[]>([
-    { name: 'http', port: 8000, targetPort: 8000, protocol: 'TCP' },
+    { name: 'http', port: 9090, targetPort: 9090, protocol: 'TCP' },
   ]);
   const [showPodConfig, setShowPodConfig] = useState(false);
 
@@ -144,6 +150,32 @@ export const ImportToolPage: React.FC = () => {
   const [authBridgeEnabled, setAuthBridgeEnabled] = useState(false);
   // SPIRE identity
   const [spireEnabled, setSpireEnabled] = useState(false);
+
+  // Per-sidecar injection controls
+  const [envoyProxyInject, setEnvoyProxyInject] = useState<boolean | undefined>(undefined);
+  const [spiffeHelperInject, setSpiffeHelperInject] = useState<boolean | undefined>(undefined);
+  const [clientRegistrationInject, setClientRegistrationInject] = useState<boolean | undefined>(true);
+
+  // Outbound routing rules
+  const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
+  const addRoute = () =>
+    setOutboundRoutes((prev) => [
+      ...prev,
+      { id: newRouteRowId(), host: '', target_audience: '', token_scopes: 'openid' },
+    ]);
+  const removeRoute = (i: number) => setOutboundRoutes(outboundRoutes.filter((_, idx) => idx !== i));
+  const updateRoute = (i: number, field: string, value: string) => {
+    const updated = [...outboundRoutes];
+    updated[i] = { ...updated[i], [field]: value };
+    setOutboundRoutes(updated);
+  };
+
+  // Port exclusion annotations
+  const [outboundPortsExclude, setOutboundPortsExclude] = useState('');
+  const [inboundPortsExclude, setInboundPortsExclude] = useState('');
+  // AuthBridge config overrides
+  const [defaultOutboundPolicy, setDefaultOutboundPolicy] = useState('passthrough');
+  const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
   const [validated, setValidated] = useState<Record<string, 'success' | 'error' | 'default'>>({});
@@ -235,8 +267,10 @@ export const ImportToolPage: React.FC = () => {
     const [, org, repo] = githubMatch;
     const branch = gitBranch || 'main';
     const path = gitPath.replace(/^\/+|\/+$/g, '');
+    // GitHub Tool AuthBridge demo uses Keycloak/JWKS env + secret refs (not LLM keys).
+    const envFile = path === 'mcp/github_tool' ? '.env.authbridge' : '.env.openai';
 
-    return `https://raw.githubusercontent.com/${org}/${repo}/refs/heads/${branch}/${path}/.env.openai`;
+    return `https://raw.githubusercontent.com/${org}/${repo}/refs/heads/${branch}/${path}/${envFile}`;
   };
 
   // Environment variable handlers
@@ -429,10 +463,19 @@ export const ImportToolPage: React.FC = () => {
         imageTag,
         shipwrightConfig,
         envVars: envVars.filter((ev) => ev.name && (ev.value !== undefined || ev.valueFrom)),
-        servicePorts: showPodConfig ? servicePorts : undefined,
+        // Always send ports so Shipwright finalize uses them (matches Import Agent behavior).
+        // Previously omitted when Pod Configuration stayed collapsed → backend defaulted to 8000.
+        servicePorts,
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
+        envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
+        spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
+        clientRegistrationInject: authBridgeEnabled ? clientRegistrationInject : undefined,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
+        inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
+        defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
       });
     } else {
       // Image deployment
@@ -451,10 +494,17 @@ export const ImportToolPage: React.FC = () => {
           : undefined,
         envVars: envVars.filter((ev) => ev.name && (ev.value !== undefined || ev.valueFrom)),
         imagePullSecret: imagePullSecret || undefined,
-        servicePorts: showPodConfig ? servicePorts : undefined,
+        servicePorts,
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
+        envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
+        spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
+        clientRegistrationInject: authBridgeEnabled ? clientRegistrationInject : undefined,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
+        inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
+        defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
       });
     }
   };
@@ -577,7 +627,7 @@ export const ImportToolPage: React.FC = () => {
                     </FormHelperText>
                   </FormGroup>
 
-                  <FormGroup label="Branch or Tag" fieldId="gitBranch">
+                  <FormGroup label="Git Branch or Tag" fieldId="gitBranch">
                     <TextInput
                       id="gitBranch"
                       value={gitBranch}
@@ -586,7 +636,7 @@ export const ImportToolPage: React.FC = () => {
                     />
                   </FormGroup>
 
-                  <FormGroup label="Example Tools" fieldId="selectedExample">
+                  <FormGroup label="Select Tool" fieldId="selectedExample">
                     <FormSelect
                       id="selectedExample"
                       value={selectedExample}
@@ -929,10 +979,40 @@ export const ImportToolPage: React.FC = () => {
                   id="authBridgeEnabled"
                   label="Enable AuthBridge sidecar injection"
                   isChecked={authBridgeEnabled}
-                  onChange={(_e, checked) => setAuthBridgeEnabled(checked)}
-                  description="When enabled, the webhook injects AuthBridge sidecars (envoy-proxy, go-processor, client-registration) into the tool pod for token exchange."
-              />
+                  onChange={(_e, checked) => {
+                    setAuthBridgeEnabled(checked);
+                    if (checked) {
+                      setEnvoyProxyInject(undefined);
+                      setSpiffeHelperInject(undefined);
+                      setClientRegistrationInject(true);
+                    }
+                  }}
+                  description="When enabled, the webhook injects AuthBridge for inbound JWT validation, outbound token exchange, and Keycloak client registration. Default webhook settings use three sidecars plus proxy-init; with featureGates.combinedSidecar enabled on kagenti-webhook, a single authbridge container is used instead (see docs linked below)."
+                />
               </FormGroup>
+
+              {authBridgeEnabled && (
+                <Alert
+                  variant="info"
+                  isInline
+                  title="Combined AuthBridge container"
+                  style={{ marginBottom: '16px' }}
+                >
+                  <Text component="p">
+                    Combined mode is configured on the admission webhook (
+                    <code>featureGates.combinedSidecar</code>), not on this page. See{' '}
+                    <a
+                      href="https://github.com/kagenti/kagenti/blob/main/docs/authbridge-combined-sidecar.md"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Combined AuthBridge sidecar
+                    </a>{' '}
+                    for operator steps. Advanced injection checkboxes still apply as flags inside the
+                    combined container when that gate is on.
+                  </Text>
+                </Alert>
+              )}
 
               {/* SPIRE Identity */}
               <FormGroup fieldId="spireEnabled">
@@ -943,6 +1023,128 @@ export const ImportToolPage: React.FC = () => {
                   onChange={(_e, checked) => setSpireEnabled(checked)}
                 />
               </FormGroup>
+
+              {authBridgeEnabled && (
+                <>
+                  <FormGroup fieldId="sidecarControls" label="Advanced Injection Controls">
+                    <Checkbox
+                      id="envoyProxyInject"
+                      label="Envoy Proxy"
+                      isChecked={envoyProxyInject !== false}
+                      onChange={(_e, checked) => setEnvoyProxyInject(checked ? undefined : false)}
+                      description="Envoy proxy with go-processor for traffic interception. Disable to skip envoy-proxy sidecar."
+                    />
+                    <Checkbox
+                      id="spiffeHelperInject"
+                      label="SPIFFE Helper"
+                      isChecked={spiffeHelperInject !== false}
+                      onChange={(_e, checked) => setSpiffeHelperInject(checked ? undefined : false)}
+                      description="SPIFFE identity helper for SVID management. Disable to skip spiffe-helper sidecar."
+                    />
+                    <Checkbox
+                      id="clientRegistrationInject"
+                      label="Client Registration"
+                      isChecked={clientRegistrationInject === true}
+                      onChange={(_e, checked) => setClientRegistrationInject(checked ? true : undefined)}
+                      description="Sidecar-based Keycloak client registration. Automatically registers the workload as an OAuth2 client using its SPIFFE identity."
+                    />
+                  </FormGroup>
+                </>
+              )}
+
+
+              {authBridgeEnabled && (
+              <ExpandableSection
+                toggleText={`Outbound Routing Rules (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
+                isExpanded={showOutboundRouting}
+                onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
+              >
+                <Text component="p" style={{ marginBottom: '8px' }}>
+                  Configure token exchange rules for outbound HTTP requests. Each route matches a service host and specifies the target audience and OAuth scopes for the exchanged token.
+                </Text>
+                {outboundRoutes.map((route, index) => (
+                  <Grid hasGutter key={route.id} style={{ marginBottom: '8px' }}>
+                    <GridItem span={3}>
+                      <TextInput
+                        aria-label="Host pattern"
+                        value={route.host}
+                        onChange={(_e, v) => updateRoute(index, 'host', v)}
+                        placeholder="e.g. github-tool-mcp"
+                      />
+                    </GridItem>
+                    <GridItem span={3}>
+                      <TextInput
+                        aria-label="Target audience"
+                        value={route.target_audience}
+                        onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                        placeholder="e.g. github-tool"
+                      />
+                    </GridItem>
+                    <GridItem span={4}>
+                      <TextInput
+                        aria-label="Token scopes"
+                        value={route.token_scopes}
+                        onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                        placeholder="openid scope1 scope2"
+                      />
+                    </GridItem>
+                    <GridItem span={2}>
+                      <Button variant="plain" onClick={() => removeRoute(index)}>
+                        Remove
+                      </Button>
+                    </GridItem>
+                  </Grid>
+                ))}
+                <Button variant="link" onClick={addRoute}>
+                  Add Route
+                </Button>
+              </ExpandableSection>
+              )}
+
+
+              {authBridgeEnabled && (
+              <ExpandableSection
+                toggleText="AuthBridge Advanced Configuration"
+              >
+                <FormGroup label="Outbound Ports to Exclude" fieldId="outboundPortsExclude">
+                  <TextInput
+                    id="outboundPortsExclude"
+                    value={outboundPortsExclude}
+                    onChange={(_e, v) => setOutboundPortsExclude(v)}
+                    placeholder="e.g. 11434,443"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>Comma-separated ports to bypass outbound proxy interception.</HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+                <FormGroup label="Inbound Ports to Exclude" fieldId="inboundPortsExclude">
+                  <TextInput
+                    id="inboundPortsExclude"
+                    value={inboundPortsExclude}
+                    onChange={(_e, v) => setInboundPortsExclude(v)}
+                    placeholder="e.g. 9090"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>Comma-separated ports to bypass inbound proxy interception.</HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+                <FormGroup label="Default Outbound Policy" fieldId="defaultOutboundPolicy">
+                  <FormSelect
+                    id="defaultOutboundPolicy"
+                    value={defaultOutboundPolicy}
+                    onChange={(_e, v) => setDefaultOutboundPolicy(v)}
+                    aria-label="Default outbound policy"
+                  >
+                    <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
+                    <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
+                  </FormSelect>
+                </FormGroup>
+              </ExpandableSection>
+              )}
 
               {/* Pod Configuration */}
               <ExpandableSection

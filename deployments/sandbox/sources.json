@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "description": "Sandbox agent source access policy — controls which repos can be cloned at runtime",
+  "allowed_remotes": [
+    "https://github.com/kagenti/*",
+    "https://github.com/kubernetes-sigs/agent-sandbox"
+  ],
+  "denied_remotes": [
+    "https://github.com/evil-org/*"
+  ],
+  "allowed_registries": [
+    "pypi.org",
+    "registry.npmjs.org"
+  ],
+  "allowed_domains": [
+    ".anthropic.com",
+    ".openai.com",
+    ".pypi.org",
+    ".pythonhosted.org",
+    ".github.com",
+    ".githubusercontent.com"
+  ],
+  "resource_limits": {
+    "max_repos": 5,
+    "max_repo_size_mb": 500,
+    "max_total_disk_mb": 2048
+  }
+}

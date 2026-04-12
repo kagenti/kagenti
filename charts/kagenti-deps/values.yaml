@@ -154,6 +154,13 @@ istio:
 # receivers/processors/exporters), provide the full array.
 #
 otel:
+  # MLflow OTEL pipeline for externally managed MLflow (e.g. RHOAI DSC).
+  # Also activates when components.mlflow.enabled is true.
+  # TODO: Replace with a single mlflow.mode enum (none|managed|external).
+  mlflow:
+    enabled: false
+    workspace: "team1"     # RHOAI workspace namespace for x-mlflow-workspace header
+    experimentId: "1"      # MLflow experiment ID for x-mlflow-experiment-id header
   collector:
     image:
       repository: otel/opentelemetry-collector-contrib
@@ -227,6 +234,9 @@ otel:
     mlflowConfig:
       exporters:
         otlphttp/mlflow:
+          # Default points to the in-cluster MLflow deployed by kagenti-deps.
+          # Override with the DSC-managed MLflow service when otel.mlflow.enabled=true:
+          # https://<mlflow-svc>.<namespace>.svc.cluster.local:8443/v1/traces
           traces_endpoint: http://mlflow:5000/v1/traces
           tls:
             insecure: true
@@ -263,6 +273,15 @@ otel:
           timeout: 10s
       service:
         extensions: [health_check, oauth2client/mlflow]
+    # RHOAI MLflow auth config - auto-merged when otel.mlflow.enabled && openshift.
+    # Uses the collector's ServiceAccount token for authentication against
+    # RHOAI MLflow's Kubernetes authorization plugin.
+    rhoaiMlflowAuthConfig:
+      extensions:
+        bearertokenauth/mlflow:
+          filename: /var/run/secrets/kubernetes.io/serviceaccount/token
+      service:
+        extensions: [health_check, bearertokenauth/mlflow]
 
 httpGateway:
   name: http

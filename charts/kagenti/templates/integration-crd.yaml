@@ -1,0 +1,148 @@
+{{- if .Values.featureFlags.integrations }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: integrations.kagenti.io
+  labels:
+    app.kubernetes.io/part-of: kagenti
+spec:
+  group: kagenti.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                repository:
+                  type: object
+                  required: [url, provider]
+                  properties:
+                    url:
+                      type: string
+                    provider:
+                      type: string
+                      enum: [github, gitlab, bitbucket]
+                    branch:
+                      type: string
+                      default: main
+                    credentialsSecret:
+                      type: string
+                agents:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, namespace]
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                webhooks:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, events]
+                    properties:
+                      name:
+                        type: string
+                      events:
+                        type: array
+                        items:
+                          type: string
+                      secret:
+                        type: string
+                      filters:
+                        type: object
+                        properties:
+                          branches:
+                            type: array
+                            items:
+                              type: string
+                          actions:
+                            type: array
+                            items:
+                              type: string
+                schedules:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, cron, skill, agent]
+                    properties:
+                      name:
+                        type: string
+                      cron:
+                        type: string
+                      skill:
+                        type: string
+                      agent:
+                        type: string
+                      enabled:
+                        type: boolean
+                        default: true
+                alerts:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, source, agent]
+                    properties:
+                      name:
+                        type: string
+                      source:
+                        type: string
+                        enum: [prometheus, pagerduty]
+                      matchLabels:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      agent:
+                        type: string
+            status:
+              type: object
+              properties:
+                webhookUrl:
+                  type: string
+                webhookRegistered:
+                  type: boolean
+                lastWebhookEvent:
+                  type: string
+                lastScheduleRun:
+                  type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Provider
+          type: string
+          jsonPath: .spec.repository.provider
+        - name: URL
+          type: string
+          jsonPath: .spec.repository.url
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: integrations
+    singular: integration
+    kind: Integration
+    shortNames:
+      - intg
+{{- end }}

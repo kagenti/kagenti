@@ -9,6 +9,10 @@ Kagenti supports deploying and orchestrating multiple categories of AI‑driven 
 
 Kagenti’s system and security architecture is designed to accommodate the requirements and constraints of each use‑case type.
 
+For platform-wide scenarios organized by persona (deployment, governance,
+observability, identity, developer experience, etc.), see
+[Use Cases](./user-stories.md).
+
 ## 1. Knowledge & Analysis Insight Service​
 
 A read‑only system that retrieves, synthesizes, and analyzes organizational content to deliver evidence‑backed, cited insights without taking external actions. ​

@@ -6,10 +6,23 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "92" "Running UI E2E tests (Playwright)"
 
-# Check Node.js is available
+# Ensure Node.js >= 22 (required by mermaid/chevrotain)
+MIN_NODE_MAJOR=22
 if ! command -v node &>/dev/null; then
     log_info "Node.js not available, skipping UI tests"
     exit 0
+fi
+NODE_MAJOR=$(node --version | sed 's/v\([0-9]*\).*/\1/')
+if [ "$NODE_MAJOR" -lt "$MIN_NODE_MAJOR" ]; then
+    log_info "Node.js $(node --version) < v${MIN_NODE_MAJOR}, upgrading via nvm..."
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    # shellcheck disable=SC1091
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    if command -v nvm &>/dev/null; then
+        nvm install "$MIN_NODE_MAJOR" && nvm use "$MIN_NODE_MAJOR"
+    else
+        log_info "nvm not available — falling back to npm ci with current Node"
+    fi
 fi
 log_info "Using Node.js $(node --version)"
 

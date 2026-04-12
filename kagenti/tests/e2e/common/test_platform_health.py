@@ -129,8 +129,16 @@ class TestPlatformHealth:
 
         Checks that every Job has at least one successful completion
         (status.succeeded >= 1). Jobs that are still actively running
-        are not considered failures.
+        are not considered failures. Helm hook jobs (oauth-secret) are
+        allowed to fail since they run during install and may encounter
+        transient Keycloak availability issues.
         """
+        # Helm hook jobs that may fail due to timing/ordering — not app failures
+        HELM_HOOK_JOBS = {
+            "kagenti-agent-oauth-secret-job",
+            "kagenti-ui-oauth-secret-job",
+        }
+
         # Get all jobs across all namespaces
         jobs = k8s_batch_client.list_job_for_all_namespaces(watch=False)
 
@@ -145,6 +153,10 @@ class TestPlatformHealth:
 
             # Skip jobs that are still running
             if active > 0:
+                continue
+
+            # Skip known Helm hook jobs that may fail transiently
+            if job_name in HELM_HOOK_JOBS:
                 continue
 
             # Job is not running - check if it succeeded

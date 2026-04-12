@@ -11,6 +11,7 @@ from kubernetes.client import ApiException
 
 from app.services.kubernetes import KubernetesService
 from app.core.config import settings
+from app.core.constants import DEFAULT_OFF_CLUSTER_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -268,17 +269,15 @@ def create_route_for_agent_or_tool(
         create_httproute(kube, name, namespace, service_name, service_port)
 
 
-def get_agent_url(name: str, namespace: str) -> str:
+def get_agent_url(name: str, namespace: str, port: int = DEFAULT_OFF_CLUSTER_PORT) -> str:
     """Get the URL for an A2A agent.
 
     Returns different URL formats based on deployment context:
-    - In-cluster: http://{name}.{namespace}.svc.cluster.local:8080
-    - Off-cluster (local dev): http://{name}.{namespace}.{domain}:8080
+    - In-cluster: http://{name}.{namespace}.svc.cluster.local:{port}
+    - Off-cluster (local dev): http://{name}.{namespace}.{domain}:{port}
     """
     if settings.is_running_in_cluster:
-        # In-cluster: use Kubernetes service DNS
-        return f"http://{name}.{namespace}.svc.cluster.local:8080"
+        return f"http://{name}.{namespace}.svc.cluster.local:{port}"
     else:
-        # Off-cluster: use external domain (e.g., localtest.me)
         domain = settings.domain_name
-        return f"http://{name}.{namespace}.{domain}:8080"
+        return f"http://{name}.{namespace}.{domain}:{port}"
