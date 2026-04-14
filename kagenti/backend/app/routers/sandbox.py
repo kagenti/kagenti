@@ -40,6 +40,11 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
+def _safe_log(value: str) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -630,13 +635,13 @@ async def get_session_history(
                                     parsed = json.loads(line)
                                     if isinstance(parsed, dict) and "loop_id" in parsed:
                                         evt_type = parsed.get("type", "")
-                                        _LEGACY = {
+                                        _legacy = {
                                             "plan",
                                             "plan_step",
                                             "reflection",
                                             "llm_response",
                                         }
-                                        if evt_type not in _LEGACY:
+                                        if evt_type not in _legacy:
                                             evt_json = json.dumps(parsed, sort_keys=True)
                                             if evt_json not in seen_event_json:
                                                 seen_event_json.add(evt_json)
@@ -700,7 +705,9 @@ async def get_session_history(
                                 context_id,
                             )
                 except Exception as e:
-                    logger.warning("HISTORY write-back failed for session %s: %s", context_id, e)
+                    logger.warning(
+                        "HISTORY write-back failed for session %s: %s", _safe_log(context_id), e
+                    )
 
             asyncio.create_task(_writeback())
 
@@ -1098,7 +1105,7 @@ async def _resume_agent_graph(
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
-        logger.error("Failed to resume agent %s: %s", agent_name, e)
+        logger.error("Failed to resume agent %s: %s", _safe_log(agent_name), e)
         raise HTTPException(502, f"Failed to resume agent: {e}")
 
     if "error" in data:
@@ -1372,7 +1379,7 @@ async def list_sandbox_agents(namespace: str):
             label_selector="kagenti.io/type=agent",
         )
     except Exception as exc:
-        logger.warning("Failed to list deployments in %s: %s", namespace, exc)
+        logger.warning("Failed to list deployments in %s: %s", _safe_log(namespace), exc)
         return []
 
     # Query session counts from DB (best effort)
@@ -1401,7 +1408,7 @@ async def list_sandbox_agents(namespace: str):
             for row in rows:
                 active_counts[row["agent"]] = row["cnt"]
     except Exception as exc:
-        logger.debug("Could not query session counts for %s: %s", namespace, exc)
+        logger.debug("Could not query session counts for %s: %s", _safe_log(namespace), exc)
 
     result: List[SandboxAgentInfo] = []
     for dep in deployments.items:
@@ -1505,7 +1512,9 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
         except ApiException as e:
             if e.status == 404:
                 continue  # deployment doesn't exist, skip
-            logger.warning("Error reading deployment %s/%s: %s", namespace, deploy_name, e)
+            logger.warning(
+                "Error reading deployment %s/%s: %s", _safe_log(namespace), deploy_name, e
+            )
             continue
 
         replicas = deployment.spec.replicas or 1
@@ -1520,7 +1529,7 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
                 namespace=namespace, label_selector=label_selector
             )
         except ApiException as e:
-            logger.warning("Error listing pods for %s/%s: %s", namespace, deploy_name, e)
+            logger.warning("Error listing pods for %s/%s: %s", _safe_log(namespace), deploy_name, e)
             pods_result.append(
                 {
                     "component": component,
@@ -1629,7 +1638,9 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
                         }
                     )
             except ApiException as e:
-                logger.warning("Error listing events for pod %s/%s: %s", namespace, pod_name, e)
+                logger.warning(
+                    "Error listing events for pod %s/%s: %s", _safe_log(namespace), pod_name, e
+                )
 
             pods_result.append(
                 {
@@ -1685,7 +1696,9 @@ async def get_pod_metrics(namespace: str, agent_name: str):
         except ApiException as e:
             if e.status == 404:
                 continue
-            logger.warning("Error reading deployment %s/%s: %s", namespace, deploy_name, e)
+            logger.warning(
+                "Error reading deployment %s/%s: %s", _safe_log(namespace), deploy_name, e
+            )
             continue
 
         match_labels = deployment.spec.selector.match_labels or {}
@@ -1800,7 +1813,9 @@ async def get_pod_events(namespace: str, agent_name: str):
         except ApiException as e:
             if e.status == 404:
                 continue
-            logger.warning("Error reading deployment %s/%s: %s", namespace, deploy_name, e)
+            logger.warning(
+                "Error reading deployment %s/%s: %s", _safe_log(namespace), deploy_name, e
+            )
             continue
 
         match_labels = deployment.spec.selector.match_labels or {}
@@ -2237,7 +2252,7 @@ _EVENT_CATEGORY_MAP: dict[str, str] = {
 # Registry of active consumers — keyed by (namespace, session_id)
 _active_consumers: dict[tuple[str, str], asyncio.Task] = {}
 
-_TERMINAL_STATES = frozenset({"completed", "failed", "canceled"})
+_terminal_states = frozenset({"completed", "failed", "canceled"})
 
 
 async def _background_event_consumer(
@@ -2379,7 +2394,7 @@ async def _background_event_consumer(
                 check_state = (
                     check_data.get("result", {}).get("status", {}).get("state", "").lower()
                 )
-                if check_state in _TERMINAL_STATES:
+                if check_state in _terminal_states:
                     logger.info(
                         "BGConsumer: task already %s — extracting events from history",
                         check_state,
@@ -2516,7 +2531,7 @@ async def _background_event_consumer(
                     )
 
     except asyncio.CancelledError:
-        logger.info("BGConsumer: cancelled for session=%s", session_id)
+        logger.info("BGConsumer: cancelled for session=%s", _safe_log(session_id))
         raise
     except Exception:
         logger.warning(
@@ -2638,7 +2653,7 @@ def _spawn_background_consumer(
     def _cleanup(t: asyncio.Task) -> None:
         _active_consumers.pop(key, None)
         if t.cancelled():
-            logger.info("BGConsumer: task cancelled for session=%s", session_id)
+            logger.info("BGConsumer: task cancelled for session=%s", _safe_log(session_id))
         elif t.exception():
             logger.warning(
                 "BGConsumer: task failed for session=%s: %s",
@@ -2646,7 +2661,7 @@ def _spawn_background_consumer(
                 t.exception(),
             )
         else:
-            logger.info("BGConsumer: task completed for session=%s", session_id)
+            logger.info("BGConsumer: task completed for session=%s", _safe_log(session_id))
 
     task.add_done_callback(_cleanup)
 
@@ -2690,7 +2705,9 @@ async def _persist_event_row(
                 json.dumps(payload),
             )
     except Exception as exc:
-        logger.debug("Event persist failed (ctx=%s idx=%d): %s", context_id, event_index, exc)
+        logger.debug(
+            "Event persist failed (ctx=%s idx=%d): %s", _safe_log(context_id), event_index, exc
+        )
 
 
 async def _stream_sandbox_response(
@@ -2843,7 +2860,7 @@ async def _stream_sandbox_response(
         },
     }
 
-    logger.info("Starting sandbox SSE stream to %s (session=%s)", agent_url, session_id)
+    logger.info("Starting sandbox SSE stream to %s (session=%s)", agent_url, _safe_log(session_id))
 
     headers = {
         "Content-Type": "application/json",
@@ -2852,14 +2869,14 @@ async def _stream_sandbox_response(
 
     # SSE keepalive interval (seconds). Prevents nginx proxy_read_timeout
     # (default 300s) from killing long-running agent connections.
-    _KEEPALIVE_INTERVAL = 15
+    _keepalive_interval = 15
 
-    _MAX_RESUBSCRIBE = 5  # Max reconnection attempts via tasks/resubscribe
+    _max_resubscribe = 5  # Max reconnection attempts via tasks/resubscribe
     _done_received = False
 
     try:
         # No global read timeout — agent sessions can run 10+ minutes.
-        # Per-line timeout via asyncio.wait_for(_KEEPALIVE_INTERVAL) handles
+        # Per-line timeout via asyncio.wait_for(_keepalive_interval) handles
         # keepalive pings. Connection closes when agent stops streaming.
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(connect=30.0, read=None, write=30.0, pool=None)
@@ -2882,7 +2899,7 @@ async def _stream_sandbox_response(
                     try:
                         line = await asyncio.wait_for(
                             line_iter.__anext__(),
-                            timeout=_KEEPALIVE_INTERVAL,
+                            timeout=_keepalive_interval,
                         )
                     except asyncio.TimeoutError:
                         yield f"data: {json.dumps({'ping': True})}\n\n"
@@ -3084,7 +3101,9 @@ async def _stream_sandbox_response(
                             has_loop_events = False
                             if status_message:
                                 msg_lines = [
-                                    l.strip() for l in status_message.split("\n") if l.strip()
+                                    line.strip()
+                                    for line in status_message.split("\n")
+                                    if line.strip()
                                 ]
                                 logger.info(
                                     "SSE_PARSE session=%s lines=%d preview=%s",
@@ -3229,11 +3248,11 @@ async def _stream_sandbox_response(
 
             # --- Resubscribe loop: reconnect if stream closed without [DONE] ---
             if not _done_received and stream_task_id:
-                for resub_attempt in range(1, _MAX_RESUBSCRIBE + 1):
+                for resub_attempt in range(1, _max_resubscribe + 1):
                     logger.info(
                         "Resubscribe attempt %d/%d: task=%s session=%s",
                         resub_attempt,
-                        _MAX_RESUBSCRIBE,
+                        _max_resubscribe,
                         stream_task_id,
                         session_id,
                     )
@@ -3295,7 +3314,7 @@ async def _stream_sandbox_response(
                                 try:
                                     line = await asyncio.wait_for(
                                         resub_iter.__anext__(),
-                                        timeout=_KEEPALIVE_INTERVAL,
+                                        timeout=_keepalive_interval,
                                     )
                                 except asyncio.TimeoutError:
                                     yield f"data: {json.dumps({'ping': True})}\n\n"
@@ -3367,7 +3386,7 @@ async def _stream_sandbox_response(
                                         status_message = _extract_text_from_parts(parts)
                                         is_final = result.get("final", False)
 
-                                        _LEGACY = {
+                                        _legacy = {
                                             "plan",
                                             "plan_step",
                                             "reflection",
@@ -3376,9 +3395,9 @@ async def _stream_sandbox_response(
                                         has_loop_events = False
                                         if status_message:
                                             msg_lines = [
-                                                l.strip()
-                                                for l in status_message.split("\n")
-                                                if l.strip()
+                                                line.strip()
+                                                for line in status_message.split("\n")
+                                                if line.strip()
                                             ]
                                             for msg_line in msg_lines:
                                                 try:
@@ -3388,7 +3407,7 @@ async def _stream_sandbox_response(
                                                         and "loop_id" in parsed
                                                     ):
                                                         evt_type = parsed.get("type", "")
-                                                        if evt_type in _LEGACY:
+                                                        if evt_type in _legacy:
                                                             continue
                                                         loop_payload = dict(payload)
                                                         loop_payload["loop_id"] = parsed["loop_id"]
@@ -3606,8 +3625,10 @@ async def _persist_and_recover(
 
         # Recovery: if loop didn't complete, poll agent for remaining events
         if session_has_loops and not has_reporter:
-            logger.info("BG persist: triggering recovery for session %s", session_id)
-            await _recover_loop_events_from_agent(agent_url, session_id, namespace, task_db_id)
+            logger.info("BG persist: triggering recovery for session %s", _safe_log(session_id))
+            await _recover_loop_events_from_agent(
+                agent_url, _safe_log(session_id), _safe_log(namespace), task_db_id
+            )
     except Exception:
         logger.warning(
             "BG persist+recover failed for session %s",
@@ -3635,7 +3656,7 @@ async def _recover_loop_events_from_agent(
     attempts, waiting for the task to reach COMPLETED or FAILED state.
     """
     try:
-        _TERMINAL_STATES = {"completed", "failed", "canceled"}
+        _terminal_states = {"completed", "failed", "canceled"}
 
         # Use task_db_id (the A2A task ID captured from the stream) to query
         # the agent. The agent stores tasks by their own UUID (task.id), NOT
@@ -3689,7 +3710,7 @@ async def _recover_loop_events_from_agent(
                     len(history),
                 )
 
-                if task_state in _TERMINAL_STATES:
+                if task_state in _terminal_states:
                     # Task finished — extract events from history
                     for msg in history:
                         for part in msg.get("parts", []):
@@ -3718,7 +3739,7 @@ async def _recover_loop_events_from_agent(
                     delay = min(delay * 2, 60.0)  # cap at 60s
 
         if not recovered_events:
-            logger.info("No loop events recovered from agent for %s", session_id)
+            logger.info("No loop events recovered from agent for %s", _safe_log(session_id))
             return
 
         logger.info(
@@ -3869,10 +3890,10 @@ async def subscribe_session(
 
     task_id = row["id"]
     state = (row["state"] or "").lower()
-    logger.info("Subscribe: session=%s task=%s state=%s", session_id, task_id, state)
+    logger.info("Subscribe: session=%s task=%s state=%s", _safe_log(session_id), task_id, state)
     if state in ("completed", "failed", "canceled"):
         # Task already finished — nothing to subscribe to
-        logger.info("Subscribe: session=%s already %s — sending done", session_id, state)
+        logger.info("Subscribe: session=%s already %s — sending done", _safe_log(session_id), state)
         return StreamingResponse(
             _done_stream(session_id),
             media_type="text/event-stream",
@@ -3919,7 +3940,7 @@ async def _subscribe_stream(
     namespace: str,
 ):
     """Proxy A2A tasks/resubscribe events to the browser."""
-    _KEEPALIVE_INTERVAL = 15
+    _keepalive_interval = 15
     resub_msg = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
@@ -3939,14 +3960,16 @@ async def _subscribe_stream(
                     yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                     return
 
-                logger.info("Subscribe: connected to agent stream for session %s", session_id)
+                logger.info(
+                    "Subscribe: connected to agent stream for session %s", _safe_log(session_id)
+                )
                 line_iter = response.aiter_lines().__aiter__()
 
                 while True:
                     try:
                         line = await asyncio.wait_for(
                             line_iter.__anext__(),
-                            timeout=_KEEPALIVE_INTERVAL,
+                            timeout=_keepalive_interval,
                         )
                     except asyncio.TimeoutError:
                         yield f"data: {json.dumps({'ping': True})}\n\n"
@@ -3959,7 +3982,9 @@ async def _subscribe_stream(
 
                     data = line[6:]
                     if data == "[DONE]":
-                        logger.info("Subscribe: received [DONE] for session %s", session_id)
+                        logger.info(
+                            "Subscribe: received [DONE] for session %s", _safe_log(session_id)
+                        )
                         yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
                         return
 
@@ -3979,15 +4004,15 @@ async def _subscribe_stream(
                         parts = result["status"].get("message", {}).get("parts", [])
                         status_message = _extract_text_from_parts(parts)
                         if status_message:
-                            _LEGACY = {"plan", "plan_step", "reflection", "llm_response"}
+                            _legacy = {"plan", "plan_step", "reflection", "llm_response"}
                             for msg_line in [
-                                l.strip() for l in status_message.split("\n") if l.strip()
+                                line.strip() for line in status_message.split("\n") if line.strip()
                             ]:
                                 try:
                                     parsed = json.loads(msg_line)
                                     if isinstance(parsed, dict) and "loop_id" in parsed:
                                         evt_type = parsed.get("type", "")
-                                        if evt_type not in _LEGACY:
+                                        if evt_type not in _legacy:
                                             loop_payload = dict(payload)
                                             loop_payload["loop_id"] = parsed["loop_id"]
                                             loop_payload["loop_event"] = parsed
