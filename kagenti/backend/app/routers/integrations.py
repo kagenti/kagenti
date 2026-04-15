@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json as json_module
 import logging
+import re
 from typing import Optional
 
 import httpx
@@ -23,6 +24,15 @@ from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 
 logger = logging.getLogger(__name__)
+
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -164,10 +174,10 @@ async def list_integrations(
         items = [_crd_to_summary(obj) for obj in result.get("items", [])]
         return IntegrationListResponse(items=items)
     except Exception as e:
-        logger.error(f"Failed to list integrations in {namespace}: {e}")
+        logger.error("Failed to list integrations in %s: %s", _safe_log(namespace), e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list integrations: {e!s}",
+            detail="Failed to list integrations",
         )
 
 
@@ -202,10 +212,12 @@ async def get_integration(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Integration {namespace}/{name} not found",
             )
-        logger.error(f"Failed to get integration {namespace}/{name}: {e}")
+        logger.error(
+            "Failed to get integration %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get integration: {e!s}",
+            detail="Failed to get integration",
         )
 
 
@@ -257,10 +269,10 @@ async def create_integration(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Integration {request.name} already exists in {request.namespace}",
             )
-        logger.error(f"Failed to create integration: {e}")
+        logger.error("Failed to create integration: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create integration: {e!s}",
+            detail="Failed to create integration",
         )
 
 
@@ -305,10 +317,12 @@ async def update_integration(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Integration {namespace}/{name} not found",
             )
-        logger.error(f"Failed to update integration {namespace}/{name}: {e}")
+        logger.error(
+            "Failed to update integration %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update integration: {e!s}",
+            detail="Failed to update integration",
         )
 
 
@@ -337,10 +351,12 @@ async def delete_integration(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Integration {namespace}/{name} not found",
             )
-        logger.error(f"Failed to delete integration {namespace}/{name}: {e}")
+        logger.error(
+            "Failed to delete integration %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete integration: {e!s}",
+            detail="Failed to delete integration",
         )
 
 
@@ -363,6 +379,11 @@ async def test_integration_connection(
             name=name,
         )
         repo_url = obj.get("spec", {}).get("repository", {}).get("url", "")
+        if not repo_url.startswith("https://"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Repository URL must use HTTPS",
+            )
         async with httpx.AsyncClient() as client:
             response = await client.head(repo_url, timeout=10.0, follow_redirects=True)
             if response.status_code < 400:
@@ -372,11 +393,15 @@ async def test_integration_connection(
                 "message": f"Repository returned status {response.status_code}",
             }
     except httpx.HTTPError as e:
-        return {"success": False, "message": f"Connection failed: {e!s}"}
+        logger.warning(
+            "Connection test failed for %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
+        return {"success": False, "message": "Connection failed"}
     except Exception as e:
+        logger.error("Test failed for %s/%s: %s", _safe_log(namespace), _safe_log(name), e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Test failed: {e!s}",
+            detail="Integration connection test failed",
         )
 
 
@@ -468,10 +493,10 @@ async def receive_webhook(
     # Log the event
     logger.info(
         "Webhook received: integration=%s/%s event=%s delivery=%s agents=%d",
-        namespace,
-        name,
-        event_type,
-        delivery_id,
+        _safe_log(namespace),
+        _safe_log(name),
+        _safe_log(event_type),
+        _safe_log(delivery_id),
         len(agents),
     )
 
@@ -515,13 +540,13 @@ async def receive_webhook(
                     }
                 )
         except Exception as e:
-            logger.error("Failed to forward webhook to %s: %s", agent_name, e)
+            logger.error("Failed to forward webhook to %s: %s", _safe_log(agent_name), e)
             results.append(
                 {
                     "agent": f"{agent_ns}/{agent_name}",
                     "status": 0,
                     "success": False,
-                    "error": str(e),
+                    "error": "Failed to deliver webhook to agent",
                 }
             )
 

@@ -23,6 +23,13 @@ from app.services.kubernetes import KubernetesService, get_kubernetes_service
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -136,7 +143,9 @@ def _find_pod(
             label_selector=f"app.kubernetes.io/name={agent_name}",
         )
     except ApiException as exc:
-        logger.error("K8s error listing pods for %s/%s: %s", namespace, agent_name, exc)
+        logger.error(
+            "K8s error listing pods for %s/%s: %s", _safe_log(namespace), _safe_log(agent_name), exc
+        )
         raise HTTPException(status_code=502, detail="Failed to list pods.") from exc
 
     for pod in pods.items:
@@ -178,8 +187,8 @@ def _exec_in_pod(
     except ApiException as exc:
         logger.error(
             "K8s exec error in %s/%s: %s",
-            namespace,
-            pod_name,
+            _safe_log(namespace),
+            _safe_log(pod_name),
             exc,
         )
         raise HTTPException(status_code=502, detail="Failed to exec in pod.") from exc

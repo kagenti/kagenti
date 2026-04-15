@@ -14,6 +14,7 @@ Key hierarchy:
 
 import logging
 import os
+import re
 from typing import Optional
 
 import httpx
@@ -24,6 +25,15 @@ from app.core.auth import require_roles, ROLE_ADMIN, ROLE_VIEWER
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 
 logger = logging.getLogger(__name__)
+
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
 
 router = APIRouter(prefix="/llm", tags=["llm-keys"])
 
@@ -163,7 +173,9 @@ async def _ensure_team(
     team_id = data.get("team_id", "")
     if not team_id:
         raise HTTPException(status_code=500, detail="LiteLLM did not return team_id")
-    logger.info("Created litellm team %s for namespace %s", team_id, namespace)
+    logger.info(
+        "Created litellm team %s for namespace %s", _safe_log(team_id), _safe_log(namespace)
+    )
     return team_id
 
 
@@ -233,7 +245,11 @@ async def create_team(
                 "kagenti.io/litellm-team-id": team_id,
             },
         )
-    logger.info("Created team %s + default key for namespace %s", team_id, req.namespace)
+    logger.info(
+        "Created team %s + default key for namespace %s",
+        _safe_log(team_id),
+        _safe_log(req.namespace),
+    )
 
     return TeamResponse(
         team_id=team_id,
@@ -332,9 +348,14 @@ async def create_agent_key(
                 "kagenti.io/litellm-team-id": team_id,
             },
         )
-        logger.info("Created agent key %s in %s/%s", req.agent_name, req.namespace, secret_name)
+        logger.info(
+            "Created agent key for agent %s in %s/%s",
+            _safe_log(req.agent_name),
+            _safe_log(req.namespace),
+            _safe_log(secret_name),
+        )
     else:
-        logger.info("Agent key %s already exists (idempotent)", req.agent_name)
+        logger.info("Agent key for %s already exists (idempotent)", _safe_log(req.agent_name))
 
     return KeyResponse(
         key_alias=req.agent_name,
@@ -395,18 +416,22 @@ async def delete_agent_key(
                 token = k.get("token", k.get("key", ""))
                 if token:
                     await _litellm_request("POST", "/key/delete", json={"keys": [token]})
-                    logger.info("Revoked litellm key for %s", agent_name)
+                    logger.info("Revoked litellm key for %s", _safe_log(agent_name))
                 break
     except HTTPException:
-        logger.warning("Could not revoke litellm key for %s (litellm may be down)", agent_name)
+        logger.warning(
+            "Could not revoke litellm key for %s (litellm may be down)", _safe_log(agent_name)
+        )
 
     # Delete k8s secret
     secret_name = f"{agent_name}-llm-key"
     try:
         kube.core_api.delete_namespaced_secret(secret_name, namespace)
-        logger.info("Deleted secret %s/%s", namespace, secret_name)
+        logger.info("Deleted secret %s/%s", _safe_log(namespace), _safe_log(secret_name))
     except Exception:
-        logger.warning("Could not delete secret %s/%s", namespace, secret_name)
+        logger.warning(
+            "Could not delete secret %s/%s", _safe_log(namespace), _safe_log(secret_name)
+        )
 
     return {"status": "deleted", "agent_name": agent_name, "namespace": namespace}
 

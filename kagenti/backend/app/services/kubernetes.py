@@ -20,6 +20,12 @@ from app.core.constants import ENABLED_NAMESPACE_LABEL_KEY, ENABLED_NAMESPACE_LA
 logger = logging.getLogger(__name__)
 
 
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 def _sanitize(value: str) -> str:
     """Strip newlines and control characters to prevent log injection (CWE-117).
 
@@ -395,7 +401,9 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error deleting Deployment %s in %s: %s", _safe_log(name), _safe_log(namespace), e
+            )
             raise
 
     def patch_deployment(self, namespace: str, name: str, body: dict) -> dict:
@@ -436,7 +444,9 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting Service {name} in {namespace}: {e}")
+            logger.error(
+                "Error getting Service %s in %s: %s", _safe_log(name), _safe_log(namespace), e
+            )
             raise
 
     def list_services(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:

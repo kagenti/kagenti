@@ -39,6 +39,19 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 # Kubernetes name validation: lowercase alphanumeric + dashes, max 63 chars
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
+# Cluster-local URL pattern for SSRF prevention (CWE-918)
+_CLUSTER_LOCAL_URL_RE = re.compile(
+    r"^http://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    r"\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.svc\.cluster\.local:\d+$"
+)
+
+
+def _validate_agent_url(agent_url: str) -> str:
+    """Validate that agent_url is a cluster-local service URL (SSRF prevention)."""
+    if not _CLUSTER_LOCAL_URL_RE.match(agent_url):
+        raise ValueError(f"Invalid agent URL: must be a cluster-local service URL")
+    return agent_url
+
 
 def _safe_log(value: object) -> str:
     """Sanitize user input for logging (CWE-117 log injection prevention)."""
@@ -1511,7 +1524,10 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
             if e.status == 404:
                 continue  # deployment doesn't exist, skip
             logger.warning(
-                "Error reading deployment %s/%s: %s", _safe_log(namespace), deploy_name, e
+                "Error reading deployment %s/%s: %s",
+                _safe_log(namespace),
+                deploy_name,
+                _safe_log(e),
             )
             continue
 
@@ -1527,7 +1543,9 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
                 namespace=namespace, label_selector=label_selector
             )
         except ApiException as e:
-            logger.warning("Error listing pods for %s/%s: %s", _safe_log(namespace), deploy_name, e)
+            logger.warning(
+                "Error listing pods for %s/%s: %s", _safe_log(namespace), deploy_name, _safe_log(e)
+            )
             pods_result.append(
                 {
                     "component": component,
@@ -1695,7 +1713,10 @@ async def get_pod_metrics(namespace: str, agent_name: str):
             if e.status == 404:
                 continue
             logger.warning(
-                "Error reading deployment %s/%s: %s", _safe_log(namespace), deploy_name, e
+                "Error reading deployment %s/%s: %s",
+                _safe_log(namespace),
+                deploy_name,
+                _safe_log(e),
             )
             continue
 
@@ -1812,7 +1833,10 @@ async def get_pod_events(namespace: str, agent_name: str):
             if e.status == 404:
                 continue
             logger.warning(
-                "Error reading deployment %s/%s: %s", _safe_log(namespace), deploy_name, e
+                "Error reading deployment %s/%s: %s",
+                _safe_log(namespace),
+                deploy_name,
+                _safe_log(e),
             )
             continue
 
@@ -1981,7 +2005,7 @@ async def chat_send(
     agent_name = await _resolve_agent_name(namespace, request.session_id, request.agent_name)
     if not _K8S_NAME_RE.match(agent_name):
         raise HTTPException(400, "Invalid resolved agent name")
-    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    agent_url = _validate_agent_url(f"http://{agent_name}.{namespace}.svc.cluster.local:8000")
 
     metadata: dict = {"username": user.username}
     if request.skill:
@@ -2008,7 +2032,8 @@ async def chat_send(
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
-        raise HTTPException(502, f"Agent error: {e}")
+        logger.error("Agent error: %s", e)
+        raise HTTPException(502, "Agent communication error")
 
     result = data.get("result", {})
     if "error" in data:
@@ -2276,6 +2301,7 @@ async def _background_event_consumer(
     ALL events are persisted to the events table and loop_events metadata
     blob, even if the UI disconnects mid-stream.
     """
+    _validate_agent_url(agent_url)
     _event_counter: int = 0
     loop_events: list[dict] = []
     _last_persisted_count: int = 0
@@ -2287,7 +2313,7 @@ async def _background_event_consumer(
         "BGConsumer: STARTED session=%s task=%s agent_url=%s",
         _safe_log(session_id),
         _safe_log(task_id),
-        agent_url,
+        _safe_log(agent_url),
     )
 
     async def _persist_event(parsed: dict) -> None:
@@ -2720,6 +2746,7 @@ async def _stream_sandbox_response(
     skill: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator that proxies A2A SSE events from the agent."""
+    _validate_agent_url(agent_url)
     owner_set = False
     loop_events_persisted = False  # Guard against double-write of loop events
     session_has_loops = False  # Session-level flag: once loop_id seen, suppress flat events
@@ -2860,7 +2887,11 @@ async def _stream_sandbox_response(
         },
     }
 
-    logger.info("Starting sandbox SSE stream to %s (session=%s)", agent_url, _safe_log(session_id))
+    logger.info(
+        "Starting sandbox SSE stream to %s (session=%s)",
+        _safe_log(agent_url),
+        _safe_log(session_id),
+    )
 
     headers = {
         "Content-Type": "application/json",
@@ -3474,13 +3505,11 @@ async def _stream_sandbox_response(
         logger.error("%s: %s", error_msg, _safe_log(e.response.text[:500]))
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
     except (httpx.RequestError, httpx.ReadError, httpx.RemoteProtocolError) as e:
-        error_msg = f"Connection error: {str(e)}"
-        logger.warning("%s — will poll for completion in finally block", error_msg)
-        yield f"data: {json.dumps({'error': error_msg, 'retry': True, 'session_id': session_id})}\n\n"
+        logger.warning("Connection error: %s — will poll for completion in finally block", str(e))
+        yield f"data: {json.dumps({'error': 'Connection error: agent unavailable', 'retry': True, 'session_id': session_id})}\n\n"
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+        logger.error("Unexpected error: %s", str(e), exc_info=True)
+        yield f"data: {json.dumps({'error': 'Unexpected server error', 'session_id': session_id})}\n\n"
     finally:
         logger.info(
             "Stream finally block for session %s: %d loop events, persisted=%s, task_id=%s",
@@ -3585,8 +3614,8 @@ async def _persist_and_recover(
                 logger.info(
                     "BG persist: WRITING session=%s agent=%s owner=%s events=%d json_len=%d",
                     _safe_log(session_id),
-                    meta.get("agent_name", "(none)"),
-                    meta.get("owner", "(none)"),
+                    _safe_log(meta.get("agent_name", "(none)")),
+                    _safe_log(meta.get("owner", "(none)")),
                     len(meta.get("loop_events", [])),
                     len(meta_json),
                 )
@@ -3651,6 +3680,7 @@ async def _recover_loop_events_from_agent(
     Polls with exponential backoff (5s, 10s, 20s, ...) up to max_retries
     attempts, waiting for the task to reach COMPLETED or FAILED state.
     """
+    _validate_agent_url(agent_url)
     try:
         _terminal_states = {"completed", "failed", "canceled"}
 
@@ -3940,6 +3970,7 @@ async def _subscribe_stream(
     namespace: str,
 ):
     """Proxy A2A tasks/resubscribe events to the browser."""
+    _validate_agent_url(agent_url)
     _keepalive_interval = 15
     resub_msg = {
         "jsonrpc": "2.0",
@@ -4021,4 +4052,4 @@ async def _subscribe_stream(
 
     except Exception as e:
         logger.warning("Subscribe stream error: %s", e)
-        yield f"data: {json.dumps({'error': str(e), 'session_id': session_id})}\n\n"
+        yield f"data: {json.dumps({'error': 'Subscribe stream error', 'session_id': session_id})}\n\n"

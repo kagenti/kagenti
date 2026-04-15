@@ -64,6 +64,12 @@ _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 _SAFE_REPO_URL = re.compile(r"^https://", re.IGNORECASE)
 
 
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -691,8 +697,8 @@ async def create_sandbox(
     if security_warnings:
         logger.warning(
             "Security warnings for '%s': %s",
-            composable_name,
-            "; ".join(security_warnings),
+            _safe_log(composable_name),
+            "; ".join(_safe_log(w) for w in security_warnings),
         )
 
     # --- Create credential Secrets when the user provides new values ---
@@ -711,9 +717,13 @@ async def create_sandbox(
                 string_data={"apikey": request.llm_api_key},
                 labels=managed_labels,
             )
-            logger.info(f"Created LLM API key Secret '{llm_secret}' in namespace '{namespace}'")
+            logger.info(
+                "Created LLM API key Secret '%s' in namespace '%s'",
+                _safe_log(llm_secret),
+                _safe_log(namespace),
+            )
         except ApiException as e:
-            logger.error(f"Failed to create LLM Secret: {e}")
+            logger.error("Failed to create LLM Secret: %s", e)
             return SandboxCreateResponse(
                 status="failed",
                 message=f"Failed to create LLM API key Secret: {e.reason}",
@@ -734,10 +744,11 @@ async def create_sandbox(
                 labels=managed_labels,
             )
             logger.info(
-                f"Created GitHub PAT Secret '{github_pat_secret}' in namespace '{namespace}'"
+                "Created GitHub PAT Secret '<redacted>' in namespace '%s'",
+                _safe_log(namespace),
             )
         except ApiException as e:
-            logger.error(f"Failed to create GitHub PAT Secret: {e}")
+            logger.error("Failed to create GitHub PAT Secret: %s", e)
             return SandboxCreateResponse(
                 status="failed",
                 message=f"Failed to create GitHub PAT Secret: {e.reason}",
@@ -746,9 +757,8 @@ async def create_sandbox(
         # Use an existing K8s secret by name (no new secret created)
         github_pat_secret = request.github_pat_secret_name
         logger.info(
-            "Using existing GitHub PAT Secret '%s' in namespace '%s'",
-            github_pat_secret,
-            namespace,
+            "Using existing GitHub PAT Secret '<redacted>' in namespace '%s'",
+            _safe_log(namespace),
         )
 
     deployment_manifest = _build_deployment_manifest(
@@ -793,12 +803,12 @@ async def create_sandbox(
             )
             logger.info(
                 "Created workspace PVC '%s' (%s)",
-                workspace_pvc_name,
-                request.workspace_size,
+                _safe_log(workspace_pvc_name),
+                _safe_log(request.workspace_size),
             )
         except ApiException as e:
             if e.status == 409:
-                logger.info("Workspace PVC '%s' already exists", workspace_pvc_name)
+                logger.info("Workspace PVC '%s' already exists", _safe_log(workspace_pvc_name))
             else:
                 logger.error("Failed to create workspace PVC: %s", e)
                 return SandboxCreateResponse(
@@ -818,8 +828,8 @@ async def create_sandbox(
             )
             logger.info(
                 "Created Squid ConfigMap '%s-squid-config' (domains: %s)",
-                request.name,
-                request.proxy_domains or request.proxy_allowlist or "DENY ALL",
+                _safe_log(request.name),
+                _safe_log(request.proxy_domains or request.proxy_allowlist or "DENY ALL"),
             )
         except Exception as e:
             logger.warning("Failed to create/update Squid ConfigMap: %s", e)
@@ -828,21 +838,25 @@ async def create_sandbox(
         proxy_deploy, proxy_svc = _build_egress_proxy_manifests(request)
         try:
             kube.create_deployment(namespace=namespace, body=proxy_deploy)
-            logger.info("Created egress proxy Deployment '%s-egress-proxy'", request.name)
+            logger.info(
+                "Created egress proxy Deployment '%s-egress-proxy'", _safe_log(request.name)
+            )
         except ApiException as e:
             if e.status == 409:
                 # Update existing proxy with new resource limits / config
                 proxy_name = f"{request.name}-egress-proxy"
                 try:
                     kube.patch_deployment(name=proxy_name, namespace=namespace, body=proxy_deploy)
-                    logger.info("Updated egress proxy Deployment '%s'", proxy_name)
+                    logger.info("Updated egress proxy Deployment '%s'", _safe_log(proxy_name))
                 except Exception as patch_err:
-                    logger.warning("Failed to update egress proxy '%s': %s", proxy_name, patch_err)
+                    logger.warning(
+                        "Failed to update egress proxy '%s': %s", _safe_log(proxy_name), patch_err
+                    )
             else:
                 logger.warning("Failed to create egress proxy Deployment: %s", e)
         try:
             kube.create_service(namespace=namespace, body=proxy_svc)
-            logger.info("Created egress proxy Service '%s-egress-proxy'", request.name)
+            logger.info("Created egress proxy Service '%s-egress-proxy'", _safe_log(request.name))
         except ApiException as e:
             if e.status == 409:
                 logger.info("Egress proxy Service already exists")
@@ -852,7 +866,11 @@ async def create_sandbox(
     # --- Create the agent Deployment ---
     try:
         kube.create_deployment(namespace=namespace, body=deployment_manifest)
-        logger.info(f"Created Deployment '{request.name}' in namespace '{namespace}'")
+        logger.info(
+            "Created Deployment '%s' in namespace '%s'",
+            _safe_log(request.name),
+            _safe_log(namespace),
+        )
     except ApiException as e:
         if e.status == 409:
             # Update existing deployment with new config (redeploy/reconfigure)
@@ -860,11 +878,17 @@ async def create_sandbox(
                 kube.patch_deployment(
                     name=request.name, namespace=namespace, body=deployment_manifest
                 )
-                logger.info(f"Updated Deployment '{request.name}' in namespace '{namespace}'")
+                logger.info(
+                    "Updated Deployment '%s' in namespace '%s'",
+                    _safe_log(request.name),
+                    _safe_log(namespace),
+                )
             except Exception as patch_err:
-                logger.warning(f"Failed to update Deployment '{request.name}': {patch_err}")
+                logger.warning(
+                    "Failed to update Deployment '%s': %s", _safe_log(request.name), patch_err
+                )
         else:
-            logger.error(f"Failed to create Deployment: {e}")
+            logger.error("Failed to create Deployment: %s", e)
             return SandboxCreateResponse(
                 status="failed",
                 message=f"Failed to create Deployment: {e.reason}",
@@ -873,12 +897,18 @@ async def create_sandbox(
     # --- Create the Service ---
     try:
         kube.create_service(namespace=namespace, body=service_manifest)
-        logger.info(f"Created Service '{request.name}' in namespace '{namespace}'")
+        logger.info(
+            "Created Service '%s' in namespace '%s'", _safe_log(request.name), _safe_log(namespace)
+        )
     except ApiException as e:
         if e.status == 409:
-            logger.warning(f"Service '{request.name}' already exists in namespace '{namespace}'")
+            logger.warning(
+                "Service '%s' already exists in namespace '%s'",
+                _safe_log(request.name),
+                _safe_log(namespace),
+            )
         else:
-            logger.error(f"Failed to create Service: {e}")
+            logger.error("Failed to create Service: %s", e)
             return SandboxCreateResponse(
                 status="failed",
                 message=f"Failed to create Service: {e.reason}",
@@ -896,12 +926,16 @@ async def create_sandbox(
                 service_name=request.name,
                 service_port=8000,
             )
-            logger.info(f"Created Route for '{request.name}' in namespace '{namespace}'")
+            logger.info(
+                "Created Route for '%s' in namespace '%s'",
+                _safe_log(request.name),
+                _safe_log(namespace),
+            )
         # Build the in-cluster URL regardless of platform
         agent_url = f"http://{request.name}.{namespace}.svc.cluster.local:8000"
     except ApiException as e:
         # Route creation failure is non-fatal — the agent is still accessible in-cluster
-        logger.warning(f"Failed to create Route for '{request.name}': {e}")
+        logger.warning("Failed to create Route for '%s': %s", _safe_log(request.name), e)
 
     return SandboxCreateResponse(
         status="deploying",
@@ -957,13 +991,15 @@ async def delete_sandbox(
         try:
             delete_fn()
             deleted.append(f"{kind}/{rname}")
-            logger.info("Deleted %s '%s' from namespace '%s'", kind, rname, namespace)
+            logger.info(
+                "Deleted %s '%s' from namespace '%s'", kind, _safe_log(rname), _safe_log(namespace)
+            )
         except ApiException as e:
             if e.status == 404:
                 pass  # Already gone
             else:
                 errors.append(f"{kind}/{rname}: {e.reason}")
-                logger.warning("Failed to delete %s '%s': %s", kind, rname, e)
+                logger.warning("Failed to delete %s '%s': %s", kind, _safe_log(rname), e)
 
     return {
         "status": "deleted" if not errors else "partial",
@@ -1036,7 +1072,9 @@ async def get_sandbox_config(
     try:
         deployment = kube.get_deployment(namespace=namespace, name=name)
     except ApiException as e:
-        logger.error("Failed to read Deployment %s/%s: %s", namespace, name, e)
+        logger.error(
+            "Failed to read Deployment %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
         return {"error": f"Deployment not found: {e.reason}"}
 
     annotations: dict = (deployment.get("metadata") or {}).get("annotations") or {}
@@ -1081,7 +1119,9 @@ async def update_sandbox(
     try:
         current = kube.get_deployment(namespace=namespace, name=name)
     except ApiException as e:
-        logger.error("Failed to read Deployment %s/%s: %s", namespace, name, e)
+        logger.error(
+            "Failed to read Deployment %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
         return SandboxCreateResponse(
             status="failed",
             message=f"Deployment '{name}' not found in namespace '{namespace}': {e.reason}",
@@ -1100,8 +1140,8 @@ async def update_sandbox(
             logger.info(
                 "Build field '%s' changed: '%s' -> '%s'",
                 field,
-                old_val,
-                new_val,
+                _safe_log(old_val),
+                _safe_log(new_val),
             )
 
     # 3. Rebuild the deployment manifest (resolve GitHub PAT secret reference)
@@ -1135,9 +1175,13 @@ async def update_sandbox(
     # 5. Patch the Deployment
     try:
         kube.patch_deployment(namespace=namespace, name=name, body=deployment_manifest)
-        logger.info("Patched Deployment '%s' in namespace '%s'", name, namespace)
+        logger.info(
+            "Patched Deployment '%s' in namespace '%s'", _safe_log(name), _safe_log(namespace)
+        )
     except ApiException as e:
-        logger.error("Failed to patch Deployment %s/%s: %s", namespace, name, e)
+        logger.error(
+            "Failed to patch Deployment %s/%s: %s", _safe_log(namespace), _safe_log(name), e
+        )
         return SandboxCreateResponse(
             status="failed",
             message=f"Failed to patch Deployment: {e.reason}",
@@ -1161,8 +1205,8 @@ async def update_sandbox(
             )
             logger.info(
                 "Updated Squid ConfigMap '%s-squid-config' (domains: %s)",
-                name,
-                new_proxy_domains or "DENY ALL",
+                _safe_log(name),
+                _safe_log(new_proxy_domains or "DENY ALL"),
             )
         except Exception as e:
             logger.warning("Failed to update Squid ConfigMap: %s", e)
@@ -1179,7 +1223,7 @@ async def update_sandbox(
                 name=f"{name}-egress-proxy",
                 body=proxy_deploy,
             )
-            logger.info("Patched egress proxy Deployment '%s-egress-proxy'", name)
+            logger.info("Patched egress proxy Deployment '%s-egress-proxy'", _safe_log(name))
         except ApiException as e:
             if e.status == 404:
                 logger.info("Egress proxy not found, skipping update")

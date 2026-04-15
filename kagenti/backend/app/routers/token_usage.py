@@ -11,6 +11,7 @@ for individual sessions and session trees (parent + children).
 import json
 import logging
 import os
+import re
 from collections import defaultdict
 from typing import Any, Dict, List
 
@@ -22,6 +23,16 @@ from app.core.auth import require_roles, ROLE_VIEWER
 from app.services.session_db import get_session_pool
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
+# Kubernetes-style name validation (RFC 1123 DNS label)
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 router = APIRouter(prefix="/token-usage", tags=["token-usage"])
 
@@ -198,19 +209,26 @@ async def _get_request_ids_from_metadata(context_id: str, namespace: str) -> Lis
             )
             return meta.get("llm_request_ids", [])
     except Exception as exc:
-        logger.warning("Failed to query task metadata for context_id=%s: %s", context_id, exc)
+        logger.warning(
+            "Failed to query task metadata for context_id=%s: %s", _safe_log(context_id), exc
+        )
     return []
 
 
 async def _fetch_from_budget_proxy(context_id: str) -> SessionTokenUsage | None:
     """Try to fetch session usage from the LLM Budget Proxy."""
+    # Validate context_id to prevent SSRF via path traversal (CWE-918)
+    if not _K8S_NAME_RE.match(context_id) and not re.match(r"^[a-zA-Z0-9_-]+$", context_id):
+        logger.warning("Invalid context_id rejected for budget proxy: %s", _safe_log(context_id))
+        return None
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             resp = await client.get(f"{LLM_BUDGET_PROXY_URL}/internal/usage/{context_id}")
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
-            logger.debug("Budget proxy unavailable for %s: %s", context_id, exc)
+            logger.debug("Budget proxy unavailable for %s: %s", _safe_log(context_id), exc)
             return None
 
     if not data.get("call_count"):
