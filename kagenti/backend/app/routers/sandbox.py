@@ -40,10 +40,14 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
-def _safe_log(value: str) -> str:
+def _safe_log(value: object) -> str:
     """Sanitize user input for logging (CWE-117 log injection prevention)."""
-    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
 
+
+# Legacy event types filtered out during loop-event processing
+_LEGACY_EVENT_TYPES = frozenset({"plan", "plan_step", "reflection", "llm_response"})
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -635,13 +639,7 @@ async def get_session_history(
                                     parsed = json.loads(line)
                                     if isinstance(parsed, dict) and "loop_id" in parsed:
                                         evt_type = parsed.get("type", "")
-                                        _legacy = {
-                                            "plan",
-                                            "plan_step",
-                                            "reflection",
-                                            "llm_response",
-                                        }
-                                        if evt_type not in _legacy:
+                                        if evt_type not in _LEGACY_EVENT_TYPES:
                                             evt_json = json.dumps(parsed, sort_keys=True)
                                             if evt_json not in seen_event_json:
                                                 seen_event_json.add(evt_json)
@@ -673,7 +671,7 @@ async def get_session_history(
         persisted_loop_events = all_loop_events
         logger.info(
             "HISTORY session=%s tasks=%d total_events=%d unique=%d types=%s",
-            context_id,
+            _safe_log(context_id),
             len(rows),
             total_raw_count,
             len(all_loop_events),
@@ -702,7 +700,7 @@ async def get_session_history(
                             logger.info(
                                 "HISTORY write-back: saved %d events to metadata for session %s",
                                 len(all_loop_events),
-                                context_id,
+                                _safe_log(context_id),
                             )
                 except Exception as e:
                     logger.warning(
@@ -1012,9 +1010,9 @@ async def approve_session(
     _validate_namespace(namespace)
     logger.info(
         "User %s approved HITL request for session %s in namespace %s",
-        user.username,
-        context_id,
-        namespace,
+        _safe_log(user.username),
+        _safe_log(context_id),
+        _safe_log(namespace),
     )
     return await _resume_agent_graph(namespace, context_id, user, approved=True)
 
@@ -1035,9 +1033,9 @@ async def deny_session(
     _validate_namespace(namespace)
     logger.info(
         "User %s denied HITL request for session %s in namespace %s",
-        user.username,
-        context_id,
-        namespace,
+        _safe_log(user.username),
+        _safe_log(context_id),
+        _safe_log(namespace),
     )
     return await _resume_agent_graph(namespace, context_id, user, approved=False)
 
@@ -1248,7 +1246,7 @@ async def cleanup_stale_sessions(
             logger.info(
                 "Cleanup: marked task %s (context_id=%s) as failed (agent timeout)",
                 row["id"],
-                row["context_id"],
+                _safe_log(row["context_id"]),
             )
 
     return CleanupResponse(cleaned=cleaned)
@@ -1474,7 +1472,7 @@ async def get_sandbox_agent_card(namespace: str, agent_name: str):
     except httpx.HTTPStatusError as e:
         raise HTTPException(e.response.status_code, f"Agent returned {e.response.status_code}")
     except httpx.RequestError as e:
-        logger.warning("Failed to fetch agent card from %s: %s", card_url, e)
+        logger.warning("Failed to fetch agent card from %s: %s", _safe_log(card_url), e)
         raise HTTPException(503, f"Cannot reach agent {agent_name}")
 
 
@@ -1759,7 +1757,7 @@ async def get_pod_metrics(namespace: str, agent_name: str):
                     if e.status != 404:
                         logger.warning(
                             "Error fetching metrics for pod %s/%s: %s",
-                            namespace,
+                            _safe_log(namespace),
                             pod_name,
                             e,
                         )
@@ -1856,7 +1854,7 @@ async def get_pod_events(namespace: str, agent_name: str):
             except ApiException as e:
                 logger.warning(
                     "Error listing events for pod %s/%s: %s",
-                    namespace,
+                    _safe_log(namespace),
                     pod_name,
                     e,
                 )
@@ -1932,9 +1930,9 @@ async def _resolve_agent_name(
                 if srow["agent_name"] != request_agent:
                     logger.info(
                         "Resolved agent from sessions table: %s (request had %s) for session %s",
-                        srow["agent_name"],
-                        request_agent,
-                        session_id[:12],
+                        _safe_log(srow["agent_name"]),
+                        _safe_log(request_agent),
+                        _safe_log(session_id[:12]),
                     )
                 return srow["agent_name"]
 
@@ -1950,9 +1948,9 @@ async def _resolve_agent_name(
                     if bound_agent != request_agent:
                         logger.info(
                             "Resolved agent from DB: %s (request had %s) for session %s",
-                            bound_agent,
-                            request_agent,
-                            session_id[:12],
+                            _safe_log(bound_agent),
+                            _safe_log(request_agent),
+                            _safe_log(session_id[:12]),
                         )
                     return bound_agent
     except Exception as e:
@@ -1981,6 +1979,8 @@ async def chat_send(
 
     # Resolve agent name: for existing sessions, use DB-bound agent
     agent_name = await _resolve_agent_name(namespace, request.session_id, request.agent_name)
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid resolved agent name")
     agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
 
     metadata: dict = {"username": user.username}
@@ -2285,8 +2285,8 @@ async def _background_event_consumer(
 
     logger.info(
         "BGConsumer: STARTED session=%s task=%s agent_url=%s",
-        session_id,
-        task_id,
+        _safe_log(session_id),
+        _safe_log(task_id),
         agent_url,
     )
 
@@ -2355,7 +2355,7 @@ async def _background_event_consumer(
 
                     logger.debug(
                         "BGConsumer: event session=%s type=%s step=%s",
-                        session_id,
+                        _safe_log(session_id),
                         evt_type,
                         parsed.get("step", ""),
                     )
@@ -2425,13 +2425,13 @@ async def _background_event_consumer(
                 logger.warning(
                     "BGConsumer: resubscribe returned %d for session=%s",
                     response.status_code,
-                    session_id,
+                    _safe_log(session_id),
                 )
                 return False
 
             logger.info(
                 "BGConsumer: connected to agent stream session=%s task=%s",
-                session_id,
+                _safe_log(session_id),
                 task_id,
             )
             line_iter = response.aiter_lines().__aiter__()
@@ -2447,7 +2447,7 @@ async def _background_event_consumer(
                 except StopAsyncIteration:
                     logger.info(
                         "BGConsumer: stream exhausted for session=%s",
-                        session_id,
+                        _safe_log(session_id),
                     )
                     return False  # stream ended without [DONE]
 
@@ -2461,7 +2461,7 @@ async def _background_event_consumer(
                 if data == "[DONE]":
                     logger.info(
                         "BGConsumer: [DONE] received for session=%s (%d events)",
-                        session_id,
+                        _safe_log(session_id),
                         len(loop_events),
                     )
                     _done_received = True
@@ -2510,7 +2510,7 @@ async def _background_event_consumer(
                         "BGConsumer: connection error attempt %d/%d session=%s: %s",
                         attempt,
                         _max_reconnect,
-                        session_id,
+                        _safe_log(session_id),
                         exc,
                     )
 
@@ -2520,14 +2520,14 @@ async def _background_event_consumer(
                         delay,
                         attempt,
                         _max_reconnect,
-                        session_id,
+                        _safe_log(session_id),
                     )
                     await asyncio.sleep(delay)
                     delay = min(delay * 2, 60.0)
                 else:
                     logger.warning(
                         "BGConsumer: max reconnects reached for session=%s",
-                        session_id,
+                        _safe_log(session_id),
                     )
 
     except asyncio.CancelledError:
@@ -2536,7 +2536,7 @@ async def _background_event_consumer(
     except Exception:
         logger.warning(
             "BGConsumer: unexpected error for session=%s",
-            session_id,
+            _safe_log(session_id),
             exc_info=True,
         )
     finally:
@@ -2545,7 +2545,7 @@ async def _background_event_consumer(
             logger.info(
                 "BGConsumer: waiting for %d persist tasks session=%s",
                 len(_persist_bg_tasks),
-                session_id,
+                _safe_log(session_id),
             )
             await asyncio.gather(*_persist_bg_tasks, return_exceptions=True)
 
@@ -2569,12 +2569,12 @@ async def _background_event_consumer(
                             logger.info(
                                 "BGConsumer: final persist %d events for session=%s",
                                 len(loop_events),
-                                session_id,
+                                _safe_log(session_id),
                             )
             except Exception as exc:
                 logger.warning(
                     "BGConsumer: final persist failed session=%s: %s",
-                    session_id,
+                    _safe_log(session_id),
                     exc,
                 )
 
@@ -2594,19 +2594,19 @@ async def _background_event_consumer(
                     )
                     logger.info(
                         "BGConsumer: session status updated session=%s status=%s",
-                        session_id,
+                        _safe_log(session_id),
                         terminal_status,
                     )
             except Exception as exc:
                 logger.warning(
                     "BGConsumer: session status update failed session=%s: %s",
-                    session_id,
+                    _safe_log(session_id),
                     exc,
                 )
 
         logger.info(
             "BGConsumer: FINISHED session=%s events=%d done=%s",
-            session_id,
+            _safe_log(session_id),
             len(loop_events),
             _done_received,
         )
@@ -2631,7 +2631,7 @@ def _spawn_background_consumer(
     if existing is not None and not existing.done():
         logger.info(
             "BGConsumer: already active for session=%s — skipping spawn",
-            session_id,
+            _safe_log(session_id),
         )
         return None
 
@@ -2657,7 +2657,7 @@ def _spawn_background_consumer(
         elif t.exception():
             logger.warning(
                 "BGConsumer: task failed for session=%s: %s",
-                session_id,
+                _safe_log(session_id),
                 t.exception(),
             )
         else:
@@ -2667,7 +2667,7 @@ def _spawn_background_consumer(
 
     logger.info(
         "BGConsumer: spawned for session=%s task=%s",
-        session_id,
+        _safe_log(session_id),
         task_id,
     )
     return task
@@ -2748,16 +2748,16 @@ async def _stream_sandbox_response(
         nonlocal stream_task_id
         logger.info(
             "_set_owner_metadata: agent_name=%s, owner=%s, namespace=%s, session=%s, task_id=%s",
-            agent_name,
-            owner,
-            namespace,
-            session_id,
-            stream_task_id,
+            _safe_log(agent_name),
+            _safe_log(owner),
+            _safe_log(namespace),
+            _safe_log(session_id),
+            _safe_log(stream_task_id),
         )
         if not namespace:
             logger.warning(
                 "_set_owner_metadata skipped: namespace is empty for session %s",
-                session_id,
+                _safe_log(session_id),
             )
             return
         for attempt in range(3):
@@ -2771,7 +2771,7 @@ async def _stream_sandbox_response(
                             continue
                         logger.warning(
                             "_set_owner_metadata: stream_task_id still None after retries for session %s",
-                            session_id,
+                            _safe_log(session_id),
                         )
                         return
 
@@ -2797,7 +2797,7 @@ async def _stream_sandbox_response(
                     else:
                         logger.warning(
                             "_set_owner_metadata called with empty agent_name for session %s",
-                            session_id,
+                            _safe_log(session_id),
                         )
                     # Update only THIS task row
                     result = await conn.execute(
@@ -2809,8 +2809,8 @@ async def _stream_sandbox_response(
                     if affected == 0:
                         logger.warning(
                             "Metadata update matched 0 rows for task %s session %s",
-                            stream_task_id,
-                            session_id,
+                            _safe_log(stream_task_id),
+                            _safe_log(session_id),
                         )
 
                     # Upsert into sessions table (authoritative session metadata)
@@ -2834,7 +2834,7 @@ async def _stream_sandbox_response(
             except Exception:
                 logger.warning(
                     "Failed to set owner on session %s (attempt %d/3)",
-                    session_id,
+                    _safe_log(session_id),
                     attempt + 1,
                     exc_info=True,
                 )
@@ -2907,7 +2907,7 @@ async def _stream_sandbox_response(
                     except StopAsyncIteration:
                         logger.info(
                             "SSE stream exhausted for session=%s after %d lines",
-                            session_id,
+                            _safe_log(session_id),
                             line_count,
                         )
                         stream_exhausted = True
@@ -2917,7 +2917,7 @@ async def _stream_sandbox_response(
                         continue
                     line_count += 1
                     # Log all SSE lines for pipeline debugging
-                    logger.info("Agent SSE [%d]: %s", line_count, line[:300])
+                    logger.info("Agent SSE [%d]: %s", line_count, _safe_log(line[:300]))
 
                     if line.startswith("data: "):
                         data = line[6:]
@@ -2972,7 +2972,7 @@ async def _stream_sandbox_response(
                                 except Exception as e:
                                     logger.warning(
                                         "Failed to persist loop events for %s: %s",
-                                        session_id,
+                                        _safe_log(session_id),
                                         e,
                                     )
                             yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
@@ -2983,7 +2983,7 @@ async def _stream_sandbox_response(
                         except json.JSONDecodeError as e:
                             logger.warning(
                                 "Failed to parse SSE data: %s, error: %s",
-                                data[:200],
+                                _safe_log(data[:200]),
                                 e,
                             )
                             continue
@@ -3012,8 +3012,8 @@ async def _stream_sandbox_response(
                                 stream_task_id = a2a_task_id
                                 logger.info(
                                     "Captured stream_task_id=%s for session %s (kind=%s)",
-                                    stream_task_id,
-                                    session_id,
+                                    _safe_log(stream_task_id),
+                                    _safe_log(session_id),
                                     result.get("kind", "?"),
                                 )
                                 # Flush any events buffered before task_id was known
@@ -3107,7 +3107,7 @@ async def _stream_sandbox_response(
                                 ]
                                 logger.info(
                                     "SSE_PARSE session=%s lines=%d preview=%s",
-                                    session_id,
+                                    _safe_log(session_id),
                                     len(msg_lines),
                                     msg_lines[0][:120] if msg_lines else "(empty)",
                                 )
@@ -3126,7 +3126,7 @@ async def _stream_sandbox_response(
                                             # Log forwarding
                                             logger.info(
                                                 "LOOP_FWD session=%s loop=%s type=%s step=%s",
-                                                session_id,
+                                                _safe_log(session_id),
                                                 parsed["loop_id"][:8],
                                                 evt_type,
                                                 parsed.get("step", ""),
@@ -3148,7 +3148,7 @@ async def _stream_sandbox_response(
                                             if stream_task_id and namespace and should_persist:
                                                 logger.info(
                                                     "INCR_PERSIST session=%s task=%s events=%d type=%s",
-                                                    session_id,
+                                                    _safe_log(session_id),
                                                     stream_task_id[:12],
                                                     len(loop_events),
                                                     evt_type,
@@ -3166,7 +3166,7 @@ async def _stream_sandbox_response(
                                             elif not stream_task_id:
                                                 logger.warning(
                                                     "INCR_PERSIST_SKIP session=%s no stream_task_id events=%d",
-                                                    session_id,
+                                                    _safe_log(session_id),
                                                     len(loop_events),
                                                 )
 
@@ -3183,7 +3183,7 @@ async def _stream_sandbox_response(
                             if status_message:
                                 logger.info(
                                     "FLAT_FWD session=%s content_len=%d first_80=%s",
-                                    session_id,
+                                    _safe_log(session_id),
                                     len(status_message),
                                     status_message[:80].replace("\n", "\\n"),
                                 )
@@ -3253,8 +3253,8 @@ async def _stream_sandbox_response(
                         "Resubscribe attempt %d/%d: task=%s session=%s",
                         resub_attempt,
                         _max_resubscribe,
-                        stream_task_id,
-                        session_id,
+                        _safe_log(stream_task_id),
+                        _safe_log(session_id),
                     )
                     resub_msg = {
                         "jsonrpc": "2.0",
@@ -3326,7 +3326,9 @@ async def _stream_sandbox_response(
                                 if not line:
                                     continue
                                 line_count += 1
-                                logger.info("Agent SSE [%d] (resub): %s", line_count, line[:300])
+                                logger.info(
+                                    "Agent SSE [%d] (resub): %s", line_count, _safe_log(line[:300])
+                                )
 
                                 if line.startswith("data: "):
                                     data = line[6:]
@@ -3386,12 +3388,6 @@ async def _stream_sandbox_response(
                                         status_message = _extract_text_from_parts(parts)
                                         is_final = result.get("final", False)
 
-                                        _legacy = {
-                                            "plan",
-                                            "plan_step",
-                                            "reflection",
-                                            "llm_response",
-                                        }
                                         has_loop_events = False
                                         if status_message:
                                             msg_lines = [
@@ -3407,7 +3403,7 @@ async def _stream_sandbox_response(
                                                         and "loop_id" in parsed
                                                     ):
                                                         evt_type = parsed.get("type", "")
-                                                        if evt_type in _legacy:
+                                                        if evt_type in _LEGACY_EVENT_TYPES:
                                                             continue
                                                         loop_payload = dict(payload)
                                                         loop_payload["loop_id"] = parsed["loop_id"]
@@ -3415,7 +3411,7 @@ async def _stream_sandbox_response(
                                                         yield f"data: {json.dumps(loop_payload)}\n\n"
                                                         logger.info(
                                                             "LOOP_FWD session=%s loop=%s type=%s step=%s (resub)",
-                                                            session_id,
+                                                            _safe_log(session_id),
                                                             parsed["loop_id"][:8],
                                                             evt_type,
                                                             parsed.get("step", ""),
@@ -3475,7 +3471,7 @@ async def _stream_sandbox_response(
 
     except httpx.HTTPStatusError as e:
         error_msg = f"Agent error: {e.response.status_code}"
-        logger.error("%s: %s", error_msg, e.response.text[:500])
+        logger.error("%s: %s", error_msg, _safe_log(e.response.text[:500]))
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
     except (httpx.RequestError, httpx.ReadError, httpx.RemoteProtocolError) as e:
         error_msg = f"Connection error: {str(e)}"
@@ -3488,7 +3484,7 @@ async def _stream_sandbox_response(
     finally:
         logger.info(
             "Stream finally block for session %s: %d loop events, persisted=%s, task_id=%s",
-            session_id,
+            _safe_log(session_id),
             len(loop_events),
             loop_events_persisted,
             stream_task_id,
@@ -3503,7 +3499,7 @@ async def _stream_sandbox_response(
             logger.info(
                 "Spawning background persist+recovery: session=%s task=%s "
                 "events=%d has_reporter=%s session_has_loops=%s",
-                session_id,
+                _safe_log(session_id),
                 stream_task_id,
                 len(loop_events),
                 has_reporter,
@@ -3551,7 +3547,7 @@ async def _persist_and_recover(
         if task_db_id is None:
             logger.warning(
                 "stream_task_id is None for session %s — cannot persist metadata",
-                session_id,
+                _safe_log(session_id),
             )
             return
 
@@ -3569,7 +3565,7 @@ async def _persist_and_recover(
                 meta = _parse_json_field(row["metadata"]) or {}
                 logger.info(
                     "BG persist: DB meta BEFORE update session=%s keys=%s agent=%s owner=%s",
-                    session_id,
+                    _safe_log(session_id),
                     list(meta.keys()),
                     meta.get("agent_name", "(none)"),
                     meta.get("owner", "(none)"),
@@ -3588,7 +3584,7 @@ async def _persist_and_recover(
                 meta_json = json.dumps(meta)
                 logger.info(
                     "BG persist: WRITING session=%s agent=%s owner=%s events=%d json_len=%d",
-                    session_id,
+                    _safe_log(session_id),
                     meta.get("agent_name", "(none)"),
                     meta.get("owner", "(none)"),
                     len(meta.get("loop_events", [])),
@@ -3602,7 +3598,7 @@ async def _persist_and_recover(
                 logger.info(
                     "BG persist: UPDATE result=%s session=%s task=%s",
                     result,
-                    session_id,
+                    _safe_log(session_id),
                     task_db_id,
                 )
 
@@ -3632,7 +3628,7 @@ async def _persist_and_recover(
     except Exception:
         logger.warning(
             "BG persist+recover failed for session %s",
-            session_id,
+            _safe_log(session_id),
             exc_info=True,
         )
 
@@ -3665,13 +3661,13 @@ async def _recover_loop_events_from_agent(
         if not task_db_id:
             logger.warning(
                 "Recovery: no A2A task ID available for session %s — cannot query agent",
-                session_id,
+                _safe_log(session_id),
             )
             return
         logger.info(
             "Recovery: querying agent with a2a_task_id=%s (session=%s)",
-            task_db_id,
-            session_id,
+            _safe_log(task_db_id),
+            _safe_log(session_id),
         )
         a2a_request = {
             "jsonrpc": "2.0",
@@ -3692,7 +3688,7 @@ async def _recover_loop_events_from_agent(
                         attempt,
                         max_retries,
                         resp.status_code,
-                        session_id,
+                        _safe_log(session_id),
                     )
                     break
 
@@ -3705,7 +3701,7 @@ async def _recover_loop_events_from_agent(
                     "Recovery attempt %d/%d: session=%s state=%s history_msgs=%d",
                     attempt,
                     max_retries,
-                    session_id,
+                    _safe_log(session_id),
                     task_state,
                     len(history),
                 )
@@ -3745,7 +3741,7 @@ async def _recover_loop_events_from_agent(
         logger.info(
             "Recovered %d loop events from agent task store for session %s",
             len(recovered_events),
-            session_id,
+            _safe_log(session_id),
         )
 
         # Write recovered events to this stream's task row, replacing any
@@ -3802,13 +3798,13 @@ async def _recover_loop_events_from_agent(
                             "Recovery: merged %d existing + %d new events for session %s (total %d)",
                             len(existing),
                             added,
-                            session_id,
+                            _safe_log(session_id),
                             len(merged),
                         )
     except Exception:
         logger.warning(
             "Recovery failed for session %s",
-            session_id,
+            _safe_log(session_id),
             exc_info=True,
         )
 
@@ -3839,6 +3835,8 @@ async def chat_stream(
     # Resolve agent name: for existing sessions, use the DB-bound agent
     # (authoritative). For new sessions, trust the request.
     agent_name = await _resolve_agent_name(namespace, request.session_id, request.agent_name)
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid resolved agent name")
     agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
 
     return StreamingResponse(
@@ -3901,6 +3899,8 @@ async def subscribe_session(
         )
 
     agent_name = await _resolve_agent_name(namespace, session_id, None)
+    if not _K8S_NAME_RE.match(agent_name):
+        raise HTTPException(400, "Invalid resolved agent name")
     agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
 
     # Ensure a background consumer is running for this session.
@@ -4004,7 +4004,6 @@ async def _subscribe_stream(
                         parts = result["status"].get("message", {}).get("parts", [])
                         status_message = _extract_text_from_parts(parts)
                         if status_message:
-                            _legacy = {"plan", "plan_step", "reflection", "llm_response"}
                             for msg_line in [
                                 line.strip() for line in status_message.split("\n") if line.strip()
                             ]:
@@ -4012,7 +4011,7 @@ async def _subscribe_stream(
                                     parsed = json.loads(msg_line)
                                     if isinstance(parsed, dict) and "loop_id" in parsed:
                                         evt_type = parsed.get("type", "")
-                                        if evt_type not in _legacy:
+                                        if evt_type not in _LEGACY_EVENT_TYPES:
                                             loop_payload = dict(payload)
                                             loop_payload["loop_id"] = parsed["loop_id"]
                                             loop_payload["loop_event"] = parsed

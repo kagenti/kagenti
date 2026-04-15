@@ -11,6 +11,7 @@ via the Kubernetes Python client. Mirrors the resources created by
 
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends
 from kubernetes.client import ApiException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
 from app.utils.routes import create_route_for_agent_or_tool, detect_platform
@@ -55,6 +56,12 @@ DEFAULT_LLM_SECRET = os.environ.get("SANDBOX_LLM_SECRET", "litellm-virtual-keys"
 DEFAULT_LLM_SECRET_KEY = os.environ.get("SANDBOX_LLM_SECRET_KEY", "api-key")
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox-deploy"])
+
+# Kubernetes name validation: lowercase alphanumeric + dashes, max 63 chars
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+# Repo URL must be HTTPS to prevent SSRF via file://, ftp://, etc.
+_SAFE_REPO_URL = re.compile(r"^https://", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +133,34 @@ class SandboxCreateRequest(BaseModel):
     agent_cpu_limit: Optional[str] = "500m"
     proxy_memory_limit: Optional[str] = "256Mi"
     proxy_cpu_limit: Optional[str] = "200m"
+
+    @field_validator("repo")
+    @classmethod
+    def validate_repo_url(cls, v: str) -> str:
+        """Validate repo URL uses HTTPS to prevent SSRF (CWE-918)."""
+        if v and not _SAFE_REPO_URL.match(v):
+            raise ValueError("Repository URL must use HTTPS")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate name matches Kubernetes naming rules."""
+        if v and not _K8S_NAME_RE.match(v):
+            raise ValueError(
+                "Name must be a valid Kubernetes name (lowercase alphanumeric + hyphens)"
+            )
+        return v
+
+    @field_validator("namespace")
+    @classmethod
+    def validate_namespace(cls, v: str) -> str:
+        """Validate namespace matches Kubernetes naming rules."""
+        if v and not _K8S_NAME_RE.match(v):
+            raise ValueError(
+                "Namespace must be a valid Kubernetes name (lowercase alphanumeric + hyphens)"
+            )
+        return v
 
     @property
     def profile(self):
