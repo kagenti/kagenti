@@ -22,6 +22,8 @@ import (
 	v1alpha1 "github.com/kagenti/kagenti/platform-operator/api/v1alpha1"
 )
 
+const messageAllReplicasReady = "all replicas ready"
+
 // Component defines the interface that all managed Kagenti components must implement.
 // Each component represents a deployable unit (e.g., agent-operator, webhook, UI).
 type Component interface {

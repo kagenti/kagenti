@@ -43,10 +43,10 @@ const (
 // KagentiPlatformReconciler reconciles a KagentiPlatform object.
 type KagentiPlatformReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	Registry   *components.Registry
-	Validator  *infrastructure.Validator
-	Fence      *migration.Checker
+	Scheme    *runtime.Scheme
+	Registry  *components.Registry
+	Validator *infrastructure.Validator
+	Fence     *migration.Checker
 }
 
 // +kubebuilder:rbac:groups=kagenti.dev,resources=kagentiplatforms,verbs=get;list;watch;create;update;patch;delete

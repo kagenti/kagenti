@@ -68,7 +68,7 @@ func (c *AgentOperatorComponent) IsReady(ctx context.Context) (bool, string, err
 	}
 
 	if deploy.Status.ReadyReplicas > 0 && deploy.Status.ReadyReplicas == *deploy.Spec.Replicas {
-		return true, "all replicas ready", nil
+		return true, messageAllReplicasReady, nil
 	}
 
 	return false, fmt.Sprintf("ready %d/%d", deploy.Status.ReadyReplicas, *deploy.Spec.Replicas), nil

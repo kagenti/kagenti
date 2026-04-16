@@ -46,11 +46,11 @@ const (
 
 // Well-known condition reasons.
 const (
-	ReasonInstalling              = "Installing"
-	ReasonReady                   = "Ready"
-	ReasonComponentError          = "ComponentError"
-	ReasonInfrastructureMissing   = "InfrastructureMissing"
-	ReasonMigrationRequired       = "MigrationRequired"
-	ReasonReconciling             = "Reconciling"
-	ReasonComponentRemoved        = "ComponentRemoved"
+	ReasonInstalling            = "Installing"
+	ReasonReady                 = "Ready"
+	ReasonComponentError        = "ComponentError"
+	ReasonInfrastructureMissing = "InfrastructureMissing"
+	ReasonMigrationRequired     = "MigrationRequired"
+	ReasonReconciling           = "Reconciling"
+	ReasonComponentRemoved      = "ComponentRemoved"
 )
