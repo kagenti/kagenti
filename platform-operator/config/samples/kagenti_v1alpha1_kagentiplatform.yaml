@@ -1,0 +1,40 @@
+apiVersion: kagenti.dev/v1alpha1
+kind: KagentiPlatform
+metadata:
+  labels:
+    app.kubernetes.io/name: kagenti-platform-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: kagenti
+spec:
+  agentOperator:
+    managementState: Managed
+  webhook:
+    managementState: Managed
+  ui:
+    managementState: Managed
+    replicas: 1
+  mcpGateway:
+    managementState: Managed
+  auth:
+    managementState: Managed
+    oidc:
+      issuerURL: "http://keycloak.localtest.me:8080/realms/kagenti"
+      clientID: "kagenti-ui"
+  agentNamespaces:
+    - name: team1
+    - name: team2
+  infrastructure:
+    certManager:
+      requirement: Required
+    istio:
+      requirement: Optional
+    spire:
+      requirement: Optional
+    tekton:
+      requirement: Required
+    shipwright:
+      requirement: Optional
+    gatewayApi:
+      requirement: Required
+  domain: localtest.me
+  deletionPolicy: Delete

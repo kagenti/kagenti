@@ -1,0 +1,645 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: kagentiplatforms.kagenti.dev
+spec:
+  group: kagenti.dev
+  names:
+    kind: KagentiPlatform
+    listKind: KagentiPlatformList
+    plural: kagentiplatforms
+    singular: kagentiplatform
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          KagentiPlatform is the Schema for the kagentiplatforms API.
+          It is a cluster-scoped singleton that declares the desired state of a Kagenti platform installation.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: KagentiPlatformSpec defines the desired state of KagentiPlatform.
+            properties:
+              agentNamespaces:
+                description: AgentNamespaces lists namespaces to create and configure
+                  for agent workloads.
+                items:
+                  description: AgentNamespace defines an agent namespace to be created
+                    and configured.
+                  properties:
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Labels are additional labels to apply to the namespace.
+                      type: object
+                    name:
+                      description: Name is the namespace name.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              agentOperator:
+                default:
+                  managementState: Managed
+                description: AgentOperator configures the kagenti-operator component.
+                properties:
+                  managementState:
+                    default: Managed
+                    description: ManagementState controls whether the operator manages
+                      this component.
+                    enum:
+                    - Managed
+                    - Removed
+                    - Unmanaged
+                    type: string
+                type: object
+              auth:
+                default:
+                  managementState: Managed
+                description: Auth configures authentication for the platform.
+                properties:
+                  managementState:
+                    default: Managed
+                    description: ManagementState controls whether the operator manages
+                      authentication.
+                    enum:
+                    - Managed
+                    - Removed
+                    - Unmanaged
+                    type: string
+                  oidc:
+                    description: OIDC configures the OpenID Connect provider for authentication.
+                    properties:
+                      clientID:
+                        description: ClientID is the OIDC client identifier.
+                        type: string
+                      credentialsSecretRef:
+                        description: |-
+                          CredentialsSecretRef references a Secret containing OIDC client credentials.
+                          The Secret must contain a 'client-secret' key.
+                        properties:
+                          name:
+                            description: Name is the name of the Secret.
+                            type: string
+                          namespace:
+                            description: Namespace is the namespace of the Secret.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      issuerURL:
+                        description: IssuerURL is the OIDC provider's issuer URL.
+                        type: string
+                      keycloak:
+                        description: Keycloak provides Keycloak-specific configuration
+                          when using the bundled Keycloak.
+                        properties:
+                          realm:
+                            default: kagenti
+                            description: Realm is the Keycloak realm name.
+                            type: string
+                        type: object
+                      requiredClaims:
+                        additionalProperties:
+                          type: string
+                        description: RequiredClaims lists JWT claims that must be
+                          present in the token.
+                        type: object
+                      requiredScopes:
+                        description: RequiredScopes lists the OIDC scopes that must
+                          be requested.
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - issuerURL
+                    type: object
+                type: object
+              deletionPolicy:
+                default: Delete
+                description: DeletionPolicy controls what happens to managed resources
+                  when the CR is deleted.
+                enum:
+                - Delete
+                - Retain
+                type: string
+              domain:
+                default: localtest.me
+                description: Domain is the base domain for the platform (used for
+                  ingress/routes).
+                type: string
+              imageOverrides:
+                description: ImageOverrides allows overriding container images for
+                  all components.
+                properties:
+                  agentOperator:
+                    description: AgentOperator overrides the agent operator image.
+                    type: string
+                  uiBackend:
+                    description: UIBackend overrides the UI backend image.
+                    type: string
+                  uiFrontend:
+                    description: UIFrontend overrides the UI frontend image.
+                    type: string
+                  webhook:
+                    description: Webhook overrides the webhook image.
+                    type: string
+                type: object
+              infrastructure:
+                description: |-
+                  Infrastructure declares infrastructure dependencies and their requirement levels.
+                  The operator validates (read-only) that required infrastructure is present.
+                properties:
+                  certManager:
+                    default:
+                      requirement: Required
+                    description: CertManager specifies the cert-manager requirement.
+                    properties:
+                      requirement:
+                        default: Required
+                        description: Requirement specifies whether this infrastructure
+                          dependency is required, optional, or ignored.
+                        enum:
+                        - Required
+                        - Optional
+                        - Ignored
+                        type: string
+                    type: object
+                  gatewayApi:
+                    default:
+                      requirement: Required
+                    description: GatewayAPI specifies the Gateway API requirement.
+                    properties:
+                      requirement:
+                        default: Required
+                        description: Requirement specifies whether this infrastructure
+                          dependency is required, optional, or ignored.
+                        enum:
+                        - Required
+                        - Optional
+                        - Ignored
+                        type: string
+                    type: object
+                  istio:
+                    default:
+                      requirement: Optional
+                    description: Istio specifies the Istio service mesh requirement.
+                    properties:
+                      requirement:
+                        default: Required
+                        description: Requirement specifies whether this infrastructure
+                          dependency is required, optional, or ignored.
+                        enum:
+                        - Required
+                        - Optional
+                        - Ignored
+                        type: string
+                    type: object
+                  shipwright:
+                    default:
+                      requirement: Optional
+                    description: Shipwright specifies the Shipwright build requirement.
+                    properties:
+                      requirement:
+                        default: Required
+                        description: Requirement specifies whether this infrastructure
+                          dependency is required, optional, or ignored.
+                        enum:
+                        - Required
+                        - Optional
+                        - Ignored
+                        type: string
+                    type: object
+                  spire:
+                    default:
+                      requirement: Optional
+                    description: SPIRE specifies the SPIFFE/SPIRE workload identity
+                      requirement.
+                    properties:
+                      requirement:
+                        default: Required
+                        description: Requirement specifies whether this infrastructure
+                          dependency is required, optional, or ignored.
+                        enum:
+                        - Required
+                        - Optional
+                        - Ignored
+                        type: string
+                    type: object
+                  tekton:
+                    default:
+                      requirement: Required
+                    description: Tekton specifies the Tekton pipelines requirement.
+                    properties:
+                      requirement:
+                        default: Required
+                        description: Requirement specifies whether this infrastructure
+                          dependency is required, optional, or ignored.
+                        enum:
+                        - Required
+                        - Optional
+                        - Ignored
+                        type: string
+                    type: object
+                type: object
+              mcpGateway:
+                default:
+                  managementState: Managed
+                description: MCPGateway configures the MCP Gateway component.
+                properties:
+                  managementState:
+                    default: Managed
+                    description: ManagementState controls whether the operator manages
+                      this component.
+                    enum:
+                    - Managed
+                    - Removed
+                    - Unmanaged
+                    type: string
+                type: object
+              ui:
+                default:
+                  managementState: Managed
+                description: UI configures the Kagenti UI (frontend + backend).
+                properties:
+                  managementState:
+                    default: Managed
+                    description: ManagementState controls whether the operator manages
+                      this component.
+                    enum:
+                    - Managed
+                    - Removed
+                    - Unmanaged
+                    type: string
+                  replicas:
+                    default: 1
+                    description: Replicas sets the number of UI deployment replicas.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
+              webhook:
+                default:
+                  managementState: Managed
+                description: Webhook configures the admission webhook component.
+                properties:
+                  managementState:
+                    default: Managed
+                    description: ManagementState controls whether the operator manages
+                      this component.
+                    enum:
+                    - Managed
+                    - Removed
+                    - Unmanaged
+                    type: string
+                type: object
+            type: object
+          status:
+            description: KagentiPlatformStatus defines the observed state of KagentiPlatform.
+            properties:
+              components:
+                description: Components reports the status of each managed component.
+                properties:
+                  agentOperator:
+                    description: AgentOperator status.
+                    properties:
+                      lastTransitionTime:
+                        description: LastTransitionTime is the last time the status
+                          transitioned.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message provides human-readable detail, especially
+                          on error.
+                        type: string
+                      status:
+                        description: Status is the current state of the component.
+                        enum:
+                        - Ready
+                        - Installing
+                        - Error
+                        - Removed
+                        type: string
+                    required:
+                    - status
+                    type: object
+                  auth:
+                    description: Auth status.
+                    properties:
+                      lastTransitionTime:
+                        description: LastTransitionTime is the last time the status
+                          transitioned.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message provides human-readable detail, especially
+                          on error.
+                        type: string
+                      status:
+                        description: Status is the current state of the component.
+                        enum:
+                        - Ready
+                        - Installing
+                        - Error
+                        - Removed
+                        type: string
+                    required:
+                    - status
+                    type: object
+                  mcpGateway:
+                    description: MCPGateway status.
+                    properties:
+                      lastTransitionTime:
+                        description: LastTransitionTime is the last time the status
+                          transitioned.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message provides human-readable detail, especially
+                          on error.
+                        type: string
+                      status:
+                        description: Status is the current state of the component.
+                        enum:
+                        - Ready
+                        - Installing
+                        - Error
+                        - Removed
+                        type: string
+                    required:
+                    - status
+                    type: object
+                  ui:
+                    description: UI status.
+                    properties:
+                      lastTransitionTime:
+                        description: LastTransitionTime is the last time the status
+                          transitioned.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message provides human-readable detail, especially
+                          on error.
+                        type: string
+                      status:
+                        description: Status is the current state of the component.
+                        enum:
+                        - Ready
+                        - Installing
+                        - Error
+                        - Removed
+                        type: string
+                    required:
+                    - status
+                    type: object
+                  webhook:
+                    description: Webhook status.
+                    properties:
+                      lastTransitionTime:
+                        description: LastTransitionTime is the last time the status
+                          transitioned.
+                        format: date-time
+                        type: string
+                      message:
+                        description: Message provides human-readable detail, especially
+                          on error.
+                        type: string
+                      status:
+                        description: Status is the current state of the component.
+                        enum:
+                        - Ready
+                        - Installing
+                        - Error
+                        - Removed
+                        type: string
+                    required:
+                    - status
+                    type: object
+                type: object
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the platform's state.
+                  Known condition types: InfrastructureReady, AgentOperatorReady, WebhookReady,
+                  UIReady, AuthReady, Available, FullyOperational, MigrationRequired
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              environment:
+                description: Environment describes the detected cluster environment.
+                properties:
+                  platform:
+                    description: Platform is the detected platform type (e.g., "Kubernetes",
+                      "OpenShift").
+                    type: string
+                  version:
+                    description: Version is the detected Kubernetes version.
+                    type: string
+                type: object
+              infrastructure:
+                description: Infrastructure reports the status of each infrastructure
+                  dependency.
+                properties:
+                  certManager:
+                    description: CertManager status.
+                    properties:
+                      available:
+                        description: Available indicates whether the infrastructure
+                          dependency was detected.
+                        type: boolean
+                      message:
+                        description: Message provides human-readable detail.
+                        type: string
+                      version:
+                        description: Version is the detected version of the infrastructure
+                          component.
+                        type: string
+                    required:
+                    - available
+                    type: object
+                  gatewayApi:
+                    description: GatewayAPI status.
+                    properties:
+                      available:
+                        description: Available indicates whether the infrastructure
+                          dependency was detected.
+                        type: boolean
+                      message:
+                        description: Message provides human-readable detail.
+                        type: string
+                      version:
+                        description: Version is the detected version of the infrastructure
+                          component.
+                        type: string
+                    required:
+                    - available
+                    type: object
+                  istio:
+                    description: Istio status.
+                    properties:
+                      available:
+                        description: Available indicates whether the infrastructure
+                          dependency was detected.
+                        type: boolean
+                      message:
+                        description: Message provides human-readable detail.
+                        type: string
+                      version:
+                        description: Version is the detected version of the infrastructure
+                          component.
+                        type: string
+                    required:
+                    - available
+                    type: object
+                  shipwright:
+                    description: Shipwright status.
+                    properties:
+                      available:
+                        description: Available indicates whether the infrastructure
+                          dependency was detected.
+                        type: boolean
+                      message:
+                        description: Message provides human-readable detail.
+                        type: string
+                      version:
+                        description: Version is the detected version of the infrastructure
+                          component.
+                        type: string
+                    required:
+                    - available
+                    type: object
+                  spire:
+                    description: SPIRE status.
+                    properties:
+                      available:
+                        description: Available indicates whether the infrastructure
+                          dependency was detected.
+                        type: boolean
+                      message:
+                        description: Message provides human-readable detail.
+                        type: string
+                      version:
+                        description: Version is the detected version of the infrastructure
+                          component.
+                        type: string
+                    required:
+                    - available
+                    type: object
+                  tekton:
+                    description: Tekton status.
+                    properties:
+                      available:
+                        description: Available indicates whether the infrastructure
+                          dependency was detected.
+                        type: boolean
+                      message:
+                        description: Message provides human-readable detail.
+                        type: string
+                      version:
+                        description: Version is the detected version of the infrastructure
+                          component.
+                        type: string
+                    required:
+                    - available
+                    type: object
+                type: object
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the overall state of the platform installation.
+                enum:
+                - Installing
+                - Ready
+                - Degraded
+                - Blocked
+                - Error
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
