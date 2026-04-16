@@ -32,9 +32,6 @@ const (
 	// helmManagedByLabel is the standard Helm label for managed-by tracking.
 	helmManagedByLabel = "app.kubernetes.io/managed-by"
 
-	// helmManagedByValue is the default value Helm sets.
-	helmManagedByValue = "Helm"
-
 	// operatorManagedByValue is the value set after adoption.
 	operatorManagedByValue = "kagenti-platform-operator"
 
