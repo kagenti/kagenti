@@ -162,10 +162,11 @@ func (r *KagentiPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		compStatus := r.reconcileComponent(ctx, comp, platform)
 		r.setComponentStatus(platform, comp.Name(), compStatus)
 
-		if compStatus.Status == v1alpha1.ComponentError {
+		switch compStatus.Status {
+		case v1alpha1.ComponentError:
 			anyError = true
 			allReady = false
-		} else if compStatus.Status == v1alpha1.ComponentInstalling {
+		case v1alpha1.ComponentInstalling:
 			allReady = false
 		}
 	}
