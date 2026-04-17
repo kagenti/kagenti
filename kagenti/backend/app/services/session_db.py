@@ -23,6 +23,13 @@ import asyncpg
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 # ---------------------------------------------------------------------------
 # Module-level pool cache
 # ---------------------------------------------------------------------------
@@ -93,7 +100,7 @@ def _dsn_for_namespace(namespace: str) -> str:
 
 def _convention_dsn(namespace: str) -> str:
     """Convention-based DSN when no secret is available."""
-    logger.warning("Using convention-based DB fallback for namespace=%s", namespace)
+    logger.warning("Using convention-based DB fallback for namespace=%s", _safe_log(namespace))
     return f"postgresql://kagenti:kagenti@postgres-sessions.{namespace}:5432/sessions"
 
 
@@ -150,11 +157,11 @@ async def get_session_pool(namespace: str) -> asyncpg.Pool:
         if not pool._closed:  # pylint: disable=protected-access
             return pool
         # Pool was closed externally — recreate
-        logger.warning("DB pool for namespace=%s was closed — recreating", namespace)
+        logger.warning("DB pool for namespace=%s was closed — recreating", _safe_log(namespace))
         del _pool_cache[namespace]
 
     dsn = _dsn_for_namespace(namespace)
-    logger.info("Creating session DB pool for namespace=%s", namespace)
+    logger.info("Creating session DB pool for namespace=%s", _safe_log(namespace))
     pool = await _create_pool(dsn)
     await _ensure_sessions_schema(pool)
     _pool_cache[namespace] = pool

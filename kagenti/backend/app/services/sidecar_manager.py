@@ -27,6 +27,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 class SidecarType(str, Enum):
     """Enumeration of available sidecar agent types."""
 
@@ -225,13 +231,13 @@ class SidecarManager:
                     )
                     logger.debug(
                         "Persisted sidecar state for session %s (%d sidecars)",
-                        parent_context_id[:12],
+                        _safe_log(parent_context_id[:12]),
                         len(state_to_persist),
                     )
         except Exception:
             logger.warning(
                 "Failed to persist sidecar state for session %s",
-                parent_context_id[:12],
+                _safe_log(parent_context_id[:12]),
                 exc_info=True,
             )
 
@@ -276,8 +282,8 @@ class SidecarManager:
                     except (ValueError, KeyError) as e:
                         logger.warning(
                             "Failed to restore sidecar %s for session %s: %s",
-                            _type_str,
-                            parent_context_id[:12],
+                            _safe_log(_type_str),
+                            _safe_log(parent_context_id[:12]),
                             e,
                         )
 
@@ -286,12 +292,12 @@ class SidecarManager:
                     logger.info(
                         "Restored %d sidecars from DB for session %s",
                         restored_count,
-                        parent_context_id[:12],
+                        _safe_log(parent_context_id[:12]),
                     )
         except Exception:
             logger.warning(
                 "Failed to restore sidecars for session %s",
-                parent_context_id[:12],
+                _safe_log(parent_context_id[:12]),
                 exc_info=True,
             )
 
@@ -375,8 +381,8 @@ class SidecarManager:
         session_sidecars[sidecar_type] = handle
         logger.info(
             "Enabled sidecar %s for session %s",
-            sidecar_type.value,
-            parent_context_id[:12],
+            _safe_log(sidecar_type.value),
+            _safe_log(parent_context_id[:12]),
         )
         await self._persist_sidecar_state(parent_context_id)
         return handle
@@ -403,8 +409,8 @@ class SidecarManager:
         handle.task = None
         logger.info(
             "Disabled sidecar %s for session %s",
-            sidecar_type.value,
-            parent_context_id[:12],
+            _safe_log(sidecar_type.value),
+            _safe_log(parent_context_id[:12]),
         )
         await self._persist_sidecar_state(parent_context_id)
 
@@ -426,9 +432,9 @@ class SidecarManager:
 
         logger.info(
             "Updated config for sidecar %s session %s: %s",
-            sidecar_type.value,
-            parent_context_id[:12],
-            config,
+            _safe_log(sidecar_type.value),
+            _safe_log(parent_context_id[:12]),
+            _safe_log(config),
         )
         await self._persist_sidecar_state(parent_context_id)
         return handle
@@ -474,8 +480,8 @@ class SidecarManager:
                 # TODO: inject corrective message into parent session via A2A
                 logger.info(
                     "Approved intervention %s from %s",
-                    msg_id,
-                    sidecar_type.value,
+                    _safe_log(msg_id),
+                    _safe_log(sidecar_type.value),
                 )
                 return approved
         return None
@@ -496,8 +502,8 @@ class SidecarManager:
                 denied = handle.pending_interventions.pop(i)
                 logger.info(
                     "Denied intervention %s from %s",
-                    msg_id,
-                    sidecar_type.value,
+                    _safe_log(msg_id),
+                    _safe_log(sidecar_type.value),
                 )
                 return denied
         return None

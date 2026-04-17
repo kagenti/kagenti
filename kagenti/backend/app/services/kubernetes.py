@@ -21,6 +21,12 @@ from app.core.constants import ENABLED_NAMESPACE_LABEL_KEY, ENABLED_NAMESPACE_LA
 logger = logging.getLogger(__name__)
 
 
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 def _sanitize(value: str) -> str:
     """Strip newlines and control characters to prevent log injection (CWE-117).
 
@@ -407,7 +413,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Deployments in {namespace}: {e}")
+            logger.error("Error listing Deployments in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def delete_deployment(self, namespace: str, name: str) -> None:
@@ -418,7 +424,12 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error deleting Deployment %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     def patch_deployment(self, namespace: str, name: str, body: dict) -> dict:
@@ -431,7 +442,12 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error patching Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error patching Deployment %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     # -------------------------------------------------------------------------
@@ -447,7 +463,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating Service in {namespace}: {e}")
+            logger.error("Error creating Service in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def get_service(self, namespace: str, name: str) -> dict:
@@ -459,7 +475,12 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting Service {name} in {namespace}: {e}")
+            logger.error(
+                "Error getting Service %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     def list_services(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
@@ -471,7 +492,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Services in {namespace}: {e}")
+            logger.error("Error listing Services in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def delete_service(self, namespace: str, name: str) -> None:
