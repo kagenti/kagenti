@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
+# Cluster-local URL pattern for SSRF prevention (CWE-918)
+_CLUSTER_LOCAL_URL_RE = re.compile(
+    r"^http://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    r"\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.svc\.cluster\.local:\d+$"
+)
+
 
 def _safe_log(value: object) -> str:
     """Sanitize user input for logging (CWE-117 log injection prevention)."""
@@ -523,8 +529,18 @@ async def receive_webhook(
             },
         }
 
-        # Send to agent's A2A endpoint
+        # Send to agent's A2A endpoint — validate inputs to prevent SSRF (CWE-918)
+        if not _K8S_NAME_RE.match(agent_name) or not _K8S_NAME_RE.match(agent_ns):
+            logger.warning(
+                "Skipping agent with invalid name/namespace: %s/%s",
+                _safe_log(agent_ns),
+                _safe_log(agent_name),
+            )
+            continue
         agent_url = f"http://{agent_name}.{agent_ns}.svc.cluster.local:8000"
+        if not _CLUSTER_LOCAL_URL_RE.match(agent_url):
+            logger.warning("Skipping agent with invalid URL: %s", _safe_log(agent_url))
+            continue
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(

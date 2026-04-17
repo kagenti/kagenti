@@ -349,10 +349,9 @@ async def create_agent_key(
             },
         )
         logger.info(
-            "Created agent key for agent %s in %s/%s",
+            "Created agent key for agent %s in namespace %s",
             _safe_log(req.agent_name),
             _safe_log(req.namespace),
-            _safe_log(secret_name),
         )
     else:
         logger.info("Agent key for %s already exists (idempotent)", _safe_log(req.agent_name))
@@ -427,10 +426,16 @@ async def delete_agent_key(
     secret_name = f"{agent_name}-llm-key"
     try:
         kube.core_api.delete_namespaced_secret(secret_name, namespace)
-        logger.info("Deleted secret %s/%s", _safe_log(namespace), _safe_log(secret_name))
+        logger.info(
+            "Deleted LLM key secret for agent %s in namespace %s",
+            _safe_log(agent_name),
+            _safe_log(namespace),
+        )
     except Exception:
         logger.warning(
-            "Could not delete secret %s/%s", _safe_log(namespace), _safe_log(secret_name)
+            "Could not delete LLM key secret for agent %s in namespace %s",
+            _safe_log(agent_name),
+            _safe_log(namespace),
         )
 
     return {"status": "deleted", "agent_name": agent_name, "namespace": namespace}

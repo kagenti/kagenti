@@ -390,7 +390,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Deployments in {namespace}: {e}")
+            logger.error("Error listing Deployments in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def delete_deployment(self, namespace: str, name: str) -> None:
@@ -402,7 +402,10 @@ class KubernetesService:
             )
         except ApiException as e:
             logger.error(
-                "Error deleting Deployment %s in %s: %s", _safe_log(name), _safe_log(namespace), e
+                "Error deleting Deployment %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
             )
             raise
 
@@ -416,7 +419,12 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error patching Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error patching Deployment %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     # -------------------------------------------------------------------------
@@ -432,7 +440,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating Service in {namespace}: {e}")
+            logger.error("Error creating Service in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def get_service(self, namespace: str, name: str) -> dict:
@@ -445,7 +453,10 @@ class KubernetesService:
             return result.to_dict()
         except ApiException as e:
             logger.error(
-                "Error getting Service %s in %s: %s", _safe_log(name), _safe_log(namespace), e
+                "Error getting Service %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
             )
             raise
 
@@ -458,7 +469,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Services in {namespace}: {e}")
+            logger.error("Error listing Services in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def delete_service(self, namespace: str, name: str) -> None:

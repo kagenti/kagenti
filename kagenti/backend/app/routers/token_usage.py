@@ -222,9 +222,13 @@ async def _fetch_from_budget_proxy(context_id: str) -> SessionTokenUsage | None:
         logger.warning("Invalid context_id rejected for budget proxy: %s", _safe_log(context_id))
         return None
 
+    # Defense-in-depth: re-validate right before URL construction (CWE-918)
+    safe_id = context_id
+    if not re.match(r"^[a-zA-Z0-9_-]+$", safe_id):
+        return None
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.get(f"{LLM_BUDGET_PROXY_URL}/internal/usage/{context_id}")
+            resp = await client.get(f"{LLM_BUDGET_PROXY_URL}/internal/usage/{safe_id}")
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:

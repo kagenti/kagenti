@@ -718,8 +718,8 @@ async def create_sandbox(
                 labels=managed_labels,
             )
             logger.info(
-                "Created LLM API key Secret '%s' in namespace '%s'",
-                _safe_log(llm_secret),
+                "Created LLM API key Secret for agent '%s' in namespace '%s'",
+                _safe_log(request.name),
                 _safe_log(namespace),
             )
         except ApiException as e:
@@ -992,14 +992,22 @@ async def delete_sandbox(
             delete_fn()
             deleted.append(f"{kind}/{rname}")
             logger.info(
-                "Deleted %s '%s' from namespace '%s'", kind, _safe_log(rname), _safe_log(namespace)
+                "Deleted %s '%s' from namespace '%s'",
+                _safe_log(kind),
+                _safe_log(rname),
+                _safe_log(namespace),
             )
         except ApiException as e:
             if e.status == 404:
                 pass  # Already gone
             else:
                 errors.append(f"{kind}/{rname}: {e.reason}")
-                logger.warning("Failed to delete %s '%s': %s", kind, _safe_log(rname), e)
+                logger.warning(
+                    "Failed to delete %s '%s': %s",
+                    _safe_log(kind),
+                    _safe_log(rname),
+                    _safe_log(e),
+                )
 
     return {
         "status": "deleted" if not errors else "partial",

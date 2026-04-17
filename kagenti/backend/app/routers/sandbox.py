@@ -49,7 +49,7 @@ _CLUSTER_LOCAL_URL_RE = re.compile(
 def _validate_agent_url(agent_url: str) -> str:
     """Validate that agent_url is a cluster-local service URL (SSRF prevention)."""
     if not _CLUSTER_LOCAL_URL_RE.match(agent_url):
-        raise ValueError(f"Invalid agent URL: must be a cluster-local service URL")
+        raise ValueError("Invalid agent URL: must be a cluster-local service URL")
     return agent_url
 
 
@@ -1090,7 +1090,7 @@ async def _resume_agent_graph(
 
     # 2. Build the A2A message to resume the graph
     decision = "approved" if approved else "denied"
-    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    agent_url = _validate_agent_url(f"http://{agent_name}.{namespace}.svc.cluster.local:8000")
     a2a_msg = {
         "jsonrpc": "2.0",
         "method": "message/send",
@@ -1474,7 +1474,7 @@ async def get_sandbox_agent_card(namespace: str, agent_name: str):
     if not _K8S_NAME_RE.match(namespace):
         raise HTTPException(400, "Invalid namespace")
 
-    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    agent_url = _validate_agent_url(f"http://{agent_name}.{namespace}.svc.cluster.local:8000")
     card_url = f"{agent_url}/.well-known/agent-card.json"
 
     try:
@@ -1526,7 +1526,7 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
             logger.warning(
                 "Error reading deployment %s/%s: %s",
                 _safe_log(namespace),
-                deploy_name,
+                _safe_log(deploy_name),
                 _safe_log(e),
             )
             continue
@@ -1544,7 +1544,10 @@ async def get_agent_pod_status(namespace: str, agent_name: str):
             )
         except ApiException as e:
             logger.warning(
-                "Error listing pods for %s/%s: %s", _safe_log(namespace), deploy_name, _safe_log(e)
+                "Error listing pods for %s/%s: %s",
+                _safe_log(namespace),
+                _safe_log(deploy_name),
+                _safe_log(e),
             )
             pods_result.append(
                 {
@@ -1715,7 +1718,7 @@ async def get_pod_metrics(namespace: str, agent_name: str):
             logger.warning(
                 "Error reading deployment %s/%s: %s",
                 _safe_log(namespace),
-                deploy_name,
+                _safe_log(deploy_name),
                 _safe_log(e),
             )
             continue
@@ -1835,7 +1838,7 @@ async def get_pod_events(namespace: str, agent_name: str):
             logger.warning(
                 "Error reading deployment %s/%s: %s",
                 _safe_log(namespace),
-                deploy_name,
+                _safe_log(deploy_name),
                 _safe_log(e),
             )
             continue
@@ -3572,6 +3575,8 @@ async def _persist_and_recover(
     Always writes metadata (owner, title, agent_name). Only writes loop_events
     if they weren't already persisted by the inline [DONE] handler.
     """
+    if agent_url:
+        _validate_agent_url(agent_url)
     try:
         if task_db_id is None:
             logger.warning(
@@ -3867,7 +3872,7 @@ async def chat_stream(
     agent_name = await _resolve_agent_name(namespace, request.session_id, request.agent_name)
     if not _K8S_NAME_RE.match(agent_name):
         raise HTTPException(400, "Invalid resolved agent name")
-    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    agent_url = _validate_agent_url(f"http://{agent_name}.{namespace}.svc.cluster.local:8000")
 
     return StreamingResponse(
         _stream_sandbox_response(
@@ -3931,7 +3936,7 @@ async def subscribe_session(
     agent_name = await _resolve_agent_name(namespace, session_id, None)
     if not _K8S_NAME_RE.match(agent_name):
         raise HTTPException(400, "Invalid resolved agent name")
-    agent_url = f"http://{agent_name}.{namespace}.svc.cluster.local:8000"
+    agent_url = _validate_agent_url(f"http://{agent_name}.{namespace}.svc.cluster.local:8000")
 
     # Ensure a background consumer is running for this session.
     # On UI reconnect, the consumer may have already been spawned
