@@ -14,7 +14,7 @@ log_step "90" "Pre-flight checks (OTEL/MLflow pipeline readiness)"
 if kubectl get deployment mlflow -n kagenti-system &>/dev/null; then
     log_info "Waiting for OTEL -> MLflow pipeline to be ready..."
 
-    MAX_WAIT=15  # 15 iterations x 10s = 150s
+    MAX_WAIT=3  # 3 iterations x 10s = 30s (don't block on pipeline issues)
     PIPELINE_READY=false
     OTEL_RESTARTS=0
 

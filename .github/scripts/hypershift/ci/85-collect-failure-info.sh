@@ -72,52 +72,8 @@ if [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
     oc logs -n team1 deployment/weather-service --tail=50 2>/dev/null || echo "(not available)"
 
     echo ""
-    echo "=== Weather Service Envoy-Proxy Logs (last 50 lines) ==="
-    oc logs -n team1 deployment/weather-service -c envoy-proxy --tail=50 2>/dev/null || echo "(not available)"
-
-    echo ""
-    echo "=== Weather Service Client-Registration Logs (last 30 lines) ==="
-    oc logs -n team1 deployment/weather-service -c kagenti-client-registration --tail=30 2>/dev/null || echo "(not available)"
-
-    echo ""
-    echo "=== AuthBridge Unified ConfigMap ==="
-    oc get configmap authbridge-unified-config -n team1 -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "(not found)"
-
-    echo ""
-    echo "=== Weather Service Pod Details (containers, labels, annotations) ==="
-    WS_POD=$(oc get pod -n team1 -l app.kubernetes.io/name=weather-service --no-headers 2>/dev/null | head -1 | awk '{print $1}')
-    if [ -n "$WS_POD" ]; then
-        echo "Containers:"
-        oc get pod "$WS_POD" -n team1 -o jsonpath='{range .spec.containers[*]}  {.name} ({.image}){"\n"}{end}' 2>/dev/null
-        echo "Init containers:"
-        oc get pod "$WS_POD" -n team1 -o jsonpath='{range .spec.initContainers[*]}  {.name} ({.image}){"\n"}{end}' 2>/dev/null
-        echo "Pod labels:"
-        oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.labels}' 2>/dev/null | python3 -m json.tool 2>/dev/null || oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.labels}' 2>/dev/null
-        echo ""
-        echo "Pod annotations:"
-        oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.annotations}' 2>/dev/null | python3 -m json.tool 2>/dev/null || oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.annotations}' 2>/dev/null
-    else
-        echo "(weather-service pod not found)"
-    fi
-
-    echo ""
     echo "=== Weather Service Agent Env Vars (LLM config) ==="
     oc get deployment weather-service -n team1 -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{.valueFrom.secretKeyRef.name}{"\n"}{end}' 2>/dev/null || echo "(not available)"
-
-    echo ""
-    echo "=== SPIFFE IdP Setup Job Logs ==="
-    SPIFFE_POD=$(oc get pods -n kagenti-system -l app=kagenti-spiffe-idp-setup --no-headers 2>/dev/null | head -1 | awk '{print $1}')
-    if [ -n "$SPIFFE_POD" ]; then
-        oc logs "$SPIFFE_POD" -n kagenti-system -c setup-spiffe-idp --tail=50 2>/dev/null || echo "(logs not available)"
-        echo "Previous logs:"
-        oc logs "$SPIFFE_POD" -n kagenti-system -c setup-spiffe-idp --previous --tail=30 2>/dev/null || echo "(no previous logs)"
-    else
-        echo "(spiffe-idp-setup pod not found)"
-    fi
-
-    echo ""
-    echo "=== Kagenti Operator Logs (injection decisions, last 50 lines) ==="
-    oc logs -n kagenti-system deployment/kagenti-controller-manager --tail=50 2>/dev/null | grep -E 'injection decision|inject|client-registration|credential|error|ERROR' | tail -30 || echo "(not available)"
 
     echo ""
     echo "=== Weather Tool MCP Logs (last 30 lines) ==="

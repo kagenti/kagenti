@@ -506,33 +506,3 @@ class TestExtractBuildRunInfo:
 
         assert info["phase"] == "Failed"
         assert info["failureMessage"] == "Build failed: Dockerfile not found"
-
-
-class TestDefaultRegistryUrlConfig:
-    """Tests for DEFAULT_INTERNAL_REGISTRY configurability via env var."""
-
-    def test_default_value_is_kind_registry(self):
-        """Default value should be the Kind dev registry."""
-        assert DEFAULT_INTERNAL_REGISTRY == "registry.cr-system.svc.cluster.local:5000"
-
-    def test_env_var_overrides_default(self, monkeypatch):
-        """DEFAULT_REGISTRY_URL env var should override the default."""
-        monkeypatch.setenv(
-            "DEFAULT_REGISTRY_URL", "image-registry.openshift-image-registry.svc:5000"
-        )
-
-        from pydantic_settings import BaseSettings
-        from app.core.config import Settings
-
-        fresh_settings = Settings()
-        assert (
-            fresh_settings.default_registry_url
-            == "image-registry.openshift-image-registry.svc:5000"
-        )
-
-    def test_openshift_registry_is_internal(self):
-        """OpenShift internal registry should be detected as internal (svc.cluster.local absent but still in-cluster)."""
-        ocp_registry = "image-registry.openshift-image-registry.svc:5000"
-        # OpenShift registry doesn't contain svc.cluster.local, so it gets secure strategy
-        result = select_build_strategy(ocp_registry)
-        assert result == SHIPWRIGHT_STRATEGY_SECURE

@@ -56,6 +56,9 @@ spec:
     realm: {{ $realm }}
     enabled: true
     registrationAllowed: false
+    ssoSessionIdleTimeout: 86400
+    ssoSessionMaxLifespan: 604800
+    accessTokenLifespan: 1800
     roles:
       realm:
         - name: admin
@@ -128,6 +131,9 @@ data:
       "realm": {{ $realm | quote }},
       "enabled": true,
       "registrationAllowed": false,
+      "ssoSessionIdleTimeout": 86400,
+      "ssoSessionMaxLifespan": 604800,
+      "accessTokenLifespan": 1800,
       "roles": {
         "realm": [
           { "name": "admin", "description": "Platform administrator" },

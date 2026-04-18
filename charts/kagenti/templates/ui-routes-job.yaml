@@ -112,9 +112,6 @@ data:
       {{- if .Values.components.phoenix.enabled }}
       "kagenti-system,phoenix,true,TRACES_DASHBOARD_URL"
       {{- end }}
-      {{- if .Values.components.mlflow.enabled }}
-      "kagenti-system,mlflow,true,MLFLOW_DASHBOARD_URL"
-      {{- end }}
       "kagenti-system,kagenti-api,true,API_URL"
       "istio-system,kiali,true,NETWORK_TRAFFIC_DASHBOARD_URL"
       "keycloak,keycloak,true,KEYCLOAK_CONSOLE_URL"

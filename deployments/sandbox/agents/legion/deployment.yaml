@@ -51,10 +51,6 @@ spec:
             secretKeyRef:
               name: openai-secret
               key: apikey
-        - name: CHECKPOINT_DB_URL
-          value: postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
-        - name: TASK_STORE_DB_URL
-          value: postgresql+psycopg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable
         - name: WORKSPACE_ROOT
           value: /workspace
         - name: CONFIG_ROOT

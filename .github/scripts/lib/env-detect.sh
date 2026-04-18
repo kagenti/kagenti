@@ -47,11 +47,14 @@ else
 fi
 
 # Detect if running on OpenShift vs vanilla Kubernetes (Kind, etc.)
-# Uses 'kubectl get clusterversion' which is fast and only exists on OpenShift.
-# Avoids 'kubectl api-resources' which is slow and can fail intermittently.
+# HyperShift hosted clusters don't have ClusterVersion (management-plane only),
+# so also check for route.openshift.io API which exists on all OpenShift clusters.
 if kubectl get clusterversion &>/dev/null; then
     export IS_OPENSHIFT=true
     echo "Detected cluster type: OpenShift"
+elif kubectl api-resources --api-group=route.openshift.io 2>/dev/null | grep Route > /dev/null; then
+    export IS_OPENSHIFT=true
+    echo "Detected cluster type: OpenShift (HyperShift hosted)"
 else
     export IS_OPENSHIFT=false
     echo "Detected cluster type: Kubernetes (Kind/vanilla)"

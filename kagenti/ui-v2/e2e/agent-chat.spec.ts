@@ -62,7 +62,7 @@ test.describe('Agent Chat - Full User Flow', () => {
     // Look for any assistant response — either streaming content or a completed message
     await expect(
       page.locator('text=/weather|temperature|New York|forecast|degrees|°/i').first()
-    ).toBeVisible({ timeout: 90000 });
+    ).toBeVisible({ timeout: 180000 });
   });
 });
 

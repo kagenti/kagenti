@@ -36,7 +36,6 @@ class TestDashboardConfigPhoenixToggle:
             with patch("app.routers.config.settings") as mock_settings:
                 mock_settings.traces_dashboard_url = ""
                 mock_settings.network_dashboard_url = ""
-                mock_settings.mlflow_dashboard_url = ""
                 mock_settings.mcp_inspector_url = ""
                 mock_settings.mcp_proxy_full_address = ""
                 mock_settings.keycloak_console_url = ""
@@ -58,7 +57,6 @@ class TestDashboardConfigPhoenixToggle:
             with patch("app.routers.config.settings") as mock_settings:
                 mock_settings.traces_dashboard_url = phoenix_url
                 mock_settings.network_dashboard_url = ""
-                mock_settings.mlflow_dashboard_url = ""
                 mock_settings.mcp_inspector_url = ""
                 mock_settings.mcp_proxy_full_address = ""
                 mock_settings.keycloak_console_url = ""
@@ -70,24 +68,3 @@ class TestDashboardConfigPhoenixToggle:
                 assert response.status_code == 200
                 data = response.json()
                 assert data["traces"] == phoenix_url
-
-    def test_mlflow_dashboard_url_non_empty(self, client):
-        """When MLFLOW_DASHBOARD_URL is set, it should be returned."""
-        mlflow_url = "http://mlflow.localtest.me:8080"
-        with patch("app.core.auth.settings") as mock_auth_settings:
-            mock_auth_settings.enable_auth = False
-            with patch("app.routers.config.settings") as mock_settings:
-                mock_settings.traces_dashboard_url = ""
-                mock_settings.network_dashboard_url = ""
-                mock_settings.mlflow_dashboard_url = mlflow_url
-                mock_settings.mcp_inspector_url = ""
-                mock_settings.mcp_proxy_full_address = ""
-                mock_settings.keycloak_console_url = ""
-                mock_settings.domain_name = "localtest.me"
-                mock_settings.effective_keycloak_url = "http://keycloak.localtest.me:8080"
-                mock_settings.effective_keycloak_realm = "kagenti"
-
-                response = client.get("/api/v1/config/dashboards")
-                assert response.status_code == 200
-                data = response.json()
-                assert data["mlflow"] == mlflow_url

@@ -25,7 +25,14 @@ source "$SCRIPT_DIR/../lib/env-detect.sh"
 source "$SCRIPT_DIR/../lib/logging.sh"
 source "$SCRIPT_DIR/../lib/k8s-utils.sh"
 
-log_step "37" "Building platform images from source"
+# Parse mode flag
+PRE_INSTALL_ONLY=false
+if [ "${1:-}" = "--pre-install-only" ]; then
+    PRE_INSTALL_ONLY=true
+    log_step "37" "Building pre-install images from source"
+else
+    log_step "37" "Building platform images from source"
+fi
 
 if [ "${SKIP_BUILD:-false}" = "true" ]; then
     log_info "SKIP_BUILD=true — using stock images"
@@ -66,6 +73,65 @@ COMPONENTS=(
     "kagenti-backend:backend/Dockerfile:worktree"
     "kagenti-ui:ui-v2/Dockerfile:worktree"
 )
+
+# Pre-install images: private GHCR packages that must be built on-cluster
+# before the Ansible installer creates jobs that reference them.
+# Format: name|contextDir|dockerfilePath|tag (contextDir relative to repo root)
+PRE_INSTALL_COMPONENTS=(
+    "spiffe-idp-setup|kagenti|auth/spiffe-idp-setup/Dockerfile|latest"
+)
+
+# ── Pre-install mode: build private GHCR images and output registry URLs ──
+if [ "$PRE_INSTALL_ONLY" = "true" ]; then
+    kubectl create namespace "$NS" 2>/dev/null || true
+
+    for SPEC in "${PRE_INSTALL_COMPONENTS[@]}"; do
+        IFS='|' read -r NAME CTX_DIR DOCKERFILE TAG <<< "$SPEC"
+        log_info "Building pre-install image: $NAME..."
+
+        oc create imagestream "$NAME" -n "$NS" 2>/dev/null || true
+
+        cat <<EOF | kubectl apply -f -
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: $NAME
+  namespace: $NS
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: $NAME:$TAG
+  source:
+    type: Git
+    git:
+      uri: $GIT_REPO_URL
+      ref: $GIT_BRANCH
+    contextDir: $CTX_DIR
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: $DOCKERFILE
+EOF
+
+        BUILD_NAME=$(oc start-build "$NAME" -n "$NS" -o name 2>&1)
+        log_info "$BUILD_NAME started"
+
+        run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" || {
+            log_error "$NAME pre-install build failed"
+            oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -30 || true
+            exit 1
+        }
+
+        # Output the internal registry URL for the caller to use
+        NAME_UPPER=$(echo "$NAME" | tr '[:lower:]-' '[:upper:]_')
+        echo "PRE_INSTALL_IMAGE_${NAME_UPPER}=$REGISTRY/$NAME:$TAG"
+        log_success "$NAME image built: $REGISTRY/$NAME:$TAG"
+    done
+
+    log_success "Pre-install images built"
+    exit 0
+fi
 
 for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
     IFS=: read -r NAME DOCKERFILE TAG <<< "$COMPONENT_SPEC"

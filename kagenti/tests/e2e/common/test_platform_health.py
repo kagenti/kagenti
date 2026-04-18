@@ -76,9 +76,6 @@ class TestPlatformHealth:
         Checks that no pods are currently in a CrashLoopBackOff state
         or have recently restarted (within the last 5 minutes).
         Initial startup restarts are ignored.
-        Excludes Job pods since they use restartPolicy: OnFailure and
-        transient restarts are expected — test_all_jobs_completed checks
-        Job completion separately.
         """
         pods = k8s_client.list_pod_for_all_namespaces(watch=False)
 
@@ -87,10 +84,6 @@ class TestPlatformHealth:
         recent_restart_threshold = timedelta(minutes=5)
 
         for pod in pods.items:
-            # Skip Job pods — they restart on failure by design
-            if _is_job_pod(pod):
-                continue
-
             # Check if pod is in CrashLoopBackOff state
             if pod.status.container_statuses:
                 for container in pod.status.container_statuses:
@@ -144,6 +137,7 @@ class TestPlatformHealth:
         HELM_HOOK_JOBS = {
             "kagenti-agent-oauth-secret-job",
             "kagenti-ui-oauth-secret-job",
+            "kagenti-spiffe-idp-setup-job",
         }
 
         # Get all jobs across all namespaces

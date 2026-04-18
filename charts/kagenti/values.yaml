@@ -27,8 +27,6 @@ components:
     enabled: true
   phoenix:
     enabled: false
-  mlflow:
-    enabled: false
 
 # Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
 # githubUser/githubToken are optional: only needed to deploy agents/tools from
@@ -86,8 +84,6 @@ ui:
   backend:
     image: ghcr.io/kagenti/kagenti/backend
     tag: latest
-    # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
-    defaultRegistryUrl: ""
     resources:
       limits:
         cpu: 250m
@@ -226,7 +222,7 @@ kagenti-operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.2.0-alpha.26
+        tag: 0.2.0-alpha.24
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -245,10 +241,10 @@ kagenti-operator-chart:
   # Pin sidecar image tags injected by the AuthBridge webhook.
   defaults:
     images:
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-unified:v0.5.0-alpha.3
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.5.0-alpha.3
-      spiffeHelper: ghcr.io/kagenti/kagenti-extensions/spiffe-helper:v0.5.0-alpha.3
-      clientRegistration: ghcr.io/kagenti/kagenti-extensions/client-registration:v0.5.0-alpha.3
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/envoy-with-processor:v0.4.0-alpha.10
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.4.0-alpha.10
+      spiffeHelper: ghcr.io/kagenti/kagenti-extensions/spiffe-helper:v0.4.0-alpha.10
+      clientRegistration: ghcr.io/kagenti/kagenti-extensions/client-registration:v0.4.0-alpha.10
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration

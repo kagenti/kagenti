@@ -14,8 +14,6 @@ from app.models.responses import DashboardConfigResponse
 
 
 class FeatureFlagsResponse(BaseModel):
-    """Response model for feature flag status."""
-
     sandbox: bool
     integrations: bool
     triggers: bool
@@ -27,10 +25,9 @@ router = APIRouter(prefix="/config", tags=["config"])
 @router.get(
     "/features",
     response_model=FeatureFlagsResponse,
-    dependencies=[Depends(require_roles(ROLE_VIEWER))],
 )
 async def get_feature_flags() -> FeatureFlagsResponse:
-    """Return enabled feature flags for UI gating. Requires ROLE_VIEWER."""
+    """Return enabled feature flags for UI gating. Public endpoint."""
     return FeatureFlagsResponse(
         sandbox=settings.kagenti_feature_flag_sandbox,
         integrations=settings.kagenti_feature_flag_integrations,
@@ -56,7 +53,6 @@ async def get_dashboard_config() -> DashboardConfigResponse:
     return DashboardConfigResponse(
         traces=settings.traces_dashboard_url,
         network=settings.network_dashboard_url or f"http://kiali.{domain}:8080",
-        mlflow=settings.mlflow_dashboard_url,
         mcpInspector=settings.mcp_inspector_url or f"http://mcp-inspector.{domain}:8080",
         mcpProxy=settings.mcp_proxy_full_address or f"http://mcp-proxy.{domain}:8080",
         keycloakConsole=(

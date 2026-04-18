@@ -6,7 +6,6 @@ Authentication and authorization utilities.
 
 Supports JWT token validation with Keycloak.
 """
-# pylint: disable=fixme
 
 import logging
 from typing import Optional, List
@@ -227,10 +226,6 @@ async def validate_token(token: str) -> TokenData:
         # assignment in Keycloak.
         if "admin" in realm_roles and ROLE_ADMIN not in roles:
             roles.append(ROLE_ADMIN)
-
-        # All authenticated users get viewer access (issue #1130)
-        if ROLE_VIEWER not in roles:
-            roles.append(ROLE_VIEWER)
 
         return TokenData(
             sub=sub,

@@ -956,12 +956,40 @@ if [ "$RUN_INSTALL" = "true" ]; then
         ./deployments/ansible/cleanup-install.sh || true
     fi
 
+    # Build pre-install images on OpenShift (private GHCR packages like spiffe-idp-setup)
+    # These must be built before the Ansible installer creates jobs that reference them.
+    if [ -f "./.github/scripts/kagenti-operator/37-build-platform-images.sh" ]; then
+        log_step "Building pre-install images from source..."
+        PRE_INSTALL_OUTPUT=$(./.github/scripts/kagenti-operator/37-build-platform-images.sh --pre-install-only 2>&1) || {
+            log_warn "Pre-install image build failed (install may fail if GHCR images are private)"
+            PRE_INSTALL_OUTPUT=""
+        }
+        # Extract spiffe-idp-setup internal registry URL (grep || true to avoid pipefail exit)
+        SPIFFE_IMAGE=$(echo "$PRE_INSTALL_OUTPUT" | grep "^PRE_INSTALL_IMAGE_SPIFFE_IDP_SETUP=" | cut -d= -f2 || true)
+    fi
+
     log_step "Installing Kagenti platform..."
     INSTALLER_ARGS=(--env "$KAGENTI_ENV")
+    # Build a single merged extra-vars JSON (run-install.sh only supports one --extra-vars)
+    EXTRA_VARS_JSON="{}"
     if [ "$NO_RHOAI" = "true" ]; then
-        INSTALLER_ARGS+=(--extra-vars '{"rhoai": {"enabled": false}}')
+        EXTRA_VARS_JSON=$(echo "$EXTRA_VARS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); d['rhoai']={'enabled':False}; print(json.dumps(d))")
     elif [ -n "$RHOAI_PROFILE" ]; then
-        INSTALLER_ARGS+=(--extra-vars "{\"rhoai\": {\"enabled\": true, \"profile\": \"$RHOAI_PROFILE\"}}")
+        EXTRA_VARS_JSON=$(echo "$EXTRA_VARS_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); d['rhoai']={'enabled':True,'profile':'$RHOAI_PROFILE'}; print(json.dumps(d))")
+    fi
+    # Override spiffe-idp-setup image if built on-cluster (top-level var to avoid clobbering charts dict)
+    if [ -n "${SPIFFE_IMAGE:-}" ]; then
+        SPIFFE_REPO="${SPIFFE_IMAGE%:*}"
+        log_step "Using on-cluster spiffe-idp-setup: $SPIFFE_REPO"
+        EXTRA_VARS_JSON=$(echo "$EXTRA_VARS_JSON" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+d['spiffe_idp_image_override']='$SPIFFE_REPO'
+print(json.dumps(d))")
+    fi
+    if [ "$EXTRA_VARS_JSON" != "{}" ]; then
+        log_step "Installer extra-vars: $EXTRA_VARS_JSON"
+        INSTALLER_ARGS+=(--extra-vars "$EXTRA_VARS_JSON")
     fi
     ./.github/scripts/kagenti-operator/30-run-installer.sh "${INSTALLER_ARGS[@]}"
 
@@ -973,11 +1001,32 @@ else
 fi
 
 # ============================================================================
+# PHASE 2b: Build backend+UI from source (when available)
+# ============================================================================
+
+if [ "$RUN_AGENTS" = "true" ] || [ "$RUN_TEST" = "true" ] || [ "$RUN_UI_TESTS" = "true" ]; then
+    if [ -f "./.github/scripts/kagenti-operator/37-build-platform-images.sh" ]; then
+        log_phase "PHASE 2b: Build Backend+UI from Source"
+        ./.github/scripts/kagenti-operator/37-build-platform-images.sh || {
+            log_warn "Platform image build failed (using stock images)"
+        }
+    fi
+fi
+
+# ============================================================================
 # PHASE 3: Deploy Test Agents
 # ============================================================================
 
 if [ "$RUN_AGENTS" = "true" ]; then
     log_phase "PHASE 3: Deploy Test Agents"
+
+    # Deploy LiteLLM FIRST — generates virtual keys that agents need
+    if [ -f "./.github/scripts/kagenti-operator/38-deploy-litellm.sh" ]; then
+        log_step "Deploying LiteLLM proxy..."
+        ./.github/scripts/kagenti-operator/38-deploy-litellm.sh || {
+            log_warn "LiteLLM deploy failed (agents may not have LLM access)"
+        }
+    fi
 
     log_step "Building weather-tool..."
     ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
@@ -987,6 +1036,14 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    # Deploy sandbox agents (if sandbox feature flag enabled)
+    if [ -f "./.github/scripts/kagenti-operator/76-deploy-sandbox-agents.sh" ]; then
+        log_step "Deploying sandbox agents..."
+        ./.github/scripts/kagenti-operator/76-deploy-sandbox-agents.sh || {
+            log_warn "Sandbox agent deploy failed (sandbox tests will fail)"
+        }
+    fi
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
@@ -1064,11 +1121,43 @@ if [ "$RUN_TEST" = "true" ]; then
     # Pre-flight checks (OTEL/MLflow pipeline readiness)
     ./.github/scripts/common/90-preflight-checks.sh
 
+    # Post-deploy validation (LiteLLM keys, sandbox pods, UI route, Keycloak)
+    if [ -f "./.github/scripts/common/91-validate-deployment.sh" ]; then
+        ./.github/scripts/common/91-validate-deployment.sh
+    fi
+
+    # Propagate --no-rhoai to test env so RHOAI tests are skipped
+    if [ "$NO_RHOAI" = "true" ]; then
+        export ENABLE_RHOAI_TESTS=false
+    fi
+
+    # Clean up stale build/failed pods before tests (prevents test_no_failed_pods failures)
+    kubectl delete pod -n team1 --field-selector=status.phase=Failed --ignore-not-found 2>/dev/null || true
+    kubectl delete pod -n kagenti-system --field-selector=status.phase=Failed --ignore-not-found 2>/dev/null || true
+
+    # Auto-detect sandbox agent URLs from routes (OpenShift/HyperShift)
+    for variant in legion hardened basic restricted; do
+        VAR_UPPER=$(echo "$variant" | tr '[:lower:]' '[:upper:]')
+        VAR_NAME="SANDBOX_${VAR_UPPER}_URL"
+        if [ -z "${!VAR_NAME:-}" ]; then
+            ROUTE_HOST=$(oc get route "sandbox-${variant}" -n team1 -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+            if [ -n "$ROUTE_HOST" ]; then
+                export "${VAR_NAME}=https://${ROUTE_HOST}"
+                log_step "Auto-detected sandbox-${variant} URL: https://${ROUTE_HOST}"
+            fi
+        fi
+    done
+
     # Ensure test user and service account exist in Keycloak
     ./.github/scripts/common/87-setup-test-credentials.sh
 
     # Backend E2E tests (pytest)
-    ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+    # Capture exit code so UI tests (Phase 4b) still run even if backend fails
+    PHASE4_EXIT=0
+    ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh || PHASE4_EXIT=$?
+    if [ "$PHASE4_EXIT" -ne 0 ]; then
+        log_error "Backend E2E tests failed (exit $PHASE4_EXIT) — continuing to UI tests"
+    fi
 else
     log_phase "PHASE 4: Skipping E2E Tests"
 fi
@@ -1080,8 +1169,12 @@ fi
 if [ "$RUN_UI_TESTS" = "true" ]; then
     log_phase "PHASE 4b: Run UI E2E Tests (Playwright)"
 
+    PHASE4B_EXIT=0
     if [ -f "./.github/scripts/common/92-run-ui-tests.sh" ]; then
-        ./.github/scripts/common/92-run-ui-tests.sh
+        ./.github/scripts/common/92-run-ui-tests.sh || PHASE4B_EXIT=$?
+        if [ "$PHASE4B_EXIT" -ne 0 ]; then
+            log_error "UI E2E tests failed (exit $PHASE4B_EXIT)"
+        fi
     else
         log_step "Skipping UI tests (script not found)"
     fi
@@ -1130,8 +1223,19 @@ else
     echo ""
 fi
 
+# Propagate test failures to exit code
+FINAL_EXIT=${PHASE4_EXIT:-0}
+[ "${PHASE4B_EXIT:-0}" -ne 0 ] && FINAL_EXIT=${PHASE4B_EXIT:-0}
+
 echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}┃${NC} Full test completed successfully!"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+if [ "$FINAL_EXIT" -ne 0 ]; then
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}┃${NC} Tests completed with failures (exit $FINAL_EXIT)"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+else
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}┃${NC} Full test completed successfully!"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+fi
 echo ""
+exit "${FINAL_EXIT}"

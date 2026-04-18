@@ -22,7 +22,6 @@ import {
   ChartLineIcon,
   NetworkIcon,
   ExternalLinkAltIcon,
-  CubesIcon,
 } from '@patternfly/react-icons';
 import { useQuery } from '@tanstack/react-query';
 
@@ -94,7 +93,6 @@ export const ObservabilityPage: React.FC = () => {
   // The backend provides fallback URLs if the ConfigMap values are not set
   const tracesUrl = dashboards?.traces || '';
   const networkUrl = dashboards?.network || '';
-  const mlflowUrl = dashboards?.mlflow || '';
 
   return (
     <>
@@ -146,45 +144,18 @@ export const ObservabilityPage: React.FC = () => {
               isLoading={isLoading}
             />
           </GridItem>
-
-          {mlflowUrl && (
-            <GridItem md={6}>
-              <DashboardCard
-                title="MLflow"
-                description="Track experiments, model runs, and LLM traces with MLflow."
-                icon={<CubesIcon />}
-                url={mlflowUrl}
-                buttonText="Open MLflow"
-                isLoading={isLoading}
-              />
-            </GridItem>
-          )}
         </Grid>
 
-        {(() => {
-          const tools = [
-            tracesUrl && 'Phoenix for traces',
-            'Kiali for service mesh',
-            mlflowUrl && 'MLflow for experiment tracking',
-          ].filter(Boolean) as string[];
-          const toolList =
-            tools.length <= 1
-              ? tools.join('')
-              : tools.length === 2
-              ? tools.join(' and ')
-              : `${tools.slice(0, -1).join(', ')}, and ${tools[tools.length - 1]}`;
-          return (
-            <Alert
-              variant="info"
-              title="Note"
-              isInline
-              style={{ marginTop: '24px' }}
-            >
-              Ensure that the observability tools ({toolList}) are properly
-              configured and accessible from your environment.
-            </Alert>
-          );
-        })()}
+        <Alert
+          variant="info"
+          title="Note"
+          isInline
+          style={{ marginTop: '24px' }}
+        >
+          Ensure that the observability tools ({tracesUrl ? 'Phoenix for traces and ' : ''}Kiali for
+          service mesh) are properly configured and accessible from your
+          environment.
+        </Alert>
       </PageSection>
     </>
   );

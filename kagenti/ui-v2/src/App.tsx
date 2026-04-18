@@ -34,7 +34,11 @@ import { SessionGraphPage } from './pages/SessionGraphPage';
 import { TriggerManagementPage } from './pages/TriggerManagementPage';
 
 function App() {
-  const features = useFeatureFlags();
+  const { isLoadingFlags, ...features } = useFeatureFlags();
+
+  if (isLoadingFlags) {
+    return null;
+  }
 
   return (
     <AppLayout features={features}>
