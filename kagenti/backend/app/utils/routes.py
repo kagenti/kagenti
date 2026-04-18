@@ -38,7 +38,7 @@ def detect_platform(kube: KubernetesService) -> str:
             )
 
         groups = api_response.get("groups", [])
-        logger.debug(f"Available API groups: {[g.get('name') for g in groups]}")
+        logger.debug("Available API groups: %s", [g.get("name") for g in groups])
 
         for group in groups:
             if group.get("name") == "route.openshift.io":
@@ -48,7 +48,7 @@ def detect_platform(kube: KubernetesService) -> str:
         logger.info("Detected Kubernetes platform (no route.openshift.io API)")
         return "kubernetes"
     except Exception as e:
-        logger.warning(f"Error detecting platform: {e}, defaulting to kubernetes")
+        logger.warning("Error detecting platform: %s, defaulting to kubernetes", e)
         return "kubernetes"
 
 
@@ -115,13 +115,13 @@ def create_httproute(
             body=httproute_manifest,
         )
         logger.info(
-            f"Created HTTPRoute '{name}' in namespace '{namespace}' with hostname '{hostname}'"
+            "Created HTTPRoute '%s' in namespace '%s' with hostname '%s'", name, namespace, hostname
         )
     except ApiException as e:
         if e.status == 409:
-            logger.warning(f"HTTPRoute '{name}' already exists in namespace '{namespace}'")
+            logger.warning("HTTPRoute '%s' already exists in namespace '%s'", name, namespace)
         else:
-            logger.error(f"Failed to create HTTPRoute: {e}")
+            logger.error("Failed to create HTTPRoute: %s", e)
             raise
 
 
@@ -177,12 +177,12 @@ def create_openshift_route(
             plural="routes",
             body=route_manifest,
         )
-        logger.info(f"Created OpenShift Route '{name}' in namespace '{namespace}'")
+        logger.info("Created OpenShift Route '%s' in namespace '%s'", name, namespace)
     except ApiException as e:
         if e.status == 409:
-            logger.warning(f"Route '{name}' already exists in namespace '{namespace}'")
+            logger.warning("Route '%s' already exists in namespace '%s'", name, namespace)
         else:
-            logger.error(f"Failed to create Route: {e}")
+            logger.error("Failed to create Route: %s", e)
             raise
 
 
@@ -229,10 +229,10 @@ def route_exists(
         if e.status == 404:
             return False
         # For other errors, log and return False
-        logger.warning(f"Error checking route existence: {e}")
+        logger.warning("Error checking route existence: %s", e)
         return False
     except Exception as e:
-        logger.warning(f"Unexpected error checking route existence: {e}")
+        logger.warning("Unexpected error checking route existence: %s", e)
         return False
 
 
@@ -256,12 +256,15 @@ def create_route_for_agent_or_tool(
         service_port: Port of the backend service
     """
     logger.info(
-        f"Creating route for {name} in namespace {namespace}, "
-        f"service={service_name}, port={service_port}"
+        "Creating route for %s in namespace %s, service=%s, port=%s",
+        name,
+        namespace,
+        service_name,
+        service_port,
     )
 
     platform = detect_platform(kube)
-    logger.info(f"Detected platform: {platform}")
+    logger.info("Detected platform: %s", platform)
 
     if platform == "openshift":
         create_openshift_route(kube, name, namespace, service_name, service_port)

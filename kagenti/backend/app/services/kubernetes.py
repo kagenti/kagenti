@@ -20,6 +20,12 @@ from app.core.constants import ENABLED_NAMESPACE_LABEL_KEY, ENABLED_NAMESPACE_LA
 logger = logging.getLogger(__name__)
 
 
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 def _sanitize(value: str) -> str:
     """Strip newlines and control characters to prevent log injection (CWE-117).
 
@@ -53,7 +59,7 @@ class KubernetesService:
             return kubernetes.client.ApiClient()
 
         except ConfigException as e:
-            logger.error(f"Failed to load Kubernetes config: {e}")
+            logger.error("Failed to load Kubernetes config: %s", e)
             raise
 
     @property
@@ -104,7 +110,7 @@ class KubernetesService:
             )
             return sorted([ns.metadata.name for ns in response.items if ns.metadata])
         except ApiException as e:
-            logger.error(f"Error listing namespaces: {e}")
+            logger.error("Error listing namespaces: %s", e)
             return ["default"]
 
     def list_enabled_namespaces(self) -> List[str]:
@@ -131,7 +137,7 @@ class KubernetesService:
             )
             return response.get("items", [])
         except ApiException as e:
-            logger.error(f"Error listing {plural} in {namespace}: {e}")
+            logger.error("Error listing %s in %s: %s", plural, namespace, e)
             raise
 
     def list_cluster_custom_resources(
@@ -150,7 +156,7 @@ class KubernetesService:
                 label_selector=label_selector,
             )
         except ApiException as e:
-            logger.error(f"Error listing cluster-scoped {plural}: {e}")
+            logger.error("Error listing cluster-scoped %s: %s", plural, e)
             raise
 
     def get_custom_resource(
@@ -171,7 +177,7 @@ class KubernetesService:
                 name=name,
             )
         except ApiException as e:
-            logger.error(f"Error getting {plural}/{name} in {namespace}: {e}")
+            logger.error("Error getting %s/%s in %s: %s", plural, name, namespace, e)
             raise
 
     def delete_custom_resource(
@@ -192,7 +198,7 @@ class KubernetesService:
                 name=name,
             )
         except ApiException as e:
-            logger.error(f"Error deleting {plural}/{name} in {namespace}: {e}")
+            logger.error("Error deleting %s/%s in %s: %s", plural, name, namespace, e)
             raise
 
     def create_custom_resource(
@@ -213,7 +219,7 @@ class KubernetesService:
                 body=body,
             )
         except ApiException as e:
-            logger.error(f"Error creating {plural} in {namespace}: {e}")
+            logger.error("Error creating %s in %s: %s", plural, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
@@ -229,7 +235,7 @@ class KubernetesService:
         """
         try:
             self.core_api.read_namespaced_service_account(name=name, namespace=namespace)
-            logger.debug(f"ServiceAccount '{name}' already exists in {namespace}")
+            logger.debug("ServiceAccount '%s' already exists in %s", name, namespace)
         except ApiException as e:
             if e.status == 404:
                 sa = kubernetes.client.V1ServiceAccount(
@@ -240,9 +246,9 @@ class KubernetesService:
                     ),
                 )
                 self.core_api.create_namespaced_service_account(namespace=namespace, body=sa)
-                logger.info(f"Created ServiceAccount '{name}' in {namespace}")
+                logger.info("Created ServiceAccount '%s' in %s", name, namespace)
             else:
-                logger.error(f"Error checking ServiceAccount '{name}' in {namespace}: {e}")
+                logger.error("Error checking ServiceAccount '%s' in %s: %s", name, namespace, e)
                 raise
 
     # -------------------------------------------------------------------------
@@ -259,7 +265,7 @@ class KubernetesService:
         """
         try:
             self.core_api.read_namespaced_config_map(name=name, namespace=namespace)
-            logger.debug(f"ConfigMap '{name}' already exists in {namespace}")
+            logger.debug("ConfigMap '%s' already exists in %s", name, namespace)
         except ApiException as e:
             if e.status == 404:
                 cm = kubernetes.client.V1ConfigMap(
@@ -273,7 +279,7 @@ class KubernetesService:
                 self.core_api.create_namespaced_config_map(namespace=namespace, body=cm)
                 logger.info("Created ConfigMap '%s' in %s", name, namespace)
             else:
-                logger.error(f"Error checking ConfigMap '{name}' in {namespace}: {e}")
+                logger.error("Error checking ConfigMap '%s' in %s: %s", name, namespace, e)
                 raise
 
     def upsert_configmap(
@@ -360,7 +366,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating Deployment in {namespace}: {e}")
+            logger.error("Error creating Deployment in %s: %s", namespace, e)
             raise
 
     def get_deployment(self, namespace: str, name: str) -> dict:
@@ -372,7 +378,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting Deployment {name} in {namespace}: {e}")
+            logger.error("Error getting Deployment %s in %s: %s", name, namespace, e)
             raise
 
     def list_deployments(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
@@ -384,7 +390,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Deployments in {namespace}: {e}")
+            logger.error("Error listing Deployments in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def delete_deployment(self, namespace: str, name: str) -> None:
@@ -395,7 +401,12 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error deleting Deployment %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     def patch_deployment(self, namespace: str, name: str, body: dict) -> dict:
@@ -408,7 +419,12 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error patching Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error patching Deployment %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     # -------------------------------------------------------------------------
@@ -424,7 +440,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating Service in {namespace}: {e}")
+            logger.error("Error creating Service in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def get_service(self, namespace: str, name: str) -> dict:
@@ -436,7 +452,12 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting Service {name} in {namespace}: {e}")
+            logger.error(
+                "Error getting Service %s in %s: %s",
+                _safe_log(name),
+                _safe_log(namespace),
+                _safe_log(e),
+            )
             raise
 
     def list_services(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
@@ -448,7 +469,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Services in {namespace}: {e}")
+            logger.error("Error listing Services in %s: %s", _safe_log(namespace), _safe_log(e))
             raise
 
     def delete_service(self, namespace: str, name: str) -> None:
@@ -557,7 +578,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating StatefulSet in {namespace}: {e}")
+            logger.error("Error creating StatefulSet in %s: %s", namespace, e)
             raise
 
     def get_statefulset(self, namespace: str, name: str) -> dict:
@@ -569,7 +590,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting StatefulSet {name} in {namespace}: {e}")
+            logger.error("Error getting StatefulSet %s in %s: %s", name, namespace, e)
             raise
 
     def list_statefulsets(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
@@ -581,7 +602,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing StatefulSets in {namespace}: {e}")
+            logger.error("Error listing StatefulSets in %s: %s", namespace, e)
             raise
 
     def delete_statefulset(self, namespace: str, name: str) -> None:
@@ -592,7 +613,7 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting StatefulSet {name} in {namespace}: {e}")
+            logger.error("Error deleting StatefulSet %s in %s: %s", name, namespace, e)
             raise
 
     def patch_statefulset(self, namespace: str, name: str, body: dict) -> dict:
@@ -605,7 +626,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error patching StatefulSet {name} in {namespace}: {e}")
+            logger.error("Error patching StatefulSet %s in %s: %s", name, namespace, e)
             raise
 
     # -------------------------------------------------------------------------
@@ -621,7 +642,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error creating Job in {namespace}: {e}")
+            logger.error("Error creating Job in %s: %s", namespace, e)
             raise
 
     def get_job(self, namespace: str, name: str) -> dict:
@@ -633,7 +654,7 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting Job {name} in {namespace}: {e}")
+            logger.error("Error getting Job %s in %s: %s", name, namespace, e)
             raise
 
     def list_jobs(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
@@ -645,7 +666,7 @@ class KubernetesService:
             )
             return [item.to_dict() for item in result.items]
         except ApiException as e:
-            logger.error(f"Error listing Jobs in {namespace}: {e}")
+            logger.error("Error listing Jobs in %s: %s", namespace, e)
             raise
 
     def delete_job(self, namespace: str, name: str) -> None:
@@ -658,7 +679,7 @@ class KubernetesService:
                 propagation_policy="Background",
             )
         except ApiException as e:
-            logger.error(f"Error deleting Job {name} in {namespace}: {e}")
+            logger.error("Error deleting Job %s in %s: %s", name, namespace, e)
             raise
 
 

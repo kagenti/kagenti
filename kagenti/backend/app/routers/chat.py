@@ -8,6 +8,7 @@ Provides endpoints for chatting with A2A agents using the Agent-to-Agent protoco
 """
 
 import logging
+import re
 from typing import Optional, List
 from uuid import uuid4
 
@@ -22,6 +23,26 @@ from app.utils.routes import get_agent_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# Cluster-local URL pattern for SSRF prevention (CWE-918)
+_CLUSTER_LOCAL_URL_RE = re.compile(
+    r"^http://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    r"\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.svc\.cluster\.local:\d+$"
+)
+
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
+def _validate_agent_url(agent_url: str) -> str:
+    """Validate that agent_url is a cluster-local service URL (SSRF prevention)."""
+    if not _CLUSTER_LOCAL_URL_RE.match(agent_url):
+        raise ValueError("Invalid agent URL: must be a cluster-local service URL")
+    return agent_url
+
 
 # A2A protocol constants
 A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
@@ -77,6 +98,8 @@ async def get_agent_card(
     All agents are reached via their cluster-internal URL through AuthBridge.
     """
     agent_url = get_agent_url(name, namespace)
+    if settings.is_running_in_cluster:
+        _validate_agent_url(agent_url)
     card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
 
     try:
@@ -111,19 +134,19 @@ async def get_agent_card(
             )
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error fetching agent card: {e}")
+        logger.error("HTTP error fetching agent card: %s", e)
         raise HTTPException(
             status_code=e.response.status_code,
             detail=f"Failed to fetch agent card: {e.response.text}",
         )
     except httpx.RequestError as e:
-        logger.error(f"Request error fetching agent card: {e}")
+        logger.error("Request error fetching agent card: %s", e)
         raise HTTPException(
             status_code=503,
             detail=f"Failed to connect to agent at {agent_url}",
         )
     except Exception as e:
-        logger.error(f"Unexpected error fetching agent card: {e}")
+        logger.error("Unexpected error fetching agent card: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching agent card: {str(e)}",
@@ -152,6 +175,8 @@ async def send_message(
     authenticated requests.
     """
     agent_url = get_agent_url(name, namespace)
+    if settings.is_running_in_cluster:
+        _validate_agent_url(agent_url)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload
@@ -215,19 +240,19 @@ async def send_message(
             )
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error sending message: {e}")
+        logger.error("HTTP error sending message: %s", e)
         raise HTTPException(
             status_code=e.response.status_code,
             detail=f"Agent returned error: {e.response.text}",
         )
     except httpx.RequestError as e:
-        logger.error(f"Request error sending message: {e}")
+        logger.error("Request error sending message: %s", e)
         raise HTTPException(
             status_code=503,
             detail=f"Failed to connect to agent at {agent_url}",
         )
     except Exception as e:
-        logger.error(f"Unexpected error sending message: {e}")
+        logger.error("Unexpected error sending message: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"Error sending message: {str(e)}",
@@ -303,8 +328,12 @@ async def _stream_a2a_response(
         },
     }
 
-    logger.info(f"Starting A2A stream to {agent_url} with session_id={session_id}")
-    logger.debug(f"Message payload: {json.dumps(message_payload, indent=2)}")
+    logger.info(
+        "Starting A2A stream to %s with session_id=%s",
+        _safe_log(agent_url),
+        _safe_log(session_id),
+    )
+    logger.debug("Message payload: %s", json.dumps(message_payload, indent=2))
 
     # Prepare headers with optional Authorization
     headers = {
@@ -451,7 +480,7 @@ async def _stream_a2a_response(
                                         if content:
                                             payload["content"] = content
 
-                                logger.info(f"Yielding task event: state={state}")
+                                logger.info("Yielding task event: state=%s", state)
                                 yield f"data: {json.dumps(payload)}\n\n"
 
                             # Direct message (A2AMessage)
@@ -472,22 +501,26 @@ async def _stream_a2a_response(
                                     payload["content"] = content
 
                                 logger.info(
-                                    f"Yielding direct message event: messageId={message_id}"
+                                    "Yielding direct message event: messageId=%s", message_id
                                 )
                                 yield f"data: {json.dumps(payload)}\n\n"
 
                             else:
                                 logger.warning(
-                                    f"Unknown result structure: keys={list(result.keys())}"
+                                    "Unknown result structure: keys=%s", list(result.keys())
                                 )
 
                         except json.JSONDecodeError as e:
-                            logger.warning(f"Failed to parse SSE data: {data[:200]}, error: {e}")
+                            logger.warning(
+                                "Failed to parse SSE data: %s, error: %s",
+                                _safe_log(data[:200]),
+                                e,
+                            )
                             continue
 
     except httpx.HTTPStatusError as e:
         error_msg = f"Agent error: {e.response.status_code}"
-        logger.error(f"{error_msg}: {e.response.text[:500]}")
+        logger.error("%s: %s", error_msg, _safe_log(e.response.text[:500]))
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
     except httpx.RequestError as e:
         error_msg = f"Connection error: {str(e)}"
@@ -517,6 +550,8 @@ async def stream_message(
     authenticated requests.
     """
     agent_url = get_agent_url(name, namespace)
+    if settings.is_running_in_cluster:
+        _validate_agent_url(agent_url)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present

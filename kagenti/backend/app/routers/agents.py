@@ -356,6 +356,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 def _is_deployment_ready(resource_data: dict) -> str:
     """Check if a Kubernetes Deployment is ready based on status.
 
@@ -677,7 +683,7 @@ async def list_agents(
             except ApiException as e:
                 # CRD not installed or not accessible - that's fine, just skip
                 if e.status not in (404, 403):
-                    logger.warning(f"Failed to list legacy Agent CRDs: {e.reason}")
+                    logger.warning("Failed to list legacy Agent CRDs: %s", e.reason)
 
         return AgentListResponse(items=agents)
 
@@ -741,7 +747,9 @@ async def get_agent(
             service = kube.get_service(namespace=namespace, name=name)
         except ApiException as e:
             if e.status != 404:
-                logger.warning(f"Failed to get Service for agent '{name}': {e.reason}")
+                logger.warning(
+                    "Failed to get Service for agent '%s': %s", _safe_log(name), e.reason
+                )
 
     # Build response with workload info and optional Service info
     metadata = workload.get("metadata", {})
@@ -827,9 +835,9 @@ async def delete_agent(
         messages.append(f"Deployment '{name}' deleted")
     except ApiException as e:
         if e.status == 404:
-            logger.debug(f"Deployment '{name}' not found (may be other workload type)")
+            logger.debug("Deployment '%s' not found (may be other workload type)", _safe_log(name))
         else:
-            logger.warning(f"Failed to delete Deployment '{name}': {e.reason}")
+            logger.warning("Failed to delete Deployment '%s': %s", _safe_log(name), e.reason)
 
     # Delete the StatefulSet (if exists)
     try:
@@ -837,9 +845,9 @@ async def delete_agent(
         messages.append(f"StatefulSet '{name}' deleted")
     except ApiException as e:
         if e.status == 404:
-            logger.debug(f"StatefulSet '{name}' not found")
+            logger.debug("StatefulSet '%s' not found", _safe_log(name))
         else:
-            logger.warning(f"Failed to delete StatefulSet '{name}': {e.reason}")
+            logger.warning("Failed to delete StatefulSet '%s': %s", _safe_log(name), e.reason)
 
     # Delete the Job (if exists)
     try:
@@ -847,9 +855,9 @@ async def delete_agent(
         messages.append(f"Job '{name}' deleted")
     except ApiException as e:
         if e.status == 404:
-            logger.debug(f"Job '{name}' not found")
+            logger.debug("Job '%s' not found", _safe_log(name))
         else:
-            logger.warning(f"Failed to delete Job '{name}': {e.reason}")
+            logger.warning("Failed to delete Job '%s': %s", _safe_log(name), e.reason)
 
     # Delete the Service
     try:
@@ -860,7 +868,7 @@ async def delete_agent(
             # Service doesn't exist, that's fine
             pass
         else:
-            logger.warning(f"Failed to delete Service '{name}': {e.reason}")
+            logger.warning("Failed to delete Service '%s': %s", _safe_log(name), e.reason)
 
     # Delete the HTTPRoute (if exists)
     try:
@@ -877,7 +885,7 @@ async def delete_agent(
             # HTTPRoute doesn't exist, that's fine
             pass
         else:
-            logger.warning(f"Failed to delete HTTPRoute '{name}': {e.reason}")
+            logger.warning("Failed to delete HTTPRoute '%s': %s", _safe_log(name), e.reason)
 
     # Delete the AgentRuntime CR (if exists)
     try:
@@ -910,7 +918,7 @@ async def delete_agent(
             # Agent CR doesn't exist, that's expected for new deployments
             pass
         else:
-            logger.warning(f"Failed to delete Agent CR '{name}': {e.reason}")
+            logger.warning("Failed to delete Agent CR '%s': %s", _safe_log(name), e.reason)
 
     # Delete Shipwright BuildRuns associated with the build
     try:
@@ -935,10 +943,14 @@ async def delete_agent(
                     messages.append(f"BuildRun '{buildrun_name}' deleted")
                 except ApiException as e:
                     if e.status != 404:
-                        logger.warning(f"Failed to delete BuildRun '{buildrun_name}': {e.reason}")
+                        logger.warning(
+                            "Failed to delete BuildRun '%s': %s",
+                            _safe_log(buildrun_name),
+                            e.reason,
+                        )
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Failed to list BuildRuns for '{name}': {e.reason}")
+            logger.warning("Failed to list BuildRuns for '%s': %s", _safe_log(name), e.reason)
 
     # Delete the Shipwright Build CR if it exists
     try:
@@ -955,7 +967,7 @@ async def delete_agent(
             # Shipwright Build doesn't exist, that's fine (might be image-based or Tekton deployment)
             pass
         else:
-            logger.warning(f"Failed to delete Shipwright Build '{name}': {e.reason}")
+            logger.warning("Failed to delete Shipwright Build '%s': %s", _safe_log(name), e.reason)
 
     return DeleteResponse(success=True, message="; ".join(messages))
 
@@ -1076,7 +1088,11 @@ async def migrate_agent(
     unless the existing Deployment was created by kagenti-operator (in which
     case we just need to clean up the Agent CRD).
     """
-    logger.info(f"Starting migration of Agent CRD '{name}' in namespace '{namespace}'")
+    logger.info(
+        "Starting migration of Agent CRD '%s' in namespace '%s'",
+        _safe_log(name),
+        _safe_log(namespace),
+    )
 
     deployment_created = False
     service_created = False
@@ -1123,7 +1139,7 @@ async def migrate_agent(
     try:
         kube.get_service(namespace=namespace, name=name)
         service_exists = True
-        logger.info(f"Service '{name}' already exists")
+        logger.info("Service '%s' already exists", _safe_log(name))
     except ApiException as e:
         if e.status != 404:
             raise HTTPException(status_code=e.status, detail=str(e.reason))
@@ -1146,9 +1162,9 @@ async def migrate_agent(
                     }
                 }
                 kube.patch_deployment(namespace=namespace, name=name, body=patch)
-                logger.info(f"Patched Deployment '{name}' with migration annotations")
+                logger.info("Patched Deployment '%s' with migration annotations", _safe_log(name))
             except ApiException as e:
-                logger.warning(f"Failed to patch Deployment '{name}': {e.reason}")
+                logger.warning("Failed to patch Deployment '%s': %s", _safe_log(name), e.reason)
         else:
             raise HTTPException(
                 status_code=409,
@@ -1162,7 +1178,7 @@ async def migrate_agent(
         try:
             kube.create_deployment(namespace=namespace, body=deployment_manifest)
             deployment_created = True
-            logger.info(f"Created Deployment '{name}' from Agent CRD")
+            logger.info("Created Deployment '%s' from Agent CRD", _safe_log(name))
         except ApiException as e:
             raise HTTPException(
                 status_code=e.status,
@@ -1175,7 +1191,7 @@ async def migrate_agent(
         try:
             kube.create_service(namespace=namespace, body=service_manifest)
             service_created = True
-            logger.info(f"Created Service '{name}' from Agent CRD")
+            logger.info("Created Service '%s' from Agent CRD", _safe_log(name))
         except ApiException as e:
             # If Deployment was created, try to clean up
             if deployment_created:
@@ -1203,10 +1219,10 @@ async def migrate_agent(
                 name=name,
             )
             agent_crd_deleted = True
-            logger.info(f"Deleted Agent CRD '{name}'")
+            logger.info("Deleted Agent CRD '%s'", _safe_log(name))
         except ApiException as e:
             if e.status != 404:
-                logger.warning(f"Failed to delete Agent CRD '{name}': {e.reason}")
+                logger.warning("Failed to delete Agent CRD '%s': %s", _safe_log(name), e.reason)
 
     # Build response message
     messages = []
@@ -1533,7 +1549,7 @@ async def list_build_strategies(
         return ClusterBuildStrategiesResponse(strategies=strategy_list)
 
     except ApiException as e:
-        logger.error(f"Failed to list ClusterBuildStrategies: {e}")
+        logger.error("Failed to list ClusterBuildStrategies: %s", e)
         raise HTTPException(
             status_code=e.status,
             detail=f"Failed to list build strategies: {e.reason}",
@@ -1869,7 +1885,7 @@ async def get_shipwright_build_info(
         except ApiException as e:
             # BuildRun not found is OK, just means no build has been triggered
             if e.status != 404:
-                logger.warning(f"Failed to get BuildRun for build '{name}': {e}")
+                logger.warning("Failed to get BuildRun for build '%s': %s", _safe_log(name), e)
 
         return response
 
@@ -1931,7 +1947,7 @@ def _ensure_authbridge_configmaps(
         data={"helper.conf": DEFAULT_SPIFFE_HELPER_CONF},
     )
 
-    logger.info(f"Ensured AuthBridge ConfigMaps in namespace '{namespace}'")
+    logger.info("Ensured AuthBridge ConfigMaps in namespace '%s'", _safe_log(namespace))
 
 
 def _ensure_authproxy_routes(
@@ -2724,7 +2740,11 @@ async def create_agent(
                     namespace=request.namespace,
                     body=workload_manifest,
                 )
-                logger.info(f"Created Job '{request.name}' in namespace '{request.namespace}'")
+                logger.info(
+                    "Created Job '%s' in namespace '%s'",
+                    _safe_log(request.name),
+                    _safe_log(request.namespace),
+                )
 
             # Create Service (not needed for Jobs)
             if request.workloadType != WORKLOAD_TYPE_JOB:
@@ -2733,7 +2753,11 @@ async def create_agent(
                     namespace=request.namespace,
                     body=service_manifest,
                 )
-                logger.info(f"Created Service '{request.name}' in namespace '{request.namespace}'")
+                logger.info(
+                    "Created Service '%s' in namespace '%s'",
+                    _safe_log(request.name),
+                    _safe_log(request.namespace),
+                )
 
             # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
             if request.workloadType != WORKLOAD_TYPE_JOB:
@@ -2835,7 +2859,7 @@ async def create_agent(
                 status_code=404,
                 detail="Agent CRD not found. Is the kagenti-operator installed?",
             )
-        logger.error(f"Failed to create agent: {e}")
+        logger.error("Failed to create agent: %s", e)
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
@@ -2885,7 +2909,11 @@ async def finalize_shipwright_build(
     Agent configuration can be provided in the request body, or it will be read from
     the Build's kagenti.io/agent-config annotation (stored during build creation).
     """
-    logger.info(f"Finalizing Shipwright build '{name}' in namespace '{namespace}'")
+    logger.info(
+        "Finalizing Shipwright build '%s' in namespace '%s'",
+        _safe_log(name),
+        _safe_log(namespace),
+    )
 
     try:
         # Step 1: Get the latest BuildRun status to get the output image
@@ -2948,7 +2976,7 @@ async def finalize_shipwright_build(
             try:
                 stored_config = json.loads(agent_config_json)
             except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse agent config from Build annotation: {e}")
+                logger.warning("Failed to parse agent config from Build annotation: %s", e)
 
         # Determine expected workload type from stored config
         expected_workload_type = stored_config.get("workloadType", WORKLOAD_TYPE_DEPLOYMENT)
@@ -3224,7 +3252,9 @@ async def finalize_shipwright_build(
                 {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
             )
             kube.create_service(namespace=namespace, body=service_manifest)
-            logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+            logger.info(
+                "Created Service '%s' in namespace '%s'", _safe_log(name), _safe_log(namespace)
+            )
 
         # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
         # Only for agents — tools don't need sidecar injection
@@ -3268,7 +3298,7 @@ async def finalize_shipwright_build(
                 status_code=409,
                 detail=f"Agent '{name}' already exists in namespace '{namespace}'",
             )
-        logger.error(f"Failed to finalize build: {e}")
+        logger.error("Failed to finalize build: %s", e)
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
@@ -3409,12 +3439,12 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
     import ssl
     from pathlib import Path
 
-    logger.info(f"Fetching .env file from URL: {request.url}")
+    logger.info("Fetching .env file from URL: %s", _safe_log(request.url))
 
     # Log SSL/Certificate configuration
-    logger.info(f"SSL_CERT_FILE env: {os.environ.get('SSL_CERT_FILE', 'NOT SET')}")
-    logger.info(f"REQUESTS_CA_BUNDLE env: {os.environ.get('REQUESTS_CA_BUNDLE', 'NOT SET')}")
-    logger.info(f"Default SSL context: {ssl.get_default_verify_paths()}")
+    logger.info("SSL_CERT_FILE env: %s", os.environ.get("SSL_CERT_FILE", "NOT SET"))
+    logger.info("REQUESTS_CA_BUNDLE env: %s", os.environ.get("REQUESTS_CA_BUNDLE", "NOT SET"))
+    logger.info("Default SSL context: %s", ssl.get_default_verify_paths())
 
     # Check if cert files exist
     cert_paths = [
@@ -3426,7 +3456,7 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
         exists = (
             Path(cert_path).exists() if cert_path.endswith(".crt") else Path(cert_path).is_dir()
         )
-        logger.info(f"Certificate path {cert_path}: {'EXISTS' if exists else 'NOT FOUND'}")
+        logger.info("Certificate path %s: %s", cert_path, "EXISTS" if exists else "NOT FOUND")
 
     # Security validation - only allow http/https
     parsed_url = urlparse(request.url)
@@ -3440,19 +3470,19 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
     # Prevent SSRF attacks - block private IPs
     try:
         ip = socket.gethostbyname(parsed_url.hostname)
-        logger.debug(f"Resolved {parsed_url.hostname} to {ip}")
+        logger.debug("Resolved %s to %s", _safe_log(parsed_url.hostname), ip)
         if is_ip_blocked(ip):
-            logger.warning(f"Blocked private IP address: {ip}")
+            logger.warning("Blocked private IP address: %s", ip)
             raise HTTPException(
                 status_code=400, detail="Private IP addresses are not allowed for security reasons"
             )
     except socket.gaierror as e:
         # Domain can't be resolved - log but let httpx handle it
-        logger.warning(f"Could not resolve hostname {parsed_url.hostname}: {e}")
+        logger.warning("Could not resolve hostname %s: %s", _safe_log(parsed_url.hostname), e)
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"Error checking IP for {parsed_url.hostname}: {e}")
+        logger.warning("Error checking IP for %s: %s", _safe_log(parsed_url.hostname), e)
 
     # Fetch content with timeout
     try:
@@ -3467,7 +3497,7 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
                     ca_bundle_path = fallback
                     break
 
-        logger.info(f"Using CA bundle: {ca_bundle_path}")
+        logger.info("Using CA bundle: %s", ca_bundle_path)
 
         # Create SSL context with system certificates
         ssl_context = ssl.create_default_context(cafile=ca_bundle_path)
@@ -3475,11 +3505,11 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
         async with httpx.AsyncClient(
             timeout=10.0, follow_redirects=True, verify=ssl_context
         ) as client:
-            logger.debug(f"Making HTTP request to {request.url}")
+            logger.debug("Making HTTP request to %s", _safe_log(request.url))
             response = await client.get(request.url)
             response.raise_for_status()
 
-            logger.info(f"Successfully fetched URL, content length: {len(response.text)} bytes")
+            logger.info("Successfully fetched URL, content length: %d bytes", len(response.text))
 
             # Validate content isn't too large (max 1MB)
             content = response.text
@@ -3488,17 +3518,19 @@ async def fetch_env_from_url(request: FetchEnvUrlRequest) -> FetchEnvUrlResponse
 
             return FetchEnvUrlResponse(content=content, url=request.url)
     except httpx.TimeoutException as e:
-        logger.error(f"Timeout fetching URL {request.url}: {e}")
+        logger.error("Timeout fetching URL %s: %s", _safe_log(request.url), e)
         raise HTTPException(status_code=504, detail="Request timeout while fetching URL")
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error fetching URL {request.url}: {e.response.status_code}")
+        logger.error(
+            "HTTP error fetching URL %s: %s", _safe_log(request.url), e.response.status_code
+        )
         raise HTTPException(
             status_code=e.response.status_code,
             detail=f"Failed to fetch URL: {e.response.status_code} {e.response.reason_phrase}",
         )
     except httpx.HTTPError as e:
-        logger.error(f"HTTP error fetching URL {request.url}: {str(e)}")
+        logger.error("HTTP error fetching URL %s: %s", _safe_log(request.url), e)
         raise HTTPException(status_code=502, detail=f"Failed to fetch URL: {str(e)}")
     except Exception as e:
-        logger.error(f"Unexpected error fetching URL {request.url}: {str(e)}")
+        logger.error("Unexpected error fetching URL %s: %s", _safe_log(request.url), e)
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

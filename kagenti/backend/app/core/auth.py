@@ -86,7 +86,7 @@ class KeycloakJWKS:
             jwks_data = response.json()
             self._keys = {key["kid"]: key for key in jwks_data.get("keys", [])}
             self._loaded = True
-            logger.info(f"Loaded {len(self._keys)} keys from Keycloak JWKS")
+            logger.info("Loaded %d keys from Keycloak JWKS", len(self._keys))
 
     def get_key(self, kid: str) -> Optional[dict]:
         """Get a specific key by its ID."""
@@ -236,19 +236,19 @@ async def validate_token(token: str) -> TokenData:
         )
 
     except JWTError as e:
-        logger.warning(f"JWT validation error: {e}")
+        logger.warning("JWT validation error: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",
         )
     except JWKError as e:
-        logger.warning(f"JWK error: {e}")
+        logger.warning("JWK error: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token key error",
         )
     except (httpx.HTTPError, ConnectionError) as e:
-        logger.error(f"Failed to connect to Keycloak for token validation: {e}")
+        logger.error("Failed to connect to Keycloak for token validation: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",

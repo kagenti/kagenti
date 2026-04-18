@@ -99,9 +99,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown events."""
     logger.info("Starting Kagenti Backend API")
-    logger.info(f"Debug mode: {settings.debug}")
-    logger.info(f"Domain: {settings.domain_name}")
-    logger.info(f"ENABLE_AUTH environment variable set to: {settings.enable_auth}")
+    logger.info("Debug mode: %s", settings.debug)
+    logger.info("Domain: %s", settings.domain_name)
+    logger.info("ENABLE_AUTH environment variable set to: %s", settings.enable_auth)
 
     # Start build reconciliation loop
     reconciliation_task = None

@@ -328,7 +328,7 @@ def extract_resource_config_from_build(
         config_dict = json.loads(config_json)
         return ResourceConfigFromBuild(**config_dict)
     except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(f"Failed to parse resource config from annotation: {e}")
+        logger.warning("Failed to parse resource config from annotation: %s", e)
         return None
 
 

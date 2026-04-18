@@ -329,6 +329,18 @@ class MCPInvokeResponse(BaseModel):
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
 
+# Cluster-local URL pattern for SSRF prevention (CWE-918)
+_CLUSTER_LOCAL_URL_RE = re.compile(
+    r"^http://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+    r"\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.svc\.cluster\.local:\d+$"
+)
+
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
 
 def _build_tool_env_vars(
     env_var_list: Optional[List[EnvVar]] = None,
@@ -639,7 +651,7 @@ async def list_tools(
                 )
         except ApiException as e:
             if e.status != 404:
-                logger.warning(f"Error listing Deployments: {e}")
+                logger.warning("Error listing Deployments: %s", e)
 
         # Query StatefulSets with tool label
         try:
@@ -665,7 +677,7 @@ async def list_tools(
                 )
         except ApiException as e:
             if e.status != 404:
-                logger.warning(f"Error listing StatefulSets: {e}")
+                logger.warning("Error listing StatefulSets: %s", e)
 
         return ToolListResponse(items=tools)
 
@@ -727,7 +739,7 @@ async def get_tool(
         }
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Error getting Service '{service_name}': {e}")
+            logger.warning("Error getting Service '%s': %s", _safe_log(service_name), e)
 
     # Build response with workload and service details
     # Return both raw status (for conditions display) and computed readyStatus string
@@ -810,7 +822,7 @@ async def delete_tool(
         deleted_resources.append(f"Build/{name}")
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Failed to delete Shipwright Build '{name}': {e}")
+            logger.warning("Failed to delete Shipwright Build '%s': %s", _safe_log(name), e)
 
     # Delete Deployment (if exists)
     try:
@@ -818,7 +830,7 @@ async def delete_tool(
         deleted_resources.append(f"Deployment/{name}")
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Failed to delete Deployment '{name}': {e}")
+            logger.warning("Failed to delete Deployment '%s': %s", _safe_log(name), e)
 
     # Delete StatefulSet (if exists)
     try:
@@ -826,7 +838,7 @@ async def delete_tool(
         deleted_resources.append(f"StatefulSet/{name}")
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Failed to delete StatefulSet '{name}': {e}")
+            logger.warning("Failed to delete StatefulSet '%s': %s", _safe_log(name), e)
 
     # Delete Service
     service_name = _get_tool_service_name(name)
@@ -835,7 +847,7 @@ async def delete_tool(
         deleted_resources.append(f"Service/{service_name}")
     except ApiException as e:
         if e.status != 404:
-            logger.warning(f"Failed to delete Service '{service_name}': {e}")
+            logger.warning("Failed to delete Service '%s': %s", _safe_log(service_name), e)
 
     if deleted_resources:
         return DeleteResponse(
@@ -1557,7 +1569,7 @@ async def create_tool(
                 status_code=404,
                 detail="Failed to create tool resources. Check cluster connectivity.",
             )
-        logger.error(f"Failed to create tool: {e}")
+        logger.error("Failed to create tool: %s", e)
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
@@ -1646,7 +1658,7 @@ async def get_tool_shipwright_build_info(
         except ApiException as e:
             # BuildRun not found is OK, just means no build has been triggered
             if e.status != 404:
-                logger.warning(f"Failed to get BuildRun for build '{name}': {e}")
+                logger.warning("Failed to get BuildRun for build '%s': %s", _safe_log(name), e)
 
         return response
 
@@ -2036,11 +2048,16 @@ def _get_tool_url(name: str, namespace: str, port: int = DEFAULT_IN_CLUSTER_PORT
     Returns different URL formats based on deployment context:
     - In-cluster: http://{name}-mcp.{namespace}.svc.cluster.local:{port}
     - Off-cluster (local dev): http://{name}.{domain}:8080 (via HTTPRoute)
+
+    Raises ValueError if the generated URL fails SSRF validation (CWE-918).
     """
     if settings.is_running_in_cluster:
         # In-cluster: use service DNS with new naming convention
         service_name = _get_tool_service_name(name)
-        return f"http://{service_name}.{namespace}.svc.cluster.local:{port}"
+        url = f"http://{service_name}.{namespace}.svc.cluster.local:{port}"
+        if not _CLUSTER_LOCAL_URL_RE.match(url):
+            raise ValueError("Invalid tool URL: must be a cluster-local service URL")
+        return url
     else:
         # Off-cluster: use external domain (e.g., localtest.me) via HTTPRoute
         domain = settings.domain_name
@@ -2082,7 +2099,7 @@ async def connect_to_tool(
     tool_url = _get_tool_url(name, namespace, port=service_port)
     mcp_endpoint = f"{tool_url}/mcp"
 
-    logger.info(f"Connecting to MCP server at {mcp_endpoint}")
+    logger.info("Connecting to MCP server at %s", _safe_log(mcp_endpoint))
 
     exit_stack = AsyncExitStack()
     try:
@@ -2096,7 +2113,7 @@ async def connect_to_tool(
             session: ClientSession = await session_context.__aenter__()
             await session.initialize()
 
-            logger.info(f"MCP session initialized for tool '{name}'")
+            logger.info("MCP session initialized for tool '%s'", _safe_log(name))
 
             # List available tools
             response = await session.list_tools()
@@ -2112,18 +2129,18 @@ async def connect_to_tool(
                             ),
                         )
                     )
-                logger.info(f"Listed {len(tools)} tools from MCP server '{name}'")
+                logger.info("Listed %d tools from MCP server '%s'", len(tools), _safe_log(name))
 
             return MCPToolsResponse(tools=tools)
 
     except ConnectionError as e:
-        logger.error(f"Connection error to MCP server: {e}")
+        logger.error("Connection error to MCP server: %s", e)
         raise HTTPException(
             status_code=503,
             detail=f"Failed to connect to MCP server at {tool_url}",
         )
     except Exception as e:
-        logger.error(f"Unexpected error connecting to MCP server: {e}")
+        logger.error("Unexpected error connecting to MCP server: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"Error connecting to MCP server: {str(e)}",
@@ -2163,12 +2180,16 @@ async def invoke_tool(
             session: ClientSession = await session_context.__aenter__()
             await session.initialize()
 
-            logger.info(f"MCP session initialized for tool invocation on '{name}'")
+            logger.info("MCP session initialized for tool invocation on '%s'", _safe_log(name))
 
             # Call the tool using the MCP client library
             result = await session.call_tool(request.tool_name, request.arguments)
 
-            logger.info(f"Tool '{request.tool_name}' invoked successfully on '{name}'")
+            logger.info(
+                "Tool '%s' invoked successfully on '%s'",
+                _safe_log(request.tool_name),
+                _safe_log(name),
+            )
 
             # Convert the result to a serializable format
             result_data = {}
@@ -2190,7 +2211,7 @@ async def invoke_tool(
             return MCPInvokeResponse(result=result_data)
 
     except ConnectionError as e:
-        logger.error(f"Connection error to MCP server: {e}")
+        logger.error("Connection error to MCP server: %s", e)
         raise HTTPException(
             status_code=503,
             detail=f"Failed to connect to MCP server at {tool_url}",
@@ -2198,7 +2219,7 @@ async def invoke_tool(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error invoking MCP tool: {e}")
+        logger.error("Unexpected error invoking MCP tool: %s", e)
         raise HTTPException(
             status_code=500,
             detail=f"Error invoking MCP tool: {str(e)}",
