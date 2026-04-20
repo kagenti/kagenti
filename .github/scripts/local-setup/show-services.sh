@@ -145,9 +145,9 @@ fi
 KC_ADMIN_USER=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 KC_ADMIN_PASS=$($CLI get secret -n keycloak keycloak-initial-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 
-# App user (master realm) - same as Keycloak admin for master realm login
-APP_USER="$KC_ADMIN_USER"
-APP_PASS="$KC_ADMIN_PASS"
+# App user (kagenti realm) - for Kagenti UI and MLflow login
+APP_USER=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
+APP_PASS=$($CLI get secret -n keycloak kagenti-test-user -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "N/A")
 
 KUBEADMIN_PASS=""
 if [ "$ENV_TYPE" = "hypershift" ]; then
@@ -167,7 +167,7 @@ if [ "$VERBOSE" = "false" ]; then
     echo ""
 
     # Credentials
-    echo -e "${GREEN}Kagenti UI & MLflow:${NC}  ${APP_USER} / ${APP_PASS}  ${DIM}(master realm)${NC}"
+    echo -e "${GREEN}Kagenti UI & MLflow:${NC}  ${APP_USER} / ${APP_PASS}  ${DIM}(kagenti realm)${NC}"
     echo -e "${GREEN}Keycloak Admin:${NC}       ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}  ${DIM}(master realm)${NC}"
     if [ -n "$KUBEADMIN_PASS" ]; then
         echo -e "${GREEN}kubeadmin:${NC}            kubeadmin / ${KUBEADMIN_PASS}"
@@ -278,7 +278,7 @@ echo -e "${CYAN}        (Services using Keycloak - use credentials below)       
 echo "##########################################################################"
 echo ""
 
-echo -e "${GREEN}App Login (Kagenti UI & MLflow):${NC} ${YELLOW}(master realm)${NC}"
+echo -e "${GREEN}App Login (Kagenti UI & MLflow):${NC} ${YELLOW}(kagenti realm)${NC}"
 echo "  Username: ${APP_USER}"
 echo "  Password: ${APP_PASS}"
 echo ""
