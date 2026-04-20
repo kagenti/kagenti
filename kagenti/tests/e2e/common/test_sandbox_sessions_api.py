@@ -348,8 +348,11 @@ async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = 
     Uses message/stream instead of message/send to keep data flowing on
     the connection, preventing Istio/Envoy idle timeout drops.
     """
-    ssl_verify = _get_ssl_context()
-    async with httpx.AsyncClient(timeout=300.0, verify=ssl_verify) as client:
+    import asyncio
+
+    def _sync_send():
+        ssl_verify = _get_ssl_context()
+        client = httpx.Client(timeout=300.0, verify=ssl_verify, follow_redirects=True)
         msg = {
             "jsonrpc": "2.0",
             "method": "message/stream",
@@ -367,14 +370,14 @@ async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = 
 
         result: dict = {}
         try:
-            async with client.stream(
+            with client.stream(
                 "POST",
                 f"{agent_url}/",
                 json=msg,
                 headers={"Accept": "text/event-stream"},
             ) as response:
                 response.raise_for_status()
-                async for line in response.aiter_lines():
+                for line in response.iter_lines():
                     if not line or line.startswith(":"):
                         continue
                     if line.startswith("data: "):
@@ -400,10 +403,14 @@ async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = 
                             break
         except httpx.RemoteProtocolError:
             pass
-
-        if not result:
-            pytest.fail("No events received from SSE stream")
+        finally:
+            client.close()
         return result
+
+    result = await asyncio.to_thread(_sync_send)
+    if not result:
+        pytest.fail("No events received from SSE stream")
+    return result
 
 
 # ---------------------------------------------------------------------------
