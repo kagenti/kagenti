@@ -84,6 +84,21 @@ jobs:
       - name: Build dependency overrides from source
         run: bash .github/scripts/common/31-build-deps-from-refs.sh
 
+      # DEBUG: Capture node resource usage before agent deployment
+      - name: Debug node resources (pre-agent)
+        run: |
+          echo "=== Node Allocatable ==="
+          kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}CPU: {.status.allocatable.cpu}{"\t"}Mem: {.status.allocatable.memory}{"\n"}{end}'
+          echo ""
+          echo "=== Total CPU Requests ==="
+          kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\t"}{range .spec.containers[*]}{.resources.requests.cpu}{" "}{end}{"\n"}{end}' | grep -v "^$" | sort
+          echo ""
+          echo "=== Pod Count ==="
+          kubectl get pods -A --no-headers | wc -l
+          echo ""
+          echo "=== Pending/Failed Pods ==="
+          kubectl get pods -A --field-selector 'status.phase!=Running,status.phase!=Succeeded' --no-headers 2>/dev/null || echo "None"
+
       # TOOL DEPLOYMENT (FIRST - agent depends on tool being available)
       # Tools are deployed as standard Kubernetes Deployments + Services
       - name: Build weather-tool image

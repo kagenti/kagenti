@@ -35,7 +35,7 @@ charts:
         phoenix:
           enabled: false
         mlflow:
-          enabled: false  # Disabled for Kind - requires full OTEL instrumentation
+          enabled: true
         mcpInspector:
           enabled: true
         metricsServer:
