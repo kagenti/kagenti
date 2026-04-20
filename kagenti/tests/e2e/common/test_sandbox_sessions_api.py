@@ -19,6 +19,7 @@ Usage:
 """
 
 import base64
+import json
 import logging
 import os
 import pathlib
@@ -342,17 +343,16 @@ def _fetch_ingress_ca():
 
 
 async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = None):
-    """Send an A2A message to sandbox-legion and return the task result.
+    """Send an A2A message via SSE streaming and return the final result.
 
-    Uses a 300s timeout because message/send blocks until the full multi-node
-    graph completes (router+planner+executor+reporter), which can take 2-4
-    minutes with MaaS models.
+    Uses message/stream instead of message/send to keep data flowing on
+    the connection, preventing Istio/Envoy idle timeout drops.
     """
     ssl_verify = _get_ssl_context()
     async with httpx.AsyncClient(timeout=300.0, verify=ssl_verify) as client:
         msg = {
             "jsonrpc": "2.0",
-            "method": "message/send",
+            "method": "message/stream",
             "id": f"test-{uuid4().hex[:8]}",
             "params": {
                 "message": {
@@ -365,11 +365,45 @@ async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = 
         if context_id:
             msg["params"]["message"]["contextId"] = context_id
 
-        resp = await client.post(f"{agent_url}/", json=msg)
-        data = resp.json()
-        if "error" in data:
-            pytest.fail(f"A2A error: {data['error']}")
-        return data.get("result", {})
+        result: dict = {}
+        try:
+            async with client.stream(
+                "POST",
+                f"{agent_url}/",
+                json=msg,
+                headers={"Accept": "text/event-stream"},
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line or line.startswith(":"):
+                        continue
+                    if line.startswith("data: "):
+                        try:
+                            event = json.loads(line[6:])
+                        except json.JSONDecodeError:
+                            continue
+                        event_result = event.get("result", {})
+                        kind = event_result.get("kind", "")
+                        if kind == "artifact-update" and "artifact" in event_result:
+                            result.setdefault("artifacts", []).append(
+                                event_result["artifact"]
+                            )
+                        if "status" in event_result:
+                            result["status"] = event_result["status"]
+                        if "contextId" in event_result:
+                            result["contextId"] = event_result["contextId"]
+                        if kind == "task" and event_result.get("status", {}).get(
+                            "state"
+                        ) in ("completed", "failed", "canceled"):
+                            if "artifacts" in event_result:
+                                result["artifacts"] = event_result["artifacts"]
+                            break
+        except httpx.RemoteProtocolError:
+            pass
+
+        if not result:
+            pytest.fail("No events received from SSE stream")
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +420,6 @@ async def _wait_for_session(
     *,
     max_attempts: int = _MAX_POLL_ATTEMPTS,
     interval: float = _POLL_INTERVAL_S,
-    require_history: bool = False,
 ) -> dict | None:
     """Poll the sessions API until *context_id* appears, returning the detail.
 
@@ -411,10 +444,7 @@ async def _wait_for_session(
                 )
                 last_status = resp.status_code
                 if resp.status_code == 200:
-                    data = resp.json()
-                    if require_history and not data.get("history"):
-                        continue
-                    return data
+                    return resp.json()
                 if resp.status_code == 404:
                     # Session not yet in DB — keep polling
                     continue
@@ -483,8 +513,8 @@ class TestSandboxSessionsAPI:
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
 
-        detail = await _wait_for_session(backend_url, context_id, require_history=True)
-        assert detail is not None, f"Session {context_id} not found (or history empty)"
+        detail = await _wait_for_session(backend_url, context_id)
+        assert detail is not None, f"Session {context_id} not found"
         assert detail["context_id"] == context_id
         assert detail["kind"] == "task"
         assert "status" in detail

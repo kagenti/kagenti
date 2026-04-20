@@ -191,6 +191,20 @@ async def close_all_pools() -> None:
 # Sessions table schema
 # ---------------------------------------------------------------------------
 
+TASKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tasks (
+    id BIGSERIAL PRIMARY KEY,
+    context_id TEXT NOT NULL,
+    kind TEXT DEFAULT 'task',
+    status TEXT DEFAULT '{}',
+    history TEXT DEFAULT '[]',
+    artifacts TEXT DEFAULT '[]',
+    metadata TEXT DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_context ON tasks(context_id);
+"""
+
 SESSIONS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     context_id TEXT PRIMARY KEY,
@@ -233,6 +247,12 @@ async def _ensure_sessions_schema(pool: asyncpg.Pool) -> None:
     except Exception as exc:
         logger.warning("Failed to ensure events schema: %s", exc)
 
-
-# NOTE: The A2A SDK's DatabaseTaskStore manages the 'tasks' table schema.
-# The backend reads from 'tasks' and manages the 'sessions' table above.
+    # Ensure tasks table exists — the A2A SDK's DatabaseTaskStore manages
+    # writes, but the backend needs to read from it.  On fresh deployments
+    # or after DB cleanup, the table may not exist yet.
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(TASKS_SCHEMA)
+        logger.info("Tasks schema ensured")
+    except Exception as exc:
+        logger.warning("Failed to ensure tasks schema: %s", exc)

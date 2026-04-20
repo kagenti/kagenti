@@ -39,6 +39,7 @@ spec:
           # Requires anyuid-seccomp SCC (runAsUser: 0 + seccomp RuntimeDefault).
           # TODO(#1126): Build custom image that runs as non-root.
           runAsUser: 0
+          runAsNonRoot: false
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           seccompProfile:

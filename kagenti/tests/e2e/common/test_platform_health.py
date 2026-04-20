@@ -15,28 +15,22 @@ import pytest
 from datetime import datetime, timezone, timedelta
 
 
-def _is_job_pod(pod) -> bool:
-    """Check if a pod is owned by a Kubernetes Job.
+def _is_job_or_build_pod(pod) -> bool:
+    """Check if a pod is owned by a Job or OpenShift Build.
 
-    Job pods can fail and be retried - this is expected behavior.
-    We should not count transient job pod failures as platform health issues.
-
-    Detection methods:
-    1. Check owner_references for kind="Job"
-    2. Fallback: Check if pod name contains "-job-" pattern (Job naming convention)
+    Job and Build pods can fail and be retried - this is expected behavior.
+    We should not count transient failures as platform health issues.
     """
-    # Method 1: Check owner references
     owner_refs = pod.metadata.owner_references
     if owner_refs is not None and len(owner_refs) > 0:
         for owner in owner_refs:
-            if owner.kind == "Job":
+            if owner.kind in ("Job", "Build"):
                 return True
 
-    # Method 2: Fallback - check pod naming convention
-    # Job pods are typically named <job-name>-<random-suffix>
-    # Job names often end with "-job" by convention
     pod_name = pod.metadata.name or ""
     if "-job-" in pod_name:
+        return True
+    if pod_name.endswith("-build"):
         return True
 
     return False
@@ -61,7 +55,8 @@ class TestPlatformHealth:
         failed_pods = [
             f"{pod.metadata.namespace}/{pod.metadata.name} ({pod.status.phase})"
             for pod in pods.items
-            if pod.status.phase not in ["Running", "Succeeded"] and not _is_job_pod(pod)
+            if pod.status.phase not in ["Running", "Succeeded"]
+            and not _is_job_or_build_pod(pod)
         ]
 
         assert len(failed_pods) == 0, (

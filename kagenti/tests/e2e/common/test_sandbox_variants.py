@@ -92,7 +92,7 @@ def _is_openshift_from_config() -> bool:
 def _make_client(agent_name: str) -> httpx.Client:
     """Create an HTTP client with optional OpenShift CA.
 
-    Uses 300s timeout because message/send blocks until the full multi-node
+    Uses 300s timeout because message/stream blocks until the full multi-node
     graph completes (router+planner+executor+reporter).  With MaaS models
     each LLM call can take 30-60s, and the graph has 4 nodes.
     """
@@ -156,37 +156,40 @@ def _send_message(
     }
 
     result: dict = {}
-    with client.stream(
-        "POST",
-        f"{agent_url}/",
-        json=payload,
-        headers={"Accept": "text/event-stream"},
-    ) as response:
-        response.raise_for_status()
-        for line in response.iter_lines():
-            if not line or line.startswith(":"):
-                continue
-            if line.startswith("data: "):
-                try:
-                    event = json.loads(line[6:])
-                except json.JSONDecodeError:
+    try:
+        with client.stream(
+            "POST",
+            f"{agent_url}/",
+            json=payload,
+            headers={"Accept": "text/event-stream"},
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line or line.startswith(":"):
                     continue
-                event_result = event.get("result", {})
-                kind = event_result.get("kind", "")
-                if kind == "artifact-update" and "artifact" in event_result:
-                    result.setdefault("artifacts", []).append(event_result["artifact"])
-                if "status" in event_result:
-                    result["status"] = event_result["status"]
-                if "contextId" in event_result:
-                    result["contextId"] = event_result["contextId"]
-                if kind == "task" and event_result.get("status", {}).get("state") in (
-                    "completed",
-                    "failed",
-                    "canceled",
-                ):
-                    if "artifacts" in event_result:
-                        result["artifacts"] = event_result["artifacts"]
-                    break
+                if line.startswith("data: "):
+                    try:
+                        event = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    event_result = event.get("result", {})
+                    kind = event_result.get("kind", "")
+                    if kind == "artifact-update" and "artifact" in event_result:
+                        result.setdefault("artifacts", []).append(
+                            event_result["artifact"]
+                        )
+                    if "status" in event_result:
+                        result["status"] = event_result["status"]
+                    if "contextId" in event_result:
+                        result["contextId"] = event_result["contextId"]
+                    if kind == "task" and event_result.get("status", {}).get(
+                        "state"
+                    ) in ("completed", "failed", "canceled"):
+                        if "artifacts" in event_result:
+                            result["artifacts"] = event_result["artifacts"]
+                        break
+    except httpx.RemoteProtocolError:
+        pass
 
     if not result:
         raise RuntimeError("No events received from SSE stream")
@@ -213,8 +216,6 @@ def _extract_text(result: dict) -> str:
             if "text" in part:
                 texts.append(part["text"])
     combined = "\n".join(texts)
-    # Filter out generic reporter placeholder — treat as empty so callers
-    # can distinguish a real response from a reporter accumulation failure.
     if combined.strip().lower() in ("no response generated.", "no response generated"):
         return ""
     return combined
@@ -262,7 +263,7 @@ class TestMultiTurnConversation:
     def test_shell_command(self, agent_name: str):
         """Agent can execute a shell command and return output.
 
-        Retries once with a fresh context_id if the reporter returns an
+        Retries with a fresh context_id if the reporter returns an
         empty/placeholder response (transient accumulator issue).
         """
         agent_url = _get_agent_url(agent_name)
@@ -287,7 +288,6 @@ class TestMultiTurnConversation:
                 time.sleep(2)
 
         assert text, f"Agent {agent_name} returned empty response after 3 attempts"
-        # The response must contain the actual echo output
         assert "hello-from-test" in text.lower(), (
             f"Agent {agent_name} response doesn't contain expected echo output: {text[:200]}"
         )
