@@ -56,7 +56,7 @@ spec:
       containers:
         - name: keycloak
           image: {{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag }}
-          args: [{{ if .Values.keycloak.database.enabled }}"start"{{ else }}"start-dev"{{ end }}]
+          args: [{{ if .Values.keycloak.database.enabled }}"start"{{ else }}"start-dev"{{ end }}, "--import-realm"]
           env:
             {{- include "kagenti.mergeEnvVars" (dict "defaults" (include "kagenti.keycloak.defaultEnv" . | fromYamlArray) "overrides" .Values.keycloak.extraEnvVars) | nindent 12 }}
           ports:
@@ -88,6 +88,14 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+          volumeMounts:
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm-import
+          configMap:
+            name: keycloak-realm-import
 {{- if .Values.keycloak.database.enabled }}
 ---
 # This is deployment of PostgreSQL with an ephemeral storage for testing: Once the Pod stops, the data is lost.
