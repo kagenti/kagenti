@@ -193,14 +193,14 @@ async def close_all_pools() -> None:
 
 TASKS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
-    id VARCHAR PRIMARY KEY,
-    context_id VARCHAR NOT NULL,
-    kind VARCHAR DEFAULT 'task',
-    status JSONB DEFAULT '{}',
-    history JSONB DEFAULT '[]',
+    id TEXT PRIMARY KEY,
+    context_id TEXT,
+    status TEXT DEFAULT 'submitted',
     artifacts JSONB DEFAULT '[]',
+    history JSONB DEFAULT '[]',
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_context ON tasks(context_id);
 """

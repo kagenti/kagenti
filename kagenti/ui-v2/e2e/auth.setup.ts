@@ -22,8 +22,17 @@ export const STORAGE_STATE = path.join(__dirname, '../playwright/.auth/user.json
 
 setup('authenticate', async ({ page }) => {
   // Navigate to the app — Keycloak will intercept
-  await page.goto('/');
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  // Retry navigation if the page doesn't load (CI cold start)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle', { timeout: 30000 });
+      break;
+    } catch {
+      if (attempt === 2) throw new Error('App failed to load after 3 attempts');
+      await page.waitForTimeout(5000);
+    }
+  }
 
   // Case 1: Already on Keycloak login page (login-required mode)
   const isKeycloakLogin = await page.locator('#kc-form-login, input[name="username"]')
@@ -59,9 +68,9 @@ setup('authenticate', async ({ page }) => {
   await page.waitForTimeout(300);
   await submitButton.click();
 
-  // Wait for redirect back to the app
-  await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  // Wait for redirect back to the app (60s for CI cold start)
+  await page.waitForURL(/^(?!.*keycloak)/, { timeout: 60000 });
+  await page.waitForLoadState('networkidle', { timeout: 30000 });
 
   // Verify we're logged in — sidebar navigation should be visible
   await expect(page.locator('nav').or(page.getByRole('navigation')).first()).toBeVisible({
