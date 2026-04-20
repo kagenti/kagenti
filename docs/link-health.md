@@ -1,22 +1,24 @@
 # Link Health Report
 
-> Last scan: 2026-04-20 12:08 ET | Scan ID: 2026-04-20-005
+> Last scan: 2026-04-20 12:45 ET | Scan ID: 2026-04-20-007
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Repos scanned | 12 |
-| Total links checked | 2050 |
-| Broken (internal) | 39 |
+| Repos scanned | 13 |
+| Total links checked | 2169 |
+| Broken (internal) | 37 |
 | Broken (external) | 23 |
 | New since last scan | +0 |
-| Fixed since last scan | -0 |
+| Fixed since last scan | -5 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 04-20 | 37 | 23 | -5 |
+| 04-20 | 42 | 23 | +3 |
 | 04-20 | 39 | 23 | 0 |
 | 04-20 | 39 | 23 | 0 |
 | 04-20 | 39 | 23 | -34 |
@@ -25,13 +27,13 @@
 | 04-17 | 62 | 33 | -1 |
 | 04-17 | 62 | 34 | -16 |
 | 04-15 | 83 | 29 | -2 |
-| 04-14 | 84 | 30 | +114 |
 
 ## Broken Links by Repo
 
 | Repo | Internal | External | Issues |
 |------|----------|----------|--------|
-| adk | 32 | 6 | |
+| .github | 2 | 0 | |
+| adk | 28 | 6 | |
 | agent-examples | 0 | 3 | |
 | agentic-control-plane | 0 | 1 | |
 | ecosystem-guide | 0 | 2 | |
