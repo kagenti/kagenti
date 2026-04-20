@@ -86,13 +86,14 @@ from app.models.responses import (
     DeleteResponse,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.routes import (
-    create_route_for_agent_or_tool,
-    detect_platform,
-    route_exists,
-    sanitize_log,
-    select_route_port,
-)
+from app.utils.routes import create_route_for_agent_or_tool, detect_platform, route_exists
+
+
+def sanitize_log(value: str) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 from app.models.shipwright import (
     ResourceType,
     ShipwrightBuildConfig,
