@@ -95,6 +95,17 @@ log_info "Creating Deployment and Service..."
 # Create ServiceAccount (required by webhook for correct SPIFFE ID derivation)
 kubectl create serviceaccount weather-service -n team1 --dry-run=client -o yaml | kubectl apply -f -
 
+# Create openai-secret for LLM API access (both Kind and OpenShift use LiteMaaS)
+OPENAI_KEY="${OPENAI_API_KEY:-}"
+if [ -n "$OPENAI_KEY" ]; then
+    kubectl create secret generic openai-secret -n team1 \
+        --from-literal=apikey="$OPENAI_KEY" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    log_info "Created openai-secret in team1 from OPENAI_API_KEY"
+else
+    log_info "OPENAI_API_KEY not set — openai-secret must exist in team1"
+fi
+
 # Apply Deployment manifest (use OCP-specific file with correct registry on OpenShift)
 if [ "$IS_OPENSHIFT" = "true" ]; then
     kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_deployment_ocp.yaml"

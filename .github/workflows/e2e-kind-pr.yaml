@@ -55,6 +55,8 @@ jobs:
 
       - name: Create secret values file for CI
         run: bash .github/scripts/common/20-create-secrets.sh
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Run Ansible installer (dev mode with kagenti-operator)
         run: bash .github/scripts/kagenti-operator/30-run-installer.sh
@@ -64,15 +66,6 @@ jobs:
 
       - name: Wait for platform to be ready
         run: bash .github/scripts/common/40-wait-platform-ready.sh
-
-      - name: Install Ollama
-        run: bash .github/scripts/common/50-install-ollama.sh
-
-      - name: Start Ollama and pull model
-        run: bash .github/scripts/common/60-pull-ollama-model.sh
-
-      - name: Configure dockerhost service for Kind
-        run: bash .github/scripts/common/70-configure-dockerhost.sh
 
       - name: Wait for kagenti-operator CRDs to be established
         run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
@@ -96,6 +89,8 @@ jobs:
       # Uses standard Kubernetes Deployment + Service (no Agent CRD dependency)
       - name: Deploy weather-service Agent
         run: bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Verify deployment health
         run: |
