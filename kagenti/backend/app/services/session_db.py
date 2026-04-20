@@ -195,6 +195,7 @@ TASKS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     context_id TEXT,
+    kind TEXT DEFAULT 'task',
     status TEXT DEFAULT 'submitted',
     artifacts JSONB DEFAULT '[]',
     history JSONB DEFAULT '[]',
@@ -203,6 +204,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_context ON tasks(context_id);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'task';
 """
 
 SESSIONS_SCHEMA = """
