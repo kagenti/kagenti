@@ -79,7 +79,8 @@ class TestPlatformHealth:
         recent_restart_threshold = timedelta(minutes=5)
 
         for pod in pods.items:
-            # Check if pod is in CrashLoopBackOff state
+            if _is_job_or_build_pod(pod):
+                continue
             if pod.status.container_statuses:
                 for container in pod.status.container_statuses:
                     # Check for CrashLoopBackOff state

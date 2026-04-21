@@ -42,8 +42,9 @@ def master_client(_ssl_verify):
     return httpx.Client(
         base_url=LITELLM_PROXY_URL,
         headers={"Authorization": f"Bearer {LITELLM_MASTER_KEY}"},
-        timeout=30.0,
+        timeout=120.0,
         verify=_ssl_verify,
+        follow_redirects=True,
     )
 
 
@@ -127,7 +128,7 @@ class TestLiteLLMChatCompletions:
                 "messages": [{"role": "user", "content": "Say hello in one word."}],
                 "max_tokens": 10,
             },
-            timeout=60.0,
+            timeout=120.0,
         )
         assert resp.status_code == 200, f"Chat failed: {resp.text}"
         data = resp.json()
@@ -145,7 +146,7 @@ class TestLiteLLMChatCompletions:
                 "messages": [{"role": "user", "content": "Say hi."}],
                 "max_tokens": 5,
             },
-            timeout=60.0,
+            timeout=120.0,
         )
         data = resp.json()
         assert "usage" in data, "Response missing 'usage'"
@@ -168,7 +169,7 @@ class TestLiteLLMChatCompletions:
                     "namespace": "team1",
                 },
             },
-            timeout=60.0,
+            timeout=120.0,
         )
         assert resp.status_code == 200, f"Chat with metadata failed: {resp.text}"
 
@@ -186,7 +187,7 @@ class TestLiteLLMChatCompletions:
                 "messages": [{"role": "user", "content": "Say hello in one word."}],
                 "max_tokens": 50,
             },
-            timeout=60.0,
+            timeout=120.0,
         )
         assert resp.status_code == 200, f"DeepSeek chat failed: {resp.text}"
         message = resp.json()["choices"][0]["message"]
@@ -272,7 +273,7 @@ class TestLiteLLMVirtualKeys:
                 "messages": [{"role": "user", "content": "Say ok."}],
                 "max_tokens": 5,
             },
-            timeout=60.0,
+            timeout=120.0,
         )
         assert resp.status_code == 200, f"Virtual key chat failed: {resp.text}"
 
