@@ -70,11 +70,13 @@ setup('authenticate', async ({ page }) => {
 
   // Wait for redirect back to the app (60s for CI cold start)
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 60000 });
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
 
-  // Verify we're logged in — sidebar navigation should be visible
+  // Wait for app to fully load — use domcontentloaded as minimum,
+  // then verify navigation is visible (more reliable than networkidle
+  // which can timeout on slow CI runners with background API calls)
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   await expect(page.locator('nav').or(page.getByRole('navigation')).first()).toBeVisible({
-    timeout: 10000,
+    timeout: 30000,
   });
 
   // Save authenticated state

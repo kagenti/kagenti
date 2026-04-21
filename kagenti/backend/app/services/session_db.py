@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     context_id TEXT,
     kind TEXT DEFAULT 'task',
-    status TEXT DEFAULT 'submitted',
+    status JSONB DEFAULT '{}',
     artifacts JSONB DEFAULT '[]',
     history JSONB DEFAULT '[]',
     metadata JSONB DEFAULT '{}',
@@ -205,6 +205,14 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_context ON tasks(context_id);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'task';
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='tasks' AND column_name='status' AND data_type='text') THEN
+    ALTER TABLE tasks ALTER COLUMN status DROP DEFAULT;
+    ALTER TABLE tasks ALTER COLUMN status TYPE JSONB USING status::jsonb;
+    ALTER TABLE tasks ALTER COLUMN status SET DEFAULT '{}'::jsonb;
+  END IF;
+END $$;
 """
 
 SESSIONS_SCHEMA = """
