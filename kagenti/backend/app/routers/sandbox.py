@@ -383,7 +383,8 @@ async def get_session(namespace: str, context_id: str):
         # Guard against NULL or malformed history values (empty string, non-JSON)
         # by catching the cast error with a CASE expression.
         row = await conn.fetchrow(
-            "SELECT * FROM tasks WHERE context_id = $1"
+            "SELECT id, context_id, kind, status, history, artifacts, metadata"
+            " FROM tasks WHERE context_id = $1"
             " ORDER BY CASE"
             "   WHEN history IS NOT NULL AND history != '' AND history != 'null'"
             "   THEN COALESCE(json_array_length(history::json), 0)"
@@ -978,7 +979,8 @@ async def kill_session(
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1", context_id
+            "SELECT id, context_id, kind, status, history, artifacts, metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
         )
         if row is None:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -1005,7 +1007,8 @@ async def kill_session(
 
         # Re-fetch updated row
         row = await conn.fetchrow(
-            "SELECT * FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1", context_id
+            "SELECT id, context_id, kind, status, history, artifacts, metadata FROM tasks WHERE context_id = $1 ORDER BY id DESC LIMIT 1",
+            context_id,
         )
 
     return _row_to_detail(row)
