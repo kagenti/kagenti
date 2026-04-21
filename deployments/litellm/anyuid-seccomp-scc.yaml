@@ -1,0 +1,41 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: anyuid-seccomp
+  annotations:
+    kubernetes.io/description: >-
+      anyuid-seccomp is a clone of the built-in anyuid SCC that also
+      permits the runtime/default seccomp profile.  This is needed for
+      workloads that must run as root (e.g. LiteLLM with Prisma binaries
+      baked as root-owned) while still opting into seccomp.
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: true
+allowPrivilegedContainer: false
+allowedCapabilities: null
+defaultAddCapabilities: null
+requiredDropCapabilities:
+  - MKNOD
+fsGroup:
+  type: RunAsAny
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+  - runtime/default
+supplementalGroups:
+  type: RunAsAny
+priority: 10
+readOnlyRootFilesystem: false
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - ephemeral
+  - persistentVolumeClaim
+  - projected
+  - secret

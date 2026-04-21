@@ -47,9 +47,8 @@ spec:
           type: RuntimeDefault
       containers:
       - name: postgres
-        image: registry.redhat.io/rhel9/postgresql-16:1-123
+        image: postgres:16-alpine
         securityContext:
-          runAsNonRoot: true
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           seccompProfile:
@@ -62,15 +61,17 @@ spec:
           name: postgres
           protocol: TCP
         env:
-        - name: POSTGRESQL_DATABASE
+        - name: POSTGRES_DB
           value: sessions
-        - name: POSTGRESQL_USER
+        - name: POSTGRES_USER
           value: kagenti
-        - name: POSTGRESQL_PASSWORD
+        - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: postgres-sessions-secret
               key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         resources:
           requests:
             cpu: 100m
@@ -80,7 +81,7 @@ spec:
             memory: 512Mi
         volumeMounts:
         - name: postgres-data
-          mountPath: /var/lib/pgsql/data
+          mountPath: /var/lib/postgresql/data
         - name: tmp
           mountPath: /tmp
         - name: run

@@ -103,12 +103,34 @@ if [ -n "$ADMIN_CLI_ID" ]; then
 import sys, json
 c = json.load(sys.stdin)
 c['directAccessGrantsEnabled'] = True
+c['fullScopeAllowed'] = True
 print(json.dumps(c))
 " 2>/dev/null || echo "")
     if [ -n "$UPDATED_CLIENT" ]; then
         kc_api PUT "$KEYCLOAK_URL/admin/realms/$REALM/clients/$ADMIN_CLI_ID" \
             -d "$UPDATED_CLIENT" >/dev/null
-        log_success "Enabled Direct Access Grants on admin-cli"
+        log_success "Enabled Direct Access Grants and Full Scope on admin-cli"
+    fi
+
+    # Add realm roles protocol mapper so realm roles appear in access tokens
+    MAPPER_EXISTS=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients/$ADMIN_CLI_ID/protocol-mappers/models" \
+        | python3 -c "import sys,json; print(any(m.get('name')=='realm roles' for m in json.load(sys.stdin)))" 2>/dev/null || echo "False")
+    if [ "$MAPPER_EXISTS" = "False" ]; then
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/clients/$ADMIN_CLI_ID/protocol-mappers/models" \
+            -d '{
+                "name": "realm roles",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-realm-role-mapper",
+                "config": {
+                    "multivalued": "true",
+                    "claim.name": "realm_access.roles",
+                    "jsonType.label": "String",
+                    "id.token.claim": "true",
+                    "access.token.claim": "true",
+                    "userinfo.token.claim": "true"
+                }
+            }' >/dev/null
+        log_success "Added realm roles mapper to admin-cli"
     fi
 fi
 
@@ -170,6 +192,120 @@ print(json.dumps(u))
     log_info "User state: requiredActions=$FINAL_ACTIONS emailVerified=$FINAL_EMAIL_V"
 fi
 
+# ============================================================================
+# 3b. Assign kagenti-viewer realm role (required for backend API access)
+# ============================================================================
+
+if [ -n "$USER_ID" ]; then
+    # Get the kagenti-viewer role ID
+    VIEWER_ROLE_JSON=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/roles/kagenti-viewer")
+    VIEWER_ROLE_ID=$(echo "$VIEWER_ROLE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+    if [ -n "$VIEWER_ROLE_ID" ]; then
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/realm" \
+            -d "[{\"id\": \"$VIEWER_ROLE_ID\", \"name\": \"kagenti-viewer\"}]" >/dev/null
+        log_success "Assigned kagenti-viewer role to test user"
+    else
+        log_info "kagenti-viewer role not found in realm — creating it"
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/roles" \
+            -d '{"name": "kagenti-viewer", "description": "Read-only access to Kagenti APIs"}' >/dev/null
+        VIEWER_ROLE_JSON=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/roles/kagenti-viewer")
+        VIEWER_ROLE_ID=$(echo "$VIEWER_ROLE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+        if [ -n "$VIEWER_ROLE_ID" ]; then
+            kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/realm" \
+                -d "[{\"id\": \"$VIEWER_ROLE_ID\", \"name\": \"kagenti-viewer\"}]" >/dev/null
+            log_success "Created and assigned kagenti-viewer role"
+        fi
+    fi
+fi
+
+# ============================================================================
+# 3c. Assign kagenti-operator realm role (required for sandbox chat/stream API)
+# ============================================================================
+
+if [ -n "$USER_ID" ]; then
+    # Get the kagenti-operator role ID
+    OPERATOR_ROLE_JSON=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/roles/kagenti-operator")
+    OPERATOR_ROLE_ID=$(echo "$OPERATOR_ROLE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+    if [ -n "$OPERATOR_ROLE_ID" ]; then
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/realm" \
+            -d "[{\"id\": \"$OPERATOR_ROLE_ID\", \"name\": \"kagenti-operator\"}]" >/dev/null
+        log_success "Assigned kagenti-operator role to test user"
+    else
+        log_info "kagenti-operator role not found in realm — creating it"
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/roles" \
+            -d '{"name": "kagenti-operator", "description": "Operator access to Kagenti sandbox APIs"}' >/dev/null
+        OPERATOR_ROLE_JSON=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/roles/kagenti-operator")
+        OPERATOR_ROLE_ID=$(echo "$OPERATOR_ROLE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+        if [ -n "$OPERATOR_ROLE_ID" ]; then
+            kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$USER_ID/role-mappings/realm" \
+                -d "[{\"id\": \"$OPERATOR_ROLE_ID\", \"name\": \"kagenti-operator\"}]" >/dev/null
+            log_success "Created and assigned kagenti-operator role to test user"
+        fi
+    fi
+fi
+
+# ============================================================================
+# 3d. Create additional test users for multi-user identity tests
+# ============================================================================
+
+EXTRA_USERS_ARGS=()
+for EXTRA_USER in dev-user ns-admin; do
+    EXTRA_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))" 2>/dev/null || echo "test-pass-${EXTRA_USER}")
+    EXISTING=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/users?username=$EXTRA_USER&exact=true")
+    EXISTING_COUNT=$(echo "$EXISTING" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+
+    if [ "$EXISTING_COUNT" = "0" ]; then
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users" \
+            -d "{
+                \"username\": \"$EXTRA_USER\",
+                \"firstName\": \"$EXTRA_USER\",
+                \"lastName\": \"Test\",
+                \"email\": \"${EXTRA_USER}@kagenti.dev\",
+                \"enabled\": true,
+                \"emailVerified\": true
+            }" >/dev/null || true
+        log_info "Created test user '$EXTRA_USER'"
+    fi
+
+    # Get user ID
+    EXTRA_USER_JSON=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/users?username=$EXTRA_USER&exact=true")
+    EXTRA_USER_ID=$(echo "$EXTRA_USER_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['id'] if d else '')" 2>/dev/null || echo "")
+
+    if [ -n "$EXTRA_USER_ID" ]; then
+        # Reset password
+        kc_api PUT "$KEYCLOAK_URL/admin/realms/$REALM/users/$EXTRA_USER_ID/reset-password" \
+            -d "{\"type\": \"password\", \"value\": \"$EXTRA_PASS\", \"temporary\": false}" >/dev/null || true
+
+        # Assign viewer role to all extra users
+        if [ -n "${VIEWER_ROLE_ID:-}" ]; then
+            kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$EXTRA_USER_ID/role-mappings/realm" \
+                -d "[{\"id\": \"$VIEWER_ROLE_ID\", \"name\": \"kagenti-viewer\"}]" >/dev/null || true
+        fi
+
+        # ns-admin gets operator role too
+        if [ "$EXTRA_USER" = "ns-admin" ] && [ -n "${OPERATOR_ROLE_ID:-}" ]; then
+            kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$EXTRA_USER_ID/role-mappings/realm" \
+                -d "[{\"id\": \"$OPERATOR_ROLE_ID\", \"name\": \"kagenti-operator\"}]" >/dev/null || true
+        fi
+
+        # Store credentials in K8s secret for tests (keycloak namespace for Playwright, team1 for pytest)
+        kubectl create secret generic "${EXTRA_USER}-password" -n team1 \
+            --from-literal=password="$EXTRA_PASS" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+        # Accumulate for combined secret
+        EXTRA_USERS_ARGS+=(--from-literal="${EXTRA_USER}-password=$EXTRA_PASS")
+
+        log_success "Test user '$EXTRA_USER' ready (password in secret ${EXTRA_USER}-password)"
+    fi
+done
+
+# Create combined secret in keycloak namespace (Playwright tests look here)
+if [ ${#EXTRA_USERS_ARGS[@]} -gt 0 ]; then
+    kubectl create secret generic kagenti-test-users -n keycloak \
+        "${EXTRA_USERS_ARGS[@]}" \
+        --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+    log_success "Combined test user passwords stored in keycloak/kagenti-test-users"
+fi
+
 # Verify: get a token for the test user
 TOKEN_RESP=$(curl -sk -X POST \
     "$KEYCLOAK_URL/realms/$REALM/protocol/openid-connect/token" \
@@ -216,35 +352,23 @@ E2E_CLIENT_SECRET=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIEN
 log_success "Service account client ready (client_id=$E2E_CLIENT_ID)"
 
 # ============================================================================
-# 4b. Attach agent audience scopes to the E2E test client
-#     Client-registration creates agent-*-aud scopes as realm defaults, but
-#     realm defaults don't retroactively apply to existing clients. We need
-#     to explicitly add them so the E2E test token contains the aud claim
-#     that AuthBridge requires for inbound JWT validation.
-# ============================================================================
-
-log_info "Attaching agent audience scopes to $E2E_CLIENT_ID..."
-REALM_DEFAULT_SCOPES=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/default-default-client-scopes")
-AGENT_SCOPE_IDS=$(echo "$REALM_DEFAULT_SCOPES" | python3 -c "
-import sys, json
-scopes = json.load(sys.stdin)
-for s in scopes:
-    if s['name'].startswith('agent-') and s['name'].endswith('-aud'):
-        print(s['id'], s['name'])
-" 2>/dev/null || echo "")
-
-if [ -n "$AGENT_SCOPE_IDS" ]; then
-    while IFS=' ' read -r scope_id scope_name; do
-        kc_api PUT "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_INTERNAL_ID/default-client-scopes/$scope_id" >/dev/null
-        log_info "  Added scope '$scope_name' to $E2E_CLIENT_ID"
-    done <<< "$AGENT_SCOPE_IDS"
-else
-    log_info "  No agent audience scopes found (agents may not be deployed yet)"
-fi
-
-# ============================================================================
 # 5. Update kagenti-test-user secret with verified credentials
 # ============================================================================
+
+# Assign kagenti-viewer role to the service account of kagenti-e2e-tests
+SA_USER_ID=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_INTERNAL_ID/service-account-user" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
+if [ -n "$SA_USER_ID" ] && [ -n "${VIEWER_ROLE_ID:-}" ]; then
+    kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$SA_USER_ID/role-mappings/realm" \
+        -d "[{\"id\": \"$VIEWER_ROLE_ID\", \"name\": \"kagenti-viewer\"}]" >/dev/null
+    log_success "Assigned kagenti-viewer role to $E2E_CLIENT_ID service account"
+fi
+# Also assign kagenti-operator to the service account
+if [ -n "$SA_USER_ID" ] && [ -n "${OPERATOR_ROLE_ID:-}" ]; then
+    kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$SA_USER_ID/role-mappings/realm" \
+        -d "[{\"id\": \"$OPERATOR_ROLE_ID\", \"name\": \"kagenti-operator\"}]" >/dev/null
+    log_success "Assigned kagenti-operator role to $E2E_CLIENT_ID service account"
+fi
 
 log_info "Updating kagenti-test-user secret with verified credentials..."
 kubectl create secret generic kagenti-test-user \

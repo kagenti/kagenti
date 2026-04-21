@@ -77,6 +77,8 @@ spec:
               key: token
         - name: TASK_STORE_DB_URL
           value: "postgresql+psycopg://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable"
+        - name: CHECKPOINT_DB_URL
+          value: "postgresql://kagenti:kagenti-sessions-dev@postgres-sessions.team1:5432/sessions?sslmode=disable"
         ports:
         - containerPort: 8000
           name: http

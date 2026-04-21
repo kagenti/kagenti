@@ -113,8 +113,8 @@ SHIPWRIGHT_STRATEGY_INSECURE = "buildah-insecure-push"
 # For external registries with TLS (quay.io, ghcr.io, docker.io)
 SHIPWRIGHT_STRATEGY_SECURE = "buildah"
 
-# Default internal registry URL (configurable via DEFAULT_REGISTRY_URL env var)
-DEFAULT_INTERNAL_REGISTRY = settings.default_registry_url
+# Default internal registry URL (for dev/kind clusters)
+DEFAULT_INTERNAL_REGISTRY = "registry.cr-system.svc.cluster.local:5000"
 
 # Default resource limits
 DEFAULT_RESOURCE_LIMITS = {"cpu": "500m", "memory": "1Gi"}

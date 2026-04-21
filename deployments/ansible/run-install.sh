@@ -266,19 +266,6 @@ fi
 # Enable task timing — shows duration of each task in the output
 export ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks
 
-# Ensure required Ansible collections are installed/upgraded before running the
-# playbook. This prevents stale user-level collections (e.g. ~/.ansible/collections)
-# from shadowing the versions needed by the installer. (fixes #856)
-COLLECTIONS_REQ="$SCRIPT_DIR/collections-reqs.yml"
-if [[ -f "$COLLECTIONS_REQ" ]]; then
-  echo "Ensuring required Ansible collections are up to date..."
-  if command -v uv >/dev/null 2>&1; then
-    uv run ansible-galaxy collection install -r "$COLLECTIONS_REQ" --upgrade
-  else
-    ansible-galaxy collection install -r "$COLLECTIONS_REQ" --upgrade
-  fi
-fi
-
 # Call ansible-playbook via the 'uv' wrapper when available so uv manages deps/venv.
 # Fall back to ansible-playbook if uv is not present.
 if command -v uv >/dev/null 2>&1; then

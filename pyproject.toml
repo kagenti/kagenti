@@ -19,16 +19,16 @@ dependencies = [
     "PyYAML>=6.0.3",
 
     # Dependencies for reliable logging in the authentication process.
-    "typer>=0.24.1"
+    "typer>=0.20.0"
 ]
 
 [project.optional-dependencies]
 test = [
     # Testing framework
     "pytest>=7.4.0",
-    "pytest-cov>=7.1.0",
+    "pytest-cov>=6.0.0",
     "pytest-timeout>=2.1.0",
-    "pytest-xdist>=3.8.0",  # For parallel test execution
+    "pytest-xdist>=3.3.0",  # For parallel test execution
     "pytest-asyncio>=0.21.0",  # For async test support
 
     # Kubernetes client
@@ -38,7 +38,7 @@ test = [
     "pyasn1>=0.6.3",  # Minimum version for CVE-2026-23490, CVE-2026-30922 fixes
 
     # HTTP requests
-    "requests>=2.33.1",
+    "requests>=2.31.0",
     "httpx>=0.24.0",  # For A2A client
 
     # A2A protocol client

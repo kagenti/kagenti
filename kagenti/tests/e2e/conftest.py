@@ -326,6 +326,79 @@ def http_client(is_openshift, openshift_ingress_ca):
         return httpx.AsyncClient(follow_redirects=False)
 
 
+def _discover_backend_url_from_route():
+    """
+    Try to discover the backend URL from an OpenShift Route.
+
+    Tries multiple route names in priority order:
+    1. kagenti-ui - the UI route that proxies /api/* to the backend
+    2. kagenti-api - a dedicated API route (used by some deployments)
+
+    Returns the URL string or None if no route is found.
+    """
+    route_names = ["kagenti-ui", "kagenti-api"]
+
+    for route_name in route_names:
+        try:
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "get",
+                    "route",
+                    route_name,
+                    "-n",
+                    "kagenti-system",
+                    "-o",
+                    "jsonpath={.spec.host}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return f"https://{result.stdout.strip()}"
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            continue
+
+    return None
+
+
+@pytest.fixture(scope="session")
+def backend_url(is_openshift):
+    """
+    Get the backend API URL based on environment.
+
+    Discovery order:
+    1. KAGENTI_BACKEND_URL env var (explicit override)
+    2. OpenShift Route auto-discovery (tries kagenti-ui and kagenti-api routes)
+    3. Kind-style localhost fallback (port-forward on localhost:8002)
+
+    The OpenShift route discovery runs regardless of the is_openshift config flag,
+    because on HyperShift clusters the config file may not be set even though the
+    cluster is OpenShift-based.
+    """
+    # 1. Explicit env var
+    url = os.environ.get("KAGENTI_BACKEND_URL")
+    if url:
+        return url.rstrip("/")
+
+    # 2. Try OpenShift route auto-discovery (works on any OpenShift/HyperShift cluster)
+    route_url = _discover_backend_url_from_route()
+    if route_url:
+        return route_url
+
+    # 3. If is_openshift is True but no route was found, fail explicitly
+    if is_openshift:
+        pytest.fail(
+            "Running on OpenShift but could not discover kagenti-ui or kagenti-api "
+            "route in kagenti-system namespace. "
+            "Set KAGENTI_BACKEND_URL env var as a workaround."
+        )
+
+    # 4. Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
+    return "http://localhost:8002"
+
+
 def _detect_openshift_from_config(kagenti_config):
     """Helper to detect OpenShift from config dict."""
     if not kagenti_config:
@@ -425,6 +498,21 @@ def pytest_collection_modifyitems(config, items):
             enabled[component_name] = (
                 enabled.get(component_name, False) or component_config["enabled"]
             )
+
+    # ===== Feature flags =====
+    # Feature flags from charts.kagenti.values.featureFlags (sandbox, integrations, etc.)
+    feature_flags = kagenti_chart.get("values", {}).get("featureFlags", {})
+    for flag_name, flag_value in feature_flags.items():
+        if isinstance(flag_value, bool):
+            enabled[flag_name] = enabled.get(flag_name, False) or flag_value
+
+    # Environment variable overrides (ENABLE_SANDBOX_TESTS etc.)
+    if os.getenv("ENABLE_SANDBOX_TESTS"):
+        enabled["sandbox"] = True
+
+    # Runtime override: disable rhoai tests when CRDs aren't present
+    if os.getenv("ENABLE_RHOAI_TESTS", "").lower() == "false":
+        enabled["rhoai"] = False
 
     # Detect OpenShift from config
     is_openshift = _detect_openshift_from_config(kagenti_config)

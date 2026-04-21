@@ -22,6 +22,27 @@ metadata:
   {{- include "kagenti.labels" $root | nindent 4 }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
+#  Istio Waypoint Proxy for Namespace: {{ . }}
+#  Required because the namespace label istio.io/use-waypoint: waypoint tells
+#  Istio ambient to route L7 traffic through a waypoint proxy. Without this
+#  Gateway resource, requests return 503 (no healthy upstream).
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: {{ . }}
+  labels:
+    istio.io/waypoint-for: service
+  {{- include "kagenti.labels" $root | nindent 4 }}
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+---
+# ——————————————————————————————————————————————————————————————————————————————
 #  Secrets for Namespace: {{ . }}
 # ——————————————————————————————————————————————————————————————————————————————
 {{- if and $.Values.secrets.githubUser $.Values.secrets.githubToken }}
@@ -312,46 +333,6 @@ data:
                   socket_address:
                     address: 127.0.0.1
                     port_value: 9090
----
-# ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for Unified AuthBridge in Namespace: {{ . }}
-#  YAML config for the authbridge-unified binary (cmd/authbridge).
-#  Used when the operator's UnifiedAuthBridge feature gate is enabled.
-#  The binary reads this at startup; credential files are loaded at runtime
-#  from /shared/ (written by client-registration sidecar).
-# ——————————————————————————————————————————————————————————————————————————————
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: authbridge-unified-config
-  namespace: {{ . }}
-  labels:
-    {{- include "kagenti.labels" $root | nindent 4 }}
-data:
-  config.yaml: |
-    mode: envoy-sidecar
-    inbound:
-      issuer: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-    outbound:
-      keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-      keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
-      default_policy: "passthrough"
-    identity:
-      # Map Helm clientAuthType to authbridge identity.type:
-      #   "client-secret"  → "client-secret" (traditional)
-      #   "federated-jwt"  → "spiffe" (SPIFFE JWT-SVID authentication)
-      type: {{ eq $root.Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" $root.Values.authBridge.clientAuthType | quote }}
-      client_id_file: "/shared/client-id.txt"
-      client_secret_file: "/shared/client-secret.txt"
-{{- if eq $root.Values.authBridge.clientAuthType "federated-jwt" }}
-      jwt_svid_path: "/opt/jwt_svid.token"
-{{- end }}
-    bypass:
-      inbound_paths:
-        - "/.well-known/*"
-        - "/healthz"
-        - "/readyz"
-        - "/livez"
 ---
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————

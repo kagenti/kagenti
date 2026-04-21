@@ -57,9 +57,6 @@ class Settings(BaseSettings):
     shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
     shipwright_default_timeout: str = "15m"
 
-    # Default registry for source-based builds (override via DEFAULT_REGISTRY_URL env var)
-    default_registry_url: str = "registry.cr-system.svc.cluster.local:5000"
-
     # Build reconciliation settings
     build_reconciliation_interval: int = 30  # seconds between reconciliation scans
     enable_build_reconciliation: bool = True  # enable/disable the reconciliation loop
@@ -85,7 +82,6 @@ class Settings(BaseSettings):
     # External service URLs (read from ConfigMap via environment variables)
     traces_dashboard_url: str = ""
     network_dashboard_url: str = ""
-    mlflow_dashboard_url: str = ""
     mcp_inspector_url: str = ""
     mcp_proxy_full_address: str = ""
     keycloak_console_url: str = ""
@@ -101,25 +97,24 @@ class Settings(BaseSettings):
 
     # Legacy direct config (fallback if AUTH_ENDPOINT not provided)
     keycloak_url: str = ""
-    # Browser-facing Keycloak URL (from keycloak.publicUrl Helm value)
-    keycloak_public_url: str = ""
     keycloak_realm: str = "kagenti"
     keycloak_client_id: str = "kagenti-ui"
 
     @property
     def effective_keycloak_url(self) -> str:
         """
-        External (browser-facing) Keycloak URL for frontend auth redirects.
+        Extract Keycloak base URL from AUTH_ENDPOINT or use direct config.
 
-        Priority: AUTH_ENDPOINT (from oauth secret) > KEYCLOAK_PUBLIC_URL
-        (from Helm) > KEYCLOAK_URL (internal, last resort) > constructed default.
+        This returns the external (browser-facing) URL, used for frontend
+        auth config and redirect flows.
         """
         if self.auth_endpoint:
+            # Parse AUTH_ENDPOINT to extract base URL
+            # Pattern: {base_url}/realms/{realm}/protocol/openid-connect/auth
             match = re.match(r"(https?://[^/]+)/realms/", self.auth_endpoint)
             if match:
                 return match.group(1)
-        if self.keycloak_public_url:
-            return self.keycloak_public_url
+        # Fallback to direct config or default
         if self.keycloak_url:
             return self.keycloak_url
         return f"http://keycloak.{self.domain_name}:8080"

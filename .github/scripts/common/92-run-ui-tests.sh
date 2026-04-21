@@ -9,8 +9,9 @@ log_step "92" "Running UI E2E tests (Playwright)"
 # Ensure Node.js >= 22 (required by mermaid/chevrotain)
 MIN_NODE_MAJOR=22
 if ! command -v node &>/dev/null; then
-    log_info "Node.js not available, skipping UI tests"
-    exit 0
+    log_error "Node.js not available — UI tests require Node.js >= v${MIN_NODE_MAJOR}"
+    log_error "Install with: nvm install ${MIN_NODE_MAJOR} or brew install node@${MIN_NODE_MAJOR}"
+    exit 1
 fi
 NODE_MAJOR=$(node --version | sed 's/v\([0-9]*\).*/\1/')
 if [ "$NODE_MAJOR" -lt "$MIN_NODE_MAJOR" ]; then
@@ -78,6 +79,17 @@ fi
 if [ -n "${PLAYWRIGHT_GREP_INVERT:-}" ]; then
     GREP_ARGS+=(--grep-invert "$PLAYWRIGHT_GREP_INVERT")
     log_info "Playwright tag filter: --grep-invert '$PLAYWRIGHT_GREP_INVERT'"
+fi
+
+# Pass KUBECONFIG to Playwright so multi-user tests can read test-user secrets
+export KUBECONFIG="${KUBECONFIG:-}"
+
+# Export test user passwords if stored in K8s secrets
+if [ -n "$KUBECONFIG" ]; then
+    DEV_PASS=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.dev-user-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    NS_PASS=$(kubectl get secret kagenti-test-users -n keycloak -o jsonpath='{.data.ns-admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    [ -n "$DEV_PASS" ] && export DEV_USER_PASSWORD="$DEV_PASS"
+    [ -n "$NS_PASS" ] && export NS_ADMIN_PASSWORD="$NS_PASS"
 fi
 
 log_info "Running Playwright E2E tests..."

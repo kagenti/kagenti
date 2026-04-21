@@ -1,4 +1,3 @@
-# pylint: disable=too-many-lines
 # Copyright 2025 IBM Corp.
 # Licensed under the Apache License, Version 2.0
 
@@ -11,7 +10,6 @@ import re
 from typing import Any, Dict, List, Literal, Optional
 from contextlib import AsyncExitStack
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client import ApiException
 from mcp import ClientSession
@@ -83,13 +81,7 @@ from app.services.shipwright import (
     get_output_image_from_buildrun,
     resolve_clone_secret,
 )
-from app.utils.routes import (
-    create_route_for_agent_or_tool,
-    lookup_service_port,
-    route_exists,
-    sanitize_log,
-    select_route_port,
-)
+from app.utils.routes import create_route_for_agent_or_tool, route_exists
 from app.routers.agents import (
     _ensure_authbridge_configmaps,
     _ensure_authproxy_routes,
@@ -269,7 +261,7 @@ class FinalizeToolBuildRequest(BaseModel):
     defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
 
 
-class ToolShipwrightBuildInfoResponse(BaseModel):  # pylint: disable=too-many-instance-attributes
+class ToolShipwrightBuildInfoResponse(BaseModel):
     """Full Shipwright Build information for tools."""
 
     # Build info
@@ -411,7 +403,7 @@ def _get_workload_status(workload: dict) -> str:
     available_replicas = status.get("available_replicas") or status.get("availableReplicas", 0)
 
     # Check conditions for more detail
-    conditions = status.get("conditions") or []
+    conditions = status.get("conditions", [])
     for condition in conditions:
         cond_type = condition.get("type", "")
         cond_status = condition.get("status", "")
@@ -777,7 +769,6 @@ async def delete_tool(
     2. Shipwright Build (if any)
     3. Deployment or StatefulSet
     4. Service
-    5. HTTPRoute or OpenShift Route (whichever exists)
     """
     deleted_resources = []
 
@@ -845,34 +836,6 @@ async def delete_tool(
     except ApiException as e:
         if e.status != 404:
             logger.warning(f"Failed to delete Service '{service_name}': {e}")
-
-    # Delete the HTTPRoute (if exists)
-    try:
-        kube.delete_custom_resource(
-            group="gateway.networking.k8s.io",
-            version="v1",
-            namespace=namespace,
-            plural="httproutes",
-            name=name,
-        )
-        deleted_resources.append(f"HTTPRoute/{name}")
-    except ApiException as e:
-        if e.status != 404:
-            logger.warning(f"Failed to delete HTTPRoute '{name}': {e}")
-
-    # Delete the OpenShift Route (if exists)
-    try:
-        kube.delete_custom_resource(
-            group="route.openshift.io",
-            version="v1",
-            namespace=namespace,
-            plural="routes",
-            name=name,
-        )
-        deleted_resources.append(f"Route/{name}")
-    except ApiException as e:
-        if e.status != 404:
-            logger.warning(f"Failed to delete Route '{name}': {e}")
 
     if deleted_resources:
         return DeleteResponse(
@@ -1563,10 +1526,10 @@ async def create_tool(
             # Create HTTPRoute/Route if requested
             # Service is now {name}-mcp on port 8000
             if request.createHttpRoute:
-                service_port = select_route_port(
-                    service_ports,
-                    default_port=DEFAULT_IN_CLUSTER_PORT,
-                )
+                service_port = DEFAULT_IN_CLUSTER_PORT
+                if service_ports and len(service_ports) > 0:
+                    service_port = service_ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
+
                 create_route_for_agent_or_tool(
                     kube=kube,
                     name=request.name,
@@ -2029,10 +1992,10 @@ async def finalize_tool_shipwright_build(
 
         # Create HTTPRoute if requested
         if create_http_route:
-            service_port = select_route_port(
-                service_ports,
-                default_port=DEFAULT_IN_CLUSTER_PORT,
-            )
+            service_port = DEFAULT_IN_CLUSTER_PORT
+            if service_ports and len(service_ports) > 0:
+                service_port = service_ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
+
             create_route_for_agent_or_tool(
                 kube=kube,
                 name=name,
@@ -2063,30 +2026,40 @@ async def finalize_tool_shipwright_build(
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
-def _get_tool_url(name: str, namespace: str, kube: KubernetesService) -> str:
+def _get_tool_url(name: str, namespace: str, port: int = DEFAULT_IN_CLUSTER_PORT) -> str:
     """Get the URL for an MCP tool server.
-
-    Looks up the K8s Service to find the actual port instead of assuming
-    the default.  Falls back to DEFAULT_IN_CLUSTER_PORT when the Service
-    is missing or has no ports.
 
     Service naming convention:
     - Service name: {name}-mcp
+    - Port: configurable, defaults to 8000
 
     Returns different URL formats based on deployment context:
     - In-cluster: http://{name}-mcp.{namespace}.svc.cluster.local:{port}
     - Off-cluster (local dev): http://{name}.{domain}:8080 (via HTTPRoute)
     """
-    service_name = _get_tool_service_name(name)
-    port = lookup_service_port(service_name, namespace, kube, DEFAULT_IN_CLUSTER_PORT)
-
     if settings.is_running_in_cluster:
+        # In-cluster: use service DNS with new naming convention
+        service_name = _get_tool_service_name(name)
         return f"http://{service_name}.{namespace}.svc.cluster.local:{port}"
     else:
-        # Off-cluster: HTTPRoute handles mapping to the Service port;
-        # the URL only needs the gateway listener port (8080).
+        # Off-cluster: use external domain (e.g., localtest.me) via HTTPRoute
         domain = settings.domain_name
         return f"http://{name}.{domain}:8080"
+
+
+def _get_tool_service_port(kube: KubernetesService, name: str, namespace: str) -> int:
+    """Look up the actual service port for a tool from K8s.
+
+    Falls back to DEFAULT_IN_CLUSTER_PORT if the service cannot be found.
+    """
+    try:
+        service = kube.get_service(namespace, _get_tool_service_name(name))
+        ports = service.get("spec", {}).get("ports", [])
+        if ports:
+            return ports[0].get("port", DEFAULT_IN_CLUSTER_PORT)
+    except ApiException:
+        pass
+    return DEFAULT_IN_CLUSTER_PORT
 
 
 @router.post(
@@ -2105,10 +2078,11 @@ async def connect_to_tool(
     This endpoint connects to the MCP server and retrieves the list of
     available tools using the MCP client library.
     """
-    tool_url = _get_tool_url(name, namespace, kube)
+    service_port = _get_tool_service_port(kube, name, namespace)
+    tool_url = _get_tool_url(name, namespace, port=service_port)
     mcp_endpoint = f"{tool_url}/mcp"
 
-    logger.info("Connecting to MCP server at %s", sanitize_log(mcp_endpoint))
+    logger.info(f"Connecting to MCP server at {mcp_endpoint}")
 
     exit_stack = AsyncExitStack()
     try:
@@ -2122,7 +2096,7 @@ async def connect_to_tool(
             session: ClientSession = await session_context.__aenter__()
             await session.initialize()
 
-            logger.info("MCP session initialized for tool %s", sanitize_log(name))
+            logger.info(f"MCP session initialized for tool '{name}'")
 
             # List available tools
             response = await session.list_tools()
@@ -2138,30 +2112,18 @@ async def connect_to_tool(
                             ),
                         )
                     )
-                logger.info("Listed %d tools from MCP server %s", len(tools), sanitize_log(name))
+                logger.info(f"Listed {len(tools)} tools from MCP server '{name}'")
 
             return MCPToolsResponse(tools=tools)
 
-    except (ConnectionError, httpx.NetworkError):
-        logger.error("Connection error to MCP server (connect)")
+    except ConnectionError as e:
+        logger.error(f"Connection error to MCP server: {e}")
         raise HTTPException(
-            status_code=502,
-            detail=f"Failed to connect to MCP server at {tool_url}",
-        )
-    except httpx.TimeoutException:
-        logger.error("Timeout connecting to MCP server (connect)")
-        raise HTTPException(
-            status_code=504,
-            detail=f"Timeout connecting to MCP server at {tool_url}",
-        )
-    except httpx.HTTPError:
-        logger.error("HTTP error connecting to MCP server (connect)")
-        raise HTTPException(
-            status_code=502,
+            status_code=503,
             detail=f"Failed to connect to MCP server at {tool_url}",
         )
     except Exception as e:
-        logger.error("Unexpected error connecting to MCP server: %s", type(e).__name__)
+        logger.error(f"Unexpected error connecting to MCP server: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Error connecting to MCP server: {str(e)}",
@@ -2185,7 +2147,8 @@ async def invoke_tool(
     This endpoint calls a specific tool on the MCP server with
     the provided arguments and returns the result.
     """
-    tool_url = _get_tool_url(name, namespace, kube)
+    service_port = _get_tool_service_port(kube, name, namespace)
+    tool_url = _get_tool_url(name, namespace, port=service_port)
     mcp_endpoint = f"{tool_url}/mcp"
 
     exit_stack = AsyncExitStack()
@@ -2200,16 +2163,12 @@ async def invoke_tool(
             session: ClientSession = await session_context.__aenter__()
             await session.initialize()
 
-            logger.info("MCP session initialized for tool invocation on %s", sanitize_log(name))
+            logger.info(f"MCP session initialized for tool invocation on '{name}'")
 
             # Call the tool using the MCP client library
             result = await session.call_tool(request.tool_name, request.arguments)
 
-            logger.info(
-                "Tool %s invoked successfully on %s",
-                sanitize_log(request.tool_name),
-                sanitize_log(name),
-            )
+            logger.info(f"Tool '{request.tool_name}' invoked successfully on '{name}'")
 
             # Convert the result to a serializable format
             result_data = {}
@@ -2230,28 +2189,16 @@ async def invoke_tool(
 
             return MCPInvokeResponse(result=result_data)
 
-    except (ConnectionError, httpx.NetworkError):
-        logger.error("Connection error to MCP server (invoke)")
+    except ConnectionError as e:
+        logger.error(f"Connection error to MCP server: {e}")
         raise HTTPException(
-            status_code=502,
-            detail=f"Failed to connect to MCP server at {tool_url}",
-        )
-    except httpx.TimeoutException:
-        logger.error("Timeout connecting to MCP server (invoke)")
-        raise HTTPException(
-            status_code=504,
-            detail=f"Timeout connecting to MCP server at {tool_url}",
-        )
-    except httpx.HTTPError:
-        logger.error("HTTP error connecting to MCP server (invoke)")
-        raise HTTPException(
-            status_code=502,
+            status_code=503,
             detail=f"Failed to connect to MCP server at {tool_url}",
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Unexpected error invoking MCP tool: %s", type(e).__name__)
+        logger.error(f"Unexpected error invoking MCP tool: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Error invoking MCP tool: {str(e)}",

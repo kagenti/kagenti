@@ -19,7 +19,6 @@ Environment Variables:
         OpenShift: https://kagenti-ui-kagenti-system.apps.cluster.example.com/api
 """
 
-import os
 import pytest
 import httpx
 
@@ -37,50 +36,11 @@ class TestUIAgentDiscovery:
         else:
             self._verify = True
 
-    @pytest.fixture
-    def backend_url(self, is_openshift):
-        """
-        Get the backend API URL based on environment.
-
-        For Kind: Expects port-forward to backend on localhost:8002
-        For OpenShift: Discovers kagenti-ui route (UI proxies /api to backend)
-        """
-        url = os.environ.get("KAGENTI_BACKEND_URL")
-        if url:
-            return url.rstrip("/")
-
-        if is_openshift:
-            # On OpenShift, the kagenti-ui route proxies /api/* to the backend
-            import subprocess
-
-            result = subprocess.run(
-                [
-                    "kubectl",
-                    "get",
-                    "route",
-                    "kagenti-ui",
-                    "-n",
-                    "kagenti-system",
-                    "-o",
-                    "jsonpath={.spec.host}",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.returncode == 0 and result.stdout:
-                return f"https://{result.stdout}"
-            pytest.fail(
-                "Could not discover kagenti-ui route for backend API access. "
-                "Set KAGENTI_BACKEND_URL env var as a workaround."
-            )
-        else:
-            # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
-            return "http://localhost:8002"
+    # backend_url fixture is inherited from conftest.py (session-scoped)
 
     @pytest.mark.critical
     def test_weather_service_agent_discoverable(
-        self, backend_url, http_client, k8s_apps_client
+        self, backend_url, http_client, k8s_apps_client, keycloak_agent_token
     ):
         """
         Verify weather-service agent is discoverable through the UI backend API.
@@ -89,6 +49,7 @@ class TestUIAgentDiscovery:
         1. weather-service Deployment exists in team1 namespace
         2. Deployment has label kagenti.io/type=agent
         3. Backend is accessible (port-forwarded or via route)
+        4. Valid Keycloak token available (backend requires ROLE_VIEWER)
         """
         # First, verify the Deployment exists and has correct labels
         deployment = k8s_apps_client.read_namespaced_deployment(
@@ -101,34 +62,41 @@ class TestUIAgentDiscovery:
             f"Found labels: {labels}"
         )
 
+        if not keycloak_agent_token:
+            pytest.skip(
+                "No Keycloak agent token available - cannot authenticate to backend API"
+            )
+
+        # Backend API requires Bearer token with kagenti-viewer role
+        headers = {"Authorization": f"Bearer {keycloak_agent_token}"}
+
         # Now verify it appears in the backend API response
-        # This is a synchronous test, so we use httpx.get instead of http_client
         url = f"{backend_url}/api/v1/agents?namespace=team1"
 
         try:
-            response = httpx.get(url, timeout=30.0, verify=self._verify)
+            response = httpx.get(
+                url, timeout=30.0, verify=self._verify, headers=headers
+            )
         except httpx.ConnectError as e:
-            pytest.skip(
+            pytest.fail(
                 f"Backend not accessible at {backend_url}. "
-                f"Port-forward may not be set up. Error: {e}"
+                f"Port-forward may not be running or route is unreachable. Error: {e}"
             )
 
-        if response.status_code != 200:
-            pytest.skip(
-                f"Backend API returned {response.status_code} - "
-                f"backend may not be properly configured. Response: {response.text}"
-            )
+        assert response.status_code == 200, (
+            f"Backend API returned {response.status_code} at {url}. "
+            f"Response: {response.text[:500]}"
+        )
 
         data = response.json()
         items = data.get("items", [])
         agent_names = [agent.get("name") for agent in items]
 
-        if not agent_names:
-            pytest.skip(
-                "Backend API returned empty agent list. "
-                "This may indicate a backend bug or RBAC issue. "
-                "The Kubernetes API can find agents (see test_backend_rbac_can_list_deployments)."
-            )
+        assert agent_names, (
+            "Backend API returned empty agent list. "
+            "This may indicate a backend bug or RBAC issue. "
+            "The Kubernetes API can find agents (see test_backend_rbac_can_list_deployments)."
+        )
 
         assert "weather-service" in agent_names, (
             f"weather-service not found in UI API response. "
@@ -137,7 +105,9 @@ class TestUIAgentDiscovery:
         )
 
     @pytest.mark.critical
-    def test_weather_service_agent_metadata(self, backend_url, http_client):
+    def test_weather_service_agent_metadata(
+        self, backend_url, http_client, keycloak_agent_token
+    ):
         """
         Verify weather-service agent has correct metadata in UI API response.
 
@@ -148,15 +118,25 @@ class TestUIAgentDiscovery:
         - labels: protocol=a2a, framework=LangGraph
         - workloadType: deployment
         """
+        if not keycloak_agent_token:
+            pytest.skip(
+                "No Keycloak agent token available - cannot authenticate to backend API"
+            )
+
+        headers = {"Authorization": f"Bearer {keycloak_agent_token}"}
         url = f"{backend_url}/api/v1/agents?namespace=team1"
 
         try:
-            response = httpx.get(url, timeout=30.0, verify=self._verify)
+            response = httpx.get(
+                url, timeout=30.0, verify=self._verify, headers=headers
+            )
         except httpx.ConnectError as e:
-            pytest.skip(f"Backend not accessible: {e}")
+            pytest.fail(f"Backend not accessible at {backend_url}: {e}")
 
-        if response.status_code != 200:
-            pytest.skip(f"Backend API returned {response.status_code}")
+        assert response.status_code == 200, (
+            f"Backend API returned {response.status_code} at {url}. "
+            f"Response: {response.text[:500]}"
+        )
 
         data = response.json()
         items = data.get("items", [])
@@ -166,11 +146,11 @@ class TestUIAgentDiscovery:
             (agent for agent in items if agent.get("name") == "weather-service"), None
         )
 
-        if weather_agent is None:
-            pytest.skip(
-                "weather-service not found in API response - "
-                "backend may not be discovering agents correctly"
-            )
+        assert weather_agent is not None, (
+            "weather-service not found in API response. "
+            f"Found agents: {[a.get('name') for a in items]}. "
+            "Backend may not be discovering agents correctly."
+        )
 
         # Verify namespace
         assert weather_agent.get("namespace") == "team1"
@@ -182,9 +162,12 @@ class TestUIAgentDiscovery:
 
         # Verify labels
         labels = weather_agent.get("labels", {})
-        assert labels.get("protocol") == "a2a", (
-            f"Expected protocol=a2a, got {labels.get('protocol')}"
-        )
+        protocol = labels.get("protocol")
+        # Backend may return protocol as string or list
+        if isinstance(protocol, list):
+            assert "a2a" in protocol, f"Expected 'a2a' in protocol list, got {protocol}"
+        else:
+            assert protocol == "a2a", f"Expected protocol=a2a, got {protocol}"
 
         # Status should be Ready or Running (depending on deployment state)
         status = weather_agent.get("status")
@@ -243,45 +226,18 @@ class TestToolDiscovery:
         else:
             self._verify = True
 
-    @pytest.fixture
-    def backend_url(self, is_openshift):
-        """Get the backend API URL based on environment."""
-        url = os.environ.get("KAGENTI_BACKEND_URL")
-        if url:
-            return url.rstrip("/")
+    # backend_url fixture is inherited from conftest.py (session-scoped)
 
-        if is_openshift:
-            import subprocess
-
-            result = subprocess.run(
-                [
-                    "kubectl",
-                    "get",
-                    "route",
-                    "kagenti-ui",
-                    "-n",
-                    "kagenti-system",
-                    "-o",
-                    "jsonpath={.spec.host}",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.returncode == 0 and result.stdout:
-                return f"https://{result.stdout}"
-            pytest.fail("Could not discover kagenti-ui route for backend API access.")
-
-        # Kind cluster with port-forward (port 8002 to avoid conflict with weather-service)
-        return "http://localhost:8002"
-
-    def test_weather_tool_discoverable(self, backend_url, k8s_apps_client):
+    def test_weather_tool_discoverable(
+        self, backend_url, k8s_apps_client, keycloak_agent_token
+    ):
         """
         Verify weather-tool is discoverable through the UI backend API.
 
         Prerequisites:
         1. weather-tool Deployment exists in team1 namespace
         2. Deployment has label kagenti.io/type=tool
+        3. Valid Keycloak token available (backend requires ROLE_VIEWER)
         """
         # First verify the Deployment exists
         deployment = k8s_apps_client.read_namespaced_deployment(
@@ -294,32 +250,36 @@ class TestToolDiscovery:
             f"Found labels: {labels}"
         )
 
+        if not keycloak_agent_token:
+            pytest.skip(
+                "No Keycloak agent token available - cannot authenticate to backend API"
+            )
+
+        headers = {"Authorization": f"Bearer {keycloak_agent_token}"}
+
         # Check API response
         url = f"{backend_url}/api/v1/tools?namespace=team1"
 
         try:
-            response = httpx.get(url, timeout=30.0, verify=self._verify)
-        except httpx.ConnectError as e:
-            pytest.skip(f"Backend not accessible: {e}")
-
-        if response.status_code in (401, 403):
-            pytest.skip(
-                f"Backend tools API returned {response.status_code} - "
-                "authorization may not be configured correctly"
+            response = httpx.get(
+                url, timeout=30.0, verify=self._verify, headers=headers
             )
+        except httpx.ConnectError as e:
+            pytest.fail(f"Backend not accessible at {backend_url}: {e}")
 
-        if response.status_code != 200:
-            pytest.skip(f"Backend API returned {response.status_code}")
+        assert response.status_code == 200, (
+            f"Backend tools API returned {response.status_code} at {url}. "
+            f"Response: {response.text[:500]}"
+        )
 
         data = response.json()
         items = data.get("items", [])
         tool_names = [tool.get("name") for tool in items]
 
-        if not tool_names:
-            pytest.skip(
-                "Backend API returned empty tool list - "
-                "backend may not be discovering tools correctly"
-            )
+        assert tool_names, (
+            "Backend API returned empty tool list. "
+            "Backend may not be discovering tools correctly."
+        )
 
         assert "weather-tool" in tool_names, (
             f"weather-tool not found in UI API response. Found tools: {tool_names}"

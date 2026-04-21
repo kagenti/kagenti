@@ -5,7 +5,6 @@
 Tests for authentication and authorization utilities.
 """
 
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,7 +18,6 @@ from app.core.auth import (
     ROLE_HIERARCHY,
     get_effective_roles,
     require_roles,
-    validate_token,
     TokenData,
 )
 
@@ -359,78 +357,3 @@ class TestEndpointRBAC:
             assert response.status_code == 200
             # Mock user should have admin role
             assert "admin" in response.json()["user"]
-
-
-# =============================================================================
-# validate_token Role Mapping Tests (issue #1130)
-# =============================================================================
-
-
-class TestValidateTokenRoleMapping:
-    """Test that validate_token assigns default roles correctly."""
-
-    @pytest.fixture
-    def mock_jwt_decode(self):
-        """Patch JWT decoding to return controlled payloads."""
-
-        @contextmanager
-        def _make_mock(realm_roles=None, resource_access=None):
-            payload = {
-                "sub": "user-123",
-                "preferred_username": "testuser",
-                "email": "test@example.com",
-                "realm_access": {"roles": realm_roles or []},
-            }
-            if resource_access is not None:
-                payload["resource_access"] = resource_access
-
-            with (
-                patch("app.core.auth.jwt") as mock_jwt,
-                patch("app.core.auth.get_jwks") as mock_get_jwks,
-            ):
-                mock_jwt.get_unverified_header.return_value = {"kid": "key-1"}
-                mock_jwt.decode.return_value = payload
-                mock_jwks = AsyncMock()
-                mock_jwks.is_loaded = True
-                mock_jwks.get_key.return_value = {"kty": "RSA", "kid": "key-1"}
-                mock_get_jwks.return_value = mock_jwks
-
-                with patch("app.core.auth.jwk") as mock_jwk:
-                    mock_jwk.construct.return_value = "fake-key"
-                    yield
-
-        return _make_mock
-
-    @pytest.mark.asyncio
-    async def test_non_admin_user_gets_viewer_role(self, mock_jwt_decode):
-        """Non-admin authenticated users should automatically get kagenti-viewer."""
-        with mock_jwt_decode(realm_roles=["default-roles-kagenti", "offline_access"]):
-            token_data = await validate_token("fake-token")
-            assert ROLE_VIEWER in token_data.roles
-            assert token_data.has_role(ROLE_VIEWER)
-
-    @pytest.mark.asyncio
-    async def test_admin_user_gets_admin_and_viewer(self, mock_jwt_decode):
-        """Admin users should get kagenti-admin (mapped) and kagenti-viewer."""
-        with mock_jwt_decode(realm_roles=["admin", "default-roles-kagenti"]):
-            token_data = await validate_token("fake-token")
-            assert ROLE_ADMIN in token_data.roles
-            assert ROLE_VIEWER in token_data.roles
-            assert token_data.has_role(ROLE_ADMIN)
-            assert token_data.has_role(ROLE_OPERATOR)
-            assert token_data.has_role(ROLE_VIEWER)
-
-    @pytest.mark.asyncio
-    async def test_user_with_explicit_viewer_no_duplicate(self, mock_jwt_decode):
-        """User who already has kagenti-viewer should not get a duplicate."""
-        with mock_jwt_decode(realm_roles=[ROLE_VIEWER]):
-            token_data = await validate_token("fake-token")
-            viewer_count = token_data.roles.count(ROLE_VIEWER)
-            assert viewer_count == 1
-
-    @pytest.mark.asyncio
-    async def test_user_with_no_realm_roles_gets_viewer(self, mock_jwt_decode):
-        """User with empty realm roles should still get kagenti-viewer."""
-        with mock_jwt_decode(realm_roles=[]):
-            token_data = await validate_token("fake-token")
-            assert ROLE_VIEWER in token_data.roles

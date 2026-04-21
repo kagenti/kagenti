@@ -18,16 +18,20 @@ const DEFAULT_FLAGS: FeatureFlags = {
 
 let cachedFlags: FeatureFlags | null = null;
 
-export function useFeatureFlags(): FeatureFlags {
-  const { isAuthenticated, token } = useAuth();
+export function useFeatureFlags(): FeatureFlags & { isLoadingFlags: boolean } {
+  const { isLoading: isAuthLoading } = useAuth();
   const [flags, setFlags] = useState<FeatureFlags>(cachedFlags ?? DEFAULT_FLAGS);
+  const [isLoadingFlags, setIsLoadingFlags] = useState(!cachedFlags);
 
   useEffect(() => {
-    if (cachedFlags || !isAuthenticated || !token) return;
+    if (cachedFlags) {
+      setIsLoadingFlags(false);
+      return;
+    }
+    if (isAuthLoading) return;
     const controller = new AbortController();
     fetch('/api/v1/config/features', {
       signal: controller.signal,
-      headers: { Authorization: `Bearer ${token}` },
     })
       .then(res => res.ok ? res.json() : DEFAULT_FLAGS)
       .then((data) => {
@@ -38,10 +42,16 @@ export function useFeatureFlags(): FeatureFlags {
         };
         cachedFlags = validated;
         setFlags(validated);
+        setIsLoadingFlags(false);
       })
-      .catch((e) => { if (e?.name !== 'AbortError') console.debug('Feature flags fetch failed:', e); });
+      .catch((e) => {
+        if (e?.name !== 'AbortError') {
+          console.debug('Feature flags fetch failed:', e);
+          setIsLoadingFlags(false);
+        }
+      });
     return () => controller.abort();
-  }, [isAuthenticated, token]);
+  }, [isAuthLoading]);
 
-  return flags;
+  return { ...flags, isLoadingFlags };
 }

@@ -4,7 +4,6 @@
 """
 Kubernetes service for API client management and common operations.
 """
-# pylint: disable=too-many-public-methods
 
 import logging
 import os
@@ -19,6 +18,12 @@ from kubernetes.config import ConfigException
 from app.core.constants import ENABLED_NAMESPACE_LABEL_KEY, ENABLED_NAMESPACE_LABEL_VALUE
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
 
 
 def _sanitize(value: str) -> str:
@@ -40,7 +45,6 @@ class KubernetesService:
         self._apps_api: Optional[kubernetes.client.AppsV1Api] = None
         self._batch_api: Optional[kubernetes.client.BatchV1Api] = None
         self._rbac_api: Optional[kubernetes.client.RbacAuthorizationV1Api] = None
-        self._apis_api: Optional[kubernetes.client.ApisApi] = None
 
     def _load_config(self) -> kubernetes.client.ApiClient:
         """Load Kubernetes configuration (in-cluster or kubeconfig)."""
@@ -93,30 +97,9 @@ class KubernetesService:
             self._rbac_api = kubernetes.client.RbacAuthorizationV1Api(self.api_client)
         return self._rbac_api
 
-    @property
-    def apis_api(self) -> kubernetes.client.ApisApi:
-        """Get ApisApi client (GET /apis/ — API group discovery)."""
-        if self._apis_api is None:
-            self._apis_api = kubernetes.client.ApisApi(self.api_client)
-        return self._apis_api
-
     def is_running_in_cluster(self) -> bool:
         """Check if running inside a Kubernetes cluster."""
         return bool(os.getenv("KUBERNETES_SERVICE_HOST"))
-
-    def api_group_exists(self, group: str) -> bool:
-        """Return True if the cluster advertises the given API group (GET /apis/)."""
-        try:
-            response = self.apis_api.get_api_versions(_request_timeout=10)
-            groups = response.groups or []
-            logger.debug(
-                "Available API groups: %s",
-                sorted(g.name for g in groups if g and g.name),
-            )
-            return any(g.name == group for g in groups if g and g.name)
-        except ApiException as e:
-            logger.warning("Error listing API groups: %s", e)
-            return False
 
     def list_namespaces(self, label_selector: Optional[str] = None) -> List[str]:
         """List namespaces with optional label selector."""
@@ -418,7 +401,9 @@ class KubernetesService:
                 namespace=namespace,
             )
         except ApiException as e:
-            logger.error(f"Error deleting Deployment {name} in {namespace}: {e}")
+            logger.error(
+                "Error deleting Deployment %s in %s: %s", _safe_log(name), _safe_log(namespace), e
+            )
             raise
 
     def patch_deployment(self, namespace: str, name: str, body: dict) -> dict:
@@ -459,7 +444,9 @@ class KubernetesService:
             )
             return result.to_dict()
         except ApiException as e:
-            logger.error(f"Error getting Service {name} in {namespace}: {e}")
+            logger.error(
+                "Error getting Service %s in %s: %s", _safe_log(name), _safe_log(namespace), e
+            )
             raise
 
     def list_services(self, namespace: str, label_selector: Optional[str] = None) -> List[dict]:
@@ -478,10 +465,13 @@ class KubernetesService:
         """Delete a Service by name."""
         namespace = _sanitize(namespace)
         name = _sanitize(name)
-        self.core_api.delete_namespaced_service(
-            name=name,
-            namespace=namespace,
-        )
+        try:
+            self.core_api.delete_namespaced_service(
+                name=name,
+                namespace=namespace,
+            )
+        except ApiException:
+            raise
 
     # -------------------------------------------------------------------------
     # Secret Operations

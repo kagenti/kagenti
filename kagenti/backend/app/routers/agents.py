@@ -1,4 +1,3 @@
-# pylint: disable=too-many-lines
 # Copyright 2025 IBM Corp.
 # Licensed under the Apache License, Version 2.0
 
@@ -88,13 +87,14 @@ from app.models.responses import (
     DeleteResponse,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.routes import (
-    create_route_for_agent_or_tool,
-    detect_platform,
-    route_exists,
-    sanitize_log,
-    select_route_port,
-)
+from app.utils.routes import create_route_for_agent_or_tool, detect_platform, route_exists
+
+
+def sanitize_log(value: str) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    return value.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 from app.models.shipwright import (
     ResourceType,
     ShipwrightBuildConfig,
@@ -107,13 +107,17 @@ from app.models.shipwright import (
     ShipwrightBuildStatusResponse,
     ShipwrightBuildRunStatusResponse,
     ResourceConfigFromBuild,
+    ShipwrightBuildInfoResponse,
 )
 from app.services.shipwright import (
     build_shipwright_build_manifest,
     build_shipwright_buildrun_manifest,
+    parse_buildrun_phase,
     extract_resource_config_from_build,
     get_latest_buildrun,
     extract_buildrun_info,
+    is_build_succeeded,
+    get_output_image_from_buildrun,
     resolve_clone_secret,
 )
 from app.services.shipwright_builds import collect_kagenti_shipwright_builds
@@ -283,7 +287,7 @@ class CreateAgentResponse(BaseModel):
     message: str
 
 
-class AgentShipwrightBuildInfoResponse(BaseModel):  # pylint: disable=too-many-instance-attributes
+class AgentShipwrightBuildInfoResponse(BaseModel):
     """Full Shipwright Build information for agents.
 
     This is an agent-specific wrapper that includes agentConfig for backwards compatibility.
@@ -370,7 +374,7 @@ def _is_deployment_ready(resource_data: dict) -> str:
     Also maintains backward compatibility with Agent CRD status format.
     """
     status = resource_data.get("status", {})
-    conditions = status.get("conditions") or []
+    conditions = status.get("conditions", [])
 
     # Check for Kubernetes Deployment conditions (type=Available)
     for condition in conditions:
@@ -654,7 +658,7 @@ async def list_agents(
 
                     # Determine status from Agent CRD
                     agent_status = "Not Ready"
-                    for cond in status.get("conditions") or []:
+                    for cond in status.get("conditions", []):
                         if cond.get("type") == "Ready" and cond.get("status") == "True":
                             agent_status = "Ready"
                             break
@@ -818,7 +822,7 @@ async def delete_agent(
     This deletes:
     - Deployment, StatefulSet, or Job (whichever exists)
     - Service
-    - HTTPRoute or OpenShift Route (whichever exists)
+    - HTTPRoute (if exists)
     - Shipwright Build CR (if exists)
     - Shipwright BuildRun CRs (if exist)
     - Legacy: Agent CR (if exists, for backward compatibility)
@@ -896,7 +900,6 @@ async def delete_agent(
         messages.append(f"Route '{name}' deleted")
     except ApiException as e:
         if e.status == 404:
-            # Route doesn't exist, that's fine
             pass
         else:
             logger.warning("Failed to delete Route '%s': %s", safe_name, e.reason)
@@ -1053,7 +1056,7 @@ async def list_migratable_agents(
         # Determine status
         status = agent.get("status", {})
         agent_status = "Unknown"
-        for cond in status.get("conditions") or []:
+        for cond in status.get("conditions", []):
             if cond.get("type") == "Ready":
                 agent_status = "Ready" if cond.get("status") == "True" else "Not Ready"
                 break
@@ -1698,7 +1701,7 @@ async def get_shipwright_buildrun_status(
 
         # Extract conditions
         conditions = []
-        for cond in status.get("conditions") or []:
+        for cond in status.get("conditions", []):
             conditions.append(
                 BuildStatusCondition(
                     type=cond.get("type", ""),
@@ -2085,46 +2088,12 @@ def _ensure_authbridge_scc_rolebinding(
         name="agent-authbridge-scc",
         cluster_role_name=cluster_role_name,
         subjects=[
-            kubernetes.client.RbacV1Subject(
+            kubernetes.client.V1Subject(
                 kind="Group",
                 api_group="rbac.authorization.k8s.io",
                 name=f"system:serviceaccounts:{namespace}",
             ),
         ],
-    )
-
-
-def _ensure_card_unsigned_configmap(
-    kube: KubernetesService,
-    name: str,
-    namespace: str,
-    service_port: int = DEFAULT_IN_CLUSTER_PORT,
-) -> None:
-    """Create the <agent>-card-unsigned ConfigMap if it does not exist.
-
-    The Kagenti operator webhook checks for this ConfigMap when a
-    Deployment is admitted.  If it exists, the webhook injects a
-    ``sign-agentcard`` init container that signs the agent card with
-    the workload's SPIRE SVID.  The ConfigMap must therefore be
-    created **before** the Deployment.
-    """
-    agent_url = f"http://{name}.{namespace}.svc.cluster.local:{service_port}"
-    agent_card = json.dumps(
-        {
-            "name": name,
-            "url": agent_url,
-            "version": "1.0.0",
-            "capabilities": {},
-            "defaultInputModes": ["application/json"],
-            "defaultOutputModes": ["text/plain"],
-            "skills": [],
-        },
-        indent=2,
-    )
-    kube.ensure_configmap(
-        namespace=namespace,
-        name=f"{name}-card-unsigned",
-        data={"agent.json": agent_card},
     )
 
 
@@ -2811,21 +2780,6 @@ async def create_agent(
             if request.authBridgeEnabled:
                 _ensure_authbridge_scc_rolebinding(kube=kube, namespace=request.namespace)
 
-            # Create card-unsigned ConfigMap so the webhook injects
-            # the sign-agentcard init container at Deployment admission.
-            if request.spireEnabled:
-                service_port = (
-                    request.servicePorts[0].port
-                    if request.servicePorts
-                    else DEFAULT_IN_CLUSTER_PORT
-                )
-                _ensure_card_unsigned_configmap(
-                    kube=kube,
-                    name=request.name,
-                    namespace=request.namespace,
-                    service_port=service_port,
-                )
-
             # Create workload based on workloadType
             if request.workloadType == WORKLOAD_TYPE_DEPLOYMENT:
                 workload_manifest = _build_deployment_manifest(
@@ -2884,9 +2838,10 @@ async def create_agent(
 
             # Create HTTPRoute/Route if requested (not applicable for Jobs)
             if request.createHttpRoute and request.workloadType != WORKLOAD_TYPE_JOB:
-                service_port = select_route_port(
-                    request.servicePorts,
-                    default_port=DEFAULT_OFF_CLUSTER_PORT,
+                service_port = (
+                    request.servicePorts[0].port
+                    if request.servicePorts
+                    else DEFAULT_OFF_CLUSTER_PORT
                 )
                 create_route_for_agent_or_tool(
                     kube=kube,
@@ -3047,7 +3002,7 @@ async def finalize_shipwright_build(
         buildrun_status = latest_buildrun.get("status", {})
 
         # Check if build succeeded
-        conditions = buildrun_status.get("conditions") or []
+        conditions = buildrun_status.get("conditions", [])
         build_succeeded = False
         failure_message = None
         for cond in conditions:
@@ -3295,19 +3250,6 @@ async def finalize_shipwright_build(
         if final_auth_bridge:
             _ensure_authbridge_scc_rolebinding(kube=kube, namespace=namespace)
 
-        # Create card-unsigned ConfigMap so the webhook injects
-        # the sign-agentcard init container at Deployment admission.
-        if final_spire_enabled:
-            service_port = (
-                final_service_ports[0].port if final_service_ports else DEFAULT_IN_CLUSTER_PORT
-            )
-            _ensure_card_unsigned_configmap(
-                kube=kube,
-                name=name,
-                namespace=namespace,
-                service_port=service_port,
-            )
-
         # Create workload based on workloadType
         if final_workload_type == WORKLOAD_TYPE_DEPLOYMENT:
             workload_manifest = _build_deployment_manifest(
@@ -3389,9 +3331,8 @@ async def finalize_shipwright_build(
 
         # Step 4: Create HTTPRoute/Route if requested (not applicable for Jobs)
         if final_create_route and final_workload_type != WORKLOAD_TYPE_JOB:
-            service_port = select_route_port(
-                final_service_ports,
-                default_port=DEFAULT_OFF_CLUSTER_PORT,
+            service_port = (
+                final_service_ports[0].port if final_service_ports else DEFAULT_OFF_CLUSTER_PORT
             )
             create_route_for_agent_or_tool(
                 kube=kube,
@@ -3409,6 +3350,8 @@ async def finalize_shipwright_build(
             message=message,
         )
 
+    except HTTPException:
+        raise
     except ApiException as e:
         if e.status == 409:
             raise HTTPException(

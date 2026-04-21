@@ -15,28 +15,22 @@ import pytest
 from datetime import datetime, timezone, timedelta
 
 
-def _is_job_pod(pod) -> bool:
-    """Check if a pod is owned by a Kubernetes Job.
+def _is_job_or_build_pod(pod) -> bool:
+    """Check if a pod is owned by a Job or OpenShift Build.
 
-    Job pods can fail and be retried - this is expected behavior.
-    We should not count transient job pod failures as platform health issues.
-
-    Detection methods:
-    1. Check owner_references for kind="Job"
-    2. Fallback: Check if pod name contains "-job-" pattern (Job naming convention)
+    Job and Build pods can fail and be retried - this is expected behavior.
+    We should not count transient failures as platform health issues.
     """
-    # Method 1: Check owner references
     owner_refs = pod.metadata.owner_references
     if owner_refs is not None and len(owner_refs) > 0:
         for owner in owner_refs:
-            if owner.kind == "Job":
+            if owner.kind in ("Job", "Build"):
                 return True
 
-    # Method 2: Fallback - check pod naming convention
-    # Job pods are typically named <job-name>-<random-suffix>
-    # Job names often end with "-job" by convention
     pod_name = pod.metadata.name or ""
     if "-job-" in pod_name:
+        return True
+    if pod_name.endswith("-build"):
         return True
 
     return False
@@ -61,7 +55,8 @@ class TestPlatformHealth:
         failed_pods = [
             f"{pod.metadata.namespace}/{pod.metadata.name} ({pod.status.phase})"
             for pod in pods.items
-            if pod.status.phase not in ["Running", "Succeeded"] and not _is_job_pod(pod)
+            if pod.status.phase not in ["Running", "Succeeded"]
+            and not _is_job_or_build_pod(pod)
         ]
 
         assert len(failed_pods) == 0, (
@@ -76,9 +71,6 @@ class TestPlatformHealth:
         Checks that no pods are currently in a CrashLoopBackOff state
         or have recently restarted (within the last 5 minutes).
         Initial startup restarts are ignored.
-        Excludes Job pods since they use restartPolicy: OnFailure and
-        transient restarts are expected — test_all_jobs_completed checks
-        Job completion separately.
         """
         pods = k8s_client.list_pod_for_all_namespaces(watch=False)
 
@@ -87,11 +79,8 @@ class TestPlatformHealth:
         recent_restart_threshold = timedelta(minutes=5)
 
         for pod in pods.items:
-            # Skip Job pods — they restart on failure by design
-            if _is_job_pod(pod):
+            if _is_job_or_build_pod(pod):
                 continue
-
-            # Check if pod is in CrashLoopBackOff state
             if pod.status.container_statuses:
                 for container in pod.status.container_statuses:
                     # Check for CrashLoopBackOff state
@@ -144,6 +133,7 @@ class TestPlatformHealth:
         HELM_HOOK_JOBS = {
             "kagenti-agent-oauth-secret-job",
             "kagenti-ui-oauth-secret-job",
+            "kagenti-spiffe-idp-setup-job",
         }
 
         # Get all jobs across all namespaces

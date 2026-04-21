@@ -23,6 +23,13 @@ import asyncpg
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_log(value: object) -> str:
+    """Sanitize user input for logging (CWE-117 log injection prevention)."""
+    s = str(value) if not isinstance(value, str) else value
+    return s.replace("\n", "\\n").replace("\r", "\\r").replace("\x00", "")
+
+
 # ---------------------------------------------------------------------------
 # Module-level pool cache
 # ---------------------------------------------------------------------------
@@ -93,7 +100,7 @@ def _dsn_for_namespace(namespace: str) -> str:
 
 def _convention_dsn(namespace: str) -> str:
     """Convention-based DSN when no secret is available."""
-    logger.warning("Using convention-based DB fallback for namespace=%s", namespace)
+    logger.warning("Using convention-based DB fallback for namespace=%s", _safe_log(namespace))
     return f"postgresql://kagenti:kagenti@postgres-sessions.{namespace}:5432/sessions"
 
 
@@ -147,14 +154,14 @@ async def get_session_pool(namespace: str) -> asyncpg.Pool:
     """Return (or lazily create) the asyncpg pool for *namespace*."""
     pool = _pool_cache.get(namespace)
     if pool is not None:
-        if not pool._closed:  # pylint: disable=protected-access
+        if not pool._closed:
             return pool
         # Pool was closed externally — recreate
-        logger.warning("DB pool for namespace=%s was closed — recreating", namespace)
+        logger.warning("DB pool for namespace=%s was closed — recreating", _safe_log(namespace))
         del _pool_cache[namespace]
 
     dsn = _dsn_for_namespace(namespace)
-    logger.info("Creating session DB pool for namespace=%s", namespace)
+    logger.info("Creating session DB pool for namespace=%s", _safe_log(namespace))
     pool = await _create_pool(dsn)
     await _ensure_sessions_schema(pool)
     _pool_cache[namespace] = pool
@@ -183,6 +190,30 @@ async def close_all_pools() -> None:
 # ---------------------------------------------------------------------------
 # Sessions table schema
 # ---------------------------------------------------------------------------
+
+TASKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    context_id TEXT,
+    kind TEXT DEFAULT 'task',
+    status JSONB DEFAULT '{}',
+    artifacts JSONB DEFAULT '[]',
+    history JSONB DEFAULT '[]',
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_context ON tasks(context_id);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'task';
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='tasks' AND column_name='status' AND data_type='text') THEN
+    ALTER TABLE tasks ALTER COLUMN status DROP DEFAULT;
+    ALTER TABLE tasks ALTER COLUMN status TYPE JSONB USING status::jsonb;
+    ALTER TABLE tasks ALTER COLUMN status SET DEFAULT '{}'::jsonb;
+  END IF;
+END $$;
+"""
 
 SESSIONS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -226,6 +257,12 @@ async def _ensure_sessions_schema(pool: asyncpg.Pool) -> None:
     except Exception as exc:
         logger.warning("Failed to ensure events schema: %s", exc)
 
-
-# NOTE: The A2A SDK's DatabaseTaskStore manages the 'tasks' table schema.
-# The backend reads from 'tasks' and manages the 'sessions' table above.
+    # Ensure tasks table exists — the A2A SDK's DatabaseTaskStore manages
+    # writes, but the backend needs to read from it.  On fresh deployments
+    # or after DB cleanup, the table may not exist yet.
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(TASKS_SCHEMA)
+        logger.info("Tasks schema ensured")
+    except Exception as exc:
+        logger.warning("Failed to ensure tasks schema: %s", exc)

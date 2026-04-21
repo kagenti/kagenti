@@ -46,7 +46,13 @@ log_success "postgres-sessions running"
 # ============================================================================
 
 log_info "Building llm-budget-proxy image..."
-if [ "$IS_OPENSHIFT" = "true" ] && oc api-resources --api-group=build.openshift.io 2>/dev/null | grep -q BuildConfig; then
+# Check if OpenShift BuildConfig API is available
+# Note: avoid grep -q with pipefail — grep -q causes SIGPIPE (exit 141) on the producer
+HAS_BUILDCONFIG=false
+if [ "$IS_OPENSHIFT" = "true" ] && kubectl api-resources --api-group=build.openshift.io 2>/dev/null | grep BuildConfig > /dev/null; then
+    HAS_BUILDCONFIG=true
+fi
+if [ "$HAS_BUILDCONFIG" = "true" ]; then
     oc create imagestream llm-budget-proxy -n "$NAMESPACE" 2>/dev/null || true
     cat <<BPEOF | kubectl apply -f -
 apiVersion: build.openshift.io/v1
@@ -62,7 +68,7 @@ spec:
   source:
     type: Git
     git:
-      uri: $(git remote get-url origin 2>/dev/null || echo "https://github.com/kagenti/kagenti.git")
+      uri: $(git remote get-url origin 2>/dev/null | sed 's|git@github.com:|https://github.com/|' || echo "https://github.com/kagenti/kagenti.git")
       ref: $(git rev-parse HEAD 2>/dev/null || echo "main")
     contextDir: kagenti
   strategy:
@@ -99,6 +105,22 @@ kubectl exec -n "$NAMESPACE" "$POSTGRES_POD" -- bash -c \
     "psql -U kagenti -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname='llm_budget'\" | grep -q 1 || \
      psql -U kagenti -d postgres -c 'CREATE DATABASE llm_budget'" 2>/dev/null || {
     log_warn "Could not create llm_budget DB (may already exist)"
+}
+
+# Ensure sessions DB has the tasks table (A2A SDK creates it on first message,
+# but the backend reads from it immediately — must exist before tests run)
+kubectl exec -n "$NAMESPACE" "$POSTGRES_POD" -- bash -c \
+    "psql -U kagenti -d sessions -c \"CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        context_id TEXT,
+        status TEXT DEFAULT 'submitted',
+        artifacts JSONB DEFAULT '[]',
+        history JSONB DEFAULT '[]',
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )\"" 2>/dev/null || {
+    log_warn "Could not ensure tasks table (may already exist or sessions DB missing)"
 }
 
 kubectl apply -f "$REPO_ROOT/deployments/sandbox/llm-budget-proxy.yaml"
@@ -215,12 +237,15 @@ for VARIANT in "${VARIANTS[@]}"; do
     kubectl apply -f "$DEPLOYMENT_FILE"
     kubectl apply -f "$SERVICE_FILE"
 
-    kubectl wait --for=condition=available --timeout=300s "deployment/$VARIANT" -n "$NAMESPACE" || {
-        log_error "$VARIANT deployment not available"
-        kubectl get pods -n "$NAMESPACE" -l "app.kubernetes.io/name=$VARIANT"
-        kubectl describe pods -n "$NAMESPACE" -l "app.kubernetes.io/name=$VARIANT" 2>&1 | tail -20 || true
-        exit 1
-    }
+    # Wait for deployment — use shorter timeout with a retry to handle ImagePullBackOff
+    if ! kubectl wait --for=condition=available --timeout=120s "deployment/$VARIANT" -n "$NAMESPACE" 2>/dev/null; then
+        log_warning "$VARIANT not ready after 120s, waiting 60s more for image pull..."
+        sleep 60
+        if ! kubectl wait --for=condition=available --timeout=120s "deployment/$VARIANT" -n "$NAMESPACE" 2>/dev/null; then
+            log_warning "$VARIANT deployment not available (will retry route later)"
+            kubectl get pods -n "$NAMESPACE" -l "app.kubernetes.io/name=$VARIANT" || true
+        fi
+    fi
 
     # Create OpenShift Route with streaming-friendly timeout
     if [ "$IS_OPENSHIFT" = "true" ]; then
@@ -269,5 +294,38 @@ EOF
 
     log_success "$VARIANT deployed"
 done
+
+# Retry route creation for any variants that were slow to deploy
+if [ "$IS_OPENSHIFT" = "true" ]; then
+    for VARIANT in "${VARIANTS[@]}"; do
+        if ! oc get route "$VARIANT" -n "$NAMESPACE" &>/dev/null; then
+            # Check if deployment is now available
+            if kubectl get deployment "$VARIANT" -n "$NAMESPACE" -o jsonpath='{.status.availableReplicas}' 2>/dev/null | grep -q "^[1-9]"; then
+                log_info "Late route creation for $VARIANT..."
+                cat <<ROUTEEOF | kubectl apply -f -
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: $VARIANT
+  namespace: $NAMESPACE
+  annotations:
+    openshift.io/host.generated: "true"
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  port:
+    targetPort: 8000
+  to:
+    kind: Service
+    name: $VARIANT
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+ROUTEEOF
+                ROUTE_HOST=$(oc get route "$VARIANT" -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+                [ -n "$ROUTE_HOST" ] && log_info "Late route: https://$ROUTE_HOST"
+            fi
+        fi
+    done
+fi
 
 log_success "All sandbox agents deployed: ${VARIANTS[*]}"

@@ -17,23 +17,31 @@ spec:
       labels:
         app.kubernetes.io/name: litellm-proxy
         app.kubernetes.io/component: model-gateway
-        istio.io/dataplane-mode: ambient
-        istio.io/use-waypoint: waypoint
+        # NOTE: Istio ambient labels intentionally omitted.
+        # LiteLLM must reach postgres (outside mesh) without mTLS interception.
+        # Inbound traffic from agents goes through the Istio waypoint via the
+        # Service, so LiteLLM endpoints are still protected.
     spec:
       serviceAccountName: litellm-proxy
       securityContext:
-        runAsNonRoot: true
+        # LiteLLM upstream image requires root (Prisma binaries).
+        # runAsNonRoot: false is intentional — see TODO(#1126).
+        runAsNonRoot: false
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: litellm
-        # TODO(#1126): Build custom LiteLLM image to remove anyuid SCC requirement
-        # /root/.cache to a non-root path, so we can drop the anyuid SCC.
         image: ghcr.io/berriai/litellm-database:main-v1.63.14-stable
         securityContext:
+          # Upstream image bakes Prisma binaries as root-owned in /root/.cache.
+          # These files have root:root ownership with restrictive SELinux labels
+          # that prevent non-root UIDs from stat()ing them on OpenShift.
+          # Requires anyuid-seccomp SCC (runAsUser: 0 + seccomp RuntimeDefault).
+          # TODO(#1126): Build custom image that runs as non-root.
+          runAsUser: 0
+          runAsNonRoot: false
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
-          runAsNonRoot: true
           seccompProfile:
             type: RuntimeDefault
           capabilities:
@@ -63,6 +71,11 @@ spec:
           value: "True"
         - name: LITELLM_LOG
           value: "INFO"
+        # Prisma query engine binaries are baked at /root/.cache in the image.
+        # Set HOME=/root so the non-root process finds them via $HOME/.cache.
+        # The binaries are world-readable (644/755) so no root UID needed.
+        - name: HOME
+          value: /root
         envFrom:
         - secretRef:
             name: litellm-model-keys
@@ -73,8 +86,6 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
-        - name: cache
-          mountPath: /root/.cache
         resources:
           requests:
             cpu: 200m
@@ -101,6 +112,4 @@ spec:
         configMap:
           name: litellm-config
       - name: tmp
-        emptyDir: {}
-      - name: cache
         emptyDir: {}

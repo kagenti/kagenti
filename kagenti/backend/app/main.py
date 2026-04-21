@@ -116,6 +116,23 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Build reconciliation disabled (ENABLE_BUILD_RECONCILIATION=false)")
 
+    # Eagerly initialize session DB pools for agent namespaces.
+    # This runs the schema migration (tasks table TEXT→JSONB) BEFORE
+    # any agent processes a message, preventing the A2A SDK from crashing
+    # on TaskStatus validation when it reads back TEXT as a Pydantic model.
+    if _sandbox_modules_loaded:
+        try:
+            from app.services.session_db import get_session_pool
+
+            for ns in ["team1", "team2"]:
+                try:
+                    await get_session_pool(ns)
+                    logger.info("Session DB pool initialized for namespace=%s", ns)
+                except Exception as exc:
+                    logger.warning("Failed to init session DB for %s: %s", ns, exc)
+        except ImportError:
+            pass
+
     yield
 
     # Stop reconciliation

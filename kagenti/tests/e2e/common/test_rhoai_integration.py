@@ -131,14 +131,30 @@ class TestRHOAICoexistence:
     @pytest.mark.requires_features(["rhoai", "istio"])
     def test_shared_root_ca(self, k8s_client):
         """Verify both Istio control planes share the same root CA."""
-        cm_kagenti = k8s_client.read_namespaced_config_map(
-            name="istio-ca-root-cert",
-            namespace="kagenti-system",
-        )
-        cm_gateway = k8s_client.read_namespaced_config_map(
-            name="istio-ca-root-cert",
-            namespace="gateway-system",
-        )
+        try:
+            cm_kagenti = k8s_client.read_namespaced_config_map(
+                name="istio-ca-root-cert",
+                namespace="kagenti-system",
+            )
+        except ApiException as e:
+            if e.status == 404:
+                pytest.skip(
+                    "istio-ca-root-cert not found in kagenti-system"
+                    " — namespace not meshed"
+                )
+            raise
+        try:
+            cm_gateway = k8s_client.read_namespaced_config_map(
+                name="istio-ca-root-cert",
+                namespace="gateway-system",
+            )
+        except ApiException as e:
+            if e.status == 404:
+                pytest.skip(
+                    "istio-ca-root-cert not found in gateway-system"
+                    " — namespace not meshed"
+                )
+            raise
         kagenti_ca = cm_kagenti.data.get("root-cert.pem", "")
         gateway_ca = cm_gateway.data.get("root-cert.pem", "")
         assert kagenti_ca == gateway_ca, (

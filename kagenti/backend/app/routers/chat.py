@@ -18,8 +18,7 @@ from pydantic import BaseModel
 
 from app.core.auth import require_roles, get_required_user, ROLE_VIEWER, ROLE_OPERATOR, TokenData
 from app.core.config import settings
-from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.routes import resolve_agent_url
+from app.utils.routes import get_agent_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -70,7 +69,6 @@ class ChatResponse(BaseModel):
 async def get_agent_card(
     namespace: str,
     name: str,
-    kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> AgentCardResponse:
     """
     Fetch the A2A agent card for an agent.
@@ -78,7 +76,7 @@ async def get_agent_card(
     The agent card describes the agent's capabilities, skills, and metadata.
     All agents are reached via their cluster-internal URL through AuthBridge.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = get_agent_url(name, namespace)
     card_url = f"{agent_url}{A2A_AGENT_CARD_PATH}"
 
     try:
@@ -143,7 +141,6 @@ async def send_message(
     request: ChatRequest,
     http_request: Request,
     user: TokenData = Depends(get_required_user),
-    kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> ChatResponse:
     """
     Send a message to an A2A agent and get the response.
@@ -154,7 +151,7 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload
@@ -509,7 +506,6 @@ async def stream_message(
     request: ChatRequest,
     http_request: Request,
     user: TokenData = Depends(get_required_user),
-    kube: KubernetesService = Depends(get_kubernetes_service),
 ):
     """
     Send a message to an A2A agent and stream the response.
@@ -520,7 +516,7 @@ async def stream_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = get_agent_url(name, namespace)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present

@@ -35,3 +35,9 @@ AVD-KSV-0125
 
 # Internal agent base image uses :latest (built on-cluster, no external tag)
 AVD-DS-0001
+
+# LiteLLM upstream image requires root (Prisma binaries at /root/.cache).
+# runAsUser:0 + runAsNonRoot:false is intentional. Custom non-root image
+# tracked in TODO(#1126).
+# File: deployments/litellm/deployment.yaml
+AVD-KSV-0012

@@ -838,13 +838,10 @@
 
 #
 #  Patch SPIRE OIDC Discovery Provider ConfigMap
-#  WORKAROUND: Neither the SPIRE helm chart (versions <=0.28.2) nor the ZTWIM operator (OCP 4.19+)
-#  configures the set_key_use option in the OIDC Discovery Provider ConfigMap.
+#  WORKAROUND: The SPIRE helm chart (versions <=0.28.2) does not render the set_key_use
+#  configuration option into the ConfigMap, even though the SPIRE binary supports it.
 #  Keycloak's SPIFFE provider requires "use": "sig" field in JWKS keys.
 #  This task patches the ConfigMap post-install to add set_key_use: true.
-#
-#  NOTE: The SPIFFE IdP setup job (below) depends on this patch. If this block's
-#  `when` condition changes, verify the job condition still aligns. See issue #1267.
 #
 # Patch SPIRE OIDC ConfigMap with set_key_use (must run AFTER kagenti-deps installs SPIRE)
 - name: Patch SPIRE OIDC ConfigMap with set_key_use
@@ -901,20 +898,34 @@
             patched_oidc_config: "{{ spire_oidc_config | combine({'set_key_use': true}) }}"
 
         - name: Apply patched ConfigMap
-          command: >
-            kubectl patch configmap spire-spiffe-oidc-discovery-provider
-            -n {{ charts.spire.server_namespace }}
-            --type merge
-            -p '{"data":{"oidc-discovery-provider.conf":{{ patched_oidc_config | to_json | to_json }}}}'
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: spire-spiffe-oidc-discovery-provider
+                namespace: "{{ charts.spire.server_namespace }}"
+                annotations:
+                  meta.helm.sh/release-name: spire
+                  meta.helm.sh/release-namespace: "{{ charts.spire.namespace }}"
+                labels:
+                  app.kubernetes.io/managed-by: Helm
+              data:
+                oidc-discovery-provider.conf: "{{ patched_oidc_config | to_json }}"
+                default.conf: "{{ spire_oidc_cm_data['default.conf'] }}"
+                spiffe-helper.conf: "{{ spire_oidc_cm_data['spiffe-helper.conf'] }}"
           register: oidc_cm_patch_result
 
         - name: Restart SPIRE OIDC Discovery Provider deployment
           command: kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n {{ charts.spire.server_namespace }}
+          when: oidc_cm_patch_result.changed
 
         - name: Wait for SPIRE OIDC Discovery Provider rollout
           command: >
             kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider
             -n {{ charts.spire.server_namespace }} --timeout=2m
+          when: oidc_cm_patch_result.changed
           register: oidc_rollout_result
           retries: 3
           delay: 10
@@ -923,6 +934,7 @@
         - name: Log OIDC ConfigMap patch status
           debug:
             msg: "✅ SPIRE OIDC ConfigMap patched with set_key_use: true and deployment restarted"
+          when: oidc_cm_patch_result.changed
       when:
         - spire_oidc_config is defined
         - not (set_key_use_present | default(false) | bool)
@@ -946,16 +958,9 @@
         msg: "⚠️  Warning: spire-spiffe-oidc-discovery-provider ConfigMap not found. Skipping set_key_use patch."
       when: spire_oidc_cm_check.resources | length == 0
   when: >
-    (
-      (charts.spire.enabled | default(false)) and
-      (charts.spire.values['spiffe-oidc-discovery-provider'].enabled | default(true)) and
-      (not (enable_openshift | default(false)) or (use_spire_helm_chart | default(false)))
-    ) or
-    (
-      (enable_openshift | default(false)) and
-      (not (use_spire_helm_chart | default(false))) and
-      (charts['kagenti-deps']['values']['components']['spire']['enabled'] | default(false))
-    )
+    (charts.spire.enabled | default(false)) and
+    (charts.spire.values['spiffe-oidc-discovery-provider'].enabled | default(true)) and
+    (not (enable_openshift | default(false)) or (use_spire_helm_chart | default(false)))
 
 # Run SPIFFE IdP setup job AFTER set_key_use patch completes
 # This ensures the job doesn't fail due to missing "use" field in JWKS
@@ -1152,8 +1157,8 @@
                         echo "SPIRE OIDC discovery provider is ready"
                 containers:
                   - name: setup-spiffe-idp
-                    image: "{{ kagenti_deps_values.spiffeIdp.image.repository }}:{{ kagenti_deps_values.spiffeIdp.image.tag | default('latest') }}"
-                    imagePullPolicy: "{{ kagenti_deps_values.spiffeIdp.image.pullPolicy | default('IfNotPresent') }}"
+                    image: "{{ spiffe_idp_image_override | default(kagenti_deps_values.spiffeIdp.image.repository) }}:{{ kagenti_deps_values.spiffeIdp.image.tag | default('latest') }}"
+                    imagePullPolicy: "{{ 'Always' if spiffe_idp_image_override is defined else (kagenti_deps_values.spiffeIdp.image.pullPolicy | default('IfNotPresent')) }}"
                     env:
                       - name: KEYCLOAK_BASE_URL
                         value: "{{ kagenti_deps_values.keycloak.url }}"
@@ -1749,53 +1754,6 @@
   ansible.builtin.import_tasks: 03_setup_kind_registry_dns.yaml
 
 #
-#  Kuadrant Operator (AuthPolicy for MCP Gateway JWT validation and authorization)
-#
-- name: Install Kuadrant operator
-  block:
-    - name: Install kuadrant-operator via Helm
-      kubernetes.core.helm:
-        release_name: kuadrant-operator
-        chart_ref: kuadrant-operator
-        chart_repo_url: https://kuadrant.io/helm-charts/
-        chart_version: "{{ charts.kuadrant.version }}"
-        release_namespace: "{{ charts.kuadrant.namespace }}"
-        create_namespace: true
-        state: present
-        wait: true
-        timeout: "{{ helm_wait_timeout }}s"
-        values: "{{ (charts.kuadrant | default({})).get('values', {}) | default({}) }}"
-      register: kuadrant_operator_result
-      retries: 3
-      delay: 30
-      until: kuadrant_operator_result is not failed
-
-    - name: Wait for Kuadrant operator to be ready
-      command: >-
-        kubectl rollout status deployment/kuadrant-operator-controller-manager
-        -n {{ charts.kuadrant.namespace }} --timeout=300s
-      register: kuadrant_operator_ready
-      retries: 3
-      delay: 15
-      until: kuadrant_operator_ready.rc == 0
-      changed_when: false
-
-    - name: Create Kuadrant CR to instantiate Authorino
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: kuadrant.io/v1beta1
-          kind: Kuadrant
-          metadata:
-            name: kuadrant
-            namespace: "{{ charts.kuadrant.namespace }}"
-      register: kuadrant_cr_result
-      retries: 3
-      delay: 15
-      until: kuadrant_cr_result is not failed
-  when: charts.kuadrant.enabled | default(false)
-
-#
 #  Namespace needed by MCP Gateway, that its own chart doesn't install
 #
 - name: Create gateway-system namespace for mcp-gateway
@@ -1878,55 +1836,6 @@
       set_fact:
         kagenti_openshift_overrides: "{{ kagenti_openshift_overrides | combine({'agentOAuthSecret': {'spiffePrefix': 'spiffe://' + ocp_trust_domain + '/sa'}}, recursive=True) }}"
       when: ocp_trust_domain is defined and ocp_trust_domain | trim | length > 0
-
-    # Discover Keycloak public URL from OpenShift Route.
-    # The authbridge-unified sidecar fetches JWKS at startup and validates JWT
-    # issuer claims, so keycloak.publicUrl must be the externally-reachable URL
-    # that matches the "iss" claim in tokens issued by Keycloak.
-    - name: Discover Keycloak Route host on OpenShift
-      command: >-
-        kubectl get route keycloak -n {{ (charts['kagenti'] | default({})).get('values', {}).get('keycloak', {}).get('namespace', 'keycloak') }}
-        -o jsonpath='{.spec.host}'
-      register: keycloak_route_host
-      failed_when: false
-      changed_when: false
-
-    - name: Override keycloak.publicUrl from discovered Route
-      set_fact:
-        kagenti_openshift_overrides: "{{ kagenti_openshift_overrides | combine({'keycloak': {'publicUrl': 'https://' + keycloak_route_host.stdout}}, recursive=True) }}"
-      when: keycloak_route_host.rc == 0 and keycloak_route_host.stdout | trim | length > 0
-
-    # Read the actual Keycloak master admin credentials on OpenShift.
-    # The RHBK operator creates keycloak-initial-admin with a random password.
-    # The Helm chart creates keycloak-admin-secret in agent namespaces for the
-    # client-registration sidecar. These must match — client-registration
-    # authenticates to the master realm to register OAuth clients.
-    - name: Read Keycloak initial admin username
-      command: >-
-        kubectl get secret {{ (charts['kagenti'] | default({})).get('values', {}).get('keycloak', {}).get('adminSecretName', 'keycloak-initial-admin') }}
-        -n {{ (charts['kagenti'] | default({})).get('values', {}).get('keycloak', {}).get('namespace', 'keycloak') }}
-        -o jsonpath='{.data.username}'
-      register: keycloak_admin_username_b64
-      failed_when: false
-      changed_when: false
-
-    - name: Read Keycloak initial admin password
-      command: >-
-        kubectl get secret {{ (charts['kagenti'] | default({})).get('values', {}).get('keycloak', {}).get('adminSecretName', 'keycloak-initial-admin') }}
-        -n {{ (charts['kagenti'] | default({})).get('values', {}).get('keycloak', {}).get('namespace', 'keycloak') }}
-        -o jsonpath='{.data.password}'
-      register: keycloak_admin_password_b64
-      failed_when: false
-      changed_when: false
-
-    - name: Override keycloak admin credentials from initial-admin secret
-      set_fact:
-        kagenti_openshift_overrides: "{{ kagenti_openshift_overrides | combine({'keycloak': {'adminUsername': (keycloak_admin_username_b64.stdout | b64decode), 'adminPassword': (keycloak_admin_password_b64.stdout | b64decode)}}, recursive=True) }}"
-      when:
-        - keycloak_admin_username_b64.rc == 0
-        - keycloak_admin_password_b64.rc == 0
-        - keycloak_admin_username_b64.stdout | trim | length > 0
-        - keycloak_admin_password_b64.stdout | trim | length > 0
 
     - name: Debug kagenti OpenShift overrides
       debug:

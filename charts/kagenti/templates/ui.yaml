@@ -17,11 +17,6 @@ data:
   {{- else }}
   TRACES_DASHBOARD_URL: ""
   {{- end }}
-  {{- if .Values.components.mlflow.enabled }}
-  MLFLOW_DASHBOARD_URL: "http://mlflow.{{ .Values.ui.domainName }}:8080"
-  {{- else }}
-  MLFLOW_DASHBOARD_URL: ""
-  {{- end }}
   NETWORK_TRAFFIC_DASHBOARD_URL: "http://kiali.{{ .Values.ui.domainName }}:8080"
   MCP_INSPECTOR_URL: "http://mcp-inspector.{{ .Values.ui.domainName }}:8080"
   MCP_PROXY_FULL_ADDRESS: "http://mcp-proxy.{{ .Values.ui.domainName }}:8080"
@@ -119,10 +114,6 @@ spec:
                   optional: true
             - name: ENABLE_AUTH
               value: "{{ .Values.ui.auth.enabled }}"
-            {{- if .Values.ui.backend.defaultRegistryUrl }}
-            - name: DEFAULT_REGISTRY_URL
-              value: {{ .Values.ui.backend.defaultRegistryUrl | quote }}
-            {{- end }}
             # Feature flags
             - name: KAGENTI_FEATURE_FLAG_SANDBOX
               value: "{{ .Values.featureFlags.sandbox }}"
@@ -132,8 +123,6 @@ spec:
               value: "{{ .Values.featureFlags.triggers }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
-            - name: KEYCLOAK_PUBLIC_URL
-              value: {{ .Values.keycloak.publicUrl | quote }}
             # Dashboard URLs from ConfigMap (populated by ui-routes-job)
             - name: TRACES_DASHBOARD_URL
               valueFrom:
@@ -147,12 +136,6 @@ spec:
                   name: "{{ .Values.ui.configmap }}"
                   key: "NETWORK_TRAFFIC_DASHBOARD_URL"
                   optional: {{ (not .Values.openshift) }}
-            - name: MLFLOW_DASHBOARD_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: "{{ .Values.ui.configmap }}"
-                  key: "MLFLOW_DASHBOARD_URL"
-                  optional: true
             - name: MCP_INSPECTOR_URL
               valueFrom:
                 configMapKeyRef:
@@ -416,11 +399,6 @@ rules:
   # webhook's SPIFFE identity uses the workload name (see kagenti#959)
   - apiGroups: [""]
     resources: ["serviceaccounts"]
-    verbs: ["get", "create"]
-  # RoleBindings — ensure_rolebinding() creates agent-authbridge-scc so service
-  # accounts in each agent namespace can use the kagenti-authbridge SCC (OpenShift).
-  - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["rolebindings"]
     verbs: ["get", "create"]
   {{- if .Values.featureFlags.sandbox }}
   # PersistentVolumeClaims for agent workspace storage (sandbox)
