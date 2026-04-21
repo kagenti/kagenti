@@ -1010,6 +1010,17 @@ if [ "$RUN_AGENTS" = "true" ] || [ "$RUN_TEST" = "true" ] || [ "$RUN_UI_TESTS" =
         ./.github/scripts/kagenti-operator/37-build-platform-images.sh || {
             log_warn "Platform image build failed (using stock images)"
         }
+
+        # Restart sandbox agents so they pick up schema changes from backend's
+        # eager DB init (e.g. tasks.kind column added by migration). The SDK's
+        # SQLAlchemy metadata cache must be refreshed.
+        for agent in sandbox-legion sandbox-basic sandbox-hardened sandbox-restricted sandbox-agent; do
+            kubectl rollout restart "deployment/$agent" -n team1 2>/dev/null || true
+        done
+        for agent in sandbox-legion sandbox-basic sandbox-hardened sandbox-restricted; do
+            kubectl rollout status "deployment/$agent" -n team1 --timeout=120s 2>/dev/null || true
+        done
+        log_step "Sandbox agents restarted (schema refresh)"
     fi
 fi
 
