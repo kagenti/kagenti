@@ -209,6 +209,21 @@ for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
     fi
 done
 
+# Re-verify image patches persisted through rollout restart.
+# Helm-managed deployments can revert to chart values during rollout.
+for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
+    IFS=: read -r NAME _ _ <<< "$COMPONENT_SPEC"
+    CURRENT_IMAGE=$(kubectl get deployment "$NAME" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+    if [ -n "$CURRENT_IMAGE" ] && ! echo "$CURRENT_IMAGE" | grep -q "image-registry"; then
+        CONTAINER_NAME=$(kubectl get deployment "$NAME" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || echo "")
+        if [ -n "$CONTAINER_NAME" ]; then
+            log_warn "$NAME image reverted to $CURRENT_IMAGE — re-patching"
+            kubectl set image "deployment/$NAME" -n "$NS" "$CONTAINER_NAME=$REGISTRY/$NAME:$TAG"
+            kubectl rollout status "deployment/$NAME" -n "$NS" --timeout=120s 2>/dev/null || true
+        fi
+    fi
+done
+
 # ── Build agent-oauth-secret (Job, not Deployment) ──
 # Jobs require delete + helm upgrade to re-trigger with the new image.
 AGENT_OAUTH_NAME="agent-oauth-secret"
