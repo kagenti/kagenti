@@ -118,9 +118,8 @@ async def _create_pool(dsn: str) -> asyncpg.Pool:
                 dsn,
                 min_size=1,
                 max_size=10,
-                max_inactive_connection_lifetime=300,
+                max_inactive_connection_lifetime=60,
                 command_timeout=30,
-                # Disable app-level SSL — Istio ambient provides mTLS
                 ssl=False,
             )
             return pool
@@ -151,14 +150,34 @@ async def _create_pool(dsn: str) -> asyncpg.Pool:
 
 
 async def get_session_pool(namespace: str) -> asyncpg.Pool:
-    """Return (or lazily create) the asyncpg pool for *namespace*."""
+    """Return (or lazily create) the asyncpg pool for *namespace*.
+
+    Validates the cached pool with a lightweight query. If the connection
+    is stale (e.g. after pod restart or Istio reset), evicts and recreates.
+    """
     pool = _pool_cache.get(namespace)
     if pool is not None:
-        if not pool._closed:
-            return pool
-        # Pool was closed externally — recreate
-        logger.warning("DB pool for namespace=%s was closed — recreating", _safe_log(namespace))
-        del _pool_cache[namespace]
+        if pool._closed:
+            logger.warning(
+                "DB pool for namespace=%s was closed — recreating",
+                _safe_log(namespace),
+            )
+            del _pool_cache[namespace]
+        else:
+            try:
+                async with pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+                return pool
+            except Exception:
+                logger.warning(
+                    "DB pool for namespace=%s has stale connections — recreating",
+                    _safe_log(namespace),
+                )
+                try:
+                    await pool.close()
+                except Exception:
+                    pass
+                del _pool_cache[namespace]
 
     dsn = _dsn_for_namespace(namespace)
     logger.info("Creating session DB pool for namespace=%s", _safe_log(namespace))
