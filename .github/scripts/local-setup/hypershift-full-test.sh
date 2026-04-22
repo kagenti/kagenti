@@ -1066,14 +1066,17 @@ fi
 if [ "$RUN_TEST" = "true" ]; then
     log_phase "PHASE 4: Run E2E Tests"
 
-    # Ensure backend uses source-built image (Helm can revert during rollout)
-    BACKEND_IMAGE=$(kubectl get deployment kagenti-backend -n kagenti-system -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
-    if [ -n "$BACKEND_IMAGE" ] && ! echo "$BACKEND_IMAGE" | grep -q "image-registry"; then
-        log_warn "Backend image reverted to $BACKEND_IMAGE — re-patching before tests"
-        kubectl set image deployment/kagenti-backend -n kagenti-system \
-            backend=image-registry.openshift-image-registry.svc:5000/kagenti-system/kagenti-backend:worktree 2>/dev/null || true
-        kubectl rollout status deployment/kagenti-backend -n kagenti-system --timeout=120s 2>/dev/null || true
-    fi
+    # Ensure backend AND UI use source-built images (Helm can revert during rollout)
+    for DEPLOY_NAME in kagenti-backend kagenti-ui; do
+        CONTAINER=$(kubectl get deployment "$DEPLOY_NAME" -n kagenti-system -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || echo "")
+        CURRENT_IMG=$(kubectl get deployment "$DEPLOY_NAME" -n kagenti-system -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+        if [ -n "$CURRENT_IMG" ] && ! echo "$CURRENT_IMG" | grep -q "image-registry"; then
+            log_warn "$DEPLOY_NAME image reverted to $CURRENT_IMG — re-patching before tests"
+            kubectl set image "deployment/$DEPLOY_NAME" -n kagenti-system \
+                "$CONTAINER=image-registry.openshift-image-registry.svc:5000/kagenti-system/$DEPLOY_NAME:worktree" 2>/dev/null || true
+            kubectl rollout status "deployment/$DEPLOY_NAME" -n kagenti-system --timeout=120s 2>/dev/null || true
+        fi
+    done
 
     log_step "Running E2E tests..."
     # Get agent URL from route (if not already set)
