@@ -47,6 +47,106 @@ def pytest_configure(config):
     )
 
 
+def _warmup_agent(agent_url: str, verify_ssl=False) -> bool:
+    """Send a throwaway message to warm up an agent's LLM connection.
+
+    The first LLM call after agent restart is slow (model loading, connection
+    pool init). Sending a warmup request before real tests prevents cold-start
+    timeouts in test_shell_ls and other early tests.
+    """
+    import json
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": uuid4().hex,
+        "method": "message/stream",
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": "Run the command: echo warmup"}],
+                "messageId": uuid4().hex,
+                "contextId": f"warmup-{uuid4().hex[:8]}",
+            }
+        },
+    }
+    try:
+        with httpx.Client(
+            timeout=120.0, verify=verify_ssl, follow_redirects=True
+        ) as client:
+            with client.stream(
+                "POST",
+                f"{agent_url}/",
+                json=payload,
+                headers={"Accept": "text/event-stream"},
+            ) as resp:
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        try:
+                            event = json.loads(line[6:])
+                        except json.JSONDecodeError:
+                            continue
+                        result = event.get("result", {})
+                        status = result.get("status", {})
+                        state = (
+                            status.get("state", "") if isinstance(status, dict) else ""
+                        )
+                        if state in ("completed", "failed", "canceled"):
+                            return True
+    except Exception:
+        pass
+    return False
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warmup_sandbox_agents():
+    """Warm up sandbox agents before any tests run.
+
+    Sends a throwaway echo command to each agent variant so the first
+    real test doesn't hit the cold-start penalty (model loading, DB
+    connection pool init).
+    """
+    if not os.getenv("ENABLE_SANDBOX_TESTS", ""):
+        config_file = os.getenv("KAGENTI_CONFIG_FILE", "")
+        if not config_file:
+            return
+        try:
+            p = pathlib.Path(config_file)
+            if not p.is_absolute():
+                p = pathlib.Path(__file__).parent.parent.parent.parent / config_file
+            cfg = yaml.safe_load(p.read_text())
+            flags = (
+                cfg.get("charts", {})
+                .get("kagenti", {})
+                .get("values", {})
+                .get("featureFlags", {})
+            )
+            if not flags.get("sandbox"):
+                return
+        except Exception:
+            return
+
+    agents = ["sandbox-legion", "sandbox-basic"]
+    namespace = os.getenv("SANDBOX_NAMESPACE", "team1")
+    for agent in agents:
+        env_key = f"SANDBOX_{agent.split('-', 1)[-1].upper()}_URL"
+        url = os.getenv(env_key, f"http://{agent}.{namespace}.svc.cluster.local:8000")
+        card_ok = False
+        try:
+            resp = httpx.get(
+                f"{url}/.well-known/agent-card.json",
+                timeout=5.0,
+                verify=False,
+                follow_redirects=True,
+            )
+            card_ok = resp.status_code == 200
+        except Exception:
+            pass
+        if card_ok:
+            _warmup_agent(url, verify_ssl=False)
+
+
 # Module-level cache for test session ID (shared across all tests)
 _test_session_id_cache = None
 
