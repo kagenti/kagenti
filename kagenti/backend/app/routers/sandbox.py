@@ -376,22 +376,14 @@ async def get_session(namespace: str, context_id: str):
     If multiple tasks share the same context_id (e.g. retries), returns
     the latest one (highest id).
     """
-    try:
-        pool = await get_session_pool(namespace)
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id, context_id, kind, status, history, artifacts, metadata"
-                " FROM tasks WHERE context_id = $1"
-                " ORDER BY CASE"
-                "   WHEN history IS NOT NULL AND history != '' AND history != 'null'"
-                "   THEN COALESCE(json_array_length(history::json), 0)"
-                "   ELSE 0 END DESC, id DESC"
-                " LIMIT 1",
-                context_id,
-            )
-    except Exception as exc:
-        logger.warning("Session query failed for %s: %s", context_id, exc)
-        raise HTTPException(status_code=404, detail="Session not found")
+    pool = await get_session_pool(namespace)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, context_id, kind, status, history, artifacts, metadata"
+            " FROM tasks WHERE context_id = $1"
+            " ORDER BY id DESC LIMIT 1",
+            context_id,
+        )
 
     if row is None:
         raise HTTPException(status_code=404, detail="Session not found")
