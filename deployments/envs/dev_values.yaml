@@ -121,7 +121,7 @@ charts:
               default:
                 jwtTTL: "5m"
 
-kind_images_preload: false
+kind_images_preload: true
 # docker or podman
 container_engine: docker
 
