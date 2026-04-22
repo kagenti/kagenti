@@ -508,7 +508,9 @@ class TestSandboxSessionsAPI:
         agent_url = _get_sandbox_legion_url()
         backend_url = _get_backend_url()
 
-        result = await _send_a2a_message(agent_url, "Say: session-api-test")
+        result = await _send_a2a_message(
+            agent_url, "Run the command: echo session-api-test"
+        )
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id, f"No context_id in result: {result}"
 
@@ -523,7 +525,7 @@ class TestSandboxSessionsAPI:
         agent_url = _get_sandbox_legion_url()
         backend_url = _get_backend_url()
 
-        result = await _send_a2a_message(agent_url, "Say: detail-test")
+        result = await _send_a2a_message(agent_url, "Run the command: echo detail-test")
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
 
@@ -586,7 +588,7 @@ class TestSandboxSessionsAPI:
         backend_url = _get_backend_url()
         headers = _get_auth_headers()
 
-        result = await _send_a2a_message(agent_url, "Say: kill-test")
+        result = await _send_a2a_message(agent_url, "Run the command: echo kill-test")
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
 
@@ -617,7 +619,7 @@ class TestSandboxSessionsAPI:
         backend_url = _get_backend_url()
         headers = _get_auth_headers()
 
-        result = await _send_a2a_message(agent_url, "Say: delete-test")
+        result = await _send_a2a_message(agent_url, "Run the command: echo delete-test")
         context_id = result.get("contextId", result.get("context_id"))
         assert context_id
 
