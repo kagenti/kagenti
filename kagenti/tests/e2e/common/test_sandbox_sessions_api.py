@@ -241,10 +241,17 @@ pytestmark = [
 
 
 def _get_sandbox_legion_url() -> str:
-    """Get the sandbox legion URL."""
+    """Get the sandbox agent URL for session tests.
+
+    Prefers sandbox-basic (lightweight, less likely to be busy from heavy
+    variant tests running on sandbox-legion). Falls back to sandbox-legion.
+    """
     return os.getenv(
-        "SANDBOX_LEGION_URL",
-        "http://sandbox-legion.team1.svc.cluster.local:8000",
+        "SANDBOX_BASIC_URL",
+        os.getenv(
+            "SANDBOX_LEGION_URL",
+            "http://sandbox-basic.team1.svc.cluster.local:8000",
+        ),
     )
 
 

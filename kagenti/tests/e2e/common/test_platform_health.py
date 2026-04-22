@@ -50,6 +50,9 @@ class TestPlatformHealth:
         # Get all pods across all namespaces
         pods = k8s_client.list_pod_for_all_namespaces(watch=False)
 
+        # Exclude known test artifact deployments that may be in Pending state
+        TEST_ARTIFACT_PREFIXES = ("rca-redeploy-test-",)
+
         # Find pods that are not in Running or Succeeded state
         # Exclude Job pods - they can fail during retries which is normal
         failed_pods = [
@@ -57,6 +60,9 @@ class TestPlatformHealth:
             for pod in pods.items
             if pod.status.phase not in ["Running", "Succeeded"]
             and not _is_job_or_build_pod(pod)
+            and not any(
+                (pod.metadata.name or "").startswith(p) for p in TEST_ARTIFACT_PREFIXES
+            )
         ]
 
         assert len(failed_pods) == 0, (
