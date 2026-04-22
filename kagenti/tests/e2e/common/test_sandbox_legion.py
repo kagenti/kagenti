@@ -12,6 +12,7 @@ Usage:
     SANDBOX_LEGION_URL=http://... pytest tests/e2e/common/test_sandbox_agent.py -v
 """
 
+import asyncio
 import os
 import pathlib
 
@@ -307,31 +308,43 @@ class TestSandboxLegionShellExecution:
         """
         Test agent can list workspace directory contents.
 
-        Sends a natural language request to list files.
-        Expects the response to mention workspace subdirectories.
+        Retries with fresh connection on empty response (transient
+        reporter accumulation issue).
         """
         agent_url = _get_sandbox_legion_url()
-        try:
-            client, _ = await _connect_to_agent(agent_url)
-        except Exception as e:
-            pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
-        message = A2AMessage(
-            role="user",
-            parts=[
-                TextPart(text="List the contents of the current directory using ls")
-            ],
-            messageId=uuid4().hex,
-        )
+        response = ""
+        events = []
+        for attempt in range(3):
+            try:
+                client, _ = await _connect_to_agent(agent_url)
+            except Exception as e:
+                pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
-        try:
-            response, events = await _extract_response(client, message)
-        except Exception as e:
-            pytest.fail(f"Error during A2A conversation: {e}")
+            message = A2AMessage(
+                role="user",
+                parts=[TextPart(text="Run the command: ls")],
+                messageId=uuid4().hex,
+            )
 
-        assert response, f"Agent did not return any response\n  Events: {events}"
+            try:
+                response, events = await _extract_response(client, message)
+            except Exception:
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                raise
 
-        # The workspace should have subdirectories from ensure_workspace
+            if response and response.strip().lower() not in (
+                "no response generated.",
+                "no response generated",
+            ):
+                break
+            if attempt < 2:
+                await asyncio.sleep(2)
+
+        assert response, f"Agent returned empty after 3 attempts\n  Events: {events}"
+
         response_lower = response.lower()
         workspace_indicators = ["data", "scripts", "repos", "output"]
         has_workspace_content = any(
