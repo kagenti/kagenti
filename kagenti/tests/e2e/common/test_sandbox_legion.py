@@ -141,6 +141,76 @@ def _get_ssl_context():
     return ssl.create_default_context(cafile=ca_path)
 
 
+def _send_message_raw(agent_url: str, text: str) -> dict:
+    """Send A2A message via raw httpx SSE streaming (sync).
+
+    More reliable than the A2A SDK's send_message which sometimes
+    returns empty due to response timing issues.
+    """
+    import json as _json
+
+    ssl_verify = _get_ssl_context()
+    verify = ssl_verify if isinstance(ssl_verify, bool) else ssl_verify
+    client = httpx.Client(timeout=300.0, verify=verify, follow_redirects=True)
+    payload = {
+        "jsonrpc": "2.0",
+        "id": uuid4().hex,
+        "method": "message/stream",
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"kind": "text", "text": text}],
+                "messageId": uuid4().hex,
+            }
+        },
+    }
+    result: dict = {}
+    try:
+        with client.stream(
+            "POST",
+            f"{agent_url}/",
+            json=payload,
+            headers={"Accept": "text/event-stream"},
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line or line.startswith(":"):
+                    continue
+                if line.startswith("data: "):
+                    try:
+                        event = _json.loads(line[6:])
+                    except _json.JSONDecodeError:
+                        continue
+                    event_result = event.get("result", {})
+                    kind = event_result.get("kind", "")
+                    if kind == "artifact-update" and "artifact" in event_result:
+                        result.setdefault("artifacts", []).append(
+                            event_result["artifact"]
+                        )
+                    if "status" in event_result:
+                        result["status"] = event_result["status"]
+                    if "contextId" in event_result:
+                        result["contextId"] = event_result["contextId"]
+                    status_state = (
+                        event_result.get("status", {}).get("state", "")
+                        if isinstance(event_result.get("status"), dict)
+                        else ""
+                    )
+                    if kind in ("task", "status-update") and status_state in (
+                        "completed",
+                        "failed",
+                        "canceled",
+                    ):
+                        if "artifacts" in event_result:
+                            result["artifacts"] = event_result["artifacts"]
+                        break
+    except httpx.RemoteProtocolError:
+        pass
+    finally:
+        client.close()
+    return result
+
+
 async def _extract_response(client, message):
     """Send an A2A message (non-streaming) and extract the text response.
 
@@ -308,42 +378,36 @@ class TestSandboxLegionShellExecution:
         """
         Test agent can list workspace directory contents.
 
-        Retries with fresh connection on empty response (transient
-        reporter accumulation issue).
+        Uses raw httpx SSE streaming instead of A2A SDK send_message
+        because the SDK's non-streaming API sometimes returns empty.
         """
         agent_url = _get_sandbox_legion_url()
 
         response = ""
-        events = []
         for attempt in range(3):
-            try:
-                client, _ = await _connect_to_agent(agent_url)
-            except Exception as e:
-                pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
-
-            message = A2AMessage(
-                role="user",
-                parts=[TextPart(text="Run the command: ls")],
-                messageId=uuid4().hex,
+            result = await asyncio.to_thread(
+                _send_message_raw, agent_url, "Run the command: ls"
             )
-
-            try:
-                response, events = await _extract_response(client, message)
-            except Exception:
-                if attempt < 2:
-                    await asyncio.sleep(2)
-                    continue
-                raise
-
+            for artifact in result.get("artifacts", []):
+                for part in artifact.get("parts", []):
+                    if "text" in part:
+                        response += part["text"]
+            if not response:
+                status = result.get("status", {})
+                msg = status.get("message", {}) if isinstance(status, dict) else {}
+                for part in msg.get("parts", []) if isinstance(msg, dict) else []:
+                    if "text" in part:
+                        response += part["text"]
             if response and response.strip().lower() not in (
                 "no response generated.",
                 "no response generated",
             ):
                 break
+            response = ""
             if attempt < 2:
                 await asyncio.sleep(2)
 
-        assert response, f"Agent returned empty after 3 attempts\n  Events: {events}"
+        assert response, f"Agent returned empty after 3 attempts"
 
         response_lower = response.lower()
         workspace_indicators = ["data", "scripts", "repos", "output"]
