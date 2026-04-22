@@ -177,27 +177,27 @@ EOF
     }
     log_success "$NAME image built"
 
-    # Patch deployment to use the new image
+    # Patch deployment: set image + imagePullPolicy + restart in one atomic operation
     CONTAINER_NAME=$(kubectl get deployment "$NAME" -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null || echo "")
     if [ -n "$CONTAINER_NAME" ]; then
-        kubectl set image "deployment/$NAME" -n "$NS" "$CONTAINER_NAME=$REGISTRY/$NAME:$TAG"
-        # Force pull to avoid node-level image cache serving stale layers
+        RESTART_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         kubectl patch deployment "$NAME" -n "$NS" --type=json \
-            -p="[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"Always\"}]" 2>/dev/null || true
-        log_info "Patched $NAME deployment → $REGISTRY/$NAME:$TAG (Always pull)"
+            -p="[
+              {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/image\",\"value\":\"$REGISTRY/$NAME:$TAG\"},
+              {\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/imagePullPolicy\",\"value\":\"Always\"},
+              {\"op\":\"add\",\"path\":\"/spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt\",\"value\":\"$RESTART_TS\"}
+            ]" 2>/dev/null || {
+            # Fallback: annotations path may not exist yet
+            kubectl set image "deployment/$NAME" -n "$NS" "$CONTAINER_NAME=$REGISTRY/$NAME:$TAG"
+            kubectl rollout restart "deployment/$NAME" -n "$NS"
+        }
+        log_info "Patched $NAME deployment → $REGISTRY/$NAME:$TAG (Always pull, restart)"
     else
         log_warn "Deployment $NAME not found — skipping patch"
     fi
 done
 
-# Restart and wait for rollouts
-for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
-    IFS=: read -r NAME _ _ <<< "$COMPONENT_SPEC"
-    if kubectl get deployment "$NAME" -n "$NS" &>/dev/null; then
-        kubectl rollout restart "deployment/$NAME" -n "$NS"
-    fi
-done
-
+# Wait for rollouts to complete
 for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
     IFS=: read -r NAME _ _ <<< "$COMPONENT_SPEC"
     if kubectl get deployment "$NAME" -n "$NS" &>/dev/null; then
