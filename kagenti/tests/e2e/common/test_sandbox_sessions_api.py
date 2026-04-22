@@ -402,9 +402,16 @@ async def _send_a2a_message(agent_url: str, text: str, context_id: str | None = 
                             result["status"] = event_result["status"]
                         if "contextId" in event_result:
                             result["contextId"] = event_result["contextId"]
-                        if kind == "task" and event_result.get("status", {}).get(
-                            "state"
-                        ) in ("completed", "failed", "canceled"):
+                        status_state = (
+                            event_result.get("status", {}).get("state", "")
+                            if isinstance(event_result.get("status"), dict)
+                            else ""
+                        )
+                        if kind in ("task", "status-update") and status_state in (
+                            "completed",
+                            "failed",
+                            "canceled",
+                        ):
                             if "artifacts" in event_result:
                                 result["artifacts"] = event_result["artifacts"]
                             break
