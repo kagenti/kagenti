@@ -13,13 +13,3 @@ docker.io/nginx/nginx-prometheus-exporter:1.4.2
 docker.io/nginxinc/nginx-unprivileged:1.29.1-alpine
 docker.io/prom/prometheus:v3.5.0
 otel/opentelemetry-collector-contrib:0.122.1
-quay.io/containers/buildah:v1.37.5
-quay.io/jetstack/cert-manager-cainjector:v1.17.2
-quay.io/jetstack/cert-manager-controller:v1.17.2
-quay.io/jetstack/cert-manager-webhook:v1.17.2
-quay.io/keycloak/keycloak:26.5.2
-ghcr.io/shipwright-io/build/shipwright-build-controller:v0.14.0
-ghcr.io/shipwright-io/build/shipwright-build-webhook:v0.14.0
-ghcr.io/kagenti/kagenti/ui-v2:v0.6.0-alpha.4
-ghcr.io/kagenti/kagenti-operator/kagenti-operator:0.2.0-alpha.30
-ghcr.io/kagenti/kagenti/backend:v0.6.0-alpha.4
