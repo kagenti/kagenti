@@ -99,7 +99,7 @@ def _warmup_agent(agent_url: str, verify_ssl=False) -> bool:
     return False
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def warmup_sandbox_agents():
     """Warm up sandbox agents before any tests run.
 
