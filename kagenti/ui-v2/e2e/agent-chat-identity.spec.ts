@@ -53,19 +53,6 @@ const NS_ADMIN_PASSWORD = process.env.NS_ADMIN_PASSWORD || getTestUserPassword('
  * Uses the same pattern as the shared loginIfNeeded helper.
  */
 async function loginAs(page: Page, username: string, password: string) {
-  // Clear any existing Keycloak SSO session to ensure a fresh login
-  const keycloakBase = process.env.KEYCLOAK_URL || '';
-  if (keycloakBase) {
-    try {
-      await page.goto(`${keycloakBase}/realms/kagenti/protocol/openid-connect/logout`, {
-        timeout: 10000,
-        waitUntil: 'domcontentloaded',
-      });
-    } catch { /* logout endpoint may redirect — that's fine */ }
-  }
-
-  const baseURL = process.env.KAGENTI_UI_URL || 'http://localhost:3000';
-  await page.goto(baseURL);
   await page.waitForLoadState('networkidle', { timeout: 60000 });
 
   const isKeycloakLogin = await page
@@ -89,10 +76,11 @@ async function loginAs(page: Page, username: string, password: string) {
     .first();
 
   await usernameField.waitFor({ state: 'visible', timeout: 10000 });
+  await usernameField.clear();
   await usernameField.fill(username);
   await passwordField.waitFor({ state: 'visible', timeout: 5000 });
-  await passwordField.click();
-  await passwordField.pressSequentially(password, { delay: 20 });
+  await passwordField.clear();
+  await passwordField.fill(password);
   await page.waitForTimeout(300);
   await submitButton.click();
 
