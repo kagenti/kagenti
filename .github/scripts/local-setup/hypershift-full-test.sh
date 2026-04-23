@@ -1011,16 +1011,27 @@ if [ "$RUN_AGENTS" = "true" ] || [ "$RUN_TEST" = "true" ] || [ "$RUN_UI_TESTS" =
             log_warn "Platform image build failed (using stock images)"
         }
 
-        # Restart sandbox agents so they pick up schema changes from backend's
-        # eager DB init (e.g. tasks.kind column added by migration). The SDK's
-        # SQLAlchemy metadata cache must be refreshed.
+        # Wait for backend to be FULLY ready (lifespan handler runs DB migration
+        # that adds tasks.kind column). Agents MUST start AFTER this migration
+        # completes, otherwise their SQLAlchemy metadata cache won't have the column.
+        log_step "Waiting for backend to complete DB migration..."
+        for i in $(seq 1 30); do
+            if kubectl exec -n kagenti-system deployment/kagenti-backend -- \
+                python3 -c "from app.services.session_db import _pool_cache; print(len(_pool_cache))" 2>/dev/null | grep -q "^[1-9]"; then
+                log_step "Backend DB migration confirmed (pool initialized)"
+                break
+            fi
+            [ "$i" -lt 30 ] && sleep 3
+        done
+
+        # Now restart agents so they pick up the migrated schema
         for agent in sandbox-legion sandbox-basic sandbox-hardened sandbox-restricted sandbox-agent; do
             kubectl rollout restart "deployment/$agent" -n team1 2>/dev/null || true
         done
         for agent in sandbox-legion sandbox-basic sandbox-hardened sandbox-restricted; do
             kubectl rollout status "deployment/$agent" -n team1 --timeout=120s 2>/dev/null || true
         done
-        log_step "Sandbox agents restarted (schema refresh)"
+        log_step "Sandbox agents restarted (schema refresh after backend migration)"
     fi
 fi
 
