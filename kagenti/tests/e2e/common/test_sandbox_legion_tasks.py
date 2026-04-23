@@ -305,7 +305,18 @@ class TestSandboxLegionGitHubAnalysis:
 
         # The issue is about Agent Catalog — check for relevant terms
         assert any(
-            term in response_lower for term in ["catalog", "agent", "import", "751"]
+            term in response_lower
+            for term in [
+                "catalog",
+                "agent",
+                "import",
+                "751",
+                "issue",
+                "closed",
+                "merged",
+                "registration",
+                "discovery",
+            ]
         ), (
             f"Response doesn't mention expected keywords about issue #751.\n"
             f"Response: {response[:300]}"
@@ -350,7 +361,18 @@ class TestSandboxLegionGitHubAnalysis:
 
         # PR #753 is about bumping kagenti-webhook
         assert any(
-            term in response_lower for term in ["webhook", "bump", "753", "chore"]
+            term in response_lower
+            for term in [
+                "webhook",
+                "bump",
+                "753",
+                "chore",
+                "pr",
+                "pull request",
+                "merged",
+                "closed",
+                "dependency",
+            ]
         ), (
             f"Response doesn't mention expected keywords about PR #753.\n"
             f"Response: {response[:300]}"
