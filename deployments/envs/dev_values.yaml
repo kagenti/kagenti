@@ -56,6 +56,10 @@ charts:
     enabled: true
     values:
       openshift: false
+      featureFlags:
+        sandbox: true
+        integrations: true
+        triggers: true
       components:
         agentNamespaces:
           enabled: true
