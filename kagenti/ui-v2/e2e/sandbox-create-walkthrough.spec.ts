@@ -159,8 +159,9 @@ test.describe('Import Wizard — Basic Agent', () => {
     const llmKeySource = page.locator('#llm-key-source');
     await expect(llmKeySource).toBeVisible({ timeout: 5000 });
 
-    // Secret name field should show default "openai-secret"
-    await expect(page.locator('#llm-secret-name')).toHaveValue('openai-secret');
+    // Secret name shows the configured default (litellm-virtual-keys on OCP, openai-secret on Kind)
+    const secretValue = await page.locator('#llm-secret-name').inputValue();
+    expect(['openai-secret', 'litellm-virtual-keys']).toContain(secretValue);
     await clickNext(page);
     await snap(page, 'basic-step4-persistence');
 

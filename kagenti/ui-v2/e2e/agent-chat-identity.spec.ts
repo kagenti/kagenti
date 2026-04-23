@@ -410,8 +410,8 @@ test.describe('Multi-User Identity', () => {
   test.setTimeout(180000);
 
   test('admin and dev-user get distinct JWT identities', async ({ browser }) => {
-    const adminContext = await browser.newContext({ ignoreHTTPSErrors: true });
-    const devContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const adminContext = await browser.newContext({ ignoreHTTPSErrors: true, storageState: undefined });
+    const devContext = await browser.newContext({ ignoreHTTPSErrors: true, storageState: undefined });
 
     const adminPage = await adminContext.newPage();
     const devPage = await devContext.newPage();
@@ -449,7 +449,7 @@ test.describe('Multi-User Identity', () => {
   });
 
   test('dev-user identity persists across page reload', async ({ browser }) => {
-    const devContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const devContext = await browser.newContext({ ignoreHTTPSErrors: true, storageState: undefined });
     const devPage = await devContext.newPage();
     const baseURL = process.env.KAGENTI_UI_URL || 'http://localhost:3000';
 
@@ -485,8 +485,8 @@ test.describe('Session Visibility RBAC', () => {
   test.setTimeout(180000);
 
   test('admin and dev-user have isolated browser sessions', async ({ browser }) => {
-    const adminContext = await browser.newContext({ ignoreHTTPSErrors: true });
-    const devContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const adminContext = await browser.newContext({ ignoreHTTPSErrors: true, storageState: undefined });
+    const devContext = await browser.newContext({ ignoreHTTPSErrors: true, storageState: undefined });
 
     const adminPage = await adminContext.newPage();
     const devPage = await devContext.newPage();
@@ -524,7 +524,7 @@ test.describe('Session Visibility RBAC', () => {
   });
 
   test('ns-admin can login and gets correct JWT identity', async ({ browser }) => {
-    const nsAdminContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const nsAdminContext = await browser.newContext({ ignoreHTTPSErrors: true, storageState: undefined });
     const nsAdminPage = await nsAdminContext.newPage();
     const baseURL = process.env.KAGENTI_UI_URL || 'http://localhost:3000';
 
