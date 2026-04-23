@@ -416,7 +416,6 @@ class TestSandboxLegionShellExecution:
         )
 
         print(f"\n  Response: {response[:300]}")
-        print(f"  Events: {events}")
 
         assert has_workspace_content, (
             f"Response doesn't mention workspace directories.\n"

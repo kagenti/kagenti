@@ -399,34 +399,49 @@ class TestSessionIsolation:
     """Verify that different sessions are isolated from each other."""
 
     def test_workspace_isolation(self, agent_name: str):
-        """Files in session A are NOT visible in session B."""
+        """Files in session A are NOT visible in session B.
+
+        Retries on transient connection drops (RemoteProtocolError,
+        timeout) with fresh sessions.
+        """
         agent_url = _get_agent_url(agent_name)
         _skip_if_unreachable(agent_name, agent_url)
-        client = _make_client(agent_name)
 
-        session_a = uuid4().hex[:36]
-        session_b = uuid4().hex[:36]
-        marker = f"isolation-{agent_name}-{uuid4().hex[:8]}"
+        text_b = ""
+        last_marker = ""
+        for attempt in range(3):
+            client = _make_client(agent_name)
+            session_a = uuid4().hex[:36]
+            session_b = uuid4().hex[:36]
+            last_marker = f"isolation-{agent_name}-{uuid4().hex[:8]}"
 
-        # Session A: Write a file
-        _send_message(
-            client,
-            agent_url,
-            f'Write "{marker}" to isolation-test.txt',
-            session_a,
-        )
+            try:
+                _send_message(
+                    client,
+                    agent_url,
+                    f'Write "{last_marker}" to isolation-test.txt',
+                    session_a,
+                )
 
-        # Session B: Try to read the file (should not exist)
-        result_b = _send_message(
-            client,
-            agent_url,
-            "Read the file isolation-test.txt. If it does not exist, say FILE_NOT_FOUND.",
-            session_b,
-        )
-        text_b = _extract_text(result_b)
-        # Session B should NOT contain the marker from Session A
-        assert marker not in text_b, (
+                result_b = _send_message(
+                    client,
+                    agent_url,
+                    "Read the file isolation-test.txt. If it does not exist, say FILE_NOT_FOUND.",
+                    session_b,
+                )
+                text_b = _extract_text(result_b)
+                break
+            except (RuntimeError, Exception):
+                if attempt < 2:
+                    import time
+
+                    time.sleep(2)
+                    continue
+                raise
+            finally:
+                client.close()
+
+        assert last_marker not in text_b, (
             f"Session isolation FAILED for {agent_name}: "
-            f"Session B contains Session A's marker '{marker}'. Got: {text_b[:300]}"
+            f"Session B contains Session A's marker '{last_marker}'. Got: {text_b[:300]}"
         )
-        client.close()
