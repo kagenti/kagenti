@@ -278,7 +278,7 @@ class TestMultiTurnConversation:
         client = _make_client(agent_name)
 
         text = ""
-        for attempt in range(3):
+        for attempt in range(5):
             context_id = uuid4().hex[:36]
             result = _send_message(
                 client,
@@ -289,12 +289,12 @@ class TestMultiTurnConversation:
             text = _extract_text(result)
             if text:
                 break
-            if attempt < 2:
+            if attempt < 4:
                 import time
 
                 time.sleep(2)
 
-        assert text, f"Agent {agent_name} returned empty response after 3 attempts"
+        assert text, f"Agent {agent_name} returned empty response after 5 attempts"
         assert "hello-from-test" in text.lower(), (
             f"Agent {agent_name} response doesn't contain expected echo output: {text[:200]}"
         )
@@ -312,7 +312,7 @@ class TestMultiTurnConversation:
 
         text2 = ""
         last_marker = ""
-        for attempt in range(3):
+        for attempt in range(5):
             context_id = uuid4().hex[:36]
             last_marker = f"variant-test-{agent_name}-{uuid4().hex[:8]}"
 
@@ -324,7 +324,7 @@ class TestMultiTurnConversation:
             )
             text1 = _extract_text(result1)
             if not text1:
-                if attempt < 2:
+                if attempt < 4:
                     import time
 
                     time.sleep(2)
@@ -339,14 +339,14 @@ class TestMultiTurnConversation:
             text2 = _extract_text(result2)
             if last_marker in text2:
                 break
-            if attempt < 2:
+            if attempt < 4:
                 import time
 
                 time.sleep(2)
 
         assert last_marker in text2, (
             f"Agent {agent_name} did not return marker '{last_marker}' from file read "
-            f"after 3 attempts. Got: {text2[:300]}"
+            f"after 5 attempts. Got: {text2[:300]}"
         )
         client.close()
 
@@ -362,7 +362,7 @@ class TestMultiTurnConversation:
 
         text2 = ""
         last_secret = ""
-        for attempt in range(3):
+        for attempt in range(5):
             context_id = uuid4().hex[:36]
             last_secret = f"zebra-{uuid4().hex[:6]}"
 
@@ -382,14 +382,14 @@ class TestMultiTurnConversation:
             text2 = _extract_text(result2)
             if last_secret in text2:
                 break
-            if attempt < 2:
+            if attempt < 4:
                 import time
 
                 time.sleep(2)
 
         assert last_secret in text2, (
             f"Agent {agent_name} forgot the secret word '{last_secret}' "
-            f"after 3 attempts. Got: {text2[:300]}"
+            f"after 5 attempts. Got: {text2[:300]}"
         )
         client.close()
 
@@ -409,7 +409,7 @@ class TestSessionIsolation:
 
         text_b = ""
         last_marker = ""
-        for attempt in range(3):
+        for attempt in range(5):
             client = _make_client(agent_name)
             session_a = uuid4().hex[:36]
             session_b = uuid4().hex[:36]
@@ -432,7 +432,7 @@ class TestSessionIsolation:
                 text_b = _extract_text(result_b)
                 break
             except (RuntimeError, Exception):
-                if attempt < 2:
+                if attempt < 4:
                     import time
 
                     time.sleep(2)

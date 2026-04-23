@@ -38,8 +38,8 @@ export default defineConfig({
     ['html', { outputFolder: 'playwright-report' }],
     ['list'],
   ],
-  /* Per-test timeout: 60s on CI to accommodate Keycloak OAuth redirects */
-  timeout: process.env.CI ? 60000 : 30000,
+  /* Per-test timeout: 180s on CI — agent-dependent tests need 60-120s for LLM calls */
+  timeout: process.env.CI ? 180000 : 60000,
 
   /* Assertion timeout: 15s on CI (Keycloak redirect adds latency before elements appear) */
   expect: {

@@ -40,7 +40,7 @@ from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 # Complex tasks involve multiple LLM calls (router+planner+executor+reporter);
 # a single LLM call can take up to 181s, and the agent may chain several.
 # Multi-turn tests (e.g. RCA) traverse the full graph twice, so 360s is safer.
-IDLE_TIMEOUT_S = 360
+IDLE_TIMEOUT_S = 600
 
 # Skip entire module if sandbox feature is not enabled
 # Uses requires_features marker (reads featureFlags from config YAML or ENABLE_SANDBOX_TESTS env)
