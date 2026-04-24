@@ -55,11 +55,11 @@ async function goToWizard(page: Page) {
   const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
   await expect(nav.first()).toBeVisible({ timeout: 10000 });
   await nav.first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
   await page.evaluate(() => { window.history.pushState({}, '', '/sandbox/create'); window.dispatchEvent(new PopStateEvent('popstate')); });
   await page.waitForTimeout(1000);
   const h = page.getByRole('heading', { name: /Create Sandbox Agent/i });
-  if (!(await h.isVisible({ timeout: 3000 }).catch(() => false))) { await page.goto('/sandbox/create'); await page.waitForLoadState('domcontentloaded'); }
+  if (!(await h.isVisible({ timeout: 3000 }).catch(() => false))) { await page.goto('/sandbox/create'); await page.waitForLoadState('networkidle'); }
   await expect(h).toBeVisible({ timeout: 15000 });
 }
 
@@ -76,7 +76,7 @@ async function pickRcaAgent(page: Page) {
   const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
   await expect(nav.first()).toBeVisible({ timeout: 10000 });
   await nav.first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
 
   // Set agent via URL param — SandboxPage has useEffect that syncs selectedAgent
   await page.evaluate((agent) => {
@@ -296,7 +296,7 @@ test.describe('Agent RCA Workflow', () => {
     if (!page.url().includes('/sandbox')) {
       const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
       await nav.first().click();
-      await page.waitForLoadState('domcontentloaded');
+      await page.waitForLoadState('networkidle');
     }
     await page.waitForTimeout(5000);
     console.log(`[rca] Final URL: ${page.url()}`);

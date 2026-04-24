@@ -140,7 +140,7 @@ test.describe('Integrations Page - Navigation', () => {
 
   test('should be accessible from sidebar navigation', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Click the Integrations link in the sidebar navigation
     const navLink = page.locator('nav').getByText('Integrations', { exact: true });
@@ -153,7 +153,7 @@ test.describe('Integrations Page - Navigation', () => {
 
   test('should highlight Integrations in sidebar when active', async ({ page }) => {
     await page.goto('/integrations');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // PatternFly NavItem gets the pf-m-current class when active
     const navItem = page.locator('.pf-v5-c-nav__link.pf-m-current, .pf-m-current').filter({
@@ -178,7 +178,7 @@ test.describe('Integrations Page - Empty State', () => {
       });
     });
     await page.goto('/integrations');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should show empty state when no integrations exist', async ({ page }) => {
@@ -216,7 +216,7 @@ test.describe('Integrations Page - Populated Table', () => {
       });
     });
     await page.goto('/integrations');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display integration in table', async ({ page }) => {
@@ -286,7 +286,7 @@ test.describe('Integrations Page - Tab Switching', () => {
       });
     });
     await page.goto('/integrations');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should switch to Webhooks tab', async ({ page }) => {
@@ -369,7 +369,7 @@ test.describe('Integrations Page - Error Handling', () => {
     });
 
     await page.goto('/integrations');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     expect(apiCalled).toBe(true);
   });
@@ -389,7 +389,7 @@ test.describe('Integrations Page - Delete Modal', () => {
       });
     });
     await page.goto('/integrations');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should open delete modal from actions menu', async ({ page }) => {

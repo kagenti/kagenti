@@ -155,7 +155,7 @@ function buildHitlSSEBody(options?: {
  */
 async function goToSandbox(page: Page) {
   await page.goto(`/sandbox?session=${TEST_SESSION_ID}`, {
-    waitUntil: 'domcontentloaded',
+    waitUntil: 'networkidle',
   });
   await expect(
     page.locator('textarea[aria-label="Message input"]').first(),

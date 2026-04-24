@@ -33,7 +33,7 @@ async function navigateToSessions(page: Page) {
   const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
   await expect(nav.first()).toBeVisible({ timeout: 10000 });
   await nav.first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
 }
 
 async function selectAgent(page: Page, agentName: string) {

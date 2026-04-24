@@ -19,7 +19,7 @@ const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  await page.waitForLoadState('networkidle', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -32,7 +32,7 @@ async function loginIfNeeded(page: Page) {
     const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -45,7 +45,7 @@ async function loginIfNeeded(page: Page) {
     await usernameField.fill(KEYCLOAK_USER);
     await passwordField.fill(KEYCLOAK_PASSWORD);
     await submitButton.click();
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
   }
 }
 
@@ -211,7 +211,7 @@ test.describe('Sandbox File Browser', () => {
 
   test('renders directory listing with entries', async ({ page }) => {
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // TreeView should appear
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
@@ -225,7 +225,7 @@ test.describe('Sandbox File Browser', () => {
 
   test('shows not-found page when no agent params provided', async ({ page }) => {
     await page.goto('/sandbox/files');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // The route /sandbox/files without :namespace/:agentName does not match
     // the router definition, so the app should show a not-found or fallback page.
@@ -236,7 +236,7 @@ test.describe('Sandbox File Browser', () => {
 
   test('click .md file shows markdown preview with mermaid', async ({ page }) => {
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for tree to render
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
@@ -260,7 +260,7 @@ test.describe('Sandbox File Browser', () => {
 
   test('click code file shows code block', async ({ page }) => {
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for tree to render
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
@@ -279,7 +279,7 @@ test.describe('Sandbox File Browser', () => {
 
   test('breadcrumb navigation shows path segments', async ({ page }) => {
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for tree to render, then click a directory to generate breadcrumb segments
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
@@ -299,7 +299,7 @@ test.describe('Sandbox File Browser', () => {
 
   test('file metadata displays size and date', async ({ page }) => {
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for tree to render
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
@@ -325,7 +325,7 @@ test.describe('Sandbox File Browser', () => {
     });
 
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
@@ -353,7 +353,7 @@ test.describe('Sandbox File Browser', () => {
     });
 
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
@@ -391,7 +391,7 @@ test.describe('Sandbox File Browser', () => {
     });
 
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     const treeView = page.locator('[class*="pf-v5-c-tree-view"]').first();
     await expect(treeView).toBeVisible({ timeout: 10000 });
@@ -464,7 +464,7 @@ test.describe('Sandbox File Browser', () => {
 
     // Navigate to any page so the browser context is active for fetch()
     await page.goto('/sandbox/files/team1/sandbox-basic');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Use page.evaluate + fetch() so the request goes through page.route() mocks
     // (page.request.get() bypasses page route interception)
@@ -545,7 +545,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     if (!page.url().includes('/sandbox/files')) {
       await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/${contextId}/data`);
     }
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // ── Step 3: Wait for tree view to render ──
     const filesBrowserReady = page.locator('[aria-label="File tree"]')
@@ -591,7 +591,7 @@ test.describe('File Browser — Live Cluster Integration', () => {
     if (!page.url().includes('/sandbox/files')) {
       await page.goto(`${LIVE_URL}/sandbox/files/${NAMESPACE}/${AGENT_NAME}?path=/workspace/${contextId2}/data`);
     }
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // ── Step 3: Wait for tree view ──
     const filesBrowserReady2 = page.locator('[aria-label="File tree"]')

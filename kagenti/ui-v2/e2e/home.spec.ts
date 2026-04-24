@@ -36,7 +36,7 @@ test.describe('Home Page', () => {
 
     if (await agentButton.isVisible()) {
       await agentButton.click();
-      await page.waitForLoadState('domcontentloaded');
+      await page.waitForLoadState('networkidle');
       await expect(page).toHaveURL(/\/agents/, { timeout: 15000 });
     }
   });
@@ -51,7 +51,7 @@ test.describe('Home Page', () => {
 
     if (await toolButton.isVisible()) {
       await toolButton.click();
-      await page.waitForLoadState('domcontentloaded');
+      await page.waitForLoadState('networkidle');
       await expect(page).toHaveURL(/\/tools/, { timeout: 15000 });
     }
   });

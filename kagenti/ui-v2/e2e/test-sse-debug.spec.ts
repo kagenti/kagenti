@@ -15,12 +15,12 @@ test('check history endpoint response', async ({ page }) => {
   });
   
   await page.goto('/');
-  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  await page.waitForLoadState('networkidle', { timeout: 30000 });
   const isKC = await page.locator('input[name="username"]').first().isVisible({ timeout: 5000 }).catch(() => false);
   if (!isKC) {
     const btn = page.getByRole('button', { name: /Sign In/i });
     if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) await btn.click();
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
   }
   await page.locator('input[name="username"]').first().waitFor({ state: 'visible', timeout: 10000 });
   await page.locator('input[name="username"]').first().fill(KEYCLOAK_USER);
@@ -31,7 +31,7 @@ test('check history endpoint response', async ({ page }) => {
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
   
   await page.locator('nav a', { hasText: 'Sessions' }).first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
   await page.getByText('+ New Session').click();
   // Handle New Session modal

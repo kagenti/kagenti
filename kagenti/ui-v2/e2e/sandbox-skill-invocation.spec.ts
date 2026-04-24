@@ -93,7 +93,7 @@ async function navigateToSandboxChat(page: Page) {
     .filter({ hasText: /^Sessions$/ });
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
 
   // Wait for the sandbox page to load — chat input appears on all states
   await expect(
@@ -107,7 +107,7 @@ test.describe('Sandbox Skill Invocation - Request Interception', () => {
   test.beforeEach(async ({ page }) => {
     await setupMocks(page);
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
     await navigateToSandboxChat(page);
   });
 

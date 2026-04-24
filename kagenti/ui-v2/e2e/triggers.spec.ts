@@ -47,7 +47,7 @@ test.describe('Triggers Page - Page Structure', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/triggers');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display page with Triggers title', async ({ page }) => {
@@ -81,7 +81,7 @@ test.describe('Triggers Page - Cron Form', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/triggers');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should show skill name field', async ({ page }) => {
@@ -107,7 +107,7 @@ test.describe('Triggers Page - Webhook Form', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/triggers');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
     // Switch to the Webhook tab
     const webhookTab = page.getByRole('tab', { name: /Webhook/i });
     await expect(webhookTab).toBeVisible({ timeout: 10000 });
@@ -138,7 +138,7 @@ test.describe('Triggers Page - Alert Form', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/triggers');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
     // Switch to the Alert tab
     const alertTab = page.getByRole('tab', { name: /Alert/i });
     await expect(alertTab).toBeVisible({ timeout: 10000 });
@@ -178,7 +178,7 @@ test.describe('Triggers Page - Form Submission', () => {
       });
     });
     await page.goto('/triggers');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Fill out the cron form
     await page.locator('#cron-skill').fill('tdd:ci');
@@ -202,7 +202,7 @@ test.describe('Triggers Page - Form Submission', () => {
       });
     });
     await page.goto('/triggers');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Fill out the cron form
     await page.locator('#cron-skill').fill('tdd:ci');

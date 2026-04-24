@@ -34,7 +34,7 @@ const markStep = (step: string) => {
 
 // --- Auth ---
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  await page.waitForLoadState('networkidle', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -49,7 +49,7 @@ async function loginIfNeeded(page: Page) {
       .catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -67,7 +67,7 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
 
   // Handle VERIFY_PROFILE if needed
   if (page.url().includes('VERIFY_PROFILE')) {
@@ -113,7 +113,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
       .filter({ hasText: /^Sessions$/ });
     await expect(sandboxNav.first()).toBeVisible({ timeout: 10000 });
     await sandboxNav.first().click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for the sandbox page to load — chat input appears on all states
     await expect(
@@ -252,7 +252,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
     // Step 8: Navigate to Sessions Table
     // ------------------------------------------------------------------
     await viewAllBtn.click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     await expect(
       page.getByRole('heading', { name: /Sessions/i })
@@ -291,7 +291,7 @@ test.describe('Sandbox Legion — Deep Dive Walkthrough', () => {
       .filter({ hasText: /^Sessions$/ });
     await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
     await sessionsNav.first().click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for the sandbox page to load — chat input appears on all states
     await expect(

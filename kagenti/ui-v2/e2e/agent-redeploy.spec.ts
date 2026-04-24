@@ -53,7 +53,7 @@ async function goToWizard(page: Page) {
   const h = page.getByRole('heading', { name: /Create Sandbox Agent/i });
   if (!(await h.isVisible({ timeout: 3000 }).catch(() => false))) {
     await page.goto('/sandbox/create');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   }
   await expect(h).toBeVisible({ timeout: 15000 });
 }
@@ -106,7 +106,7 @@ async function sendMessageAndWait(page: Page, message: string) {
   const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
   await expect(nav.first()).toBeVisible({ timeout: 10000 });
   await nav.first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
   await page.evaluate((agent) => {
     const url = new URL(window.location.href);
     url.searchParams.set('agent', agent);
@@ -191,7 +191,7 @@ test.describe('Agent Redeploy', () => {
     // Navigate to the session and check Pod tab
     const nav = page.locator('nav a, nav button').filter({ hasText: /^Sessions$/ });
     await nav.first().click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
     await page.evaluate((agent) => {
       const url = new URL(window.location.href);
       url.searchParams.set('agent', agent);

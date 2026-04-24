@@ -106,7 +106,7 @@ test.describe('Skill Whisperer', () => {
     await setupMocks(page);
     // Navigate directly to sandbox page with agent pre-selected via URL param
     await page.goto('/sandbox?agent=sandbox-legion');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Wait for the sandbox page to load — chat input appears on all states
     await expect(

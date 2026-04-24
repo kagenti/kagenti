@@ -22,11 +22,11 @@ test.describe('Agent Chat - Full User Flow', () => {
 
     // Step 1: Go to home page (already authenticated via storageState)
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Step 2: Navigate to agents page (click sidebar link for reliable navigation)
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Step 3: Verify we're on the agent catalog
     await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
@@ -72,9 +72,9 @@ test.describe('Agent Chat - Navigation', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to agents via sidebar (already authenticated via storageState)
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display chat interface on agent detail page', async ({ page }) => {

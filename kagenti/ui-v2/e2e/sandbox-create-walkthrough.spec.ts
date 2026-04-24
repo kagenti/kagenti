@@ -37,7 +37,7 @@ async function snap(page: Page, label: string) {
 }
 
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  await page.waitForLoadState('networkidle', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -52,7 +52,7 @@ async function loginIfNeeded(page: Page) {
       .catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -70,7 +70,7 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
 
   if (page.url().includes('VERIFY_PROFILE')) {
     const verifySubmit = page.locator(
@@ -101,7 +101,7 @@ async function navigateToWizard(page: Page) {
     .filter({ hasText: /^Sessions$/ });
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle');
 
   // Then navigate to /sandbox/create using the browser's address bar
   // (SPA client-side navigation)
@@ -116,7 +116,7 @@ async function navigateToWizard(page: Page) {
   const heading = page.getByRole('heading', { name: /Create Sandbox Agent/i });
   if (!(await heading.isVisible({ timeout: 3000 }).catch(() => false))) {
     await page.goto('/sandbox/create');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   }
 
   await expect(heading).toBeVisible({ timeout: 15000 });
@@ -398,7 +398,7 @@ test.describe('Import Wizard — Navigation', () => {
     const cancelBtn = page.getByRole('button', { name: /^Cancel$/i });
     await expect(cancelBtn).toBeVisible();
     await cancelBtn.click();
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
 
     // Should navigate to /sandbox
     await expect(
