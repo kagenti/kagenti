@@ -34,23 +34,24 @@ setup('authenticate', async ({ page }) => {
     }
   }
 
-  // Case 1: Already on Keycloak login page (login-required mode)
-  const isKeycloakLogin = await page.locator('#kc-form-login, input[name="username"]')
-    .first()
-    .isVisible({ timeout: 5000 })
-    .catch(() => false);
+  // Race: wait for auth nav (already logged in), Sign In button (check-sso),
+  // or Keycloak form (login-required). OIDC check-sso can take 5-15s.
+  const authNav = page.locator('nav a, nav button', { hasText: /Agents|Tools/ }).first();
+  const signInButton = page.getByRole('button', { name: /Sign In/i });
+  const keycloakForm = page.locator('#kc-form-login, input[name="username"]').first();
 
-  if (!isKeycloakLogin) {
-    // Case 2: App loaded with "Sign In" button (check-sso mode)
-    const signInButton = page.getByRole('button', { name: /Sign In/i });
-    const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
+  const state = await Promise.race([
+    authNav.waitFor({ state: 'visible', timeout: 20000 }).then(() => 'authenticated' as const),
+    signInButton.waitFor({ state: 'visible', timeout: 20000 }).then(() => 'signIn' as const),
+    keycloakForm.waitFor({ state: 'visible', timeout: 20000 }).then(() => 'keycloak' as const),
+  ]).catch(() => 'none' as const);
 
-    if (!hasSignIn) {
-      // No auth needed — save empty state and return
-      await page.context().storageState({ path: STORAGE_STATE });
-      return;
-    }
+  if (state === 'authenticated' || state === 'none') {
+    await page.context().storageState({ path: STORAGE_STATE });
+    return;
+  }
 
+  if (state === 'signIn') {
     await signInButton.click();
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }

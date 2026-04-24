@@ -14,16 +14,22 @@ const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 export async function loginIfNeeded(page: Page) {
   await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
-  const isKeycloakLogin = await page
-    .locator('#kc-form-login, input[name="username"]')
-    .first()
-    .isVisible({ timeout: 5000 })
-    .catch(() => false);
+  // Race: wait for EITHER authenticated nav (Agents/Tools visible) OR a login
+  // prompt (Keycloak form or Sign In button). OIDC check-sso can take 5-15s
+  // on HyperShift clusters, so 5s was too short for the old approach.
+  const authNav = page.locator('nav a, nav button', { hasText: /Agents|Tools/ }).first();
+  const signInButton = page.getByRole('button', { name: /Sign In/i });
+  const keycloakForm = page.locator('#kc-form-login, input[name="username"]').first();
 
-  if (!isKeycloakLogin) {
-    const signInButton = page.getByRole('button', { name: /Sign In/i });
-    const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!hasSignIn) return;
+  const state = await Promise.race([
+    authNav.waitFor({ state: 'visible', timeout: 20000 }).then(() => 'authenticated' as const),
+    signInButton.waitFor({ state: 'visible', timeout: 20000 }).then(() => 'signIn' as const),
+    keycloakForm.waitFor({ state: 'visible', timeout: 20000 }).then(() => 'keycloak' as const),
+  ]).catch(() => 'none' as const);
+
+  if (state === 'authenticated' || state === 'none') return;
+
+  if (state === 'signIn') {
     await signInButton.click();
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
