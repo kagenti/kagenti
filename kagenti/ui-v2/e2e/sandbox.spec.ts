@@ -61,7 +61,7 @@ test.describe('Sandbox Legion - Health Check', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await expect(
       page.getByRole('heading', { name: /sandbox-legion/i })
@@ -91,7 +91,7 @@ test.describe('Sandbox Legion - Navigation', () => {
     await loginIfNeeded(page);
 
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await expect(
       page.getByRole('heading', { name: /sandbox-legion/i })
@@ -110,7 +110,7 @@ test.describe('Sandbox Legion - Chat', () => {
 
     // Navigate to sandbox
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await expect(
       page.getByRole('heading', { name: /sandbox-legion/i })
@@ -148,7 +148,7 @@ test.describe('Sandbox Legion - Sidebar', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     // Sidebar search should be visible
     const searchInput = page.getByPlaceholder(/Search sessions/i);
@@ -169,12 +169,12 @@ test.describe('Sandbox Legion - Sidebar', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await page
       .getByRole('button', { name: /View All Sessions/i })
       .click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await expect(
       page.getByRole('heading', { name: /Sessions/i })
@@ -189,9 +189,9 @@ test.describe('Sandbox Legion - Sessions Table', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
     await page.getByRole('button', { name: /View All Sessions/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await expect(
       page.getByRole('heading', { name: /Sessions/i })
@@ -206,9 +206,9 @@ test.describe('Sandbox Legion - Sessions Table', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
     await page.getByRole('button', { name: /View All Sessions/i }).click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     await expect(
       page.getByRole('heading', { name: /Sessions/i })
@@ -233,7 +233,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     // Agents panel should be visible below sessions
     await expect(
@@ -245,7 +245,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     // Import Agent button should be visible
     const importBtn = page.getByRole('button', { name: /Import Agent/i });
@@ -253,7 +253,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
 
     // Click should navigate to wizard
     await importBtn.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
     await expect(
       page.getByRole('heading', { name: /Create Sandbox Agent/i })
     ).toBeVisible({ timeout: 15000 });
@@ -267,7 +267,7 @@ test.describe('Sandbox Legion - Root Only Toggle', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     // Root only toggle should be visible
     const toggle = page.locator('#root-only-toggle');
@@ -289,7 +289,7 @@ test.describe('Sandbox Legion - Advanced Config', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     // Find and click the advanced config toggle
     const configToggle = page.getByText(/Advanced Configuration/i);
