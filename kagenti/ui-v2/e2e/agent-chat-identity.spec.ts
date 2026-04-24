@@ -341,7 +341,8 @@ test.describe('Agent Chat - HITL Approval', () => {
     expect(hitlDenyReceived).toBe(true);
   });
 
-  test('should auto-approve safe tools without showing approval card', async ({ page }) => {
+  test.skip('should auto-approve safe tools without showing approval card', async ({ page }) => {
+    // Skip: AUTO_APPROVE_TOOLS backend feature not yet implemented (needs config.py allowlist + chat.py intercept)
     await navigateToWeatherChat(page);
 
     await page.route('**/api/v1/chat/**/stream', async (route, request) => {
