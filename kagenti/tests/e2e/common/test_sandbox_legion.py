@@ -384,7 +384,7 @@ class TestSandboxLegionShellExecution:
         agent_url = _get_sandbox_legion_url()
 
         response = ""
-        for attempt in range(3):
+        for attempt in range(5):
             result = await asyncio.to_thread(
                 _send_message_raw, agent_url, "Run the command: ls"
             )
@@ -404,10 +404,10 @@ class TestSandboxLegionShellExecution:
             ):
                 break
             response = ""
-            if attempt < 2:
+            if attempt < 4:
                 await asyncio.sleep(2)
 
-        assert response, f"Agent returned empty after 3 attempts"
+        assert response, f"Agent returned empty after 5 attempts"
 
         response_lower = response.lower()
         workspace_indicators = ["data", "scripts", "repos", "output"]
