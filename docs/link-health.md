@@ -1,22 +1,23 @@
 # Link Health Report
 
-> Last scan: 2026-04-22 07:01 ET | Scan ID: 2026-04-22-001
+> Last scan: 2026-04-24 07:01 ET | Scan ID: 2026-04-24-001
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Repos scanned | 14 |
-| Total links checked | 2138 |
-| Broken (internal) | 37 |
+| Total links checked | 2182 |
+| Broken (internal) | 38 |
 | Broken (external) | 22 |
-| New since last scan | +0 |
-| Fixed since last scan | -1 |
+| New since last scan | +1 |
+| Fixed since last scan | -0 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 04-24 | 38 | 22 | +1 |
 | 04-22 | 37 | 22 | -1 |
 | 04-20 | 37 | 23 | -5 |
 | 04-20 | 42 | 23 | +3 |
@@ -26,7 +27,6 @@
 | 04-20 | 61 | 35 | 0 |
 | 04-20 | 61 | 35 | +1 |
 | 04-17 | 62 | 33 | -1 |
-| 04-17 | 62 | 34 | -16 |
 
 ## Broken Links by Repo
 
@@ -37,6 +37,7 @@
 | agent-examples | 0 | 3 | |
 | agentic-control-plane | 0 | 1 | |
 | ecosystem-guide | 0 | 2 | |
+| humr | 1 | 0 | |
 | kagenti | 5 | 7 | |
 | kagenti-extensions | 0 | 2 | |
 | kagenti-operator | 2 | 0 | |
