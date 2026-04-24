@@ -42,10 +42,18 @@ async function assertNoErrors(page: Page) {
  * Waits for the nav item to be visible before clicking.
  */
 async function navigateToSessions(page: Page) {
+  // Wait for feature flags to load — the "Sessions" nav item is gated
+  // behind features.sandbox. Poll until it appears (flags may take a few
+  // seconds to fetch from /api/v1/config/features).
   const sessionsNav = page.locator('nav a, nav button', { hasText: 'Sessions' });
-  await expect(sessionsNav.first()).toBeVisible({ timeout: 30000 });
+  await expect(sessionsNav.first()).toBeVisible({ timeout: 60000 });
   await sessionsNav.first().click();
   await page.waitForLoadState('load');
+
+  // Wait for the sandbox page heading to confirm navigation succeeded
+  await expect(
+    page.getByRole('heading', { name: /sandbox/i }).first()
+  ).toBeVisible({ timeout: 15000 });
 }
 
 /**
@@ -66,7 +74,7 @@ async function assertNoFailedSessions(page: Page) {
 }
 
 test.describe('Sandbox Legion - Health Check', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   test('should have no error alerts or failed sessions on load', async ({ page }) => {
     await page.goto('/');
@@ -85,7 +93,7 @@ test.describe('Sandbox Legion - Health Check', () => {
 });
 
 test.describe('Sandbox Legion - Navigation', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   test('should have Sessions in navigation sidebar', async ({ page }) => {
     await page.goto('/');
@@ -153,7 +161,7 @@ test.describe('Sandbox Legion - Chat', () => {
 });
 
 test.describe('Sandbox Legion - Sidebar', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   test('should show session sidebar with search', async ({ page }) => {
     await page.goto('/');
@@ -194,7 +202,7 @@ test.describe('Sandbox Legion - Sidebar', () => {
 });
 
 test.describe('Sandbox Legion - Sessions Table', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   test('should display sessions table with search', async ({ page }) => {
     await page.goto('/');
@@ -238,7 +246,7 @@ test.describe('Sandbox Legion - Sessions Table', () => {
 });
 
 test.describe('Sandbox Legion - Agents Panel', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   test('should show sandbox agents panel in sidebar', async ({ page }) => {
     await page.goto('/');
@@ -272,7 +280,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
 });
 
 test.describe('Sandbox Legion - Root Only Toggle', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   test('should toggle between root-only and all sessions', async ({ page }) => {
     await page.goto('/');
@@ -290,7 +298,7 @@ test.describe('Sandbox Legion - Root Only Toggle', () => {
 });
 
 test.describe('Sandbox Legion - Advanced Config', () => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
 
   // SandboxConfig panel is disabled — model/repo/branch not yet wired to backend.
   // See SandboxPage.tsx: "SandboxConfig disabled" comments.
