@@ -143,10 +143,8 @@ def _get_auth_headers() -> dict:
     keycloak_base_url = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
     token_url = f"{keycloak_base_url}/realms/{realm}/protocol/openid-connect/token"
 
-    verify_ssl: bool | str = True
-    if os.environ.get("KEYCLOAK_VERIFY_SSL", "true").lower() == "false":
-        verify_ssl = VERIFY_SSL
-    elif os.environ.get("KEYCLOAK_CA_BUNDLE"):
+    verify_ssl: bool | str = VERIFY_SSL
+    if os.environ.get("KEYCLOAK_CA_BUNDLE"):
         verify_ssl = os.environ["KEYCLOAK_CA_BUNDLE"]
 
     # Try service account client_credentials first (has realm roles mapped)
