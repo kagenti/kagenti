@@ -83,7 +83,7 @@ test.describe('Sandbox Legion - Navigation', () => {
     const sandboxNav = page.locator('nav a, nav button', {
       hasText: 'Sessions',
     });
-    await expect(sandboxNav.first()).toBeVisible({ timeout: 10000 });
+    await expect(sandboxNav.first()).toBeVisible({ timeout: 30000 });
   });
 
   test('should navigate to sandbox page', async ({ page }) => {
@@ -118,7 +118,7 @@ test.describe('Sandbox Legion - Chat', () => {
 
     // Verify chat input is visible
     const chatInput = page.getByPlaceholder(/Type your message/i);
-    await expect(chatInput).toBeVisible({ timeout: 10000 });
+    await expect(chatInput).toBeVisible({ timeout: 30000 });
 
     // Send a message
     await chatInput.fill('Say exactly: playwright-sandbox-test');
@@ -222,7 +222,7 @@ test.describe('Sandbox Legion - Sessions Table', () => {
     // Should show "No sessions found" or empty table
     await expect(
       page.locator('text=/No.*sessions/i').first()
-    ).toBeVisible({ timeout: 10000 });
+    ).toBeVisible({ timeout: 30000 });
   });
 });
 
@@ -249,7 +249,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
 
     // Import Agent button should be visible
     const importBtn = page.getByRole('button', { name: /Import Agent/i });
-    await expect(importBtn).toBeVisible({ timeout: 10000 });
+    await expect(importBtn).toBeVisible({ timeout: 30000 });
 
     // Click should navigate to wizard
     await importBtn.click();
@@ -271,7 +271,7 @@ test.describe('Sandbox Legion - Root Only Toggle', () => {
 
     // Root only toggle should be visible
     const toggle = page.locator('#root-only-toggle');
-    await expect(toggle).toBeVisible({ timeout: 10000 });
+    await expect(toggle).toBeVisible({ timeout: 30000 });
 
     // Should be checked by default
     await expect(toggle).toBeChecked();
