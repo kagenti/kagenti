@@ -99,7 +99,7 @@ async function loginIfNeeded(page: Page) {
  * Navigate to the weather agent chat tab
  */
 async function navigateToWeatherChat(page: Page) {
-  await page.locator('nav a', { hasText: 'Agents' }).first().click();
+  await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
   await page.waitForLoadState('networkidle');
   await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
     timeout: 15000,

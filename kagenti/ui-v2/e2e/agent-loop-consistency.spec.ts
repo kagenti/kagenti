@@ -67,7 +67,7 @@ async function loginIfNeeded(page: Page) {
 
 /** Navigate to the Sandbox (Sessions) page with a specific agent. */
 async function navigateToSandbox(page: Page, agent: string) {
-  await page.locator('nav a', { hasText: 'Sessions' }).first().click();
+  await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
   await page.waitForLoadState('networkidle');
   // Wait for the chat input to appear
   await expect(

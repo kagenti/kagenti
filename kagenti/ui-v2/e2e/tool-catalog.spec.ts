@@ -14,7 +14,7 @@ test.describe('Tool Catalog Page @extended', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
@@ -43,7 +43,7 @@ test.describe('Tool Catalog - With Deployed Tools @extended', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
@@ -84,7 +84,7 @@ test.describe('Tool Catalog - API Integration @extended', () => {
       { timeout: 30000 }
     );
 
-    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
 
     const response = await responsePromise;
     expect(response.url()).toContain('/api/v1/tools');
@@ -101,7 +101,7 @@ test.describe('Tool Catalog - API Integration @extended', () => {
       });
     });
 
-    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByText(/Error loading tools|error|failed/i).first()).toBeVisible({
@@ -121,7 +121,7 @@ test.describe('Tool Catalog - API Integration @extended', () => {
       });
     });
 
-    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByText(/No tools found/i).first()).toBeVisible({

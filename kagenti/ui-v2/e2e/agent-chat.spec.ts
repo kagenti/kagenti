@@ -14,19 +14,17 @@
  *   KAGENTI_UI_URL: Base URL for the UI (default: http://localhost:3000)
  */
 import { test, expect } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 test.describe('Agent Chat - Full User Flow', () => {
   test('should navigate to weather agent and get a chat response', async ({ page }) => {
-    // Increase timeout for this test — chat responses can be slow (LLM inference)
     test.setTimeout(120000);
 
-    // Step 1: Go to home page (already authenticated via storageState)
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await loginIfNeeded(page);
 
-    // Step 2: Navigate to agents page (click sidebar link for reliable navigation)
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Verify we're on the agent catalog
     await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
@@ -70,11 +68,10 @@ test.describe('Agent Chat - Navigation', () => {
   test.setTimeout(60000);
 
   test.beforeEach(async ({ page }) => {
-    // Navigate to agents via sidebar (already authenticated via storageState)
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await loginIfNeeded(page);
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display chat interface on agent detail page', async ({ page }) => {

@@ -49,7 +49,7 @@ async function loginIfNeeded(page: Page) {
 
 /** Create a sandbox session by sending a quick message */
 async function ensureSessionExists(page: Page) {
-  await page.locator('nav a', { hasText: 'Sessions' }).first().click();
+  await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
   await page.waitForLoadState('networkidle');
 
   // Check if sessions already exist

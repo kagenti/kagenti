@@ -18,7 +18,7 @@ test.describe('Agent Catalog Page @extended', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
@@ -66,7 +66,7 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
@@ -183,7 +183,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
       { timeout: 30000 }
     );
 
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
 
     const response = await responsePromise;
 
@@ -203,7 +203,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
 
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
 
     // Component shows "Error loading agents" EmptyState on query failure
@@ -225,7 +225,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
       });
     });
 
-    await page.locator('nav a', { hasText: 'Agents' }).first().click();
+    await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
 
     // Verify empty state is shown (use .first() to avoid strict mode violation with multiple matches)

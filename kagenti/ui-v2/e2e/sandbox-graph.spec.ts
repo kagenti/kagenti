@@ -396,7 +396,7 @@ test.describe('Session Graph - Navigation', () => {
 
   test('should navigate to graph page from Sessions nav', async ({ page }) => {
     // The Session Graph link should be accessible from the nav
-    const graphLink = page.locator('nav a', { hasText: /Graph|Session Graph/i });
+    const graphLink = page.locator('nav a, nav button', { hasText: /Graph|Session Graph/i });
     const hasGraphLink = await graphLink.isVisible({ timeout: 5000 }).catch(() => false);
 
     if (hasGraphLink) {

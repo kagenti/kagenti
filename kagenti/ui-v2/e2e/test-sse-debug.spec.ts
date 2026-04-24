@@ -30,7 +30,7 @@ test('check history endpoint response', async ({ page }) => {
   await page.locator('#kc-login, button[type="submit"], input[type="submit"]').first().click();
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
   
-  await page.locator('nav a', { hasText: 'Sessions' }).first().click();
+  await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
   await page.getByText('+ New Session').click();

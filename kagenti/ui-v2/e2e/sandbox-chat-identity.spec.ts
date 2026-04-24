@@ -52,7 +52,7 @@ async function loginIfNeeded(page: Page) {
 
 /** Navigate to the Sessions chat page */
 async function navigateToSandboxChat(page: Page) {
-  await page.locator('nav a', { hasText: 'Sessions' }).first().click();
+  await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
   await page.waitForLoadState('networkidle');
   // Wait for chat input to appear
   await expect(
