@@ -38,6 +38,17 @@ async function assertNoErrors(page: Page) {
 }
 
 /**
+ * Navigate to the Sessions/Sandbox page via sidebar.
+ * Waits for the nav item to be visible before clicking.
+ */
+async function navigateToSessions(page: Page) {
+  const sessionsNav = page.locator('nav a, nav button', { hasText: 'Sessions' });
+  await expect(sessionsNav.first()).toBeVisible({ timeout: 30000 });
+  await sessionsNav.first().click();
+  await page.waitForLoadState('load');
+}
+
+/**
  * Assert no failed/errored sessions in the sidebar.
  * Failed sessions from test cleanup or crashes indicate a problem.
  */
@@ -60,7 +71,7 @@ test.describe('Sandbox Legion - Health Check', () => {
   test('should have no error alerts or failed sessions on load', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     await expect(
@@ -90,7 +101,7 @@ test.describe('Sandbox Legion - Navigation', () => {
     await page.goto('/');
     await loginIfNeeded(page);
 
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     await expect(
@@ -109,7 +120,7 @@ test.describe('Sandbox Legion - Chat', () => {
     await loginIfNeeded(page);
 
     // Navigate to sandbox
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     await expect(
@@ -147,7 +158,7 @@ test.describe('Sandbox Legion - Sidebar', () => {
   test('should show session sidebar with search', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     // Sidebar search should be visible
@@ -168,7 +179,7 @@ test.describe('Sandbox Legion - Sidebar', () => {
   test('should navigate to sessions table via View All', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     await page
@@ -188,7 +199,7 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   test('should display sessions table with search', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
     await page.getByRole('button', { name: /View All Sessions/i }).click();
     await page.waitForLoadState('load');
@@ -205,7 +216,7 @@ test.describe('Sandbox Legion - Sessions Table', () => {
   test('should search and filter results', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
     await page.getByRole('button', { name: /View All Sessions/i }).click();
     await page.waitForLoadState('load');
@@ -232,7 +243,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
   test('should show sandbox agents panel in sidebar', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     // Agents panel should be visible below sessions
@@ -244,7 +255,7 @@ test.describe('Sandbox Legion - Agents Panel', () => {
   test('should show Import Agent button and navigate to wizard', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     // Import Agent button should be visible
@@ -266,7 +277,7 @@ test.describe('Sandbox Legion - Root Only Toggle', () => {
   test('should toggle between root-only and all sessions', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     // Root only toggle should be visible
@@ -288,7 +299,7 @@ test.describe('Sandbox Legion - Advanced Config', () => {
   test('should toggle advanced config panel', async ({ page }) => {
     await page.goto('/');
     await loginIfNeeded(page);
-    await page.locator('nav a, nav button', { hasText: 'Sessions' }).first().click();
+    await navigateToSessions(page);
     await page.waitForLoadState('load');
 
     // Find and click the advanced config toggle
