@@ -31,7 +31,7 @@ const AGENT_NAME = 'sandbox-legion';
  * Reusable login helper (same pattern as other E2E specs).
  */
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -44,7 +44,7 @@ async function loginIfNeeded(page: Page) {
     const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -62,13 +62,13 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 }
 
 /** Navigate to the Sandbox (Sessions) page with a specific agent. */
 async function navigateToSandbox(page: Page, agent: string) {
   await page.locator('nav a', { hasText: 'Sessions' }).first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   // Wait for the chat input to appear
   await expect(
     page.locator('textarea[aria-label="Message input"]').first()
@@ -208,7 +208,7 @@ test.describe('Agent Loop Consistency — Streaming vs Historical', () => {
     await loginIfNeeded(page);
     // Navigate back to sandbox with the session param to trigger history reload
     await page.goto(`/sandbox?session=${sessionId}&agent=${AGENT_NAME}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     // Wait for history + loop reconstruction from loop_events
     await page.waitForTimeout(5000);
     // Ensure the chat input is visible (page fully loaded)

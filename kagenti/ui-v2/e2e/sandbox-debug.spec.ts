@@ -31,7 +31,7 @@ async function snap(page: Page, label: string) {
 }
 
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -46,7 +46,7 @@ async function loginIfNeeded(page: Page) {
       .catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -64,7 +64,7 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
   if (page.url().includes('VERIFY_PROFILE')) {
     const verifySubmit = page.locator(
@@ -92,7 +92,7 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
     // ---- Step 2: Navigate to sandbox-legion with a fresh session ----
     // Go directly to sandbox with agent param (no session param = new session)
     await page.goto('/sandbox?agent=sandbox-legion');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await snap(page, 'sandbox-page');
 
     // Verify heading
@@ -192,7 +192,7 @@ test.describe('Sandbox Debug — Visual Inspection', () => {
     const urlBeforeReload = page.url();
     console.log(`[debug] URL before reload: ${urlBeforeReload}`);
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(3000);
     await snap(page, 'after-page-reload');
 

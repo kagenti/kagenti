@@ -66,7 +66,7 @@ async function spaReloadSession(page: Page) {
     }, sid);
   } else {
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await loginIfNeeded(page);
   }
   await page.waitForTimeout(3000);
@@ -76,7 +76,7 @@ async function navigateToAgent(page: Page, agentName: string) {
   await page.goto('/');
   await loginIfNeeded(page);
   await page.goto(`/sandbox?agent=${agentName}`);
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   // Re-login if Keycloak redirect happened
   await loginIfNeeded(page);
   // Verify we're on the sandbox page with the right agent

@@ -19,7 +19,7 @@ test.describe('Agent Catalog Page @extended', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display agent catalog page with title', async ({ page }) => {
@@ -67,7 +67,7 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display agents table when agents are deployed', async ({ page }) => {
@@ -204,7 +204,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Component shows "Error loading agents" EmptyState on query failure
     await expect(
@@ -226,7 +226,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
     });
 
     await page.locator('nav a', { hasText: 'Agents' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify empty state is shown (use .first() to avoid strict mode violation with multiple matches)
     await expect(page.getByText(/No agents found/i).first()).toBeVisible({

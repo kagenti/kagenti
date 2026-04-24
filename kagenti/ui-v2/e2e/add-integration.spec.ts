@@ -67,7 +67,7 @@ test.describe('Add Integration Page - Structure', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/integrations/add');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display Add Integration title', async ({ page }) => {
@@ -113,7 +113,7 @@ test.describe('Add Integration Page - Form Fields', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/integrations/add');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should have name, URL, provider, branch fields in repository card', async ({ page }) => {
@@ -172,7 +172,7 @@ test.describe('Add Integration Page - Expandable Sections', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/integrations/add');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should have Webhooks expandable section', async ({ page }) => {
@@ -220,7 +220,7 @@ test.describe('Add Integration Page - Form Submission', () => {
   test.beforeEach(async ({ page }) => {
     await mockBackendAPIs(page);
     await page.goto('/integrations/add');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should have Create Integration button', async ({ page }) => {

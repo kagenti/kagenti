@@ -16,7 +16,7 @@ const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -29,7 +29,7 @@ async function loginIfNeeded(page: Page) {
     const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -47,13 +47,13 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 }
 
 /** Navigate to the Sessions chat page */
 async function navigateToSandboxChat(page: Page) {
   await page.locator('nav a', { hasText: 'Sessions' }).first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   // Wait for chat input to appear
   await expect(
     page.locator('textarea[placeholder*="message"], textarea[aria-label="Message input"]').first()

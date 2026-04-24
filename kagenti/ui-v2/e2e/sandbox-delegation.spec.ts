@@ -39,13 +39,13 @@ async function navigateToSandboxWithAgent(page: Page, agentName: string) {
   // This prevents state desync between window.location and React Router
   // which would cause setSearchParams({ session: ... }) to silently fail.
   await page.goto(`/sandbox?agent=${encodeURIComponent(agentName)}`);
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
   // Re-login if redirected to Keycloak
   if (page.url().includes('keycloak') || page.url().includes('auth/realms')) {
     await loginIfNeeded(page);
     await page.goto(`/sandbox?agent=${encodeURIComponent(agentName)}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   }
 
   // Confirm the agent badge renders

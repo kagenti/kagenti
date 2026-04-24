@@ -26,7 +26,7 @@ setup('authenticate', async ({ page }) => {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await page.goto('/');
-      await page.waitForLoadState('networkidle', { timeout: 30000 });
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
       break;
     } catch {
       if (attempt === 2) throw new Error('App failed to load after 3 attempts');
@@ -52,7 +52,7 @@ setup('authenticate', async ({ page }) => {
     }
 
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
 
   // Fill Keycloak credentials
@@ -72,7 +72,7 @@ setup('authenticate', async ({ page }) => {
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 60000 });
 
   // Wait for app to fully load — use domcontentloaded as minimum,
-  // then verify navigation is visible (more reliable than networkidle
+  // then verify navigation is visible (more reliable than domcontentloaded
   // which can timeout on slow CI runners with background API calls)
   await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   await expect(page.locator('nav').or(page.getByRole('navigation')).first()).toBeVisible({

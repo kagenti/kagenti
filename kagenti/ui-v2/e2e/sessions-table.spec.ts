@@ -104,7 +104,7 @@ test.describe('Sessions Table - Page Structure', () => {
       });
     });
     await page.goto('/sessions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display page with Sessions title', async ({ page }) => {
@@ -160,7 +160,7 @@ test.describe('Sessions Table - Type Filtering', () => {
       });
     });
     await page.goto('/sessions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should filter to root sessions only', async ({ page }) => {
@@ -217,7 +217,7 @@ test.describe('Sessions Table - Data Display', () => {
       });
     });
     await page.goto('/sessions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should show truncated session IDs', async ({ page }) => {
@@ -330,7 +330,7 @@ test.describe('Sessions Table - Empty State', () => {
       });
     });
     await page.goto('/sessions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Switch to child filter - no child sessions exist
     await page.locator('#filter-child').click();
@@ -380,7 +380,7 @@ test.describe('Sessions Table - Error Handling', () => {
     });
 
     await page.goto('/sessions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     expect(apiCalled).toBe(true);
   });
@@ -400,7 +400,7 @@ test.describe('Sessions Table - Delete Modal', () => {
       });
     });
     await page.goto('/sessions');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should open delete modal from actions menu', async ({ page }) => {

@@ -15,7 +15,7 @@ test.describe('Tool Catalog Page @extended', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a', { hasText: 'Tools' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display tool catalog page with title', async ({ page }) => {
@@ -44,7 +44,7 @@ test.describe('Tool Catalog - With Deployed Tools @extended', () => {
     await page.goto('/');
     await loginIfNeeded(page);
     await page.locator('nav a', { hasText: 'Tools' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('should display tools table when tools are deployed', async ({ page }) => {
@@ -102,7 +102,7 @@ test.describe('Tool Catalog - API Integration @extended', () => {
     });
 
     await page.locator('nav a', { hasText: 'Tools' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByText(/Error loading tools|error|failed/i).first()).toBeVisible({
       timeout: 10000,
@@ -122,7 +122,7 @@ test.describe('Tool Catalog - API Integration @extended', () => {
     });
 
     await page.locator('nav a', { hasText: 'Tools' }).first().click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await expect(page.getByText(/No tools found/i).first()).toBeVisible({
       timeout: 10000,

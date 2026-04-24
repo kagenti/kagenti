@@ -53,7 +53,7 @@ const NS_ADMIN_PASSWORD = process.env.NS_ADMIN_PASSWORD || getTestUserPassword('
  * Uses the same pattern as the shared loginIfNeeded helper.
  */
 async function loginAs(page: Page, username: string, password: string) {
-  await page.waitForLoadState('networkidle', { timeout: 60000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 60000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -66,7 +66,7 @@ async function loginAs(page: Page, username: string, password: string) {
     const hasSignIn = await signInButton.isVisible({ timeout: 10000 }).catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 60000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 60000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -85,7 +85,7 @@ async function loginAs(page: Page, username: string, password: string) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 60000 });
-  await page.waitForLoadState('networkidle', { timeout: 60000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 60000 });
 }
 
 /**
@@ -100,7 +100,7 @@ async function loginIfNeeded(page: Page) {
  */
 async function navigateToWeatherChat(page: Page) {
   await page.locator('nav a', { hasText: 'Agents' }).first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   await expect(page.getByRole('heading', { name: /Agent Catalog/i })).toBeVisible({
     timeout: 15000,
   });
@@ -467,7 +467,7 @@ test.describe('Multi-User Identity', () => {
 
       // Reload page — Keycloak SSO should re-authenticate
       await devPage.reload();
-      await devPage.waitForLoadState('networkidle', { timeout: 30000 });
+      await devPage.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
       // Assert: identity persists after reload
       const tokenAfter = await devPage.evaluate(() =>

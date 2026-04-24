@@ -43,5 +43,5 @@ export async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 }

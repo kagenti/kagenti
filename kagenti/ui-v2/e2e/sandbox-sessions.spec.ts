@@ -26,7 +26,7 @@ async function snap(page: Page, label: string) {
 }
 
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -41,7 +41,7 @@ async function loginIfNeeded(page: Page) {
       .catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -59,7 +59,7 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
   // Handle VERIFY_PROFILE page if it appears
   if (page.url().includes('VERIFY_PROFILE')) {
@@ -125,7 +125,7 @@ async function navigateToSandbox(page: Page) {
     .filter({ hasText: /^Sessions$/ });
   await expect(sessionsNav.first()).toBeVisible({ timeout: 10000 });
   await sessionsNav.first().click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
   // Wait for the sandbox page to load — chat input appears on all states
   await expect(
     page.getByPlaceholder(/Type your message/i)
@@ -398,7 +398,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     } else {
       // Alternative: navigate directly via URL
       await page.goto(`/sandbox?session=${sessionAId}`);
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await loginIfNeeded(page);
       await page.waitForTimeout(3000);
       await snap(page, 'restored-session-a-via-url');
@@ -457,11 +457,11 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     // Also verify: the sidebar session is clickable and loads content
     // Navigate via URL to ensure a clean load (avoids stale state from PART 3)
     await page.goto(`/sandbox?session=${sessionAId}`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     if (page.url().includes('keycloak') || page.url().includes('auth/realms')) {
       await loginIfNeeded(page);
       await page.goto(`/sandbox?session=${sessionAId}`);
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
     }
     await page.waitForTimeout(5000);
 
@@ -552,7 +552,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // ---- Reload and verify localStorage survives ----
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await loginIfNeeded(page);
 
     const storedAfterReload = await page.evaluate(

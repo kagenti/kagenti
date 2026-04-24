@@ -18,7 +18,7 @@ const KEYCLOAK_USER = process.env.KEYCLOAK_USER || 'admin';
 const KEYCLOAK_PASSWORD = process.env.KEYCLOAK_PASSWORD || 'admin';
 
 async function loginIfNeeded(page: Page) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
 
   const isKeycloakLogin = await page
     .locator('#kc-form-login, input[name="username"]')
@@ -31,7 +31,7 @@ async function loginIfNeeded(page: Page) {
     const hasSignIn = await signInButton.isVisible({ timeout: 5000 }).catch(() => false);
     if (!hasSignIn) return;
     await signInButton.click();
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   }
 
   const usernameField = page.locator('input[name="username"]').first();
@@ -49,7 +49,7 @@ async function loginIfNeeded(page: Page) {
   await submitButton.click();
 
   await page.waitForURL(/^(?!.*keycloak)/, { timeout: 30000 });
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 }
 
 // ─── Mock data ───────────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ test.describe('Session Graph - Page Rendering', () => {
 
   test('should render the graph page with heading and legend', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Page heading
     await expect(
@@ -265,7 +265,7 @@ test.describe('Session Graph - Page Rendering', () => {
 
   test('should render root node with correct data', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Root node should be visible
     const rootNode = page.locator('[data-testid="graph-node-ctx-root-001"]');
@@ -286,7 +286,7 @@ test.describe('Session Graph - Page Rendering', () => {
 
   test('should render child nodes connected to parent', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // All 4 nodes should be visible
     await expect(page.locator('[data-testid="graph-node-ctx-root-001"]')).toBeVisible({ timeout: 10000 });
@@ -310,7 +310,7 @@ test.describe('Session Graph - Page Rendering', () => {
 
   test('should show edges between nodes with correct count', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Wait for the graph to render
     await expect(page.locator('[data-testid="graph-node-ctx-root-001"]')).toBeVisible({ timeout: 10000 });
@@ -338,7 +338,7 @@ test.describe('Session Graph - Status Colors', () => {
 
   test('should show correct status colors for each state', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await expect(page.locator('[data-testid="graph-node-ctx-root-001"]')).toBeVisible({ timeout: 10000 });
 
     // Running nodes have blue status indicator
@@ -358,7 +358,7 @@ test.describe('Session Graph - Status Colors', () => {
     await mockGraphAPI(page, MOCK_GRAPH_WITH_FAILURE);
 
     await page.goto('/sandbox/graph?contextId=ctx-fail-root&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await expect(page.locator('[data-testid="graph-node-ctx-fail-root"]')).toBeVisible({ timeout: 10000 });
 
     // Failed node has red status indicator
@@ -380,7 +380,7 @@ test.describe('Session Graph - Navigation', () => {
 
   test('should navigate to session chat when node is clicked', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const childNode = page.locator('[data-testid="graph-node-child-explore-001"]');
     await expect(childNode).toBeVisible({ timeout: 10000 });
@@ -427,7 +427,7 @@ test.describe('Session Graph - Edge Styles', () => {
 
   test('should differentiate edge styles by delegation mode', async ({ page }) => {
     await page.goto('/sandbox/graph?contextId=ctx-root-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
     await expect(page.locator('[data-testid="graph-node-ctx-root-001"]')).toBeVisible({ timeout: 10000 });
 
     // In-process edge
@@ -454,7 +454,7 @@ test.describe('Session Graph - Single Root', () => {
     // Auth is mocked as disabled — skip login, go directly to graph page
     // (loginIfNeeded is not needed when auth/config returns enabled:false)
     await page.goto('/sandbox/graph?contextId=ctx-solo-001&namespace=team1');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Only the root node should be visible
     const rootNode = page.locator('[data-testid="graph-node-ctx-solo-001"]');
