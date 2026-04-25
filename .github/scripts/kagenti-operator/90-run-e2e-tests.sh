@@ -17,7 +17,15 @@ log_step "90" "Running backend E2E tests (Kagenti Operator)"
 cd "$REPO_ROOT/kagenti"
 
 # Use environment variables if set, otherwise auto-detect
-export AGENT_URL="${AGENT_URL:-http://localhost:8000}"
+if [ -z "${AGENT_URL:-}" ]; then
+    # Try OpenShift route first
+    ROUTE_URL=$(kubectl get route weather-service -n team1 -o jsonpath='{.spec.host}' 2>/dev/null || true)
+    if [ -n "$ROUTE_URL" ]; then
+        export AGENT_URL="https://$ROUTE_URL"
+    else
+        export AGENT_URL="http://localhost:8000"
+    fi
+fi
 
 # Auto-detect OpenShift/HyperShift clusters
 if [ -z "${IS_OPENSHIFT:-}" ]; then

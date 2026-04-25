@@ -96,7 +96,7 @@ def _make_client(agent_name: str) -> httpx.Client:
     graph completes (router+planner+executor+reporter).  With MaaS models
     each LLM call can take 30-60s, and the graph has 4 nodes.
     """
-    kwargs: dict = {"timeout": 300.0, "follow_redirects": True}
+    kwargs: dict = {"timeout": 600.0, "follow_redirects": True}
     # Check if any agent URL is HTTPS (implies OpenShift routes with self-signed certs)
     agent_url = _get_agent_url(agent_name)
     needs_ca = _is_openshift_from_config() or agent_url.startswith("https://")
@@ -112,19 +112,31 @@ def _make_client(agent_name: str) -> httpx.Client:
 
 
 def _skip_if_unreachable(agent_name: str, agent_url: str) -> None:
-    """Verify agent is reachable — fail (not skip) if deployed but broken."""
+    """Verify agent is reachable — retry on transient errors (502/503)."""
+    import time
+
     client = _make_client(agent_name)
+    last_exc = None
     try:
-        resp = client.get(
-            f"{agent_url}/.well-known/agent-card.json",
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-    except Exception as exc:
+        for attempt in range(6):
+            try:
+                resp = client.get(
+                    f"{agent_url}/.well-known/agent-card.json",
+                    timeout=15.0,
+                )
+                if resp.status_code in (502, 503, 504):
+                    last_exc = Exception(f"HTTP {resp.status_code}")
+                    time.sleep(10)
+                    continue
+                resp.raise_for_status()
+                return
+            except Exception as exc:
+                last_exc = exc
+                time.sleep(10)
         env_key = f"SANDBOX_{agent_name.split('-', 1)[-1].upper()}_URL"
         pytest.fail(
-            f"Agent {agent_name} not reachable at {agent_url} "
-            f"(set {env_key} to the route URL): {exc}"
+            f"Agent {agent_name} not reachable at {agent_url} after 6 attempts "
+            f"(set {env_key} to the route URL): {last_exc}"
         )
     finally:
         client.close()
