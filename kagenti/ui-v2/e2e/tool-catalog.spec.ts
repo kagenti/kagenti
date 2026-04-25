@@ -97,6 +97,7 @@ test.describe('Tool Catalog - API Integration @extended', () => {
     await page.route('**/api/v1/tools**', (route) => {
       route.fulfill({
         status: 500,
+        contentType: 'application/json',
         body: JSON.stringify({ error: 'Internal server error' }),
       });
     });
@@ -104,9 +105,11 @@ test.describe('Tool Catalog - API Integration @extended', () => {
     await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/Error loading tools|error|failed/i).first()).toBeVisible({
-      timeout: 10000,
-    });
+    // Component renders EmptyStateHeader with titleText="Error loading tools" inside an <h4>
+    // Use a generous timeout to allow react-query retries to exhaust
+    await expect(
+      page.getByRole('heading', { name: /Error loading tools/i })
+    ).toBeVisible({ timeout: 30000 });
   });
 
   test('should handle empty tool list', async ({ page }) => {
@@ -124,8 +127,9 @@ test.describe('Tool Catalog - API Integration @extended', () => {
     await page.locator('nav a, nav button', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/No tools found/i).first()).toBeVisible({
-      timeout: 10000,
-    });
+    // Component renders EmptyStateHeader with titleText="No tools found" inside an <h4>
+    await expect(
+      page.getByRole('heading', { name: /No tools found/i })
+    ).toBeVisible({ timeout: 15000 });
   });
 });

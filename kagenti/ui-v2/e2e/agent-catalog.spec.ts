@@ -106,12 +106,10 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
   });
 
   test('should show agent status badge', async ({ page }) => {
-    // Wait for table to load
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/v1/agents') && response.status() === 200,
-      { timeout: 30000 }
-    );
+    // Wait for the table or empty state to be visible (API already called in beforeEach)
+    await expect(
+      page.getByRole('grid').or(page.getByText(/No agents found/i).first())
+    ).toBeVisible({ timeout: 15000 });
 
     // Look for status labels (Ready, Running, Progressing, etc.)
     const statusBadge = page.locator('.pf-v5-c-label').filter({
@@ -132,12 +130,10 @@ test.describe('Agent Catalog - With Deployed Agents @extended', () => {
   });
 
   test('should navigate to agent detail page when clicking agent name', async ({ page }) => {
-    // Wait for table to load
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/v1/agents') && response.status() === 200,
-      { timeout: 30000 }
-    );
+    // Wait for the table or empty state to be visible (API already called in beforeEach)
+    await expect(
+      page.getByRole('grid').or(page.getByText(/No agents found/i).first())
+    ).toBeVisible({ timeout: 15000 });
 
     // Find any agent link in the table (scoped to the table to avoid nav links)
     const table = page.getByRole('grid');
@@ -216,7 +212,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
     await page.goto('/');
     await loginIfNeeded(page);
 
-    // Mock an empty response
+    // Mock an empty response — return a plain array (agentService.list extracts .items)
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
         status: 200,
@@ -228,9 +224,9 @@ test.describe('Agent Catalog - API Integration @extended', () => {
     await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
 
-    // Verify empty state is shown (use .first() to avoid strict mode violation with multiple matches)
-    await expect(page.getByText(/No agents found/i).first()).toBeVisible({
-      timeout: 10000,
-    });
+    // Component renders EmptyStateHeader with titleText="No agents found" inside an <h4>
+    await expect(
+      page.getByRole('heading', { name: /No agents found/i })
+    ).toBeVisible({ timeout: 15000 });
   });
 });
