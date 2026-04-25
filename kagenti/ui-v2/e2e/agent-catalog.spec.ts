@@ -209,10 +209,7 @@ test.describe('Agent Catalog - API Integration @extended', () => {
   });
 
   test('should handle empty agent list', async ({ page }) => {
-    await page.goto('/');
-    await loginIfNeeded(page);
-
-    // Mock an empty response — return a plain array (agentService.list extracts .items)
+    // Set up mock BEFORE navigation to prevent react-query caching real data
     await page.route('**/api/v1/agents**', (route) => {
       route.fulfill({
         status: 200,
@@ -221,6 +218,8 @@ test.describe('Agent Catalog - API Integration @extended', () => {
       });
     });
 
+    await page.goto('/');
+    await loginIfNeeded(page);
     await page.locator('nav a, nav button', { hasText: 'Agents' }).first().click();
     await page.waitForLoadState('networkidle');
 
