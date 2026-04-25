@@ -239,10 +239,10 @@ for VARIANT in "${VARIANTS[@]}"; do
 
     # Wait for deployment — use shorter timeout with a retry to handle ImagePullBackOff
     if ! kubectl wait --for=condition=available --timeout=120s "deployment/$VARIANT" -n "$NAMESPACE" 2>/dev/null; then
-        log_warning "$VARIANT not ready after 120s, waiting 60s more for image pull..."
+        log_warn "$VARIANT not ready after 120s, waiting 60s more for image pull..."
         sleep 60
         if ! kubectl wait --for=condition=available --timeout=120s "deployment/$VARIANT" -n "$NAMESPACE" 2>/dev/null; then
-            log_warning "$VARIANT deployment not available (will retry route later)"
+            log_warn "$VARIANT deployment not available (will retry route later)"
             kubectl get pods -n "$NAMESPACE" -l "app.kubernetes.io/name=$VARIANT" || true
         fi
     fi
