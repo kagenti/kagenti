@@ -77,6 +77,7 @@ def _get_backend_url() -> str:
 # ---------------------------------------------------------------------------
 
 _cached_auth_headers: dict | None = None
+_token_acquired_at: float = 0
 
 
 def _get_auth_headers() -> dict:
@@ -86,12 +87,17 @@ def _get_auth_headers() -> dict:
     from the keycloak-initial-admin secret. When auth is disabled (Kind
     without Keycloak), returns empty headers.
 
-    The token is cached for the module lifetime to avoid repeated token
-    requests.
+    Token is cached but refreshed after 4 minutes (Keycloak default TTL is 5 min).
     """
-    global _cached_auth_headers
+    import time
+
+    global _cached_auth_headers, _token_acquired_at
     if _cached_auth_headers is not None:
-        return _cached_auth_headers
+        if not _cached_auth_headers:
+            return _cached_auth_headers
+        if time.time() - _token_acquired_at < 240:
+            return _cached_auth_headers
+        _cached_auth_headers = None
 
     # Try to get Keycloak credentials from K8s secret
     try:
@@ -185,6 +191,7 @@ def _get_auth_headers() -> dict:
             token_data = resp.json()
             access_token = token_data["access_token"]
             _cached_auth_headers = {"Authorization": f"Bearer {access_token}"}
+            _token_acquired_at = time.time()
             logger.info("Acquired Keycloak token for backend API calls")
             return _cached_auth_headers
         else:
