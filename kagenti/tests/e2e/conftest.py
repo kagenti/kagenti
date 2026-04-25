@@ -613,6 +613,16 @@ def pytest_collection_modifyitems(config, items):
     # Runtime override: disable rhoai tests when CRDs aren't present
     if os.getenv("ENABLE_RHOAI_TESTS", "").lower() == "false":
         enabled["rhoai"] = False
+    elif enabled.get("rhoai"):
+        try:
+            from kubernetes import client as _k8s_client
+
+            api = _k8s_client.ApiextensionsV1Api()
+            api.read_custom_resource_definition(
+                "datascienceclusters.datasciencecluster.opendatahub.io"
+            )
+        except Exception:
+            enabled["rhoai"] = False
 
     # Detect OpenShift from config
     is_openshift = _detect_openshift_from_config(kagenti_config)

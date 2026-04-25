@@ -74,28 +74,65 @@ async function getSessionContextId(page: Page): Promise<string> {
   return match?.[1] || '';
 }
 
+/**
+ * Capture the Bearer token from outgoing API requests.
+ *
+ * localStorage/sessionStorage access throws SecurityError when the page
+ * context is cross-origin (e.g. after Keycloak OIDC redirect on HTTPS).
+ * Instead, we intercept the Authorization header that the app already
+ * attaches to its own fetch/XHR calls to /api/*.
+ */
+let _capturedToken = '';
+
+function installTokenCapture(page: Page) {
+  page.on('request', (req) => {
+    const auth = req.headers()['authorization'] || '';
+    if (auth.startsWith('Bearer ')) {
+      _capturedToken = auth.slice('Bearer '.length);
+    }
+  });
+}
+
 async function getAuthHeaders(page: Page): Promise<Record<string, string>> {
-  const token = await page.evaluate(() => {
-    for (const storage of [localStorage, sessionStorage]) {
-      for (let i = 0; i < storage.length; i++) {
-        const key = storage.key(i);
-        if (key && (key.includes('token') || key.includes('kc-'))) {
-          try {
-            const val = JSON.parse(storage.getItem(key) || '');
-            if (val?.access_token) return val.access_token;
-            if (val?.token) return val.token;
-          } catch {
-            const val = storage.getItem(key) || '';
-            if (val.startsWith('eyJ')) return val;
+  // If we already captured a token from a prior request, use it.
+  if (_capturedToken) {
+    return { Authorization: `Bearer ${_capturedToken}`, 'Content-Type': 'application/json' };
+  }
+
+  // Trigger an API call so the app sends its token, then capture it.
+  // Navigate to a page that makes an API call, or make a lightweight request.
+  // Wait briefly and try to capture from any in-flight requests.
+  try {
+    const token = await page.evaluate(() => {
+      try {
+        for (const storage of [localStorage, sessionStorage]) {
+          for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (key && (key.includes('token') || key.includes('kc-'))) {
+              try {
+                const val = JSON.parse(storage.getItem(key) || '');
+                if (val?.access_token) return val.access_token;
+                if (val?.token) return val.token;
+              } catch {
+                const val = storage.getItem(key) || '';
+                if (val.startsWith('eyJ')) return val;
+              }
+            }
           }
         }
+      } catch {
+        // SecurityError: cross-origin localStorage access denied — expected on HTTPS clusters
       }
+      return '';
+    });
+    if (token) {
+      _capturedToken = token;
+      return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     }
-    return '';
-  });
-  if (token) {
-    return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  } catch {
+    // page.evaluate itself can throw if the page is on a cross-origin frame
   }
+
   return { 'Content-Type': 'application/json' };
 }
 
@@ -174,6 +211,13 @@ async function getChildSessions(page: Page, contextId: string) {
 
 test.describe('Sidecar Agents', () => {
   test.setTimeout(600_000);
+
+  test.beforeEach(async ({ page }) => {
+    // Reset captured token for each test (fresh page context)
+    _capturedToken = '';
+    // Start intercepting Authorization headers from the app's own API calls
+    installTokenCapture(page);
+  });
 
   test('sidecar panel: enable, configure, verify API, disable lifecycle', async ({ page }) => {
     // Skip if sidecar endpoints aren't available (returns 500 when manager not initialized)
