@@ -83,12 +83,15 @@ async function sendAndWaitForResponse(
   timeout = AGENT_TIMEOUT
 ): Promise<string> {
   const chatInput = page.getByPlaceholder(/Type your message/i);
-  await expect(chatInput).toBeVisible({ timeout: 10000 });
-  await expect(chatInput).toBeEnabled({ timeout: 5000 });
+  await expect(chatInput).toBeVisible({ timeout: 15000 });
+  await expect(chatInput).toBeEnabled({ timeout: 15000 });
   await chatInput.fill(message);
 
   const sendButton = page.getByRole('button', { name: /Send/i });
-  await expect(sendButton).toBeEnabled({ timeout: 5000 });
+  // The Send button may stay disabled until the session context is fully
+  // initialised (agent selected, session created). Use a generous timeout
+  // to avoid flakes on slow clusters.
+  await expect(sendButton).toBeEnabled({ timeout: 15000 });
   await sendButton.click();
 
   // Verify user message appears immediately
@@ -140,6 +143,9 @@ async function navigateToSandbox(page: Page) {
  * messages=[], agentLoops empty, and isStreaming=false.
  */
 async function startNewSession(page: Page) {
+  // Capture the current session ID so we can detect when it changes
+  const oldSessionId = getSessionIdFromUrl(page);
+
   const newSessionBtn = page.getByRole('button', { name: /New Session/i });
   await newSessionBtn.click();
   // Handle New Session modal
@@ -147,6 +153,15 @@ async function startNewSession(page: Page) {
   if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
     await startBtn.click();
   }
+
+  // Wait for the URL to change — the new session gets a fresh session= param
+  // or the old one is cleared. This is the most reliable signal that the
+  // backend has acknowledged the new session.
+  await expect(async () => {
+    const currentId = getSessionIdFromUrl(page);
+    // Either the session param was removed (fresh state) or changed to a new value
+    expect(currentId !== oldSessionId || currentId === '').toBe(true);
+  }).toPass({ timeout: 15000, intervals: [500, 1000, 1000, 2000, 2000] });
 
   // Wait for the session to fully reset. SESSION_CLEARED sets messages=[] and
   // agentLoops to empty Map, but React batching may delay the render cycle.
@@ -165,6 +180,13 @@ async function startNewSession(page: Page) {
       .catch(() => false);
     expect(welcomeVisible || chatEmpty).toBe(true);
   }).toPass({ timeout: 15000, intervals: [500, 1000, 1000, 2000, 2000] });
+
+  // Wait for chat input to be fully enabled before any interaction —
+  // after session reset the input may briefly be disabled while the
+  // new session context initialises.
+  const chatInput = page.getByPlaceholder(/Type your message/i);
+  await expect(chatInput).toBeVisible({ timeout: 10000 });
+  await expect(chatInput).toBeEnabled({ timeout: 10000 });
 }
 
 /**
@@ -288,9 +310,21 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // ==== PART 2: Isolated multi-turn conversation in Session B (4 turns) ====
 
+    // Allow backend time to finalise Session A before creating Session B.
+    // Without this gap the backend may still be processing the last SSE events
+    // from Session A, and Session B can end up with a stale context_id.
+    await page.waitForTimeout(5000);
+
     // ---- Start Session B ----
     await startNewSession(page);
     await snap(page, 'new-session-b');
+
+    // Extra wait for the new session context to fully initialise —
+    // the Send button must be enabled and the URL must NOT carry Session A's id.
+    await expect(async () => {
+      const currentSid = getSessionIdFromUrl(page);
+      expect(currentSid).not.toBe(sessionAId);
+    }).toPass({ timeout: 10000, intervals: [500, 1000, 2000] });
 
     // ---- Turn 1: Unique marker for Session B ----
     await sendAndWaitForResponse(

@@ -90,15 +90,48 @@ async function deployAgent(page: Page, memoryLimit: string, cpuLimit: string) {
 
 async function waitForAgentReady(page: Page, timeoutMs = 180000) {
   const deadline = Date.now() + timeoutMs;
+
+  // Phase 1: Wait for Kubernetes readyReplicas=1
+  let kubeReady = false;
   while (Date.now() < deadline) {
     const replicas = kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.readyReplicas}'`);
     if (replicas === '1') {
-      console.log('[redeploy] Agent ready');
-      return true;
+      kubeReady = true;
+      console.log('[redeploy] Kubernetes reports readyReplicas=1');
+      break;
     }
     await page.waitForTimeout(5000);
   }
-  return false;
+  if (!kubeReady) return false;
+
+  // Phase 2: Wait for the agent's A2A endpoint to actually respond.
+  // The pod can be "Ready" per Kubernetes but the Python server inside
+  // may still be starting (importing models, connecting to DB, etc.).
+  // Poll the health endpoint via kubectl exec for up to 120s.
+  console.log('[redeploy] Polling agent A2A endpoint for readiness...');
+  let agentHealthy = false;
+  const healthDeadline = Math.min(Date.now() + 120000, deadline);
+  while (Date.now() < healthDeadline) {
+    const result = kc(
+      `exec deploy/${AGENT_NAME} -n ${NAMESPACE} -- python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/agent-card.json', timeout=5); print('ready')"`,
+      15000
+    );
+    if (result.includes('ready')) {
+      agentHealthy = true;
+      console.log('[redeploy] Agent A2A endpoint is responding');
+      break;
+    }
+    await page.waitForTimeout(5000);
+  }
+  if (!agentHealthy) {
+    console.log('[redeploy] WARNING: Agent health check timed out — proceeding anyway');
+  }
+
+  // Phase 3: Extra buffer for the readiness probe to propagate to
+  // the service endpoint and for the UI to pick up the healthy state.
+  await page.waitForTimeout(10000);
+  console.log('[redeploy] Agent ready (all phases complete)');
+  return true;
 }
 
 async function sendMessageAndWait(page: Page, message: string) {
@@ -115,10 +148,25 @@ async function sendMessageAndWait(page: Page, message: string) {
   }, AGENT_NAME);
   await page.waitForTimeout(2000);
 
-  const input = page.locator('textarea[aria-label="Message input"]');
-  await expect(input).toBeVisible({ timeout: 15000 });
+  // Try multiple selectors — the input may be a textarea or a placeholder-based input
+  let input = page.locator('textarea[aria-label="Message input"]');
+  if (!(await input.isVisible({ timeout: 5000 }).catch(() => false))) {
+    input = page.getByPlaceholder(/Type your message/i);
+  }
+  await expect(input).toBeVisible({ timeout: 30000 });
+  // Wait for the input to be enabled — after a redeploy the UI may keep it
+  // disabled until the agent health check passes. Use a generous timeout.
+  await expect(input).toBeEnabled({ timeout: 60000 });
   await input.fill(message);
-  await input.press('Enter');
+
+  // Use the Send button instead of Enter — more reliable, and we can
+  // assert it's enabled (proves the agent is reachable from the UI).
+  let sendBtn = page.locator('button[type="submit"]');
+  if (!(await sendBtn.isVisible({ timeout: 3000 }).catch(() => false))) {
+    sendBtn = page.getByRole('button', { name: /Send/i });
+  }
+  await expect(sendBtn).toBeEnabled({ timeout: 30000 });
+  await sendBtn.click();
   console.log(`[redeploy] Sent: ${message}`);
 
   // Wait for agent response

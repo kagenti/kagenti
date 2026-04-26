@@ -302,13 +302,46 @@ test.describe('Budget Persistence Across Restart', () => {
     console.log('[budget-restart] Scaling agent back to 1...');
     kc(`scale deploy/${RESTART_AGENT} -n ${NAMESPACE} --replicas=1`);
     kc(`rollout status deploy/${RESTART_AGENT} -n ${NAMESPACE} --timeout=120s`, 150000);
+    console.log('[budget-restart] Rollout complete, waiting for agent health...');
+
+    // Wait for the agent's A2A endpoint to respond — the pod may be Running
+    // but the Python server inside hasn't started yet. Poll the health
+    // endpoint via kubectl exec for up to 120s.
+    let agentHealthy = false;
+    for (let i = 0; i < 24; i++) {
+      const result = kc(
+        `exec deploy/${RESTART_AGENT} -n ${NAMESPACE} -- python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/agent-card.json', timeout=5); print('ready')"`,
+        15000
+      );
+      if (result.includes('ready')) {
+        agentHealthy = true;
+        console.log(`[budget-restart] Agent healthy after ${(i + 1) * 5}s`);
+        break;
+      }
+      execSync('sleep 5');
+    }
+    if (!agentHealthy) {
+      console.log('[budget-restart] WARNING: Agent health check timed out — proceeding anyway');
+    }
+
+    // Extra buffer for readiness probe to propagate to the service endpoint
+    await page.waitForTimeout(10000);
     console.log('[budget-restart] Agent is back');
 
-    // Step 4: Switch to chat and send follow-up in the SAME session
+    // Step 4: Switch to chat and send follow-up in the SAME session.
+    // Use a longer, unique prompt that FORCES actual LLM processing —
+    // short prompts like "Read the file" can return cached/error responses
+    // that consume zero tokens, making the budget check flaky.
     const chatTab = page.locator('[role="tab"]').filter({ hasText: /Chat/i });
     await chatTab.click();
 
-    await sendMessage(page, 'Read the file /workspace/budget-test.txt');
+    const uniqueMarker = `restart-${Date.now().toString(36)}`;
+    await sendMessage(
+      page,
+      `After the pod restart, write a new file called /workspace/${uniqueMarker}.txt ` +
+      `with the content "budget persistence test". Then list all files in /workspace/ ` +
+      `and tell me the total count. Start your response with "${uniqueMarker}".`
+    );
     await waitForResponse(page, 180000);
 
     // Step 5: Budget MUST still be visible and >= pre-restart value.
@@ -317,19 +350,37 @@ test.describe('Budget Persistence Across Restart', () => {
     // The Stats tab now fetches cumulative totals from the proxy API,
     // but that fetch is async — poll until the value stabilises above
     // the pre-restart baseline.
+
+    // First, verify the agent actually completed processing by checking
+    // that the loop card reached a terminal state. Without this, the
+    // stats tab may show stale pre-restart values.
+    const loopCards = page.locator('[data-testid="agent-loop-card"]');
+    await expect(async () => {
+      const lastCard = loopCards.last();
+      const isVisible = await lastCard.isVisible().catch(() => false);
+      if (!isVisible) return;
+      const activeCount = await lastCard.locator('text=/planning|executing|reflecting/').count();
+      expect(activeCount).toBe(0);
+    }).toPass({ timeout: 30000, intervals: [2000, 3000, 3000, 5000] });
+    // Allow the stats aggregation to settle after the loop completes
+    await page.waitForTimeout(3000);
+
     await switchToStatsTab(page);
     await expect(budgetTokensUsed).toBeVisible({ timeout: 15000 });
 
-    // Poll for up to 60 s: the proxy API fetch may lag behind the SSE stream,
+    // Poll for up to 90 s: the proxy API fetch may lag behind the SSE stream,
     // especially after pod restart when the proxy reconnects.
     let tokensAfterRestart = 0;
-    const pollDeadline = Date.now() + 60000;
+    const pollDeadline = Date.now() + 90000;
     while (Date.now() < pollDeadline) {
       tokensAfterRestart = Number(
         (await budgetTokensUsed.textContent() || '0').replace(/,/g, '')
       );
       if (tokensAfterRestart > tokensBeforeRestart) break;
-      await page.waitForTimeout(2000);
+      // Re-click the Stats tab to force a refresh of the proxy API data
+      const statsTabRefresh = page.locator('[role="tab"]').filter({ hasText: /Stats/i });
+      await statsTabRefresh.click();
+      await page.waitForTimeout(3000);
     }
     console.log(`[budget-restart] After restart: ${tokensAfterRestart.toLocaleString()}`);
 
