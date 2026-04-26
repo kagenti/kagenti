@@ -1107,17 +1107,20 @@ export const SandboxPage: React.FC = () => {
   /** Start a new session with the chosen agent (from the New Session modal). */
   const handleNewSession = useCallback(
     (agentName: string) => {
-      selectedAgentRef.current = agentName; // sync ref immediately
+      // Clear URL param FIRST — setSearchParams is batched by React, so
+      // clear it before state changes to ensure the URL updates before
+      // any re-render can read the stale session= param.
+      setSearchParams({}, { replace: true });
+      localStorage.removeItem(STORAGE_KEY_SESSION);
+      contextIdRef.current = '';
+      selectedAgentRef.current = agentName;
       setSelectedAgent(agentName);
-      // Clear contextId to start fresh (no existing session)
       setContextId('');
       sessionDispatch({ type: 'SESSION_CLEARED' });
       setInput('');
       setStreamingContent('');
       setError(null);
       shouldAutoScroll.current = true;
-      setSearchParams({});
-      localStorage.removeItem(STORAGE_KEY_SESSION);
     },
     [setSearchParams, sessionDispatch]
   );

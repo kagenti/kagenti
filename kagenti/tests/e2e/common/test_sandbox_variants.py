@@ -99,6 +99,7 @@ def _make_client(agent_name: str) -> httpx.Client:
     kwargs: dict = {
         "timeout": httpx.Timeout(connect=30, read=300, write=30, pool=30),
         "follow_redirects": True,
+        "limits": httpx.Limits(max_connections=1, max_keepalive_connections=0),
     }
     # Check if any agent URL is HTTPS (implies OpenShift routes with self-signed certs)
     agent_url = _get_agent_url(agent_name)

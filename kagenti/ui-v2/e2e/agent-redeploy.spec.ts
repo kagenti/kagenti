@@ -102,7 +102,13 @@ async function waitForAgentReady(page: Page, timeoutMs = 180000) {
     }
     await page.waitForTimeout(5000);
   }
-  if (!kubeReady) return false;
+  if (!kubeReady) {
+    const podStatus = kc(`get pods -n ${NAMESPACE} -l app.kubernetes.io/name=${AGENT_NAME} -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{range .status.containerStatuses[*]}{.state}{end}{"\\n"}{end}'`);
+    const deployStatus = kc(`get deploy ${AGENT_NAME} -n ${NAMESPACE} -o jsonpath='{.status.conditions[*].message}'`);
+    console.error(`[redeploy] FAILED: Pod not ready. Pods: ${podStatus}`);
+    console.error(`[redeploy] Deploy conditions: ${deployStatus}`);
+    return false;
+  }
 
   // Phase 2: Wait for the agent's A2A endpoint to actually respond.
   // The pod can be "Ready" per Kubernetes but the Python server inside
