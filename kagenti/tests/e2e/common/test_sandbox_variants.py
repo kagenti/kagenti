@@ -96,7 +96,10 @@ def _make_client(agent_name: str) -> httpx.Client:
     graph completes (router+planner+executor+reporter).  With MaaS models
     each LLM call can take 30-60s, and the graph has 4 nodes.
     """
-    kwargs: dict = {"timeout": 600.0, "follow_redirects": True}
+    kwargs: dict = {
+        "timeout": httpx.Timeout(connect=30, read=120, write=30, pool=30),
+        "follow_redirects": True,
+    }
     # Check if any agent URL is HTTPS (implies OpenShift routes with self-signed certs)
     agent_url = _get_agent_url(agent_name)
     needs_ca = _is_openshift_from_config() or agent_url.startswith("https://")
@@ -275,6 +278,7 @@ class TestAgentCard:
         client.close()
 
 
+@pytest.mark.timeout(900)
 @pytest.mark.parametrize("agent_name", AGENT_VARIANTS)
 class TestMultiTurnConversation:
     """Verify multi-turn conversation with tool calls for each variant."""
@@ -406,6 +410,7 @@ class TestMultiTurnConversation:
         client.close()
 
 
+@pytest.mark.timeout(900)
 @pytest.mark.parametrize("agent_name", AGENT_VARIANTS)
 class TestSessionIsolation:
     """Verify that different sessions are isolated from each other."""
