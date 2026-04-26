@@ -18,8 +18,8 @@ cd "$REPO_ROOT/kagenti"
 
 # Use environment variables if set, otherwise auto-detect
 if [ -z "${AGENT_URL:-}" ]; then
-    # Try OpenShift route first
-    ROUTE_URL=$(kubectl get route weather-service -n team1 -o jsonpath='{.spec.host}' 2>/dev/null || true)
+    # Try OpenShift route first (oc or kubectl)
+    ROUTE_URL=$(oc get route weather-service -n team1 -o jsonpath='{.spec.host}' 2>/dev/null || kubectl get route weather-service -n team1 -o jsonpath='{.spec.host}' 2>/dev/null || true)
     if [ -n "$ROUTE_URL" ]; then
         export AGENT_URL="https://$ROUTE_URL"
     else
