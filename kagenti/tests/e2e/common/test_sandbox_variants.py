@@ -243,6 +243,29 @@ def _extract_text(result: dict) -> str:
     return combined
 
 
+def _is_tool_refusal(text: str) -> bool:
+    """Detect when the LLM responded conversationally instead of calling a tool.
+
+    With tool_choice="auto", simpler agent variants (basic, restricted)
+    sometimes emit a "ready to help" reply rather than invoking write_file
+    or read_file.  This helper catches those patterns so the caller can
+    retry with a more forceful prompt.
+    """
+    lower = text.lower()
+    refusal_phrases = (
+        "i am ready",
+        "i'm ready",
+        "ready to help",
+        "ready to assist",
+        "how can i help",
+        "how can i assist",
+        "what would you like",
+        "let me know",
+        "respond_to_user",
+    )
+    return any(phrase in lower for phrase in refusal_phrases)
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -320,7 +343,10 @@ class TestMultiTurnConversation:
         """Agent can write a file and read it back in the same session.
 
         Retries with a fresh context_id on empty write response (transient
-        reporter accumulation issue).
+        reporter accumulation issue).  Also retries within the same session
+        when the LLM returns a conversational reply (e.g. "I am ready...")
+        instead of calling the file tool -- a known non-determinism with
+        tool_choice="auto" on simpler agent variants.
         """
         agent_url = _get_agent_url(agent_name)
         _skip_if_unreachable(agent_name, agent_url)
@@ -332,24 +358,58 @@ class TestMultiTurnConversation:
             context_id = uuid4().hex[:36]
             last_marker = f"variant-test-{agent_name}-{uuid4().hex[:8]}"
 
+            # Explicit prompt that steers the LLM toward tool invocation
+            write_prompt = (
+                f"Use the write_file tool to create a file named variant-marker.txt "
+                f'with the exact content "{last_marker}". '
+                f"Do NOT just respond with text -- you MUST call the write_file tool."
+            )
+
             result1 = _send_message(
                 client,
                 agent_url,
-                f'Write the text "{last_marker}" to a file called variant-marker.txt',
+                write_prompt,
                 context_id,
             )
             text1 = _extract_text(result1)
-            if not text1:
-                if attempt < 4:
-                    import time
 
-                    time.sleep(2)
-                continue
+            # Detect LLM non-determinism: agent replied conversationally
+            # instead of calling the tool.  Retry within the same session
+            # (the LLM usually complies on a follow-up nudge).
+            if not text1 or _is_tool_refusal(text1):
+                if not text1:
+                    # Empty response -- retry with fresh context
+                    if attempt < 4:
+                        import time
+
+                        time.sleep(2)
+                    continue
+                # Non-empty but refused to call tool -- nudge once more
+                result1 = _send_message(
+                    client,
+                    agent_url,
+                    (
+                        "You did not write the file. Please call the write_file "
+                        "tool NOW to create variant-marker.txt with content "
+                        f'"{last_marker}". Do not reply with text, use the tool.'
+                    ),
+                    context_id,
+                )
+                text1 = _extract_text(result1)
+                if not text1 or _is_tool_refusal(text1):
+                    if attempt < 4:
+                        import time
+
+                        time.sleep(2)
+                    continue
 
             result2 = _send_message(
                 client,
                 agent_url,
-                "Read the file variant-marker.txt and tell me its exact contents.",
+                (
+                    "Use the read_file tool to read the file variant-marker.txt "
+                    "and show me its exact contents."
+                ),
                 context_id,
             )
             text2 = _extract_text(result2)
@@ -436,7 +496,11 @@ class TestSessionIsolation:
                 _send_message(
                     client,
                     agent_url,
-                    f'Write "{last_marker}" to isolation-test.txt',
+                    (
+                        f"Use the write_file tool to create a file named "
+                        f'isolation-test.txt with content "{last_marker}". '
+                        f"You MUST call the write_file tool."
+                    ),
                     session_a,
                 )
 
