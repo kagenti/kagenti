@@ -97,7 +97,7 @@ def _make_client(agent_name: str) -> httpx.Client:
     each LLM call can take 30-60s, and the graph has 4 nodes.
     """
     kwargs: dict = {
-        "timeout": httpx.Timeout(connect=30, read=120, write=30, pool=30),
+        "timeout": httpx.Timeout(connect=30, read=300, write=30, pool=30),
         "follow_redirects": True,
     }
     # Check if any agent URL is HTTPS (implies OpenShift routes with self-signed certs)
