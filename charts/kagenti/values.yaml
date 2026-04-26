@@ -225,6 +225,11 @@ kagenti-webhook-chart:
 # ------------------------------------------------------------------
 kagenti-operator-chart:
   controllerManager:
+    serviceAccount:
+      annotations: {}
+    pod:
+      labels: {}
+      annotations: {}
     container:
       cmd: /manager
       image:
