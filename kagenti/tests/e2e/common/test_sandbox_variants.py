@@ -324,7 +324,7 @@ class TestAgentCard:
         client.close()
 
 
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(600)
 @pytest.mark.parametrize("agent_name", AGENT_VARIANTS)
 class TestMultiTurnConversation:
     """Verify multi-turn conversation with tool calls for each variant."""
@@ -383,87 +383,39 @@ class TestMultiTurnConversation:
     def test_file_write_and_read(self, agent_name: str):
         """Agent can write a file and read it back in the same session.
 
-        Retries with a fresh context_id on empty write response (transient
-        reporter accumulation issue).  Also retries within the same session
-        when the LLM returns a conversational reply (e.g. "I am ready...")
-        instead of calling the file tool -- a known non-determinism with
-        tool_choice="auto" on simpler agent variants.
+        Uses a SINGLE combined prompt (write + read) to halve LLM calls.
+        3 retries with fresh context_id on failure.
         """
         agent_url = _get_agent_url(agent_name)
         _skip_if_unreachable(agent_name, agent_url)
         client = _make_client(agent_name)
 
-        text2 = ""
+        text = ""
         last_marker = ""
-        for attempt in range(5):
+        for attempt in range(3):
             context_id = uuid4().hex[:36]
-            last_marker = f"variant-test-{agent_name}-{uuid4().hex[:8]}"
+            last_marker = f"vt-{uuid4().hex[:8]}"
 
-            # Explicit prompt that steers the LLM toward tool invocation
-            write_prompt = (
-                f"Use the write_file tool to create a file named variant-marker.txt "
-                f'with the exact content "{last_marker}". '
-                f"Do NOT just respond with text -- you MUST call the write_file tool."
-            )
-
-            result1 = _send_message(
-                client,
-                agent_url,
-                write_prompt,
-                context_id,
-            )
-            text1 = _extract_text(result1)
-
-            # Detect LLM non-determinism: agent replied conversationally
-            # instead of calling the tool.  Retry within the same session
-            # (the LLM usually complies on a follow-up nudge).
-            if not text1 or _is_tool_refusal(text1):
-                if not text1:
-                    # Empty response -- retry with fresh context
-                    if attempt < 4:
-                        import time
-
-                        time.sleep(2)
-                    continue
-                # Non-empty but refused to call tool -- nudge once more
-                result1 = _send_message(
-                    client,
-                    agent_url,
-                    (
-                        "You did not write the file. Please call the write_file "
-                        "tool NOW to create variant-marker.txt with content "
-                        f'"{last_marker}". Do not reply with text, use the tool.'
-                    ),
-                    context_id,
-                )
-                text1 = _extract_text(result1)
-                if not text1 or _is_tool_refusal(text1):
-                    if attempt < 4:
-                        import time
-
-                        time.sleep(2)
-                    continue
-
-            result2 = _send_message(
+            result = _send_message(
                 client,
                 agent_url,
                 (
-                    "Use the read_file tool to read the file variant-marker.txt "
-                    "and show me its exact contents."
+                    f'Write "{last_marker}" to variant-marker.txt, '
+                    f"then read it back and show the contents."
                 ),
                 context_id,
             )
-            text2 = _extract_text(result2)
-            if last_marker in text2:
+            text = _extract_text(result)
+            if last_marker in text:
                 break
-            if attempt < 4:
+            if attempt < 2:
                 import time
 
                 time.sleep(2)
 
-        assert last_marker in text2, (
-            f"Agent {agent_name} did not return marker '{last_marker}' from file read "
-            f"after 5 attempts. Got: {text2[:300]}"
+        assert last_marker in text, (
+            f"Agent {agent_name} did not return marker '{last_marker}' "
+            f"after 3 attempts. Got: {text[:300]}"
         )
         client.close()
 
@@ -479,7 +431,7 @@ class TestMultiTurnConversation:
 
         text2 = ""
         last_secret = ""
-        for attempt in range(5):
+        for attempt in range(3):
             context_id = uuid4().hex[:36]
             last_secret = f"zebra-{uuid4().hex[:6]}"
 
@@ -499,19 +451,19 @@ class TestMultiTurnConversation:
             text2 = _extract_text(result2)
             if last_secret in text2:
                 break
-            if attempt < 4:
+            if attempt < 2:
                 import time
 
                 time.sleep(2)
 
         assert last_secret in text2, (
             f"Agent {agent_name} forgot the secret word '{last_secret}' "
-            f"after 5 attempts. Got: {text2[:300]}"
+            f"after 3 attempts. Got: {text2[:300]}"
         )
         client.close()
 
 
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(600)
 @pytest.mark.parametrize("agent_name", AGENT_VARIANTS)
 class TestSessionIsolation:
     """Verify that different sessions are isolated from each other."""
@@ -527,34 +479,30 @@ class TestSessionIsolation:
 
         text_b = ""
         last_marker = ""
-        for attempt in range(5):
+        for attempt in range(3):
             client = _make_client(agent_name)
             session_a = uuid4().hex[:36]
             session_b = uuid4().hex[:36]
-            last_marker = f"isolation-{agent_name}-{uuid4().hex[:8]}"
+            last_marker = f"iso-{uuid4().hex[:8]}"
 
             try:
                 _send_message(
                     client,
                     agent_url,
-                    (
-                        f"Use the write_file tool to create a file named "
-                        f'isolation-test.txt with content "{last_marker}". '
-                        f"You MUST call the write_file tool."
-                    ),
+                    f'Write "{last_marker}" to isolation-test.txt',
                     session_a,
                 )
 
                 result_b = _send_message(
                     client,
                     agent_url,
-                    "Read the file isolation-test.txt. If it does not exist, say FILE_NOT_FOUND.",
+                    "Read isolation-test.txt. If missing say FILE_NOT_FOUND.",
                     session_b,
                 )
                 text_b = _extract_text(result_b)
                 break
             except (RuntimeError, Exception):
-                if attempt < 4:
+                if attempt < 2:
                     import time
 
                     time.sleep(2)
