@@ -16,7 +16,7 @@ import { execSync } from 'child_process';
 const AGENT_NAME = 'rca-redeploy-test';
 const NAMESPACE = 'team1';
 const REPO_URL = 'https://github.com/kagenti/kagenti';
-const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'litellm-proxy-secret';
+const LLM_SECRET_NAME = process.env.LLM_SECRET_NAME || 'litellm-virtual-keys';
 
 function getKubeconfig(): string {
   return process.env.KUBECONFIG || `${process.env.HOME}/clusters/hcp/kagenti-team-sbox42/auth/kubeconfig`;

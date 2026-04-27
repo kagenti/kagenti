@@ -387,6 +387,19 @@ test.describe('Budget Persistence Across Restart', () => {
     // Budget MUST NOT have reset — tokens after >= tokens before
     expect(tokensAfterRestart).toBeGreaterThanOrEqual(tokensBeforeRestart);
 
+    // If budget didn't increase (agent may have errored), verify the agent
+    // at least produced a response in the chat area — the test shouldn't
+    // silently pass without the agent doing any work.
+    if (tokensAfterRestart === tokensBeforeRestart) {
+      console.log('[budget-restart] Budget did not increase — verifying agent responded in chat');
+      const chatTab2 = page.locator('[role="tab"]').filter({ hasText: /Chat/i });
+      await chatTab2.click();
+      const chatArea = page.locator('[data-testid="chat-messages"]');
+      const chatText = await chatArea.textContent() || '';
+      expect(chatText.length).toBeGreaterThan(50);
+      console.log(`[budget-restart] Chat area has content (${chatText.length} chars) — agent responded`);
+    }
+
     console.log(
       `[budget-restart] Budget persisted: ${tokensBeforeRestart.toLocaleString()} -> ` +
         `${tokensAfterRestart.toLocaleString()} (delta: +${(tokensAfterRestart - tokensBeforeRestart).toLocaleString()})`

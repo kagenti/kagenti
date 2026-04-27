@@ -757,7 +757,13 @@ export const SandboxPage: React.FC = () => {
   const selectedAgentRef = useRef(selectedAgent);
   useEffect(() => { selectedAgentRef.current = selectedAgent; }, [selectedAgent]);
   const contextIdRef = useRef(contextId);
-  useEffect(() => { contextIdRef.current = contextId; }, [contextId]);
+  // Guard: when creating a new session, skip syncing contextIdRef from stale
+  // React state so the old contextId doesn't overwrite the cleared ref.
+  const isCreatingNewSessionRef = useRef(false);
+  useEffect(() => {
+    if (isCreatingNewSessionRef.current) return;
+    contextIdRef.current = contextId;
+  }, [contextId]);
 
   // Sync selectedAgent when URL ?agent= param changes (e.g. SPA navigation)
   useEffect(() => {
@@ -1107,6 +1113,9 @@ export const SandboxPage: React.FC = () => {
   /** Start a new session with the chosen agent (from the New Session modal). */
   const handleNewSession = useCallback(
     (agentName: string) => {
+      // Prevent the contextIdRef sync effect from re-injecting the old
+      // contextId while we are transitioning to a blank session.
+      isCreatingNewSessionRef.current = true;
       // Clear URL param FIRST — setSearchParams is batched by React, so
       // clear it before state changes to ensure the URL updates before
       // any re-render can read the stale session= param.
@@ -1248,6 +1257,8 @@ export const SandboxPage: React.FC = () => {
             // wipes messages. Instead, save to ref + URL and set state in finally.
             if (data.session_id && !contextIdRef.current) {
               contextIdRef.current = data.session_id;
+              // New session has been assigned an ID — allow contextIdRef sync again
+              isCreatingNewSessionRef.current = false;
               // Update URL immediately (visual feedback, no state change)
               setSearchParams((prev) => {
                 const next = new URLSearchParams(prev);

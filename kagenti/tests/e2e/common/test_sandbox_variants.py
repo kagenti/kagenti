@@ -24,12 +24,16 @@ Usage:
 """
 
 import json
+import logging
 import os
 import pathlib
 
 import pytest
 import httpx
+import httpcore
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 
@@ -172,6 +176,8 @@ def _send_message(
     }
 
     result: dict = {}
+    max_lines = 2000
+    lines_read = 0
     try:
         with client.stream(
             "POST",
@@ -181,6 +187,10 @@ def _send_message(
         ) as response:
             response.raise_for_status()
             for line in response.iter_lines():
+                lines_read += 1
+                if lines_read > max_lines:
+                    logger.warning("SSE stream exceeded %d lines, breaking", max_lines)
+                    break
                 if not line or line.startswith(":"):
                     continue
                 if line.startswith("data: "):
@@ -211,8 +221,20 @@ def _send_message(
                         if "artifacts" in event_result:
                             result["artifacts"] = event_result["artifacts"]
                         break
-    except httpx.RemoteProtocolError:
-        pass
+    except httpx.RemoteProtocolError as exc:
+        logger.warning("RemoteProtocolError during SSE stream: %s", exc)
+    except (
+        httpx.ReadError,
+        httpx.TimeoutException,
+        httpx.ConnectError,
+        httpcore.ReadError,
+    ) as exc:
+        logger.warning(
+            "Connection error during SSE stream (%s): %s",
+            type(exc).__name__,
+            exc,
+        )
+        return {}
 
     if not result:
         raise RuntimeError("No events received from SSE stream")
@@ -311,7 +333,8 @@ class TestMultiTurnConversation:
         """Agent can execute a shell command and return output.
 
         Retries with a fresh context_id if the reporter returns an
-        empty/placeholder response (transient accumulator issue).
+        empty/placeholder response (transient accumulator issue) or
+        if the budget proxy returns a 402 / exhaustion error.
         """
         agent_url = _get_agent_url(agent_name)
         _skip_if_unreachable(agent_name, agent_url)
@@ -323,11 +346,28 @@ class TestMultiTurnConversation:
             result = _send_message(
                 client,
                 agent_url,
-                "Run the command: echo hello-from-test",
+                "Run: echo hello-from-test",
                 context_id,
             )
             text = _extract_text(result)
             if text:
+                # Budget exhaustion — retry with fresh context_id
+                text_lower = text.lower()
+                if any(
+                    kw in text_lower
+                    for kw in ("budget", "exhausted", "402", "rate limit")
+                ):
+                    logger.warning(
+                        "Budget exhaustion detected on attempt %d for %s: %s",
+                        attempt + 1,
+                        agent_name,
+                        text[:200],
+                    )
+                    if attempt < 4:
+                        import time
+
+                        time.sleep(2)
+                    continue
                 break
             if attempt < 4:
                 import time
