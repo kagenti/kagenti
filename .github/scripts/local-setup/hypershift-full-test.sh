@@ -1089,6 +1089,35 @@ if [ "$RUN_TEST" = "true" ]; then
         fi
     done
 
+    # Wait for backend to be healthy after any image patches above.
+    # The 37-build step triggers rollout restarts — the backend needs
+    # time for DB migration, SPIFFE setup, and Keycloak discovery.
+    log_step "Waiting for backend health..."
+    for i in {1..60}; do
+        BACKEND_READY=$(kubectl exec deploy/kagenti-backend -n kagenti-system -- \
+            python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=5); print('ok')" 2>/dev/null || echo "")
+        if [ "$BACKEND_READY" = "ok" ]; then
+            log_step "Backend healthy after ${i}x5s"
+            break
+        fi
+        [ "$i" -eq 60 ] && log_warn "Backend not healthy after 300s — proceeding anyway"
+        sleep 5
+    done
+
+    # Wait for sandbox agents to be healthy (agent card must respond)
+    for variant in legion hardened basic restricted; do
+        AGENT_READY=""
+        for j in {1..12}; do
+            AGENT_READY=$(kubectl exec "deploy/sandbox-${variant}" -n team1 -- \
+                python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/agent-card.json', timeout=5); print('ok')" 2>/dev/null || echo "")
+            if [ "$AGENT_READY" = "ok" ]; then
+                break
+            fi
+            sleep 5
+        done
+        [ "$AGENT_READY" = "ok" ] && log_step "sandbox-${variant}: healthy" || log_warn "sandbox-${variant}: not healthy after 60s"
+    done
+
     log_step "Running E2E tests..."
     # Get agent URL from route (if not already set)
     # Wait for the route to be created by kagenti-operator (can take a few seconds after deployment is ready)
