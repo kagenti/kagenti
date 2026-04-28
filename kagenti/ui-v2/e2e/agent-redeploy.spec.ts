@@ -130,7 +130,8 @@ async function waitForAgentReady(page: Page, timeoutMs = 180000) {
     await page.waitForTimeout(5000);
   }
   if (!agentHealthy) {
-    console.log('[redeploy] WARNING: Agent health check timed out — proceeding anyway');
+    console.error('[redeploy] FAILED: Agent A2A endpoint not responding after 120s');
+    return false;
   }
 
   // Phase 3: Extra buffer for the readiness probe to propagate to

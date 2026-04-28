@@ -301,6 +301,14 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    # Deploy sandbox agents (if script exists and sandbox feature flag enabled)
+    if [ -f "./.github/scripts/kagenti-operator/76-deploy-sandbox-agents.sh" ]; then
+        log_step "Deploying sandbox agents..."
+        ./.github/scripts/kagenti-operator/76-deploy-sandbox-agents.sh || {
+            log_step "Sandbox agent deploy failed (sandbox tests will fail)"
+        }
+    fi
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
@@ -320,6 +328,17 @@ if [ "$RUN_TEST" = "true" ]; then
 
     log_step "Starting port-forward..."
     ./.github/scripts/common/85-start-port-forward.sh
+
+    # Port-forward sandbox agents for host-based tests (Kind has no routes)
+    PORT=8001
+    for variant in legion hardened basic restricted; do
+        if kubectl get deploy "sandbox-${variant}" -n team1 2>/dev/null | grep -q "1/1"; then
+            kubectl port-forward -n team1 "svc/sandbox-${variant}" "${PORT}:8000" > /dev/null 2>&1 &
+            export "SANDBOX_$(echo $variant | tr '[:lower:]' '[:upper:]')_URL=http://localhost:${PORT}"
+            log_step "sandbox-${variant} port-forwarded on :${PORT}"
+            PORT=$((PORT + 1))
+        fi
+    done
 
     log_step "Setting up test credentials..."
     ./.github/scripts/common/87-setup-test-credentials.sh

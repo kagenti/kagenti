@@ -328,4 +328,17 @@ ROUTEEOF
     done
 fi
 
+# ============================================================================
+# Step 4: Verify LLM_API_BASE points to local budget proxy (not external MaaS)
+# ============================================================================
+
+EXPECTED_LLM_BASE="http://llm-budget-proxy.${NAMESPACE}.svc:8080/v1"
+for VARIANT in sandbox-legion sandbox-hardened sandbox-basic sandbox-restricted sandbox-agent; do
+    ACTUAL=$(kubectl get deploy "$VARIANT" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LLM_API_BASE")].value}' 2>/dev/null || echo "")
+    if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$EXPECTED_LLM_BASE" ]; then
+        log_warn "$VARIANT has LLM_API_BASE=$ACTUAL, patching to $EXPECTED_LLM_BASE"
+        kubectl set env "deploy/$VARIANT" -n "$NAMESPACE" "LLM_API_BASE=$EXPECTED_LLM_BASE"
+    fi
+done
+
 log_success "All sandbox agents deployed: ${VARIANTS[*]}"

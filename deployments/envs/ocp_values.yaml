@@ -74,6 +74,7 @@ charts:
         sandbox: true
         integrations: true
         triggers: true
+        sidecars: true
       components:
         agentNamespaces:
           enabled: true

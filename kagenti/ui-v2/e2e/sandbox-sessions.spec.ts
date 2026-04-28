@@ -154,14 +154,20 @@ async function startNewSession(page: Page) {
     await startBtn.click();
   }
 
-  // Wait for the URL to change — the new session gets a fresh session= param
-  // or the old one is cleared. This is the most reliable signal that the
-  // backend has acknowledged the new session.
+  // Wait for a NEW, non-empty session ID — the new session must have a real
+  // context_id that is different from the previous one. Empty session IDs
+  // indicate the backend hasn't finished creating the session yet.
   await expect(async () => {
     const currentId = getSessionIdFromUrl(page);
-    // Either the session param was removed (fresh state) or changed to a new value
-    expect(currentId !== oldSessionId || currentId === '').toBe(true);
-  }).toPass({ timeout: 15000, intervals: [500, 1000, 1000, 2000, 2000] });
+    if (oldSessionId) {
+      expect(currentId).not.toBe(oldSessionId);
+    }
+    expect(currentId).toBeTruthy();  // Must have a real session ID
+  }).toPass({ timeout: 20000, intervals: [500, 1000, 2000, 3000] });
+
+  // Extra wait for backend session initialization — the session row
+  // and workspace may still be setting up even after the URL updates.
+  await page.waitForTimeout(5000);
 
   // Wait for the session to fully reset. SESSION_CLEARED sets messages=[] and
   // agentLoops to empty Map, but React batching may delay the render cycle.

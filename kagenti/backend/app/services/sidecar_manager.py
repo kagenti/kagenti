@@ -572,6 +572,21 @@ class SidecarManager:
             analyzer.counter_limit,
         )
 
+        # Startup check: immediately query session state before the first
+        # sleep interval. If the session already completed/failed before the
+        # looper was enabled, set _session_done so the first iteration
+        # triggers auto-continue instead of waiting interval_seconds.
+        try:
+            await self._poll_session_state(handle, analyzer)
+            if analyzer._session_done:
+                logger.info(
+                    "Looper startup: session %s already %s — will auto-continue on first iteration",
+                    handle.parent_context_id[:12],
+                    analyzer._last_polled_state,
+                )
+        except Exception:
+            logger.debug("Looper: startup session state poll failed (will retry in loop)")
+
         while handle.enabled:
             # Each iteration: read the current session state from the DB.
             # This is the primary detection mechanism — the looper doesn't
