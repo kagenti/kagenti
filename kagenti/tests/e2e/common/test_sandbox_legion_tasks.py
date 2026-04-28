@@ -261,12 +261,30 @@ MOCK_CI_FAILURE_LOG = textwrap.dedent("""\
 # ---------------------------------------------------------------------------
 
 
+def _skip_if_github_unreachable():
+    """Skip tests if GitHub API is unreachable or rate-limited."""
+    try:
+        resp = httpx.get(
+            "https://api.github.com/rate_limit",
+            timeout=10,
+            follow_redirects=True,
+        )
+        if resp.status_code == 403:
+            pytest.skip("GitHub API rate-limited (403)")
+        remaining = resp.json().get("rate", {}).get("remaining", 0)
+        if remaining < 5:
+            pytest.skip(f"GitHub API rate limit low ({remaining} remaining)")
+    except Exception as exc:
+        pytest.skip(f"GitHub API unreachable: {exc}")
+
+
 class TestSandboxLegionGitHubAnalysis:
     """Test the agent performing real GitHub repository analysis."""
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(600)
     async def test_analyze_closed_issue(self):
+        _skip_if_github_unreachable()
         """
         Ask the agent to analyze a real closed issue from kagenti/kagenti.
 
@@ -330,6 +348,7 @@ class TestSandboxLegionGitHubAnalysis:
 
         The agent should fetch the PR data and summarize what changed.
         """
+        _skip_if_github_unreachable()
         agent_url = _get_sandbox_legion_url()
         try:
             client, _ = await _connect_to_agent(agent_url)

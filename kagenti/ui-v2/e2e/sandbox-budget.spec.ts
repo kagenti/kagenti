@@ -159,10 +159,10 @@ test.describe('Budget Enforcement', () => {
     ) || '1000000';
     console.log(`[budget] Original proxy DEFAULT_SESSION_MAX_TOKENS: ${originalMaxTokens}`);
 
-    // Set very low budget so the proxy returns 402 mid-task.
-    // 200 tokens is less than a single LLM call, forcing immediate 402.
-    kc(`set env deploy/llm-budget-proxy -n ${NAMESPACE} DEFAULT_SESSION_MAX_TOKENS=200`);
-    kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS=200`);
+    // Set low budget so the proxy returns 402 after 1-2 LLM calls.
+    // 1000 tokens allows one LLM call but exhausts on follow-up.
+    kc(`set env deploy/llm-budget-proxy -n ${NAMESPACE} DEFAULT_SESSION_MAX_TOKENS=1000`);
+    kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS=1000`);
     console.log('[budget] Set budget=200 on proxy + agent');
 
     // Wait for both rollouts

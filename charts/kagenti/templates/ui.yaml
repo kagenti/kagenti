@@ -121,6 +121,8 @@ spec:
               value: "{{ .Values.featureFlags.integrations }}"
             - name: KAGENTI_FEATURE_FLAG_TRIGGERS
               value: "{{ .Values.featureFlags.triggers }}"
+            - name: KAGENTI_FEATURE_FLAG_SIDECARS
+              value: "{{ .Values.featureFlags.sidecars | default false }}"
             - name: KEYCLOAK_URL
               value: {{ .Values.keycloak.url | quote }}
             # Dashboard URLs from ConfigMap (populated by ui-routes-job)
