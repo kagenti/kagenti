@@ -273,8 +273,9 @@ otel:
       exporters:
         otlphttp/mlflow:
           # Default points to the in-cluster MLflow deployed by kagenti-deps.
-          # Override with the DSC-managed MLflow service when otel.mlflow.enabled=true:
-          # https://<mlflow-svc>.<namespace>.svc.cluster.local:8443/v1/traces
+          # For RHOAI (otel.mlflow.enabled=true), setup-kagenti.sh overrides this
+          # with the MLflow CR gateway URL (status.url + /v1/traces). TLS is
+          # verified via the container's system CA pool (Let's Encrypt trusted by default).
           traces_endpoint: http://mlflow:5000/v1/traces
           tls:
             insecure: true

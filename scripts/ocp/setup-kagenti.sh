@@ -308,8 +308,8 @@ EOF
 
 _mlflow_wait_ready() {
   if $DRY_RUN; then
-    MLFLOW_TRACES_ENDPOINT="https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443/v1/traces"
-    echo "  [dry-run] would wait for MLflow Service and pod in $MLFLOW_NAMESPACE"
+    MLFLOW_TRACES_ENDPOINT="https://mlflow-gateway.${DOMAIN}/v1/traces"
+    echo "  [dry-run] would wait for MLflow Service, pod, and gateway URL in $MLFLOW_NAMESPACE"
     return 0
   fi
 
@@ -326,9 +326,6 @@ _mlflow_wait_ready() {
   done
   log_success "MLflow Service found"
 
-  MLFLOW_TRACES_ENDPOINT="https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443/v1/traces"
-  log_success "MLflow traces endpoint: $MLFLOW_TRACES_ENDPOINT"
-
   log_info "Waiting for MLflow pod to be Running..."
   tries=0
   while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
@@ -337,7 +334,7 @@ _mlflow_wait_ready() {
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
       log_warn "MLflow pod not Running after 5m — proceeding anyway (OTEL will retry)"
-      return 0
+      break
     fi
     sleep 5
   done
@@ -349,11 +346,30 @@ _mlflow_wait_ready() {
     tries=$((tries + 1))
     if [ $tries -ge 12 ]; then
       log_warn "MLflow Service has no ready endpoints after 1m — proceeding anyway"
-      return 0
+      break
     fi
     sleep 5
   done
-  log_success "MLflow is ready"
+
+  # Resolve the gateway URL from the MLflow CR status.url (mirrors the
+  # kagenti-operator's resolveTrackingURI logic). TLS is verified via the
+  # container's system CA pool (Let's Encrypt trusted by default).
+  log_info "Waiting for MLflow gateway URL (status.url)..."
+  local gateway_url=""
+  tries=0
+  while [ -z "$gateway_url" ]; do
+    gateway_url=$($KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+      -o jsonpath='{.status.url}' 2>/dev/null || echo "")
+    [ -n "$gateway_url" ] && break
+    tries=$((tries + 1))
+    if [ $tries -ge 60 ]; then
+      log_error "MLflow CR status.url not populated after 5m"
+      exit 1
+    fi
+    sleep 5
+  done
+  MLFLOW_TRACES_ENDPOINT="${gateway_url%/}/v1/traces"
+  log_success "MLflow traces endpoint (gateway): $MLFLOW_TRACES_ENDPOINT"
 }
 
 _mlflow_grant_otel_rbac() {
