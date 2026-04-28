@@ -1,0 +1,10 @@
+name: PR Verifier
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  verify:
+    uses: kagenti/.github/.github/workflows/pr-verifier-required.yml@main
+
