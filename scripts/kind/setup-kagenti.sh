@@ -57,7 +57,7 @@ CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
 CERT_MANAGER_VERSION="v1.17.2"
 ISTIO_VERSION="1.28.0"
 SPIRE_CRD_VERSION="0.5.0"
-SPIRE_VERSION="0.27.0"
+SPIRE_VERSION="0.28.4"  # Includes native setKeyUse configuration support
 GATEWAY_API_VERSION="v1.4.0"
 TEKTON_VERSION="v0.66.0"
 SHIPWRIGHT_VERSION="v0.14.0"
@@ -700,38 +700,9 @@ if $WITH_SPIRE && ! $DRY_RUN; then
   SPIRE_SERVER_NS="zero-trust-workload-identity-manager"
   KAGENTI_NS="kagenti-system"
 
-  # 7a: Patch SPIRE OIDC ConfigMap to add set_key_use if missing
-  log_info "Checking SPIRE OIDC ConfigMap..."
-  tries=0
-  while ! kubectl get configmap spire-spiffe-oidc-discovery-provider \
-    -n "$SPIRE_SERVER_NS" &>/dev/null; do
-    tries=$((tries + 1))
-    [ $tries -ge 90 ] && { log_warn "SPIRE OIDC ConfigMap not found after 3m"; break; }
-    sleep 2
-  done
-
-  if kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" &>/dev/null; then
-    OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider \
-      -n "$SPIRE_SERVER_NS" \
-      -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || echo "")
-    if [ -n "$OIDC_CONF" ] && ! echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if d.get('set_key_use') else 1)" 2>/dev/null; then
-      log_info "Patching OIDC ConfigMap with set_key_use: true..."
-      PATCHED=$(echo "$OIDC_CONF" | python3 -c "import sys,json; d=json.load(sys.stdin); d['set_key_use']=True; json.dump(d,sys.stdout)")
-      kubectl get configmap spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS" -o json | \
-        python3 -c "
-import sys, json
-cm = json.load(sys.stdin)
-cm['data']['oidc-discovery-provider.conf'] = '''$PATCHED'''
-json.dump(cm, sys.stdout)
-" | kubectl apply -f -
-      kubectl rollout restart deployment/spire-spiffe-oidc-discovery-provider -n "$SPIRE_SERVER_NS"
-      kubectl rollout status deployment/spire-spiffe-oidc-discovery-provider \
-        -n "$SPIRE_SERVER_NS" --timeout=120s || true
-      log_success "OIDC ConfigMap patched"
-    else
-      log_success "OIDC ConfigMap already has set_key_use"
-    fi
-  fi
+  # 7a: SPIRE OIDC ConfigMap configuration
+  # Note: The SPIRE chart (v0.28.4+) now supports setKeyUse configuration natively via Helm values.
+  # No ConfigMap patching is needed. The set_key_use: true config is set in deployments/envs/*.yaml
 
   # 7b: Run SPIFFE IdP setup job (configures Keycloak with SPIRE identity provider)
   log_info "Setting up SPIFFE IdP..."
