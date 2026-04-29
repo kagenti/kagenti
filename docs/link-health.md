@@ -1,22 +1,23 @@
 # Link Health Report
 
-> Last scan: 2026-04-24 07:01 ET | Scan ID: 2026-04-24-001
+> Last scan: 2026-04-29 07:01 ET | Scan ID: 2026-04-29-001
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
-| Repos scanned | 14 |
-| Total links checked | 2182 |
+| Repos scanned | 17 |
+| Total links checked | 2677 |
 | Broken (internal) | 38 |
-| Broken (external) | 22 |
-| New since last scan | +1 |
+| Broken (external) | 27 |
+| New since last scan | +5 |
 | Fixed since last scan | -0 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 04-29 | 38 | 27 | +5 |
 | 04-24 | 38 | 22 | +1 |
 | 04-22 | 37 | 22 | -1 |
 | 04-20 | 37 | 23 | -5 |
@@ -26,13 +27,13 @@
 | 04-20 | 39 | 23 | -34 |
 | 04-20 | 61 | 35 | 0 |
 | 04-20 | 61 | 35 | +1 |
-| 04-17 | 62 | 33 | -1 |
 
 ## Broken Links by Repo
 
 | Repo | Internal | External | Issues |
 |------|----------|----------|--------|
 | .github | 2 | 0 | |
+| OpenShell | 0 | 5 | |
 | adk | 28 | 6 | |
 | agent-examples | 0 | 3 | |
 | agentic-control-plane | 0 | 1 | |
