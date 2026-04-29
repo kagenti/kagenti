@@ -325,6 +325,35 @@ if [ "$SKIP_AGENTS" = "false" ]; then
     # Ensure team1 namespace exists
     kubectl get ns team1 >/dev/null 2>&1 || kubectl create ns team1
 
+    # ── Istio waypoint proxies (required for L7 traffic in ambient mode) ──
+    # Namespaces with istio.io/use-waypoint label need a waypoint Gateway.
+    # Without it, ztunnel resets all L7 (HTTP) connections.
+    for NS in team1 team2; do
+        if kubectl get ns "$NS" -o jsonpath='{.metadata.labels.istio\.io/use-waypoint}' 2>/dev/null | grep -q waypoint; then
+            if ! kubectl get gateway waypoint -n "$NS" >/dev/null 2>&1; then
+                log_step "Creating Istio waypoint for $NS"
+                kubectl apply -f - <<EOWAYPOINT
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: $NS
+  labels:
+    istio.io/waypoint-for: all
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+    allowedRoutes:
+      namespaces:
+        from: Same
+EOWAYPOINT
+            fi
+        fi
+    done
+
     # ── LLM secret (idempotent) ─────────────────────────────────────
     # Source .env.maas early — we need the keys for both the secret and env patching.
     # Check REPO_ROOT, CWD, and git main worktree (worktrees have .env in parent).
@@ -404,7 +433,16 @@ if [ "$SKIP_AGENTS" = "false" ]; then
         LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
 
         if true; then
+            log_step "Creating LiteMaaS credentials secret..."
+            kubectl create secret generic litemaas-credentials -n team1 \
+                --from-literal=api-key="$LITEMAAS_KEY" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
             log_step "Deploying LiteLLM model proxy with model aliases..."
+            # hosted_vllm/ provider avoids LiteLLM's OpenAI Responses API bridge
+            # which doesn't work with non-OpenAI backends (LiteMaaS).
+            # use_chat_completions_url_for_anthropic_messages routes /v1/messages
+            # through chat completions instead of the Responses API.
             kubectl apply -f - <<EOLITELLM
 apiVersion: v1
 kind: ConfigMap
@@ -413,49 +451,55 @@ metadata:
   namespace: team1
 data:
   config.yaml: |
+    litellm_settings:
+      use_chat_completions_url_for_anthropic_messages: true
+      drop_params: true
     model_list:
       - model_name: "gpt-4o-mini"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-4o"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-4"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-5-nano"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-5"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-5-mini"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "$LITEMAAS_MODEL"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "claude-sonnet-4-20250514"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "claude-haiku-4-20250414"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -482,6 +526,12 @@ spec:
         ports:
         - containerPort: 4000
           name: http
+        env:
+        - name: LITEMAAS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litemaas-credentials
+              key: api-key
         resources:
           requests:
             cpu: 100m

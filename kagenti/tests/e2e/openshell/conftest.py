@@ -479,6 +479,137 @@ spec:
     return exec_result.stdout
 
 
+def run_claude_in_sandbox(
+    prompt: str,
+    namespace: str = "team1",
+    timeout_sec: int = 120,
+) -> str | None:
+    """Create a sandbox with Claude Code, run a prompt via LiteLLM, return output.
+
+    Claude Code uses ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN to reach
+    the LiteLLM proxy which translates Anthropic Messages API format to
+    OpenAI format for LiteMaaS.
+
+    Requires LiteLLM config with:
+    - hosted_vllm/ provider (avoids OpenAI Responses API bridge)
+    - use_chat_completions_url_for_anthropic_messages: true
+    - drop_params: true (Claude Code sends reasoning_effort etc.)
+    - claude-sonnet-4-20250514 model alias
+    """
+    import time
+
+    name = "test-claude-skill-run"
+    litellm_svc = kubectl_run(
+        "get", "svc", "litellm-model-proxy", "-n", namespace, timeout=10
+    )
+    if litellm_svc.returncode != 0:
+        return None
+
+    litellm_url = f"http://litellm-model-proxy.{namespace}.svc:4000"
+
+    kubectl_run(
+        "delete",
+        "sandbox",
+        name,
+        "-n",
+        namespace,
+        "--ignore-not-found",
+        "--wait=false",
+    )
+    time.sleep(2)
+
+    sandbox_yaml = f"""
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: {name}
+  namespace: {namespace}
+spec:
+  podTemplate:
+    spec:
+      containers:
+      - name: sandbox
+        image: {BASE_IMAGE}
+        command: ["sleep", "300"]
+        env:
+        - name: ANTHROPIC_BASE_URL
+          value: "{litellm_url}"
+        - name: ANTHROPIC_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: litellm-virtual-keys
+              key: api-key
+"""
+    result = subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=sandbox_yaml,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+
+    deadline = time.time() + 60
+    pod_name = None
+    while time.time() < deadline:
+        pods = kubectl_get_pods_json(namespace)
+        matching = [
+            p
+            for p in pods
+            if name in p["metadata"].get("name", "")
+            and p["status"].get("phase") == "Running"
+        ]
+        if matching:
+            pod_name = matching[0]["metadata"]["name"]
+            break
+        time.sleep(5)
+
+    if not pod_name:
+        kubectl_run(
+            "delete",
+            "sandbox",
+            name,
+            "-n",
+            namespace,
+            "--ignore-not-found",
+            "--wait=false",
+        )
+        return None
+
+    exec_result = kubectl_run(
+        "exec",
+        pod_name,
+        "-n",
+        namespace,
+        "--",
+        "timeout",
+        str(timeout_sec),
+        "claude",
+        "--print",
+        "--bare",
+        "--model",
+        "claude-sonnet-4-20250514",
+        prompt,
+        timeout=timeout_sec + 30,
+    )
+
+    kubectl_run(
+        "delete",
+        "sandbox",
+        name,
+        "-n",
+        namespace,
+        "--ignore-not-found",
+        "--wait=false",
+    )
+
+    if exec_result.returncode != 0:
+        return None
+
+    return exec_result.stdout
+
+
 # ---------------------------------------------------------------------------
 # Canonical test data (shared across all test files)
 # ---------------------------------------------------------------------------
