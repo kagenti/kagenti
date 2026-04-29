@@ -1,0 +1,50 @@
+name: Release Pin Validation
+
+on:
+  pull_request:
+    paths:
+      - 'charts/**'
+
+permissions:
+  contents: read
+
+jobs:
+  check-pins:
+    name: Check Release Pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Run pin-validation script
+        id: pins
+        run: |
+          bash scripts/check-release-pins.sh --json > pin-results.json
+          bash scripts/check-release-pins.sh
+
+      - name: Write summary
+        if: always()
+        run: |
+          echo "## Release Pin Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          error_count=$(jq '.summary.errors' pin-results.json)
+          warning_count=$(jq '.summary.warnings' pin-results.json)
+
+          if [[ "$error_count" -gt 0 ]]; then
+            echo "| File | Line | Issue |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|------|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.errors[] | "| \(.file) | \(.line) | \(.issue) |"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**${error_count} error(s) found — not release-ready**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "All pins validated. Release is ready." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "$warning_count" -gt 0 ]]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Warnings" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.warnings[] | "- \(.file): \(.issue)"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
+          fi

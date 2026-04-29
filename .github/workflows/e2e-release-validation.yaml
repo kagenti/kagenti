@@ -1,0 +1,233 @@
+name: E2E Release Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to validate (e.g. v0.6.0-alpha.5)'
+        required: true
+        type: string
+      run_hypershift:
+        description: 'Also run HyperShift E2E'
+        type: boolean
+        default: false
+
+# Only allow one release validation at a time
+concurrency:
+  group: e2e-release-validation
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  K8S_VERSION: '1.35.0'
+  KAGENTI_EXTENSIONS_GIT_REF: 'main'
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Validate release pins (fast, no cluster needed)
+  # -----------------------------------------------------------------------
+  validate-pins:
+    name: Validate Release Pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Run pin-validation script
+        id: pins
+        run: |
+          bash scripts/check-release-pins.sh --json > pin-results.json
+          cat pin-results.json
+
+      - name: Write pin-check summary
+        if: always()
+        run: |
+          echo "## Release Pin Validation — \`${{ inputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          error_count=$(jq '.summary.errors' pin-results.json)
+          warning_count=$(jq '.summary.warnings' pin-results.json)
+
+          if [[ "$error_count" -gt 0 ]]; then
+            echo "| File | Line | Issue |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|------|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.errors[] | "| \(.file) | \(.line) | \(.issue) |"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**${error_count} error(s) found — not release-ready**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "All pins validated. Release is ready." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "$warning_count" -gt 0 ]]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Warnings" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.warnings[] | "- \(.file): \(.issue)"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # -----------------------------------------------------------------------
+  # Job 2: Kind E2E suite (runs after pin validation passes)
+  # -----------------------------------------------------------------------
+  e2e-kind:
+    name: Kind E2E (${{ inputs.version }})
+    needs: validate-pins
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.11'
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+
+      - name: Install Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
+        with:
+          version: 'v3.17.0'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+
+      - name: Free up disk space
+        run: bash .github/scripts/common/05-free-disk-space.sh
+
+      - name: Install dependencies (jq, uv)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y jq
+          python -m pip install --upgrade pip
+          pip install uv
+
+      - name: Create secrets for bash installer
+        run: bash .github/scripts/common/20-create-secrets-bash.sh
+
+      - name: Install Kagenti platform (bash installer)
+        run: bash scripts/kind/setup-kagenti.sh --with-all --build-images
+
+      - name: Wait for platform and reduce Kuadrant resources
+        run: bash .github/scripts/common/40-wait-platform-ready.sh
+
+      - name: Install Ollama
+        run: bash .github/scripts/common/50-install-ollama.sh
+
+      - name: Start Ollama and pull model
+        run: bash .github/scripts/common/60-pull-ollama-model.sh
+
+      - name: Configure dockerhost service for Kind
+        run: bash .github/scripts/common/70-configure-dockerhost.sh
+
+      - name: Wait for kagenti-operator CRDs to be established
+        run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
+
+      - name: Build weather-tool image
+        run: bash .github/scripts/kagenti-operator/71-build-weather-tool.sh
+
+      - name: Deploy weather-tool via Deployment + Service
+        run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+
+      - name: Deploy weather-service Agent
+        run: bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+      - name: Verify deployment health
+        run: |
+          chmod +x .github/scripts/verify_deployment.sh
+          .github/scripts/verify_deployment.sh || true
+
+      - name: Install test dependencies
+        run: bash .github/scripts/common/80-install-test-deps.sh
+
+      - name: Start port-forward for agent service
+        run: bash .github/scripts/common/85-start-port-forward.sh
+
+      - name: Print version matrix
+        if: success()
+        run: bash .github/scripts/common/86-print-version-matrix.sh
+
+      - name: Setup test credentials
+        run: bash .github/scripts/common/87-setup-test-credentials.sh
+
+      - name: Pre-flight checks
+        if: success()
+        run: bash .github/scripts/common/90-preflight-checks.sh
+
+      - name: Run backend E2E tests
+        if: success()
+        run: bash .github/scripts/kagenti-operator/90-run-e2e-tests.sh
+
+      - name: Free capacity for AuthBridge weather (scale baseline weather)
+        if: success()
+        run: bash .github/scripts/kind/90b-free-capacity-for-advanced-weather.sh
+        env:
+          NAMESPACE: team1
+
+      - name: AuthBridge Weather (advanced) E2E
+        if: success()
+        run: bash .github/scripts/kind/91-run-authbridge-weather-e2e.sh
+        env:
+          NAMESPACE: team1
+
+      - name: Restore baseline weather for UI E2E
+        if: success()
+        run: bash .github/scripts/kind/90c-restore-baseline-weather-for-ui.sh
+        env:
+          NAMESPACE: team1
+
+      - name: Run UI E2E tests
+        if: success()
+        run: bash .github/scripts/common/92-run-ui-tests.sh
+        env:
+          PLAYWRIGHT_GREP_INVERT: "@extended"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: e2e-kind-results-${{ inputs.version }}
+          path: test-results/
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-report-${{ inputs.version }}
+          path: kagenti/ui-v2/playwright-report/
+          retention-days: 30
+
+      - name: Collect logs on failure
+        if: failure()
+        run: bash .github/scripts/common/99-collect-logs.sh
+
+  # -----------------------------------------------------------------------
+  # Job 3: HyperShift E2E (optional, runs after pin validation passes)
+  # -----------------------------------------------------------------------
+  e2e-hypershift:
+    name: HyperShift E2E (${{ inputs.version }})
+    needs: validate-pins
+    if: inputs.run_hypershift
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Placeholder — HyperShift E2E
+        run: |
+          echo "HyperShift E2E for ${{ inputs.version }} would run here."
+          echo "This job delegates to the HyperShift workflow steps."
+          echo "TODO: duplicate or call reusable HyperShift E2E job."
+          exit 1

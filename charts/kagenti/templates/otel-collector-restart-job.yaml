@@ -83,7 +83,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: restarter
-        image: {{ .Values.common.kubectlImage | default "bitnami/kubectl:latest" }}
+        image: {{ .Values.common.kubectlImage }}
         command:
         - /bin/sh
         - -c
