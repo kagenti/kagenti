@@ -5,5 +5,5 @@ on:
     types: [opened, edited, synchronize, reopened]
 
 jobs:
-  verify:
-    uses: kagenti/.github/.github/workflows/pr-verifier-required.yml@fccbcfaaadf24f180b4a754377ceff6d9e000297
+  verify-pr-title:
+    uses: kagenti/.github/.github/workflows/pr-verifier-required.yml@4e535f2436d167295d39d488ce5c44b5a2d49792
