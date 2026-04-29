@@ -7,4 +7,3 @@ on:
 jobs:
   verify:
     uses: kagenti/.github/.github/workflows/pr-verifier-required.yml@fccbcfaaadf24f180b4a754377ceff6d9e000297
-
