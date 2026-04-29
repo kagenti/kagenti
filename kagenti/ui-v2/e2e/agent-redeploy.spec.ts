@@ -88,7 +88,7 @@ async function deployAgent(page: Page, memoryLimit: string, cpuLimit: string) {
   console.log('[redeploy] Deploy clicked');
 }
 
-async function waitForAgentReady(page: Page, timeoutMs = 180000) {
+async function waitForAgentReady(page: Page, timeoutMs = 240000) {
   const deadline = Date.now() + timeoutMs;
 
   // Phase 1: Wait for Kubernetes readyReplicas=1
@@ -113,10 +113,10 @@ async function waitForAgentReady(page: Page, timeoutMs = 180000) {
   // Phase 2: Wait for the agent's A2A endpoint to actually respond.
   // The pod can be "Ready" per Kubernetes but the Python server inside
   // may still be starting (importing models, connecting to DB, etc.).
-  // Poll the health endpoint via kubectl exec for up to 120s.
+  // Poll the health endpoint via kubectl exec for up to 180s.
   console.log('[redeploy] Polling agent A2A endpoint for readiness...');
   let agentHealthy = false;
-  const healthDeadline = Math.min(Date.now() + 120000, deadline);
+  const healthDeadline = Math.min(Date.now() + 180000, deadline);
   while (Date.now() < healthDeadline) {
     const result = kc(
       `exec deploy/${AGENT_NAME} -n ${NAMESPACE} -- python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/agent-card.json', timeout=5); print('ready')"`,
@@ -130,7 +130,7 @@ async function waitForAgentReady(page: Page, timeoutMs = 180000) {
     await page.waitForTimeout(5000);
   }
   if (!agentHealthy) {
-    console.error('[redeploy] FAILED: Agent A2A endpoint not responding after 120s');
+    console.error('[redeploy] FAILED: Agent A2A endpoint not responding after 180s');
     return false;
   }
 

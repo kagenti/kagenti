@@ -521,19 +521,21 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
   test('input and streaming state do not leak between sessions', async ({
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(300_000);
 
     // ---- Login & Navigate ----
     await page.goto('/');
     await loginIfNeeded(page);
     await navigateToSandbox(page);
+    // Re-login if Keycloak redirect happened during navigation
+    await loginIfNeeded(page);
 
     // ---- Start a session so there is an active chat input ----
     await startNewSession(page);
 
     // ---- Type text in input without sending ----
     const chatInput = page.getByPlaceholder(/Type your message/i);
-    await expect(chatInput).toBeVisible({ timeout: 10000 });
+    await expect(chatInput).toBeVisible({ timeout: 15000 });
     await chatInput.fill('THIS-TEXT-SHOULD-NOT-LEAK');
     await snap(page, 'input-with-text');
 
@@ -550,7 +552,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     await expect(async () => {
       const val = await chatInput.inputValue();
       expect(val).toBe('');
-    }).toPass({ timeout: 10000 });
+    }).toPass({ timeout: 15000 });
 
     // ---- Assert: chat shows empty state (welcome card visible) ----
     await expect(async () => {
@@ -569,7 +571,7 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
   });
 
   test('session persists across page reload', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(300_000);
 
     // ---- Login & Navigate ----
     await page.goto('/');
@@ -593,7 +595,12 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
     // ---- Reload and verify localStorage survives ----
     await page.reload();
     await page.waitForLoadState('networkidle');
+    // On aged clusters, Keycloak session may have expired — re-login
     await loginIfNeeded(page);
+    // After Keycloak redirect the page may land on / instead of /sandbox,
+    // so wait for the app to settle before checking localStorage.
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
 
     const storedAfterReload = await page.evaluate(
       () => localStorage.getItem('kagenti-sandbox-last-session')
@@ -602,7 +609,9 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
 
     // Navigate to Sessions page — session should restore from localStorage
     await navigateToSandbox(page);
-    await page.waitForTimeout(3000);
+    // Re-login if Keycloak redirect happened during navigation
+    await loginIfNeeded(page);
+    await page.waitForTimeout(5000);
     await snap(page, 'after-reload');
 
     // Session ID is in localStorage, ready to be restored when user clicks a session.

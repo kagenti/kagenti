@@ -159,11 +159,12 @@ test.describe('Budget Enforcement', () => {
     ) || '1000000';
     console.log(`[budget] Original proxy DEFAULT_SESSION_MAX_TOKENS: ${originalMaxTokens}`);
 
-    // Set low budget so the proxy returns 402 after 1-2 LLM calls.
-    // 1000 tokens allows one LLM call but exhausts on follow-up.
-    kc(`set env deploy/llm-budget-proxy -n ${NAMESPACE} DEFAULT_SESSION_MAX_TOKENS=1000`);
-    kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS=1000`);
-    console.log('[budget] Set budget=200 on proxy + agent');
+    // Set low budget so the proxy returns 402 before the agent completes.
+    // 500 tokens is enough for the agent to START but not COMPLETE a
+    // multi-node graph — the first LLM call exceeds the budget.
+    kc(`set env deploy/llm-budget-proxy -n ${NAMESPACE} DEFAULT_SESSION_MAX_TOKENS=500`);
+    kc(`set env deploy/${BUDGET_AGENT} -n ${NAMESPACE} SANDBOX_MAX_TOKENS=500`);
+    console.log('[budget] Set budget=500 on proxy + agent');
 
     // Wait for both rollouts
     kc(`rollout status deploy/llm-budget-proxy -n ${NAMESPACE} --timeout=90s`, 120000);
@@ -221,7 +222,7 @@ test.describe('Budget Enforcement', () => {
     if (await budgetTokensTotal.isVisible({ timeout: 5000 }).catch(() => false)) {
       const total = Number((await budgetTokensTotal.textContent() || '0').replace(/,/g, ''));
       console.log(`[budget] Budget total shown: ${total}`);
-      expect(total).toBe(200);
+      expect(total).toBe(500);
     }
 
     // ── Message 2: Follow-up after budget exhausted ──
