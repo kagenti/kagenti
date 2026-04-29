@@ -70,6 +70,8 @@ spec:
               key: api-key
         - name: LLM_MODEL
           value: "llama-4-scout"
+        - name: SANDBOX_FORCE_TOOL_CHOICE
+          value: "1"
         - name: UV_CACHE_DIR
           value: "/app/.cache/uv"
         - name: GH_TOKEN
