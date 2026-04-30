@@ -29,6 +29,7 @@ KIND_TLS_NODEPORT=30443
 IMAGE_TAG="${OPENSHELL_IMAGE_TAG:-latest}"
 DRY_RUN=false
 TIMEOUT=120
+DEPLOY_AGENTS=false
 EXTRA_HELM_SETS=()  # Additional --set arguments
 
 # ── Colors & logging ────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ Options:
   --image-tag <tag>    Image tag for all containers (default: latest)
   --set <key=val>      Extra helm --set values (repeatable)
   --timeout <secs>     Timeout for wait operations (default: 120)
+  --agents             Also deploy agent manifests + platform setup for this tenant
 EOF
   exit 0
 }
@@ -71,6 +73,7 @@ while [[ $# -gt 0 ]]; do
     --image-tag)     IMAGE_TAG="$2"; shift 2 ;;
     --set)           EXTRA_HELM_SETS+=("$2"); shift 2 ;;
     --timeout)       TIMEOUT="$2"; shift 2 ;;
+    --agents)        DEPLOY_AGENTS=true; shift ;;
     -*)
       log_error "Unknown option: $1"
       usage
@@ -248,6 +251,73 @@ else
   log_success "Gateway pod ready"
 fi
 echo ""
+
+# ── Step 5: Deploy agents (optional) ────────────────────────────────────────
+if $DEPLOY_AGENTS; then
+  log_info "Step 5: Deploying agents for tenant $TENANT"
+
+  # Platform-specific setup
+  if is_openshift; then
+    log_info "Granting SCCs for OpenShell agents..."
+    run_cmd oc adm policy add-scc-to-user anyuid -z openshell-gateway -n openshell-system 2>/dev/null || true
+    run_cmd oc adm policy add-scc-to-user privileged -z openshell-supervisor -n "$TENANT" 2>/dev/null || true
+  else
+    # Kind: Set webhook to Ignore so agents deploy without AuthBridge
+    log_warn "PoC: Setting webhook failurePolicy=Ignore (Kind only)"
+    kubectl get mutatingwebhookconfiguration -o name 2>/dev/null | grep kagenti | while read -r webhook; do
+      kubectl patch "$webhook" --type='json' \
+        -p='[{"op":"replace","path":"/webhooks/0/failurePolicy","value":"Ignore"}]' 2>/dev/null || true
+    done
+  fi
+
+  # Create supervisor ServiceAccount
+  run_cmd kubectl create serviceaccount openshell-supervisor -n "$TENANT" \
+    --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
+
+  # Create kagenti-skills ConfigMap
+  run_cmd kubectl create configmap kagenti-skills -n "$TENANT" \
+    --from-literal=skills.json='{"version":"1.0","source":"kagenti/.claude/skills/","skills":[{"name":"review","type":"claude-code-skill"},{"name":"rca","type":"claude-code-skill"},{"name":"k8s:health","type":"claude-code-skill"},{"name":"k8s:pods","type":"claude-code-skill"},{"name":"k8s:logs","type":"claude-code-skill"},{"name":"tdd:kind","type":"claude-code-skill"},{"name":"tdd:hypershift","type":"claude-code-skill"},{"name":"github:pr-review","type":"claude-code-skill"},{"name":"security-review","type":"claude-code-skill"}]}' \
+    --dry-run=client -o yaml | kubectl apply -f - 2>&1 | grep -v "^Warning:" || true
+
+  # Apply agent manifests
+  AGENTS_DIR="$REPO_ROOT/deployments/openshell/agents"
+  if [ -d "$AGENTS_DIR" ]; then
+    for manifest in "$AGENTS_DIR"/*.yaml "$AGENTS_DIR"/*/deployment.yaml; do
+      [ -f "$manifest" ] || continue
+      log_info "Applying: $(basename "$manifest")"
+      run_cmd kubectl apply -f "$manifest" 2>&1 | grep -v "ensure CRDs" || true
+    done
+  fi
+
+  # Patch agents to use LiteLLM proxy (if available)
+  LITELLM_PROXY_NAME="litellm-model-proxy"
+  if kubectl get svc "$LITELLM_PROXY_NAME" -n "$TENANT" &>/dev/null; then
+    LITELLM_URL="http://$LITELLM_PROXY_NAME.$TENANT.svc:4000/v1"
+    LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+    log_info "Patching agents to use LiteLLM proxy at $LITELLM_URL"
+
+    kubectl set env deploy/claude-sdk-agent -n "$TENANT" \
+      "ANTHROPIC_BASE_URL=$LITELLM_URL" \
+      "ANTHROPIC_MODEL=$LITEMAAS_MODEL" 2>/dev/null || true
+  fi
+
+  # Wait for agent rollouts
+  if ! $DRY_RUN; then
+    sleep 5
+    log_info "Waiting for agent rollouts..."
+    for deploy in $(kubectl get deploy -n "$TENANT" -l kagenti.io/type=agent -o name 2>/dev/null); do
+      case "$deploy" in
+        *nemoclaw*) kubectl rollout status "$deploy" -n "$TENANT" --timeout=60s 2>/dev/null || \
+                      log_warn "$deploy not ready (NemoClaw image pending)" ;;
+        *) kubectl rollout status "$deploy" -n "$TENANT" --timeout=180s 2>/dev/null || \
+               log_warn "$deploy rollout not complete" ;;
+      esac
+    done
+  fi
+
+  log_success "Agents deployed for tenant $TENANT"
+  echo ""
+fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo "╔════════════════════════════════════════════════════════════════╗"
