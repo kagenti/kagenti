@@ -1,6 +1,6 @@
 ---
-name: test:graph-loop
-description: TDD iteration loop across 4 environments (local Kind, custom HyperShift, CI Kind, CI HyperShift) with test matrix tracking
+name: graph-loop
+description: TDD iteration loop across 4 environments (local Kind, custom HyperShift, CI Kind, CI HyperShift) with test matrix tracking and log analysis
 ---
 
 # OpenShell E2E Test Graph Loop
