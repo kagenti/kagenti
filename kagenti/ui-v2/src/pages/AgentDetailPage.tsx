@@ -1029,14 +1029,16 @@ export const AgentDetailPage: React.FC = () => {
                       <Spinner size="md" aria-label="Loading AuthBridge config" />
                     ) : authBridgeConfig ? (
                       <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                          <DescriptionListTerm>Enabled</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <Label color={authBridgeConfig.AuthBridge ? 'green' : 'red'} isCompact>
-                              {authBridgeConfig.AuthBridge ? 'Yes' : 'No'}
-                            </Label>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
+                        {authBridgeConfig.AuthBridge != null && !authBridgeConfig.AuthBridge && (
+                          <DescriptionListGroup>
+                            <DescriptionListTerm>Enabled</DescriptionListTerm>
+                            <DescriptionListDescription>
+                              <Label color={authBridgeConfig.AuthBridge ? 'green' : 'red'} isCompact>
+                                {authBridgeConfig.AuthBridge ? 'Yes' : 'No'}
+                              </Label>
+                            </DescriptionListDescription>
+                          </DescriptionListGroup>
+                        )}
                         <DescriptionListGroup>
                           <DescriptionListTerm>Mode</DescriptionListTerm>
                           <DescriptionListDescription>
@@ -1080,54 +1082,18 @@ export const AgentDetailPage: React.FC = () => {
                           </DescriptionListDescription>
                         </DescriptionListGroup>
                         <DescriptionListGroup>
-                          <DescriptionListTerm>Listener Ext-Proc Address</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.listener?.ext_proc_addr || '-'}</code>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                          <DescriptionListTerm>Listener Ext-Authz Address</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.listener?.ext_authz_addr || '-'}</code>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                          <DescriptionListTerm>Listener Forward Proxy</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.listener?.forward_proxy_addr || '-'}</code>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                          <DescriptionListTerm>Listener Reverse Proxy</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.listener?.reverse_proxy_addr || '-'}</code>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
                           <DescriptionListTerm>Bypass Inbound Paths</DescriptionListTerm>
                           <DescriptionListDescription>
-                            {authBridgeConfig.bypass?.inbound_paths?.length > 0 ? (
+                            {(authBridgeConfig.bypass?.inbound_paths?.length ?? 0) > 0 ? (
                               <LabelGroup>
-                                {authBridgeConfig.bypass.inbound_paths.map((path) => (
+                                {authBridgeConfig.bypass?.inbound_paths?.map((path) => (
                                   <Label key={path} isCompact>{path}</Label>
                                 ))}
                               </LabelGroup>
                             ) : '-'}
                           </DescriptionListDescription>
                         </DescriptionListGroup>
-                        <DescriptionListGroup>
-                          <DescriptionListTerm>Routes File</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.routes?.file || '-'}</code>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                          <DescriptionListTerm>Stats Address</DescriptionListTerm>
-                          <DescriptionListDescription>
-                            <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.stats?.address || '-'}</code>
-                          </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {authBridgeConfig.routes?.rules?.length > 0 && (
+                        {(authBridgeConfig.routes?.rules?.length ?? 0) > 0 && (
                           <DescriptionListGroup>
                             <DescriptionListTerm>Routes</DescriptionListTerm>
                             <DescriptionListDescription>
@@ -1141,7 +1107,7 @@ export const AgentDetailPage: React.FC = () => {
                                   </Tr>
                                 </Thead>
                                 <Tbody>
-                                  {authBridgeConfig.routes.rules.map((route, idx) => (
+                                  {authBridgeConfig.routes?.rules?.map((route, idx) => (
                                     <Tr key={idx}>
                                       <Td dataLabel="Host">{route.host}</Td>
                                       <Td dataLabel="Action">{route.action || '-'}</Td>
@@ -1175,7 +1141,7 @@ export const AgentDetailPage: React.FC = () => {
                       <Spinner size="md" aria-label="Loading AuthBridge status" />
                     ) : authBridgeStats ? (
                       <DescriptionList isCompact>
-                        {authBridgeStats.AuthBridge != null && (
+                        {authBridgeStats.AuthBridge != null && !authBridgeStats.AuthBridge && (
                           <DescriptionListGroup>
                             <DescriptionListTerm>Enabled</DescriptionListTerm>
                             <DescriptionListDescription>
@@ -1195,7 +1161,7 @@ export const AgentDetailPage: React.FC = () => {
                                     <Label key={key} isCompact color="green">{key}: {val}</Label>
                                   ))}
                                 </LabelGroup>
-                              ) : '0'}
+                              ) : 'None'}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         )}
@@ -1209,7 +1175,7 @@ export const AgentDetailPage: React.FC = () => {
                                     <Label key={key} isCompact color="red">{key}: {val}</Label>
                                   ))}
                                 </LabelGroup>
-                              ) : '0'}
+                              ) : 'None'}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         )}
@@ -1223,7 +1189,7 @@ export const AgentDetailPage: React.FC = () => {
                                     <Label key={key} isCompact color="green">{key}: {val}</Label>
                                   ))}
                                 </LabelGroup>
-                              ) : '0'}
+                              ) : 'None'}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         )}
@@ -1237,7 +1203,7 @@ export const AgentDetailPage: React.FC = () => {
                                     <Label key={key} isCompact color="red">{key}: {val}</Label>
                                   ))}
                                 </LabelGroup>
-                              ) : '0'}
+                              ) : 'None'}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         )}
@@ -1251,7 +1217,7 @@ export const AgentDetailPage: React.FC = () => {
                                     <Label key={key} isCompact color="blue">{key}: {val}</Label>
                                   ))}
                                 </LabelGroup>
-                              ) : '0'}
+                              ) : 'None'}
                             </DescriptionListDescription>
                           </DescriptionListGroup>
                         )}

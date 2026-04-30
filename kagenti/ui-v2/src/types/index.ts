@@ -452,15 +452,15 @@ export interface CreateSkillResponse {
 
 // AuthBridge types
 export interface AuthBridgeConfig {
-  AuthBridge: boolean
-  mode: string;
-	inbound: InboundConfig;
-	outbound: OutboundConfig;
-	identity: IdentityConfig;
-	listener: ListenerConfig;
-	bypass:   BypassConfig;
-	routes:   RoutesConfig;
-	stats:    StatsConfig;
+  AuthBridge: boolean | null
+  mode: string | null;
+	inbound: InboundConfig | null;
+	outbound: OutboundConfig | null;
+	identity: IdentityConfig | null;
+	listener: ListenerConfig | null;
+	bypass:   BypassConfig | null;
+	routes:   RoutesConfig | null;
+	stats:    StatsConfig | null;
 }
 
 export interface InboundConfig {
