@@ -255,17 +255,21 @@ test.describe('Agent Redeploy', () => {
     }, AGENT_NAME);
     await page.waitForTimeout(2000);
 
-    // Click Pod tab
+    // Click Pod tab (diagnostic only — kubectl verification below is authoritative)
     const podTab = page.locator('[role="tab"]').filter({ hasText: /Pod/i });
     if (await podTab.isVisible({ timeout: 5000 }).catch(() => false)) {
       await podTab.click();
       await page.waitForTimeout(2000);
-      const podContent = await page.locator('[role="tabpanel"]').textContent() || '';
-      console.log(`[redeploy] Pod tab content: ${podContent.substring(0, 300)}`);
-      // Check for new limits in pod tab
-      const has1537 = podContent.includes('1537');
-      const has507 = podContent.includes('507');
-      console.log(`[redeploy] Pod tab shows 1537Mi: ${has1537}, 507m: ${has507}`);
+      try {
+        const podPanel = page.locator('[role="tabpanel"], [data-testid="pod-status-panel"], .pf-v5-c-tab-content').first();
+        const podContent = await podPanel.textContent({ timeout: 10000 }) || '';
+        console.log(`[redeploy] Pod tab content: ${podContent.substring(0, 300)}`);
+        const has1537 = podContent.includes('1537');
+        const has507 = podContent.includes('507');
+        console.log(`[redeploy] Pod tab shows 1537Mi: ${has1537}, 507m: ${has507}`);
+      } catch {
+        console.log('[redeploy] Pod tab content not available (UI rendering delay)');
+      }
     }
 
     // ── Step 5: Verify via kubectl ────────────────────────────────────────

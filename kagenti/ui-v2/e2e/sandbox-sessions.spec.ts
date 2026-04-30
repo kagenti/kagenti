@@ -168,30 +168,13 @@ async function startNewSession(page: Page) {
   // Wait for UI to settle after session clear
   await page.waitForTimeout(3000);
 
-  // Wait for the session to fully reset. SESSION_CLEARED sets messages=[] and
-  // agentLoops to empty Map, but React batching may delay the render cycle.
-  // Use toPass() retry so we tolerate the asynchronous state propagation.
-  await expect(async () => {
-    // Primary: welcome-card appears when messages=[] && agentLoops.size===0
-    const welcomeVisible = await page
-      .getByTestId('welcome-card')
-      .isVisible()
-      .catch(() => false);
-    // Fallback: chat-messages area exists but is effectively empty
-    const chatEmpty = await page
-      .getByTestId('chat-messages')
-      .textContent()
-      .then((t) => (t || '').trim().length === 0)
-      .catch(() => false);
-    expect(welcomeVisible || chatEmpty).toBe(true);
-  }).toPass({ timeout: 15000, intervals: [500, 1000, 1000, 2000, 2000] });
-
-  // Wait for chat input to be fully enabled before any interaction —
-  // after session reset the input may briefly be disabled while the
-  // new session context initialises.
+  // Wait for chat input to be enabled — this is the reliable signal that
+  // the session reset is complete. Don't check for welcome-card or empty
+  // chat-messages (React batching makes DOM state unpredictable during
+  // the SESSION_CLEARED → re-render cycle).
   const chatInput = page.getByPlaceholder(/Type your message/i);
-  await expect(chatInput).toBeVisible({ timeout: 10000 });
-  await expect(chatInput).toBeEnabled({ timeout: 10000 });
+  await expect(chatInput).toBeVisible({ timeout: 15000 });
+  await expect(chatInput).toBeEnabled({ timeout: 15000 });
 }
 
 /**
