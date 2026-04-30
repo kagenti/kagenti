@@ -99,7 +99,7 @@ not concatenated (e.g. service.extensions).
 {{- if and $.Values.openshift $rhoaiMlflow -}}
 {{- $mlflowExp := dig "exporters" "otlphttp/mlflow" dict $config -}}
 {{- if $mlflowExp -}}
-{{- $_ := set $mlflowExp "tls" (dict "ca_file" "/etc/pki/service-ca/service-ca.pem") -}}
+{{- $_ := set $mlflowExp "tls" (dict) -}}
 {{- end -}}
 {{- if $.Values.otel.collector.rhoaiMlflowAuthConfig -}}
 {{- $config = mustMergeOverwrite $config (deepCopy $.Values.otel.collector.rhoaiMlflowAuthConfig) -}}

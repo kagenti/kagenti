@@ -21,20 +21,6 @@ metadata:
     "helm.sh/resource-policy": keep
 data: {}
 {{- end }}
-{{- if and $.Values.openshift ($.Values.otel.mlflow).enabled }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: otel-service-ca
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
-  annotations:
-    service.beta.openshift.io/inject-cabundle: "true"
-    "helm.sh/resource-policy": keep
-data: {}
-{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -110,11 +96,6 @@ spec:
               mountPath: /etc/pki/ingress-ca
               readOnly: true
             {{- end }}
-            {{- if and $.Values.openshift ($.Values.otel.mlflow).enabled }}
-            - name: service-ca
-              mountPath: /etc/pki/service-ca
-              readOnly: true
-            {{- end }}
           ports:
             - containerPort: 4317
               name: otlp-grpc
@@ -147,17 +128,6 @@ spec:
             items:
               - key: ca-bundle.crt
                 path: ingress-ca.pem
-        {{- end }}
-        {{- if and $.Values.openshift ($.Values.otel.mlflow).enabled }}
-        # OpenShift service-serving CA for RHOAI MLflow endpoint TLS verification.
-        # The service-ca-operator auto-injects the CA bundle via annotation.
-        - name: service-ca
-          configMap:
-            name: otel-service-ca
-            optional: true
-            items:
-              - key: service-ca.crt
-                path: service-ca.pem
         {{- end }}
 ---
 apiVersion: v1
