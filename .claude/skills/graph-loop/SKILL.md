@@ -8,6 +8,28 @@ description: TDD iteration loop across 4 environments (local Kind, custom HyperS
 Iterate on OpenShell E2E tests across all 4 environments until the test matrix is green.
 Track iterations, detect regressions, and report status tables.
 
+## CRITICAL: Idempotency & Forward Progress
+
+This skill is designed for `/loop` — it MUST be idempotent and always progress forward.
+
+### Rules:
+1. **Check state first.** Before running anything, read `$LOG_DIR/test-matrix-tracking.md`
+   (or create it). Know which iteration you're on and what passed last time.
+2. **Never re-run passing tests.** If a test category passed in the previous iteration
+   and no code changed, skip re-running it — mark as PASS (carry forward).
+3. **Only fix, never regress.** Before committing a fix, run targeted tests to verify
+   the fix works AND doesn't break previously-passing tests. If a commit causes
+   regression, revert it immediately.
+4. **Track flaky tests.** If a test passes sometimes and fails sometimes (same code),
+   mark it as FLAKY in the matrix. Document the flakiness pattern in the tracking file.
+   Flaky tests need root-cause analysis, not retries.
+5. **Forward-only iteration counter.** Each iteration number is monotonically increasing.
+   Never reuse an iteration number. If you need to re-run, increment.
+6. **Resume from where you left off.** If the loop was interrupted, read the tracking
+   file and continue from the last incomplete iteration. Don't restart from scratch.
+7. **Show the matrix.** Every iteration MUST end with the full matrix table printed
+   to the user, showing all 4 environments and all categories.
+
 ## Environments
 
 | ID | Environment | How to run | Credentials |
