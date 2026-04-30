@@ -83,6 +83,13 @@ _patch_ocp_image() {
         log_step "Patching $name image → internal registry"
         kubectl set image "deploy/$name" -n "$AGENT_NS" "agent=$target_image"
     fi
+    # Scale back to 1 if scaled down (fulltest scales to 0 on OCP before build)
+    local replicas
+    replicas=$(kubectl get deploy "$name" -n "$AGENT_NS" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+    if [ "$replicas" = "0" ]; then
+        log_step "Scaling $name back to 1 replica"
+        kubectl scale deploy "$name" -n "$AGENT_NS" --replicas=1
+    fi
 }
 
 # Build custom agents and create policy ConfigMaps

@@ -395,7 +395,9 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
 }
 
 log_info "Step 2.5: MLflow DSC preflight + provisioning"
-if ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
+if [ "$SKIP_MLFLOW" = true ]; then
+  log_success "Skipping MLflow DSC preflight (--skip-mlflow)"
+elif ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
   log_warn "RHOAI not installed (DataScienceCluster CRD not found) — skipping MLflow provisioning"
 else
   _mlflow_check_dsc
@@ -958,9 +960,9 @@ run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
   -f "$SECRETS_FILE" \
-  "${KAGENTI_UI_FLAGS[@]}" \
-  "${OPERATOR_IMAGE_FLAGS[@]}" \
-  "${KC_ADMIN_FLAGS[@]}" \
+  ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
+  ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
+  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \

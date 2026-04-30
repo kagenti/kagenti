@@ -243,11 +243,28 @@ fi
 # ============================================================================
 log_phase "PHASE 3: Deploy OpenShell Gateway"
 
+# ── OCP: Grant SCCs BEFORE deploying gateway ────────────────────
+# The kustomization creates the openshell-gateway SA and StatefulSet.
+# On OCP, the SA needs anyuid SCC to run with UID 1000.
+# This must happen BEFORE the StatefulSet tries to create pods.
+if [ "$PLATFORM" = "ocp" ]; then
+    kubectl create namespace openshell-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    kubectl create serviceaccount openshell-gateway -n openshell-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    log_step "Granting anyuid SCC to openshell-gateway..."
+    oc adm policy add-scc-to-user anyuid -z openshell-gateway -n openshell-system 2>/dev/null || true
+fi
+
 log_step "Applying OpenShell manifests (kubectl apply -k)..."
-kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -v "^Warning:" || {
-    log_warn "Server-side apply failed, retrying with --validate=false..."
-    kubectl apply -k deployments/openshell/ --validate=false 2>&1 | grep -v "^Warning:"
-}
+if ! kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -v "^Warning:"; then
+    if kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -q "Forbidden: updates to statefulset spec"; then
+        log_warn "StatefulSet immutable field conflict — deleting and recreating..."
+        kubectl delete statefulset openshell-gateway agent-sandbox-controller -n openshell-system --ignore-not-found --wait=false 2>/dev/null
+        sleep 3
+    fi
+    kubectl apply -k deployments/openshell/ 2>&1 | grep -v "^Warning:" || {
+        log_warn "Kustomize apply failed — continuing with existing resources"
+    }
+fi
 
 log_step "Waiting for openshell-system pods to be ready..."
 kubectl wait --for=condition=ready pod --all -n openshell-system --timeout=180s 2>/dev/null || {
@@ -325,9 +342,39 @@ if [ "$SKIP_AGENTS" = "false" ]; then
     # Ensure team1 namespace exists
     kubectl get ns team1 >/dev/null 2>&1 || kubectl create ns team1
 
+    # ── Istio waypoint proxies (required for L7 traffic in ambient mode) ──
+    # Namespaces with istio.io/use-waypoint label need a waypoint Gateway.
+    # Without it, ztunnel resets all L7 (HTTP) connections.
+    for NS in team1 team2; do
+        if kubectl get ns "$NS" -o jsonpath='{.metadata.labels.istio\.io/use-waypoint}' 2>/dev/null | grep -q waypoint; then
+            if ! kubectl get gateway waypoint -n "$NS" >/dev/null 2>&1; then
+                log_step "Creating Istio waypoint for $NS"
+                kubectl apply -f - <<EOWAYPOINT
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: $NS
+  labels:
+    istio.io/waypoint-for: all
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+    allowedRoutes:
+      namespaces:
+        from: Same
+EOWAYPOINT
+            fi
+        fi
+    done
+
     # ── LLM secret (idempotent) ─────────────────────────────────────
     # Source .env.maas early — we need the keys for both the secret and env patching.
     # Check REPO_ROOT, CWD, and git main worktree (worktrees have .env in parent).
+    # CI passes OPENAI_API_KEY via GH secrets — use it as fallback when no .env.maas.
     MAAS_SOURCED=false
     MAAS_FILE=""
     GIT_MAIN_WORKTREE="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||' || echo "")"
@@ -342,6 +389,12 @@ if [ "$SKIP_AGENTS" = "false" ]; then
         source "$MAAS_FILE"
         MAAS_SOURCED=true
         log_step "Loaded LiteMaaS credentials from $(basename "$MAAS_FILE")"
+    elif [ -n "${OPENAI_API_KEY:-}" ]; then
+        export MAAS_LLAMA4_API_KEY="$OPENAI_API_KEY"
+        export MAAS_LLAMA4_API_BASE="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
+        export MAAS_LLAMA4_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+        MAAS_SOURCED=true
+        log_step "Using OPENAI_API_KEY from environment as LiteMaaS credentials"
     fi
 
     kubectl create secret generic litellm-virtual-keys -n team1 \
@@ -367,16 +420,16 @@ if [ "$SKIP_AGENTS" = "false" ]; then
     kubectl create serviceaccount openshell-supervisor -n team1 --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
 
     if [ "$PLATFORM" = "ocp" ]; then
-        # Gateway needs UID 1000 (anyuid)
-        log_step "Granting SCCs for OpenShell agents..."
-        oc adm policy add-scc-to-user anyuid -z openshell-gateway -n openshell-system 2>/dev/null || true
         # Supervised agent needs privileged (Landlock + mount --make-shared)
+        # Gateway anyuid SCC is granted in PHASE 3 before gateway deploy.
+        log_step "Granting SCCs for OpenShell agents..."
         oc adm policy add-scc-to-user privileged -z openshell-supervisor -n team1 2>/dev/null || true
     fi
 
-    # ── Apply agent manifests FIRST ────────────────────────────────
-    # Manifests use local image names (e.g., adk-agent:latest).
-    # The build script will patch these to internal registry refs on OCP.
+    # ── Apply agent manifests (creates Deployments, Services, ConfigMaps) ──
+    # On OCP, deployments initially use local image names (e.g., agent:latest)
+    # which can't be pulled. The build script below patches them to internal
+    # registry refs after building. Scale to 0 on OCP to avoid ImagePullBackOff.
     AGENTS_DIR="deployments/openshell/agents"
     if [ -d "$AGENTS_DIR" ]; then
         for manifest in "$AGENTS_DIR"/*.yaml "$AGENTS_DIR"/*/deployment.yaml; do
@@ -384,11 +437,16 @@ if [ "$SKIP_AGENTS" = "false" ]; then
             log_step "Applying: $manifest"
             kubectl apply -f "$manifest" 2>&1 | grep -v "ensure CRDs" || true
         done
+        if [ "$PLATFORM" = "ocp" ]; then
+            for agent in claude-sdk-agent adk-agent-supervised weather-agent-supervised nemoclaw-hermes nemoclaw-openclaw; do
+                kubectl scale deploy "$agent" -n team1 --replicas=0 2>/dev/null || true
+            done
+        fi
     fi
 
     # ── Build custom agent images (idempotent) ──────────────────────
     # On Kind: docker build + kind load.
-    # On OCP: oc binary build + patch deployment image to internal registry.
+    # On OCP: oc binary build → patch deployment image → scale back to 1.
     log_step "Building agent images..."
     PLATFORM="$PLATFORM" CLUSTER_NAME="$CLUSTER_NAME" AGENT_NS="team1" \
         ./.github/scripts/local-setup/openshell-build-agents.sh
@@ -404,7 +462,16 @@ if [ "$SKIP_AGENTS" = "false" ]; then
         LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
 
         if true; then
+            log_step "Creating LiteMaaS credentials secret..."
+            kubectl create secret generic litemaas-credentials -n team1 \
+                --from-literal=api-key="$LITEMAAS_KEY" \
+                --dry-run=client -o yaml | kubectl apply -f -
+
             log_step "Deploying LiteLLM model proxy with model aliases..."
+            # hosted_vllm/ provider avoids LiteLLM's OpenAI Responses API bridge
+            # which doesn't work with non-OpenAI backends (LiteMaaS).
+            # use_chat_completions_url_for_anthropic_messages routes /v1/messages
+            # through chat completions instead of the Responses API.
             kubectl apply -f - <<EOLITELLM
 apiVersion: v1
 kind: ConfigMap
@@ -413,49 +480,55 @@ metadata:
   namespace: team1
 data:
   config.yaml: |
+    litellm_settings:
+      use_chat_completions_url_for_anthropic_messages: true
+      drop_params: true
     model_list:
       - model_name: "gpt-4o-mini"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-4o"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-4"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-5-nano"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-5"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "gpt-5-mini"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
       - model_name: "$LITEMAAS_MODEL"
         litellm_params:
-          model: "openai/$LITEMAAS_MODEL"
+          model: "hosted_vllm/$LITEMAAS_MODEL"
           api_base: "$LITEMAAS_URL"
-          api_key: "$LITEMAAS_KEY"
-          use_chat_completions_api: true
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "claude-sonnet-4-20250514"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "claude-haiku-4-20250414"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -482,6 +555,12 @@ spec:
         ports:
         - containerPort: 4000
           name: http
+        env:
+        - name: LITEMAAS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litemaas-credentials
+              key: api-key
         resources:
           requests:
             cpu: 100m
