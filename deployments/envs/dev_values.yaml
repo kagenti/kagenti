@@ -113,7 +113,7 @@ charts:
       # This is required for Keycloak SPIFFE provider compatibility
       spiffe-oidc-discovery-provider:
         config:
-          set_key_use: true
+          setKeyUse: true
       # CRITICAL: Set JWT TTL to 5 minutes for Keycloak compatibility
       # Keycloak rejects JWTs older than ~3 minutes. With 5-minute TTL,
       # SPIRE refreshes every ~2.5 minutes, keeping JWTs fresh enough.

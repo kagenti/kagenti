@@ -376,7 +376,7 @@ if $WITH_SPIRE; then
     --set spire-server.controllerManager.identities.clusterSPIFFEIDs.default.autoPopulateDNSNames=true \
     --set spire-server.controllerManager.identities.clusterSPIFFEIDs.default.jwtTTL=5m \
     --set spiffe-oidc-discovery-provider.enabled=true \
-    --set spiffe-oidc-discovery-provider.config.set_key_use=true \
+    --set spiffe-oidc-discovery-provider.config.setKeyUse=true \
     --set spiffe-oidc-discovery-provider.tls.spire.enabled=false \
     --set tornjak-frontend.enabled=true \
     --set tornjak-frontend.image.tag=v2.0.0 \
