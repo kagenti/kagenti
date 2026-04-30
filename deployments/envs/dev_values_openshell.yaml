@@ -85,6 +85,9 @@ charts:
   ####################################################################
   spire:
     enabled: true
+    version: "0.28.4"
+    crd:
+      version: "0.5.0"
     values:
       global:
         spire:
