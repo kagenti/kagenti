@@ -1092,6 +1092,15 @@ if [ "$RUN_TEST" = "true" ]; then
     # Wait for backend to be healthy after any image patches above.
     # The 37-build step triggers rollout restarts — the backend needs
     # time for DB migration, SPIFFE setup, and Keycloak discovery.
+    # Verify LiteLLM proxy is still running (may have been OOMKilled during
+    # image builds). Restart it if the pod disappeared.
+    LITELLM_PODS=$(kubectl get pods -n kagenti-system -l app=litellm-proxy --no-headers 2>/dev/null | grep -c "Running" || echo 0)
+    if [ "$LITELLM_PODS" = "0" ]; then
+        log_warn "LiteLLM proxy not running — restarting..."
+        kubectl rollout restart deploy/litellm-proxy -n kagenti-system 2>/dev/null || true
+        kubectl rollout status deploy/litellm-proxy -n kagenti-system --timeout=120s 2>/dev/null || log_warn "LiteLLM restart failed"
+    fi
+
     log_step "Waiting for backend health..."
     for i in {1..60}; do
         BACKEND_READY=$(kubectl exec deploy/kagenti-backend -n kagenti-system -- \
