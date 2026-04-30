@@ -246,6 +246,12 @@ if [ "$SKIP_IMAGES" = "false" ]; then
     if [ "$PLATFORM" = "kind" ]; then
         BUILD_ARGS+=(--kind "$CLUSTER_NAME")
     fi
+    # Use prebuilt images when source repos are not available (e.g., CI)
+    REPOS_DIR="${OPENSHELL_REPOS_DIR:-$REPO_ROOT/../}"
+    if [ ! -d "$REPOS_DIR/OpenShell" ]; then
+        BUILD_ARGS+=(--prebuilt)
+        log_step "Source repos not found — using prebuilt images from ghcr.io"
+    fi
     BUILD_ARGS+=(--agents)
 
     scripts/openshell/build-images.sh "${BUILD_ARGS[@]}"

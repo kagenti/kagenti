@@ -39,23 +39,28 @@ GATEWAY_ONLY=false
 DRIVER_ONLY=false
 CREDENTIALS_ONLY=false
 BUILD_AGENTS=false
+PREBUILT=false
 AGENT_NS="${AGENT_NS:-team1}"
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-LOCAL DEVELOPMENT ONLY — builds OpenShell images from source repos.
-Production deployments pull pre-built images from ghcr.io/kagenti/.
+Builds or pulls OpenShell images for local development or CI.
+
+Modes:
+  Default (no --prebuilt): builds from source repos (local dev)
+  --prebuilt:              pulls published images from ghcr.io (CI / no source)
 
 Options:
-  --kind <cluster>       Load built images into the named Kind cluster
-  --gateway-only         Build only the gateway image
-  --driver-only          Build only the compute driver image
-  --credentials-only     Build only the credentials driver image
+  --kind <cluster>       Load built/pulled images into the named Kind cluster
+  --prebuilt             Pull pre-built images from ghcr.io instead of building
+  --gateway-only         Build/pull only the gateway image
+  --driver-only          Build/pull only the compute driver image
+  --credentials-only     Build/pull only the credentials driver image
   --agents               Also build agent images from deployments/openshell/agents/
   --agent-ns <ns>        Agent namespace for OCP builds (default: team1)
-  --tag <tag>            Image tag (default: local)
+  --tag <tag>            Image tag (default: local for build, latest for prebuilt)
   --repos-dir <path>     Directory containing source repos (default: $REPOS_DIR)
   --help                 Show this help message
 
@@ -63,7 +68,7 @@ Environment variables:
   OPENSHELL_REPOS_DIR    Override repos directory
   OPENSHELL_IMAGE_TAG    Override image tag (default: local)
 
-Source repos expected at:
+Source repos (only needed without --prebuilt):
   \$REPOS_DIR/OpenShell/                       (gateway)
   \$REPOS_DIR/openshell-driver-openshift/      (compute driver)
   \$REPOS_DIR/openshell-credentials-keycloak/  (credentials driver)
@@ -82,6 +87,8 @@ while [[ $# -gt 0 ]]; do
             CREDENTIALS_ONLY=true; shift ;;
         --agents)
             BUILD_AGENTS=true; shift ;;
+        --prebuilt)
+            PREBUILT=true; shift ;;
         --agent-ns)
             AGENT_NS="$2"; shift 2 ;;
         --tag)
@@ -143,26 +150,59 @@ kind_load() {
     kind load docker-image "$image:$TAG" --name "$KIND_CLUSTER"
 }
 
+pull_image() {
+    local image="$1"
+    echo "Pulling $image:$TAG"
+    docker pull "$image:$TAG"
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
+
+# When --prebuilt is used, default tag to "latest" (not "local")
+if [[ "$PREBUILT" == "true" && "$TAG" == "local" ]]; then
+    TAG="latest"
+fi
 
 IMAGES_BUILT=()
 
-if [[ "$GATEWAY_ONLY" == "true" ]]; then
-    build_gateway
-    IMAGES_BUILT+=("$GATEWAY_IMAGE")
-elif [[ "$DRIVER_ONLY" == "true" ]]; then
-    build_compute_driver
-    IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
-elif [[ "$CREDENTIALS_ONLY" == "true" ]]; then
-    build_credentials_driver
-    IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+if [[ "$PREBUILT" == "true" ]]; then
+    # Pull pre-built images from ghcr.io
+    if [[ "$GATEWAY_ONLY" == "true" ]]; then
+        pull_image "$GATEWAY_IMAGE"
+        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+    elif [[ "$DRIVER_ONLY" == "true" ]]; then
+        pull_image "$COMPUTE_DRIVER_IMAGE"
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+    elif [[ "$CREDENTIALS_ONLY" == "true" ]]; then
+        pull_image "$CREDENTIALS_DRIVER_IMAGE"
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+    else
+        pull_image "$GATEWAY_IMAGE"
+        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+        pull_image "$COMPUTE_DRIVER_IMAGE"
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+        pull_image "$CREDENTIALS_DRIVER_IMAGE"
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+    fi
 else
-    build_gateway
-    IMAGES_BUILT+=("$GATEWAY_IMAGE")
-    build_compute_driver
-    IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
-    build_credentials_driver
-    IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+    # Build from source
+    if [[ "$GATEWAY_ONLY" == "true" ]]; then
+        build_gateway
+        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+    elif [[ "$DRIVER_ONLY" == "true" ]]; then
+        build_compute_driver
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+    elif [[ "$CREDENTIALS_ONLY" == "true" ]]; then
+        build_credentials_driver
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+    else
+        build_gateway
+        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+        build_compute_driver
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+        build_credentials_driver
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+    fi
 fi
 
 if [[ -n "$KIND_CLUSTER" ]]; then
