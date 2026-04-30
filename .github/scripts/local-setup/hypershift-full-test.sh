@@ -968,6 +968,22 @@ if [ "$RUN_INSTALL" = "true" ]; then
         SPIFFE_IMAGE=$(echo "$PRE_INSTALL_OUTPUT" | grep "^PRE_INSTALL_IMAGE_SPIFFE_IDP_SETUP=" | cut -d= -f2 || true)
     fi
 
+    # Adopt orphaned Istio Gateway resources before Helm upgrade.
+    # The waypoint Gateway in agent namespaces can be created by Istio's
+    # waypoint provisioner (via namespace label istio.io/use-waypoint),
+    # which strips Helm ownership labels. Helm then refuses to upgrade.
+    for ns in team1 team2; do
+        if kubectl get gateway waypoint -n "$ns" 2>/dev/null | grep -q waypoint; then
+            kubectl annotate gateway waypoint -n "$ns" \
+                meta.helm.sh/release-name=kagenti \
+                meta.helm.sh/release-namespace=kagenti-system \
+                --overwrite 2>/dev/null || true
+            kubectl label gateway waypoint -n "$ns" \
+                app.kubernetes.io/managed-by=Helm \
+                --overwrite 2>/dev/null || true
+        fi
+    done
+
     log_step "Installing Kagenti platform..."
     INSTALLER_ARGS=(--env "$KAGENTI_ENV")
     # Build a single merged extra-vars JSON (run-install.sh only supports one --extra-vars)

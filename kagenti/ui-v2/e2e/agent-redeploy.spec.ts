@@ -134,9 +134,39 @@ async function waitForAgentReady(page: Page, timeoutMs = 240000) {
     return false;
   }
 
-  // Phase 3: Extra buffer for the readiness probe to propagate to
-  // the service endpoint and for the UI to pick up the healthy state.
-  await page.waitForTimeout(10000);
+  // Phase 3: Send a warmup message via kubectl exec to force LLM initialization.
+  // The agent card responds immediately but the LLM executor only initializes
+  // on the first real message. Without this, the UI message hangs.
+  console.log('[redeploy] Phase 3: Sending warmup message to initialize LLM executor...');
+  let warmedUp = false;
+  for (let w = 0; w < 6; w++) {
+    const warmup = kc(
+      `exec deploy/${AGENT_NAME} -n ${NAMESPACE} -- python3 -c "
+import urllib.request, json
+payload = json.dumps({'jsonrpc':'2.0','id':'warmup','method':'message/send','params':{'message':{'role':'user','parts':[{'kind':'text','text':'echo warmup'}],'messageId':'warmup','contextId':'warmup-${Date.now()}'}}}).encode()
+req = urllib.request.Request('http://localhost:8000/', data=payload, headers={'Content-Type':'application/json','Accept':'application/json'})
+try:
+    r = urllib.request.urlopen(req, timeout=60)
+    print('warm' if r.status == 200 else 'cold')
+except Exception as e:
+    print(f'cold:{e}')
+"`,
+      90000
+    );
+    if (result.includes('warm')) {
+      warmedUp = true;
+      console.log(`[redeploy] LLM executor warmed up after attempt ${w + 1}`);
+      break;
+    }
+    console.log(`[redeploy] Warmup attempt ${w + 1}/6: ${result.substring(0, 100)}`);
+    await page.waitForTimeout(10000);
+  }
+  if (!warmedUp) {
+    console.log('[redeploy] WARNING: Warmup did not complete — proceeding anyway');
+  }
+
+  // Phase 4: Extra buffer for service endpoint propagation.
+  await page.waitForTimeout(5000);
   console.log('[redeploy] Agent ready (all phases complete)');
   return true;
 }
