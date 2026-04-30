@@ -241,34 +241,22 @@ class TestLiteLLMAnthropicPassthrough:
     @skip_no_llm
     def test_claude_model_alias_in_model_list(self):
         """LiteLLM /v1/models must list claude-sonnet-4-20250514."""
-        result = subprocess.run(
-            [
-                "kubectl",
-                "exec",
-                "deploy/litellm-model-proxy",
-                "-n",
-                AGENT_NS,
-                "--",
-                "python3",
-                "-c",
-                """
-import urllib.request, json
-req = urllib.request.Request("http://localhost:4000/v1/models")
-resp = urllib.request.urlopen(req, timeout=10)
-data = json.loads(resp.read())
-models = [m["id"] for m in data.get("data", [])]
-print(json.dumps(models))
-""",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Model list failed: {result.stderr}"
-        models = json.loads(result.stdout.strip())
-        assert "claude-sonnet-4-20250514" in models, (
-            f"claude-sonnet-4-20250514 not in model list: {models}"
-        )
+        from kagenti.tests.e2e.openshell.conftest import _port_forward
+
+        url, proc = _port_forward("litellm-model-proxy", AGENT_NS, 4000)
+        if not url:
+            pytest.skip("Cannot port-forward to LiteLLM proxy")
+        try:
+            resp = httpx.get(f"{url}/v1/models", timeout=10.0)
+            assert resp.status_code == 200, f"Model list failed: {resp.text[:200]}"
+            models = [m["id"] for m in resp.json().get("data", [])]
+            assert "claude-sonnet-4-20250514" in models, (
+                f"claude-sonnet-4-20250514 not in model list: {models}"
+            )
+        finally:
+            if proc:
+                proc.terminate()
+                proc.wait()
 
 
 class TestClaudeCodeSandbox:
