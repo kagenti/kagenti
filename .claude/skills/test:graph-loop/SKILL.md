@@ -163,6 +163,48 @@ Each iteration runs environments in parallel at their natural speed:
 - Highlight: what passes everywhere, what's environment-specific, what's flaky
 - Brainstorm with user on misaligned columns
 
+## Log Analysis (per iteration)
+
+Every iteration must also analyze component logs for errors and warnings.
+Target: **0 errors, minimum warnings**.
+
+### Collect logs (after test run, before cleanup):
+```bash
+for COMP in openshell-gateway litellm-model-proxy; do
+  kubectl logs deploy/$COMP -n ${NS:-team1} --tail=500 > $LOG_DIR/${COMP}.log 2>&1 || true
+done
+for COMP in claude-sdk-agent adk-agent-supervised weather-agent-supervised; do
+  kubectl logs deploy/$COMP -n team1 -c agent --tail=200 > $LOG_DIR/${COMP}.log 2>&1 || true
+done
+kubectl logs -n istio-system -l app=ztunnel --tail=100 > $LOG_DIR/ztunnel.log 2>&1 || true
+kubectl logs deploy/waypoint -n team1 --tail=100 > $LOG_DIR/waypoint.log 2>&1 || true
+```
+
+### Analyze with subagent:
+```
+Agent(subagent_type='Explore'):
+  "Grep $LOG_DIR/*.log for ERROR|WARN|error|warn|panic|fatal.
+   Categorize by component and severity.
+   Exclude known noise: 'deprecated', 'liveness probe'.
+   Report: component, count of errors, count of warnings, sample messages.
+   Under 200 words."
+```
+
+### Log matrix columns:
+| Component | Errors | Warnings | Notes |
+|-----------|--------|----------|-------|
+| openshell-gateway | 0 | 2 | deprecation warnings (known) |
+| litellm-model-proxy | 0 | 0 | clean |
+| claude-sdk-agent | 0 | 1 | reconnect warning |
+| ztunnel | 0 | 0 | clean |
+| waypoint | 0 | 0 | clean |
+
+### OTel structured logging
+Verify agents emit structured JSON logs with OTel fields:
+- `trace_id`, `span_id` in log entries (when tracing enabled)
+- `level`, `msg`, `component` fields
+- No raw print() or unstructured output in production paths
+
 ## Done condition
 
 All 4 environments show:
@@ -171,3 +213,5 @@ All 4 environments show:
 - ADK agent: PASS
 - Gateway: PASS
 - 0 FAIL, only expected SKIP (e.g., NemoClaw when not deployed)
+- 0 ERROR in component logs
+- Warnings catalogued and either fixed or documented as known
