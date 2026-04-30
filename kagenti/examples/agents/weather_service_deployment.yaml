@@ -29,7 +29,7 @@ spec:
         kagenti.io/type: agent
         protocol.kagenti.io/a2a: ""
         kagenti.io/framework: LangGraph
-        kagenti.io/client-registration-inject: "true"
+        kagenti.io/inject: "enabled"
         app.kubernetes.io/name: weather-service
     spec:
       serviceAccountName: weather-service
