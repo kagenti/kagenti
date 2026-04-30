@@ -39,11 +39,8 @@ jobs:
         with:
           ref: ${{ inputs.version }}
 
-      - name: Run pin-validation script
-        id: pins
-        run: |
-          bash scripts/check-release-pins.sh --json > pin-results.json
-          cat pin-results.json
+      - name: Capture pin-validation results
+        run: bash scripts/check-release-pins.sh --json > pin-results.json || true
 
       - name: Write pin-check summary
         if: always()
@@ -69,6 +66,9 @@ jobs:
             echo "### Warnings" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.warnings[] | "- \(.file): \(.issue)"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Run pin-validation check
+        run: bash scripts/check-release-pins.sh
 
   # -----------------------------------------------------------------------
   # Job 2: Kind E2E suite (runs after pin validation passes)

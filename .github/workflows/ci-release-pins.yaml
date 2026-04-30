@@ -18,11 +18,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      - name: Run pin-validation script
-        id: pins
-        run: |
-          bash scripts/check-release-pins.sh --json > pin-results.json
-          bash scripts/check-release-pins.sh
+      - name: Capture pin-validation results
+        run: bash scripts/check-release-pins.sh --json > pin-results.json || true
 
       - name: Write summary
         if: always()
@@ -48,3 +45,6 @@ jobs:
             echo "### Warnings" >> "$GITHUB_STEP_SUMMARY"
             jq -r '.warnings[] | "- \(.file): \(.issue)"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Run pin-validation check
+        run: bash scripts/check-release-pins.sh
