@@ -251,40 +251,57 @@ Shared Keycloak instance (can be Kagenti's existing Keycloak or a dedicated one)
 
 ### 4.1 Kind
 
-**Ingress: Istio Gateway API (TCPRoute)**
+**Ingress: Shared TLS Gateway + per-tenant TLSRoute**
 
-The gateway requires L4 passthrough (mTLS between CLI and gateway, SSH tunneling inside gRPC).
+The gateway requires L4 passthrough (mTLS between CLI and gateway, SSH tunneling inside gRPC). A single shared Istio Gateway in `kagenti-system` handles TLS passthrough for all tenants. Each tenant deploys only a `TLSRoute` that uses SNI (hostname) to route to its backend.
+
+**Shared Gateway** (deployed once by `deploy-shared.sh`):
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: openshell
-  namespace: team1
+  name: tls-passthrough
+  namespace: kagenti-system
+  annotations:
+    networking.istio.io/service-type: NodePort
 spec:
   gatewayClassName: istio
   listeners:
-    - name: openshell-grpc
-      port: 9443
+    - name: tls-passthrough
+      port: 443
       protocol: TLS
       tls:
         mode: Passthrough
----
+      allowedRoutes:
+        namespaces:
+          from: All
+```
+
+**Per-tenant TLSRoute** (deployed by `charts/openshell/` per namespace):
+
+```yaml
 apiVersion: gateway.networking.k8s.io/v1alpha2
-kind: TCPRoute
+kind: TLSRoute
 metadata:
   name: openshell
   namespace: team1
 spec:
+  hostnames:
+    - "openshell-team1.localtest.me"
   parentRefs:
-    - name: openshell
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: tls-passthrough
+      namespace: kagenti-system
+      sectionName: tls-passthrough
   rules:
     - backendRefs:
         - name: openshell-server
           port: 8080
 ```
 
-Each tenant gets a separate Gateway + TCPRoute on a distinct port or SNI hostname. On Kind, access via NodePort mapped to the Istio gateway.
+All tenants share the single Gateway (one Envoy pod in `kagenti-system`, NodePort 30443). SNI hostname distinguishes tenants — no extra Envoy pods per namespace, no port-per-tenant allocation.
 
 **Prerequisites:**
 - Kind cluster with Istio installed (Kagenti's `kind-full-test.sh` includes this)
@@ -569,24 +586,33 @@ The supervisor's egress proxy is the critical instrumentation point for LLM obse
    - Kind: `kind-full-test.sh` (includes Istio)
    - OpenShift: existing cluster with Istio ambient or standard ingress
 
-2. **Shared infrastructure**
+2. **Shared infrastructure** (`scripts/openshell/deploy-shared.sh`)
    - Deploy `agents.x-k8s.io` Sandbox CRD + agent-sandbox-controller
+   - Gateway API experimental CRDs (TLSRoute/TCPRoute, Kind only)
+   - Shared TLS passthrough Gateway in `kagenti-system` (Kind only)
+   - cert-manager CA chain (ClusterIssuer + CA Certificate)
    - Deploy Keycloak with `openshell` realm, PKCE client, users (alice/team1, bob/team2, admin/both)
 
-3. **Per-tenant deployment** (repeat for team1 and team2)
+3. **Per-tenant deployment** (`scripts/openshell/deploy-tenant.sh`, repeat for team1 and team2)
    ```bash
-   helm install openshell-team1 charts/openshell/ \
-     --namespace team1 --create-namespace \
-     --set oidc.issuer="https://keycloak.example.com/realms/openshell" \
+   scripts/openshell/deploy-tenant.sh team1
+   scripts/openshell/deploy-tenant.sh team2
+   ```
+   Under the hood this runs:
+   ```bash
+   helm upgrade openshell-team1 charts/openshell/ --install \
+     --namespace team1 \
+     --set oidc.issuer="http://keycloak-service.keycloak.svc.cluster.local:8080/realms/openshell" \
      --set oidc.audience="team1" \
      --set driver.namespace="team1" \
-     --set ingress.host="openshell-team1.example.com"
+     --set ingress.type="istio" \
+     --set ingress.host="openshell-team1.localtest.me"
    ```
 
 4. **CLI configuration**
    ```bash
-   # Alice (team1)
-   openshell gateway set --url https://openshell-team1.example.com
+   # Alice (team1) — port 30443 is the shared gateway NodePort
+   openshell gateway set --url https://openshell-team1.localtest.me:30443
    openshell login   # Browser PKCE flow
    ```
 
@@ -711,19 +737,21 @@ Deploys cluster-wide components (idempotent):
 
 1. **agent-sandbox-controller** — upstream image, `agent-sandbox-system` namespace
 2. **Gateway API experimental CRDs** — for TLSRoute/TCPRoute (Kind only, OCP has Routes)
-3. **cert-manager CA chain** — `ClusterIssuer` + CA `Certificate` (see [Section 13.3](#133-tls-via-cert-manager))
-4. **Keycloak realm** — `openshell` realm, `openshell-cli` PKCE client, users (alice/team1, bob/team2, admin/both), audience mappers
+3. **Shared TLS passthrough Gateway** — single Istio Gateway in `kagenti-system` with `allowedRoutes.namespaces.from: All`, NodePort 30443 (Kind only, OCP uses Routes)
+4. **cert-manager CA chain** — `ClusterIssuer` + CA `Certificate` (see [Section 13.3](#133-tls-via-cert-manager))
+5. **Keycloak realm** — `openshell` realm, `openshell-cli` PKCE client, users (alice/team1, bob/team2, admin/both), audience mappers
 
 #### `scripts/openshell/deploy-tenant.sh <team>`
 
 Deploys one tenant's gateway stack via the `charts/openshell/` Helm chart:
 
-- Namespace creation + labels
+- Namespace creation + labels (`shared-gateway-access=true`, `openshell.ai/tenant`)
 - cert-manager `Certificate` CRs for server TLS + client mTLS (signed by shared CA)
 - Gateway `StatefulSet` with compute-driver + credentials-driver sidecars
 - `Service` (ClusterIP), namespace-scoped `Role`/`RoleBinding`
-- Platform-specific ingress: Istio `TCPRoute` (Kind) or passthrough `Route` (OpenShift)
+- Platform-specific ingress: Istio `TLSRoute` referencing shared gateway (Kind) or passthrough `Route` (OpenShift)
 - `ResourceQuota`
+- Auto-detects Kind vs OCP, constructs OIDC issuer URL from Keycloak service discovery
 
 Invocation: `deploy-tenant.sh team1` and `deploy-tenant.sh team2`.
 
@@ -757,7 +785,9 @@ New Helm chart for per-tenant deployment. Templated values:
 | `oidc.audience` | `team1` | Tenant-scoped audience claim |
 | `driver.namespace` | `team1` | Compute driver target namespace |
 | `ingress.type` | `istio` or `route` | Platform-specific ingress |
-| `ingress.host` | `openshell-team1.localtest.me` | Ingress hostname |
+| `ingress.host` | `openshell-team1.localtest.me` | Ingress hostname (SNI routing key) |
+| `ingress.gatewayName` | `tls-passthrough` | Shared Istio Gateway name (Kind) |
+| `ingress.gatewayNamespace` | `kagenti-system` | Namespace of shared Gateway (Kind) |
 | `tls.issuerRef` | `openshell-ca-issuer` | cert-manager issuer for leaf certs |
 
 ### 13.3 TLS via cert-manager
