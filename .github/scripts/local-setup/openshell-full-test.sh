@@ -243,6 +243,17 @@ fi
 # ============================================================================
 log_phase "PHASE 3: Deploy OpenShell Gateway"
 
+# ── OCP: Grant SCCs BEFORE deploying gateway ────────────────────
+# The kustomization creates the openshell-gateway SA and StatefulSet.
+# On OCP, the SA needs anyuid SCC to run with UID 1000.
+# This must happen BEFORE the StatefulSet tries to create pods.
+if [ "$PLATFORM" = "ocp" ]; then
+    kubectl create namespace openshell-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    kubectl create serviceaccount openshell-gateway -n openshell-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    log_step "Granting anyuid SCC to openshell-gateway..."
+    oc adm policy add-scc-to-user anyuid -z openshell-gateway -n openshell-system 2>/dev/null || true
+fi
+
 log_step "Applying OpenShell manifests (kubectl apply -k)..."
 if ! kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -v "^Warning:"; then
     if kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -q "Forbidden: updates to statefulset spec"; then
@@ -409,16 +420,16 @@ EOWAYPOINT
     kubectl create serviceaccount openshell-supervisor -n team1 --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
 
     if [ "$PLATFORM" = "ocp" ]; then
-        # Gateway needs UID 1000 (anyuid)
-        log_step "Granting SCCs for OpenShell agents..."
-        oc adm policy add-scc-to-user anyuid -z openshell-gateway -n openshell-system 2>/dev/null || true
         # Supervised agent needs privileged (Landlock + mount --make-shared)
+        # Gateway anyuid SCC is granted in PHASE 3 before gateway deploy.
+        log_step "Granting SCCs for OpenShell agents..."
         oc adm policy add-scc-to-user privileged -z openshell-supervisor -n team1 2>/dev/null || true
     fi
 
-    # ── Apply agent manifests FIRST ────────────────────────────────
-    # Manifests use local image names (e.g., adk-agent:latest).
-    # The build script will patch these to internal registry refs on OCP.
+    # ── Apply agent manifests (creates Deployments, Services, ConfigMaps) ──
+    # On OCP, deployments initially use local image names (e.g., agent:latest)
+    # which can't be pulled. The build script below patches them to internal
+    # registry refs after building. Scale to 0 on OCP to avoid ImagePullBackOff.
     AGENTS_DIR="deployments/openshell/agents"
     if [ -d "$AGENTS_DIR" ]; then
         for manifest in "$AGENTS_DIR"/*.yaml "$AGENTS_DIR"/*/deployment.yaml; do
@@ -426,11 +437,16 @@ EOWAYPOINT
             log_step "Applying: $manifest"
             kubectl apply -f "$manifest" 2>&1 | grep -v "ensure CRDs" || true
         done
+        if [ "$PLATFORM" = "ocp" ]; then
+            for agent in claude-sdk-agent adk-agent-supervised weather-agent-supervised nemoclaw-hermes nemoclaw-openclaw; do
+                kubectl scale deploy "$agent" -n team1 --replicas=0 2>/dev/null || true
+            done
+        fi
     fi
 
     # ── Build custom agent images (idempotent) ──────────────────────
     # On Kind: docker build + kind load.
-    # On OCP: oc binary build + patch deployment image to internal registry.
+    # On OCP: oc binary build → patch deployment image → scale back to 1.
     log_step "Building agent images..."
     PLATFORM="$PLATFORM" CLUSTER_NAME="$CLUSTER_NAME" AGENT_NS="team1" \
         ./.github/scripts/local-setup/openshell-build-agents.sh
