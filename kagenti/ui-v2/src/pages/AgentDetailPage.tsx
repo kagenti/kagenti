@@ -208,6 +208,7 @@ export const AgentDetailPage: React.FC = () => {
   });
 
   // Fetch AuthBridge config and status
+  // AuthBridge queries are suppressed until the agent is loaded and confirmed to have the sidecar
   const hasAuthBridge = agent?.metadata?.labels?.['kagenti.io/inject'] === 'enabled';
 
   const { data: authBridgeConfig, isLoading: isAuthBridgeConfigLoading } = useQuery({
@@ -1021,7 +1022,7 @@ export const AgentDetailPage: React.FC = () => {
             </Card>
           </Tab>
 
-          <Tab eventKey={4} title={<TabTitleText>AuthBridge</TabTitleText>}>
+          {hasAuthBridge && <Tab eventKey={4} title={<TabTitleText>AuthBridge</TabTitleText>}>
             <Grid hasGutter style={{ marginTop: '16px' }}>
               <GridItem md={6}>
                 <Card>
@@ -1235,7 +1236,7 @@ export const AgentDetailPage: React.FC = () => {
                 </Card>
               </GridItem>
             </Grid>
-          </Tab>
+          </Tab>}
         </Tabs>
       </PageSection>
 
