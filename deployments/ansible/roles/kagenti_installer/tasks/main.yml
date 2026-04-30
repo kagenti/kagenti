@@ -1051,7 +1051,7 @@
                       - name: SPIFFE_TRUST_DOMAIN
                         value: "spiffe://{{ kagenti_deps_values.domain }}"
                       - name: SPIFFE_BUNDLE_ENDPOINT
-                        value: "https://spire-spiffe-oidc-discovery-provider.{{ charts.spire.server_namespace }}.svc.cluster.local/keys"
+                        value: "{{ 'https' if (enable_openshift | default(false)) else 'http' }}://spire-spiffe-oidc-discovery-provider.{{ charts.spire.server_namespace }}.svc.cluster.local/keys"
                       - name: SPIFFE_IDP_ALIAS
                         value: "{{ (kagenti_deps_values.authBridge | default({})).spiffeIdpAlias | default('spire-spiffe') }}"
                       - name: SPIFFE_TLS_VERIFY
