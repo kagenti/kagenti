@@ -1,4 +1,4 @@
-name: E2E OCP 4.20.11 (HyperShift)
+name: E2E OCP 4.20.13 (HyperShift)
 
 on:
   push:
@@ -23,7 +23,7 @@ on:
       ocp_version:
         description: 'OpenShift version'
         required: false
-        default: '4.20.11'
+        default: '4.20.13'
       skip_destroy:
         description: 'Skip cluster destruction (for debugging)'
         required: false
@@ -52,7 +52,7 @@ env:
   # Cluster suffix - for push to main uses run number, for workflow_dispatch uses user input
   # For PR testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
   CLUSTER_SUFFIX: ${{ inputs.cluster_name || github.run_number }}
-  OCP_VERSION: ${{ inputs.ocp_version || '4.20.11' }}  # Update workflow name when changing default
+  OCP_VERSION: ${{ inputs.ocp_version || '4.20.13' }}  # Update workflow name when changing default
   # Slot management for parallel CI runs
   MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
   SLOT_TIMEOUT: '60'  # Minutes to wait for an available slot

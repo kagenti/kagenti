@@ -107,7 +107,7 @@ HYPERSHIFT_AUTOMATION_DIR=$(find_hypershift_automation)
 # Configuration with defaults
 REPLICAS="${REPLICAS:-2}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-m5.xlarge}"
-OCP_VERSION="${OCP_VERSION:-4.20.11}"
+OCP_VERSION="${OCP_VERSION:-4.20.13}"
 
 # NodePool autoscaling (enabled by default)
 # Override AUTOSCALE_MIN and AUTOSCALE_MAX to adjust limits, or set to empty to disable

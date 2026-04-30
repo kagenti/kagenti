@@ -16,7 +16,7 @@
 #   - Label serves as visual indicator of approval status
 #   - New commits require re-approval (TOCTOU protection)
 #
-name: E2E OCP 4.20.11 (HyperShift PR)
+name: E2E OCP 4.20.13 (HyperShift PR)
 
 on:
   issue_comment:
@@ -27,7 +27,7 @@ permissions: {}
 
 # Version tracking - keep workflow name in sync with OCP_VERSION
 env:
-  OCP_VERSION: '4.20.11'  # Update workflow name when changing default
+  OCP_VERSION: '4.20.13'  # Update workflow name when changing default
   MAX_SLOTS: '6'
   SLOT_TIMEOUT: '60'
 
