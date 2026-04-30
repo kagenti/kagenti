@@ -1,0 +1,58 @@
+# Langfuse Cloud OTEL Collector Configuration
+# Configures the OTEL collector to export ALL traces to Langfuse cloud service
+#
+# SETUP INSTRUCTIONS:
+# 1. Copy this file to langfuse-cloud-values.yaml
+# 2. Get your Langfuse API keys from https://us.cloud.langfuse.com
+# 3. Encode as base64: echo -n "pk-lf-YOUR-KEY:sk-lf-YOUR-SECRET" | base64
+# 4. Replace <YOUR_BASE64_ENCODED_KEYS_HERE> below with the output
+#
+# Usage:
+#   helm upgrade kagenti-deps charts/kagenti-deps -n kagenti-system \
+#     -f deployments/envs/dev_values.yaml \
+#     -f deployments/envs/langfuse-cloud-values.yaml \
+#     --set openshift=false
+#
+# For full documentation, see: docs/langfuse-integration.md
+
+charts:
+  kagenti-deps:
+    values:
+      openshift: false
+      components:
+        otel:
+          enabled: true
+      # Override OTEL collector configuration
+      otel:
+        collector:
+          # Add Langfuse exporter to base config
+          config:
+            exporters:
+              debug:
+                verbosity: detailed
+              otlphttp/langfuse:
+                # Langfuse cloud endpoint (US region)
+                # For EU region, use: https://cloud.langfuse.eu/api/public/otel
+                endpoint: https://us.cloud.langfuse.com/api/public/otel
+                headers:
+                  # Basic Auth with base64-encoded public_key:secret_key
+                  # Generate with: echo -n "pk-lf-...:sk-lf-..." | base64
+                  Authorization: "Basic <YOUR_BASE64_ENCODED_KEYS_HERE>"
+                compression: gzip
+                retry_on_failure:
+                  enabled: true
+                  initial_interval: 5s
+                  max_interval: 30s
+                  max_elapsed_time: 300s
+                sending_queue:
+                  enabled: true
+                  num_consumers: 10
+                  queue_size: 1000
+          # Override defaultConfig to use Langfuse pipeline
+          defaultConfig:
+            service:
+              pipelines:
+                traces/langfuse:
+                  receivers: [otlp]
+                  processors: [memory_limiter, batch]
+                  exporters: [debug, otlphttp/langfuse]

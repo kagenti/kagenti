@@ -172,6 +172,8 @@ cython_debug/
 *.tgz
 
 .values_override.yaml
+# Langfuse cloud values with API keys (use .example template instead)
+deployments/envs/langfuse-cloud-values.yaml
 
 ############## Node and React
 
