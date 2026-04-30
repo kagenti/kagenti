@@ -26,6 +26,8 @@ import type {
   SkillFile,
   CreateSkillRequest,
   CreateSkillResponse,
+  AuthBridgeConfig,
+  AuthBridgeStats,
 } from '@/types';
 
 // API configuration
@@ -1500,6 +1502,16 @@ export const skillService = {
         method: 'DELETE',
       }
     );
+  },
+};
+
+export const authBridgeService = {
+  async getConfig(namespace: string, name: string): Promise<AuthBridgeConfig> {
+    return apiFetch(`/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/identity-config`);
+  },
+
+  async getStatus(namespace: string, name: string): Promise<AuthBridgeStats> {
+    return apiFetch(`/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/identity-status`);
   },
 };
 
