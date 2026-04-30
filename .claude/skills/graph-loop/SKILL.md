@@ -30,6 +30,61 @@ This skill is designed for `/loop` — it MUST be idempotent and always progress
 7. **Show the matrix.** Every iteration MUST end with the full matrix table printed
    to the user, showing all 4 environments and all categories.
 
+## Two-Speed Loop
+
+The graph loop has two modes — use the **quick debug loop** to fix individual
+failures fast, then switch to the **full iteration** to verify everything.
+
+### Quick Debug Loop (inner loop — seconds to minutes)
+
+For fixing specific failing tests on a LIVE cluster. No full redeploy.
+
+1. **Identify the failing test** from the matrix
+2. **Redeploy only the affected component:**
+   ```bash
+   # LiteLLM config change:
+   kubectl apply -f - <<EOF ... EOF && kubectl rollout restart deploy/litellm-model-proxy -n team1
+
+   # Test code change (no redeploy needed — pytest reads from disk):
+   # just edit and rerun
+
+   # Agent manifest change:
+   kubectl apply -f deployments/openshell/agents/<agent>.yaml -n team1
+
+   # Gateway change:
+   kubectl delete sts openshell-gateway -n openshell-system --wait=false
+   kubectl apply -k deployments/openshell/
+   ```
+3. **Run ONLY the failing tests:**
+   ```bash
+   OPENSHELL_LLM_AVAILABLE=true uv run pytest \
+     kagenti/tests/e2e/openshell/test_12_litellm_claude_sandbox.py \
+     -v --tb=short -k "test_name_pattern" \
+     > $LOG_DIR/quick-debug.log 2>&1; echo "EXIT:$?"
+   ```
+4. **Check result** — if it passes, run a slightly broader set to check regressions:
+   ```bash
+   OPENSHELL_LLM_AVAILABLE=true uv run pytest \
+     kagenti/tests/e2e/openshell/test_12_litellm_claude_sandbox.py \
+     kagenti/tests/e2e/openshell/test_07_skill_execution.py \
+     -v --tb=short -k "claude or litellm or waypoint" \
+     > $LOG_DIR/quick-regression.log 2>&1; echo "EXIT:$?"
+   ```
+5. **Commit the fix** only when both targeted AND regression tests pass
+6. **Return to full iteration** to verify across all environments
+
+### Full Iteration (outer loop — 15-40 minutes)
+
+Runs the complete `openshell-full-test.sh` end-to-end. Use AFTER quick debug
+fixes are committed. Produces the matrix row with all categories.
+
+**The flow:**
+```
+Quick debug (fix A) → Quick debug (fix B) → Commit → Full iteration → Matrix update
+     ↑                                                                      |
+     └──────────── if regression detected ──────────────────────────────────┘
+```
+
 ## Environments
 
 | ID | Environment | How to run | Credentials |
