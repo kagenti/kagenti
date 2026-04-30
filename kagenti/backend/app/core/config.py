@@ -33,6 +33,42 @@ class Settings(BaseSettings):
 
         return os.getenv("KUBERNETES_SERVICE_HOST") is not None
 
+    @property
+    def is_openshift(self) -> bool:
+        """
+        Detect if running on OpenShift platform.
+
+        Checks for the presence of route.openshift.io API group.
+        Returns False if not in cluster or detection fails.
+        """
+        if not self.is_running_in_cluster:
+            return False
+
+        try:
+            from kubernetes import client, config
+
+            # Load config if not already loaded
+            try:
+                config.load_incluster_config()
+            except config.ConfigException:
+                return False
+
+            # Check for OpenShift-specific API group
+            apis_api = client.ApisApi()
+            api_list = apis_api.get_api_versions()
+
+            # api_list.groups is a list of V1APIGroup objects
+            # Type ignore needed due to dynamic kubernetes client response types
+            if hasattr(api_list, "groups") and api_list.groups:  # type: ignore[union-attr]
+                for group in api_list.groups:  # type: ignore[union-attr]
+                    if hasattr(group, "name") and group.name == "route.openshift.io":  # type: ignore[union-attr]
+                        return True
+
+            return False
+        except Exception:
+            # If detection fails, assume not OpenShift
+            return False
+
     # CORS settings (domain-based origin added dynamically via validator)
     cors_origins: List[str] = [
         "http://localhost:3000",
@@ -54,11 +90,35 @@ class Settings(BaseSettings):
     agentruntimes_plural: str = "agentruntimes"
 
     # Shipwright build settings
-    shipwright_default_strategy: str = "buildah-insecure-push"  # Default for dev
     shipwright_default_timeout: str = "15m"
 
+    @property
+    def shipwright_default_strategy(self) -> str:
+        """
+        Get the default Shipwright build strategy based on platform.
+
+        Returns:
+            - "kaniko-insecure-push" for OpenShift clusters
+            - "buildah-insecure-push" for other Kubernetes clusters (Kind, etc.)
+        """
+        if self.is_openshift:
+            return "kaniko-insecure-push"
+        return "buildah-insecure-push"
+
     # Default registry for source-based builds (override via DEFAULT_REGISTRY_URL env var)
-    default_registry_url: str = "registry.cr-system.svc.cluster.local:5000"
+    # Using Field with alias to allow environment variable override while providing property-based default
+    default_registry_url: str = ""
+
+    @model_validator(mode="after")
+    def _set_default_registry_url(self) -> "Settings":
+        """Set default registry URL based on platform if not explicitly provided."""
+        if not self.default_registry_url:
+            # Auto-detect based on platform
+            if self.is_openshift:
+                self.default_registry_url = "image-registry.openshift-image-registry.svc:5000"
+            else:
+                self.default_registry_url = "registry.cr-system.svc.cluster.local:5000"
+        return self
 
     # Build reconciliation settings
     build_reconciliation_interval: int = 30  # seconds between reconciliation scans

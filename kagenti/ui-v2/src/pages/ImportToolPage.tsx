@@ -67,6 +67,7 @@ const TOOL_EXAMPLES = [
 
 const REGISTRY_OPTIONS = [
   { value: 'local', label: 'Local Registry (In-Cluster)', url: 'registry.cr-system.svc.cluster.local:5000' },
+  { value: 'openshift', label: 'OpenShift Internal Registry', url: 'image-registry.openshift-image-registry.svc:5000' },
   { value: 'quay', label: 'Quay.io', url: 'quay.io' },
   { value: 'dockerhub', label: 'Docker Hub', url: 'docker.io' },
   { value: 'github', label: 'GitHub Container Registry', url: 'ghcr.io' },
@@ -110,12 +111,21 @@ export const ImportToolPage: React.FC = () => {
 
   // Update registry secret default when registry type changes
   React.useEffect(() => {
-    if (registryType !== 'local') {
+    if (registryType === 'openshift') {
+      // OpenShift uses service account tokens, no secret needed
+      setRegistrySecret('');
+      setRegistryNamespace(namespace);
+      // Use kaniko strategy for OpenShift
+      setBuildStrategy('kaniko-insecure-push');
+    } else if (registryType !== 'local') {
       setRegistrySecret(`${registryType}-registry-secret`);
+      // Use buildah for other registries
+      setBuildStrategy('buildah-insecure-push');
     } else {
       setRegistrySecret('');
+      setBuildStrategy('buildah-insecure-push');
     }
-  }, [registryType]);
+  }, [registryType, namespace]);
 
   // Shipwright build configuration
   const [buildStrategy, setBuildStrategy] = useState('buildah-insecure-push');

@@ -134,12 +134,21 @@ export const ImportAgentPage: React.FC = () => {
 
   // Update registry secret default when registry type changes
   React.useEffect(() => {
-    if (registryType !== 'local') {
+    if (registryType === 'openshift') {
+      // OpenShift uses service account tokens, no secret needed
+      setRegistrySecret('');
+      setRegistryNamespace(namespace);
+      // Use kaniko strategy for OpenShift
+      setBuildStrategy('kaniko-insecure-push');
+    } else if (registryType !== 'local') {
       setRegistrySecret(`${registryType}-registry-secret`);
+      // Use buildah for other registries
+      setBuildStrategy('buildah-insecure-push');
     } else {
       setRegistrySecret('');
+      setBuildStrategy('buildah-insecure-push');
     }
-  }, [registryType]);
+  }, [registryType, namespace]);
 
   // Shipwright build configuration (always enabled for source builds)
   const [buildStrategy, setBuildStrategy] = useState('buildah-insecure-push');

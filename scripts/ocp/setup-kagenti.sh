@@ -970,6 +970,86 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "keycloak.realm=${KC_REALM}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)"
 
+
+# ============================================================================
+# Step 4.5: Install kaniko-insecure-push ClusterBuildStrategy
+# ============================================================================
+log_info "Step 4.5: Install kaniko-insecure-push ClusterBuildStrategy"
+
+# Install kaniko-insecure-push strategy for OpenShift internal registry
+log_info "Installing kaniko-insecure-push ClusterBuildStrategy for OpenShift..."
+run_cmd $KUBECTL apply -f - <<'STRATEGY_EOF'
+apiVersion: shipwright.io/v1beta1
+kind: ClusterBuildStrategy
+metadata:
+  name: kaniko-insecure-push
+  annotations:
+    description: "Kaniko-based build strategy for OpenShift with insecure registry support"
+spec:
+  parameters:
+    - name: dockerfile
+      description: Path to the Dockerfile
+      type: string
+      default: Dockerfile
+  steps:
+    - name: prepare-auth
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      command:
+        - /bin/sh
+      args:
+        - -c
+        - |
+          set -e
+          TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          mkdir -p /kaniko/.docker
+          cat > /kaniko/.docker/config.json <<EOC
+          {
+            "auths": {
+              "image-registry.openshift-image-registry.svc:5000": {
+                "auth": "$(echo -n "serviceaccount:${TOKEN}" | base64 -w 0)"
+              }
+            }
+          }
+          EOC
+          cat /kaniko/.docker/config.json
+      volumeMounts:
+        - mountPath: /kaniko/.docker
+          name: docker-config
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      workingDir: $(params.shp-source-root)
+      command:
+        - /kaniko/executor
+      args:
+        - --dockerfile=$(params.dockerfile)
+        - --context=$(params.shp-source-context)
+        - --destination=$(params.shp-output-image)
+        - --skip-tls-verify
+        - --insecure-pull
+        - --insecure-registry=image-registry.openshift-image-registry.svc:5000
+      env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      securityContext:
+        capabilities:
+          add:
+            - CHOWN
+            - DAC_OVERRIDE
+            - FOWNER
+            - SETGID
+            - SETUID
+            - SETFCAP
+        runAsUser: 0
+      volumeMounts:
+        - mountPath: /kaniko/.docker
+          name: docker-config
+  volumes:
+    - name: docker-config
+      emptyDir: {}
+STRATEGY_EOF
+
+log_success "kaniko-insecure-push ClusterBuildStrategy installed"
+echo ""
 log_success "Kagenti installed"
 
 # Grant otel-collector SA MLflow RBAC in agent namespaces (created by kagenti chart above)
