@@ -18,13 +18,20 @@ spec:
       labels:
         {{- include "openshell.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: gateway
-        openshell.ai/tenant: {{ .Values.tenant }}
     spec:
       serviceAccountName: openshell-gateway
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
           imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
             - name: grpc
               containerPort: 8080
@@ -66,6 +73,10 @@ spec:
         - name: compute-driver
           image: "{{ .Values.images.computeDriver.repository }}:{{ .Values.images.computeDriver.tag }}"
           imagePullPolicy: {{ .Values.images.computeDriver.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           args:
             - "--socket=/run/drivers/compute.sock"
             - "--namespace={{ include "openshell.driverNamespace" . }}"
@@ -77,6 +88,10 @@ spec:
         - name: credentials-driver
           image: "{{ .Values.images.credentialsDriver.repository }}:{{ .Values.images.credentialsDriver.tag }}"
           imagePullPolicy: {{ .Values.images.credentialsDriver.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           args:
             - "--socket=/run/drivers/credentials.sock"
             - "--config=/etc/openshell/credentials.yaml"
@@ -104,7 +119,6 @@ spec:
         - name: credentials-secrets
           secret:
             secretName: openshell-credentials-secrets
-            optional: true
   volumeClaimTemplates:
     - metadata:
         name: data

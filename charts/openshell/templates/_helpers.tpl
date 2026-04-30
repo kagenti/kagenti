@@ -62,3 +62,13 @@ OIDC audience (defaults to tenant)
 {{- define "openshell.oidcAudience" -}}
 {{- default .Values.tenant .Values.oidc.audience }}
 {{- end }}
+
+{{/*
+Validate required values
+*/}}
+{{- define "openshell.validateValues" -}}
+{{- required "tenant is required (e.g. --set tenant=team1)" .Values.tenant -}}
+{{- if .Values.oidc.enabled -}}
+{{- required "oidc.issuer is required when oidc.enabled=true" .Values.oidc.issuer -}}
+{{- end -}}
+{{- end }}

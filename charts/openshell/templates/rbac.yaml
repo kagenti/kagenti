@@ -12,6 +12,8 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "events", "persistentvolumeclaims"]
     verbs: ["get", "list", "watch"]
+  # Secrets: create-only — gateway provisions per-sandbox credentials but does not
+  # rotate or delete them (sandbox controller handles cleanup).
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]

@@ -17,7 +17,7 @@ spec:
     - localhost
   issuerRef:
     name: {{ .Values.tls.issuerRef }}
-    kind: ClusterIssuer
+    kind: {{ .Values.tls.issuerKind }}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -35,4 +35,4 @@ spec:
     - client auth
   issuerRef:
     name: {{ .Values.tls.issuerRef }}
-    kind: ClusterIssuer
+    kind: {{ .Values.tls.issuerKind }}
