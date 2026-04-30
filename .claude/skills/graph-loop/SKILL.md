@@ -292,3 +292,38 @@ All 4 environments show:
 - 0 FAIL, only expected SKIP (e.g., NemoClaw when not deployed)
 - 0 ERROR in component logs
 - Warnings catalogued and either fixed or documented as known
+
+## End-of-Cycle Review (after 5 iterations)
+
+After 5 iterations (or when progress stalls), present a structured summary
+to the user with batched questions so they can unblock the next cycle.
+
+### Summary format:
+```markdown
+## Graph Loop Cycle Complete — Iterations 1-5
+
+### Matrix (final state)
+[full matrix table here]
+
+### Resolved this cycle
+- [x] Claude Code sandbox: works via LiteLLM (hosted_vllm provider)
+- [x] Waypoint: created automatically in fulltest script
+
+### Remaining blockers
+| # | Issue | Environments | Root cause | Options |
+|---|-------|-------------|-----------|---------|
+| 1 | Gateway not deployed on HyperShift CI | ci-hcp | Image pull auth | A) Add imagePullSecret, B) Push to public registry |
+| 2 | OPENAI_API_KEY empty in CI | ci-kind, ci-hcp | Fork PR + issue_comment | A) Use workflow_run, B) Store in repo var |
+| 3 | Flaky security review test | kind | LLM returns empty | A) Retry decorator, B) Stronger prompt |
+
+### Questions for user (answer all, then run next /graph-loop)
+1. **Image registry**: Should we push gateway images to ghcr.io/kagenti/ (public) or add imagePullSecret for ghcr.io/nvidia/?
+2. **CI secret access**: The OPENAI_API_KEY secret is empty for fork PRs. Should we move to workflow_run trigger or use a repo-level variable?
+3. **Flaky test policy**: Mark as FLAKY and track, or add retry logic?
+4. **HyperShift scope**: Should custom HyperShift testing be part of this PR or a follow-up?
+```
+
+### Why batched questions:
+- User answers all at once → next `/graph-loop` cycle has clear direction
+- No back-and-forth blocking — one decision point per cycle
+- Questions include options so user can pick fast
