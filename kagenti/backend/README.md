@@ -88,6 +88,7 @@ Once running, access the OpenAPI documentation:
 - `POST /api/v1/agents/{namespace}/{name}/shipwright-buildrun` - Trigger new Shipwright BuildRun
 - `GET /api/v1/agents/{namespace}/{name}/shipwright-build-info` - Get full Shipwright build information
 - `POST /api/v1/agents/{namespace}/{name}/finalize-shipwright-build` - Finalize agent creation after successful build
+- `GET /api/v1/agents/shipwright-builds` - List agent Shipwright builds (`namespace` or `allNamespaces` query)
 - `POST /api/v1/agents/parse-env` - Parse environment file content
 - `POST /api/v1/agents/fetch-env-url` - Fetch and parse environment file from URL
 

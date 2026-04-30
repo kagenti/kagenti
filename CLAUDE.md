@@ -23,6 +23,7 @@ kagenti/
 ├── kagenti/
 │   ├── ui-v2/              # React frontend
 │   ├── backend/            # FastAPI backend
+│   ├── kubectl-kagenti/    # kubectl/oc Krew plugin (Go)
 │   ├── tests/e2e/          # E2E tests
 │   └── examples/           # Example agents/tools
 ├── charts/                 # Helm charts

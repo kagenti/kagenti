@@ -366,7 +366,41 @@ export interface ShipwrightBuildInfo {
 /**
  * Shipwright build service
  */
+export interface AgentShipwrightBuildSummary {
+  name: string;
+  namespace: string;
+  registered: boolean;
+  strategy: string;
+  gitUrl: string;
+  gitRevision: string;
+  contextDir: string;
+  outputImage: string;
+  creationTimestamp?: string;
+}
+
 export const shipwrightService = {
+  /**
+   * List Shipwright Build CRs for agents (namespace or all kagenti-enabled namespaces).
+   */
+  async listAgentBuilds(params: {
+    namespace: string;
+    allNamespaces?: false;
+  }): Promise<AgentShipwrightBuildSummary[]>;
+  async listAgentBuilds(params: { allNamespaces: true }): Promise<AgentShipwrightBuildSummary[]>;
+  async listAgentBuilds(params: {
+    namespace?: string;
+    allNamespaces?: boolean;
+  }): Promise<AgentShipwrightBuildSummary[]> {
+    const q =
+      params.allNamespaces === true
+        ? 'allNamespaces=true'
+        : `namespace=${encodeURIComponent(params.namespace ?? '')}`;
+    const response = await apiFetch<{ items: AgentShipwrightBuildSummary[] }>(
+      `/agents/shipwright-builds?${q}`
+    );
+    return response.items;
+  },
+
   /**
    * List available ClusterBuildStrategies
    */

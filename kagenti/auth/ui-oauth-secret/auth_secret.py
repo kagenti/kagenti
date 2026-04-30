@@ -33,6 +33,9 @@ DEFAULT_ADMIN_USERNAME_KEY = "username"
 DEFAULT_ADMIN_PASSWORD_KEY = "password"
 OAUTH_REDIRECT_PATH = "/"
 OAUTH_SCOPE = "openid profile email"
+# Local OAuth callback for CLI tools (e.g. agentik) — must match Keycloak valid redirect URIs
+CLI_OAUTH_REDIRECT_URI = "http://127.0.0.1:8250/oauth/callback"
+CLI_OAUTH_WEB_ORIGIN = "http://127.0.0.1:8250"
 SERVICE_ACCOUNT_CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 DEFAULT_DEMO_USERS = ("bob", "alice")
 DEFAULT_DEMO_PASSWORDS = ("kagenti1", "kagenti2")
@@ -481,6 +484,16 @@ def main() -> None:
                 f"'{keycloak_realm}' already exists"
             )
 
+        enable_cli = get_optional_env("ENABLE_CLI", "true").lower() == "true"
+        redirect_uris = [root_url + "/*"]
+        web_origins = [root_url]
+        if enable_cli:
+            redirect_uris.append(CLI_OAUTH_REDIRECT_URI)
+            web_origins.append(CLI_OAUTH_WEB_ORIGIN)
+            logger.info(
+                "ENABLE_CLI=true: adding CLI redirect URI %s", CLI_OAUTH_REDIRECT_URI
+            )
+
         # Register client
         # Configure as public client with PKCE for SPA best practices
         # Public clients don't use client secrets (can't be kept confidential in browser)
@@ -494,8 +507,8 @@ def main() -> None:
             "baseUrl": "",
             "enabled": True,
             "publicClient": True,  # Public client - no client secret
-            "redirectUris": [root_url + "/*"],
-            "webOrigins": [root_url],
+            "redirectUris": redirect_uris,
+            "webOrigins": web_origins,
             "standardFlowEnabled": True,  # Authorization code flow
             "implicitFlowEnabled": False,  # Deprecated, use standard flow instead
             "directAccessGrantsEnabled": False,  # No password grant for SPAs
@@ -509,6 +522,19 @@ def main() -> None:
         }
 
         internal_client_id = register_client(keycloak_admin, client_id, client_payload)
+
+        # Sync redirect URIs / web origins (covers upgrades and pre-existing clients)
+        try:
+            keycloak_admin.update_client(
+                internal_client_id,
+                {"redirectUris": redirect_uris, "webOrigins": web_origins},
+            )
+            logger.info("Updated Keycloak client redirect URIs and web origins")
+        except Exception as upd_err:
+            logger.warning(
+                "Could not update client redirect URIs (client may still work if newly created): %s",
+                upd_err,
+            )
 
         # Get client secret (will be empty for public clients, but kept for backward compatibility)
         # Public clients don't have secrets, so this will return empty

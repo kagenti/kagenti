@@ -1664,6 +1664,100 @@ async def list_build_strategies(
         )
 
 
+class AgentShipwrightBuildSummary(BaseModel):
+    """One Shipwright Build CR for an agent (git/source pipeline)."""
+
+    name: str
+    namespace: str
+    registered: bool = False
+    strategy: str = ""
+    gitUrl: str = ""
+    gitRevision: str = ""
+    contextDir: str = ""
+    outputImage: str = ""
+    creationTimestamp: Optional[str] = None
+
+
+class AgentShipwrightBuildListResponse(BaseModel):
+    items: List[AgentShipwrightBuildSummary]
+
+
+@router.get(
+    "/shipwright-builds",
+    response_model=AgentShipwrightBuildListResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def list_agent_shipwright_builds(
+    namespace: str = Query(
+        default="",
+        description="Kubernetes namespace (required unless all_namespaces=true)",
+    ),
+    all_namespaces: bool = Query(
+        default=False,
+        alias="allNamespaces",
+        description="If true, list builds in all kagenti-enabled namespaces",
+    ),
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> AgentShipwrightBuildListResponse:
+    """List Shipwright Build resources created for agents (kagenti.io/type=agent)."""
+    label_selector = f"{KAGENTI_TYPE_LABEL}={RESOURCE_TYPE_AGENT}"
+    namespaces_to_scan: List[str] = []
+    if all_namespaces:
+        namespaces_to_scan = kube.list_enabled_namespaces()
+    else:
+        if not namespace or not namespace.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="namespace query parameter is required (or use allNamespaces=true)",
+            )
+        namespaces_to_scan = [namespace.strip()]
+
+    items: List[AgentShipwrightBuildSummary] = []
+    for ns in namespaces_to_scan:
+        try:
+            builds = kube.list_custom_resources(
+                group=SHIPWRIGHT_CRD_GROUP,
+                version=SHIPWRIGHT_CRD_VERSION,
+                namespace=ns,
+                plural=SHIPWRIGHT_BUILDS_PLURAL,
+                label_selector=label_selector,
+            )
+        except ApiException as e:
+            if e.status == 403:
+                logger.warning("Skip namespace %s listing shipwright builds: %s", ns, e.reason)
+                continue
+            if e.status == 404:
+                continue
+            raise HTTPException(status_code=e.status, detail=str(e.reason))
+
+        for b in builds:
+            md = b.get("metadata", {})
+            spec = b.get("spec", {})
+            status = b.get("status", {})
+            source = spec.get("source", {}) or {}
+            git = source.get("git", {}) or {}
+            strat = spec.get("strategy", {}) or {}
+            out = spec.get("output", {}) or {}
+            items.append(
+                AgentShipwrightBuildSummary(
+                    name=md.get("name", ""),
+                    namespace=md.get("namespace", ns),
+                    registered=bool(status.get("registered", False)),
+                    strategy=strat.get("name", "") or "",
+                    gitUrl=git.get("url", "") or "",
+                    gitRevision=git.get("revision", "") or "",
+                    contextDir=source.get("contextDir", "") or "",
+                    outputImage=out.get("image", "") or "",
+                    creationTimestamp=_format_timestamp(
+                        md.get("creationTimestamp") or md.get("creation_timestamp")
+                    ),
+                )
+            )
+
+    items.sort(key=lambda x: (x.namespace, x.name))
+    return AgentShipwrightBuildListResponse(items=items)
+
+
 @router.get(
     "/shipwright-builds",
     response_model=ShipwrightBuildListResponse,

@@ -1,0 +1,77 @@
+# Krew plugin manifest (apiVersion krew.googlecontainertools.github.com/v1alpha2).
+# After tagging v0.1.0 and running GoReleaser, fill sha256 for each platform
+# (see scripts/fill-krew-sha256.sh) or copy from release checksums.txt.
+#
+# Install (after release assets exist):
+#   kubectl krew install --manifest-url https://raw.githubusercontent.com/akram/kubectl-kagenti/v0.1.0/deploy/krew/kagenti.yaml
+#
+# Local dev (single platform):
+#   make krew-pack
+#   # edit uri below to file:///absolute/path/to/dist/kubectl-kagenti_v0.1.0_...tar.gz and set sha256
+#   kubectl krew install --manifest=deploy/krew/kagenti.yaml
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: kagenti
+spec:
+  version: v0.1.0
+  homepage: https://github.com/akram/kubectl-kagenti
+  shortDescription: CLI for the Kagenti platform
+  description: |
+    kubectl kagenti (and oc kagenti when installed as oc-kagenti) talks to the Kagenti API.
+    Configure backend_url and a Keycloak JWT (see README).
+  caveats: |
+    * Set backend_url in ~/.config/kagenti/config.yaml and supply a bearer token
+      ($KAGENTI_TOKEN or token file). Browser login comes in a later release.
+    * For OpenShift: ln -s "$(which kubectl-kagenti)" ~/bin/oc-kagenti (or equivalent).
+  platforms:
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: amd64
+      uri: https://github.com/akram/kubectl-kagenti/releases/download/v0.1.0/kubectl-kagenti_v0.1.0_darwin_amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-kagenti
+      files:
+        - from: kubectl-kagenti
+          to: "."
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: arm64
+      uri: https://github.com/akram/kubectl-kagenti/releases/download/v0.1.0/kubectl-kagenti_v0.1.0_darwin_arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-kagenti
+      files:
+        - from: kubectl-kagenti
+          to: "."
+    - selector:
+        matchLabels:
+          os: linux
+          arch: amd64
+      uri: https://github.com/akram/kubectl-kagenti/releases/download/v0.1.0/kubectl-kagenti_v0.1.0_linux_amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-kagenti
+      files:
+        - from: kubectl-kagenti
+          to: "."
+    - selector:
+        matchLabels:
+          os: linux
+          arch: arm64
+      uri: https://github.com/akram/kubectl-kagenti/releases/download/v0.1.0/kubectl-kagenti_v0.1.0_linux_arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-kagenti
+      files:
+        - from: kubectl-kagenti
+          to: "."
+    - selector:
+        matchLabels:
+          os: windows
+          arch: amd64
+      uri: https://github.com/akram/kubectl-kagenti/releases/download/v0.1.0/kubectl-kagenti_v0.1.0_windows_amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-kagenti.exe
+      files:
+        - from: kubectl-kagenti.exe
+          to: "."

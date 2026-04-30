@@ -1,0 +1,4 @@
+/dist/
+/kubectl-kagenti
+*.exe
+.DS_Store

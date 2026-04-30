@@ -1,0 +1,51 @@
+# Copyright 2025 IBM Corp.
+# SPDX-License-Identifier: Apache-2.0
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kubectl-kagenti
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    binary: kubectl-kagenti
+    ldflags:
+      - -s -w
+      - -X github.com/kagenti/kagenti/kagenti/kubectl-kagenti/internal/cli.Version={{.Version}}
+      - -X github.com/kagenti/kagenti/kagenti/kubectl-kagenti/internal/cli.GitCommit={{.Commit}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "kubectl-kagenti_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: akram
+    name: kubectl-kagenti
