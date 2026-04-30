@@ -244,10 +244,16 @@ fi
 log_phase "PHASE 3: Deploy OpenShell Gateway"
 
 log_step "Applying OpenShell manifests (kubectl apply -k)..."
-kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -v "^Warning:" || {
-    log_warn "Server-side apply failed, retrying with --validate=false..."
-    kubectl apply -k deployments/openshell/ --validate=false 2>&1 | grep -v "^Warning:"
-}
+if ! kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -v "^Warning:"; then
+    if kubectl apply -k deployments/openshell/ --server-side --force-conflicts 2>&1 | grep -q "Forbidden: updates to statefulset spec"; then
+        log_warn "StatefulSet immutable field conflict — deleting and recreating..."
+        kubectl delete statefulset openshell-gateway agent-sandbox-controller -n openshell-system --ignore-not-found --wait=false 2>/dev/null
+        sleep 3
+    fi
+    kubectl apply -k deployments/openshell/ 2>&1 | grep -v "^Warning:" || {
+        log_warn "Kustomize apply failed — continuing with existing resources"
+    }
+fi
 
 log_step "Waiting for openshell-system pods to be ready..."
 kubectl wait --for=condition=ready pod --all -n openshell-system --timeout=180s 2>/dev/null || {

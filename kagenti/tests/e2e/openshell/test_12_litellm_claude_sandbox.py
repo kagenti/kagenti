@@ -11,8 +11,8 @@ These tests verify infrastructure correctness, not agent behavior.
 
 import json
 import os
-import subprocess
 
+import httpx
 import pytest
 
 from kagenti.tests.e2e.openshell.conftest import (
@@ -199,55 +199,44 @@ class TestLiteLLMAnthropicPassthrough:
     @skip_no_llm
     def test_anthropic_messages_api_returns_response(self):
         """LiteLLM /v1/messages endpoint returns valid Anthropic-format response."""
-        litellm_svc = kubectl_run(
-            "get", "svc", "litellm-model-proxy", "-n", AGENT_NS, timeout=10
-        )
-        if litellm_svc.returncode != 0:
-            pytest.skip("LiteLLM service not found")
+        from kagenti.tests.e2e.openshell.conftest import _port_forward
 
-        result = subprocess.run(
-            [
-                "kubectl",
-                "exec",
-                "deploy/litellm-model-proxy",
-                "-n",
-                AGENT_NS,
-                "--",
-                "python3",
-                "-c",
-                """
-import urllib.request, json
-req = urllib.request.Request(
-    "http://localhost:4000/v1/messages",
-    data=json.dumps({
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 50,
-        "messages": [{"role": "user", "content": "What is 2+2? Reply with just the number."}]
-    }).encode(),
-    headers={
-        "Content-Type": "application/json",
-        "x-api-key": "test",
-        "anthropic-version": "2023-06-01",
-    },
-)
-resp = urllib.request.urlopen(req, timeout=30)
-data = json.loads(resp.read())
-print(json.dumps(data))
-""",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert result.returncode == 0, f"Anthropic Messages API failed: {result.stderr}"
-
-        data = json.loads(result.stdout.strip())
-        assert data.get("type") == "message", (
-            f"Expected type=message, got {data.get('type')}"
-        )
-        assert len(data.get("content", [])) > 0, "Response has no content"
-        text = data["content"][0].get("text", "")
-        assert "4" in text, f"Expected '4' in response, got: {text}"
+        url, proc = _port_forward("litellm-model-proxy", AGENT_NS, 4000)
+        if not url:
+            pytest.skip("Cannot port-forward to LiteLLM proxy")
+        try:
+            resp = httpx.post(
+                f"{url}/v1/messages",
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 50,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "What is 2+2? Reply with just the number.",
+                        }
+                    ],
+                },
+                headers={
+                    "x-api-key": "test",
+                    "anthropic-version": "2023-06-01",
+                },
+                timeout=30.0,
+            )
+            assert resp.status_code == 200, (
+                f"Anthropic Messages API returned {resp.status_code}: {resp.text[:200]}"
+            )
+            data = resp.json()
+            assert data.get("type") == "message", (
+                f"Expected type=message, got {data.get('type')}"
+            )
+            assert len(data.get("content", [])) > 0, "Response has no content"
+            text = data["content"][0].get("text", "")
+            assert "4" in text, f"Expected '4' in response, got: {text}"
+        finally:
+            if proc:
+                proc.terminate()
+                proc.wait()
 
     @skip_no_llm
     def test_claude_model_alias_in_model_list(self):

@@ -479,30 +479,35 @@ spec:
     return exec_result.stdout
 
 
-def run_claude_in_sandbox(
-    prompt: str,
-    namespace: str = "team1",
-    timeout_sec: int = 120,
-) -> str | None:
-    """Create a sandbox with Claude Code, run a prompt via LiteLLM, return output.
+_claude_sandbox_pod: dict[str, str | None] = {}
 
-    Claude Code uses ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN to reach
-    the LiteLLM proxy which translates Anthropic Messages API format to
-    OpenAI format for LiteMaaS.
 
-    Requires LiteLLM config with:
-    - hosted_vllm/ provider (avoids OpenAI Responses API bridge)
-    - use_chat_completions_url_for_anthropic_messages: true
-    - drop_params: true (Claude Code sends reasoning_effort etc.)
-    - claude-sonnet-4-20250514 model alias
-    """
+def _ensure_claude_sandbox(namespace: str = "team1") -> str | None:
+    """Ensure a shared Claude Code sandbox pod is running. Returns pod name."""
     import time
 
-    name = "test-claude-skill-run"
+    cache_key = namespace
+    if cache_key in _claude_sandbox_pod:
+        pod_name = _claude_sandbox_pod[cache_key]
+        if pod_name:
+            check = kubectl_run(
+                "get",
+                "pod",
+                pod_name,
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={.status.phase}",
+            )
+            if check.returncode == 0 and check.stdout.strip() == "Running":
+                return pod_name
+
+    name = "test-claude-shared"
     litellm_svc = kubectl_run(
         "get", "svc", "litellm-model-proxy", "-n", namespace, timeout=10
     )
     if litellm_svc.returncode != 0:
+        _claude_sandbox_pod[cache_key] = None
         return None
 
     litellm_url = f"http://litellm-model-proxy.{namespace}.svc:4000"
@@ -514,7 +519,8 @@ def run_claude_in_sandbox(
         "-n",
         namespace,
         "--ignore-not-found",
-        "--wait=false",
+        "--wait=true",
+        timeout=30,
     )
     time.sleep(2)
 
@@ -530,7 +536,7 @@ spec:
       containers:
       - name: sandbox
         image: {BASE_IMAGE}
-        command: ["sleep", "300"]
+        command: ["sleep", "1800"]
         env:
         - name: ANTHROPIC_BASE_URL
           value: "{litellm_url}"
@@ -548,10 +554,10 @@ spec:
         timeout=30,
     )
     if result.returncode != 0:
+        _claude_sandbox_pod[cache_key] = None
         return None
 
-    deadline = time.time() + 60
-    pod_name = None
+    deadline = time.time() + 90
     while time.time() < deadline:
         pods = kubectl_get_pods_json(namespace)
         matching = [
@@ -562,19 +568,33 @@ spec:
         ]
         if matching:
             pod_name = matching[0]["metadata"]["name"]
-            break
+            _claude_sandbox_pod[cache_key] = pod_name
+            return pod_name
         time.sleep(5)
 
+    _claude_sandbox_pod[cache_key] = None
+    return None
+
+
+def run_claude_in_sandbox(
+    prompt: str,
+    namespace: str = "team1",
+    timeout_sec: int = 120,
+) -> str | None:
+    """Run Claude Code in a shared sandbox pod via LiteLLM, return output.
+
+    Reuses a single sandbox pod across tests (created on first call).
+    Multiple Claude Code invocations exec into the same pod, avoiding
+    the create/delete race that caused flaky test failures.
+
+    Requires LiteLLM config with:
+    - hosted_vllm/ provider (avoids OpenAI Responses API bridge)
+    - use_chat_completions_url_for_anthropic_messages: true
+    - drop_params: true (Claude Code sends reasoning_effort etc.)
+    - claude-sonnet-4-20250514 model alias
+    """
+    pod_name = _ensure_claude_sandbox(namespace)
     if not pod_name:
-        kubectl_run(
-            "delete",
-            "sandbox",
-            name,
-            "-n",
-            namespace,
-            "--ignore-not-found",
-            "--wait=false",
-        )
         return None
 
     exec_result = kubectl_run(
@@ -592,16 +612,6 @@ spec:
         "claude-sonnet-4-20250514",
         prompt,
         timeout=timeout_sec + 30,
-    )
-
-    kubectl_run(
-        "delete",
-        "sandbox",
-        name,
-        "-n",
-        namespace,
-        "--ignore-not-found",
-        "--wait=false",
     )
 
     if exec_result.returncode != 0:
