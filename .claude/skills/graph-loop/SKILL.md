@@ -240,6 +240,44 @@ Each iteration runs environments in parallel at their natural speed:
 - Highlight: what passes everywhere, what's environment-specific, what's flaky
 - Brainstorm with user on misaligned columns
 
+## Event Graph Validation
+
+The "graph" in graph-loop means reconstructing the flow of events across
+components and validating the expected sequence occurred. This goes beyond
+pass/fail — it verifies the ARCHITECTURE is working correctly.
+
+### How it works:
+1. **Collect logs** from all components after a test run
+2. **Reconstruct the event graph** — trace a request through the system:
+   ```
+   Claude Code → ANTHROPIC_BASE_URL → LiteLLM /v1/messages
+     → hosted_vllm translation → LiteMaaS /v1/chat/completions
+     → response back through LiteLLM → Anthropic format → Claude Code
+   ```
+3. **Assert expected events present** in the logs:
+   - LiteLLM: `POST /v1/messages` received, model resolved, upstream call made
+   - Gateway: sandbox created, pod scheduled, exec completed
+   - Waypoint: HBONE connection established, no cert errors
+4. **Flag missing events** — if a step is missing, the architecture has a gap
+
+### Log levels:
+- **INFO** (default): sufficient for most validation — request/response logging
+- **DEBUG**: enable per-component when investigating specific failures:
+  ```bash
+  kubectl set env deploy/litellm-model-proxy -n team1 LITELLM_LOG=DEBUG
+  kubectl set env deploy/claude-sdk-agent -n team1 -c agent LOG_LEVEL=DEBUG
+  ```
+- Only enable DEBUG for the component under investigation, reset after
+
+### Example event graph assertion (for Claude Code sandbox test):
+```
+[litellm] INFO POST /v1/messages model=claude-sonnet-4-20250514
+[litellm] INFO Using chat_completions path (anthropic messages translation)
+[litellm] INFO Upstream call to hosted_vllm/llama-scout-17b
+[litellm] INFO Response 200 tokens=N
+```
+If any line is missing → the test should flag it even if the response was correct.
+
 ## Log Analysis (per iteration)
 
 Every iteration must also analyze component logs for errors and warnings.
