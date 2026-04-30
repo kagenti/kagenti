@@ -7,12 +7,16 @@
 #   2. Gateway API experimental CRDs (TCPRoute/TLSRoute, Kind only)
 #   3. cert-manager CA chain (ClusterIssuer + CA Certificate)
 #   4. Keycloak realm (openshell realm, PKCE client, test users)
+#   5. LiteLLM model proxy (optional, when --litellm is passed)
+#   6. Base sandbox image pre-pull (optional, when --pre-pull is passed)
 #
 # Idempotent: safe to re-run. Checks existing state before each step.
 #
 # Usage:
 #   scripts/openshell/deploy-shared.sh                  # Deploy everything
 #   scripts/openshell/deploy-shared.sh --skip-sandbox   # Skip agent-sandbox
+#   scripts/openshell/deploy-shared.sh --litellm        # Also deploy LiteLLM proxy
+#   scripts/openshell/deploy-shared.sh --pre-pull       # Pre-pull base sandbox image
 #   scripts/openshell/deploy-shared.sh --dry-run        # Print commands only
 #   scripts/openshell/deploy-shared.sh --help           # Show usage
 #
@@ -38,6 +42,9 @@ STEP_SANDBOX=true
 STEP_GATEWAY_API=true
 STEP_TLS=true
 STEP_KEYCLOAK=true
+STEP_LITELLM=false
+STEP_PREPULL=false
+KIND_CLUSTER="${CLUSTER_NAME:-kagenti}"
 DRY_RUN=false
 
 # ── Colors & logging ────────────────────────────────────────────────────────
@@ -63,6 +70,9 @@ Options:
   --skip-gateway-api  Skip experimental Gateway API CRDs
   --skip-tls          Skip cert-manager CA chain
   --skip-keycloak     Skip Keycloak realm setup
+  --litellm           Deploy LiteLLM model proxy (requires MAAS_* env vars)
+  --pre-pull          Pre-pull base sandbox image into the cluster
+  --kind-cluster NAME Kind cluster name for pre-pull (default: kagenti)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
   --dry-run           Print commands without executing
 EOF
@@ -78,6 +88,9 @@ while [[ $# -gt 0 ]]; do
     --skip-tls)         STEP_TLS=false; shift ;;
     --skip-keycloak)    STEP_KEYCLOAK=false; shift ;;
     --keycloak-ns)      KEYCLOAK_NS="$2"; shift 2 ;;
+    --litellm)          STEP_LITELLM=true; shift ;;
+    --pre-pull)         STEP_PREPULL=true; shift ;;
+    --kind-cluster)     KIND_CLUSTER="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)
       log_error "Unknown option: $1"
@@ -95,6 +108,8 @@ echo "  Sandbox controller: $STEP_SANDBOX"
 echo "  Gateway API CRDs:   $STEP_GATEWAY_API"
 echo "  cert-manager CA:    $STEP_TLS"
 echo "  Keycloak realm:     $STEP_KEYCLOAK"
+echo "  LiteLLM proxy:      $STEP_LITELLM"
+echo "  Base image pre-pull: $STEP_PREPULL"
 echo "  Keycloak namespace: $KEYCLOAK_NS"
 echo "  Dry run:            $DRY_RUN"
 echo ""
@@ -440,6 +455,202 @@ if $STEP_KEYCLOAK; then
 fi
 
 # ============================================================================
+# Step 5: LiteLLM model proxy (optional)
+# ============================================================================
+if $STEP_LITELLM; then
+  log_info "Step 5: LiteLLM model proxy"
+
+  LITEMAAS_URL="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
+  LITEMAAS_KEY="${MAAS_LLAMA4_API_KEY:-}"
+  LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+  LITELLM_NS="${LITELLM_NS:-team1}"
+  LITELLM_PROXY_NAME="litellm-model-proxy"
+
+  if [[ -z "$LITEMAAS_KEY" ]]; then
+    log_warn "MAAS_LLAMA4_API_KEY not set — skipping LiteLLM proxy"
+  elif kubectl get deployment "$LITELLM_PROXY_NAME" -n "$LITELLM_NS" &>/dev/null \
+       && kubectl rollout status "deploy/$LITELLM_PROXY_NAME" -n "$LITELLM_NS" --timeout=5s &>/dev/null; then
+    log_success "LiteLLM proxy already deployed and ready — skipping"
+  else
+    log_info "Deploying LiteLLM model proxy in namespace $LITELLM_NS..."
+    kubectl get ns "$LITELLM_NS" &>/dev/null || run_cmd kubectl create ns "$LITELLM_NS"
+
+    run_cmd kubectl apply -f - <<EOLITELLM
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: $LITELLM_NS
+data:
+  config.yaml: |
+    model_list:
+      - model_name: "gpt-4o-mini"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+      - model_name: "gpt-4o"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+      - model_name: "gpt-4"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+      - model_name: "gpt-5-nano"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+      - model_name: "gpt-5"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+      - model_name: "gpt-5-mini"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+      - model_name: "$LITEMAAS_MODEL"
+        litellm_params:
+          model: "openai/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "$LITEMAAS_KEY"
+          use_chat_completions_api: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: $LITELLM_PROXY_NAME
+  namespace: $LITELLM_NS
+  labels:
+    app.kubernetes.io/name: $LITELLM_PROXY_NAME
+    app.kubernetes.io/part-of: kagenti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: $LITELLM_PROXY_NAME
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: $LITELLM_PROXY_NAME
+    spec:
+      containers:
+      - name: litellm
+        image: ghcr.io/berriai/litellm:main-v1.83.10-stable
+        args: ["--config", "/config/config.yaml", "--port", "4000"]
+        ports:
+        - containerPort: 4000
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        readinessProbe:
+          tcpSocket:
+            port: 4000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /config
+      volumes:
+      - name: config
+        configMap:
+          name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: $LITELLM_PROXY_NAME
+  namespace: $LITELLM_NS
+  labels:
+    app.kubernetes.io/name: $LITELLM_PROXY_NAME
+spec:
+  selector:
+    app.kubernetes.io/name: $LITELLM_PROXY_NAME
+  ports:
+  - name: http
+    port: 4000
+    targetPort: 4000
+EOLITELLM
+
+    if ! $DRY_RUN; then
+      kubectl rollout status "deploy/$LITELLM_PROXY_NAME" -n "$LITELLM_NS" --timeout=120s || {
+        log_warn "LiteLLM proxy rollout not complete"
+      }
+    fi
+    log_success "LiteLLM model proxy deployed"
+  fi
+
+  # Create LLM virtual-keys secret (idempotent)
+  log_info "Creating litellm-virtual-keys secret in $LITELLM_NS..."
+  run_cmd kubectl create secret generic litellm-virtual-keys -n "$LITELLM_NS" \
+    --from-literal=api-key="${LITEMAAS_KEY:-PLACEHOLDER}" \
+    --dry-run=client -o yaml | kubectl apply -f - 2>&1 | grep -v "^Warning:" || true
+
+  echo ""
+fi
+
+# ============================================================================
+# Step 6: Base sandbox image pre-pull (optional)
+# ============================================================================
+if $STEP_PREPULL; then
+  log_info "Step 6: Pre-pull base sandbox image"
+
+  BASE_IMAGE="ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+
+  if is_openshift; then
+    # OCP: Start a pull Job in team1 (non-blocking)
+    if ! kubectl get job openshell-base-pull -n team1 &>/dev/null; then
+      log_info "Starting base sandbox image pre-pull Job (OCP)..."
+      run_cmd kubectl apply -f - <<EOJOB
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openshell-base-pull
+  namespace: team1
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      containers:
+      - name: pull
+        image: $BASE_IMAGE
+        command: ["echo", "Image pulled successfully"]
+      restartPolicy: Never
+EOJOB
+    else
+      log_success "Base image pre-pull Job already exists"
+    fi
+  else
+    # Kind: docker pull + kind load
+    if docker exec "${KIND_CLUSTER}-control-plane" crictl images 2>/dev/null | grep -q "sandboxes/base"; then
+      log_success "Base sandbox image already loaded in Kind — skipping"
+    else
+      log_info "Pre-pulling base sandbox image into Kind cluster '$KIND_CLUSTER'..."
+      docker pull "$BASE_IMAGE" 2>/dev/null && \
+        kind load docker-image "$BASE_IMAGE" --name "$KIND_CLUSTER" 2>/dev/null || \
+        log_warn "Base image pre-pull failed (non-critical)"
+    fi
+  fi
+  echo ""
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo "╔════════════════════════════════════════════════════════════════╗"
@@ -452,5 +663,8 @@ if ! $DRY_RUN; then
   echo "    kubectl get crd sandboxes.agents.x-k8s.io"
   echo "    kubectl get clusterissuer openshell-ca-issuer"
   echo "    kubectl get secret openshell-ca-secret -n cert-manager"
+  if $STEP_LITELLM; then
+    echo "    kubectl get deployment litellm-model-proxy -n ${LITELLM_NS:-team1}"
+  fi
   echo ""
 fi
