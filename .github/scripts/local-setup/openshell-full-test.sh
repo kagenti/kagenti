@@ -357,6 +357,7 @@ EOWAYPOINT
     # ── LLM secret (idempotent) ─────────────────────────────────────
     # Source .env.maas early — we need the keys for both the secret and env patching.
     # Check REPO_ROOT, CWD, and git main worktree (worktrees have .env in parent).
+    # CI passes OPENAI_API_KEY via GH secrets — use it as fallback when no .env.maas.
     MAAS_SOURCED=false
     MAAS_FILE=""
     GIT_MAIN_WORKTREE="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||' || echo "")"
@@ -371,6 +372,12 @@ EOWAYPOINT
         source "$MAAS_FILE"
         MAAS_SOURCED=true
         log_step "Loaded LiteMaaS credentials from $(basename "$MAAS_FILE")"
+    elif [ -n "${OPENAI_API_KEY:-}" ]; then
+        export MAAS_LLAMA4_API_KEY="$OPENAI_API_KEY"
+        export MAAS_LLAMA4_API_BASE="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
+        export MAAS_LLAMA4_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+        MAAS_SOURCED=true
+        log_step "Using OPENAI_API_KEY from environment as LiteMaaS credentials"
     fi
 
     kubectl create secret generic litellm-virtual-keys -n team1 \
