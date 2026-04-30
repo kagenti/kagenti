@@ -217,14 +217,6 @@ static_resources:
         "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
     filter_chains:
     - filter_chain_match:
-        destination_port: 9093
-      filters:
-      - name: envoy.filters.network.tcp_proxy
-        typed_config:
-          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
-          stat_prefix: outbound_passthrough_9093
-          cluster: original_destination
-    - filter_chain_match:
         transport_protocol: tls
       filters:
       - name: envoy.filters.network.tcp_proxy
@@ -279,6 +271,15 @@ static_resources:
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst
     filter_chains:
+    # AuthBridge config and stats passthrough
+    - filter_chain_match:
+        destination_port: 9093
+      filters:
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: outbound_passthrough_9093
+          cluster: original_destination
     - filters:
       - name: envoy.filters.network.http_connection_manager
         typed_config:
