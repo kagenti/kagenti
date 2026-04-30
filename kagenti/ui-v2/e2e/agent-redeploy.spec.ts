@@ -153,12 +153,12 @@ except Exception as e:
 "`,
       90000
     );
-    if (result.includes('warm')) {
+    if (warmup.includes('warm')) {
       warmedUp = true;
       console.log(`[redeploy] LLM executor warmed up after attempt ${w + 1}`);
       break;
     }
-    console.log(`[redeploy] Warmup attempt ${w + 1}/6: ${result.substring(0, 100)}`);
+    console.log(`[redeploy] Warmup attempt ${w + 1}/6: ${warmup.substring(0, 100)}`);
     await page.waitForTimeout(10000);
   }
   if (!warmedUp) {

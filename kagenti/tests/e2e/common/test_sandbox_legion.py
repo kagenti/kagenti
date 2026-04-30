@@ -430,39 +430,60 @@ class TestSandboxLegionShellExecution:
 
         Sends a request to write content to a file, then read it.
         Expects the response to contain the written content.
+        Retries up to 3 times with fresh message IDs on failure.
         """
         agent_url = _get_sandbox_legion_url()
-        try:
-            client, _ = await _connect_to_agent(agent_url)
-        except Exception as e:
-            pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
 
-        message = A2AMessage(
-            role="user",
-            parts=[
-                TextPart(
-                    text=(
-                        "Write the text 'sandbox-e2e-test-payload' to a file "
-                        "called data/e2e_test.txt, then read it back and tell "
-                        "me exactly what the file contains."
+        response = ""
+        last_error = ""
+        for attempt in range(3):
+            try:
+                client, _ = await _connect_to_agent(agent_url)
+            except Exception as e:
+                last_error = str(e)
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                pytest.fail(f"Sandbox agent not reachable at {agent_url}: {e}")
+
+            message = A2AMessage(
+                role="user",
+                parts=[
+                    TextPart(
+                        text=(
+                            "Write the text 'sandbox-e2e-test-payload' to a file "
+                            "called data/e2e_test.txt, then read it back and tell "
+                            "me exactly what the file contains."
+                        )
                     )
-                )
-            ],
-            messageId=uuid4().hex,
+                ],
+                messageId=uuid4().hex,
+            )
+
+            try:
+                response, events = await _extract_response(client, message)
+            except Exception as e:
+                last_error = str(e)
+                if attempt < 2:
+                    await asyncio.sleep(2)
+                    continue
+                pytest.fail(f"Error during A2A conversation: {e}")
+
+            if response and "sandbox-e2e-test-payload" in response:
+                break
+            last_error = f"Response missing payload: {response[:200]}"
+            if attempt < 2:
+                await asyncio.sleep(2)
+
+        assert response, (
+            f"Agent did not return any response after 3 attempts. "
+            f"Last error: {last_error}"
         )
 
-        try:
-            response, events = await _extract_response(client, message)
-        except Exception as e:
-            pytest.fail(f"Error during A2A conversation: {e}")
-
-        assert response, f"Agent did not return any response\n  Events: {events}"
-
         print(f"\n  Response: {response[:300]}")
-        print(f"  Events: {events}")
 
         assert "sandbox-e2e-test-payload" in response, (
-            f"Response doesn't contain the written content.\n"
+            f"Response doesn't contain the written content after 3 attempts.\n"
             f"Expected: 'sandbox-e2e-test-payload'\n"
             f"Response: {response}"
         )

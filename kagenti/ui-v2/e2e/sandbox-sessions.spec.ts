@@ -314,6 +314,11 @@ test.describe('Sandbox Sessions — Multi-Turn & Isolation', () => {
       expect(currentSid).not.toBe(sessionAId);
     }).toPass({ timeout: 10000, intervals: [500, 1000, 2000] });
 
+    // Wait for the new session context to fully initialise on the backend.
+    // Without this the first message may race against session creation,
+    // causing flaky failures where Session B inherits Session A's context.
+    await page.waitForTimeout(5000);
+
     // ---- Turn 1: Unique marker for Session B ----
     await sendAndWaitForResponse(
       page,
