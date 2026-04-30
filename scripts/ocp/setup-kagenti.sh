@@ -960,9 +960,9 @@ run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
   -f "$SECRETS_FILE" \
-  "${KAGENTI_UI_FLAGS[@]}" \
-  "${OPERATOR_IMAGE_FLAGS[@]}" \
-  "${KC_ADMIN_FLAGS[@]}" \
+  ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
+  ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
+  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \
