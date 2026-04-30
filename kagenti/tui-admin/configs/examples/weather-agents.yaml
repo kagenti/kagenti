@@ -1,0 +1,26 @@
+# Example: Weather agent + tool deployment config
+# Usage: kagenti-admin deploy agent --config configs/examples/weather-agents.yaml
+agents:
+  - name: weather-tool
+    namespace: team1
+    type: tool
+    source:
+      repo: kagenti/agent-examples
+      ref: main
+      context: mcp/weather_tool
+    build:
+      strategy: buildah-insecure-push
+      registry: registry.cr-system.svc.cluster.local:5000
+
+  - name: weather-service
+    namespace: team1
+    type: agent
+    source:
+      repo: kagenti/agent-examples
+      ref: main
+      context: a2a/weather_agent
+    env:
+      ollama:
+        LLM_API_BASE: http://dockerhost:11434/v1
+        LLM_API_KEY: dummy
+        LLM_MODEL: qwen2.5:3b

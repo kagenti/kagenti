@@ -46,7 +46,7 @@ else
     echo "Detected OS: Linux"
 fi
 
-# Detect if running on OpenShift vs vanilla Kubernetes (Kind, etc.)
+# Detect if running on OpenShift vs vanilla Kubernetes (Kind, K3s, etc.)
 # Uses 'kubectl get clusterversion' which is fast and only exists on OpenShift.
 # Avoids 'kubectl api-resources' which is slow and can fail intermittently.
 if kubectl get clusterversion &>/dev/null; then
@@ -54,7 +54,16 @@ if kubectl get clusterversion &>/dev/null; then
     echo "Detected cluster type: OpenShift"
 else
     export IS_OPENSHIFT=false
-    echo "Detected cluster type: Kubernetes (Kind/vanilla)"
+    # Refine detection: Kind vs K3s vs other
+    _ctx=$(kubectl config current-context 2>/dev/null || echo "")
+    if echo "$_ctx" | grep -q "^kind-"; then
+        echo "Detected cluster type: Kubernetes (Kind)"
+    elif echo "$_ctx" | grep -q "rancher-desktop"; then
+        echo "Detected cluster type: Kubernetes (K3s/Rancher Desktop)"
+    else
+        echo "Detected cluster type: Kubernetes (vanilla)"
+    fi
+    unset _ctx
 fi
 
 # Export for child scripts

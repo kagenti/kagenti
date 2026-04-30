@@ -50,6 +50,8 @@ detect_environment() {
         echo "hypershift"
     elif kubectl config current-context 2>/dev/null | grep -q "^kind-"; then
         echo "kind"
+    elif kubectl config current-context 2>/dev/null | grep -q "rancher-desktop"; then
+        echo "k3s"
     elif command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
         echo "openshift"
     else
@@ -91,6 +93,7 @@ case "$ENV_TYPE" in
         if ! setup_hypershift_kubeconfig; then exit 1; fi
         ;;
     kind) CLUSTER_NAME="kind-local" ;;
+    k3s) CLUSTER_NAME="rancher-desktop" ;;
     openshift) CLUSTER_NAME="openshift" ;;
     *)
         echo -e "${RED}Error: Unable to detect environment${NC}"
@@ -107,14 +110,23 @@ fi
 # =============================================================================
 # Fetch all route hostnames up front
 # =============================================================================
-if [ "$ENV_TYPE" = "kind" ]; then
+if [ "$ENV_TYPE" = "kind" ] || [ "$ENV_TYPE" = "k3s" ]; then
     DOMAIN_NAME="${DOMAIN_NAME:-localtest.me}"
-    KEYCLOAK_URL="http://keycloak.${DOMAIN_NAME}:8080"
-    UI_URL="http://kagenti-ui.${DOMAIN_NAME}:8080"
-    MLFLOW_URL="http://mlflow.${DOMAIN_NAME}:8080"
-    PHOENIX_URL="http://phoenix.${DOMAIN_NAME}:8080"
-    KIALI_URL="http://kiali.${DOMAIN_NAME}:8080"
-    API_URL="http://kagenti-api.${DOMAIN_NAME}:8080"
+    # Kind maps NodePort 30080 -> host 8080 via extraPortMappings.
+    # K3s/Rancher Desktop exposes NodePorts directly on the host.
+    if [ "$ENV_TYPE" = "k3s" ]; then
+        # Find the actual NodePort for our Istio gateway
+        NODEPORT=$($CLI get svc -n istio-system http-istio-np -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}' 2>/dev/null || echo "30080")
+        INGRESS_PORT="${NODEPORT}"
+    else
+        INGRESS_PORT="8080"
+    fi
+    KEYCLOAK_URL="http://keycloak.${DOMAIN_NAME}:${INGRESS_PORT}"
+    UI_URL="http://kagenti-ui.${DOMAIN_NAME}:${INGRESS_PORT}"
+    MLFLOW_URL="http://mlflow.${DOMAIN_NAME}:${INGRESS_PORT}"
+    PHOENIX_URL="http://phoenix.${DOMAIN_NAME}:${INGRESS_PORT}"
+    KIALI_URL="http://kiali.${DOMAIN_NAME}:${INGRESS_PORT}"
+    API_URL="http://kagenti-api.${DOMAIN_NAME}:${INGRESS_PORT}"
     AGENT_URL=""
     CONSOLE_URL=""
 else
@@ -226,7 +238,7 @@ if [ "$VERBOSE" = "false" ]; then
     fi
 
     # Weather Agent
-    if [ "$ENV_TYPE" = "kind" ]; then
+    if [ "$ENV_TYPE" = "kind" ] || [ "$ENV_TYPE" = "k3s" ]; then
         echo -e "${MAGENTA}Weather Agent${NC}"
         echo "  http://weather-service.team1.svc.cluster.local:8000"
     elif [ -n "${AGENT_URL:-}" ]; then
@@ -265,6 +277,11 @@ case "$ENV_TYPE" in
         ;;
     kind)
         echo -e "${CYAN}Environment:${NC}  Kind (local Docker)"
+        echo ""
+        ;;
+    k3s)
+        echo -e "${CYAN}Environment:${NC}  K3s (Rancher Desktop)"
+        echo -e "${CYAN}Node:${NC}         $(kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo 'unknown')"
         echo ""
         ;;
 esac
@@ -415,8 +432,8 @@ echo -e "${BLUE}Auth:${NC}         None required"
 echo ""
 fi
 
-# Kind: show Kiali here (no OpenShift OAuth)
-if [ "$ENV_TYPE" = "kind" ]; then
+# Kind/K3s: show Kiali here (no OpenShift OAuth)
+if [ "$ENV_TYPE" = "kind" ] || [ "$ENV_TYPE" = "k3s" ]; then
     echo "---------------------------------------------------------------------------"
     echo -e "${MAGENTA}Kiali (Service Mesh Observability)${NC}"
     echo "---------------------------------------------------------------------------"
@@ -427,7 +444,7 @@ if [ "$ENV_TYPE" = "kind" ]; then
     KIALI_NS="kagenti-system%2Cteam1%2Cteam2%2Ckeycloak%2Cistio-system%2Cgateway-system%2Cdefault"
     echo -e "${BLUE}Quick links:${NC}"
     echo -e "  $(link "$KIALI_URL/console/graph/namespaces?${KIALI_GRAPH}&namespaces=${KIALI_NS}" "Traffic Graph (all namespaces)")"
-    echo -e "${BLUE}Auth:${NC}         None required (Kind mode)"
+    echo -e "${BLUE}Auth:${NC}         None required (local mode)"
     echo ""
 fi
 
@@ -448,7 +465,7 @@ AGENT_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-service 
     || $CLI get pods -n team1 -l app=weather-service -o jsonpath='{.items[0].status.phase}' 2>/dev/null \
     || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $AGENT_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
+if [ "$ENV_TYPE" = "kind" ] || [ "$ENV_TYPE" = "k3s" ]; then
     echo -e "${BLUE}URL:${NC}          http://weather-service.team1.svc.cluster.local:8000"
 elif [ -n "${AGENT_URL:-}" ]; then
     echo -e "${BLUE}URL:${NC}          $(link "$AGENT_URL")"
@@ -463,7 +480,7 @@ TOOL_STATUS=$($CLI get pods -n team1 -l app.kubernetes.io/name=weather-tool -o j
     || $CLI get pods -n team1 -l app=weather-tool -o jsonpath='{.items[0].status.phase}' 2>/dev/null \
     || echo "Not Found")
 echo -e "${BLUE}Status:${NC}       $TOOL_STATUS"
-if [ "$ENV_TYPE" = "kind" ]; then
+if [ "$ENV_TYPE" = "kind" ] || [ "$ENV_TYPE" = "k3s" ]; then
     echo -e "${BLUE}URL:${NC}          http://weather-tool.team1.svc.cluster.local:8000"
 else
     TOOL_ROUTE=$($CLI get route -n team1 weather-tool -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
@@ -524,8 +541,8 @@ echo -e "${YELLOW}View recent events:${NC}"
 echo "  $CLI get events -A --sort-by='.lastTimestamp' | tail -30"
 echo ""
 echo -e "${YELLOW}Run E2E tests:${NC}"
-if [ "$ENV_TYPE" = "kind" ]; then
-    echo "  ./.github/scripts/local-setup/kind-full-test.sh --include-test"
+if [ "$ENV_TYPE" = "kind" ] || [ "$ENV_TYPE" = "k3s" ]; then
+    echo "  ./.github/scripts/local-setup/local-fulltest.sh --include-test"
 else
     echo "  ./.github/scripts/local-setup/hypershift-full-test.sh --include-test"
 fi

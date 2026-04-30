@@ -22,7 +22,7 @@ if [[ ! -f "$PLAYBOOK" ]]; then
   exit 2
 fi
 
-# Check for unsupported Helm v4: warn and exit early if detected
+# Check Helm version: v3 and v4 are supported
 if command -v helm >/dev/null 2>&1; then
   # Prefer the short output (e.g. "v3.12.0+g...") but fall back to full output
   helm_ver=$(helm version --short 2>/dev/null || helm version 2>/dev/null)
@@ -31,13 +31,13 @@ if command -v helm >/dev/null 2>&1; then
   # Extract major version number using regex (handles optional "v" prefix)
   if [[ "$helm_ver_short" =~ ^v?([0-9]+)\. ]]; then
     helm_major_ver="${BASH_REMATCH[1]}"
-    if [[ "$helm_major_ver" == "4" ]]; then
-      echo "ERROR: Detected Helm version $helm_ver_short which is unsupported by this installer." >&2
-      echo "       Please downgrade to Helm v3.x and re-run this installer." >&2
+    if [[ "$helm_major_ver" -lt 3 ]]; then
+      echo "ERROR: Detected Helm version $helm_ver_short. Helm v3+ is required." >&2
       exit 1
     fi
+    echo "Detected Helm $helm_ver_short"
   else
-    echo "WARNING: Could not parse Helm version string. Original output: '$helm_ver'. Parsed short version: '$helm_ver_short'. Please ensure you are using Helm v3.x." >&2
+    echo "WARNING: Could not parse Helm version string. Original output: '$helm_ver'. Parsed short version: '$helm_ver_short'. Please ensure you are using Helm v3+." >&2
   fi
 fi
 
@@ -68,7 +68,7 @@ usage() {
 Usage: ${0##*/} [options] [-- ansible-playbook-args]
 
 Options:
-  --env <dev|minimal|ocp>   Use a named environment file from deployments/envs
+  --env <dev|k3s|minimal|ocp>  Use a named environment file from deployments/envs
   --env-file <path>         Add an explicit environment values file (can repeat)
   --secret <path>           Path to secret values file (example: ../envs/.secret_values.yaml)
   --preload                 Set kind_images_preload=true
@@ -91,6 +91,7 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || { echo "--env requires a value"; exit 2; }
       case "$1" in
         dev) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values.yaml") ;;
+        k3s) ENV_FILES+=("$SCRIPT_DIR/../envs/k3s_values.yaml") ;;
         minimal) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values_minimal.yaml") ;;
         auth) ENV_FILES+=("$SCRIPT_DIR/../envs/dev_values_minimal_auth.yaml") ;;
         ocp) ENV_FILES+=("$SCRIPT_DIR/../envs/ocp_values.yaml") ;;

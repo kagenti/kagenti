@@ -118,6 +118,37 @@ jobs:
       - name: Build
         run: go build ./...
 
+  tui-admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5  # v5
+        with:
+          go-version-file: kagenti/tui-admin/go.mod
+          cache-dependency-path: kagenti/tui-admin/go.sum
+
+      - name: Run go vet
+        working-directory: kagenti/tui-admin
+        run: go vet ./...
+
+      - name: Run tests
+        working-directory: kagenti/tui-admin
+        run: go test ./... -v -race -count=1 -coverprofile=coverage.out
+
+      - name: Show coverage
+        working-directory: kagenti/tui-admin
+        run: go tool cover -func=coverage.out | tail -1
+
+      - name: Build
+        working-directory: kagenti/tui-admin
+        run: go build -o bin/kagenti-admin .
+
   chart-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
