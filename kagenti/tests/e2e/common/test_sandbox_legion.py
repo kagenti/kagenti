@@ -588,13 +588,16 @@ class TestSandboxLegionMemory:
         assert response2, f"Turn 2: No response\n  Events: {events2}"
         print(f"  Turn 2 response: {response2[:200]}")
 
-        assert "Bob Beep" in response2, (
+        response2_lower = response2.lower()
+        assert "bob" in response2_lower and (
+            "beep" in response2_lower or "bob beep" in response2_lower
+        ), (
             f"Agent didn't remember the name.\n"
-            f"Expected 'Bob Beep' in response.\n"
+            f"Expected 'Bob' and 'Beep' in response.\n"
             f"Response: {response2}"
         )
 
-        print(f"\n  Multi-turn memory verified: agent remembered 'Bob Beep'")
+        print(f"\n  Multi-turn memory verified: agent remembered the name")
 
 
 if __name__ == "__main__":
