@@ -525,22 +525,54 @@ _wait_kagenti_deps_ready() {
 
 # Apply operand CRs that --no-hooks skipped.
 # Called on both fresh install AND upgrade so reruns fix missing CRs.
-_apply_operand_crs() {
-  if $DRY_RUN; then return; fi
-
-  # Wait for the Keycloak CRD before applying — the operator subscription was
-  # just installed and needs time to register the CRD.
-  log_info "Waiting for Keycloak CRD..."
-  local tries=0
-  while ! $KUBECTL get crd keycloaks.k8s.keycloak.org &>/dev/null; do
+_wait_for_crd() {
+  local crd="$1" label="${2:-$1}" timeout="${3:-120}"
+  local tries=0 max_tries=$(( timeout / 5 ))
+  log_info "Waiting for CRD $label..."
+  while ! $KUBECTL get crd "$crd" &>/dev/null; do
     tries=$((tries + 1))
-    if [ $tries -ge 60 ]; then
-      log_error "Keycloak CRD not found after 5m — cannot proceed without Keycloak"
+    if [ $tries -ge $max_tries ]; then
+      log_error "$label CRD not found after ${timeout}s"
       return 1
+    fi
+    # Auto-approve pending InstallPlans so OLM operators can finish installing
+    if (( tries % 6 == 0 )); then
+      for ns in openshift-operators zero-trust-workload-identity-manager; do
+        local pending
+        pending=$($KUBECTL get installplan -n "$ns" \
+          -o jsonpath='{range .items[?(@.spec.approved==false)]}{.metadata.name}{" "}{end}' 2>/dev/null || true)
+        for plan in $pending; do
+          [ -z "$plan" ] && continue
+          log_info "  Auto-approving InstallPlan $plan in $ns"
+          $KUBECTL patch installplan "$plan" -n "$ns" --type merge \
+            -p '{"spec":{"approved":true}}' 2>/dev/null || true
+        done
+      done
     fi
     sleep 5
   done
-  log_success "Keycloak CRD available"
+  log_success "$label CRD available"
+}
+
+_apply_operand_crs() {
+  if $DRY_RUN; then return; fi
+
+  # Wait for operator CRDs before applying operand CRs.
+  # The operator subscriptions were created by the kagenti-deps chart (regular
+  # templates), but OLM needs time to install the operators and register CRDs.
+  # Without these waits the kubectl apply below silently fails (|| true) and
+  # Istio/SPIRE never deploy.
+  _wait_for_crd keycloaks.k8s.keycloak.org "Keycloak" 300
+
+  # Sail operator (Istio service mesh) — only if Istio components are enabled
+  if $KUBECTL get subscription servicemeshoperator3 -n openshift-operators &>/dev/null; then
+    _wait_for_crd istios.sailoperator.io "Sail operator (Istio)" 600
+  fi
+
+  # ZTWIM operator (SPIRE) — only if SPIRE subscription exists
+  if $KUBECTL get subscription -n zero-trust-workload-identity-manager -o name &>/dev/null 2>&1 | grep -q .; then
+    _wait_for_crd spireservers.operator.openshift.io "ZTWIM (SPIRE)" 600
+  fi
 
   # Wait for ZTWIM operator CRDs — the Subscription was just created and
   # OLM needs time to install the operator CSV which registers the CRDs.
@@ -1031,6 +1063,8 @@ log_success "Kagenti installed"
 # Grant otel-collector SA MLflow RBAC in agent namespaces (created by kagenti chart above)
 if [ "$SKIP_MLFLOW" = true ]; then
   log_success "Skipping MLflow RBAC grant (--skip-mlflow)"
+elif ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
+  log_warn "RHOAI not installed — skipping MLflow RBAC grant"
 else
   _mlflow_grant_otel_rbac
 fi
