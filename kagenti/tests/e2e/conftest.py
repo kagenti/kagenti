@@ -426,6 +426,26 @@ def pytest_collection_modifyitems(config, items):
                 enabled.get(component_name, False) or component_config["enabled"]
             )
 
+    # Runtime override: disable features whose CRDs are missing on the cluster.
+    # The config says what SHOULD be installed, but on fresh CI clusters some
+    # operators may not have finished installing or may not be available at all.
+    _crd_requirements = {
+        "rhoai": "datascienceclusters.datasciencecluster.opendatahub.io",
+        "mlflow": "datascienceclusters.datasciencecluster.opendatahub.io",
+    }
+    for feature, crd in _crd_requirements.items():
+        if enabled.get(feature, False):
+            try:
+                result = subprocess.run(
+                    ["kubectl", "get", "crd", crd],
+                    capture_output=True,
+                    timeout=10,
+                )
+                if result.returncode != 0:
+                    enabled[feature] = False
+            except Exception:
+                enabled[feature] = False
+
     # Detect OpenShift from config
     is_openshift = _detect_openshift_from_config(kagenti_config)
 
