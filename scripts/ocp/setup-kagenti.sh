@@ -51,6 +51,7 @@ SKIP_OVN_PATCH=false
 SKIP_MCP_GATEWAY=false
 SKIP_UI=false
 SKIP_MLFLOW=false
+MLFLOW_DEFERRED=false
 SHOW_SECRETS=false
 MCP_GATEWAY_VERSION="0.5.1"
 OPERATOR_REPO=""
@@ -418,8 +419,8 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
 
 log_info "Step 2.5: MLflow DSC preflight + provisioning"
 if ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
-  log_warn "RHOAI not installed (DataScienceCluster CRD not found) — skipping MLflow provisioning"
-  SKIP_MLFLOW=true
+  log_info "RHOAI not yet installed — MLflow provisioning deferred to after kagenti-deps (Step 3c)"
+  MLFLOW_DEFERRED=true
 else
   _mlflow_check_dsc
   _mlflow_create_cr
@@ -939,6 +940,134 @@ ${ROOT_CERT}"
 }
 _ensure_rhoai_shared_trust
 echo ""
+
+# ============================================================================
+# Step 3c: Deferred MLflow provisioning (when RHOAI was installed by kagenti-deps)
+# ============================================================================
+# On fresh clusters, RHOAI isn't pre-installed — kagenti-deps creates the OLM
+# subscription in Step 3, and the operator registers its CRDs shortly after.
+# This step waits for the RHOAI operator, provisions MLflow, then upgrades
+# kagenti-deps with the OTEL traces endpoint.
+if [ "$MLFLOW_DEFERRED" = true ] && [ "$SKIP_MLFLOW" = false ]; then
+  log_info "Step 3c: Deferred MLflow provisioning"
+
+  # Wait for RHOAI operator to register the DataScienceCluster CRD (up to 5 min)
+  if _wait_for_crd datascienceclusters.datasciencecluster.opendatahub.io "RHOAI operator" 300 2>/dev/null; then
+    # Wait for RHOAI operator CSV to succeed (CRD exists but operator may still be initializing)
+    log_info "Waiting for RHOAI operator CSV..."
+    _csv_tries=0
+    while true; do
+      _csv_phase=$($KUBECTL get csv -n redhat-ods-operator \
+        -o jsonpath='{.items[?(@.spec.displayName=="Red Hat OpenShift AI")].status.phase}' 2>/dev/null || echo "")
+      if [ "$_csv_phase" = "Succeeded" ]; then
+        log_success "RHOAI operator CSV succeeded"
+        break
+      fi
+      _csv_tries=$((_csv_tries + 1))
+      if [ $_csv_tries -ge 60 ]; then
+        log_warn "RHOAI operator CSV not ready after 5m (status: $_csv_phase) — skipping MLflow"
+        SKIP_MLFLOW=true
+        break
+      fi
+      sleep 5
+    done
+
+    if [ "$SKIP_MLFLOW" = false ]; then
+      # Create or patch DataScienceCluster with mlflowoperator Managed
+      if ! $KUBECTL get datasciencecluster default-dsc &>/dev/null; then
+        log_info "Creating DataScienceCluster with mlflowoperator Managed..."
+        $KUBECTL apply -f - <<'DSCEOF'
+apiVersion: datasciencecluster.opendatahub.io/v1
+kind: DataScienceCluster
+metadata:
+  name: default-dsc
+spec:
+  components:
+    dashboard:
+      managementState: Removed
+    kserve:
+      managementState: Managed
+      rawDeploymentServiceConfig: Headless
+    workbenches:
+      managementState: Removed
+    modelmeshserving:
+      managementState: Removed
+    datasciencepipelines:
+      managementState: Removed
+    codeflare:
+      managementState: Removed
+    ray:
+      managementState: Removed
+    kueue:
+      managementState: Removed
+    trustyai:
+      managementState: Removed
+    modelregistry:
+      managementState: Removed
+    trainingoperator:
+      managementState: Removed
+    mlflowoperator:
+      managementState: Managed
+DSCEOF
+        log_success "DataScienceCluster created"
+      else
+        # DSC exists but mlflowoperator may not be Managed — patch it
+        _mlflow_state=""
+        _mlflow_state=$($KUBECTL get datasciencecluster default-dsc \
+          -o jsonpath='{.spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
+        if [ "$_mlflow_state" != "Managed" ]; then
+          log_info "Patching DataScienceCluster to enable mlflowoperator..."
+          $KUBECTL patch datasciencecluster default-dsc --type=merge \
+            -p '{"spec":{"components":{"mlflowoperator":{"managementState":"Managed"}}}}'
+          log_success "mlflowoperator set to Managed"
+        fi
+      fi
+
+      # Wait for mlflowoperator to register the MLflow CRD (reconciles DSC → installs operator → registers CRD)
+      if _wait_for_crd mlflows.mlflow.opendatahub.io "MLflow operator" 300 2>/dev/null; then
+        _mlflow_create_cr
+        _mlflow_wait_ready
+      else
+        log_warn "MLflow CRD not registered after 5m — MLflow will not be available"
+        SKIP_MLFLOW=true
+      fi
+    fi
+
+    # Upgrade kagenti-deps to add the MLflow OTEL exporter pipeline
+    if [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
+      log_info "Upgrading kagenti-deps with MLflow OTEL endpoint..."
+      _kc_public_url="https://keycloak-${KC_NAMESPACE}.${DOMAIN}"
+      _mlflow_vals_file=$(mktemp /tmp/kagenti-mlflow-vals-XXXXXX.yaml)
+      cat > "$_mlflow_vals_file" <<EOF
+otel:
+  mlflow:
+    enabled: true
+  collector:
+    mlflowConfig:
+      exporters:
+        otlphttp/mlflow:
+          traces_endpoint: "${MLFLOW_TRACES_ENDPOINT}"
+EOF
+      run_cmd helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
+        -n kagenti-system \
+        --set spire.trustDomain="${DOMAIN}" \
+        --set "keycloak.publicUrl=${_kc_public_url}" \
+        --set components.kiali.enabled=false \
+        --set components.rhoai.enabled=true \
+        --set components.mlflow.enabled=false \
+        --set components.shipwright.enabled=false \
+        --set mlflow.auth.enabled=false \
+        -f "$_mlflow_vals_file" \
+        --no-hooks
+      rm -f "$_mlflow_vals_file"
+      log_success "kagenti-deps upgraded with MLflow OTEL endpoint"
+    fi
+  else
+    log_warn "RHOAI operator did not register CRDs within 5m — MLflow will not be available"
+    SKIP_MLFLOW=true
+  fi
+  echo ""
+fi
 
 # ============================================================================
 # Step 4: Install Kagenti (operator + webhook + UI)
