@@ -5,7 +5,7 @@
 # Installs the Kagenti stack (SPIRE, cert-manager, Keycloak, operator, webhook,
 # MCP Gateway) on an OpenShift cluster. Run this BEFORE setup.sh --with-a2a.
 # Optional layers enabled via --with-* flags (Kiali, Builds, Kuadrant).
-# UI/backend installed by default (use --skip-ui to disable).
+# UI/backend disabled by default (use --with-ui to enable).
 #
 # MLflow: provisions an MLflow instance via RHOAI's DSC mlflowoperator
 # and wires the OTEL collector to export traces to it.
@@ -49,7 +49,7 @@ KC_REALM="${KEYCLOAK_REALM:-kagenti}"
 KC_NAMESPACE="${KEYCLOAK_NAMESPACE:-keycloak}"
 SKIP_OVN_PATCH=false
 SKIP_MCP_GATEWAY=false
-SKIP_UI=false
+SKIP_UI=true
 SKIP_MLFLOW=false
 SHOW_SECRETS=false
 MCP_GATEWAY_VERSION="0.5.1"
@@ -84,7 +84,8 @@ while [[ $# -gt 0 ]]; do
     --keycloak-namespace) KC_NAMESPACE="$2"; shift 2 ;;
     --skip-ovn-patch)     SKIP_OVN_PATCH=true; shift ;;
     --skip-mcp-gateway)   SKIP_MCP_GATEWAY=true; shift ;;
-    --skip-ui)            SKIP_UI=true; shift ;;
+    --with-ui)            SKIP_UI=false; shift ;;
+    --skip-ui)            log_warn "--skip-ui is deprecated (UI is now disabled by default). Flag has no effect."; shift ;;
     --skip-mlflow)        SKIP_MLFLOW=true; shift ;;
     --show-secrets)       SHOW_SECRETS=true; shift ;;
     --operator-repo)      OPERATOR_REPO="$2"; shift 2 ;;
@@ -104,7 +105,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --keycloak-namespace NS   Keycloak namespace (default: keycloak, or \$KEYCLOAK_NAMESPACE)"
       echo "  --skip-ovn-patch          Skip OVN gateway routing patch"
       echo "  --skip-mcp-gateway        Skip MCP Gateway installation"
-      echo "  --skip-ui                 Skip Kagenti UI and backend installation"
+      echo "  --with-ui                 Enable Kagenti UI and backend installation (disabled by default)"
       echo "  --skip-mlflow             Skip MLflow integration (OTel traces + operator auto-config)"
       echo "  --show-secrets            Print Keycloak admin credentials to stdout (omitted by default for CI safety)"
       echo "  --with-kiali              Enable Kiali + Prometheus (user workload monitoring)"
@@ -930,7 +931,7 @@ fi
 # Build UI helm flags
 KAGENTI_UI_FLAGS=()
 if $SKIP_UI; then
-  log_info "Kagenti UI: skipped (--skip-ui)"
+  log_info "Kagenti UI: skipped (disabled by default; use --with-ui to enable)"
   KAGENTI_UI_FLAGS+=(--set components.ui.enabled=false)
 else
   log_info "Detecting latest kagenti release tag..."
