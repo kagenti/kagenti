@@ -28,10 +28,14 @@ import pytest
 
 
 def pytest_configure(config):
-    """Register the openshell marker."""
+    """Register custom markers."""
     config.addinivalue_line(
         "markers",
         "openshell: OpenShell PoC tests (gateway, agents, sandbox lifecycle)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "mvp: Multi-tenant MVP validation criteria (Section 9.2)",
     )
 
 

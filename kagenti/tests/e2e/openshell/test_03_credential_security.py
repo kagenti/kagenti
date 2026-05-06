@@ -16,7 +16,7 @@ import pytest
 from kagenti.tests.e2e.openshell.conftest import kubectl_get_pods_json
 
 
-pytestmark = pytest.mark.openshell
+pytestmark = [pytest.mark.openshell, pytest.mark.mvp]
 
 _AGENTS = [
     "adk-agent-supervised",
