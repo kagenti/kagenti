@@ -217,7 +217,6 @@ if [ "$SKIP_INSTALL" = "false" ]; then
         log_step "Running Helm-based OCP installer..."
         "$REPO_ROOT/scripts/ocp/setup-kagenti.sh" \
             --kagenti-repo "$REPO_ROOT" \
-            --skip-ui \
             --skip-mlflow \
             --skip-mcp-gateway \
             --skip-ovn-patch
