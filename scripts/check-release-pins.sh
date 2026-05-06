@@ -50,62 +50,108 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# jq is required for safe JSON construction. Fail early with a clear message
+# rather than producing broken output.
+if ! command -v jq >/dev/null 2>&1; then
+    echo "error: jq is required but not installed" >&2
+    exit 2
+fi
+
 # ---------------------------------------------------------------------------
-# Result accumulators (plain text lines, one per finding)
+# Finding accumulators
+#
+# Each finding is a single JSON object built with jq -n --arg (so strings
+# containing quotes, backslashes, colons, etc. are escaped correctly).
+#
+# ERRORS_JSON, WARNINGS_JSON, OKS_JSON are each a comma-separated list of
+# JSON objects. They are wrapped in [] at output time.
 # ---------------------------------------------------------------------------
 
-error_lines=""
-error_count=0
+ERRORS_JSON=""
+ERROR_COUNT=0
 
-warning_lines=""
-warning_count=0
+WARNINGS_JSON=""
+WARNING_COUNT=0
 
-ok_lines=""
-ok_count=0
-
-# JSON accumulators (comma-separated JSON objects)
-json_errors=""
-json_warnings=""
-json_oks=""
+OKS_JSON=""
+OK_COUNT=0
 
 add_error() {
     local file="$1"
     local line="$2"
     local issue="$3"
+    local obj
+    obj=$(jq -n \
+        --arg file "$file" \
+        --argjson line "$line" \
+        --arg issue "$issue" \
+        '{file: $file, line: $line, issue: $issue}')
 
-    error_count=$((error_count + 1))
-    error_lines="${error_lines}FAIL|${file}|${line}|${issue}"$'\n'
-
-    if [[ -n "$json_errors" ]]; then
-        json_errors="${json_errors},"
+    if [[ -n "$ERRORS_JSON" ]]; then
+        ERRORS_JSON="${ERRORS_JSON},"
     fi
-    json_errors="${json_errors}{\"file\": \"${file}\", \"line\": ${line}, \"issue\": \"${issue}\"}"
+    ERRORS_JSON="${ERRORS_JSON}${obj}"
+    ERROR_COUNT=$((ERROR_COUNT + 1))
 }
 
 add_warning() {
     local file="$1"
     local issue="$2"
+    local obj
+    obj=$(jq -n \
+        --arg file "$file" \
+        --arg issue "$issue" \
+        '{file: $file, issue: $issue}')
 
-    warning_count=$((warning_count + 1))
-    warning_lines="${warning_lines}WARN|${file}|${issue}"$'\n'
-
-    if [[ -n "$json_warnings" ]]; then
-        json_warnings="${json_warnings},"
+    if [[ -n "$WARNINGS_JSON" ]]; then
+        WARNINGS_JSON="${WARNINGS_JSON},"
     fi
-    json_warnings="${json_warnings}{\"file\": \"${file}\", \"issue\": \"${issue}\"}"
+    WARNINGS_JSON="${WARNINGS_JSON}${obj}"
+    WARNING_COUNT=$((WARNING_COUNT + 1))
 }
 
 add_ok() {
     local file="$1"
     local check="$2"
+    local obj
+    obj=$(jq -n \
+        --arg file "$file" \
+        --arg check "$check" \
+        '{file: $file, check: $check}')
 
-    ok_count=$((ok_count + 1))
-    ok_lines="${ok_lines}OK|${file}|${check}"$'\n'
-
-    if [[ -n "$json_oks" ]]; then
-        json_oks="${json_oks},"
+    if [[ -n "$OKS_JSON" ]]; then
+        OKS_JSON="${OKS_JSON},"
     fi
-    json_oks="${json_oks}{\"file\": \"${file}\", \"check\": \"${check}\"}"
+    OKS_JSON="${OKS_JSON}${obj}"
+    OK_COUNT=$((OK_COUNT + 1))
+}
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# Check whether a version string is considered unpinned. Unpinned means:
+#   - empty
+#   - literal "*" or "x"
+#   - contains any semver-range metacharacter: > < ~ ^
+#   - is a wildcard pattern like "1.*" or "1.x"
+is_unpinned_version() {
+    local version="$1"
+
+    if [[ -z "$version" ]]; then
+        return 0
+    fi
+    if [[ "$version" == "*" ]] || [[ "$version" == "x" ]]; then
+        return 0
+    fi
+    if [[ "$version" == *"*"* ]]; then
+        return 0
+    fi
+    case "$version" in
+        *">"*|*"<"*|*"~"*|*"^"*) return 0 ;;
+    esac
+
+    return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -115,13 +161,17 @@ add_ok() {
 if [[ ! -f "$VALUES_FILE" ]]; then
     add_error "charts/kagenti/values.yaml" 0 "file not found"
 else
-    matches=$(grep -n 'tag: latest' "$VALUES_FILE" || true)
+    matches=$(grep -Fn 'tag: latest' "$VALUES_FILE" || true)
 
     if [[ -z "$matches" ]]; then
         add_ok "charts/kagenti/values.yaml" "no tag: latest found"
     else
         while IFS= read -r match; do
-            line_number=$(echo "$match" | cut -d: -f1)
+            if [[ -z "$match" ]]; then
+                continue
+            fi
+
+            line_number="${match%%:*}"
             add_error "charts/kagenti/values.yaml" "$line_number" "tag: latest"
         done <<< "$matches"
     fi
@@ -129,21 +179,30 @@ fi
 
 # ---------------------------------------------------------------------------
 # Check 2: No ":latest" in template files
+#
+# grep -rn output format: <filepath>:<line>:<content>. Content can contain
+# any character including colons, so only split on the first two colons.
 # ---------------------------------------------------------------------------
 
 if [[ ! -d "$TEMPLATES_DIR" ]]; then
     add_error "charts/kagenti/templates/" 0 "directory not found"
 else
-    matches=$(grep -rn ':latest' "$TEMPLATES_DIR" || true)
+    matches=$(grep -rFn ':latest' "$TEMPLATES_DIR" || true)
 
     if [[ -z "$matches" ]]; then
         add_ok "charts/kagenti/templates/" "no :latest found"
     else
         while IFS= read -r match; do
-            # match format: /full/path/to/file.yaml:95:    image: ...
-            filepath=$(echo "$match" | cut -d: -f1)
-            line_number=$(echo "$match" | cut -d: -f2)
+            if [[ -z "$match" ]]; then
+                continue
+            fi
+
+            # Split on the FIRST colon (file path) and SECOND colon (line).
+            filepath="${match%%:*}"
+            rest="${match#*:}"
+            line_number="${rest%%:*}"
             filename=$(basename "$filepath")
+
             add_error "charts/kagenti/templates/${filename}" "$line_number" ":latest"
         done <<< "$matches"
     fi
@@ -151,37 +210,140 @@ fi
 
 # ---------------------------------------------------------------------------
 # Check 3: All Chart.yaml dependency versions are pinned
+#
+# Parse the dependencies block by walking lines. Each dependency starts with
+# "- name:" at 0 indentation (inside the "dependencies:" block). A dependency
+# can contain any ordering of fields like name:, version:, repository:,
+# condition:, alias:, etc. We collect the version of each dependency, not
+# assuming it immediately follows name.
+#
+# If yq is available we prefer it — it's a real YAML parser and handles every
+# edge case (quotes, block scalars, comments). The bash fallback is just for
+# environments without yq.
 # ---------------------------------------------------------------------------
+
+parse_chart_dependencies_with_yq() {
+    # Use yq's `line` builtin to locate each dependency's position. yq emits
+    # the line of the dependency map node; that's close enough (it points at
+    # the first field of the item — usually "- name:" or the block start).
+    #
+    # Output format: "line<TAB>version" per dependency. Missing version
+    # fields come back as empty strings.
+    yq eval -r '.dependencies[] | [(. | line), (.version // "")] | @tsv' \
+        "$CHART_FILE" 2>/dev/null
+}
+
+parse_chart_dependencies_with_bash() {
+    # Walk Chart.yaml line-by-line, tracking whether we're inside the
+    # "dependencies:" block. Each dependency starts with "- " and can contain
+    # fields in any order (name, version, repository, condition, alias, etc).
+    # We record the version and the line number it was found on, so the
+    # caller can point at the exact offending line without a second grep.
+    #
+    # Output format: one "line_number<TAB>version" per dependency. A
+    # dependency with no version emits "0<TAB>".
+    local in_dependencies=false
+    local current_version=""
+    local current_version_line=0
+    local have_item=false
+    local line_number=0
+    local line
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_number=$((line_number + 1))
+
+        # Top-level key (no leading whitespace, ends in colon). Entering or
+        # leaving the dependencies block.
+        if [[ "$line" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*: ]]; then
+            # Flush the last item if we were in dependencies
+            if [[ "$in_dependencies" == "true" ]] && [[ "$have_item" == "true" ]]; then
+                printf '%d\t%s\n' "$current_version_line" "$current_version"
+            fi
+
+            if [[ "$line" == "dependencies:"* ]]; then
+                in_dependencies=true
+            else
+                in_dependencies=false
+            fi
+
+            current_version=""
+            current_version_line=0
+            have_item=false
+            continue
+        fi
+
+        if [[ "$in_dependencies" != "true" ]]; then
+            continue
+        fi
+
+        # New dependency item (starts with "- " possibly with leading spaces).
+        # Flush the previous item and reset state.
+        if [[ "$line" =~ ^[[:space:]]*-[[:space:]] ]]; then
+            if [[ "$have_item" == "true" ]]; then
+                printf '%d\t%s\n' "$current_version_line" "$current_version"
+            fi
+
+            current_version=""
+            current_version_line=0
+            have_item=true
+
+            # The "- " line may include the first field (e.g. "- name: foo"
+            # or "- version: 1.2.3"). Strip the "- " prefix so the same
+            # field-match logic below applies.
+            line="${line#*- }"
+        fi
+
+        # Look for "version:" on this line (with any indentation).
+        if [[ "$line" =~ ^[[:space:]]*version:[[:space:]]*(.*)$ ]]; then
+            local raw="${BASH_REMATCH[1]}"
+            # Strip trailing comments, surrounding whitespace and quotes.
+            raw="${raw%%#*}"
+            raw="${raw## }"
+            raw="${raw%% }"
+            raw="${raw#\"}"
+            raw="${raw%\"}"
+            raw="${raw#\'}"
+            raw="${raw%\'}"
+            current_version="$raw"
+            current_version_line="$line_number"
+        fi
+    done < "$CHART_FILE"
+
+    # Flush the final item
+    if [[ "$in_dependencies" == "true" ]] && [[ "$have_item" == "true" ]]; then
+        printf '%d\t%s\n' "$current_version_line" "$current_version"
+    fi
+}
 
 if [[ ! -f "$CHART_FILE" ]]; then
     add_error "charts/kagenti/Chart.yaml" 0 "file not found"
 else
-    # Extract dependency version lines (lines that follow "- name:" lines)
-    dep_versions=$(grep -A1 '^\- name:' "$CHART_FILE" | grep 'version:' || true)
+    if command -v yq >/dev/null 2>&1; then
+        dep_entries=$(parse_chart_dependencies_with_yq || true)
+    else
+        dep_entries=$(parse_chart_dependencies_with_bash || true)
+    fi
+
     deps_ok=true
 
-    if [[ -n "$dep_versions" ]]; then
-        while IFS= read -r version_line; do
-            # Extract just the version value, stripping whitespace and quotes
-            version=$(echo "$version_line" | cut -d: -f2 | tr -d ' "'"'"'')
+    if [[ -n "$dep_entries" ]]; then
+        while IFS=$'\t' read -r line_number version; do
+            # Trim leading/trailing whitespace
+            version="${version## }"
+            version="${version%% }"
 
-            is_unpinned=false
-            if [[ "$version" == "*" ]]; then
-                is_unpinned=true
-            fi
-            if [[ "$version" == "" ]]; then
-                is_unpinned=true
-            fi
-            if echo "$version" | grep -qE '[><~^]'; then
-                is_unpinned=true
-            fi
-
-            if [[ "$is_unpinned" == "true" ]]; then
+            if is_unpinned_version "$version"; then
                 deps_ok=false
-                line_number=$(grep -n "version:.*${version}" "$CHART_FILE" | head -1 | cut -d: -f1)
-                add_error "charts/kagenti/Chart.yaml" "${line_number:-0}" "unpinned dependency version: ${version}"
+
+                if [[ -z "$version" ]]; then
+                    issue="unpinned dependency version: (empty)"
+                else
+                    issue="unpinned dependency version: ${version}"
+                fi
+
+                add_error "charts/kagenti/Chart.yaml" "${line_number:-0}" "$issue"
             fi
-        done <<< "$dep_versions"
+        done <<< "$dep_entries"
     fi
 
     if [[ "$deps_ok" == "true" ]]; then
@@ -196,30 +358,50 @@ fi
 if [[ -f "$CHARTS_DIR/Chart.lock" ]]; then
     add_ok "charts/kagenti/Chart.lock" "present"
 else
-    add_warning "charts/kagenti/Chart.lock" "not found — run helm dependency update if you have local dependencies"
+    add_warning "charts/kagenti/Chart.lock" \
+        "not found — run helm dependency update if you have local dependencies"
 fi
 
 # ---------------------------------------------------------------------------
 # Check 5 (optional): Verify pinned GHCR images exist in registry
+#
+# Extract image: <ref> lines from values.yaml. Only GHCR is checked.
+# docker is required in this mode; fail with a clear message if missing.
 # ---------------------------------------------------------------------------
 
 if [[ "$VERIFY_IMAGES" == "true" ]]; then
-    image_lines=$(grep -E '^\s+image:' "$VALUES_FILE" || true)
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "error: --verify-images requires docker, which is not installed" >&2
+        exit 2
+    fi
+
+    image_lines=$(grep -E '^[[:space:]]+image:[[:space:]]' "$VALUES_FILE" || true)
 
     if [[ -n "$image_lines" ]]; then
         while IFS= read -r image_line; do
-            # Extract the image reference after "image:"
-            image=$(echo "$image_line" | cut -d: -f2- | tr -d ' "'"'"'')
+            if [[ -z "$image_line" ]]; then
+                continue
+            fi
 
-            # Only check GHCR images
+            # Take everything after the first "image:" occurrence.
+            image="${image_line#*image:}"
+
+            # Strip whitespace and quotes.
+            image="${image## }"
+            image="${image%% }"
+            image="${image#\"}"
+            image="${image%\"}"
+            image="${image#\'}"
+            image="${image%\'}"
+
             if [[ "$image" != ghcr.io/* ]]; then
                 continue
             fi
 
             if docker manifest inspect "$image" >/dev/null 2>&1; then
-                add_ok "image-verify" "$image exists"
+                add_ok "image-verify" "${image} exists"
             else
-                add_error "image-verify" 0 "image not found in registry: $image"
+                add_error "image-verify" 0 "image not found in registry: ${image}"
             fi
         done <<< "$image_lines"
     fi
@@ -230,57 +412,69 @@ fi
 # ---------------------------------------------------------------------------
 
 ready=true
-if [[ $error_count -gt 0 ]]; then
+if [[ $ERROR_COUNT -gt 0 ]]; then
     ready=false
 fi
 
 if [[ "$JSON_MODE" == "true" ]]; then
-    cat <<EOF
-{
-  "errors": [${json_errors}],
-  "warnings": [${json_warnings}],
-  "ok": [${json_oks}],
-  "summary": {"errors": ${error_count}, "warnings": ${warning_count}, "ready": ${ready}}
-}
-EOF
+    # Build the full response once via jq so it's guaranteed valid JSON.
+    jq -n \
+        --argjson errors "[${ERRORS_JSON}]" \
+        --argjson warnings "[${WARNINGS_JSON}]" \
+        --argjson oks "[${OKS_JSON}]" \
+        --argjson error_count "$ERROR_COUNT" \
+        --argjson warning_count "$WARNING_COUNT" \
+        --argjson ready "$ready" \
+        '{
+            errors: $errors,
+            warnings: $warnings,
+            ok: $oks,
+            summary: {errors: $error_count, warnings: $warning_count, ready: $ready}
+        }'
 else
-    RED='\033[0;31m'
-    YELLOW='\033[0;33m'
-    GREEN='\033[0;32m'
-    NC='\033[0m'
+    # Use $'...' so bash expands the escape sequences at assignment time,
+    # not when printf interprets its format string. That way the printf
+    # format strings below can be plain constants (shellcheck SC2059).
+    RED=$'\033[0;31m'
+    YELLOW=$'\033[0;33m'
+    GREEN=$'\033[0;32m'
+    NC=$'\033[0m'
+
+    # Render findings by reading back the JSON arrays. Using jq + @tsv here
+    # (rather than re-parsing the original input ourselves) means the output
+    # always agrees with the JSON mode and correctly handles special
+    # characters in file paths or issue strings.
 
     # Print errors
-    if [[ -n "$error_lines" ]]; then
-        while IFS='|' read -r _status file line issue; do
-            if [[ -n "$file" ]]; then
-                printf "${RED}[FAIL]${NC} %s:%s    %s\n" "$file" "$line" "$issue"
-            fi
-        done <<< "$error_lines"
+    if [[ "$ERROR_COUNT" -gt 0 ]]; then
+        while IFS=$'\t' read -r file line issue; do
+            printf '%s[FAIL]%s %s:%s    %s\n' "$RED" "$NC" "$file" "$line" "$issue"
+        done < <(jq -r '.[] | [.file, (.line | tostring), .issue] | @tsv' \
+                  <<< "[${ERRORS_JSON}]")
     fi
 
     # Print successes
-    if [[ -n "$ok_lines" ]]; then
-        while IFS='|' read -r _status file check _rest; do
-            if [[ -n "$file" ]]; then
-                printf "${GREEN}[OK]${NC}   %s — %s\n" "$file" "$check"
-            fi
-        done <<< "$ok_lines"
+    if [[ "$OK_COUNT" -gt 0 ]]; then
+        while IFS=$'\t' read -r file check; do
+            printf '%s[OK]%s   %s — %s\n' "$GREEN" "$NC" "$file" "$check"
+        done < <(jq -r '.[] | [.file, .check] | @tsv' \
+                  <<< "[${OKS_JSON}]")
     fi
 
     # Print warnings
-    if [[ -n "$warning_lines" ]]; then
-        while IFS='|' read -r _status file issue _rest; do
-            if [[ -n "$file" ]]; then
-                printf "${YELLOW}[WARN]${NC} %s — %s\n" "$file" "$issue"
-            fi
-        done <<< "$warning_lines"
+    if [[ "$WARNING_COUNT" -gt 0 ]]; then
+        while IFS=$'\t' read -r file issue; do
+            printf '%s[WARN]%s %s — %s\n' "$YELLOW" "$NC" "$file" "$issue"
+        done < <(jq -r '.[] | [.file, .issue] | @tsv' \
+                  <<< "[${WARNINGS_JSON}]")
     fi
 
     echo ""
     if [[ "$ready" == "true" ]]; then
-        printf "${GREEN}All checks passed — release is ready to tag${NC}\n"
+        printf '%sAll checks passed — release is ready to tag%s\n' "$GREEN" "$NC"
     else
-        printf "${RED}%d error(s) found — release is NOT ready to tag${NC}\n" "$error_count"
+        printf '%s%d error(s) found — release is NOT ready to tag%s\n' \
+            "$RED" "$ERROR_COUNT" "$NC"
     fi
 fi
 
