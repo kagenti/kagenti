@@ -170,10 +170,10 @@ else
         --env ocp
 fi
 
-# When this script runs in GitHub Actions, always rebuild/restart ui-oauth-secret
-# from the checked-out source. This keeps PR behavior correct even when a
-# comment-triggered workflow definition comes from the default branch.
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+# When this script runs in GitHub Actions and UI is deployed, rebuild/restart
+# ui-oauth-secret from the checked-out source. This keeps PR behavior correct
+# even when a comment-triggered workflow definition comes from the default branch.
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]] && kubectl get deployment kagenti-ui -n kagenti-system &>/dev/null; then
     HELPER_SCRIPT="$REPO_ROOT/.github/scripts/common/25-build-oauth-secret-image.sh"
     echo "Rebuilding and restarting ui-oauth-secret job from current checkout..."
     if [[ -x "$HELPER_SCRIPT" ]]; then
