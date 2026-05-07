@@ -1,0 +1,55 @@
+# Pending OpenShell Check for Pull Requests
+#
+# Sets pending commit statuses for OpenShell Kind and HyperShift checks
+# on PRs that change relevant paths. This makes it visible in the PR
+# checks UI that /run-e2e-openshell is needed.
+#
+# The context strings must match those used in e2e-openshell-kind.yaml
+# and e2e-openshell-hypershift.yaml so the workflows can update
+# these same statuses from pending to success/failure.
+#
+name: E2E OpenShell (Pending)
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - 'deployments/openshell/**'
+      - 'charts/openshell/**'
+      - 'scripts/openshell/**'
+      - 'kagenti/tests/e2e/openshell/**'
+      - 'kagenti/backend/**'
+      - '.github/scripts/local-setup/openshell-full-test.sh'
+      - '.github/scripts/local-setup/openshell-build-agents.sh'
+      - '.github/workflows/e2e-openshell-kind.yaml'
+      - '.github/workflows/e2e-openshell-hypershift.yaml'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  pending-status:
+    name: Set Pending Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create pending OpenShell commit statuses
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const sha = context.payload.pull_request.head.sha;
+            const prUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${context.payload.pull_request.number}`;
+            const checks = [
+              { context: 'OpenShell PoC (Kind) [/run-e2e-openshell]', description: 'Waiting for /run-e2e-openshell command' },
+              { context: 'OpenShell PoC (HyperShift)', description: 'Waiting for /run-e2e-openshell command' },
+            ];
+            for (const check of checks) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner, repo: context.repo.repo,
+                sha, state: 'pending',
+                context: check.context,
+                description: check.description,
+                target_url: prUrl,
+              });
+            }

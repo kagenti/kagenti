@@ -32,7 +32,6 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
-      statuses: write
     outputs:
       authorized: ${{ steps.check.outputs.has-permission }}
       pr_number: ${{ steps.pr-info.outputs.number }}
@@ -78,21 +77,6 @@ jobs:
             await github.rest.reactions.createForIssueComment({
               owner: context.repo.owner, repo: context.repo.repo,
               comment_id: context.payload.comment.id, content: 'rocket'
-            });
-
-      - name: Create pending commit status
-        if: steps.check.outputs.has-permission == 'true' && github.event_name != 'workflow_dispatch'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
-        with:
-          script: |
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner, repo: context.repo.repo,
-              sha: '${{ steps.pr-info.outputs.sha }}',
-              state: 'pending',
-              target_url: runUrl,
-              description: 'OpenShell E2E tests running on HyperShift',
-              context: 'OpenShell PoC (HyperShift)'
             });
 
   e2e-openshell:
