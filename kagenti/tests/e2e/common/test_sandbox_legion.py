@@ -259,7 +259,7 @@ async def _extract_response(client, message):
 async def _connect_to_agent(agent_url):
     """Connect to the sandbox legion via A2A protocol."""
     ssl_verify = _get_ssl_context()
-    httpx_client = httpx.AsyncClient(timeout=180.0, verify=ssl_verify)
+    httpx_client = httpx.AsyncClient(timeout=600.0, verify=ssl_verify)
 
     from a2a.client import A2AClient
     from a2a.client.card_resolver import A2ACardResolver
@@ -279,7 +279,7 @@ async def _connect_to_agent_streaming(agent_url):
     avoiding gateway timeouts on multi-turn requests.
     """
     ssl_verify = _get_ssl_context()
-    httpx_client = httpx.AsyncClient(timeout=180.0, verify=ssl_verify)
+    httpx_client = httpx.AsyncClient(timeout=600.0, verify=ssl_verify)
     config = ClientConfig(httpx_client=httpx_client)
 
     from a2a.client.card_resolver import A2ACardResolver

@@ -40,7 +40,7 @@ from kagenti.tests.e2e.conftest import _fetch_openshift_ingress_ca
 # Complex tasks involve multiple LLM calls (router+planner+executor+reporter);
 # a single LLM call can take up to 181s, and the agent may chain several.
 # Multi-turn tests (e.g. RCA) traverse the full graph twice, so 360s is safer.
-IDLE_TIMEOUT_S = 120
+IDLE_TIMEOUT_S = 300
 
 # Skip entire module if sandbox feature is not enabled
 # Uses requires_features marker (reads featureFlags from config YAML or ENABLE_SANDBOX_TESTS env)
@@ -149,7 +149,7 @@ def _get_ssl_context():
 async def _connect_to_agent(agent_url):
     """Connect via streaming-capable A2A client (SSE)."""
     ssl_verify = _get_ssl_context()
-    httpx_client = httpx.AsyncClient(timeout=300.0, verify=ssl_verify)
+    httpx_client = httpx.AsyncClient(timeout=600.0, verify=ssl_verify)
     config = ClientConfig(httpx_client=httpx_client)
 
     from a2a.client.card_resolver import A2ACardResolver
@@ -335,7 +335,7 @@ class TestSandboxLegionGitHubAnalysis:
     """Test the agent analyzing mock GitHub issue/PR data provided inline."""
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(300)
+    @pytest.mark.timeout(900)
     async def test_analyze_closed_issue(self):
         """
         Provide a mock GitHub issue inline and ask the agent to analyze it.
@@ -420,7 +420,7 @@ class TestSandboxLegionGitHubAnalysis:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(300)
+    @pytest.mark.timeout(900)
     async def test_analyze_closed_pr(self):
         """
         Provide mock PR data inline and ask the agent to analyze it.
@@ -509,7 +509,7 @@ class TestSandboxLegionRCA:
     """Test the agent performing root cause analysis on CI failures."""
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(600)
+    @pytest.mark.timeout(900)
     async def test_rca_on_mock_ci_log(self):
         """
         Send a mock CI failure log inline and ask the agent to perform
