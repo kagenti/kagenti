@@ -214,70 +214,70 @@ def _send_message_raw(agent_url: str, text: str) -> dict:
     return result
 
 
+IDLE_TIMEOUT_S = 300
+
+
+def _extract_text_from_artifacts(artifacts):
+    """Extract text from a list of A2A Artifact objects."""
+    text = ""
+    for artifact in artifacts or []:
+        for part in artifact.parts or []:
+            p = getattr(part, "root", part)
+            if hasattr(p, "text"):
+                text += p.text
+    return text
+
+
 async def _extract_response(client, message):
-    """Send an A2A message (non-streaming) and extract the text response.
+    """Send an A2A message via SSE streaming and extract the text response.
 
-    Uses the non-streaming send_message API which returns a direct JSON
-    response. This avoids SSE connection drops from OpenShift routes.
+    Uses streaming to keep the connection alive through OpenShift routes
+    via heartbeat events. Detects task completion by checking for terminal
+    task states and extracts the last artifact (reporter answer).
     """
-    from a2a.types import SendMessageRequest, MessageSendParams
-
-    params = MessageSendParams(message=message)
-    request = SendMessageRequest(id=uuid4().hex, params=params)
-    response = await client.send_message(request)
-
-    # Extract from response
-    root = getattr(response, "root", response)
-    if hasattr(root, "error") and root.error:
-        raise RuntimeError(f"A2A error: {root.error}")
-
-    result = getattr(root, "result", None)
-    if result is None:
-        return "", ["NoResult"]
-
     full_response = ""
-    events_received = ["NonStreaming"]
 
-    # Result can be a Task or a Message
-    # Use the LAST artifact — the reporter's final answer.
-    # Earlier artifacts contain intermediate tool call descriptions.
-    if hasattr(result, "artifacts") and result.artifacts:
-        last_artifact = result.artifacts[-1]
-        for part in last_artifact.parts or []:
-            p = getattr(part, "root", part)
-            if hasattr(p, "text"):
-                full_response += p.text
-    elif hasattr(result, "parts"):
-        for part in result.parts or []:
-            p = getattr(part, "root", part)
-            if hasattr(p, "text"):
-                full_response += p.text
+    aiter = client.send_message(message).__aiter__()
+    while True:
+        try:
+            result = await asyncio.wait_for(aiter.__anext__(), timeout=IDLE_TIMEOUT_S)
+        except StopAsyncIteration:
+            break
+        except asyncio.TimeoutError:
+            break
 
-    return full_response, events_received
+        if isinstance(result, tuple):
+            task, event = result
+
+            if isinstance(event, TaskArtifactUpdateEvent):
+                if hasattr(event, "artifact") and event.artifact:
+                    full_response += _extract_text_from_artifacts([event.artifact])
+
+            task_state = ""
+            if task and hasattr(task, "status") and task.status:
+                task_state = getattr(task.status, "state", "")
+                if hasattr(task_state, "value"):
+                    task_state = task_state.value
+            if task_state in ("completed", "failed", "canceled"):
+                if task and task.artifacts:
+                    last_artifact = task.artifacts[-1]
+                    final_text = _extract_text_from_artifacts([last_artifact])
+                    if final_text:
+                        full_response = final_text
+                break
+
+        elif isinstance(result, A2AMessage):
+            for part in result.parts or []:
+                p = getattr(part, "root", part)
+                if hasattr(p, "text"):
+                    full_response += p.text
+            break
+
+    return full_response, ["Streaming"]
 
 
 async def _connect_to_agent(agent_url):
-    """Connect to the sandbox legion via A2A protocol."""
-    ssl_verify = _get_ssl_context()
-    httpx_client = httpx.AsyncClient(timeout=600.0, verify=ssl_verify)
-
-    from a2a.client import A2AClient
-    from a2a.client.card_resolver import A2ACardResolver
-
-    resolver = A2ACardResolver(httpx_client, agent_url)
-    card = await resolver.get_agent_card()
-    card.url = agent_url
-    client = A2AClient(httpx_client=httpx_client, url=agent_url)
-    return client, card
-
-
-async def _connect_to_agent_streaming(agent_url):
-    """Connect to the sandbox legion via A2A streaming protocol.
-
-    Uses ClientFactory which returns a streaming-capable client.
-    SSE streaming keeps the connection alive with heartbeat events,
-    avoiding gateway timeouts on multi-turn requests.
-    """
+    """Connect via streaming-capable A2A client (SSE)."""
     ssl_verify = _get_ssl_context()
     httpx_client = httpx.AsyncClient(timeout=600.0, verify=ssl_verify)
     config = ClientConfig(httpx_client=httpx_client)
@@ -289,45 +289,6 @@ async def _connect_to_agent_streaming(agent_url):
     card.url = agent_url
     client = await ClientFactory.connect(card, client_config=config)
     return client, card
-
-
-async def _extract_response_streaming(client, message):
-    """Send an A2A message via streaming and extract the text response.
-
-    Uses SSE streaming which keeps the connection alive with heartbeat
-    events, preventing gateway timeouts on long-running multi-turn
-    requests (LLM call + checkpointer lookup).
-    """
-    full_response = ""
-    events_received = []
-
-    async for result in client.send_message(message):
-        if isinstance(result, tuple):
-            task, event = result
-            events_received.append(type(event).__name__ if event else "Task(final)")
-
-            if isinstance(event, TaskArtifactUpdateEvent):
-                if hasattr(event, "artifact") and event.artifact:
-                    for part in event.artifact.parts or []:
-                        p = getattr(part, "root", part)
-                        if hasattr(p, "text"):
-                            full_response += p.text
-
-            if event is None and task and task.artifacts:
-                for artifact in task.artifacts:
-                    for part in artifact.parts or []:
-                        p = getattr(part, "root", part)
-                        if hasattr(p, "text"):
-                            full_response += p.text
-
-        elif isinstance(result, A2AMessage):
-            events_received.append("Message")
-            for part in result.parts or []:
-                p = getattr(part, "root", part)
-                if hasattr(p, "text"):
-                    full_response += p.text
-
-    return full_response, events_received
 
 
 class TestSandboxLegionDeployment:
