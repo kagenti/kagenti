@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     kagenti_feature_flag_sidecars: bool = (
         False  # sidecar agents (looper, hallucination, context guardian)
     )
+    kagenti_feature_flag_acp: bool = False  # ACP WebSocket protocol gateway
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"

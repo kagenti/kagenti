@@ -69,6 +69,12 @@ def agent_port():
 LLM_AVAILABLE = os.getenv("OPENSHELL_LLM_AVAILABLE", "false").lower() == "true"
 skip_no_llm = pytest.mark.skipif(not LLM_AVAILABLE, reason="LLM proxy not available")
 
+# True when kagenti-backend is deployed and reachable
+BACKEND_AVAILABLE = os.getenv("OPENSHELL_BACKEND_AVAILABLE", "false").lower() == "true"
+skip_no_backend = pytest.mark.skipif(
+    not BACKEND_AVAILABLE, reason="Backend not deployed"
+)
+
 
 @pytest.fixture(scope="session")
 def llm_available():
@@ -187,6 +193,65 @@ def nemoclaw_openclaw_url(agent_namespace):
 def nemoclaw_enabled() -> bool:
     """Check if NemoClaw agent tests are enabled."""
     return os.getenv("OPENSHELL_NEMOCLAW_ENABLED", "").lower() == "true"
+
+
+@pytest.fixture(scope="session")
+def backend_url(agent_namespace):
+    """Port-forward to kagenti-backend (port 8000), session-scoped."""
+    if not BACKEND_AVAILABLE:
+        pytest.skip("Backend not deployed (OPENSHELL_BACKEND_AVAILABLE != true)")
+    url, proc = _port_forward("kagenti-backend", agent_namespace, 8000)
+    if not url:
+        pytest.skip("Cannot reach kagenti-backend — not deployed")
+    yield url
+    if proc:
+        proc.terminate()
+        proc.wait()
+
+
+async def backend_send(
+    client: httpx.AsyncClient,
+    backend_url: str,
+    namespace: str,
+    agent_name: str,
+    text: str,
+    session_id: str | None = None,
+    timeout: float = 120.0,
+) -> dict:
+    """Send a message through kagenti-backend's A2A proxy."""
+    payload = {"message": text}
+    if session_id:
+        payload["session_id"] = session_id
+    response = await client.post(
+        f"{backend_url}/api/v1/chat/{namespace}/{agent_name}/send",
+        json=payload,
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def backend_stream(
+    client: httpx.AsyncClient,
+    backend_url: str,
+    namespace: str,
+    agent_name: str,
+    text: str,
+    session_id: str | None = None,
+    timeout: float = 120.0,
+) -> httpx.Response:
+    """Stream from kagenti-backend's A2A proxy. Returns raw response for SSE parsing."""
+    payload = {"message": text}
+    if session_id:
+        payload["session_id"] = session_id
+    response = await client.post(
+        f"{backend_url}/api/v1/chat/{namespace}/{agent_name}/stream",
+        json=payload,
+        headers={"Accept": "text/event-stream"},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -739,6 +804,13 @@ CLI_AGENT_NAMES = ["openshell-claude", "openshell-opencode"]
 # All agents (full test matrix)
 ALL_AGENTS = ALL_DEPLOYED_AGENTS + CLI_AGENTS
 ALL_AGENT_NAMES_FULL = ALL_DEPLOYED_AGENT_NAMES + CLI_AGENT_NAMES
+
+# Backend-proxied agents — A2A agents accessible via kagenti-backend proxy
+BACKEND_AGENTS = [
+    pytest.param("claude-sdk-agent", id="claude_sdk_agent"),
+    pytest.param("adk-agent-supervised", id="adk_supervised"),
+]
+BACKEND_AGENT_NAMES = ["claude-sdk-agent", "adk-agent-supervised"]
 
 # Agents without LLM (skip skill tests)
 NO_LLM_AGENTS = {"weather-agent-supervised"}

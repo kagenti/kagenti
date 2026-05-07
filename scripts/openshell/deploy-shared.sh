@@ -9,6 +9,7 @@
 #   4. Keycloak realm (openshell realm, PKCE client, test users)
 #   5. LiteLLM model proxy (optional, when --litellm is passed)
 #   6. Base sandbox image pre-pull (optional, when --pre-pull is passed)
+#   7. kagenti-backend + PostgreSQL sessions DB (default on, --skip-backend)
 #
 # Idempotent: safe to re-run. Checks existing state before each step.
 #
@@ -44,6 +45,7 @@ STEP_TLS=true
 STEP_KEYCLOAK=true
 STEP_LITELLM=false
 STEP_PREPULL=false
+STEP_BACKEND=true
 KIND_CLUSTER="${CLUSTER_NAME:-kagenti}"
 DRY_RUN=false
 
@@ -72,6 +74,8 @@ Options:
   --skip-keycloak     Skip Keycloak realm setup
   --litellm           Deploy LiteLLM model proxy (requires MAAS_* env vars)
   --pre-pull          Pre-pull base sandbox image into the cluster
+  --backend           Deploy kagenti-backend (default: enabled, use --skip-backend to disable)
+  --skip-backend      Skip kagenti-backend deployment
   --kind-cluster NAME Kind cluster name for pre-pull (default: kagenti)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
   --dry-run           Print commands without executing
@@ -90,6 +94,8 @@ while [[ $# -gt 0 ]]; do
     --keycloak-ns)      KEYCLOAK_NS="$2"; shift 2 ;;
     --litellm)          STEP_LITELLM=true; shift ;;
     --pre-pull)         STEP_PREPULL=true; shift ;;
+    --backend)          STEP_BACKEND=true; shift ;;
+    --skip-backend)     STEP_BACKEND=false; shift ;;
     --kind-cluster)     KIND_CLUSTER="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)
@@ -110,6 +116,7 @@ echo "  cert-manager CA:    $STEP_TLS"
 echo "  Keycloak realm:     $STEP_KEYCLOAK"
 echo "  LiteLLM proxy:      $STEP_LITELLM"
 echo "  Base image pre-pull: $STEP_PREPULL"
+echo "  Backend + sessions: $STEP_BACKEND"
 echo "  Keycloak namespace: $KEYCLOAK_NS"
 echo "  Dry run:            $DRY_RUN"
 echo ""
@@ -740,6 +747,259 @@ EOJOB
 fi
 
 # ============================================================================
+# Step 7: kagenti-backend + PostgreSQL sessions DB
+# ============================================================================
+if $STEP_BACKEND; then
+  log_info "Step 7: kagenti-backend + PostgreSQL sessions DB"
+
+  BACKEND_NS="${LITELLM_NS:-team1}"
+  BACKEND_IMAGE="${KAGENTI_BACKEND_IMAGE:-kagenti-backend:local}"
+
+  # 7a: PostgreSQL sessions DB
+  if kubectl get statefulset postgres-sessions -n "$BACKEND_NS" &>/dev/null \
+     && kubectl rollout status statefulset/postgres-sessions -n "$BACKEND_NS" --timeout=5s &>/dev/null; then
+    log_success "PostgreSQL sessions DB already deployed — skipping"
+  else
+    log_info "Deploying PostgreSQL sessions DB in $BACKEND_NS..."
+
+    # Kind: use postgres:16-alpine (RedHat image needs registry auth)
+    if ! is_openshift; then
+      run_cmd kubectl apply -f - <<EOPG
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-sessions-secret
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+type: Opaque
+stringData:
+  host: postgres-sessions.$BACKEND_NS
+  port: "5432"
+  database: sessions
+  username: kagenti
+  password: kagenti-sessions-dev
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-sessions
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+    app.kubernetes.io/part-of: kagenti
+spec:
+  serviceName: postgres-sessions
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-sessions
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-sessions
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            drop: [ALL]
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: sessions
+        - name: POSTGRES_USER
+          value: kagenti
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-sessions
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: postgres-sessions
+spec:
+  selector:
+    app.kubernetes.io/name: postgres-sessions
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+EOPG
+    else
+      # OCP: use the RedHat image from the existing manifest
+      run_cmd kubectl apply -f "$REPO_ROOT/deployments/sandbox/postgres-sessions.yaml"
+    fi
+
+    if ! $DRY_RUN; then
+      kubectl rollout status statefulset/postgres-sessions -n "$BACKEND_NS" --timeout=120s || {
+        log_warn "PostgreSQL still starting — continuing (backend will retry connection)"
+      }
+    fi
+    log_success "PostgreSQL sessions DB deployed"
+  fi
+
+  # 7b: Build backend image (Kind only)
+  if ! is_openshift && [[ "$BACKEND_IMAGE" == *":local"* ]]; then
+    log_info "Building kagenti-backend image..."
+    if ! $DRY_RUN; then
+      docker build -f "$REPO_ROOT/kagenti/backend/Dockerfile" "$REPO_ROOT/kagenti/" \
+        -t "$BACKEND_IMAGE" 2>&1 | tail -5
+      kind load docker-image "$BACKEND_IMAGE" --name "$KIND_CLUSTER" 2>/dev/null || {
+        log_warn "kind load failed — image may already exist"
+      }
+    else
+      echo "  [dry-run] docker build -f kagenti/backend/Dockerfile kagenti/ -t $BACKEND_IMAGE"
+      echo "  [dry-run] kind load docker-image $BACKEND_IMAGE --name $KIND_CLUSTER"
+    fi
+  fi
+
+  # 7c: Backend Deployment
+  if kubectl get deployment kagenti-backend -n "$BACKEND_NS" &>/dev/null \
+     && kubectl rollout status deploy/kagenti-backend -n "$BACKEND_NS" --timeout=5s &>/dev/null; then
+    log_success "kagenti-backend already deployed and ready — skipping"
+  else
+    log_info "Deploying kagenti-backend in $BACKEND_NS..."
+    run_cmd kubectl apply -f - <<EOBACKEND
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/part-of: kagenti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagenti-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kagenti-backend
+    spec:
+      containers:
+      - name: backend
+        image: $BACKEND_IMAGE
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: ENABLE_AUTH
+          value: "false"
+        - name: DOMAIN_NAME
+          value: "localtest.me"
+        - name: KAGENTI_FEATURE_FLAG_SANDBOX
+          value: "true"
+        - name: KAGENTI_FEATURE_FLAG_ACP
+          value: "true"
+        - name: POSTGRES_HOST
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: host
+        - name: POSTGRES_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: port
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: database
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-sessions-secret
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+    app.kubernetes.io/part-of: kagenti
+spec:
+  selector:
+    app.kubernetes.io/name: kagenti-backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+EOBACKEND
+
+    if ! $DRY_RUN; then
+      kubectl rollout status deploy/kagenti-backend -n "$BACKEND_NS" --timeout=120s || {
+        log_warn "kagenti-backend still starting — continuing"
+      }
+    fi
+    log_success "kagenti-backend deployed"
+  fi
+  echo ""
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo "╔════════════════════════════════════════════════════════════════╗"
@@ -754,6 +1014,10 @@ if ! $DRY_RUN; then
   echo "    kubectl get secret openshell-ca-secret -n cert-manager"
   if $STEP_LITELLM; then
     echo "    kubectl get deployment litellm-model-proxy -n ${LITELLM_NS:-team1}"
+  fi
+  if $STEP_BACKEND; then
+    echo "    kubectl get deployment kagenti-backend -n ${BACKEND_NS:-team1}"
+    echo "    kubectl get statefulset postgres-sessions -n ${BACKEND_NS:-team1}"
   fi
   echo ""
 fi
