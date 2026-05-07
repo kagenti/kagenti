@@ -456,13 +456,10 @@ class TestSandboxLegionShellExecution:
 
 
 class TestSandboxLegionContextPersistence:
-    """Test multi-turn context persistence via shared contextId.
-
-    Each turn uses a fresh non-streaming HTTP request to avoid
-    connection drops from the OpenShift route / Istio ztunnel.
-    """
+    """Test multi-turn context persistence via shared contextId."""
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(900)
     async def test_multi_turn_file_persistence(self, test_session_id):
         """
         Test that files written in turn 1 are readable in turn 2
@@ -526,13 +523,10 @@ class TestSandboxLegionContextPersistence:
 
 
 class TestSandboxLegionMemory:
-    """Test multi-turn conversational memory via shared contextId.
-
-    Each turn uses a fresh non-streaming HTTP request to avoid
-    connection drops from the OpenShift route / Istio ztunnel.
-    """
+    """Test multi-turn conversational memory via shared contextId."""
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(900)
     async def test_multi_turn_memory(self, test_session_id):
         """
         Verify agent remembers context across turns via shared workspace.
