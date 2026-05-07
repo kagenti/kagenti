@@ -331,6 +331,15 @@ if [ "$SKIP_TEST" = "false" ]; then
         log_step "LLM tests enabled (models: $OPENSHELL_LLM_MODELS)"
     fi
 
+    # Enable backend API tests if kagenti-backend is deployed and healthy
+    if kubectl get deploy kagenti-backend -n team1 &>/dev/null; then
+        READY=$(kubectl get deploy kagenti-backend -n team1 -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        if [ "${READY:-0}" -ge 1 ]; then
+            export OPENSHELL_BACKEND_AVAILABLE=true
+            log_step "Backend API tests enabled (kagenti-backend ready)"
+        fi
+    fi
+
     # Enable NemoClaw tests if agents are deployed and healthy
     if kubectl get deploy nemoclaw-openclaw -n team1 &>/dev/null; then
         READY=$(kubectl get deploy nemoclaw-openclaw -n team1 -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
