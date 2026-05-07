@@ -1024,7 +1024,7 @@ DSCEOF
       fi
 
       # Wait for mlflowoperator to register the MLflow CRD (reconciles DSC → installs operator → registers CRD)
-      if _wait_for_crd mlflows.mlflow.opendatahub.io "MLflow operator" 300 2>/dev/null; then
+      if _wait_for_crd mlflows.mlflow.opendatahub.io "MLflow operator" 600 2>/dev/null; then
         _mlflow_create_cr
         _mlflow_wait_ready
       else

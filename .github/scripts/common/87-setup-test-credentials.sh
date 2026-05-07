@@ -224,14 +224,36 @@ log_success "Service account client ready (client_id=$E2E_CLIENT_ID)"
 # ============================================================================
 
 log_info "Attaching agent audience scopes to $E2E_CLIENT_ID..."
-REALM_DEFAULT_SCOPES=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/default-default-client-scopes")
-AGENT_SCOPE_IDS=$(echo "$REALM_DEFAULT_SCOPES" | python3 -c "
+# Agent audience scopes (agent-*-aud) are created asynchronously by the
+# kagenti-operator ClientRegistrationReconciler (or legacy sidecar).
+# Wait for them before minting the test token, otherwise AuthBridge rejects
+# every request with 401 "audience is required".
+AGENT_COUNT=$(kubectl get deployment -n team1 -l kagenti.io/type=agent \
+    -o name 2>/dev/null | wc -l | tr -d ' ')
+SCOPE_WAIT_TIMEOUT="${SCOPE_WAIT_TIMEOUT:-300}"
+AGENT_SCOPE_IDS=""
+
+if [ "${AGENT_COUNT:-0}" -gt 0 ]; then
+    _elapsed=0
+    while [ $_elapsed -lt "$SCOPE_WAIT_TIMEOUT" ]; do
+        REALM_DEFAULT_SCOPES=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/default-default-client-scopes")
+        AGENT_SCOPE_IDS=$(echo "$REALM_DEFAULT_SCOPES" | python3 -c "
 import sys, json
 scopes = json.load(sys.stdin)
 for s in scopes:
     if s['name'].startswith('agent-') and s['name'].endswith('-aud'):
         print(s['id'], s['name'])
 " 2>/dev/null || echo "")
+        if [ -n "$AGENT_SCOPE_IDS" ]; then
+            break
+        fi
+        log_info "  No agent audience scopes yet, waiting... (${_elapsed}s/${SCOPE_WAIT_TIMEOUT}s)"
+        sleep 10
+        _elapsed=$((_elapsed + 10))
+    done
+else
+    log_info "  No agent deployments in team1 — skipping audience scope wait"
+fi
 
 if [ -n "$AGENT_SCOPE_IDS" ]; then
     while IFS=' ' read -r scope_id scope_name; do
@@ -239,7 +261,48 @@ if [ -n "$AGENT_SCOPE_IDS" ]; then
         log_info "  Added scope '$scope_name' to $E2E_CLIENT_ID"
     done <<< "$AGENT_SCOPE_IDS"
 else
-    log_info "  No agent audience scopes found (agents may not be deployed yet)"
+    # Fallback: create a platform-level audience scope so the test token
+    # includes the aud claim that AuthBridge requires. This covers the case
+    # where neither the sidecar nor the operator controller has created
+    # agent-specific scopes yet.
+    log_warn "No agent audience scopes found — adding audience mapper directly to test client"
+    # Refresh admin token (the original likely expired during the 5-minute scope wait)
+    ADMIN_TOKEN=$(curl -sk -X POST \
+        "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+        -d "grant_type=password&client_id=admin-cli&username=$ADMIN_USER&password=$ADMIN_PASS" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
+    KEYCLOAK_PUBLIC_URL=$(kubectl get configmap authbridge-config -n team1 \
+        -o jsonpath='{.data.EXPECTED_AUDIENCE}' 2>/dev/null || echo "")
+    if [ -n "$KEYCLOAK_PUBLIC_URL" ]; then
+        # Add audience mapper directly to the test client (more reliable than client scopes)
+        MAPPER_PAYLOAD=$(python3 -c "
+import json, sys
+print(json.dumps({
+    'name': 'kagenti-platform-audience',
+    'protocol': 'openid-connect',
+    'protocolMapper': 'oidc-audience-mapper',
+    'consentRequired': False,
+    'config': {
+        'included.custom.audience': sys.argv[1],
+        'id.token.claim': 'false',
+        'access.token.claim': 'true',
+        'introspection.token.claim': 'true'
+    }
+}))
+" "$KEYCLOAK_PUBLIC_URL")
+        kc_api POST "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_INTERNAL_ID/protocol-mappers/models" \
+            -d "$MAPPER_PAYLOAD" >/dev/null 2>&1 || true
+        # Verify the mapper was added
+        MAPPER_CHECK=$(kc_api GET "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_INTERNAL_ID/protocol-mappers/models" | \
+            python3 -c "import sys,json; mappers=json.load(sys.stdin); print('yes' if any(m['name']=='kagenti-platform-audience' for m in mappers) else 'no')" 2>/dev/null || echo "no")
+        if [ "$MAPPER_CHECK" = "yes" ]; then
+            log_success "Added audience mapper to $E2E_CLIENT_ID (aud=$KEYCLOAK_PUBLIC_URL)"
+        else
+            log_warn "Failed to add audience mapper — agent tests may fail with 401"
+        fi
+    else
+        log_warn "Could not determine EXPECTED_AUDIENCE from authbridge-config — agent tests may fail with 401"
+    fi
 fi
 
 # ============================================================================
