@@ -999,19 +999,10 @@ fi
 # ============================================================================
 log_info "Step 8: kagenti"
 
-# Detect latest release tag for UI images (skip when building from source)
-KAGENTI_TAG="latest"
-if $WITH_UI && ! $BUILD_IMAGES; then
-  log_info "Detecting latest kagenti release tag..."
-  DETECTED_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git 2>/dev/null | \
-    tail -n1 | sed 's|.*refs/tags/||; s/\^{}//' || echo "")
-  if [ -n "$DETECTED_TAG" ]; then
-    KAGENTI_TAG="$DETECTED_TAG"
-    log_success "Using tag: $KAGENTI_TAG"
-  else
-    log_warn "Could not detect latest tag — using 'latest'"
-  fi
-fi
+# Image tags come from charts/kagenti/values.yaml (pinned at release time by
+# chore(release) commits — see docs/releasing.md). The only override is below
+# in KAGENTI_FLAGS when --build-images is set, since locally-built images are
+# tagged ":latest" and loaded into Kind.
 
 # Secrets file resolution (checked in order of precedence):
 #   1. --secrets-file CLI argument
@@ -1099,11 +1090,27 @@ KAGENTI_FLAGS=(
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
   --set "components.phoenix.enabled=false"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
-  --set "ui.frontend.tag=${KAGENTI_TAG}"
-  --set "ui.backend.tag=${KAGENTI_TAG}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
 )
+
+# When --build-images is set, the build step tags images ":latest" and loads
+# them into Kind (see list above). Override the chart's release-pinned tags
+# for exactly those images so pods use the locally-built copies instead of
+# pulling pinned tags from ghcr.io. Image selection mirrors _BUILD_IMAGES.
+if $BUILD_IMAGES; then
+  KAGENTI_FLAGS+=(--set "agentOAuthSecret.tag=latest")
+  if $WITH_BACKEND; then
+    KAGENTI_FLAGS+=(--set "ui.backend.tag=latest")
+  fi
+  if $WITH_UI; then
+    KAGENTI_FLAGS+=(--set "ui.frontend.tag=latest")
+    KAGENTI_FLAGS+=(--set "uiOAuthSecret.tag=latest")
+  fi
+  if $WITH_MLFLOW; then
+    KAGENTI_FLAGS+=(--set "mlflowOAuthSecret.tag=latest")
+  fi
+fi
 
 log_info "Installing kagenti..."
 run_cmd helm upgrade --install kagenti "$REPO_ROOT/charts/kagenti/" \
