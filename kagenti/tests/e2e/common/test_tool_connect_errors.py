@@ -25,6 +25,7 @@ import httpx
 import pytest
 
 
+@pytest.mark.requires_features(["ui"])
 class TestToolConnectErrors:
     """Test that tool connection failures return correct HTTP status codes."""
 
