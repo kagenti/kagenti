@@ -1044,6 +1044,18 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "keycloak.realm=${KC_REALM}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)"
 
+# Helm upgrade can miss additional CRDs, install them now
+NEW_TMP_DIR=$(mktemp -d)
+trap "rm -rf ${NEW_TMP_DIR}" EXIT
+log_info "Ensuring kagenti CRDs are updated"
+OPERATOR_TGZ_MATCHES=( "$KAGENTI_REPO"/charts/kagenti/charts/kagenti-operator-chart-*.tgz )
+if [[ ${#OPERATOR_TGZ_MATCHES[@]} -ne 1 || ! -f "${OPERATOR_TGZ_MATCHES[0]}" ]]; then
+  log_error "Expected exactly one kagenti-operator-chart-*.tgz in $KAGENTI_REPO/charts/kagenti/charts/, found ${#OPERATOR_TGZ_MATCHES[@]}: ${OPERATOR_TGZ_MATCHES[*]}"
+  exit 1
+fi
+run_cmd tar -C "${NEW_TMP_DIR}" -xzf "${OPERATOR_TGZ_MATCHES[0]}" kagenti-operator-chart/crds
+run_cmd kubectl apply -f "${NEW_TMP_DIR}/kagenti-operator-chart/crds/"
+
 log_success "Kagenti installed"
 
 # Grant otel-collector SA MLflow RBAC in agent namespaces (created by kagenti chart above)
