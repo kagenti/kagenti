@@ -809,8 +809,13 @@ ALL_AGENT_NAMES_FULL = ALL_DEPLOYED_AGENT_NAMES + CLI_AGENT_NAMES
 BACKEND_AGENTS = [
     pytest.param("claude-sdk-agent", id="claude_sdk_agent"),
     pytest.param("adk-agent-supervised", id="adk_supervised"),
+    pytest.param("weather-agent-supervised", id="weather_supervised"),
 ]
-BACKEND_AGENT_NAMES = ["claude-sdk-agent", "adk-agent-supervised"]
+BACKEND_AGENT_NAMES = [
+    "claude-sdk-agent",
+    "adk-agent-supervised",
+    "weather-agent-supervised",
+]
 
 # Agents without LLM (skip skill tests)
 NO_LLM_AGENTS = {"weather-agent-supervised"}

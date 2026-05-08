@@ -62,37 +62,47 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
 | HITL: Network egress | P | — |
 | Audit logging | — | P (Claude Code, OpenCode) |
 
-**Tier 5: Backend API (via kagenti-backend proxy)**
+**Tier 5: Backend API (via kagenti-backend A2A proxy)**
 
-| Capability | Claude SDK | ADK |
-|---|:---:|:---:|
-| Health check | — | — |
-| Agent card proxy | — | — |
-| Send proxy | — | — |
-| Stream proxy | — | — |
-| Multiturn proxy | — | — |
-| Agent list | — | — |
-| Error handling | — | — |
-| Concurrent proxy | — | — |
+All A2A agents are tested through the backend proxy (`/api/v1/chat/{ns}/{agent}/send|stream`).
+This validates the production path — one port-forward to the backend replaces per-agent port-forwards.
 
-Requires `OPENSHELL_BACKEND_AVAILABLE=true`. Tests go through
-`kagenti-backend` A2A proxy instead of direct port-forward.
+| Capability | Claude SDK | ADK | Weather | Claude Code | OpenCode | OpenClaw |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Health check | — | — | — | — | — | — |
+| Agent card proxy | — | — | — | — | — | — |
+| Send proxy | — | — | S | — | — | — |
+| Stream proxy | — | — | S | — | — | — |
+| Multiturn proxy | — | — | S | — | — | — |
+| Agent list | — | — | — | — | — | — |
+| Error handling | — | — | — | — | — | — |
+| Concurrent proxy | — | — | — | — | — | — |
+
+S for Weather send/stream/multiturn: no LLM capability (by design).
+Claude Code/OpenCode: CLI sandbox agents, not A2A — backend proxy N/A (use ACP instead).
+OpenClaw: gateway protocol, not A2A — backend proxy N/A (needs adapter).
+Requires `OPENSHELL_BACKEND_AVAILABLE=true`.
 
 **Tier 6: ACP Protocol (WebSocket)**
 
-| Capability | Claude SDK | ADK |
-|---|:---:|:---:|
-| Initialize | — | — |
-| Session new/close | — | — |
-| Prompt relay | — | — |
-| Context preserved | — | — |
-| Session list | — | — |
-| Session resume | — | — |
-| Permission gate | — | — |
-| Error handling | — | — |
+Tests the ACP WebSocket endpoint (`/api/v1/acp/ws/{ns}/{agent}`) with JSON-RPC 2.0.
+Currently bridges to A2A agents; future: direct ACP for Claude Code/OpenCode sandboxes.
 
+| Capability | Claude SDK | ADK | Weather | Claude Code | OpenCode | OpenClaw |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Initialize | — | — | — | — | — | — |
+| Session new/close | — | — | — | — | — | — |
+| Prompt relay | — | — | S | — | — | — |
+| Context preserved | — | — | S | — | — | — |
+| Session list | — | — | — | — | — | — |
+| Session resume | — | — | — | — | — | — |
+| Permission gate | — | — | — | — | — | — |
+| Error handling | — | — | — | — | — | — |
+
+S for Weather: no LLM.
+Claude Code/OpenCode: future — ACP native (session/prompt → sandbox exec).
+OpenClaw: future — ACP-NemoClaw bridge.
 Requires `KAGENTI_FEATURE_FLAG_ACP=true` on the backend.
-Tests the ACP WebSocket endpoint with JSON-RPC 2.0 lifecycle.
 
 ## Skip Reasons
 
