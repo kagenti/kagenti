@@ -1121,7 +1121,7 @@ if [[ ${#OPERATOR_TGZ_MATCHES[@]} -ne 1 || ! -f "${OPERATOR_TGZ_MATCHES[0]}" ]];
   exit 1
 fi
 run_cmd tar -C "${CRD_TMP_DIR}" -xzf "${OPERATOR_TGZ_MATCHES[0]}" kagenti-operator-chart/crds
-run_cmd kubectl apply -f "${CRD_TMP_DIR}/kagenti-operator-chart/crds/"
+run_cmd kubectl apply --server-side --force-conflicts -f "${CRD_TMP_DIR}/kagenti-operator-chart/crds/"
 
 log_success "kagenti installed"
 echo ""
