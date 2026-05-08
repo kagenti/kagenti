@@ -1,7 +1,7 @@
 # Workspace Persistence
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_10_workspace_persistence.py`
-> **Tests:** 8 | **Pass:** 7 | **Skip:** 1 (Kind, fresh cluster)
+> **Test file:** `kagenti/tests/e2e/openshell/test_T1_4_workspace.py`
+> **Tests:** 6 | **Pass:** 7 | **Skip:** 1 (Kind, fresh cluster)
 
 ## What This Tests
 

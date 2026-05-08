@@ -1,6 +1,6 @@
 # Platform Health
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_01_platform_health.py`
+> **Test file:** `kagenti/tests/e2e/openshell/test_T0_1_infra_platform.py`
 > **Tests:** 7 | **Pass:** 7 | **Skip:** 0 (Kind, fresh cluster)
 
 ## What This Tests

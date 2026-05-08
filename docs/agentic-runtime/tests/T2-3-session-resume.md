@@ -1,7 +1,7 @@
 # Conversation Resume
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_06_conversation_resume.py`
-> **Tests:** 5 | **Pass:** 0 | **Skip:** 5 (Kind, fresh cluster)
+> **Test file:** `kagenti/tests/e2e/openshell/test_T2_3_session_resume.py`
+> **Tests:** 3 | **Pass:** 0 | **Skip:** 5 (Kind, fresh cluster)
 
 ## What This Tests
 
@@ -111,7 +111,7 @@ These tests are destructive (kill pods, break port-forwards) and are disabled by
 export OPENSHELL_DESTRUCTIVE_TESTS=true
 
 # Run only conversation resume tests
-uv run pytest kagenti/tests/e2e/openshell/test_06_conversation_resume.py -v
+uv run pytest kagenti/tests/e2e/openshell/test_T2_3_session_resume.py -v
 ```
 
 Why disabled by default:

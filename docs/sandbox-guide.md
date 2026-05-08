@@ -46,7 +46,7 @@ Choose the section that matches your target environment.
 #### Step 1: Deploy Kagenti on Kind
 
 ```bash
-scripts/kind/setup-kagenti.sh  --with-ui --with-agent-sandbox --with-spire
+.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
 ```
 
 This deploys: Kind cluster, Istio ambient mesh, cert-manager, Keycloak, SPIRE,
@@ -55,7 +55,7 @@ and the Kagenti platform.
 #### Step 2: Deploy OpenShell Shared Infrastructure
 
 ```bash
-scripts/openshell/deploy-shared.sh
+.github/scripts/local-setup/openshell-full-test.sh --skip-test --skip-cluster-create --skip-cluster-destroy
 ```
 
 This creates:

@@ -244,9 +244,9 @@ see the `claude-*` model name and accept it.
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|-------|------|------|-------|
-| test_04_sandbox_lifecycle | 1 | 1 | 0 | Sandbox CR created |
-| test_07_skill_execution | 3 | 0 | 3 | Needs real Anthropic key |
-| test_10_workspace_persistence | 2 | 1 | 1 | PVC write passes; sandbox creation skips |
+| test_T1_3_sandbox_lifecycle | 1 | 1 | 0 | Sandbox CR created |
+| test_T3_1_skill_execution | 3 | 0 | 3 | Needs real Anthropic key |
+| test_T1_4_workspace | 2 | 1 | 1 | PVC write passes; sandbox creation skips |
 
 ## 11. Sandbox Deployment Models
 

@@ -151,7 +151,7 @@ Two credential models exist:
 
 **Status:** TESTED (new)
 
-Our `test_09_hitl_policy.py` tests OPA egress blocking via `kubectl exec` into
+Our `test_T4_1_hitl_network.py` tests OPA egress blocking via `kubectl exec` into
 the supervised agent. Three tests: deny unauthorized, allow authorized, log denials.
 
 **Hurdle:** `curl` not available in supervised agent pod. Fixed by using python3 urllib.

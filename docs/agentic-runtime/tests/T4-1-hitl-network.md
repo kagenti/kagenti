@@ -1,6 +1,6 @@
 # HITL Policy
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_09_hitl_policy.py`
+> **Test file:** `kagenti/tests/e2e/openshell/test_T4_1_hitl_network.py`
 > **Tests:** 3 | **Pass:** 2 | **Skip:** 1 (Kind, fresh cluster)
 
 ## What This Tests
@@ -136,12 +136,12 @@ network_policies:
 
 | Test File | What's Tested | How |
 |-----------|--------------|-----|
-| test_08_supervisor_enforcement | Rules APPLIED | Supervisor logs show "CONFIG:APPLYING" |
-| test_09_hitl_policy | Rules ENFORCED | Agent process blocked/allowed by OPA |
+| test_T0_3_infra_supervisor | Rules APPLIED | Supervisor logs show "CONFIG:APPLYING" |
+| test_T4_1_hitl_network | Rules ENFORCED | Agent process blocked/allowed by OPA |
 
 Both are needed:
-- test_08 verifies supervisor started correctly
-- test_09 verifies supervisor actually blocks traffic
+- test_T0_3 verifies supervisor started correctly
+- test_T4_1 verifies supervisor actually blocks traffic
 
 ## Netns DNS Issue
 

@@ -138,8 +138,8 @@ Which E2E tests cover this agent:
 
 | Test File | Tests | Pass | Skip | Fail |
 |-----------|-------|------|------|------|
-| test_02_a2a_connectivity | 2 | 2 | 0 | 0 |
-| test_07_skill_execution | 3 | 1 | 2 | 0 |
+| test_T1_1_connectivity | 2 | 2 | 0 | 0 |
+| test_T3_1_skill_execution | 3 | 1 | 2 | 0 |
 ```
 ```
 

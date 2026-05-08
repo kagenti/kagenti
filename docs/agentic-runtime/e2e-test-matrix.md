@@ -19,7 +19,7 @@ Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
 
 ## Capability Matrix (CI Kind)
 
-208 tests total. P=pass, S=skip, —=not tested.
+174 tests total. P=pass, S=skip, —=not tested.
 
 **Tier 1: Infrastructure**
 
@@ -29,8 +29,6 @@ Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
 | Credentials | P | P | P | P | P | P | P |
 | Sandbox lifecycle | P | — | — | — | — | — | — |
 | Workspace | P | P | — | — | — | — | — |
-| Credential security | P | P | P | P | P | P | P |
-| Sandbox connectivity | P | — | — | — | — | — | — |
 | Resource limits | S | — | P | S | S | P | P |
 
 **Tier 2: Capabilities**
@@ -62,10 +60,49 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
 | Capability | Weather | Others |
 |---|:---:|:---:|
 | HITL: Network egress | P | — |
-| Tenant isolation (auth) | — | S (needs Keycloak port-forward in CI) |
-| Tenant isolation (RBAC) | — | P |
-| Tenant isolation (credentials) | — | P |
 | Audit logging | — | P (Claude Code, OpenCode) |
+
+**Tier 5: Backend API (via kagenti-backend A2A proxy)**
+
+All A2A agents are tested through the backend proxy (`/api/v1/chat/{ns}/{agent}/send|stream`).
+This validates the production path — one port-forward to the backend replaces per-agent port-forwards.
+
+| Capability | Claude SDK | ADK | Weather | Claude Code | OpenCode | OpenClaw |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Health check | — | — | — | — | — | — |
+| Agent card proxy | — | — | — | — | — | — |
+| Send proxy | — | — | S | — | — | — |
+| Stream proxy | — | — | S | — | — | — |
+| Multiturn proxy | — | — | S | — | — | — |
+| Agent list | — | — | — | — | — | — |
+| Error handling | — | — | — | — | — | — |
+| Concurrent proxy | — | — | — | — | — | — |
+
+S for Weather send/stream/multiturn: no LLM capability (by design).
+Claude Code/OpenCode: CLI sandbox agents, not A2A — backend proxy N/A (use ACP instead).
+OpenClaw: gateway protocol, not A2A — backend proxy N/A (needs adapter).
+Requires `OPENSHELL_BACKEND_AVAILABLE=true`.
+
+**Tier 6: ACP Protocol (WebSocket)**
+
+Tests the ACP WebSocket endpoint (`/api/v1/acp/ws/{ns}/{agent}`) with JSON-RPC 2.0.
+Currently bridges to A2A agents; future: direct ACP for Claude Code/OpenCode sandboxes.
+
+| Capability | Claude SDK | ADK | Weather | Claude Code | OpenCode | OpenClaw |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Initialize | — | — | — | — | — | — |
+| Session new/close | — | — | — | — | — | — |
+| Prompt relay | — | — | S | — | — | — |
+| Context preserved | — | — | S | — | — | — |
+| Session list | — | — | — | — | — | — |
+| Session resume | — | — | — | — | — | — |
+| Permission gate | — | — | — | — | — | — |
+| Error handling | — | — | — | — | — | — |
+
+S for Weather: no LLM.
+Claude Code/OpenCode: future — ACP native (session/prompt → sandbox exec).
+OpenClaw: future — ACP-NemoClaw bridge.
+Requires `KAGENTI_FEATURE_FLAG_ACP=true` on the backend.
 
 ## Skip Reasons
 
@@ -94,10 +131,9 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
 | `test_T2_1_multiturn.py` | 2 | 20 | Multiturn, context, tool calling, concurrent |
 | `test_T2_3_session_resume.py` | 2 | 7 | Session resume across restarts |
 | `test_T3_1_skill_execution.py` | 3 | 32 | Skills x 6 agents + per-model + audit |
-| `test_T1_6_credential_security.py` | 1 | 14 | Secret delivery, no hardcoded keys, K8s token leak, policy mount |
-| `test_T1_7_sandbox_connectivity.py` | 1 | 5 | Gateway health, endpoints, port-forward, kubectl exec |
 | `test_T4_1_hitl_network.py` | 4 | 3 | HITL network egress |
-| `test_T4_2_tenant_isolation.py` | 4 | 15 | JWT audience, RBAC scoping, credential isolation |
+| `test_T5_1_backend_api.py` | 5 | ~15 | Backend A2A proxy |
+| `test_T6_1_acp_protocol.py` | 6 | ~15 | ACP WebSocket protocol |
 
 ## Running Tests
 

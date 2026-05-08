@@ -1,7 +1,7 @@
 # Multi-Turn Conversation
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_05_multiturn_conversation.py`
-> **Tests:** 12 | **Pass:** 9 | **Skip:** 3 (Kind, fresh cluster)
+> **Test file:** `kagenti/tests/e2e/openshell/test_T2_1_multiturn.py`
+> **Tests:** 18 | **Pass:** 9 | **Skip:** 3 (Kind, fresh cluster)
 
 ## What This Tests
 
