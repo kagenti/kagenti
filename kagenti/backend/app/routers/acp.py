@@ -3,10 +3,15 @@ ACP (Agent Client Protocol) WebSocket endpoint.
 
 Implements JSON-RPC 2.0 over WebSocket for ACP clients (IDEs, DAM/Humr,
 CLI tools). Bridges to A2A agents via the ACPBridge service.
+
+TODO: Add namespace-level authorization — currently any client can connect
+to any namespace/agent. Production deployments need Keycloak JWT validation
+on WebSocket upgrade (via query param or Sec-WebSocket-Protocol header).
 """
 
 import json
 import logging
+import re
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -22,11 +27,20 @@ JSON_RPC_METHOD_NOT_FOUND = -32601
 JSON_RPC_INTERNAL_ERROR = -32603
 JSON_RPC_PARSE_ERROR = -32700
 
+_SAFE_NAME = re.compile(r"^[a-zA-Z0-9._-]{1,63}$")
+
+
+def _safe(value: str) -> str:
+    """Sanitize path params for logging to prevent log injection."""
+    if _SAFE_NAME.match(value):
+        return value
+    return re.sub(r"[\n\r\t]", "_", value)[:63]
+
 
 @router.websocket("/ws/{namespace}/{agent_name}")
 async def acp_websocket(websocket: WebSocket, namespace: str, agent_name: str):
     await websocket.accept()
-    logger.info("ACP WebSocket connected: %s/%s", namespace, agent_name)
+    logger.info("ACP WebSocket connected: %s/%s", _safe(namespace), _safe(agent_name))
 
     try:
         while True:
@@ -53,7 +67,16 @@ async def acp_websocket(websocket: WebSocket, namespace: str, agent_name: str):
                 await _send_error(websocket, rpc_id, JSON_RPC_INTERNAL_ERROR, str(e))
 
     except WebSocketDisconnect:
-        logger.info("ACP WebSocket disconnected: %s/%s", namespace, agent_name)
+        logger.info("ACP WebSocket disconnected: %s/%s", _safe(namespace), _safe(agent_name))
+    finally:
+        cleaned = await _bridge.cleanup_sessions(namespace, agent_name)
+        if cleaned:
+            logger.info(
+                "Cleaned up %d closed sessions for %s/%s",
+                cleaned,
+                _safe(namespace),
+                _safe(agent_name),
+            )
 
 
 async def _dispatch(
@@ -73,7 +96,7 @@ async def _dispatch(
 
     elif method == "session/new":
         cwd = params.get("cwd", "")
-        session = _bridge.create_session(namespace, agent_name, cwd=cwd)
+        session = await _bridge.create_session(namespace, agent_name, cwd=cwd)
         await _send_result(ws, rpc_id, {"sessionId": session.session_id})
 
     elif method == "session/prompt":
@@ -97,11 +120,11 @@ async def _dispatch(
 
     elif method == "session/close":
         session_id = params.get("sessionId", "")
-        ok = _bridge.close_session(session_id)
+        ok = await _bridge.close_session(session_id)
         await _send_result(ws, rpc_id, {"closed": ok})
 
     elif method == "session/list":
-        sessions = _bridge.list_sessions(namespace, agent_name)
+        sessions = await _bridge.list_sessions(namespace, agent_name)
         await _send_result(
             ws,
             rpc_id,
@@ -119,7 +142,7 @@ async def _dispatch(
 
     elif method == "session/resume":
         session_id = params.get("sessionId", "")
-        session = _bridge.get_session(session_id)
+        session = await _bridge.get_session(session_id)
         if session and not session.closed:
             await _send_result(ws, rpc_id, {"sessionId": session.session_id, "resumed": True})
         else:

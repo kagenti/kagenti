@@ -5,7 +5,9 @@ Translates between ACP (Agent Client Protocol) JSON-RPC 2.0 messages
 and the existing A2A protocol endpoints in chat.py.
 """
 
+import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import AsyncIterator
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 ACP_PROTOCOL_VERSION = 1
+A2A_STREAM_TIMEOUT = 120.0
 
 
 @dataclass
@@ -32,11 +35,17 @@ class ACPSession:
     closed: bool = False
 
 
+def _sanitize_log(value: str) -> str:
+    """Sanitize user-provided values for logging to prevent log injection."""
+    return re.sub(r"[\n\r\t]", "_", value)[:128]
+
+
 class ACPBridge:
     """Bridges ACP WebSocket sessions to A2A HTTP agents."""
 
     def __init__(self):
         self._sessions: dict[str, ACPSession] = {}
+        self._lock = asyncio.Lock()
 
     def server_capabilities(self) -> dict:
         return {
@@ -48,36 +57,57 @@ class ACPBridge:
             },
         }
 
-    def create_session(self, namespace: str, agent_name: str, cwd: str = "") -> ACPSession:
+    async def create_session(self, namespace: str, agent_name: str, cwd: str = "") -> ACPSession:
         session = ACPSession(
             session_id=uuid4().hex,
             agent_name=agent_name,
             namespace=namespace,
         )
-        self._sessions[session.session_id] = session
-        logger.info("ACP session %s created for %s/%s", session.session_id, namespace, agent_name)
+        async with self._lock:
+            self._sessions[session.session_id] = session
+        logger.info(
+            "ACP session %s created for %s/%s",
+            session.session_id,
+            _sanitize_log(namespace),
+            _sanitize_log(agent_name),
+        )
         return session
 
-    def get_session(self, session_id: str) -> ACPSession | None:
-        return self._sessions.get(session_id)
+    async def get_session(self, session_id: str) -> ACPSession | None:
+        async with self._lock:
+            return self._sessions.get(session_id)
 
-    def close_session(self, session_id: str) -> bool:
-        session = self._sessions.get(session_id)
-        if session:
-            session.closed = True
-            return True
+    async def close_session(self, session_id: str) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session:
+                session.closed = True
+                return True
         return False
 
-    def list_sessions(self, namespace: str = "", agent_name: str = "") -> list[ACPSession]:
-        results = []
-        for s in self._sessions.values():
-            if s.closed:
-                continue
-            if namespace and s.namespace != namespace:
-                continue
-            if agent_name and s.agent_name != agent_name:
-                continue
-            results.append(s)
+    async def cleanup_sessions(self, namespace: str, agent_name: str) -> int:
+        """Remove all sessions for a namespace/agent pair (called on WebSocket disconnect)."""
+        async with self._lock:
+            to_remove = [
+                sid
+                for sid, s in self._sessions.items()
+                if s.namespace == namespace and s.agent_name == agent_name and s.closed
+            ]
+            for sid in to_remove:
+                del self._sessions[sid]
+        return len(to_remove)
+
+    async def list_sessions(self, namespace: str = "", agent_name: str = "") -> list[ACPSession]:
+        async with self._lock:
+            results = []
+            for s in self._sessions.values():
+                if s.closed:
+                    continue
+                if namespace and s.namespace != namespace:
+                    continue
+                if agent_name and s.agent_name != agent_name:
+                    continue
+                results.append(s)
         return results
 
     async def prompt(
@@ -86,7 +116,8 @@ class ACPBridge:
         text: str,
     ) -> AsyncIterator[dict]:
         """Send a prompt via A2A message/stream and yield ACP update notifications."""
-        session = self._sessions.get(session_id)
+        async with self._lock:
+            session = self._sessions.get(session_id)
         if not session:
             yield _acp_error("Session not found", session_id=session_id)
             return
@@ -112,7 +143,7 @@ class ACPBridge:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=A2A_STREAM_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
                     agent_url,
