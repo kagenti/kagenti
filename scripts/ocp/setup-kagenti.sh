@@ -1044,17 +1044,14 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "keycloak.realm=${KC_REALM}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)"
 
-# Helm upgrade can miss additional CRDs, install them now
-CRD_SRC_DIR="$KAGENTI_REPO/charts/kagenti/charts/kagenti-operator-chart/crds"
-if [ ! -d "$CRD_SRC_DIR" ]; then
-  OPERATOR_TGZ_MATCHES=( "$KAGENTI_REPO"/charts/kagenti/charts/kagenti-operator-chart-*.tgz )
-  if [[ ${#OPERATOR_TGZ_MATCHES[@]} -ne 1 || ! -f "${OPERATOR_TGZ_MATCHES[0]}" ]]; then
-    log_error "..."
-    exit 1
-  fi
-  run_cmd tar -C "${CRD_TMP_DIR}" -xzf "${OPERATOR_TGZ_MATCHES[0]}" kagenti-operator-chart/crds
-  CRD_SRC_DIR="${CRD_TMP_DIR}/kagenti-operator-chart/crds"
-fi
+# Helm upgrade can miss additional CRDs, install them now.
+# There are three ways this script is configured with chart location
+# - No --kagenti-repo given: always clone fresh from upstream main
+# - --kagenti-repo is GitHub/git URL (cloned into cache)
+# - Local path provided — "use as-is"
+# In all three cases, KAGENTI_CACHE_DIR should point to downloaded Kagenti source
+KAGENTI_CACHE_DIR="${HOME}/.cache/kagenti"
+CRD_SRC_DIR="$KAGENTI_CACHE_DIR/charts/kagenti/charts/kagenti-operator-chart/crds"
 run_cmd kubectl apply --server-side --force-conflicts -f "${CRD_SRC_DIR}/"
 
 log_success "Kagenti installed"
