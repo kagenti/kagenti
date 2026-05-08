@@ -546,67 +546,44 @@ class TestSandboxLegionMemory:
         Expects 'Bob' in the response from turn 2.
         """
         agent_url = _get_sandbox_legion_url()
+        context_id = uuid4().hex[:36]
+        print(f"\n=== Multi-turn Memory Test ===")
+        print(f"  Context ID: {context_id}")
 
-        response2 = ""
-        last_error = ""
-        for attempt in range(3):
-            context_id = uuid4().hex[:36]
-            print(f"\n=== Multi-turn Memory Test (attempt {attempt + 1}) ===")
-            print(f"  Context ID: {context_id}")
-
-            try:
-                # Use explicit shell commands to avoid tool_choice="any"
-                # mangling vague prompts as "READY: step complete"
-                client1, _ = await _connect_to_agent(agent_url)
-                msg1 = A2AMessage(
-                    role="user",
-                    parts=[
-                        TextPart(
-                            text="Run this shell command: echo 'Bob Beep' > /tmp/myname.txt"
-                        )
-                    ],
-                    messageId=uuid4().hex,
-                    contextId=context_id,
+        client1, _ = await _connect_to_agent(agent_url)
+        msg1 = A2AMessage(
+            role="user",
+            parts=[
+                TextPart(
+                    text="Run this shell command: echo 'Bob Beep' > /tmp/myname.txt"
                 )
-                response1, _ = await _extract_response(client1, msg1)
-                if not response1 or "step complete" in response1.lower():
-                    last_error = f"Turn 1 premature: {(response1 or '')[:100]}"
-                    continue
-                print(f"  Turn 1: {response1[:200]}")
+            ],
+            messageId=uuid4().hex,
+            contextId=context_id,
+        )
+        response1, events1 = await _extract_response(client1, msg1)
+        assert response1, f"Turn 1: No response. Events: {events1}"
+        print(f"  Turn 1: {response1[:200]}")
 
-                client2, _ = await _connect_to_agent(agent_url)
-                msg2 = A2AMessage(
-                    role="user",
-                    parts=[
-                        TextPart(
-                            text=(
-                                "Run this shell command: cat /tmp/myname.txt "
-                                "and tell me the exact text contents of the file"
-                            )
-                        )
-                    ],
-                    messageId=uuid4().hex,
-                    contextId=context_id,
+        client2, _ = await _connect_to_agent(agent_url)
+        msg2 = A2AMessage(
+            role="user",
+            parts=[
+                TextPart(
+                    text=(
+                        "Run this shell command: cat /tmp/myname.txt "
+                        "and tell me the exact text contents of the file"
+                    )
                 )
-                response2, _ = await _extract_response(client2, msg2)
-                if not response2 or "step complete" in response2.lower():
-                    last_error = f"Turn 2 premature: {(response2 or '')[:100]}"
-                    response2 = ""
-                    continue
-                print(f"  Turn 2: {response2[:200]}")
+            ],
+            messageId=uuid4().hex,
+            contextId=context_id,
+        )
+        response2, events2 = await _extract_response(client2, msg2)
+        assert response2, f"Turn 2: No response. Events: {events2}"
+        print(f"  Turn 2: {response2[:200]}")
 
-                if "bob" in response2.lower():
-                    break
-            except Exception as e:
-                last_error = str(e)
-                if attempt < 2:
-                    import asyncio as _asyncio
-
-                    await _asyncio.sleep(2)
-
-        assert response2, f"No response after 3 attempts. Last: {last_error}"
-        response2_lower = response2.lower()
-        assert "bob" in response2_lower, (
+        assert "bob" in response2.lower(), (
             f"Agent didn't remember 'Bob'. Response: {response2[:300]}"
         )
         print(f"\n  Multi-turn memory verified")
