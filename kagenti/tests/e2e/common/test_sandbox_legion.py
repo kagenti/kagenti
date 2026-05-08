@@ -217,6 +217,13 @@ def _send_message_raw(agent_url: str, text: str) -> dict:
 IDLE_TIMEOUT_S = 300
 
 
+def _strip_think_tags(text: str) -> str:
+    """Strip DeepSeek R1 <think>...</think> reasoning blocks."""
+    import re
+
+    return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
+
+
 def _extract_text_from_artifacts(artifacts):
     """Extract text from a list of A2A Artifact objects."""
     text = ""
@@ -225,7 +232,7 @@ def _extract_text_from_artifacts(artifacts):
             p = getattr(part, "root", part)
             if hasattr(p, "text"):
                 text += p.text
-    return text
+    return _strip_think_tags(text)
 
 
 async def _extract_response(client, message):
