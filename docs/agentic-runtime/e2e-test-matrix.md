@@ -19,7 +19,7 @@ Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
 
 ## Capability Matrix (CI Kind)
 
-174 tests total. P=pass, S=skip, —=not tested.
+208 tests total. P=pass, S=skip, —=not tested.
 
 **Tier 1: Infrastructure**
 
@@ -29,6 +29,8 @@ Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
 | Credentials | P | P | P | P | P | P | P |
 | Sandbox lifecycle | P | — | — | — | — | — | — |
 | Workspace | P | P | — | — | — | — | — |
+| Credential security | P | P | P | P | P | P | P |
+| Sandbox connectivity | P | — | — | — | — | — | — |
 | Resource limits | S | — | P | S | S | P | P |
 
 **Tier 2: Capabilities**
@@ -60,6 +62,9 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
 | Capability | Weather | Others |
 |---|:---:|:---:|
 | HITL: Network egress | P | — |
+| Tenant isolation (auth) | — | S (needs Keycloak port-forward in CI) |
+| Tenant isolation (RBAC) | — | P |
+| Tenant isolation (credentials) | — | P |
 | Audit logging | — | P (Claude Code, OpenCode) |
 
 ## Skip Reasons
@@ -89,7 +94,10 @@ Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
 | `test_T2_1_multiturn.py` | 2 | 20 | Multiturn, context, tool calling, concurrent |
 | `test_T2_3_session_resume.py` | 2 | 7 | Session resume across restarts |
 | `test_T3_1_skill_execution.py` | 3 | 32 | Skills x 6 agents + per-model + audit |
+| `test_T1_6_credential_security.py` | 1 | 14 | Secret delivery, no hardcoded keys, K8s token leak, policy mount |
+| `test_T1_7_sandbox_connectivity.py` | 1 | 5 | Gateway health, endpoints, port-forward, kubectl exec |
 | `test_T4_1_hitl_network.py` | 4 | 3 | HITL network egress |
+| `test_T4_2_tenant_isolation.py` | 4 | 15 | JWT audience, RBAC scoping, credential isolation |
 
 ## Running Tests
 

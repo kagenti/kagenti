@@ -35,10 +35,14 @@ import pytest
 
 
 def pytest_configure(config):
-    """Register the openshell marker."""
+    """Register custom markers."""
     config.addinivalue_line(
         "markers",
         "openshell: OpenShell PoC tests (gateway, agents, sandbox lifecycle)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "mvp: Multi-tenant MVP validation criteria (Section 9.2)",
     )
 
 
@@ -81,12 +85,13 @@ def llm_available():
 # ---------------------------------------------------------------------------
 
 
-def _find_free_port() -> int:
+def find_free_port() -> int:
     """Find a free local port for port-forwarding."""
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
 
@@ -96,7 +101,7 @@ def _port_forward(name: str, namespace: str, remote_port: int):
     Tests connectivity first — if port-forward fails (e.g., agent uses
     OpenShell netns which blocks external access), returns None.
     """
-    local_port = _find_free_port()
+    local_port = find_free_port()
     try:
         proc = subprocess.Popen(
             [
