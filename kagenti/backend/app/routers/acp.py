@@ -4,17 +4,18 @@ ACP (Agent Client Protocol) WebSocket endpoint.
 Implements JSON-RPC 2.0 over WebSocket for ACP clients (IDEs, DAM/Humr,
 CLI tools). Bridges to A2A agents via the ACPBridge service.
 
-TODO: Add namespace-level authorization — currently any client can connect
-to any namespace/agent. Production deployments need Keycloak JWT validation
-on WebSocket upgrade (via query param or Sec-WebSocket-Protocol header).
+Auth: When ENABLE_AUTH is true, the WebSocket upgrade requires a valid JWT
+token passed as the `token` query parameter. The token is validated using
+the same Keycloak JWKS as the REST endpoints.
 """
 
 import json
 import logging
 import re
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from app.core.config import settings
 from app.services.acp_bridge import ACPBridge
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,24 @@ def _safe(value: str) -> str:
 
 
 @router.websocket("/ws/{namespace}/{agent_name}")
-async def acp_websocket(websocket: WebSocket, namespace: str, agent_name: str):
+async def acp_websocket(
+    websocket: WebSocket,
+    namespace: str,
+    agent_name: str,
+    token: str = Query(default=""),
+):
+    if settings.enable_auth:
+        if not token:
+            await websocket.close(code=4001, reason="Authentication required: pass ?token=<jwt>")
+            return
+        try:
+            from app.core.auth import validate_token
+
+            await validate_token(token)
+        except Exception:
+            await websocket.close(code=4003, reason="Invalid or expired token")
+            return
+
     await websocket.accept()
     logger.info("ACP WebSocket connected: %s/%s", _safe(namespace), _safe(agent_name))
 
