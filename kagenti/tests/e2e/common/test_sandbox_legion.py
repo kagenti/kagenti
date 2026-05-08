@@ -236,6 +236,7 @@ async def _extract_response(client, message):
     task states and extracts the last artifact (reporter answer).
     """
     full_response = ""
+    events_received = []
 
     aiter = client.send_message(message).__aiter__()
     while True:
@@ -244,10 +245,15 @@ async def _extract_response(client, message):
         except StopAsyncIteration:
             break
         except asyncio.TimeoutError:
-            break
+            raise RuntimeError(
+                f"SSE idle timeout ({IDLE_TIMEOUT_S}s). "
+                f"Events: {events_received}, response so far: {full_response[:100]}"
+            )
 
         if isinstance(result, tuple):
             task, event = result
+            event_name = type(event).__name__ if event else "Task(final)"
+            events_received.append(event_name)
 
             if isinstance(event, TaskArtifactUpdateEvent):
                 if hasattr(event, "artifact") and event.artifact:
@@ -267,13 +273,17 @@ async def _extract_response(client, message):
                 break
 
         elif isinstance(result, A2AMessage):
+            events_received.append("Message")
             for part in result.parts or []:
                 p = getattr(part, "root", part)
                 if hasattr(p, "text"):
                     full_response += p.text
             break
 
-    return full_response, ["Streaming"]
+    if not full_response and not events_received:
+        raise RuntimeError("SSE stream returned 0 events — agent unreachable?")
+
+    return full_response, events_received
 
 
 async def _connect_to_agent(agent_url):
