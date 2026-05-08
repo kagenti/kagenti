@@ -38,6 +38,11 @@ updates:
         update-types: [minor, patch]
       major:
         update-types: [major]
+    ignore:
+      # cryptography 47+ crashes with SIGILL on ARM64 Kind clusters.
+      # Pin is intentional — block all bumps above the current upper bound.
+      - dependency-name: "cryptography"
+        update-types: [version-update:semver-major, version-update:semver-minor]
 
   # npm (UI) — React frontend dependencies
   - package-ecosystem: npm
