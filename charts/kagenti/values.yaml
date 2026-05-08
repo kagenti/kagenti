@@ -240,8 +240,7 @@ kagenti-operator-chart:
       - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
       - "--config-path=/etc/kagenti/config.yaml"
       - "--feature-gates-path=/etc/kagenti/feature-gates/feature-gates.yaml"
-      - "--enable-client-registration=false"
-      - "--enable-operator-client-registration=true"
+      - "--enable-client-registration=true"
       resources:
         limits:
           cpu: 150m
