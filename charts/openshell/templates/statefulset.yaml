@@ -49,6 +49,8 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            - name: OPENSHELL_BIND_ADDRESS
+              value: "0.0.0.0"
             - name: OPENSHELL_TLS_CERT
               value: "/tls/server/tls.crt"
             - name: OPENSHELL_TLS_KEY
@@ -108,7 +110,8 @@ spec:
             - "--namespace={{ include "openshell.driverNamespace" . }}"
             - "--supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
             - "--gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
-            - "--dtach-binary-path=/usr/local/bin/openshell-sandbox"
+            - "--supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
+            - "--dtach-binary-path={{ .Values.supervisorImage.binaryPath }}"
             - "--tls-ca-secret=openshell-server-tls"
             - "--tls-client-secret=openshell-client-tls"
             {{- if .Values.sandboxImagePullPolicy }}

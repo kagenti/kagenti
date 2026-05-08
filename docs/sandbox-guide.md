@@ -46,7 +46,7 @@ Choose the section that matches your target environment.
 #### Step 1: Deploy Kagenti on Kind
 
 ```bash
-scripts/kind/setup-kagenti.sh  --with-all
+scripts/kind/setup-kagenti.sh  --with-ui --with-agent-sandbox --with-spire
 ```
 
 This deploys: Kind cluster, Istio ambient mesh, cert-manager, Keycloak, SPIRE,
