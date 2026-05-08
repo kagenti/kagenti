@@ -88,15 +88,20 @@ class TestT5Stream:
     async def test_T5_stream__delivers_events(self, agent, backend_url):
         """POST /chat/{ns}/{agent}/stream delivers SSE events."""
         payload = {"message": "Say hello briefly."}
+        got_data = False
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
+            async with client.stream(
+                "POST",
                 f"{backend_url}/api/v1/chat/{AGENT_NS}/{agent}/stream",
                 json=payload,
                 headers={"Accept": "text/event-stream"},
-            )
-            assert resp.status_code == 200, f"Stream failed: {resp.text}"
-            body = resp.text
-            assert "data:" in body, f"No SSE data events in response: {body[:300]}"
+            ) as resp:
+                assert resp.status_code == 200, f"Stream failed: {resp.status_code}"
+                async for line in resp.aiter_lines():
+                    if line.startswith("data:"):
+                        got_data = True
+                        break
+        assert got_data, f"No SSE data events received from {agent}"
 
 
 @pytest.mark.asyncio
@@ -129,10 +134,14 @@ class TestT5AgentList:
     """Agent listing through backend API."""
 
     def test_T5_agent_list__shows_deployed(self, backend_url):
-        """GET /agents/{ns} lists deployed agents."""
+        """GET /agents?namespace={ns} lists deployed agents."""
         import httpx as hx
 
-        resp = hx.get(f"{backend_url}/api/v1/agents/{AGENT_NS}", timeout=30)
+        resp = hx.get(
+            f"{backend_url}/api/v1/agents",
+            params={"namespace": AGENT_NS},
+            timeout=30,
+        )
         assert resp.status_code == 200, f"Agent list failed: {resp.text}"
         data = resp.json()
         agents = data if isinstance(data, list) else data.get("agents", [])
@@ -142,7 +151,11 @@ class TestT5AgentList:
         """Each agent has name and type metadata."""
         import httpx as hx
 
-        resp = hx.get(f"{backend_url}/api/v1/agents/{AGENT_NS}", timeout=30)
+        resp = hx.get(
+            f"{backend_url}/api/v1/agents",
+            params={"namespace": AGENT_NS},
+            timeout=30,
+        )
         data = resp.json()
         agents = data if isinstance(data, list) else data.get("agents", [])
         for agent in agents[:3]:

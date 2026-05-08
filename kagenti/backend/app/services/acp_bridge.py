@@ -138,32 +138,35 @@ class ACPBridge:
         payload = {
             "jsonrpc": "2.0",
             "id": uuid4().hex,
-            "method": "message/stream",
+            "method": "message/send",
             "params": params,
         }
 
         try:
             async with httpx.AsyncClient(timeout=A2A_STREAM_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
+                response = await client.post(
                     agent_url,
                     json=payload,
-                    headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
-                ) as response:
-                    response.raise_for_status()
-                    buffer = ""
-                    async for chunk in response.aiter_text():
-                        buffer += chunk
-                        while "\n\n" in buffer:
-                            event_text, buffer = buffer.split("\n\n", 1)
-                            acp_update = _sse_to_acp_update(event_text, session)
-                            if acp_update:
-                                yield acp_update
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+                result = response.json()
 
-                    if buffer.strip():
-                        acp_update = _sse_to_acp_update(buffer, session)
-                        if acp_update:
-                            yield acp_update
+                context_id = result.get("result", {}).get("contextId", "")
+                if context_id and not session.context_id:
+                    session.context_id = context_id
+
+                text = _extract_text_from_a2a(result)
+                if text:
+                    yield {
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": [{"type": "text", "text": text}],
+                        },
+                    }
 
         except httpx.HTTPStatusError as e:
             logger.error("A2A HTTP error: %s", e)
