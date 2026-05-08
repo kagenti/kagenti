@@ -231,9 +231,8 @@ for CLUSTER_NAME in $CLUSTERS; do
             echo "       Would delete (use --apply to execute)"
         else
             echo "       Deleting cluster..."
-            # Use direct oc delete for reliable cleanup in CI and local environments
-            # The HostedCluster deletion triggers cascading cleanup of AWS resources
-            if oc delete hostedcluster "$CLUSTER_NAME" -n clusters 2>&1 | tee "/tmp/cleanup-${CLUSTER_NAME}.log"; then
+            # Use destroy-cluster.sh which handles ansible cleanup and stuck finalizers
+            if "$SCRIPT_DIR/destroy-cluster.sh" "$CLUSTER_NAME" 2>&1 | tee "/tmp/cleanup-${CLUSTER_NAME}.log"; then
                 log_success "Successfully deleted $CLUSTER_NAME"
                 DELETED_COUNT=$((DELETED_COUNT + 1))
             else
