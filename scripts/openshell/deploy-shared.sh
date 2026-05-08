@@ -892,7 +892,46 @@ EOPG
     fi
   fi
 
-  # 7c: Backend Deployment
+  # 7c: Backend RBAC (needed to list agents and resolve service ports)
+  log_info "Applying backend RBAC..."
+  run_cmd kubectl apply -f - <<EORBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+  labels:
+    app.kubernetes.io/name: kagenti-backend
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+rules:
+- apiGroups: ["", "apps", "batch"]
+  resources: ["pods", "deployments", "statefulsets", "jobs", "services", "secrets", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["agents.x-k8s.io", "extensions.agents.x-k8s.io"]
+  resources: ["sandboxes", "sandboxclaims", "sandboxtemplates"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+subjects:
+- kind: ServiceAccount
+  name: kagenti-backend
+  namespace: $BACKEND_NS
+roleRef:
+  kind: Role
+  name: kagenti-backend
+  apiGroup: rbac.authorization.k8s.io
+EORBAC
+
+  # 7d: Backend Deployment
   if kubectl get deployment kagenti-backend -n "$BACKEND_NS" &>/dev/null \
      && kubectl rollout status deploy/kagenti-backend -n "$BACKEND_NS" --timeout=5s &>/dev/null; then
     log_success "kagenti-backend already deployed and ready — skipping"
@@ -917,6 +956,7 @@ spec:
       labels:
         app.kubernetes.io/name: kagenti-backend
     spec:
+      serviceAccountName: kagenti-backend
       containers:
       - name: backend
         image: $BACKEND_IMAGE
