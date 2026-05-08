@@ -28,6 +28,8 @@
 #   --skip-images           Skip image builds (Phase 3)
 #   --skip-agents           Skip agent deployment within tenants
 #   --skip-test             Skip E2E test phase
+#   --sequential            Run tests sequentially (default: 4 parallel workers)
+#   --workers N             Number of parallel pytest workers (default: 4, 0=sequential)
 #   --cluster-name NAME     Kind cluster name (default: kagenti)
 #   [positional]            HyperShift cluster suffix (e.g., "ostest")
 #
@@ -58,6 +60,7 @@ SKIP_TEST=false
 SKIP_AGENTS=false
 SKIP_INSTALL=false
 SKIP_IMAGES=false
+PYTEST_WORKERS="${PYTEST_WORKERS:-4}"
 
 # ── Parse arguments ──────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -69,6 +72,8 @@ while [[ $# -gt 0 ]]; do
         --skip-agents)          SKIP_AGENTS=true;  shift ;;
         --skip-install)         SKIP_INSTALL=true; shift ;;
         --skip-images)          SKIP_IMAGES=true;  shift ;;
+        --sequential)           PYTEST_WORKERS=0;  shift ;;
+        --workers)              PYTEST_WORKERS="$2"; shift 2 ;;
         --cluster-name)         CLUSTER_NAME="$2"; shift 2 ;;
         -*)
             echo "Unknown option: $1" >&2
@@ -350,8 +355,14 @@ if [ "$SKIP_TEST" = "false" ]; then
 
     TEST_DIR="kagenti/tests/e2e/openshell"
     if [ -d "$TEST_DIR" ]; then
-        log_step "Running OpenShell E2E tests..."
-        uv run pytest "$TEST_DIR" -v --timeout=300
+        PYTEST_ARGS=(-v --timeout=300)
+        if [ "$PYTEST_WORKERS" -gt 0 ] 2>/dev/null; then
+            PYTEST_ARGS+=(-n "$PYTEST_WORKERS" --dist loadfile)
+            log_step "Running OpenShell E2E tests (${PYTEST_WORKERS} parallel workers)..."
+        else
+            log_step "Running OpenShell E2E tests (sequential)..."
+        fi
+        uv run pytest "$TEST_DIR" "${PYTEST_ARGS[@]}"
     else
         log_warn "No tests at $TEST_DIR — skipping."
     fi
