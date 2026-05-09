@@ -336,7 +336,10 @@ def lookup_service_port(
 
 def resolve_agent_url(name: str, namespace: str, kube: KubernetesService) -> str:
     """Resolve agent URL by looking up actual Service port."""
-    port = lookup_service_port(name, namespace, kube, DEFAULT_OFF_CLUSTER_PORT)
+    fallback = (
+        DEFAULT_IN_CLUSTER_PORT if settings.is_running_in_cluster else DEFAULT_OFF_CLUSTER_PORT
+    )
+    port = lookup_service_port(name, namespace, kube, fallback)
     return get_agent_url(name, namespace, port)
 
 

@@ -63,8 +63,8 @@ class TestResolveAgentUrl:
         assert url == "http://my-agent.team1.svc.cluster.local:8080"
 
     @patch("app.utils.routes.settings")
-    def test_service_not_found(self, mock_settings, kubernetes_service):
-        """Missing Service falls back to default port."""
+    def test_service_not_found_in_cluster(self, mock_settings, kubernetes_service):
+        """Missing Service in-cluster falls back to in-cluster port (8000)."""
         mock_settings.is_running_in_cluster = True
         kubernetes_service._core_api.read_namespaced_service.side_effect = ApiException(
             status=404, reason="Not Found"
@@ -73,11 +73,25 @@ class TestResolveAgentUrl:
         from app.utils.routes import resolve_agent_url
 
         url = resolve_agent_url("my-agent", "team1", kubernetes_service)
-        assert url == "http://my-agent.team1.svc.cluster.local:8080"
+        assert url == "http://my-agent.team1.svc.cluster.local:8000"
 
     @patch("app.utils.routes.settings")
-    def test_service_no_ports(self, mock_settings, kubernetes_service):
-        """Service with empty ports list falls back to default port."""
+    def test_service_not_found_off_cluster(self, mock_settings, kubernetes_service):
+        """Missing Service off-cluster falls back to off-cluster port (8080)."""
+        mock_settings.is_running_in_cluster = False
+        mock_settings.domain_name = "localtest.me"
+        kubernetes_service._core_api.read_namespaced_service.side_effect = ApiException(
+            status=404, reason="Not Found"
+        )
+
+        from app.utils.routes import resolve_agent_url
+
+        url = resolve_agent_url("my-agent", "team1", kubernetes_service)
+        assert url == "http://my-agent.team1.localtest.me:8080"
+
+    @patch("app.utils.routes.settings")
+    def test_service_no_ports_in_cluster(self, mock_settings, kubernetes_service):
+        """Service with empty ports list in-cluster falls back to 8000."""
         mock_settings.is_running_in_cluster = True
         mock_result = MagicMock()
         mock_result.to_dict.return_value = {"spec": {"ports": []}}
@@ -86,7 +100,21 @@ class TestResolveAgentUrl:
         from app.utils.routes import resolve_agent_url
 
         url = resolve_agent_url("my-agent", "team1", kubernetes_service)
-        assert url == "http://my-agent.team1.svc.cluster.local:8080"
+        assert url == "http://my-agent.team1.svc.cluster.local:8000"
+
+    @patch("app.utils.routes.settings")
+    def test_service_no_ports_off_cluster(self, mock_settings, kubernetes_service):
+        """Service with empty ports list off-cluster falls back to 8080."""
+        mock_settings.is_running_in_cluster = False
+        mock_settings.domain_name = "localtest.me"
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {"spec": {"ports": []}}
+        kubernetes_service._core_api.read_namespaced_service.return_value = mock_result
+
+        from app.utils.routes import resolve_agent_url
+
+        url = resolve_agent_url("my-agent", "team1", kubernetes_service)
+        assert url == "http://my-agent.team1.localtest.me:8080"
 
     @patch("app.utils.routes.settings")
     def test_off_cluster_custom_port(self, mock_settings, kubernetes_service):
