@@ -15,7 +15,7 @@
 | `nemoclaw-hermes` | TCP (internal) | LiteMaaS | Internal protocol (skip) |
 
 Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
-`NEMOCLAW_AGENTS`, `SKILL_AGENTS`, `ALL_AGENTS`.
+`NEMOCLAW_AGENTS`, `ALL_AGENTS`.
 
 ## Capability Matrix (CI Kind)
 
@@ -116,6 +116,8 @@ Requires `KAGENTI_FEATURE_FLAG_ACP=true` on the backend.
 | Session resume | 5 | All | Kagenti backend session store |
 
 ## Test File Organization
+
+Test counts include parametrized instances (e.g., a test parametrized across 3 agents counts as 3).
 
 | File | Tier | Tests | What it covers |
 |---|---|:---:|---|

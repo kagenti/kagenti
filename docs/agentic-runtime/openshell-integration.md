@@ -366,7 +366,6 @@ model validation.
 
 | Agent | Supervisor? | OPA Enforced? | Egress |
 |-------|------------|---------------|--------|
-| weather-agent-supervised | Yes | Yes | Tier 2 |
 | weather-agent-supervised | **Yes** | **Yes** | Restricted to `*.svc.cluster.local` + LiteMaaS |
 | adk-agent-supervised | Yes | Yes (enforced) | Tier 2 |
 | claude-sdk-agent | No | No (policy mounted but not enforced) | **Open** |

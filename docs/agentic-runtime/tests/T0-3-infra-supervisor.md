@@ -1,7 +1,7 @@
 # Supervisor Enforcement
 
 > **Test file:** `kagenti/tests/e2e/openshell/test_T0_3_infra_supervisor.py`
-> **Tests:** 12 | **Pass:** 11 | **Skip:** 0 (Kind, fresh cluster)
+> **Tests:** 12
 
 ## What This Tests
 

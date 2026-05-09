@@ -1,7 +1,7 @@
 # Conversation Resume
 
 > **Test file:** `kagenti/tests/e2e/openshell/test_T2_3_session_resume.py`
-> **Tests:** 3 | **Pass:** 0 | **Skip:** 5 (Kind, fresh cluster)
+> **Tests:** 3
 
 ## What This Tests
 

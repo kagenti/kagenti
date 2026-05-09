@@ -1,7 +1,7 @@
 # A2A Connectivity
 
 > **Test file:** `kagenti/tests/e2e/openshell/test_T1_1_connectivity.py`
-> **Tests:** 11 | **Pass:** 7 | **Skip:** 1 (Kind, fresh cluster)
+> **Tests:** 11
 
 ## What This Tests
 

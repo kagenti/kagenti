@@ -1,7 +1,7 @@
 # Sandbox Lifecycle
 
 > **Test file:** `kagenti/tests/e2e/openshell/test_T1_3_sandbox_lifecycle.py`
-> **Tests:** 9 | **Pass:** 7 | **Skip:** 0 (Kind, fresh cluster)
+> **Tests:** 9
 
 ## What This Tests
 

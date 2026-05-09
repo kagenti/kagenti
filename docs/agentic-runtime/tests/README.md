@@ -89,3 +89,5 @@ export OPENSHELL_DESTRUCTIVE_TESTS=false
 | `OPENSHELL_NEMOCLAW_ENABLED` | `false` | Enable NemoClaw tests |
 | `OPENSHELL_BACKEND_AVAILABLE` | `false` | Enable backend API tests (T5/T6) |
 | `OPENSHELL_DESTRUCTIVE_TESTS` | `false` | Enable pod restart tests |
+| `OPENSHELL_AGENT_PORT` | `8080` | Agent port for port-forwarding |
+| `OPENSHELL_LLM_PROVIDER` | `remote` | LLM provider type (`remote` or `ollama`) |
