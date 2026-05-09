@@ -185,6 +185,11 @@ export const AgentDetailPage: React.FC = () => {
     queryKey: ['agentCard', namespace, name],
     queryFn: () => chatService.getAgentCard(namespace!, name!),
     enabled: !!namespace && !!name && isAgentReady,
+    retry: 3,
+    retryDelay: 2000,
+    refetchInterval: (query) => {
+      return query.state.data ? false : 5000;
+    },
   });
 
   // Check if an HTTPRoute/Route exists for this agent
