@@ -561,9 +561,7 @@ class TestSandboxLegionMemory:
         msg1 = A2AMessage(
             role="user",
             parts=[
-                TextPart(
-                    text="Run this shell command: echo 'Bob Beep' > /tmp/myname.txt"
-                )
+                TextPart(text="Run this shell command: echo 'Bob Beep' > myname.txt")
             ],
             messageId=uuid4().hex,
             contextId=context_id,
@@ -575,14 +573,7 @@ class TestSandboxLegionMemory:
         client2, _ = await _connect_to_agent(agent_url)
         msg2 = A2AMessage(
             role="user",
-            parts=[
-                TextPart(
-                    text=(
-                        "Run this shell command: cat /tmp/myname.txt "
-                        "and tell me the exact text contents of the file"
-                    )
-                )
-            ],
+            parts=[TextPart(text="Run this shell command: cat myname.txt")],
             messageId=uuid4().hex,
             contextId=context_id,
         )
