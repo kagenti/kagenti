@@ -3075,6 +3075,14 @@ async def create_agent(
         f"workloadType={request.workloadType}, "
         f"createHttpRoute={request.createHttpRoute}"
     )
+    
+    # Feature flag: reject skill linking if feature is disabled
+    if request.skills and not settings.kagenti_feature_flag_skills:
+        raise HTTPException(
+            status_code=400,
+            detail="Skill linking is disabled. Enable KAGENTI_FEATURE_FLAG_SKILLS to use this feature.",
+        )
+    
     try:
         if request.deploymentMethod == "image":
             # Deploy from existing container image
@@ -3535,6 +3543,13 @@ async def finalize_shipwright_build(
         final_skills = request.skills
         if final_skills is None:
             final_skills = stored_config.get("skills")
+        
+        # Feature flag: reject skill linking if feature is disabled
+        if final_skills and not settings.kagenti_feature_flag_skills:
+            raise HTTPException(
+                status_code=400,
+                detail="Skill linking is disabled. Enable KAGENTI_FEATURE_FLAG_SKILLS to use this feature.",
+            )
 
         final_service_ports = request.servicePorts
         if final_service_ports is None and "servicePorts" in stored_config:

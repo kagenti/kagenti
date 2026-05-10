@@ -164,13 +164,28 @@ async function fetchDirectoryContents(
 }
 
 /**
+ * Cache for successful branch/path lookups to reduce API calls
+ * Key format: "owner/repo/branch/path"
+ */
+const branchPathCache = new Map<string, { branch: string; path: string }>();
+
+/**
  * Try to find the correct branch/path split by testing against GitHub API
+ * Uses session-based caching to minimize redundant API calls
  */
 async function findValidBranchAndPath(
   owner: string,
   repo: string,
   remainingParts: string[]
 ): Promise<{ branch: string; path: string } | null> {
+  // Check cache first
+  const cacheKey = `${owner}/${repo}/${remainingParts.join('/')}`;
+  const cached = branchPathCache.get(cacheKey);
+  if (cached) {
+    console.debug(`Using cached branch/path for ${cacheKey}`);
+    return cached;
+  }
+
   // Try progressively longer branch names, starting from shortest
   // This is more efficient as most branches don't have slashes
   for (let i = 0; i < remainingParts.length; i++) {
@@ -193,7 +208,10 @@ async function findValidBranchAndPath(
       });
       
       if (response.ok) {
-        return { branch: potentialBranch, path: potentialPath };
+        const result = { branch: potentialBranch, path: potentialPath };
+        // Cache successful lookup
+        branchPathCache.set(cacheKey, result);
+        return result;
       }
     } catch {
       // Continue trying other combinations
