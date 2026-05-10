@@ -64,7 +64,7 @@ The `kind-full-test.sh` script runs:
 
 1. **Cleanup** - Remove existing cluster (optional)
 2. **Create Cluster** - Create Kind cluster
-3. **Deploy Platform** - Deploy Kagenti via Ansible
+3. **Deploy Platform** - Deploy Kagenti platform
 4. **Deploy Agents** - Build and deploy demo agents
 5. **Run E2E Tests** - Execute test suite
 6. **Show Access** - Display UI access information
@@ -88,7 +88,7 @@ SKIP_TESTS=true ./.github/scripts/local-setup/kind-full-test.sh
 The `hypershift-full-test.sh` script runs:
 
 1. **Create Cluster** - Create HyperShift cluster on AWS (~15 min)
-2. **Deploy Platform** - Deploy Kagenti via Ansible
+2. **Deploy Platform** - Deploy Kagenti platform
 3. **Wait for CRDs** - Wait for Kagenti CRDs
 4. **Apply Pipelines** - Apply Tekton pipeline templates
 5. **Build Tools** - Build weather tool via Tekton
@@ -222,7 +222,6 @@ export HOSTED_KUBECONFIG=~/clusters/hcp/kagenti-hypershift-custom-ladas/auth/kub
 
 - AWS CLI with admin credentials
 - OpenShift CLI (oc)
-- Ansible
 - HyperShift credentials configured
 
 ## Debugging Failed Tests

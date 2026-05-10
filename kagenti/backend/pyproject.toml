@@ -18,6 +18,8 @@ dependencies = [
     "a2a-sdk>=0.2.0",
     "mcp>=1.0.0",
     "asyncpg>=0.30.0",
+    # cryptography 47+ crashes with SIGILL on ARM64 Kind clusters
+    "cryptography<47",
 ]
 
 [project.optional-dependencies]

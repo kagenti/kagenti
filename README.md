@@ -127,8 +127,8 @@ git checkout v0.5.1
 cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
 # Edit deployments/envs/.secret_values.yaml with your values
 
-# Run the Ansible-based installer
-deployments/ansible/run-install.sh --env dev
+# Deploy to Kind cluster
+scripts/kind/setup-kagenti.sh --with-ui --with-spire --with-agent-sandbox --with-builds
 ```
 
 > **Tip:** To find the latest stable version from the command line:
@@ -136,7 +136,7 @@ deployments/ansible/run-install.sh --env dev
 > git tag --list 'v*' --sort=-v:refname | grep -v -E '(alpha|rc)' | head -1
 > ```
 
-Use `deployments/ansible/run-install.sh --help` for options. For more detailed installation instructions including OpenShift refer to [Installation Guide](./docs/install.md).
+For all available installer options and detailed instructions (including OpenShift), refer to the [Installation Guide](./docs/install.md).
 
 ### Access the UI
 

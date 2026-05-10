@@ -92,7 +92,7 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml  # OpenShift
 
 | Script | Description |
 |--------|-------------|
-| `30-run-installer.sh` | Run Ansible installer for Kagenti platform |
+| `30-run-installer.sh` | Run platform installer |
 | `41-wait-crds.sh` | Wait for Kagenti CRDs to be available |
 
 ### Namespace Setup
@@ -202,7 +202,7 @@ oc get routes -A
 ### Installer Fails
 
 ```bash
-# Check Ansible logs
+# Check installer logs
 # (Logs are output during run)
 
 # Check namespace
@@ -261,6 +261,6 @@ curl http://localhost:8000/.well-known/agent.json
 
 ## Related Documentation
 
-- `deployments/ansible/README.md` - Ansible deployment guide
+- `deployments/README.md` - Deployment guide
 - `docs/install.md` - Installation guide
 - `docs/components.md` - Component details

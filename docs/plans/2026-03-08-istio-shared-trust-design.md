@@ -1,5 +1,9 @@
 # Istio Multi-Mesh Shared Trust via cert-manager
 
+> **[Historical — Ansible installer removed]** This design doc references the Ansible installer
+> (`deployments/ansible/`) which has been removed. The cert-manager Helm resources are in place;
+> the cacerts transformation step is now handled by the OCP installer (`scripts/ocp/setup-kagenti.sh`).
+
 **Date:** 2026-03-08
 **Status:** Approved
 **Replaces:** Shared Trust Pattern (credential copying workaround)

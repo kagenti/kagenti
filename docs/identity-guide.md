@@ -610,97 +610,15 @@ tool_response = requests.post(
 
 ## 🌉 AuthBridge Component
 
-The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) provides a complete, hands-on implementation of Kagenti's identity and authorization patterns. It combines **Client Registration** and **AuthProxy** to demonstrate the full zero-trust authentication flow.
+AuthBridge provides platform primitives to secure AI agents by managing agent identity,
+authentication, and authorization transparently. For comprehensive documentation, see:
 
-### What AuthBridge Demonstrates
-
-| Capability | Description |
-|------------|-------------|
-| **Automatic Workload Identity** | Pod registers itself with Keycloak using SPIFFE ID |
-| **Inbound JWT Validation** | Validates incoming token signature, expiration, and issuer via JWKS; optionally validates audience. Returns 401 for invalid tokens. |
-| **Transparent Token Exchange** | Sidecar exchanges outbound tokens for correct target audience via Keycloak |
-| **Target Service Validation** | Target validates token has correct audience |
-
-### AuthBridge Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  1. SPIFFE Helper obtains SVID from SPIRE Agent                                 │
-│  2. Client Registration extracts SPIFFE ID and registers with Keycloak          │
-│  3. Caller gets token from Keycloak (audience: "caller's SPIFFE ID")            │
-│  4. Caller sends request to auth-target with token                              │
-│  5. Envoy intercepts; Go Processor (ext-proc) validates token signature,        │
-│     expiration, and issuer via JWKS (returns 401 if invalid), then exchanges    │
-│     token for target audience (audience: "auth-target")                         │
-│  6. Auth Target validates token and returns "authorized"                        │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-  SPIRE Agent                    Keycloak                       Auth Target
-       │                            │                               │
-       │  1. SVID                   │                               │
-       ▼                            │                               │
-  ┌─────────┐                       │                               │
-  │ SPIFFE  │  2. Register client   │                               │
-  │ Helper  │──────────────────────►│                               │
-  └─────────┘                       │                               │
-       │                            │                               │
-       ▼                            │                               │
-  ┌─────────┐  3. Get token         │                               │
-  │ Caller  │──────────────────────►│                               │
-  │         │◄──────────────────────│                               │
-  │         │   (aud: authproxy)    │                               │
-  │         │                       │                               │
-  │         │  4. Request + token   │                               │
-  │         │───────────────────────┼──────────────────────────────►│
-  └─────────┘                       │                               │
-       │                            │                               │
-       │      ┌──────────────┐      │                               │
-       └─────►│ Envoy+GoPro  │      │                               │
-              │              │  5. Exchange token                   │
-              │              │─────►│                               │
-              │              │◄─────│                               │
-              │              │   (aud: auth-target)                 │
-              │              │─────────────────────────────────────►│
-              └──────────────┘                              6. Validate & Authorize
-                                                                    │
-                                                               "authorized"
-```
-
-### AuthBridge Components
-
-| Component | Type | Purpose |
-|-----------|------|---------|
-| **Client Registration** | Container | Registers workload with Keycloak using SPIFFE ID |
-| **SPIFFE Helper** | Container | Obtains SVID from SPIRE Agent |
-| **Envoy + Go Processor (Ext Proc)** | Sidecar | Intercepts traffic in both directions: **inbound** — validates JWT (signature, expiration, issuer, optional audience) via JWKS, returns 401 for invalid tokens; **outbound** — exchanges tokens for target audience via Keycloak |
-| **Auth Target** | Deployment | Target service that validates exchanged tokens |
-
-### Installation and Hands-On Demo
-
-The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) provides a complete end-to-end example:
-
-```bash
-# Clone and deploy
-cd AuthBridge
-python setup_keycloak.py           # Configure Keycloak
-kubectl apply -f k8s/authbridge-deployment.yaml  # Deploy demo
-
-# Test
-kubectl exec -it deployment/caller -n authbridge -c caller -- sh
-TOKEN=$(curl -s ... | jq -r '.access_token')
-curl -H "Authorization: Bearer $TOKEN" http://auth-target-service:8081/test
-# Returns: "authorized"
-```
-
-For detailed installation and demo instructions please see the [AuthBridge Demo](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)
-
-### AuthBridge Documentation
-
-For complete documentation, see:
-
-- **[AuthBridge README](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Full demo instructions
-- **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/authproxy)** - Token validation and exchange proxy
-- **[Client Registration](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/client-registration)** - Automatic Keycloak client registration
+- **[AuthBridge Documentation](./authbridge/README.md)** — Overview, architecture, and persona guides
+- **[Security Model](./authbridge/security-model.md)** — Trust model, token exchange, threat model
+- **[Deployment Guide](./authbridge/deployment-guide.md)** — Modes, configuration, troubleshooting
+- **[Demos](./authbridge/demos.md)** — Progressive hands-on walkthrough
+- **[Roadmap](./authbridge/roadmap.md)** — Vision and upcoming features
+- **[AuthBridge Source](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** — Implementation and demo code
 
 ---
 

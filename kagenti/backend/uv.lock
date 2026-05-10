@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -686,6 +686,7 @@ source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },
     { name = "asyncpg" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "kubernetes" },
@@ -711,6 +712,7 @@ dev = [
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=0.2.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
+    { name = "cryptography", specifier = "<47" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },

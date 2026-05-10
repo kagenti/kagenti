@@ -10,7 +10,7 @@ create_kind_cluster: false
 #
 # If your cluster is running OCP < 4.19:
 #   - Set components.spire.enabled to 'false' in kagenti-deps section (line 36)
-#   - The Ansible installer will auto-detect and disable SPIRE on older versions
+#   - The installer will auto-detect and disable SPIRE on older versions
 #   - See docs/ocp/openshift-install.md for upgrade instructions
 #
 # To check your OpenShift version:
@@ -43,13 +43,13 @@ charts:
         spire:
           # ⚠️  REQUIRES OpenShift 4.19 or higher
           # The ZTWIM (Zero Trust Workload Identity Manager) operator is only available on OCP 4.19+
-          # For OCP < 4.19: Set this to 'false' or the Ansible installer will auto-disable it
+          # For OCP < 4.19: Set this to 'false' or the installer will auto-disable it
           enabled: true  # Use ZTWIM operator for OCP 4.19+
         tekton:
           enabled: true
         shipwright:
           enabled: true
-          # Skip Helm hook for OpenShiftBuild operand - Ansible creates it after CRD is ready
+          # Skip Helm hook for OpenShiftBuild operand - installer creates it after CRD is ready
           # This is needed on HyperShift/fresh installs where the CRD doesn't exist yet
           skipOpenShiftBuildOperand: true
         certManager:

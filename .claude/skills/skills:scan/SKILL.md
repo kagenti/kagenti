@@ -76,7 +76,6 @@ Based on findings, propose categories:
 | `charts/` or `helm/` | `helm:debug` |
 | `Dockerfile` | `docker:build`, `docker:debug` |
 | `tests/e2e/` | `tdd:ci`, `rca:ci` |
-| `deployments/ansible/` | `deploy:ansible` |
 | Kubernetes manifests | `k8s:health`, `k8s:pods`, `k8s:logs` |
 | Kind/minikube configs | `tdd:kind`, `rca:kind` |
 | HyperShift/OpenShift | `tdd:hypershift`, `rca:hypershift` |

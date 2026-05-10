@@ -3,6 +3,9 @@
 This guide describes how maintainers create tags, pre-releases, and stable (GA)
 releases across the Kagenti organization.
 
+> **Policy:** For branching strategy, support windows, and governance decisions,
+> see [docs/release-sop.md](release-sop.md).
+>
 > **AI-assisted releases:** Use the `/release` skill to walk through the release
 > process interactively. See [Using the Release Skill](#using-the-release-skill)
 > at the end of this guide for examples.
@@ -53,7 +56,7 @@ GA release notes should include a compatibility table:
 | agent-examples | v0.2.0 |
 ```
 
-Users who install via the Ansible installer or Helm charts do not need to manage
+Users who install via Helm charts do not need to manage
 version compatibility manually — checking out a Kagenti release tag gives a
 consistent, tested set of components.
 

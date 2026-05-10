@@ -541,6 +541,12 @@ body {
   height: 36px;
 }
 
+.kagenti-brand-version {
+  font-size: 0.75rem;
+  color: #ffffff;
+  margin-left: 0.5rem;
+}
+
 /* Content area */
 .kagenti-content {
   flex: 1;

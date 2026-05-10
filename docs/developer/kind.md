@@ -111,7 +111,7 @@ Login with Keycloak admin credentials shown by `show-services.sh`.
 
 The `scripts/kind/setup-kagenti.sh` bash installer creates a Kind cluster and
 deploys Kagenti with composable `--with-*` flags. It requires only `kind`,
-`helm` (v3), and `kubectl` — no Python, Ansible, or `uv` needed.
+`helm` (v3), and `kubectl` — no Python or `uv` needed.
 
 ### Examples
 

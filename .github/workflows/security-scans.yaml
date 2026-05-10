@@ -95,8 +95,6 @@ jobs:
           fail-on-severity: moderate
           # Block strong copyleft licenses that could affect project licensing
           deny-licenses: GPL-3.0, AGPL-3.0
-          # Ansible is GPL-3.0 but is a build/deployment tool, not shipped in container images
-          allow-dependencies-licenses: "pkg:pypi/ansible, pkg:pypi/ansible-core"
           # Note: Packages without detected license will warn but not fail (default behavior)
           # Scan results are shown in the "Show scan results" step below
           comment-summary-in-pr: never
@@ -490,17 +488,17 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4
+        uses: github/codeql-action/init@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4
         with:
           languages: python
           # Use security-extended queries for more thorough analysis
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4
+        uses: github/codeql-action/autobuild@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4
+        uses: github/codeql-action/analyze@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4
         with:
           category: "/language:python"
 

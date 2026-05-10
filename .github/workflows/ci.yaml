@@ -132,7 +132,13 @@ jobs:
           version: v3.20.1
 
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git
+        # Pin the version — without --version, helm pulls the plugin's main
+        # branch, whose install hook currently references a release tag
+        # (v1.1.0) that does not exist on GitHub, causing checksum validation
+        # to fail with "no properly formatted SHA checksum lines found".
+        # v1.0.3 is the latest published release with a resolvable linux-amd64
+        # tarball asset.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v1.0.3
 
       - name: Build chart dependencies
         run: helm dependency build charts/kagenti-deps

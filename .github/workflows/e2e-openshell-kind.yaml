@@ -21,6 +21,8 @@ on:
     branches: [main]
     paths:
       - 'deployments/openshell/**'
+      - 'charts/openshell/**'
+      - 'scripts/openshell/**'
       - 'kagenti/tests/e2e/openshell/**'
       - '.github/scripts/local-setup/openshell-full-test.sh'
       - '.github/scripts/local-setup/openshell-build-agents.sh'
@@ -29,6 +31,8 @@ on:
     branches: [main]
     paths:
       - 'deployments/openshell/**'
+      - 'charts/openshell/**'
+      - 'scripts/openshell/**'
       - 'kagenti/tests/e2e/openshell/**'
       - '.github/scripts/local-setup/openshell-full-test.sh'
       - '.github/scripts/local-setup/openshell-build-agents.sh'
@@ -53,13 +57,14 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
+      statuses: write
     outputs:
       authorized: ${{ steps.check.outputs.has-permission }}
       pr_sha: ${{ steps.pr-info.outputs.sha }}
     steps:
       - name: Check write permission
         id: check
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             if (context.eventName !== 'issue_comment') {
@@ -77,7 +82,7 @@ jobs:
       - name: Get PR info
         id: pr-info
         if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             const { data: pr } = await github.rest.pulls.get({
@@ -88,12 +93,27 @@ jobs:
 
       - name: React with rocket
         if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
               owner: context.repo.owner, repo: context.repo.repo,
               comment_id: context.payload.comment.id, content: 'rocket'
+            });
+
+      - name: Create pending commit status
+        if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              sha: '${{ steps.pr-info.outputs.sha }}',
+              state: 'pending',
+              target_url: runUrl,
+              description: 'OpenShell E2E tests running on Kind',
+              context: 'OpenShell PoC (Kind) [/run-e2e-openshell]'
             });
 
   # ── E2E Test Job ───────────────────────────────────────────────
@@ -106,6 +126,7 @@ jobs:
     continue-on-error: true
     permissions:
       contents: read
+      statuses: write
 
     steps:
       - name: Checkout repository
@@ -119,7 +140,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@15650b3ad78fff148532a140b8a4c821796b2d7b  # v5.0.0
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
 
       - name: Install Helm v3
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
@@ -138,18 +159,19 @@ jobs:
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
 
       - name: Free up disk space
         run: bash .github/scripts/common/05-free-disk-space.sh
 
-      - name: Setup Python and Ansible dependencies
+      - name: Setup dependencies
         run: bash .github/scripts/common/10-setup-dependencies.sh
 
       - name: Install Python project dependencies
         run: uv sync --frozen
 
       - name: Run OpenShell full test
+        id: run-tests
         run: |
           SCRIPT="./.github/scripts/local-setup/openshell-full-test.sh"
           if [ ! -f "$SCRIPT" ]; then
@@ -161,13 +183,14 @@ jobs:
           PLATFORM: kind
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+          OPENSHELL_LLM_MODELS: "llama-scout-17b,deepseek-r1"
 
       - name: Collect logs on failure
         if: failure()
         run: |
           mkdir -p /tmp/kagenti/ci-logs
           kubectl get pods -A > /tmp/kagenti/ci-logs/all-pods.txt 2>&1 || true
-          kubectl logs -n openshell-system openshell-gateway-0 --tail=100 > /tmp/kagenti/ci-logs/gateway.log 2>&1 || true
+          kubectl logs -n team1 openshell-server-0 --tail=100 > /tmp/kagenti/ci-logs/gateway.log 2>&1 || true
           kubectl get events -n team1 --sort-by='.lastTimestamp' > /tmp/kagenti/ci-logs/team1-events.txt 2>&1 || true
 
       - name: Upload test results
@@ -178,3 +201,19 @@ jobs:
           path: |
             test-results/
             /tmp/kagenti/
+
+      - name: Update commit status
+        if: always() && github.event_name == 'issue_comment' && needs.authorize.outputs.pr_sha
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const passed = '${{ steps.run-tests.outcome }}' === 'success';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              sha: '${{ needs.authorize.outputs.pr_sha }}',
+              state: passed ? 'success' : 'failure',
+              target_url: runUrl,
+              description: `OpenShell E2E ${passed ? 'Passed' : 'Failed'}`,
+              context: 'OpenShell PoC (Kind) [/run-e2e-openshell]'
+            });

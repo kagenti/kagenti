@@ -36,7 +36,6 @@ kubectl get clusterversion version -o jsonpath='{.status.desired.version}'
 
 If your cluster is running OpenShift 4.16 - 4.18, the installer will automatically use SPIRE Helm charts:
 
-- **No manual configuration required** - The Ansible installer detects the version and configures everything automatically
 - **Full SPIRE functionality** - All SPIRE features work the same as on Kubernetes
 - **Transparent fallback** - You'll see a message during installation indicating Helm charts are being used
 
@@ -56,7 +55,6 @@ components:
 
 The Kagenti installer includes automatic version detection:
 
-- **Ansible Installer**: Automatically detects OCP version and selects the appropriate SPIRE installation method (ZTWIM operator for 4.19+, Helm charts for older versions)
 - **Helm Charts**: When installing manually, pass `ocpVersion` and `useSpireHelmChart` values to control behavior
 - **Pre-flight Checks**: Run validation before installation to understand what will be installed
 
@@ -154,15 +152,7 @@ kubectl patch network.operator.openshift.io cluster --type=merge -p '{"spec":{"d
 
 Zero Trust Workload Identity Manager (ZTWIM) utilizes the OpenShift "apps" subdomain as its Trust Domain by default.
 
-### Using the Ansible Installer (Automatic)
-
-The Ansible installer **automatically detects** the trust domain from the OpenShift DNS cluster configuration. No manual configuration is required - the installer will:
-
-1. Query the DNS cluster resource for the base domain
-2. Construct the trust domain as `apps.<baseDomain>`
-3. Pass it to both kagenti-deps (`spire.trustDomain`) and kagenti (`agentOAuthSecret.spiffePrefix`) charts
-
-### Manual Helm Chart Installation
+### Helm Chart Installation
 
 If installing manually with Helm charts, set the `DOMAIN` environment variable:
 
@@ -295,22 +285,6 @@ To start, ensure your `kubectl` or `oc` is configured to point to your OpenShift
    ```shell
    helm upgrade --install kagenti ./charts/kagenti/ -n kagenti-system --create-namespace -f ./charts/kagenti/.secrets.yaml --set ui.frontend.tag=${LATEST_TAG} --set ui.backend.tag=${LATEST_TAG} --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa --set uiOAuthSecret.useServiceAccountCA=false --set agentOAuthSecret.useServiceAccountCA=false
    ```
-
-## Using the new ansible-based installer
-
-You may also use the new ansible based installer to install the helm charts.
-
-1. Copy example secrets file: `deployments/envs/secret_values.yaml.example` to `deployments/envs/.secret_values.yaml` and fill in the values in that file.
-
-2. Run the installer as:
-
-```bash
-deployments/ansible/run-install.sh --env ocp
-```
-
-Check [Ansible README](../../deployments/ansible/README.md) for more details on the new installer.
-
-To override existing environments, you may create a [customized override file](../../deployments/ansible/README.md#using-override-files).
 
 ## Checking the Spire daemonsets
 
@@ -576,18 +550,12 @@ oc get clusterversion
 
 Kagenti uses SPIRE for workload identity management. The installation method varies by OpenShift version.
 
-#### Using the Ansible Installer (Recommended)
-
-The ansible-based installer automatically detects your OpenShift version and selects the appropriate SPIRE installation method:
-
 | OCP Version | What Happens |
 |-------------|--------------|
 | 4.19.0+ | Installs ZTWIM operator via OLM |
 | 4.16.0 - 4.18.x | Installs SPIRE via upstream Helm charts |
 
-No manual intervention is required - the installer handles everything automatically.
-
-#### Manual Helm Chart Installation
+#### Helm Chart Installation
 
 When installing Kagenti manually with Helm charts on OCP < 4.19, you need to:
 
@@ -623,20 +591,7 @@ For OCP 4.19+, you can let kagenti-deps install the ZTWIM operator automatically
 
 Kagenti requires cert-manager for TLS certificate management. On OpenShift, cert-manager may already be installed by other operators such as OpenShift Pipelines (Tekton).
 
-#### Using the Ansible Installer (Recommended)
-
-The ansible-based installer automatically detects existing cert-manager installations, including:
-- Cert-manager installed via OLM (Operator Lifecycle Manager)
-- Cert-manager installed by OpenShift Pipelines/Tekton operator
-
-When an existing cert-manager is detected, the installer will:
-1. Skip the cert-manager operator installation
-2. Use the existing cert-manager installation
-3. Wait for the CRDs and webhook to be ready before proceeding
-
-No manual intervention is required when using the ansible installer.
-
-#### Manual Helm Chart Installation
+#### Helm Chart Installation
 
 When installing Kagenti manually with Helm charts, you need to handle cert-manager appropriately.
 
@@ -711,9 +666,7 @@ OpenShift Pipelines (Tekton) can install its own internal cert-manager, which ma
 
 **Solution: Configure TektonConfig to use external cert-manager**
 
-OpenShift Pipelines 1.12+ can be configured to use an existing cluster-wide cert-manager. The ansible installer automatically patches the TektonConfig when it detects this scenario.
-
-For manual installations, apply this configuration:
+OpenShift Pipelines 1.12+ can be configured to use an existing cluster-wide cert-manager. Apply this configuration:
 
 ```shell
 kubectl patch tektonconfig config --type=merge -p '
@@ -729,8 +682,6 @@ This configuration:
 - Ensures proper RBAC resource creation for Tekton components
 - Sets the correct target namespace for OpenShift Pipelines
 - Prevents conflicts with external cert-manager installations
-
-**Note:** When using the ansible installer (`deployments/ansible/run-install.sh --env ocp`), this patch is applied automatically.
 
 **Alternative: Disable Tekton Results**
 

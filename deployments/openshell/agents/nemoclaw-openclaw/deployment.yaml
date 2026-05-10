@@ -136,7 +136,7 @@ spec:
             memory: 512Mi
           limits:
             cpu: "1"
-            memory: 1Gi
+            memory: 2Gi
         volumeMounts:
         - name: config
           mountPath: /etc/nemoclaw
@@ -174,7 +174,6 @@ spec:
   - name: http
     port: 8080
     targetPort: 8080
-    targetPort: 18789
     protocol: TCP
 ---
 # 4. AgentRuntime CR

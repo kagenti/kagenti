@@ -361,6 +361,9 @@ else
     echo "Cluster kept for debugging. To destroy later:"
     echo "  ./.github/scripts/kind/destroy-cluster.sh"
     echo ""
+    echo "To view service URLs and login credentials:"
+    echo "  ./.github/scripts/local-setup/show-services.sh"
+    echo ""
 fi
 
 echo ""

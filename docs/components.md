@@ -280,7 +280,7 @@ spec:
   rules:
   - backendRefs:
     - name: weather-tool
-      port: 8000
+      port: 9090
 ```
 
 ```yaml

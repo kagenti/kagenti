@@ -162,93 +162,50 @@ If you have an existing Kind cluster:
 scripts/kind/setup-kagenti.sh --skip-cluster --with-all
 ```
 
-For non-Kind clusters, use the [Ansible-based installer](#legacy-ansible-based-installer-deprecated) or the
-[OpenShift installation](#openshift-installation) instructions.
-
-### Legacy: Ansible-based Installer (Deprecated)
-
-> **Deprecated:** The Ansible-based installer for Kind is deprecated and will be
-> removed in a future release. Use the [Bash Installer](#bash-installer-recommended)
-> above instead. The Ansible installer remains supported for
-> [OpenShift installations](#openshift-installation).
-> See [migration epic #1266](https://github.com/kagenti/kagenti/issues/1266) for details.
-
-<details>
-<summary>Ansible-based installer instructions (click to expand)</summary>
-
-```bash
-# Install additional prerequisites
-brew install ansible uv python@3.11  # macOS
-
-# Copy and configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit .secret_values.yaml with your values
-
-# Run installer
-deployments/ansible/run-install.sh --env dev
-```
-
-See [Ansible README](../deployments/ansible/README.md) for details and
-[override files](../deployments/ansible/README.md#using-override-files).
-
-</details>
+For non-Kind clusters, see the [OpenShift installation](#openshift-installation) instructions.
 
 ---
 
 ## OpenShift Installation
 
-> **Note**: OpenShift support is work in progress. Current limitations:
-> - Only [quay.io](https://quay.io) registry tested for build-from-source
->
-> Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](local-models.md) for setup details.
+Both Ollama (local models) and OpenAI are supported as LLM backends. See the [Local Models Guide](local-models.md) for setup details.
 
-### Pre-Installation Steps
+### Option A: Bash Installer (Recommended)
 
-#### 1. Remove Cert Manager (if installed)
+The `scripts/ocp/setup-kagenti.sh` script is the recommended way to install Kagenti on OpenShift.
+It installs SPIRE, cert-manager, Keycloak, the operator, MCP Gateway, and the UI/backend in a
+single command. Run it from the repository root after logging in with `oc`.
 
-Kagenti installs its own Cert Manager. Remove any existing installation:
-
-```bash
-# Check if cert-manager exists
-kubectl get all -n cert-manager-operator
-kubectl get all -n cert-manager
-```
-
-If present, uninstall via OpenShift Console:
-1. Go to **Operators > Installed Operators**
-2. Find **cert-manager Operator for Red Hat OpenShift**
-3. Click **⋮** → **Uninstall Operator**
-
-Then clean up:
+> **Note**: If your cluster already has a cert-manager installation (e.g. installed via the
+> Red Hat OpenShift cert-manager Operator), remove it before running the script, as Kagenti
+> installs its own.
 
 ```bash
-kubectl delete deploy cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
-kubectl delete service cert-manager cert-manager-cainjector cert-manager-webhook -n cert-manager
-kubectl delete ns cert-manager-operator cert-manager
+# Clone repository
+git clone https://github.com/kagenti/kagenti.git
+cd kagenti
+
+# Log in to your cluster
+oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
+
+# Install Kagenti platform
+./scripts/ocp/setup-kagenti.sh
 ```
 
-#### 2. Configure OVN for Istio Ambient Mode
+Common options:
 
-Check your network type:
+| Flag | Description |
+|------|-------------|
+| `--kagenti-repo PATH\|URL` | Local path or GitHub URL to the repo (default: clones `main` to `~/.cache/kagenti`) |
+| `--realm REALM` | Keycloak realm (default: `kagenti`) |
+| `--skip-ovn-patch` | Skip OVN gateway routing patch |
+| `--skip-mcp-gateway` | Skip MCP Gateway installation |
+| `--skip-ui` | Skip Kagenti UI and backend installation |
+| `--skip-mlflow` | Skip MLflow integration |
+| `--operator-image IMG:TAG` | Custom operator image (e.g. `quay.io/user/kagenti-operator:dev`) |
+| `--dry-run` | Show commands without executing |
 
-```bash
-kubectl describe network.config/cluster
-```
-
-If using `OVNKubernetes`, enable local gateway mode:
-
-```bash
-kubectl patch network.operator.openshift.io cluster --type=merge \
-  -p '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"gatewayConfig":{"routingViaHost":true}}}}}'
-```
-
-#### 3. Set Trust Domain
-
-```bash
-export DOMAIN=apps.$(kubectl get dns cluster -o jsonpath='{ .spec.baseDomain }')
-```
-
-### Option A: Install from OCI Charts (Recommended)
+### Option B: Install from OCI Charts
 
 ```bash
 # Get latest version
@@ -279,7 +236,7 @@ helm upgrade --install --create-namespace -n kagenti-system \
   --set agentOAuthSecret.useServiceAccountCA=false
 ```
 
-### Option B: Install from Repository
+### Option C: Install from Repository
 
 ```bash
 # Clone repository
@@ -314,17 +271,6 @@ helm upgrade --install kagenti ./charts/kagenti/ \
   --set agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false
-```
-
-### Option C: Ansible-Based Installer
-
-```bash
-# Configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit .secret_values.yaml
-
-# Run installer for OpenShift
-deployments/ansible/run-install.sh --env ocp
 ```
 
 ### Verify SPIRE Daemonsets
@@ -388,7 +334,7 @@ The installer automatically creates `keycloak-admin-secret` in every agent names
 
 If your Keycloak admin credentials differ from the defaults, override them using a values file (preferred over `--set` to avoid exposing passwords in shell history and process listings):
 
-**Ansible installer** (via `.secret_values.yaml`):
+**OCP installer** (via `.secret_values.yaml`):
 
 Add to your `deployments/envs/.secret_values.yaml`:
 

@@ -236,7 +236,7 @@ main() {
         echo ""
         echo -e "Next steps:"
         echo -e "  1. Review any warnings above"
-        echo -e "  2. Run the Ansible installer: ${BLUE}deployments/ansible/run-install.sh --env ocp${NC}"
+        echo -e "  2. Run the OCP installer: ${BLUE}scripts/ocp/setup-kagenti.sh${NC}"
         echo -e "  3. Or install manually with Helm (see docs/ocp/openshift-install.md)"
         exit 0
     else

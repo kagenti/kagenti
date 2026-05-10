@@ -11,6 +11,8 @@ export interface FeatureFlags {
   /** agent-sandbox (kubernetes-sigs) as a fourth workload type. */
   agentSandbox: boolean;
   skills: boolean;
+  /** AuthBridge statistics */
+  authbridgeAPI: boolean;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -19,6 +21,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   triggers: false,
   agentSandbox: false,
   skills: false,
+  authbridgeAPI: false,
 };
 
 let cachedFlags: FeatureFlags | null = null;
@@ -38,7 +41,8 @@ export function useFeatureFlags(): FeatureFlags {
           triggers: data.triggers === true,
           agentSandbox: data.agentSandbox === true,
           skills: data.skills === true,
-        };
+          authbridgeAPI: data.authbridgeAPI === true,
+          };
         cachedFlags = validated;
         setFlags(validated);
       })

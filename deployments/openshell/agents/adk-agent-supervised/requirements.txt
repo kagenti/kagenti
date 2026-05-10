@@ -2,3 +2,5 @@
 google-adk[a2a]>=1.0.0
 litellm>=1.60.0,!=1.82.7,!=1.82.8
 uvicorn>=0.30.0
+# cryptography 47+ crashes with SIGILL on ARM64 Kind clusters
+cryptography<47

@@ -189,7 +189,7 @@ export const ImportAgentPage: React.FC = () => {
   // Per-sidecar injection controls
   const [envoyProxyInject, setEnvoyProxyInject] = useState<boolean | undefined>(undefined);
   const [spiffeHelperInject, setSpiffeHelperInject] = useState<boolean | undefined>(undefined);
-  const [clientRegistrationInject, setClientRegistrationInject] = useState<boolean | undefined>(true);
+  const [clientRegistrationInject, setClientRegistrationInject] = useState<boolean | undefined>(undefined);
 
   // Outbound routing rules
   const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);

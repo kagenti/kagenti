@@ -74,7 +74,7 @@ git push -u origin feature-auth
 source ~/.kagenti-hypershift-env.sh
 
 # Deploy from worktree to cluster
-KUBECONFIG=$HOSTED_KUBECONFIG ./deployments/ansible/run-install.sh --env ocp
+KUBECONFIG=$HOSTED_KUBECONFIG scripts/ocp/setup-kagenti.sh
 
 # Or use local-setup scripts
 ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-destroy
@@ -143,7 +143,7 @@ cd .worktrees/my-feature
 source ~/.kagenti-hypershift-env.sh
 
 # Deploy to existing cluster
-KUBECONFIG=$HOSTED_KUBECONFIG ./deployments/ansible/run-install.sh --env ocp
+KUBECONFIG=$HOSTED_KUBECONFIG scripts/ocp/setup-kagenti.sh
 
 # Or create new cluster with this code
 ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy

@@ -44,7 +44,7 @@ Deploys the full Kagenti platform (takes ~15-20 minutes):
 ```
 
 This script:
-- Creates Kind cluster via Ansible installer
+- Creates Kind cluster via bash installer
 - Deploys all platform components (Keycloak, PostgreSQL, Istio, SPIRE)
 - Installs Ollama and pulls qwen2.5:0.5b model
 - Deploys weather agent and tool
@@ -199,7 +199,7 @@ If UI doesn't load:
 
 - These scripts are for local development only (not committed to repo)
 - Scripts are in `.gitignore` to avoid accidental commits
-- Deployment uses same Ansible installer as CI
+- Deployment uses same installer as CI
 - Cluster name is `kagenti` (matches CI workflow)
 - Secrets used are test values (not production)
 

@@ -74,6 +74,14 @@ spec:
       - name: port-bridge
         image: python:3.12-slim
         imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         command: ["python3", "-c"]
         args:
         - |
@@ -93,12 +101,6 @@ spec:
               threading.Thread(target=forward, args=(u, c), daemon=True).start()
         ports:
         - containerPort: 8080
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          capabilities:
-            drop: ["ALL"]
       volumes:
       - name: policy
         configMap:

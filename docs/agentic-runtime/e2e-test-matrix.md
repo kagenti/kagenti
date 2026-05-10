@@ -1,478 +1,130 @@
 # OpenShell E2E Test Matrix
 
-> Back to [main doc](openshell-integration.md) | **Detailed test docs:** [tests/](tests/README.md)
-
-## Agent Taxonomy
-
-Every test category covers ALL agent types. Unsupported combinations are
-explicitly skipped with documented reasons and TODOs.
-
-### Currently Deployed Agents
-
-| Agent ID | Type | Tier | Protocol | LLM | Supervisor | Skill Support | Tests |
-|----------|------|------|----------|-----|------------|---------------|:---:|
-| `claude_sdk_agent` | Custom A2A | 3 | A2A JSON-RPC | LiteMaaS | No | Via LLM prompt injection | 11 pass |
-| `adk_agent_supervised` | Custom A2A | **2** | A2A via port-bridge | LiteMaaS | **Yes** | LLM + supervisor security | 3 pass |
-| `weather_supervised` | Custom A2A | 2 | kubectl exec | No | Yes | N/A (no LLM) | 3 pass |
-| `openshell_opencode` | Builtin sandbox | 1 | kubectl exec | OpenAI-compat | Yes | Via `@ai-sdk/openai-compatible` | 6 pass |
-| `openshell_claude` | Builtin sandbox | 1 | kubectl exec | Anthropic/LiteLLM | Yes | Native `.claude/skills/` | 2 pass, 5 skip |
-| `openshell_generic` | Builtin sandbox | 1 | kubectl exec | N/A | Yes | No agent | 2 pass |
-| `nemoclaw_hermes` | NemoClaw | 3 | TCP (internal) | LiteMaaS | No | N/A | 8 pass, 1 skip |
-| `nemoclaw_openclaw` | NemoClaw | 3 | HTTP gateway | LiteMaaS | No | N/A | 9 pass |
-
-> **Latest results:** 102 passed, 0 failed, 34 skipped (local Kind with LiteMaaS + NemoClaw)
-
-### Sandbox Compatibility Matrix (Builtin + NemoClaw Agents)
-
-Agents deployed into OpenShell sandboxes fall into three compatibility tiers
-based on how their security model interacts with the supervisor's Landlock,
-seccomp, netns, and credential isolation layers.
-
-**Composable agents** (delegate security to the environment) sandbox cleanly.
-**Exclusive agents** (implement their own perimeter) fight the sandbox.
-
-| Compatibility | Agents | Sandbox Behavior | Kagenti Skill Support |
-|--------------|--------|-----------------|----------------------|
-| **Works unmodified** | Claude Code, Codex, OpenCode, Copilot, Gemini CLI, Continue.dev | Composable security — delegates to environment | Claude: native `.claude/skills/`; Others: via prompt injection |
-| **Config only** | Windsurf, Augment, SWE-Agent, OpenHands, Roo Code | Needs proxy/endpoint config to route through supervisor | Via prompt injection once configured |
-| **Targeted fixes** | Amp, Cline, Aider | Credential writes or self-update conflict with Landlock | Possible after fixes |
-| **Full adapter ([NemoClaw](https://github.com/NVIDIA/NemoClaw))** | Cursor, Goose, OpenClaw | Own sandbox (Landlock/seccomp/SSRF) fights supervisor | Needs NemoClaw-style adapter layer |
-
-**NemoClaw agents** with manifests (`agents/*/manifest.yaml`):
-
-| Agent | Language | Inference | Health Probe | NemoClaw Status |
-|-------|----------|-----------|-------------|----------------|
-| [OpenClaw](https://github.com/NVIDIA/NemoClaw/tree/main/agents/openclaw) | Node.js | Gateway-managed, explicit proxy | `:18789` | Primary target |
-| [Hermes](https://github.com/NVIDIA/NemoClaw/tree/main/agents/hermes) | Python | Custom OpenAI-compat endpoint | `:8642/health` | Second agent |
-
-The NemoClaw [agent manifest](https://github.com/NVIDIA/NemoClaw/blob/main/agents/openclaw/manifest.yaml)
-format declares the integration contract: binary path, health probe, config
-directories (immutable vs writable), phone-home hosts, inference routing,
-credential handling, and package registry. This is effectively an **agent
-security manifest** — the contract between the agent and the sandbox.
-
-### Future: Agent Security Manifest Standard
-
-Without a standardized agent security manifest, each agent that implements
-its own security perimeter needs a dedicated adapter (NemoClaw for OpenClaw,
-potentially NemoCursor, NemoOpenHands, etc.). The manifest should declare:
-- SSRF behavior (does the agent reject proxies?)
-- Credential handling (writes to disk? environment only? token exchange?)
-- Network expectations (phone-home hosts, package registries)
-- Sandbox delegation (composable vs exclusive security model)
-
-Kagenti's test matrix validates agents across all tiers. Agents that "work
-by accident" today may break with future updates — validated images per
-version are needed for production deployments.
-
-## Phase 1 PoC Test Results
-
-| Platform | Total | Passed | Failed | Skipped | Notes |
-|----------|-------|--------|--------|---------|-------|
-| Kind | 120 | 92 | 0 | 28 | Fresh cluster, zero failures |
-| HyperShift | 120 | 83 | 1 | 36 | 1 failure is stale build pod (not our code) |
-
-Infrastructure:
-- LiteLLM v1.83.10 model proxy with aliases (gpt-4o-mini → llama-scout-17b)
-- `use_chat_completions_api: true` (translates `/v1/responses` → `/v1/chat/completions`)
-- OpenCode sandbox uses `@ai-sdk/openai-compatible` provider (avoids `/v1/responses`)
-- HITL OPA egress blocking tests (python3 urllib, not curl)
-- PVC workspace persistence tests
-- Sandbox creation for Claude + OpenCode
-- TCP readiness probes (Istio ambient mTLS compatible)
-- Port-bridge socat sidecar for supervised agents (bridges netns)
-- `kagenti.io/inject: disabled` on all agents (AuthBridge Phase 3)
-
-## Result Legend
-
-- **PASS** (✅) — test runs and passes
-- **FAIL** — test runs but assertion fails (intermittent = rollout timing)
-- **SKIP** (⏭️) — test skips with documented reason
-- **—** — test not applicable for this agent type
-
-## Skill Execution Matrix (Kind + HyperShift)
-
-| Skill | adk | claude_sdk | adk_supervised | weather | supervised | os_claude | os_opencode | os_generic |
-|-------|-----|-----------|----------------|---------|-----------|----------|------------|-----------|
-| PR review | ✅ | ✅ | ✅ | ⏭️ no LLM | ⏭️ no LLM | ⏭️ Anthropic key | ✅ (Kind) | ⏭️ no agent |
-| RCA | ✅ | ✅ | ✅ | ⏭️ no LLM | ⏭️ no LLM | ⏭️ Anthropic key | ✅ (Kind) | ⏭️ no agent |
-| Security review | ✅ | ✅ | ✅ | ⏭️ no LLM | ⏭️ no LLM | ⏭️ Anthropic key | ✅ (Kind) | ⏭️ no agent |
-| Code generation | — | ✅ | — | — | — | — | — | — |
-| Real GitHub PR | ✅ | ✅ | — | — | — | ⏭️ Anthropic key | ⏭️ timeout | — |
-| RCA CI logs | — | ✅ | — | — | — | — | — | — |
-
-**Skip reasons:**
-- `no LLM` — agent has no LLM capability (by design)
-- `no agent` — generic sandbox has no agent CLI
-- `Anthropic key` — Claude Code requires real Anthropic API key (Phase 2)
-- `timeout` — sandbox creation + LLM call exceeds test timeout for large diffs
-
-**Skill injection method per agent:**
-- `adk` / `claude_sdk` — skill markdown read from `.claude/skills/<name>/SKILL.md` and embedded in A2A `message/send` prompt
-- `os_claude` — native `.claude/skills/` discovery (highest fidelity, but needs Anthropic key)
-- `os_opencode` — `opencode run` with skill content in prompt via `kubectl exec`
-- Per-agent skill docs: [adk](agents/adk-agent.md#9-skill-execution), [claude_sdk](agents/claude-sdk-agent.md#8-skill-execution), [os_claude](agents/openshell-claude.md#9-skill-execution), [os_opencode](agents/openshell-opencode.md#9-skill-execution)
-
-**Available Kagenti skills** (from `.claude/skills/`):
-- `github:pr-review` — PR review against coding standards
-- `rca:ci` — Root cause analysis from CI logs
-- `test:review` — Test quality review
-- `docs:review` — Documentation review
-- `cve:scan` — Security vulnerability scanning
-
-## A2A Connectivity Matrix
-
-Tests basic message/send and agent card discovery. Only custom A2A agents
-are tested — builtin sandboxes (os_claude, os_opencode, os_generic) don't
-expose A2A endpoints (they use SSH/exec instead).
-
-| Test | weather_agent | adk_agent | claude_sdk_agent | weather_supervised | os_claude | os_opencode | os_generic |
-|------|--------------|-----------|-----------------|-------------------|----------|------------|-----------|
-| A2A hello | ✅ | ✅ | ✅ | ✅ (exec) | — | — | — |
-| Agent card | ✅ | ✅ | ✅ | ⏭️ netns | — | — | — |
-
-**Why no builtin sandboxes:** Builtin sandboxes don't run A2A servers. They are
-CLI tools (Claude Code, OpenCode) accessed via SSH or kubectl exec, not HTTP.
-
-## Multi-Turn Conversation Matrix
-
-Tests sequential A2A messages and context persistence. Only A2A agents
-can be tested via the A2A protocol. Builtin sandboxes would need the
-ExecSandbox gRPC adapter for multi-turn (Phase 2).
-
-| Test | weather_agent | adk_agent | claude_sdk_agent | weather_supervised | os_claude | os_opencode | os_generic |
-|------|--------------|-----------|-----------------|-------------------|----------|------------|-----------|
-| 3 sequential messages | ✅ | ✅ | ✅ | ✅ (exec) | — | — | — |
-| Context isolation | ✅ | ✅ | ✅ | ⏭️ netns | — | — | — |
-| Context continuity | ⏭️ stateless | ⏭️ ADK gap | ⏭️ stateless | ⏭️ Phase 2 | — | — | — |
-
-**Why no builtin sandboxes:** Multi-turn requires sending multiple messages.
-Builtin sandboxes use terminal sessions (persistent by nature) or need the
-ExecSandbox gRPC adapter to simulate multi-turn.
-
-## Credential Security Matrix
-
-Tests secret delivery and policy mounting. All custom A2A agents are tested.
-Builtin sandboxes are not tested because they use the OpenShell gateway's
-provider injection mechanism (different credential path — see Q2.3).
-
-| Test | weather_agent | adk_agent | claude_sdk_agent | weather_supervised | os_claude | os_opencode | os_generic |
-|------|--------------|-----------|-----------------|-------------------|----------|------------|-----------|
-| secretKeyRef delivery | — | ✅ | ✅ | — | — | — | — |
-| No hardcoded keys | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| No K8s token leak | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Policy file mounted | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Policy valid YAML | ✅ | ✅ | ✅ | ✅ | — | — | — |
-
-**Why only custom agents:** Builtin sandboxes get credentials from the OpenShell
-gateway via `GetProviderEnvironment` gRPC, not from K8s Secrets.
-**Why weather/supervised have no secretKeyRef:** They have no LLM API key.
-
-## Supervisor Enforcement Matrix
-
-Tests OpenShell supervisor security layers. Only `weather_supervised` has
-the supervisor deployed. Other custom A2A agents are Tier 3 (no supervisor).
-Builtin sandboxes have the supervisor but are tested via sandbox lifecycle
-tests, not enforcement-specific tests.
-
-| Test | weather_agent | adk_agent | claude_sdk_agent | weather_supervised | os_claude | os_opencode | os_generic |
-|------|--------------|-----------|-----------------|-------------------|----------|------------|-----------|
-| Landlock applied | — | — | — | ✅ | — | — | — |
-| Landlock ABI V3 | — | — | — | ✅ | — | — | — |
-| Read-only paths | — | — | — | ✅ | — | — | — |
-| Read-write paths | — | — | — | ✅ | — | — | — |
-| Netns created | — | — | — | ✅ | — | — | — |
-| OPA proxy | — | — | — | ✅ | — | — | — |
-| Seccomp | — | — | — | ✅ | — | — | — |
-| TLS termination | — | — | — | ✅ | — | — | — |
-
-**Why only weather_supervised:** It's the only Tier 2 agent (Deployment + supervisor).
-Other agents are Tier 3 (no supervisor). When agents upgrade to Tier 2,
-these tests will cover them too.
-
-## Workspace Persistence Matrix
-
-Tests PVC-backed workspace for builtin sandboxes. Custom A2A agents don't
-have persistent workspaces (they're stateless services).
-
-| Test | weather_agent | adk_agent | claude_sdk_agent | weather_supervised | os_claude | os_opencode | os_generic |
-|------|--------------|-----------|-----------------|-------------------|----------|------------|-----------|
-| Session to PVC | — | — | — | — | ✅ | ✅ | ✅ |
-| PVC survives deletion | — | — | — | — | — | — | ✅ |
-| Sandbox CR created | — | — | — | — | ✅ | ✅ | ✅ |
-
-**Why only builtin sandboxes (current):** Custom A2A agents are Deployment-backed
-stateless services and don't have workspace PVCs in this PoC. Builtin sandboxes
-are the ones with persistent workspaces for code, configs, and sessions.
-
-**Future integration:** The Kagenti sandboxing PR adds workspace PVCs to custom
-agents (Tier 2/3 Deployments with PVC mounts). When deployed, these tests will
-extend to cover custom agent workspace persistence — enabling session state,
-agent memory, and file persistence across pod restarts for all agent types.
-
-## HITL Policy Matrix
-
-Tests OPA egress enforcement. Only `weather_supervised` has the supervisor
-with OPA proxy active. When other agents upgrade to Tier 2, HITL will apply.
-
-| Test | weather_agent | adk_agent | claude_sdk_agent | weather_supervised | os_claude | os_opencode | os_generic |
-|------|--------------|-----------|-----------------|-------------------|----------|------------|-----------|
-| OPA denies egress | — | — | — | ✅ | — | — | — |
-| OPA allows egress | — | — | — | ⏭️ DNS | — | — | — |
-| Denial logged | — | — | — | ⏭️ log fmt | — | — | — |
-
-**Why only weather_supervised:** Only Tier 2 agents have the supervisor's
-OPA proxy for egress enforcement.
-
-## Test Categories
-
-### 1. Platform Health
-
-Verifies gateway, operator, and all agent pods are running and healthy.
-
-| Test | weather | adk | claude_sdk | supervised | openshell_* | Notes |
-|------|---------|-----|------------|------------|-------------|-------|
-| gateway_pod_running | - | - | - | - | - | Checks openshell-system |
-| gateway_containers_ready | - | - | - | - | - | All containers in gateway |
-| operator_pod_running | - | - | - | - | - | SKIP on HyperShift if not installed |
-| all_agent_pods_exist | PASS | PASS | PASS | PASS | - | Dynamic discovery |
-| all_agent_pods_running | PASS | PASS | PASS | PASS | - | Excludes build pods |
-| agent_deployments_ready | PASS | PASS | PASS | PASS | - | All replicas ready |
-| no_crashlooping_agents | PASS | PASS | PASS | PASS | - | Zero CrashLoopBackOff |
-
-### 2. Credential Isolation
-
-Verifies secrets are delivered via K8s secretKeyRef, not hardcoded. Parametrized
-across all 4 custom agents.
-
-| Test | weather | adk | claude_sdk | supervised | Notes |
-|------|---------|-----|------------|------------|-------|
-| api_key_from_secret_ref | - | PASS | PASS | - | Only LLM agents have API keys |
-| no_literal_api_keys | PASS | PASS | PASS | PASS | No `sk-` patterns in YAML |
-| no_kubernetes_token_exposed | PASS | PASS | PASS | PASS | SA token not in env |
-| policy_file_exists | PASS | PASS | PASS | PASS | `/etc/openshell/policy.yaml` |
-| policy_is_valid_yaml | PASS | PASS | PASS | PASS | Has version + policy sections |
-| supervisor_entrypoint | SKIP | SKIP | SKIP | PASS | Only supervised has supervisor as PID 1 |
-| placeholder_tokens | - | SKIP | SKIP | - | TODO: supervisor credential injection |
-
-### 3. A2A Agent Conversations
-
-Direct A2A JSON-RPC conversations with each agent. LLM-gated tests require
-`OPENSHELL_LLM_AVAILABLE=true`.
-
-| Test | weather | adk | claude_sdk | Notes |
-|------|---------|-----|------------|-------|
-| hello | - | PASS | PASS | Basic A2A handshake |
-| weather_query_london | PASS | - | - | MCP tool call |
-| weather_query_multi_city | PASS | - | - | Multi-tool call |
-| pr_review (LLM) | - | PASS | - | ADK tool + LLM |
-| code_review (LLM) | - | - | PASS | Claude SDK + LLM |
-
-### 4. Multi-Turn Conversations
-
-Tests sequential messages across all A2A agent types. Context continuity
-tests document which agents preserve conversation state.
-
-| Test | weather | adk | claude_sdk | supervised | Notes |
-|------|---------|-----|------------|------------|-------|
-| responds_to_3_turns | PASS | PASS | PASS | PASS (exec) | All agents handle sequential messages |
-| context_isolation | PASS | PASS | PASS | SKIP (netns) | Independent conversations don't share state |
-| context_continuity | SKIP | SKIP | SKIP | SKIP | No agent preserves contextId yet |
-
-**Skip reasons for context_continuity:**
-- `weather_agent`: Stateless, no contextId returned. TODO: Kagenti backend session store.
-- `adk_agent`: Returns contextId but `to_a2a()` creates new one per request. TODO: upstream ADK PR.
-- `claude_sdk_agent`: Stateless, no contextId. TODO: Kagenti backend session store.
-- `weather_supervised`: Netns blocks port-forward. TODO: ExecSandbox gRPC adapter.
-
-### 5. Conversation Survives Restart
-
-Scale agent to 0, back to 1, try to continue conversation. Tests whether
-context persists across pod restarts.
-
-| Test | weather | adk | claude_sdk | supervised | Notes |
-|------|---------|-----|------------|------------|-------|
-| multiturn_across_restart | SKIP | SKIP | SKIP | SKIP | Responds but context lost |
-| pod_uid_changes | PASS | PASS | PASS | PASS | Confirms new pod created |
-
-**All `multiturn_across_restart` skip** because no agent currently preserves
-context across restarts. This is by design — context should live in the
-Kagenti backend, not in the agent.
-
-**When Kagenti backend session store is integrated, these tests will:**
-1. Pre-populate conversation history in PostgreSQL
-2. Scale agent to 0, then back to 1
-3. Send follow-up message (backend includes context from DB)
-4. Verify agent responds with awareness of previous conversation
-
-### 6. PVC Workspace Persistence
-
-Creates sandboxes with PVC-backed `/workspace`, writes session state, verifies
-data persists. Parametrized across all builtin sandbox types.
-
-| Test | openshell_generic | openshell_claude | openshell_opencode | Notes |
-|------|-------------------|------------------|--------------------|-------|
-| session_written_to_pvc | PASS | PASS | PASS | Session file persisted |
-| pvc_survives_deletion | PASS | PASS | PASS | PVC independent of CR |
-
-### 7. Sandbox Status Observability
-
-A2A equivalent of `openshell term`. Verifies all status data is queryable
-via K8s API (same data the Kagenti UI renders).
-
-| Test | Notes |
-|------|-------|
-| gateway_status_queryable | StatefulSet replicas, readiness |
-| agent_deployments_status_queryable | Replica counts, conditions |
-| agent_pods_status_queryable | Phase, containerStatuses, restartCount |
-| sandbox_cr_status_queryable | Sandbox CRD list operation |
-| gateway_logs_accessible | Gateway logs readable |
-
-### 8. Agent Service Persistence
-
-A2A equivalent of session reconnect. Verifies agents remain available across
-multiple independent HTTP connections.
-
-| Test | Notes |
-|------|-------|
-| responds_across_connections | 3 requests, fresh TCP each time |
-| stable_after_delay | Responds after 5s idle |
-| pod_not_restarted_during_requests | restartCount unchanged |
-
-### 9. Supervisor Enforcement
-
-Verifies OpenShell security layers on `weather_supervised` agent.
-
-| Test | Result | What it verifies |
-|------|--------|------------------|
-| landlock_applied_in_logs | PASS | CONFIG:APPLYING + rules_applied:14+ |
-| landlock_abi_version | PASS | ABI V2+ |
-| read_only_paths_configured | PASS | /usr, /etc in policy |
-| read_write_paths_configured | PASS | /tmp, /app in policy |
-| netns_created_in_logs | PASS | CONFIG:CREATING + 10.200.0.1/10.200.0.2 |
-| opa_proxy_listening | PASS | NET:LISTEN + 10.200.0.1:3128 |
-| netns_name_in_logs | PASS | ns:sandbox-{hex} |
-| seccomp_not_disabled | PASS | No Unconfined in pod spec |
-| opa_policy_loaded | PASS | CONFIG:LOADING + sandbox-policy.rego |
-| policy_has_network_rules | PASS | network_policies + endpoints in YAML |
-| rego_file_mounted | PASS | /etc/openshell/sandbox-policy.rego exists |
-| tls_termination_enabled | PASS | TLS termination + ephemeral CA |
-
-### 10. Skill Discovery & Execution
-
-Tests kagenti skill loading and LLM-backed execution.
-
-| Test | Agent | Result | What it verifies |
-|------|-------|--------|------------------|
-| create_skills_configmap | ALL | PASS | ConfigMap created in team1 |
-| skills_configmap_has_index | ALL | PASS | JSON index with skill list |
-| skills_include_review | ALL | PASS | Review skill in index |
-| weather_agent_lists_skills | weather | PASS | Agent card includes skills |
-| claude_sdk_has_code_review | claude_sdk | PASS | Agent card has code_review |
-| claude_sdk_pr_review_skill | claude_sdk | PASS | Real LLM PR review |
-| adk_pr_review_skill | adk | PASS | Real LLM PR review |
-| claude_sdk_rca_skill | claude_sdk | PASS | Real LLM RCA analysis |
-| claude_sdk_security_review | claude_sdk | PASS | Real LLM security review |
-| review_real_github_pr | claude_sdk | PASS | Real GitHub PR #1300 diff |
-| rca_style_log_analysis | claude_sdk | PASS | Real LLM CI log analysis |
-
-### 11. Builtin Sandboxes
-
-Tests OpenShell base image sandbox creation via Sandbox CRs.
-
-| Test | Result | Notes |
-|------|--------|-------|
-| create_sandbox_cr | PASS | Sandbox CR accepted by API |
-| gateway_sees_sandbox | PASS | Gateway logs show processing |
-| base_image_cli_check | PASS (Kind) / SKIP (HyperShift) | CLI availability in base image |
-| claude_sandbox_responds | PASS | Claude sandbox created |
-| opencode_sandbox_responds | PASS | OpenCode sandbox created |
-| codex_sandbox | SKIP | Requires real OpenAI key |
-| copilot_sandbox | SKIP | Requires GitHub subscription |
-
-### 12. Sandbox Lifecycle
-
-Tests Sandbox CR CRUD operations.
-
-| Test | Result | Notes |
-|------|--------|-------|
-| list_sandboxes | PASS | List operation succeeds |
-| create_sandbox | PASS | CR created and verified |
-| delete_sandbox | PASS | CR deleted cleanly |
-| gateway_processes_sandbox | PASS | Gateway logs confirm processing |
-
----
-
-## Future Tests (Enabled by Kagenti Backend Integration)
-
-These tests become possible when the Kagenti backend is wired to the
-OpenShell gateway and manages agent sessions.
-
-### Session Management via Backend
-
-| Test | Agents | What it validates | Depends on |
-|------|--------|-------------------|------------|
-| backend_creates_a2a_session | ALL A2A | Backend creates session in PostgreSQL | Backend A2A adapter |
-| backend_stores_conversation | ALL A2A | Turn history persisted in DB | Session store |
-| backend_restores_context_after_restart | ALL A2A | Context survives pod restart via DB | Session restore logic |
-| backend_creates_sandbox_session | openshell_* | Backend creates sandbox via gRPC | ExecSandbox adapter |
-| backend_exec_in_sandbox | openshell_* | Backend sends prompt via ExecSandbox | ExecSandbox adapter |
-
-### Skill Execution Matrix (All Agents)
-
-| Test | weather | adk | claude_sdk | supervised | openshell_claude | openshell_opencode | Notes |
-|------|---------|-----|------------|------------|-----------------|-------------------|-------|
-| load_skill_from_configmap | N/A | PASS | PASS | N/A | TODO | TODO | Skill markdown loaded |
-| execute_pr_review_skill | N/A | PASS | PASS | N/A | TODO | TODO | LLM follows skill instructions |
-| execute_rca_skill | N/A | TODO | PASS | N/A | TODO | TODO | RCA methodology followed |
-| execute_security_review | N/A | TODO | PASS | N/A | TODO | TODO | Security issues identified |
-| native_claude_skill | N/A | N/A | N/A | N/A | TODO | N/A | Claude Code reads .claude/skills/ directly |
-
-**`openshell_claude` is the highest-value target** for skill execution because
-Claude Code natively reads `.claude/skills/` — no prompt injection needed.
-This requires a real Anthropic API key (Phase 2 provider integration).
-
-### PVC + Session Restore
-
-| Test | Agents | What it validates |
-|------|--------|-------------------|
-| workspace_survives_sandbox_restart | openshell_* | PVC data persists across sandbox recreate |
-| backend_resumes_from_pvc | openshell_* | Backend loads workspace state + DB history |
-| file_browser_reads_workspace | openshell_* | Kagenti UI FileBrowser can browse PVC |
-
-### AuthBridge Integration Tests (Phase 3)
-
-These tests validate combined AuthBridge + supervisor security. Depends on
-resolving the netns architectural conflict (see [Q9.1](questions.md#q91-how-should-authbridge-and-the-openshell-supervisor-coexist-in-tier-2-agents)).
-
-**Current state:** Supervised agents use `kagenti.io/inject: disabled`.
-Non-supervised agents (Tier 3) have AuthBridge injected and working.
-
-| Test | Agents | What it validates | Depends on |
-|------|--------|-------------------|------------|
-| authbridge_jwt_validates_inbound | Tier 2 | Inbound request rejected without valid JWT | Q9.1 resolution |
-| authbridge_token_exchange_outbound | Tier 2 | Outbound MCP call gets audience-scoped token | Q9.1 resolution |
-| supervisor_egress_plus_token | Tier 2 | OPA allows endpoint + AuthBridge adds token | Q9.1 + Q9.3 |
-| spiffe_identity_assigned | Tier 2 | SPIRE issues SVID for supervised agent | Q9.1 resolution |
-| combined_audit_trail | Tier 2 | OTel span + OPA decision log for same request | Q9.1 + Q5.1 |
-| mcp_tool_with_egress_policy | Tier 2 | Agent calls MCP tool, OPA allows, token exchanged | Q9.1 + Q9.3 |
-| tier3_authbridge_working | ALL Tier 3 | Verify AuthBridge injection works for non-supervised agents | Already possible |
-| tier3_jwt_inbound | ALL Tier 3 | JWT validation on inbound A2A requests | Already possible |
-
-**AuthBridge per agent tier (current):**
-
-| Agent | Tier | AuthBridge | Supervisor | Status |
-|-------|------|-----------|-----------|--------|
-| weather-agent-supervised | 2 | Injected | No | AuthBridge working |
-| adk-agent-supervised | 2 | Injected | No | AuthBridge working |
-| claude-sdk-agent | 3 | Injected | No | AuthBridge working |
-| weather-supervised | 2 | **Disabled** | Yes | `kagenti.io/inject: disabled` |
-| openshell sandboxes | 1 | Not present | Yes | Gateway-managed |
-
-### Observability Integration
-
-| Test | Agents | What it validates |
-|------|--------|-------------------|
-| llm_usage_tracked | adk, claude_sdk | Token counts appear in LlmUsagePanel |
-| otel_spans_exported | ALL | Traces visible in Phoenix |
-| supervisor_events_in_otel | supervised, openshell_* | Landlock/netns events exported |
+> Back to [main doc](openshell-integration.md) | Tests: `kagenti/tests/e2e/openshell/`
+
+## Agents
+
+| Agent | Protocol | LLM | Skill Support |
+|---|---|---|---|
+| `claude-sdk-agent` | A2A JSON-RPC | LiteMaaS | Via prompt |
+| `adk-agent-supervised` | A2A via port-bridge | LiteMaaS (supervised) | Via prompt |
+| `weather-agent-supervised` | kubectl exec | No | N/A |
+| `openshell-claude` | kubectl exec (sandbox) | Anthropic/LiteLLM | Native `.claude/skills/` |
+| `openshell-opencode` | kubectl exec (sandbox) | OpenAI-compat | Via prompt |
+| `nemoclaw-openclaw` | HTTP gateway | LiteMaaS | Gateway protocol (skip) |
+| `nemoclaw-hermes` | TCP (internal) | LiteMaaS | Internal protocol (skip) |
+
+Agent lists defined in `conftest.py`: `A2A_AGENTS`, `EXEC_AGENTS`, `CLI_AGENTS`,
+`NEMOCLAW_AGENTS`, `SKILL_AGENTS`, `ALL_AGENTS`.
+
+## Capability Matrix (CI Kind)
+
+208 tests total. P=pass, S=skip, —=not tested.
+
+**Tier 1: Infrastructure**
+
+| Capability | Claude Code | OpenCode | Claude SDK | ADK | Weather | OpenClaw | Hermes |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Connectivity | P | P | P | P | P | P | P |
+| Credentials | P | P | P | P | P | P | P |
+| Sandbox lifecycle | P | — | — | — | — | — | — |
+| Workspace | P | P | — | — | — | — | — |
+| Credential security | P | P | P | P | P | P | P |
+| Sandbox connectivity | P | — | — | — | — | — | — |
+| Resource limits | S | — | P | S | S | P | P |
+
+**Tier 2: Capabilities**
+
+| Capability | Claude Code | OpenCode | Claude SDK | ADK | Weather | OpenClaw | Hermes |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Multiturn | S | S | P | P | S | P | — |
+| Context isolation | S | S | P | P | S | P | — |
+| Tool calling | P | — | — | — | — | — | — |
+| Concurrent sessions | P | — | — | — | — | — | — |
+
+S for Claude Code/OpenCode: CLI is single-invocation (by design).
+
+**Tier 3: Skills (parametrized x 6 agents)**
+
+| Capability | Claude SDK | ADK | Claude Code | OpenCode | OpenClaw | Weather |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| PR review | P | P | P | P | S | S |
+| RCA | P | P | P | P | S | S |
+| Security | P | P | P | P | S | S |
+| GitHub PR | P | P | P | P | S | S |
+
+S for OpenClaw: gateway doesn't expose REST chat API.
+S for Weather: no LLM capability.
+Per-model: `llama-scout-17b` + `deepseek-r1` (both 100% via LiteMaaS).
+
+**Tier 4: Security**
+
+| Capability | Weather | Others |
+|---|:---:|:---:|
+| HITL: Network egress | P | — |
+| Tenant isolation (auth) | — | S (needs Keycloak port-forward in CI) |
+| Tenant isolation (RBAC) | — | P |
+| Tenant isolation (credentials) | — | P |
+| Audit logging | — | P (Claude Code, OpenCode) |
+
+## Skip Reasons
+
+| Reason | Count | Agents | Resolution |
+|---|:---:|---|---|
+| CLI single-invocation | 6 | Claude Code, OpenCode | ExecSandbox gRPC adapter (Phase 2) |
+| No LLM | 9 | Weather, generic | By design |
+| No resource limits | 5 | ADK, Weather, sandbox | Add limits to deployment YAMLs |
+| Gateway protocol | 4 | OpenClaw | A2A adapter or NemoClaw plugin |
+| Waypoint not deployed | 3 | All | Add to deploy-shared.sh |
+| Session resume | 5 | All | Kagenti backend session store |
+
+## Test File Organization
+
+| File | Tier | Tests | What it covers |
+|---|---|:---:|---|
+| `test_T0_1_infra_platform.py` | 0 | 9 | Gateway, operator, agent pods |
+| `test_T0_3_infra_supervisor.py` | 0 | 12 | Supervisor enforcement (weather) |
+| `test_T0_4_infra_nemoclaw.py` | 0 | 18 | NemoClaw health, security |
+| `test_T0_5_infra_litellm.py` | 0 | 14 | LiteLLM config, waypoint, passthrough |
+| `test_T1_1_connectivity.py` | 1 | 12 | A2A, sandbox, NemoClaw connectivity |
+| `test_T1_2_credentials.py` | 1 | 15 | Secret delivery, no hardcoded keys |
+| `test_T1_3_sandbox_lifecycle.py` | 1 | 10 | Sandbox CRUD, status observability |
+| `test_T1_4_workspace.py` | 1 | 5 | PVC persistence |
+| `test_T1_5_resource_limits.py` | 1 | 9 | CPU/memory limits on all agents |
+| `test_T2_1_multiturn.py` | 2 | 20 | Multiturn, context, tool calling, concurrent |
+| `test_T2_3_session_resume.py` | 2 | 7 | Session resume across restarts |
+| `test_T3_1_skill_execution.py` | 3 | 32 | Skills x 6 agents + per-model + audit |
+| `test_T1_6_credential_security.py` | 1 | 14 | Secret delivery, no hardcoded keys, K8s token leak, policy mount |
+| `test_T1_7_sandbox_connectivity.py` | 1 | 5 | Gateway health, endpoints, port-forward, kubectl exec |
+| `test_T4_1_hitl_network.py` | 4 | 3 | HITL network egress |
+| `test_T4_2_tenant_isolation.py` | 4 | 15 | JWT audience, RBAC scoping, credential isolation |
+
+## Running Tests
+
+### CI (via PR comment on any PR)
+
+Comment `/run-e2e-openshell` on a PR to trigger both:
+- **OpenShell PoC (Kind)** — `e2e-openshell-kind.yaml` (~20 min)
+- **OpenShell PoC (HyperShift)** — `e2e-openshell-hypershift.yaml` (~45 min, creates ephemeral cluster)
+
+The Kind workflow also auto-triggers on `pull_request` for paths under
+`deployments/openshell/**` and `kagenti/tests/e2e/openshell/**`.
+
+### Local
+
+```bash
+# Full deploy + test on Kind
+.github/scripts/local-setup/openshell-full-test.sh --skip-cluster-destroy
+
+# Iterate on existing Kind cluster (skip deploy)
+.github/scripts/local-setup/openshell-full-test.sh --skip-cluster-create --skip-cluster-destroy
+
+# Full deploy + test on HyperShift
+source .env.kagenti-hypershift-custom
+.github/scripts/local-setup/openshell-full-test.sh --platform ocp --skip-cluster-destroy ostest
+
+# Direct pytest (no deploy, existing cluster)
+export OPENSHELL_LLM_AVAILABLE=true OPENSHELL_LLM_MODELS="llama-scout-17b,deepseek-r1"
+export OPENSHELL_NEMOCLAW_ENABLED=true OPENSHELL_GATEWAY_NAMESPACE=team1
+uv run pytest kagenti/tests/e2e/openshell/ -v --timeout=300
+```

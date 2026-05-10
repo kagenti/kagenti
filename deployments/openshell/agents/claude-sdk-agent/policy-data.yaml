@@ -26,6 +26,8 @@ network_policies:
       - host: "*.svc.cluster.local"
         port: 8000
       - host: "*.svc.cluster.local"
+        port: 4000
+      - host: "*.svc.cluster.local"
         port: 443
   litemaas:
     name: "Allow LiteMaaS LLM endpoint"

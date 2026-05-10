@@ -193,7 +193,7 @@ kill %1
 | test_02_a2a_connectivity | 2 | 2 | 0 | Hello + agent card |
 | test_05_multiturn | 3 | 2 | 1 | Sequential + isolation pass; continuity skips |
 | test_07_skill_execution | 5 | 3 | 2 | PR review, RCA, security pass; real GH PR pass |
-| test_03_credential_security | 4 | 4 | 0 | secretKeyRef, no hardcoded keys |
+| test_T1_6_credential_security | 4 | 4 | 0 | secretKeyRef, no hardcoded keys |
 | test_06_conversation_resume | 2 | 0 | 2 | Destructive-gated |
 
 ## 11. Sandbox Deployment Models

@@ -28,6 +28,7 @@ spec:
         app.kubernetes.io/component: openshell
     spec:
       serviceAccountName: openshell-gateway
+      enableServiceLinks: false
       securityContext:
         # Use a numeric UID (OCP requires numeric for runAsNonRoot verification)
         runAsNonRoot: true

@@ -38,10 +38,11 @@ jobs:
   authorize:
     name: Authorize
     runs-on: ubuntu-latest
-    # Only run for PR comments starting with /run-e2e
+    # Only run for /run-e2e (not /run-e2e-openshell which is a different workflow)
     if: |
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/run-e2e')
+      startsWith(github.event.comment.body, '/run-e2e') &&
+      !startsWith(github.event.comment.body, '/run-e2e-')
     permissions:
       pull-requests: write
       contents: read

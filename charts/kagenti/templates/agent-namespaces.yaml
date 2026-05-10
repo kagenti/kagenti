@@ -161,6 +161,7 @@ data:
   # for inbound JWT "aud" claim validation. Must match the audience mapper value
   # configured in Keycloak (kagenti-platform-audience scope).
   EXPECTED_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  CREDENTIAL_WAIT_TIMEOUT: {{ $root.Values.authBridge.credentialWaitTimeout | quote }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
@@ -195,14 +196,6 @@ data:
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
         filter_chains:
-        - filter_chain_match:
-            destination_port: 9093
-          filters:
-          - name: envoy.filters.network.tcp_proxy
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
-              stat_prefix: outbound_passthrough_9093
-              cluster: original_destination
         # TLS passthrough: forward HTTPS traffic as-is via TCP proxy
         - filter_chain_match:
             transport_protocol: tls
@@ -240,6 +233,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
                     response_header_mode: SKIP
@@ -260,6 +254,15 @@ data:
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst
         filter_chains:
+        # AuthBridge config and stats passthrough
+        - filter_chain_match:
+            destination_port: 9093
+          filters:
+          - name: envoy.filters.network.tcp_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+              stat_prefix: outbound_passthrough_9093
+              cluster: original_destination
         - filters:
           - name: envoy.filters.network.http_connection_manager
             typed_config:
@@ -295,6 +298,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
                     response_header_mode: SKIP
@@ -342,30 +346,42 @@ metadata:
   labels:
     {{- include "kagenti.labels" $root | nindent 4 }}
 data:
+  # Per-plugin config. Plugin-level defaults (audience_file,
+  # bypass_paths, identity file paths, etc.) are applied by the
+  # authbridge binary itself — see
+  # authbridge/authlib/plugins/CONVENTIONS.md in kagenti-extensions.
   config.yaml: |
     mode: envoy-sidecar
-    inbound:
-      issuer: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-    outbound:
-      keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-      keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
-      default_policy: "passthrough"
-    identity:
-      # Map Helm clientAuthType to authbridge identity.type:
-      #   "client-secret"  → "client-secret" (traditional)
-      #   "federated-jwt"  → "spiffe" (SPIFFE JWT-SVID authentication)
-      type: {{ eq $root.Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" $root.Values.authBridge.clientAuthType | quote }}
-      client_id_file: "/shared/client-id.txt"
-      client_secret_file: "/shared/client-secret.txt"
-{{- if eq $root.Values.authBridge.clientAuthType "federated-jwt" }}
-      jwt_svid_path: "/opt/jwt_svid.token"
-{{- end }}
-    bypass:
-      inbound_paths:
-        - "/.well-known/*"
-        - "/healthz"
-        - "/readyz"
-        - "/livez"
+    pipeline:
+      inbound:
+        plugins:
+          - name: jwt-validation
+            config:
+              # `issuer` carries the PUBLIC Keycloak URL because that is what
+              # Keycloak stamps into the `iss` claim of issued tokens (must
+              # match bit-for-bit for validation to pass).
+              issuer: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+              # `keycloak_url` + `keycloak_realm` let jwt-validation derive
+              # `jwks_url` from the INTERNAL Keycloak URL — the sidecar
+              # actually fetches JWKS from inside the cluster, and the
+              # public hostname (in `issuer`) typically resolves to
+              # 127.0.0.1 via the localtest.me wildcard. Mirrors the pair
+              # already passed to token-exchange below. See
+              # kagenti-extensions#383.
+              keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
+              keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
+      outbound:
+        plugins:
+          - name: token-exchange
+            config:
+              keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
+              keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
+              default_policy: "passthrough"
+              identity:
+                # Map Helm clientAuthType to authbridge identity.type:
+                #   "client-secret"  → "client-secret" (traditional)
+                #   "federated-jwt"  → "spiffe" (SPIFFE JWT-SVID authentication)
+                type: {{ eq $root.Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" $root.Values.authBridge.clientAuthType | quote }}
 ---
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————

@@ -58,7 +58,7 @@ spec:
         value: /
     backendRefs:
     - name: weather-tool-mcp
-      port: 8000' | kubectl apply -f -
+      port: 9090' | kubectl apply -f -
 ```
 
 and then create an `MCPServerRegistration` Custom Resource:

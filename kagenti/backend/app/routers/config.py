@@ -21,6 +21,7 @@ class FeatureFlagsResponse(BaseModel):
     triggers: bool = Field(description="Event-driven trigger system")
     agentSandbox: bool = Field(description="agent-sandbox (k8s-sigs) as a workload type")
     skills: bool = Field(description="Skill management system (CRUD + catalog UI)")
+    authbridgeAPI: bool = Field(description="AuthBridge statistics (API and UI)")
 
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -38,6 +39,7 @@ async def get_feature_flags() -> FeatureFlagsResponse:
         triggers=settings.kagenti_feature_flag_triggers,
         agentSandbox=settings.kagenti_feature_flag_agent_sandbox,
         skills=settings.kagenti_feature_flag_skills,
+        authbridgeAPI=settings.kagenti_feature_flag_authbridge_api,
     )
 
 

@@ -30,6 +30,7 @@ RUN pip install --no-cache-dir \
     && hermes --version
 
 # Startup script: configure + socat bridge + hermes gateway
+# hadolint ignore=SC2016
 RUN echo '#!/bin/sh' > /usr/local/bin/start-hermes.sh \
     && echo 'set -e' >> /usr/local/bin/start-hermes.sh \
     && echo 'mkdir -p "$HOME/.hermes" "$HOME/.hermes-data/memories" "$HOME/.hermes-data/logs"' >> /usr/local/bin/start-hermes.sh \

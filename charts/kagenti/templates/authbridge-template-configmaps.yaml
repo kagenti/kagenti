@@ -28,6 +28,7 @@ data:
   SPIFFE_IDP_ALIAS: "{{ .Values.authBridge.spiffeIdpAlias }}"
   JWT_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
   EXPECTED_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+  CREDENTIAL_WAIT_TIMEOUT: {{ .Values.authBridge.credentialWaitTimeout | quote }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -37,27 +38,38 @@ metadata:
   labels:
     {{- include "kagenti.labels" . | nindent 4 }}
 data:
+  # Per-plugin config. Plugin-level defaults (audience_file,
+  # bypass_paths, identity file paths, etc.) are applied by the
+  # authbridge binary itself — see
+  # authbridge/authlib/plugins/CONVENTIONS.md in kagenti-extensions.
   config.yaml: |
     mode: envoy-sidecar
-    inbound:
-      issuer: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
-    outbound:
-      keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
-      keycloak_realm: {{ .Values.keycloak.realm | quote }}
-      default_policy: "passthrough"
-    identity:
-      type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
-      client_id_file: "/shared/client-id.txt"
-      client_secret_file: "/shared/client-secret.txt"
-{{- if eq .Values.authBridge.clientAuthType "federated-jwt" }}
-      jwt_svid_path: "/opt/jwt_svid.token"
-{{- end }}
-    bypass:
-      inbound_paths:
-        - "/.well-known/*"
-        - "/healthz"
-        - "/readyz"
-        - "/livez"
+    pipeline:
+      inbound:
+        plugins:
+          - name: jwt-validation
+            config:
+              # `issuer` carries the PUBLIC Keycloak URL because that is what
+              # Keycloak stamps into the `iss` claim of issued tokens (must
+              # match bit-for-bit for validation to pass).
+              issuer: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+              # `keycloak_url` + `keycloak_realm` let jwt-validation derive
+              # `jwks_url` from the INTERNAL Keycloak URL — the sidecar
+              # fetches JWKS from inside the cluster, and the public
+              # hostname in `issuer` isn't reachable from inside the pod.
+              # Mirrors the pair already passed to token-exchange below.
+              # See kagenti-extensions#383.
+              keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+              keycloak_realm: {{ .Values.keycloak.realm | quote }}
+      outbound:
+        plugins:
+          - name: token-exchange
+            config:
+              keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+              keycloak_realm: {{ .Values.keycloak.realm | quote }}
+              default_policy: "passthrough"
+              identity:
+                type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -126,6 +138,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
                     response_header_mode: SKIP
@@ -178,6 +191,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
                     response_header_mode: SKIP

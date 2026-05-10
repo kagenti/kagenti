@@ -26,6 +26,7 @@ RUN npm install -g "openclaw@${OPENCLAW_VERSION}" \
     && openclaw --version
 
 # Startup script: socat bridge + openclaw gateway
+# hadolint ignore=SC2016
 RUN echo '#!/bin/sh' > /usr/local/bin/start-openclaw.sh \
     && echo 'set -e' >> /usr/local/bin/start-openclaw.sh \
     && echo 'mkdir -p "$HOME/.openclaw" "$HOME/.openclaw-data"' >> /usr/local/bin/start-openclaw.sh \

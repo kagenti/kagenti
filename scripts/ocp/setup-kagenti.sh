@@ -4,8 +4,8 @@
 # ============================================================================
 # Installs the Kagenti stack (SPIRE, cert-manager, Keycloak, operator, webhook,
 # MCP Gateway) on an OpenShift cluster. Run this BEFORE setup.sh --with-a2a.
-# Prometheus/Kiali are disabled. UI/backend installed by default (use --skip-ui to disable).
-# Shipwright disabled by default.
+# Optional layers enabled via --with-* flags (Kiali, Builds, Kuadrant).
+# UI/backend installed by default (use --skip-ui to disable).
 #
 # MLflow: provisions an MLflow instance via RHOAI's DSC mlflowoperator
 # and wires the OTEL collector to export traces to it.
@@ -15,6 +15,10 @@
 #   ./scripts/ocp/setup-kagenti.sh --kagenti-repo /path/to/kagenti  # Use local clone
 #   ./scripts/ocp/setup-kagenti.sh --kagenti-repo https://github.com/org/kagenti.git  # Clone from URL
 #   ./scripts/ocp/setup-kagenti.sh --realm nerc                 # Custom Keycloak realm (default: kagenti)
+#   ./scripts/ocp/setup-kagenti.sh --with-kiali                  # Enable Kiali + Prometheus
+#   ./scripts/ocp/setup-kagenti.sh --with-builds                # Enable Tekton + OpenShift Builds
+#   ./scripts/ocp/setup-kagenti.sh --with-kuadrant              # Enable Kuadrant (auto-enables MCP Gateway)
+#   ./scripts/ocp/setup-kagenti.sh --with-all                   # Enable all optional components
 #   ./scripts/ocp/setup-kagenti.sh --skip-ovn-patch             # Skip OVN gateway patch
 #   ./scripts/ocp/setup-kagenti.sh --skip-mcp-gateway           # Skip MCP Gateway install
 #   ./scripts/ocp/setup-kagenti.sh --skip-mlflow                # Disable Kagenti-Operator <-> MLflow integration
@@ -52,6 +56,10 @@ MCP_GATEWAY_VERSION="0.5.1"
 OPERATOR_REPO=""
 OPERATOR_IMAGE=""
 DRY_RUN=false
+WITH_KIALI=false
+WITH_BUILDS=false
+WITH_KUADRANT=false
+KUADRANT_VERSION="1.4.2"
 MLFLOW_NAMESPACE="redhat-ods-applications"
 MLFLOW_INSTANCE_NAME="mlflow"
 MLFLOW_TRACES_ENDPOINT=""
@@ -82,6 +90,10 @@ while [[ $# -gt 0 ]]; do
     --operator-repo)      OPERATOR_REPO="$2"; shift 2 ;;
     --operator-image)     OPERATOR_IMAGE="$2"; shift 2 ;;
     --mcp-gateway-version) MCP_GATEWAY_VERSION="$2"; shift 2 ;;
+    --with-kiali)         WITH_KIALI=true; shift ;;
+    --with-builds)        WITH_BUILDS=true; shift ;;
+    --with-kuadrant)      WITH_KUADRANT=true; shift ;;
+    --with-all)           WITH_KIALI=true; WITH_BUILDS=true; WITH_KUADRANT=true; shift ;;
     --dry-run)            DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -95,6 +107,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --skip-ui                 Skip Kagenti UI and backend installation"
       echo "  --skip-mlflow             Skip MLflow integration (OTel traces + operator auto-config)"
       echo "  --show-secrets            Print Keycloak admin credentials to stdout (omitted by default for CI safety)"
+      echo "  --with-kiali              Enable Kiali + Prometheus (user workload monitoring)"
+      echo "  --with-builds             Enable Tekton + OpenShift Builds (Shipwright)"
+      echo "  --with-kuadrant           Enable Kuadrant operator (auto-enables MCP Gateway)"
+      echo "  --with-all                Enable all optional components (kiali, builds, kuadrant)"
       echo "  --operator-repo PATH      Local path to kagenti-operator repo (overrides Chart.yaml dependency)"
       echo "  --operator-image IMG:TAG  Custom operator image (e.g. quay.io/user/kagenti-operator:dev)"
       echo "  --mcp-gateway-version VER MCP Gateway chart version (default: $MCP_GATEWAY_VERSION)"
@@ -105,6 +121,12 @@ while [[ $# -gt 0 ]]; do
     *) log_error "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+# ── Flag dependencies ──────────────────────────────────────────────────────
+# Kuadrant provides AuthPolicy for MCP Gateway — don't skip it
+if $WITH_KUADRANT && $SKIP_MCP_GATEWAY; then
+  SKIP_MCP_GATEWAY=false
+fi
 
 run_cmd() {
   if $DRY_RUN; then
@@ -308,8 +330,8 @@ EOF
 
 _mlflow_wait_ready() {
   if $DRY_RUN; then
-    MLFLOW_TRACES_ENDPOINT="https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443/v1/traces"
-    echo "  [dry-run] would wait for MLflow Service and pod in $MLFLOW_NAMESPACE"
+    MLFLOW_TRACES_ENDPOINT="https://mlflow-gateway.${DOMAIN}/v1/traces"
+    echo "  [dry-run] would wait for MLflow Service, pod, and gateway URL in $MLFLOW_NAMESPACE"
     return 0
   fi
 
@@ -326,9 +348,6 @@ _mlflow_wait_ready() {
   done
   log_success "MLflow Service found"
 
-  MLFLOW_TRACES_ENDPOINT="https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443/v1/traces"
-  log_success "MLflow traces endpoint: $MLFLOW_TRACES_ENDPOINT"
-
   log_info "Waiting for MLflow pod to be Running..."
   tries=0
   while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
@@ -337,7 +356,7 @@ _mlflow_wait_ready() {
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
       log_warn "MLflow pod not Running after 5m — proceeding anyway (OTEL will retry)"
-      return 0
+      break
     fi
     sleep 5
   done
@@ -349,11 +368,30 @@ _mlflow_wait_ready() {
     tries=$((tries + 1))
     if [ $tries -ge 12 ]; then
       log_warn "MLflow Service has no ready endpoints after 1m — proceeding anyway"
-      return 0
+      break
     fi
     sleep 5
   done
-  log_success "MLflow is ready"
+
+  # Resolve the gateway URL from the MLflow CR status.url (mirrors the
+  # kagenti-operator's resolveTrackingURI logic). TLS is verified via the
+  # container's system CA pool (Let's Encrypt trusted by default).
+  log_info "Waiting for MLflow gateway URL (status.url)..."
+  local gateway_url=""
+  tries=0
+  while [ -z "$gateway_url" ]; do
+    gateway_url=$($KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+      -o jsonpath='{.status.url}' 2>/dev/null || echo "")
+    [ -n "$gateway_url" ] && break
+    tries=$((tries + 1))
+    if [ $tries -ge 60 ]; then
+      log_error "MLflow CR status.url not populated after 5m"
+      exit 1
+    fi
+    sleep 5
+  done
+  MLFLOW_TRACES_ENDPOINT="${gateway_url%/}/v1/traces"
+  log_success "MLflow traces endpoint (gateway): $MLFLOW_TRACES_ENDPOINT"
 }
 
 _mlflow_grant_otel_rbac() {
@@ -395,7 +433,9 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
 }
 
 log_info "Step 2.5: MLflow DSC preflight + provisioning"
-if ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
+if [ "$SKIP_MLFLOW" = true ]; then
+  log_success "Skipping MLflow DSC preflight (--skip-mlflow)"
+elif ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
   log_warn "RHOAI not installed (DataScienceCluster CRD not found) — skipping MLflow provisioning"
   SKIP_MLFLOW=true
 else
@@ -611,10 +651,11 @@ EOF
       -n kagenti-system \
       --set spire.trustDomain="${DOMAIN}" \
       --set "keycloak.publicUrl=${_kc_public_url}" \
-      --set components.kiali.enabled=false \
+      --set "components.kiali.enabled=${WITH_KIALI}" \
       --set components.rhoai.enabled=true \
       --set components.mlflow.enabled=false \
-      --set components.shipwright.enabled=false \
+      --set "components.tekton.enabled=${WITH_BUILDS}" \
+      --set "components.shipwright.enabled=${WITH_BUILDS}" \
       --set mlflow.auth.enabled=false \
       ${_mlflow_vals_file:+-f "$_mlflow_vals_file"} \
       --no-hooks
@@ -634,10 +675,11 @@ EOF
     -n kagenti-system --create-namespace \
     --set spire.trustDomain="${DOMAIN}" \
     --set "keycloak.publicUrl=${_kc_public_url}" \
-    --set components.kiali.enabled=false \
+    --set "components.kiali.enabled=${WITH_KIALI}" \
     --set components.rhoai.enabled=true \
     --set components.mlflow.enabled=false \
-    --set components.shipwright.enabled=false \
+    --set "components.tekton.enabled=${WITH_BUILDS}" \
+    --set "components.shipwright.enabled=${WITH_BUILDS}" \
     --set mlflow.auth.enabled=false \
     ${_mlflow_vals_file:+-f "$_mlflow_vals_file"} \
     --no-hooks
@@ -990,9 +1032,9 @@ run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
   -f "$SECRETS_FILE" \
-  "${KAGENTI_UI_FLAGS[@]}" \
-  "${OPERATOR_IMAGE_FLAGS[@]}" \
-  "${KC_ADMIN_FLAGS[@]}" \
+  ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
+  ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
+  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \
@@ -1013,9 +1055,46 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: Install MCP Gateway
+# Step 5: Install Kuadrant operator (optional, --with-kuadrant)
 # ============================================================================
-log_info "Step 5: Install MCP Gateway"
+log_info "Step 5: Kuadrant"
+
+if $WITH_KUADRANT; then
+  KUADRANT_NS="kuadrant-system"
+
+  if helm status kuadrant-operator -n "$KUADRANT_NS" &>/dev/null; then
+    log_info "Kuadrant operator already installed — skipping"
+  else
+    log_info "Installing Kuadrant operator v${KUADRANT_VERSION}..."
+    run_cmd helm upgrade --install kuadrant-operator kuadrant-operator \
+      --repo "https://kuadrant.io/helm-charts/" \
+      --version "$KUADRANT_VERSION" \
+      -n "$KUADRANT_NS" --create-namespace --wait --timeout 5m
+  fi
+
+  if ! $DRY_RUN; then
+    _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
+
+    log_info "Creating Kuadrant CR..."
+    $KUBECTL apply -f - <<EOF
+apiVersion: kuadrant.io/v1beta1
+kind: Kuadrant
+metadata:
+  name: kuadrant
+  namespace: ${KUADRANT_NS}
+EOF
+  fi
+
+  log_success "Kuadrant installed"
+else
+  log_info "Skipped (use --with-kuadrant)"
+fi
+echo ""
+
+# ============================================================================
+# Step 5b: Install MCP Gateway
+# ============================================================================
+log_info "Step 5b: Install MCP Gateway"
 
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
@@ -1059,6 +1138,9 @@ VERIFY_FAILED=false
 _verify_release kagenti-deps kagenti-system    || VERIFY_FAILED=true
 if ! $SKIP_MCP_GATEWAY; then
   _verify_release mcp-gateway mcp-system       || VERIFY_FAILED=true
+fi
+if $WITH_KUADRANT; then
+  _verify_release kuadrant-operator kuadrant-system || VERIFY_FAILED=true
 fi
 _verify_release kagenti kagenti-system         || VERIFY_FAILED=true
 

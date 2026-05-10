@@ -156,6 +156,8 @@ NOW_EPOCH=$(date +%s)
 STALE_COUNT=0
 PROTECTED_COUNT=0
 OK_COUNT=0
+DELETED_COUNT=0
+FAILED_COUNT=0
 
 for CLUSTER_NAME in $CLUSTERS; do
     # Pattern filtering
@@ -229,12 +231,14 @@ for CLUSTER_NAME in $CLUSTERS; do
             echo "       Would delete (use --apply to execute)"
         else
             echo "       Deleting cluster..."
-            # Extract cluster suffix from full name
-            CLUSTER_SUFFIX="${CLUSTER_NAME##*-}"
-            "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
-                --include-cluster-destroy "$CLUSTER_SUFFIX" 2>&1 | tee "/tmp/cleanup-${CLUSTER_NAME}.log" || {
-                    log_error "Failed to delete $CLUSTER_NAME (see /tmp/cleanup-${CLUSTER_NAME}.log)"
-                }
+            # Use destroy-cluster.sh which handles ansible cleanup and stuck finalizers
+            if "$SCRIPT_DIR/destroy-cluster.sh" "$CLUSTER_NAME" 2>&1 | tee "/tmp/cleanup-${CLUSTER_NAME}.log"; then
+                log_success "Successfully deleted $CLUSTER_NAME"
+                DELETED_COUNT=$((DELETED_COUNT + 1))
+            else
+                log_error "Failed to delete $CLUSTER_NAME (see /tmp/cleanup-${CLUSTER_NAME}.log)"
+                FAILED_COUNT=$((FAILED_COUNT + 1))
+            fi
         fi
         echo ""
         STALE_COUNT=$((STALE_COUNT + 1))
@@ -265,8 +269,16 @@ if [ "$DRY_RUN" = "true" ] && [ "$STALE_COUNT" -gt 0 ]; then
     echo "This was a DRY-RUN. No clusters were deleted."
     echo "To actually delete stale clusters, run with --apply flag."
     echo ""
-elif [ "$STALE_COUNT" -gt 0 ]; then
-    log_success "Deleted $STALE_COUNT stale cluster(s)"
+elif [ "$DRY_RUN" = "false" ]; then
+    if [ "$DELETED_COUNT" -gt 0 ]; then
+        log_success "Successfully deleted $DELETED_COUNT cluster(s)"
+    fi
+    if [ "$FAILED_COUNT" -gt 0 ]; then
+        log_error "Failed to delete $FAILED_COUNT cluster(s)"
+    fi
+    if [ "$STALE_COUNT" -eq 0 ]; then
+        log_success "No stale clusters found"
+    fi
 else
     log_success "No stale clusters found"
 fi

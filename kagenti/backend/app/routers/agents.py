@@ -2016,32 +2016,52 @@ def _build_authbridge_runtime_yaml(
     merging in mode and listener addresses at injection time. The Helm chart
     creates an equivalent ConfigMap for pre-declared namespaces
     (see charts/kagenti/templates/agent-namespaces.yaml).
+
+    Emits the per-plugin schema: every plugin-specific setting lives under
+    its own `config:` block inside pipeline.inbound.plugins[] or
+    pipeline.outbound.plugins[]. Plugin-level defaults (audience_file,
+    bypass_paths, identity file paths) are intentionally omitted — the
+    authbridge binary applies them from its own convention layer
+    (see authbridge/authlib/plugins/CONVENTIONS.md). Leaving them out
+    here keeps the backend-generated ConfigMap minimal and the schema
+    source-of-truth in one place.
     """
     identity_type = "spiffe" if spire_enabled else "client-secret"
+    # jwt-validation receives keycloak_url + keycloak_realm so it can
+    # derive jwks_url from the INTERNAL keycloak URL rather than the
+    # public `issuer`. Required for split-horizon deployments where
+    # `issuer` isn't reachable from inside the pod. See
+    # kagenti-extensions#383.
     config = {
         "mode": "envoy-sidecar",
-        "inbound": {"issuer": issuer},
-        "outbound": {
-            "keycloak_url": keycloak_url,
-            "keycloak_realm": realm,
-            "default_policy": "passthrough",
-        },
-        "identity": {
-            "type": identity_type,
-            "client_id_file": "/shared/client-id.txt",
-            "client_secret_file": "/shared/client-secret.txt",
-        },
-        "bypass": {
-            "inbound_paths": [
-                "/.well-known/*",
-                "/healthz",
-                "/readyz",
-                "/livez",
-            ]
+        "pipeline": {
+            "inbound": {
+                "plugins": [
+                    {
+                        "name": "jwt-validation",
+                        "config": {
+                            "issuer": issuer,
+                            "keycloak_url": keycloak_url,
+                            "keycloak_realm": realm,
+                        },
+                    }
+                ]
+            },
+            "outbound": {
+                "plugins": [
+                    {
+                        "name": "token-exchange",
+                        "config": {
+                            "keycloak_url": keycloak_url,
+                            "keycloak_realm": realm,
+                            "default_policy": "passthrough",
+                            "identity": {"type": identity_type},
+                        },
+                    }
+                ]
+            },
         },
     }
-    if spire_enabled:
-        config["identity"]["jwt_svid_path"] = "/opt/jwt_svid.token"
 
     return yaml.dump(config, default_flow_style=False)
 
@@ -2969,7 +2989,18 @@ def _build_sandbox_manifest(
     shipwright_build_name: Optional[str] = None,
 ) -> dict:
     """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation."""
-    env_vars = _build_env_vars(request)
+    # Sandbox controller creates a headless Service with no port translation,
+    # so the container must listen on the same port clients connect to (the
+    # external service port, which is also baked into AGENT_ENDPOINT). For
+    # other workload types the Service port-translates to targetPort, so the
+    # split is fine there.
+    service_port = (
+        request.servicePorts[0].port if request.servicePorts else DEFAULT_OFF_CLUSTER_PORT
+    )
+    env_vars = [
+        {"name": "PORT", "value": str(service_port)} if ev.get("name") == "PORT" else ev
+        for ev in _build_env_vars(request)
+    ]
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
 
@@ -2981,9 +3012,7 @@ def _build_sandbox_manifest(
     if shipwright_build_name:
         annotations["kagenti.io/shipwright-build"] = shipwright_build_name
 
-    container_port = DEFAULT_IN_CLUSTER_PORT
-    if request.servicePorts and len(request.servicePorts) > 0:
-        container_port = request.servicePorts[0].targetPort
+    container_port = service_port
 
     manifest = {
         "apiVersion": f"{AGENT_SANDBOX_CRD_GROUP}/{AGENT_SANDBOX_CRD_VERSION}",

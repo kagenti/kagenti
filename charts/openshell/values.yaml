@@ -5,11 +5,11 @@ tenant: ""
 images:
   gateway:
     repository: ghcr.io/kagenti/openshell/gateway
-    tag: mvp-00a418f
+    tag: v0.0.36-kagenti.8
     pullPolicy: IfNotPresent
   computeDriver:
     repository: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
-    tag: mvp-8c86191
+    tag: mvp-a5f33f4
     pullPolicy: IfNotPresent
   credentialsDriver:
     repository: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
@@ -31,7 +31,13 @@ keycloakClusterIP: ""
 # Built from kagenti/OpenShell@mvp as a multi-arch image (linux/amd64 + linux/arm64).
 supervisorImage:
   repository: ghcr.io/kagenti/openshell/supervisor
-  tag: latest
+  tag: v0.0.36-kagenti.8
+  binaryPath: /openshell-sandbox
+
+# -- Image pull policy for sandbox pods (init + agent containers).
+# Valid values: Always, IfNotPresent, Never.
+# Empty string means use the Kubernetes default (Always for :latest, IfNotPresent otherwise).
+sandboxImagePullPolicy: "IfNotPresent"
 
 # -- Compute driver settings
 driver:
@@ -48,6 +54,12 @@ tls:
   duration: 8760h # one year
   # Renew before expiry
   renewBefore: 720h
+
+# -- Trusted CA bundle ConfigMap name (OpenShift: label a CM with
+# config.openshift.io/inject-cabundle=true to get the cluster CAs injected).
+# When set, the CA bundle is mounted into the gateway so it can verify
+# TLS connections to the Keycloak route.
+trustedCABundle: ""
 
 # -- Ingress configuration
 ingress:

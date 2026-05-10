@@ -48,6 +48,7 @@ import {
 import { useAuth, useTheme } from '@/contexts';
 import type { ThemeMode } from '@/contexts';
 import type { FeatureFlags } from '@/hooks/useFeatureFlags';
+import packageJson from '../../package.json';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -236,6 +237,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
           </svg>
           Kagenti
         </MastheadBrand>
+        <span className="kagenti-brand-version">
+          {packageJson.version}
+        </span>
       </MastheadMain>
       <MastheadContent>
         <Toolbar isFullHeight isStatic>

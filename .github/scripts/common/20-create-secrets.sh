@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create Secrets (Wave 20)
-# Creates .secret_values.yaml for Ansible
+# Creates .secret_values.yaml for platform installer
 
 set -euo pipefail
 

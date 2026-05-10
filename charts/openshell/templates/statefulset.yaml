@@ -30,6 +30,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -48,6 +49,8 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            - name: OPENSHELL_BIND_ADDRESS
+              value: "0.0.0.0"
             - name: OPENSHELL_TLS_CERT
               value: "/tls/server/tls.crt"
             - name: OPENSHELL_TLS_KEY
@@ -65,6 +68,12 @@ spec:
               value: {{ include "openshell.oidcAudience" . | quote }}
             - name: OPENSHELL_OIDC_ENABLED
               value: {{ .Values.oidc.enabled | quote }}
+            {{- if .Values.trustedCABundle }}
+            - name: SSL_CERT_FILE
+              value: "/etc/ssl/certs/ca-certificates.crt"
+            - name: SSL_CERT_DIR
+              value: "/etc/ssl/certs"
+            {{- end }}
             - name: OPENSHELL_DB_URL
               value: "sqlite:///data/openshell.db"
             - name: OPENSHELL_DRIVERS
@@ -81,6 +90,12 @@ spec:
             - name: server-tls
               mountPath: /tls/server
               readOnly: true
+            {{- if .Values.trustedCABundle }}
+            - name: trusted-ca
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-bundle.crt
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.resources.gateway | nindent 12 }}
         - name: compute-driver
@@ -95,9 +110,13 @@ spec:
             - "--namespace={{ include "openshell.driverNamespace" . }}"
             - "--supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
             - "--gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
-            - "--dtach-binary-path=/usr/local/bin/openshell-sandbox"
+            - "--supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
+            - "--dtach-binary-path={{ .Values.supervisorImage.binaryPath }}"
             - "--tls-ca-secret=openshell-server-tls"
             - "--tls-client-secret=openshell-client-tls"
+            {{- if .Values.sandboxImagePullPolicy }}
+            - "--sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
+            {{- end }}
           volumeMounts:
             - name: driver-sockets
               mountPath: /run/drivers
@@ -137,6 +156,11 @@ spec:
         - name: credentials-secrets
           secret:
             secretName: openshell-credentials-secrets
+        {{- if .Values.trustedCABundle }}
+        - name: trusted-ca
+          configMap:
+            name: {{ .Values.trustedCABundle }}
+        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -11,7 +11,7 @@ updates:
       minor-and-patch:
         update-types: [minor, patch]
 
-  # Python (root) — Ansible + E2E test dependencies
+  # Python (root) — E2E test dependencies
   - package-ecosystem: pip
     directory: /
     schedule:

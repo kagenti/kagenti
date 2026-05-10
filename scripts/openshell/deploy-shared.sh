@@ -7,12 +7,16 @@
 #   2. Gateway API experimental CRDs (TCPRoute/TLSRoute, Kind only)
 #   3. cert-manager CA chain (ClusterIssuer + CA Certificate)
 #   4. Keycloak realm (openshell realm, PKCE client, test users)
+#   5. LiteLLM model proxy (optional, when --litellm is passed)
+#   6. Base sandbox image pre-pull (optional, when --pre-pull is passed)
 #
 # Idempotent: safe to re-run. Checks existing state before each step.
 #
 # Usage:
 #   scripts/openshell/deploy-shared.sh                  # Deploy everything
 #   scripts/openshell/deploy-shared.sh --skip-sandbox   # Skip agent-sandbox
+#   scripts/openshell/deploy-shared.sh --litellm        # Also deploy LiteLLM proxy
+#   scripts/openshell/deploy-shared.sh --pre-pull       # Pre-pull base sandbox image
 #   scripts/openshell/deploy-shared.sh --dry-run        # Print commands only
 #   scripts/openshell/deploy-shared.sh --help           # Show usage
 #
@@ -38,6 +42,9 @@ STEP_SANDBOX=true
 STEP_GATEWAY_API=true
 STEP_TLS=true
 STEP_KEYCLOAK=true
+STEP_LITELLM=false
+STEP_PREPULL=false
+KIND_CLUSTER="${CLUSTER_NAME:-kagenti}"
 DRY_RUN=false
 
 # ── Colors & logging ────────────────────────────────────────────────────────
@@ -63,6 +70,9 @@ Options:
   --skip-gateway-api  Skip experimental Gateway API CRDs
   --skip-tls          Skip cert-manager CA chain
   --skip-keycloak     Skip Keycloak realm setup
+  --litellm           Deploy LiteLLM model proxy (requires MAAS_* env vars)
+  --pre-pull          Pre-pull base sandbox image into the cluster
+  --kind-cluster NAME Kind cluster name for pre-pull (default: kagenti)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
   --dry-run           Print commands without executing
 EOF
@@ -78,6 +88,9 @@ while [[ $# -gt 0 ]]; do
     --skip-tls)         STEP_TLS=false; shift ;;
     --skip-keycloak)    STEP_KEYCLOAK=false; shift ;;
     --keycloak-ns)      KEYCLOAK_NS="$2"; shift 2 ;;
+    --litellm)          STEP_LITELLM=true; shift ;;
+    --pre-pull)         STEP_PREPULL=true; shift ;;
+    --kind-cluster)     KIND_CLUSTER="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)
       log_error "Unknown option: $1"
@@ -95,13 +108,15 @@ echo "  Sandbox controller: $STEP_SANDBOX"
 echo "  Gateway API CRDs:   $STEP_GATEWAY_API"
 echo "  cert-manager CA:    $STEP_TLS"
 echo "  Keycloak realm:     $STEP_KEYCLOAK"
+echo "  LiteLLM proxy:      $STEP_LITELLM"
+echo "  Base image pre-pull: $STEP_PREPULL"
 echo "  Keycloak namespace: $KEYCLOAK_NS"
 echo "  Dry run:            $DRY_RUN"
 echo ""
 
 # ── Helper: wait for deployment ─────────────────────────────────────────────
 wait_deployment_ready() {
-  local name=$1 namespace=$2 timeout=${3:-120}
+  local name=$1 namespace=$2 timeout=${3:-300}
   if $DRY_RUN; then return 0; fi
   log_info "Waiting for deployment $name in $namespace (timeout: ${timeout}s)..."
   kubectl wait --for=condition=Available deployment/"$name" \
@@ -110,7 +125,7 @@ wait_deployment_ready() {
 
 # ── Helper: detect OpenShift ────────────────────────────────────────────────
 is_openshift() {
-  kubectl get crd routes.route.openshift.io &>/dev/null
+  kubectl get clusterversion &>/dev/null
 }
 
 # ============================================================================
@@ -208,6 +223,21 @@ EOF
     fi
     log_success "Shared TLS passthrough Gateway created"
   fi
+
+  # Fix NodePort to 30443 so it matches Kind extraPortMappings (host 9443 → container 30443)
+  KIND_TLS_NODEPORT=30443
+  CURRENT_NODEPORT=$(kubectl get svc tls-passthrough-istio -n kagenti-system \
+    -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}' 2>/dev/null || echo "")
+  if [[ -n "$CURRENT_NODEPORT" && "$CURRENT_NODEPORT" != "$KIND_TLS_NODEPORT" ]]; then
+    log_info "Fixing TLS NodePort: $CURRENT_NODEPORT → $KIND_TLS_NODEPORT"
+    if ! $DRY_RUN; then
+      kubectl patch svc tls-passthrough-istio -n kagenti-system --type='json' \
+        -p="[{\"op\": \"replace\", \"path\": \"/spec/ports/1/nodePort\", \"value\": $KIND_TLS_NODEPORT}]"
+    else
+      echo "  [dry-run] kubectl patch svc tls-passthrough-istio NodePort → $KIND_TLS_NODEPORT"
+    fi
+    log_success "TLS NodePort fixed to $KIND_TLS_NODEPORT"
+  fi
   echo ""
 fi
 
@@ -227,7 +257,9 @@ if $STEP_GATEWAY_API && ! is_openshift; then
       PILOT_ENABLE_ALPHA_GATEWAY_API=true
 
     if ! $DRY_RUN; then
-      kubectl rollout status deployment/istiod -n istio-system --timeout=60s
+      kubectl rollout status deployment/istiod -n istio-system --timeout=120s || {
+        log_warn "istiod rollout slow — continuing (will settle during tenant deploy)"
+      }
     fi
     log_success "Istio alpha Gateway API support enabled"
   fi
@@ -463,6 +495,251 @@ if $STEP_KEYCLOAK; then
 fi
 
 # ============================================================================
+# Step 5: LiteLLM model proxy (optional)
+# ============================================================================
+if $STEP_LITELLM; then
+  log_info "Step 5: LiteLLM model proxy"
+
+  LITEMAAS_URL="${MAAS_LLAMA4_API_BASE:-https://litellm-prod.apps.maas.redhatworkshops.io/v1}"
+  LITEMAAS_KEY="${MAAS_LLAMA4_API_KEY:-}"
+  LITEMAAS_MODEL="${MAAS_LLAMA4_MODEL:-llama-scout-17b}"
+  LITELLM_NS="${LITELLM_NS:-team1}"
+  LITELLM_PROXY_NAME="litellm-model-proxy"
+
+  DEEPSEEK_MODEL="${MAAS_DEEPSEEK_MODEL:-deepseek-r1-distill-qwen-14b}"
+
+  if [[ -z "$LITEMAAS_KEY" ]]; then
+    log_warn "MAAS_LLAMA4_API_KEY not set — skipping LiteLLM proxy"
+  elif kubectl get deployment "$LITELLM_PROXY_NAME" -n "$LITELLM_NS" &>/dev/null \
+       && kubectl rollout status "deploy/$LITELLM_PROXY_NAME" -n "$LITELLM_NS" --timeout=5s &>/dev/null; then
+    log_success "LiteLLM proxy already deployed and ready — skipping"
+  else
+    log_info "Deploying LiteLLM model proxy in namespace $LITELLM_NS..."
+    kubectl get ns "$LITELLM_NS" &>/dev/null || run_cmd kubectl create ns "$LITELLM_NS"
+
+    # Store API key in a Secret (not plaintext in ConfigMap)
+    kubectl create secret generic litemaas-credentials -n "$LITELLM_NS" \
+        --from-literal=api-key="$LITEMAAS_KEY" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    # Also create litellm-virtual-keys for sandbox agents
+    kubectl create secret generic litellm-virtual-keys -n "$LITELLM_NS" \
+        --from-literal=api-key="$LITEMAAS_KEY" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    # hosted_vllm/ provider avoids LiteLLM's OpenAI Responses API bridge
+    run_cmd kubectl apply -f - <<EOLITELLM
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: $LITELLM_NS
+data:
+  config.yaml: |
+    litellm_settings:
+      drop_params: true
+      use_chat_completions_url_for_anthropic_messages: true
+    model_list:
+      - model_name: "gpt-4o-mini"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "gpt-4o"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "gpt-4"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "gpt-5-nano"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "gpt-5"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "gpt-5-mini"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "$LITEMAAS_MODEL"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "claude-sonnet-4-20250514"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "claude-haiku-4-20250414"
+        litellm_params:
+          model: "hosted_vllm/$LITEMAAS_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+      - model_name: "deepseek-r1"
+        litellm_params:
+          model: "hosted_vllm/$DEEPSEEK_MODEL"
+          api_base: "$LITEMAAS_URL"
+          api_key: "os.environ/LITEMAAS_API_KEY"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: $LITELLM_PROXY_NAME
+  namespace: $LITELLM_NS
+  labels:
+    app.kubernetes.io/name: $LITELLM_PROXY_NAME
+    app.kubernetes.io/part-of: kagenti
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: $LITELLM_PROXY_NAME
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: $LITELLM_PROXY_NAME
+    spec:
+      containers:
+      - name: litellm
+        image: ghcr.io/berriai/litellm:main-v1.83.10-stable
+        args: ["--config", "/config/config.yaml", "--port", "4000"]
+        ports:
+        - containerPort: 4000
+          name: http
+        env:
+        - name: LITEMAAS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litemaas-credentials
+              key: api-key
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        readinessProbe:
+          tcpSocket:
+            port: 4000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /config
+      volumes:
+      - name: config
+        configMap:
+          name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: $LITELLM_PROXY_NAME
+  namespace: $LITELLM_NS
+  labels:
+    app.kubernetes.io/name: $LITELLM_PROXY_NAME
+spec:
+  selector:
+    app.kubernetes.io/name: $LITELLM_PROXY_NAME
+  ports:
+  - name: http
+    port: 4000
+    targetPort: 4000
+EOLITELLM
+
+    if ! $DRY_RUN; then
+      kubectl rollout status "deploy/$LITELLM_PROXY_NAME" -n "$LITELLM_NS" --timeout=60s || {
+        log_warn "LiteLLM proxy still pulling image — continuing (will be ready by test phase)"
+      }
+    fi
+    log_success "LiteLLM model proxy deployed"
+  fi
+
+  # Create LLM virtual-keys secret (idempotent)
+  log_info "Creating litellm-virtual-keys secret in $LITELLM_NS..."
+  run_cmd kubectl create secret generic litellm-virtual-keys -n "$LITELLM_NS" \
+    --from-literal=api-key="${LITEMAAS_KEY:-PLACEHOLDER}" \
+    --dry-run=client -o yaml | kubectl apply -f - 2>&1 | grep -v "^Warning:" || true
+
+  echo ""
+fi
+
+# ============================================================================
+# Step 6: Base sandbox image pre-pull (optional)
+# ============================================================================
+if $STEP_PREPULL; then
+  log_info "Step 6: Pre-pull base sandbox image"
+
+  BASE_IMAGE="ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+
+  # Read gateway image tags from values.yaml
+  CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/charts/openshell"
+  GW_REPO=$(grep -A2 'gateway:' "$CHART_DIR/values.yaml" | grep 'repository:' | awk '{print $2}')
+  GW_TAG=$(grep -A3 'gateway:' "$CHART_DIR/values.yaml" | grep 'tag:' | awk '{print $2}')
+  CD_REPO=$(grep -A2 'computeDriver:' "$CHART_DIR/values.yaml" | grep 'repository:' | awk '{print $2}')
+  CD_TAG=$(grep -A3 'computeDriver:' "$CHART_DIR/values.yaml" | grep 'tag:' | awk '{print $2}')
+  CR_REPO=$(grep -A2 'credentialsDriver:' "$CHART_DIR/values.yaml" | grep 'repository:' | awk '{print $2}')
+  CR_TAG=$(grep -A3 'credentialsDriver:' "$CHART_DIR/values.yaml" | grep 'tag:' | awk '{print $2}')
+
+  if is_openshift; then
+    # OCP: Start pull Jobs for all images in parallel (non-blocking)
+    PULL_IMAGES="$BASE_IMAGE ${GW_REPO}:${GW_TAG} ${CD_REPO}:${CD_TAG} ${CR_REPO}:${CR_TAG}"
+    for img in $PULL_IMAGES; do
+      job_name="pull-$(echo "$img" | sed 's|[/:.@]|-|g' | tail -c 58)"
+      if kubectl get job "$job_name" -n team1 &>/dev/null; then
+        continue
+      fi
+      log_info "Pre-pulling $img..."
+      run_cmd kubectl apply -f - <<EOJOB
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: $job_name
+  namespace: team1
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      containers:
+      - name: pull
+        image: $img
+        imagePullPolicy: Always
+        command: ["echo", "pulled"]
+      restartPolicy: Never
+EOJOB
+    done
+    log_info "Waiting for pre-pull Jobs to complete (up to 10 min)..."
+    for jn in $PULL_IMAGES; do
+      jname="pull-$(echo "$jn" | sed 's|[/:.@]|-|g' | tail -c 58)"
+      kubectl wait --for=condition=Complete "job/$jname" \
+        -n team1 --timeout=600s 2>/dev/null || log_warn "Pre-pull $jname not complete"
+    done
+  else
+    # Kind: docker pull + kind load
+    if docker exec "${KIND_CLUSTER}-control-plane" crictl images 2>/dev/null | grep -q "sandboxes/base"; then
+      log_success "Base sandbox image already loaded in Kind — skipping"
+    else
+      log_info "Pre-pulling base sandbox image into Kind cluster '$KIND_CLUSTER'..."
+      docker pull "$BASE_IMAGE" 2>/dev/null && \
+        kind load docker-image "$BASE_IMAGE" --name "$KIND_CLUSTER" 2>/dev/null || \
+        log_warn "Base image pre-pull failed (non-critical)"
+    fi
+  fi
+  echo ""
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo "╔════════════════════════════════════════════════════════════════╗"
@@ -475,5 +752,8 @@ if ! $DRY_RUN; then
   echo "    kubectl get crd sandboxes.agents.x-k8s.io"
   echo "    kubectl get clusterissuer openshell-ca-issuer"
   echo "    kubectl get secret openshell-ca-secret -n cert-manager"
+  if $STEP_LITELLM; then
+    echo "    kubectl get deployment litellm-model-proxy -n ${LITELLM_NS:-team1}"
+  fi
   echo ""
 fi

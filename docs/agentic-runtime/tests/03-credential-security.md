@@ -1,6 +1,6 @@
 # Credential Security
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_03_credential_security.py`
+> **Test file:** `kagenti/tests/e2e/openshell/test_T1_6_credential_security.py`
 > **Tests:** 15 | **Pass:** 15 | **Skip:** 0 (Kind, fresh cluster)
 
 ## What This Tests

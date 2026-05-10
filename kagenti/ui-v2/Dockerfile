@@ -2,18 +2,24 @@
 # Licensed under the Apache License, Version 2.0
 
 # Stage 1: Build the React application
-FROM node:25-alpine@sha256:ad82ecad30371c43f4057aaa4800a8ed88f9446553a2d21323710c7b937177fc AS builder
+FROM node:26-slim@sha256:ccd1c33b2876c07564b3fae7f6a5815aa42f71163faf07d00a9907e398d48bdc AS builder
 
 WORKDIR /app
 
 # Copy package files
-COPY ui-v2/package.json ./
+COPY ui-v2/package.json ui-v2/package-lock.json ./
 
-# Install dependencies
-RUN npm install --legacy-peer-deps
+# Install dependencies (locked via package-lock.json)
+# Rollup needs the explicit glibc binary in slim/Debian (not auto-resolved like in alpine)
+# hadolint ignore=DL3016
+RUN npm ci --legacy-peer-deps && \
+    npm install @rollup/rollup-linux-x64-gnu --save-optional
 
 # Copy source code
 COPY ui-v2/ .
+
+ARG RELEASE_TAG=unknown
+RUN sed -i -r 's/^\ \ "version": (.*)/  "version": "'${RELEASE_TAG}'",/' package.json
 
 # Build the application
 RUN npm run build

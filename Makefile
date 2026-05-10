@@ -6,6 +6,7 @@ lint:
 KIND_CLUSTER_NAME := kagenti
 # Generate unique tag using git commit hash (short) or timestamp if not in git repo
 TAG := $(shell git rev-parse --short HEAD 2>/dev/null | xargs -I {} sh -c 'echo "{}-$$(date +%s)"' || date +%s)
+RELEASE_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "unknown")
 
 # Agent OAuth Secret
 AGENT_OAUTH_SECRET_IMAGE := agent-oauth-secret
@@ -72,7 +73,7 @@ build-load-ui-frontend:
 		echo "Info: Podman backend detected. Using --load flag for build."; \
 	fi
 	@echo ""
-	docker build -t $(UI_FRONTEND_REPO):$(UI_FRONTEND_TAG) -f $(UI_FRONTEND_DIR)/Dockerfile $(DOCKER_BUILD_CONTEXT) $(DOCKER_BUILD_FLAGS)
+	docker build -t $(UI_FRONTEND_REPO):$(UI_FRONTEND_TAG) -f $(UI_FRONTEND_DIR)/Dockerfile $(DOCKER_BUILD_CONTEXT) $(DOCKER_BUILD_FLAGS) --build-arg RELEASE_TAG=$(RELEASE_TAG)
 	@echo ""
 	@echo "Loading frontend image into kind cluster $(KIND_CLUSTER_NAME)..."
 	kind load docker-image $(UI_FRONTEND_REPO):$(UI_FRONTEND_TAG) --name $(KIND_CLUSTER_NAME)

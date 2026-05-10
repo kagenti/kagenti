@@ -89,7 +89,7 @@ fi
 
 # ── Platform detection ───────────────────────────────────────────────────────
 is_openshift() {
-  kubectl get crd routes.route.openshift.io &>/dev/null
+  kubectl get clusterversion &>/dev/null
 }
 
 get_ocp_base_domain() {

@@ -117,6 +117,8 @@ jobs:
           file: ${{ matrix.image_config.context }}/${{ matrix.image_config.dockerfile }}
           load: true
           tags: ${{ matrix.image_config.name }}:smoke-test
+          build-args: |
+            RELEASE_TAG=${{ github.ref_name }}
 
       - name: Run smoke test for ${{ matrix.image_config.name }}
         if: matrix.image_config.smoke_cmd
@@ -133,6 +135,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_retry.outputs.tags || steps.meta.outputs.tags }}
           labels: ${{ steps.meta_retry.outputs.labels || steps.meta.outputs.labels }}
+          build-args: |
+            RELEASE_TAG=${{ github.ref_name }}
 
   package-charts:
     # Package and push Helm charts once, after all images are built.
