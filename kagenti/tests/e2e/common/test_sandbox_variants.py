@@ -245,25 +245,35 @@ def _send_message(
 def _extract_text(result: dict) -> str:
     """Extract text from A2A result artifacts or status message.
 
-    Checks artifacts first (preferred), then status message as fallback.
-    Filters out generic "no response" placeholders that the reporter
-    emits when accumulation fails.
+    Uses the LAST artifact (reporter's final answer) rather than
+    concatenating all artifacts, which would include intermediate
+    tool call descriptions. Falls back to status message.
     """
+    import re
+
+    artifacts = result.get("artifacts", [])
+    if artifacts:
+        last = artifacts[-1]
+        texts = []
+        for part in last.get("parts", []):
+            if "text" in part:
+                texts.append(part["text"])
+        combined = "\n".join(texts)
+        combined = re.sub(
+            r"<think>.*?</think>\s*", "", combined, flags=re.DOTALL
+        ).strip()
+        if combined and combined.strip().lower() not in (
+            "no response generated.",
+            "no response generated",
+        ):
+            return combined
+    status = result.get("status", {})
+    msg = status.get("message", {})
     texts = []
-    for artifact in result.get("artifacts", []):
-        for part in artifact.get("parts", []):
-            if "text" in part:
-                texts.append(part["text"])
-    if not texts:
-        status = result.get("status", {})
-        msg = status.get("message", {})
-        for part in msg.get("parts", []):
-            if "text" in part:
-                texts.append(part["text"])
-    combined = "\n".join(texts)
-    if combined.strip().lower() in ("no response generated.", "no response generated"):
-        return ""
-    return combined
+    for part in msg.get("parts", []):
+        if "text" in part:
+            texts.append(part["text"])
+    return "\n".join(texts)
 
 
 def _is_tool_refusal(text: str) -> bool:
