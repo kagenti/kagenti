@@ -185,7 +185,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Install yamllint
-        run: pip install yamllint
+        run: pip install yamllint==1.38.0
 
       - name: Create config
         run: |
@@ -299,7 +299,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Bandit
-        run: pip install bandit[toml]
+        run: pip install "bandit[toml]==1.9.4"
 
       - name: Run Bandit security scan
         run: |

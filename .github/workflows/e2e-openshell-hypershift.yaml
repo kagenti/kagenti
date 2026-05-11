@@ -125,7 +125,7 @@ jobs:
         run: |
           bash .github/scripts/hypershift/ci/20-install-tools.sh
           bash .github/scripts/common/10-setup-dependencies.sh
-          pip install boto3 botocore
+          pip install boto3==1.43.6 botocore==1.43.6
 
       - name: Install Helm v3
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
