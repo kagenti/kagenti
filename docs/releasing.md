@@ -211,9 +211,15 @@ bash scripts/check-release-pins.sh
 - All dependency versions in `Chart.yaml` are pinned (hard fail)
 - `Chart.lock` is present (warning)
 
-**PR gate:** The `ci-release-pins.yaml` workflow runs this script automatically
-on any PR that touches `charts/`. PRs introducing `tag: latest` will get a red
-check before merge, keeping `main` release-ready at all times.
+**CI behavior:** The `ci-release-pins.yaml` workflow runs this script on any
+PR that touches `charts/` and posts a summary to the Actions tab for
+visibility. It only *fails* the check when the PR targets a `release/*`
+branch — on `main` it's informational, because `tag: latest` is intentional
+during normal development (tags get pinned during release prep).
+
+Maintainers can also trigger the workflow manually via the Actions tab
+(`workflow_dispatch`) to run the full check on any branch, useful before a
+`release/*` branch exists.
 
 ### E2E release validation workflow
 

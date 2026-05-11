@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'charts/**'
+  # Allow maintainers to run the pin check manually on any branch — useful
+  # during release prep before a release/* branch exists.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -46,5 +49,15 @@ jobs:
             jq -r '.warnings[] | "- \(.file): \(.issue)"' pin-results.json >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Run pin-validation check
+      # Hard gate — only enforce on PRs targeting release/* branches and on
+      # manual dispatches. During normal development `tag: latest` in
+      # values.yaml is intentional (tags are pinned during release prep),
+      # so blocking every charts PR on main would be noise.
+      #
+      # The summary step above still runs on every charts PR, giving
+      # informational visibility without blocking merge.
+      - name: Run pin-validation check (release branches and manual dispatch only)
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/'))
         run: bash scripts/check-release-pins.sh
