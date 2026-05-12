@@ -1,9 +1,9 @@
 name: Cleanup Stale HyperShift Clusters
 
 on:
-  # Scheduled cleanup every 3 hours (dry-run only for safety)
+  # Scheduled cleanup every 3 hours (change to --apply for automatic deletion)
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '27 */3 * * *'  # Every 3 hours at :27 (avoid :00 and :30)
 
   # Manual trigger with configurable options
   workflow_dispatch:
@@ -44,18 +44,32 @@ jobs:
           sudo mv oc kubectl /usr/local/bin/
           oc version --client
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq awscli python3-pip
+          pip3 install ansible boto3 botocore
 
       - name: Setup management cluster kubeconfig
         env:
-          KUBECONFIG_BASE64: ${{ secrets.KUBECONFIG_HCP_MGMT }}
+          KUBECONFIG_BASE64: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
         run: |
           mkdir -p ~/.kube
           echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
           export KUBECONFIG=~/.kube/config
           oc whoami --show-server
+
+      - name: Setup HyperShift environment
+        env:
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+        run: |
+          echo "MANAGED_BY_TAG=${MANAGED_BY_TAG}" >> $GITHUB_ENV
+          echo "HCP_ROLE_NAME=${HCP_ROLE_NAME}" >> $GITHUB_ENV
+
+      - name: Clone hypershift-automation
+        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
 
       - name: Setup AWS credentials (for cluster deletion)
         if: github.event.inputs.dry_run == 'false' || github.event_name == 'schedule'
@@ -68,12 +82,13 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
           echo "AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
 
-      - name: Run cleanup script (Dry-run - Scheduled)
+      - name: Run cleanup script (Scheduled)
         if: github.event_name == 'schedule'
         env:
           KUBECONFIG: /home/runner/.kube/config
         run: |
-          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh --dry-run --verbose
+          # Change --dry-run to --apply to enable automatic deletion
+          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh --dry-run --verbose 2>&1 | tee /tmp/cleanup-output.log
 
       - name: Run cleanup script (Manual - Dry-run)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
@@ -108,7 +123,7 @@ jobs:
           bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS | tee /tmp/cleanup-output.log
 
       - name: Upload deletion logs
-        if: github.event.inputs.dry_run == 'false' && always()
+        if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
           name: cleanup-logs-${{ github.run_id }}
@@ -116,7 +131,7 @@ jobs:
           retention-days: 90
 
       - name: Create audit issue for deletions
-        if: github.event.inputs.dry_run == 'false' && success()
+        if: (github.event_name == 'schedule' || github.event.inputs.dry_run == 'false') && success()
         uses: actions/github-script@v9.0.0
         with:
           script: |

@@ -1,0 +1,160 @@
+name: Cleanup Zombie HyperShift Resources
+
+on:
+  # Scheduled cleanup every 6 hours (conservative for safety)
+  schedule:
+    - cron: '17 */6 * * *'  # Every 6 hours at :17 (avoid :00 and :30)
+
+  # Manual trigger with options
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (show what would be deleted)'
+        required: false
+        type: boolean
+        default: true
+      max_age_hours:
+        description: 'Max cluster age in hours before considered zombie'
+        required: false
+        type: number
+        default: 6
+
+permissions:
+  contents: read
+  issues: write  # For audit trail
+
+jobs:
+  cleanup-zombies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hours for deep AWS cleanup
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          # Install OpenShift CLI
+          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz
+          tar -xzf openshift-client-linux.tar.gz
+          sudo mv oc kubectl /usr/local/bin/
+          oc version --client
+
+          # Install AWS CLI
+          sudo apt-get update
+          sudo apt-get install -y awscli jq
+
+          # Install Ansible for hypershift-automation
+          sudo apt-get install -y python3-pip
+          pip3 install ansible boto3 botocore
+
+      - name: Setup management cluster kubeconfig
+        env:
+          KUBECONFIG_BASE64: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          export KUBECONFIG=~/.kube/config
+          oc whoami --show-server
+
+      - name: Setup AWS credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
+          echo "AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
+          aws sts get-caller-identity
+
+      - name: Setup HyperShift environment
+        env:
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+        run: |
+          echo "MANAGED_BY_TAG=${MANAGED_BY_TAG}" >> $GITHUB_ENV
+          echo "HCP_ROLE_NAME=${HCP_ROLE_NAME}" >> $GITHUB_ENV
+
+      - name: Clone hypershift-automation
+        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
+
+      - name: Run zombie cleanup (Scheduled - Apply Mode)
+        if: github.event_name == 'schedule'
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+          MAX_CLUSTER_AGE_HOURS: 6
+        run: |
+          bash ./.github/scripts/hypershift/cleanup-zombies.sh --force \
+            --max-age-hours ${MAX_CLUSTER_AGE_HOURS} 2>&1 | tee /tmp/zombie-cleanup.log
+
+      - name: Run zombie cleanup (Manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          MAX_AGE: ${{ github.event.inputs.max_age_hours }}
+        run: |
+          ARGS=""
+          if [ "$DRY_RUN" = "false" ]; then
+            ARGS="--force"
+          fi
+          if [ -n "$MAX_AGE" ]; then
+            ARGS="$ARGS --max-age-hours $MAX_AGE"
+          fi
+          bash ./.github/scripts/hypershift/cleanup-zombies.sh $ARGS 2>&1 | tee /tmp/zombie-cleanup.log
+
+      - name: Upload cleanup logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: zombie-cleanup-logs-${{ github.run_id }}
+          path: /tmp/zombie-cleanup.log
+          retention-days: 90
+
+      - name: Create audit issue
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const logContent = fs.readFileSync('/tmp/zombie-cleanup.log', 'utf8');
+            const zombieMatches = logContent.match(/\[ZOMBIE\][^\n]+/g) || [];
+            const cleanedMatches = logContent.match(/Cleaned:\s+(\d+)/);
+            const failedMatches = logContent.match(/Failed:\s+(\d+)/);
+
+            const zombieCount = zombieMatches.length;
+            const cleanedCount = cleanedMatches ? parseInt(cleanedMatches[1]) : 0;
+            const failedCount = failedMatches ? parseInt(failedMatches[1]) : 0;
+
+            if (zombieCount > 0) {
+              const timestamp = new Date().toISOString();
+              const zombieList = zombieMatches.map(z => `- ${z.replace('[ZOMBIE]', '').trim()}`).join('\n');
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[Zombie Cleanup] Found ${zombieCount} zombie resource(s) - ${timestamp}`,
+                body: `## Automated Zombie Cleanup
+
+            **Timestamp:** ${timestamp}
+            **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+
+            **Results:**
+            - Zombies Found: ${zombieCount}
+            - Successfully Cleaned: ${cleanedCount}
+            - Failed: ${failedCount}
+
+            **Zombie Resources:**
+
+            ${zombieList}
+
+            **Logs:** Check workflow artifacts for detailed cleanup logs.
+
+            ---
+            _This issue was created automatically by the zombie cleanup workflow._
+            `,
+                labels: ['infrastructure', 'automated-cleanup', 'hypershift', 'zombie-resources']
+              });
+            }
