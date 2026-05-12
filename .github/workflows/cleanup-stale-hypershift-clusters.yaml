@@ -47,7 +47,15 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq awscli python3-pip
+          sudo apt-get install -y jq python3-pip unzip
+
+          # Install AWS CLI v2 (awscli package not available in Ubuntu 24.04)
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+          aws --version
+
+          # Install Ansible and boto
           pip3 install ansible boto3 botocore
 
       - name: Setup management cluster kubeconfig

@@ -40,12 +40,17 @@ jobs:
           sudo mv oc kubectl /usr/local/bin/
           oc version --client
 
-          # Install AWS CLI
+          # Install dependencies
           sudo apt-get update
-          sudo apt-get install -y awscli jq
+          sudo apt-get install -y jq python3-pip unzip
+
+          # Install AWS CLI v2 (awscli package not available in Ubuntu 24.04)
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+          aws --version
 
           # Install Ansible for hypershift-automation
-          sudo apt-get install -y python3-pip
           pip3 install ansible boto3 botocore
 
       - name: Setup management cluster kubeconfig
