@@ -10,7 +10,7 @@ featureFlags:
   sandbox: false
   integrations: false
   triggers: false
-  agentSandbox: false
+  agentSandbox: true
   skills: false
   authbridgeAPI: false
 
