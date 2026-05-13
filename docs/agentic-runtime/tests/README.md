@@ -30,6 +30,8 @@ Tests use tiered naming: `test_T{tier}_{module}_{description}.py`
 - [T1-3 Sandbox Lifecycle](T1-3-sandbox-lifecycle.md) — Sandbox CR CRUD, status observability
 - [T1-4 Workspace](T1-4-workspace.md) — PVC data persistence
 - [T1-5 Resource Limits](T1-5-resource-limits.md) — CPU/memory limits on all agents
+- T1-6 Credential Security (`test_T1_6_credential_security.py`, 5 tests) — secretKeyRef delivery, no hardcoded secrets, policy ConfigMaps
+- T1-7 Sandbox Connectivity (`test_T1_7_sandbox_connectivity.py`, 5 tests) — Gateway reachable, kubectl exec into sandboxes
 
 ### Tier 2: Conversation
 
@@ -43,6 +45,7 @@ Tests use tiered naming: `test_T{tier}_{module}_{description}.py`
 ### Tier 4: Security
 
 - [T4-1 HITL Network](T4-1-hitl-network.md) — OPA egress blocking
+- T4-2 Tenant Isolation (`test_T4_2_tenant_isolation.py`, 15 tests) — JWT audience auth, RBAC namespace scoping, credential isolation
 
 ### Tier 5: Backend API
 

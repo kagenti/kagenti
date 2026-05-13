@@ -190,7 +190,7 @@ It **cannot** use OpenAI-compatible proxies (LiteMaaS, LiteLLM, Ollama) because:
 
 ### Path to Enabling Skills (Paolo's Provider Workflow)
 
-Once TLS + ingress are configured (see [architecture alignment](../../plans/2026-04-25-architecture-alignment-review.md#4-openshell-provider-mechanism--zero-trust-credential-delivery)):
+Once TLS + ingress are configured:
 
 ```bash
 # 1. Create provider with real Anthropic key (or LiteLLM with Anthropic routing)

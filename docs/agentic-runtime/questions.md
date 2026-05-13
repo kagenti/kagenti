@@ -579,7 +579,7 @@ Sources: [OpenCode providers docs](https://opencode.ai/docs/providers),
 
 **Status:** OPEN (architecture decision) | **Related:** Q1.1 (tiers), Q2.3 (credential model)
 
-AuthBridge (Kagenti's [identity sidecar](../authbridge-combined-sidecar.md))
+AuthBridge (Kagenti's [identity sidecar](../authbridge/README.md))
 and the OpenShell supervisor provide complementary security layers:
 - AuthBridge: inbound JWT validation, outbound token exchange, SPIFFE identity
 - Supervisor: Landlock, seccomp, netns, OPA egress filtering, credential injection
@@ -652,8 +652,8 @@ management under Keycloak/AuthBridge.
 | Agent-to-agent communication | SPIFFE mTLS between pods | Egress policy allows target | Mutual auth + policy |
 | CI/CD agent running in sandbox | — | Seccomp blocks dangerous syscalls | Identity + process isolation |
 
-**Phase 3 tests:** See [e2e-test-matrix.md § AuthBridge Integration](e2e-test-matrix.md#authbridge-integration-tests-phase-3)
-for the planned test matrix.
+**Phase 3 tests:** AuthBridge integration tests are planned but not yet in the
+[test matrix](e2e-test-matrix.md).
 
 ### Q9.5: Which `authbridge-unified-config` ConfigMap version is required?
 

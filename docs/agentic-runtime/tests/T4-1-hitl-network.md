@@ -5,7 +5,7 @@
 
 ## What This Tests
 
-Validates that OPA policy enforcement ACTUALLY blocks unauthorized egress and allows authorized egress. This is the live enforcement complement to test_08 (which verifies rules are applied via logs).
+Validates that OPA policy enforcement ACTUALLY blocks unauthorized egress and allows authorized egress. This is the live enforcement complement to `test_T0_3_infra_supervisor` (which verifies rules are applied via logs).
 
 ## Architecture Under Test
 

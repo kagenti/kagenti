@@ -261,7 +261,7 @@ graph TB
 
 ### AuthBridge Integration (Phase 3)
 
-Kagenti's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
+Kagenti's [AuthBridge](../authbridge/README.md) and the OpenShell
 supervisor are complementary security layers that cannot currently coexist in
 the same pod. AuthBridge provides inbound JWT validation, outbound token
 exchange, and SPIFFE identity. The supervisor provides Landlock, seccomp,
@@ -327,9 +327,9 @@ volumes:
   emptyDir: {}
 ```
 
-Helm values for configuring the supervisor image:
-- `server.supervisorImage` (default: `ghcr.io/nvidia/openshell/supervisor:latest`)
-- `server.supervisorImagePullPolicy`
+Upstream Helm values for configuring the supervisor image:
+- `supervisor.image.repository` (default: `ghcr.io/nvidia/openshell/supervisor`)
+- `supervisor.image.pullPolicy`
 
 **Note:** The supervisor binary path changed from `/usr/local/bin/openshell-sandbox`
 to `/openshell-sandbox` in the upstream image. Kagenti's chart
