@@ -169,8 +169,8 @@ data:
 {{- end }}
 {{- if and .Values.components.otel.enabled .Values.components.mcpGateway.enabled }}
 ---
-# Allow workloads to push traces to the OTel collector.
-# Covers MCP Gateway router (mcp-system) and agent namespaces (team1, team2, kagenti-system).
+# Allow any mesh workload to push traces to the OTel collector.
+# Open allow-all on the collector workload avoids hardcoding agent or MCP gateway namespaces.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
