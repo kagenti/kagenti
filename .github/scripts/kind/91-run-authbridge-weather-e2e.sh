@@ -19,6 +19,7 @@
 #   KAGENTI_EXTENSIONS_GIT_REF  Branch or tag (default: main). Pin in CI to a release tag once
 #     authbridge/demos/weather-agent is included; verify with: git ls-remote --tags URL
 #   NAMESPACE                 K8s namespace (default: team1)
+#   OPERATOR_NAMESPACE        Operator namespace where keycloak-admin-secret is located (default: kagenti-system)
 #   SKIP_DEPLOY                 If 1, only run in-cluster verify (default: 0 = full deploy)
 #   WEATHER_TOOL_ROLLOUT_TIMEOUT / WEATHER_AGENT_ROLLOUT_TIMEOUT / WEATHER_TOOL_KC_CLIENT_SEC
 #   WEATHER_ADVANCED_PRUNE_LEGACY   Passed to deploy (default: 1 here — scale down wave-90 weather)
@@ -47,6 +48,7 @@ if ! command -v git &>/dev/null; then
 fi
 
 export NAMESPACE="${NAMESPACE:-team1}"
+export OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-kagenti-system}"
 
 if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
     log_error "Namespace $NAMESPACE not found. Deploy the platform first."
@@ -54,12 +56,13 @@ if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
 fi
 
 # Preflight: Keycloak admin credentials for setup_keycloak_weather_advanced.py / token exchange
-if ! kubectl get secret keycloak-admin-secret -n "$NAMESPACE" &>/dev/null; then
-    log_error "Secret 'keycloak-admin-secret' not found in namespace '$NAMESPACE'."
-    log_error "The installer usually creates it in agent namespaces. Re-run platform deploy or create it (AuthBridge / Keycloak docs) before AuthBridge E2E."
+# Note: keycloak-admin-secret is now in the operator namespace for security
+if ! kubectl get secret keycloak-admin-secret -n "$OPERATOR_NAMESPACE" &>/dev/null; then
+    log_error "Secret 'keycloak-admin-secret' not found in namespace '$OPERATOR_NAMESPACE'."
+    log_error "The installer creates it in the operator namespace. Re-run platform deploy or create it (AuthBridge / Keycloak docs) before AuthBridge E2E."
     exit 1
 fi
-log_info "Preflight OK: keycloak-admin-secret present in $NAMESPACE"
+log_info "Preflight OK: keycloak-admin-secret present in $OPERATOR_NAMESPACE"
 
 EXT_ROOT="${KAGENTI_EXTENSIONS_ROOT:-}"
 # Trim trailing slash so path joins are never authbridge//...

@@ -5,13 +5,13 @@
 #  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods:
 #    - proxy-init (init): iptables interception (needs NET_ADMIN/NET_RAW, root, non-privileged)
 #    - envoy-proxy (sidecar): Envoy for auth token injection (requests UID 1337)
+#    - authbridge-light (sidecar): OAuth token management (no hardcoded UID)
 #    - spiffe-helper (sidecar): SPIRE identity (UBI image, no hardcoded UID)
-#    - client-registration (sidecar): Keycloak registration (no hardcoded UID)
 #
 #  This SCC grants the minimum permissions needed for AuthBridge sidecars:
 #    - proxy-init needs root + NET_ADMIN/NET_RAW capabilities (not privileged mode)
 #    - envoy-proxy requests UID 1337 (for iptables exclusion coordination)
-#    - spiffe-helper and client-registration run as image-default UIDs (no override)
+#    - authbridge-light and spiffe-helper run as image-default UIDs (no override)
 #  RunAsAny is required because proxy-init needs root and envoy needs UID 1337.
 #  Bound to agent namespaces via the `groups` field below.
 # ——————————————————————————————————————————————————————————————————————————————

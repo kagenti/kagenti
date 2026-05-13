@@ -96,6 +96,11 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
   const { data: agentCard, isLoading: isLoadingCard, error: cardError } = useQuery({
     queryKey: ['agent-card', namespace, name],
     queryFn: () => chatService.getAgentCard(namespace, name),
+    retry: 3,
+    retryDelay: 2000,
+    refetchInterval: (query) => {
+      return query.state.data ? false : 5000;
+    },
   });
 
   const sendMessageMutation = useMutation({

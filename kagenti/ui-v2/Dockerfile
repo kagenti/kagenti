@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0
 
 # Stage 1: Build the React application
-FROM node:26-slim@sha256:ccd1c33b2876c07564b3fae7f6a5815aa42f71163faf07d00a9907e398d48bdc AS builder
+FROM node:26-slim@sha256:424cafd2a035ed2b2d74acc3142b68b426fb62a47742c80a75e7117db02d6b30 AS builder
 
 WORKDIR /app
 

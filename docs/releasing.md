@@ -68,7 +68,7 @@ artifacts when a tag is pushed:
 | Repository | Artifacts on tag push | CI workflow(s) |
 |------------|----------------------|----------------|
 | [kagenti/kagenti](https://github.com/kagenti/kagenti) | Container images (ui-v2, backend, oauth-secrets), Helm charts (kagenti, kagenti-deps) | `build.yaml` |
-| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (kagenti-webhook-chart) | `build.yaml`, `goreleaser.yml` |
+| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (authbridge-envoy, authbridge-light, proxy-init, client-registration, spiffe-helper) | `build.yaml` |
 | [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator) | Operator image, Helm chart (kagenti-operator-chart) | repo-specific |
 | [kagenti/agent-examples](https://github.com/kagenti/agent-examples) | Sample agent/tool images | repo-specific |
 
@@ -122,9 +122,6 @@ versions in `charts/kagenti/Chart.yaml`:
 
 ```yaml
 dependencies:
-- name: kagenti-webhook-chart
-  version: X.Y.0-alpha.N    # <-- new version
-  repository: oci://ghcr.io/kagenti/kagenti-extensions
 - name: kagenti-operator-chart
   version: X.Y.0-alpha.N    # <-- new version
   repository: oci://ghcr.io/kagenti/kagenti-operator

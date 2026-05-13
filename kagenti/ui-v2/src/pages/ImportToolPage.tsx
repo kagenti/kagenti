@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isValidEnvVarName, isValidContainerImage, isValidImageTag } from '../utils/validation';
 import { newRouteRowId } from '../utils/routeRowId';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import {
   PageSection,
   Title,
@@ -87,9 +88,12 @@ interface ServicePort {
 
 export const ImportToolPage: React.FC = () => {
   const navigate = useNavigate();
+  const features = useFeatureFlags();
 
-  // Deployment method
-  const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>('source');
+  // Deployment method — default to 'image' when builds unavailable
+  const [deploymentMethod, setDeploymentMethod] = useState<DeploymentMethod>(
+    features.builds ? 'source' : 'image'
+  );
 
   // Form state
   const [namespace, setNamespace] = useState('team1');
@@ -154,7 +158,6 @@ export const ImportToolPage: React.FC = () => {
   // Per-sidecar injection controls
   const [envoyProxyInject, setEnvoyProxyInject] = useState<boolean | undefined>(undefined);
   const [spiffeHelperInject, setSpiffeHelperInject] = useState<boolean | undefined>(undefined);
-  const [clientRegistrationInject, setClientRegistrationInject] = useState<boolean | undefined>(undefined);
 
   // Outbound routing rules
   const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
@@ -471,7 +474,6 @@ export const ImportToolPage: React.FC = () => {
         spireEnabled,
         envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
         spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
-        clientRegistrationInject: authBridgeEnabled ? clientRegistrationInject : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -500,7 +502,6 @@ export const ImportToolPage: React.FC = () => {
         spireEnabled,
         envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
         spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
-        clientRegistrationInject: authBridgeEnabled ? clientRegistrationInject : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -580,14 +581,16 @@ export const ImportToolPage: React.FC = () => {
               </Title>
 
               <FormGroup role="radiogroup" fieldId="deploymentMethod">
-                <Radio
-                  name="deploymentMethod"
-                  label="Build from Source"
-                  description="Build container image from source code using Shipwright"
-                  isChecked={deploymentMethod === 'source'}
-                  onChange={() => setDeploymentMethod('source')}
-                  id="deploymentMethod-source"
-                />
+                {features.builds && (
+                  <Radio
+                    name="deploymentMethod"
+                    label="Build from Source"
+                    description="Build container image from source code using Shipwright"
+                    isChecked={deploymentMethod === 'source'}
+                    onChange={() => setDeploymentMethod('source')}
+                    id="deploymentMethod-source"
+                  />
+                )}
                 <Radio
                   name="deploymentMethod"
                   label="Deploy from Image"
@@ -595,7 +598,7 @@ export const ImportToolPage: React.FC = () => {
                   isChecked={deploymentMethod === 'image'}
                   onChange={() => setDeploymentMethod('image')}
                   id="deploymentMethod-image"
-                  style={{ marginTop: '8px' }}
+                  style={{ marginTop: features.builds ? '8px' : undefined }}
                 />
               </FormGroup>
 
@@ -984,10 +987,9 @@ export const ImportToolPage: React.FC = () => {
                     if (checked) {
                       setEnvoyProxyInject(undefined);
                       setSpiffeHelperInject(undefined);
-                      setClientRegistrationInject(true);
                     }
                   }}
-                  description="When enabled, the webhook injects AuthBridge for inbound JWT validation, outbound token exchange, and Keycloak client registration. Default webhook settings use three sidecars plus proxy-init; with featureGates.combinedSidecar enabled on kagenti-webhook, a single authbridge container is used instead (see docs linked below)."
+                  description="When enabled, the webhook injects AuthBridge for inbound JWT validation and outbound token exchange. Default webhook settings use two sidecars (envoy-proxy, spiffe-helper) plus proxy-init; with featureGates.combinedSidecar enabled on kagenti-webhook, a single authbridge container is used instead (see docs linked below)."
                 />
               </FormGroup>
 
@@ -1040,13 +1042,6 @@ export const ImportToolPage: React.FC = () => {
                       isChecked={spiffeHelperInject !== false}
                       onChange={(_e, checked) => setSpiffeHelperInject(checked ? undefined : false)}
                       description="SPIFFE identity helper for SVID management. Disable to skip spiffe-helper sidecar."
-                    />
-                    <Checkbox
-                      id="clientRegistrationInject"
-                      label="Client Registration"
-                      isChecked={clientRegistrationInject === true}
-                      onChange={(_e, checked) => setClientRegistrationInject(checked ? true : undefined)}
-                      description="Sidecar-based Keycloak client registration. Automatically registers the workload as an OAuth2 client using its SPIFFE identity."
                     />
                   </FormGroup>
                 </>

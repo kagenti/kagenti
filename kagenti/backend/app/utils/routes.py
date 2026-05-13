@@ -6,6 +6,7 @@ Utility functions for creating HTTPRoutes (Kubernetes) and Routes (OpenShift).
 """
 
 import logging
+from typing import Optional
 
 from kubernetes.client import ApiException
 
@@ -334,13 +335,57 @@ def lookup_service_port(
     return default_port
 
 
-def resolve_agent_url(name: str, namespace: str, kube: KubernetesService) -> str:
-    """Resolve agent URL by looking up actual Service port."""
-    fallback = (
-        DEFAULT_IN_CLUSTER_PORT if settings.is_running_in_cluster else DEFAULT_OFF_CLUSTER_PORT
+def _lookup_sandbox_port(
+    name: str,
+    namespace: str,
+    kube: KubernetesService,
+) -> Optional[int]:
+    """Return the container port advertised by a Sandbox's pod template, or None.
+
+    Sandbox controllers create a headless Service with no ports
+    (kubernetes-sigs/agent-sandbox#154), so callers must discover the port from
+    the workload itself. Prefer containerPort, fall back to the PORT env var.
+    """
+    try:
+        sandbox = kube.get_sandbox(namespace=namespace, name=name)
+    except ApiException:
+        return None
+    containers = (
+        sandbox.get("spec", {}).get("podTemplate", {}).get("spec", {}).get("containers", [])
     )
-    port = lookup_service_port(name, namespace, kube, fallback)
-    return get_agent_url(name, namespace, port)
+    if not containers:
+        return None
+    ports = containers[0].get("ports") or []
+    if ports and isinstance(ports[0].get("containerPort"), int):
+        return ports[0]["containerPort"]
+    for env in containers[0].get("env", []) or []:
+        if env.get("name") == "PORT":
+            try:
+                return int(env.get("value"))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def resolve_agent_url(name: str, namespace: str, kube: KubernetesService) -> str:
+    """Resolve the URL for an agent by discovering its port.
+
+    1. If the Service exposes ports (Deployment/StatefulSet/Job path), use the
+       first port.
+    2. Else, if a Sandbox owns this name, read the port from its pod template
+       (Sandbox-created Services are headless with no ports).
+    3. Otherwise fall back to DEFAULT_OFF_CLUSTER_PORT, which matches both the
+       default external port and the default the sandbox builder writes.
+    """
+    port = lookup_service_port(name, namespace, kube, default_port=0)
+    if port:
+        return get_agent_url(name, namespace, port)
+
+    sandbox_port = _lookup_sandbox_port(name, namespace, kube)
+    if sandbox_port is not None:
+        return get_agent_url(name, namespace, sandbox_port)
+
+    return get_agent_url(name, namespace, DEFAULT_OFF_CLUSTER_PORT)
 
 
 def get_agent_url(name: str, namespace: str, port: int = DEFAULT_OFF_CLUSTER_PORT) -> str:

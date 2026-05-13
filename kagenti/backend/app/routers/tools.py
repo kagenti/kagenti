@@ -598,6 +598,9 @@ async def list_tool_shipwright_builds(
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> ShipwrightBuildListResponse:
     """List Shipwright Build resources for tools only (kagenti.io/type=tool)."""
+    if not kube.api_group_exists("shipwright.io"):
+        return ShipwrightBuildListResponse(items=[])
+
     namespaces_to_scan: List[str] = []
     if all_namespaces:
         namespaces_to_scan = kube.list_enabled_namespaces()
@@ -1040,9 +1043,6 @@ def _build_tool_deployment_manifest(
     if spiffe_helper_inject is False:
         labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
         pod_labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-    if client_registration_inject is True:
-        labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
-        pod_labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
 
     # Build annotations
     annotations = {}
@@ -1209,9 +1209,6 @@ def _build_tool_statefulset_manifest(
     if spiffe_helper_inject is False:
         labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
         pod_labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-    if client_registration_inject is True:
-        labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
-        pod_labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
 
     # Build annotations
     annotations = {}

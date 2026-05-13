@@ -263,23 +263,17 @@ grant_type=authorization_code
 }
 ```
 
-#### Stage 2: Keycloak Client Registration Flow (Secret-based)
+#### Stage 2: Keycloak Client Registration Flow (Operator-managed)
 
-![Keycloak Client Registration Flow (Secret-based) Flow](./diagrams/images/png/02-kagenti-client-registration.png)
+Keycloak client registration is now handled by the kagenti-operator's ClientRegistrationReconciler controller. The controller:
+1. Watches for Deployments/StatefulSets labeled with `kagenti.io/type: agent` or `tool`
+2. Reads Keycloak admin credentials from the `keycloak-admin-secret` in the operator namespace (`kagenti-system`)
+3. Uses the workload's SPIFFE ID as the client identifier
+4. Registers the client with Keycloak and creates a secret containing client credentials in the agent namespace
 
-*Figure 2: Keycloak Client Registration Flow (Secret-based) Flow - Shows how automatic client registration registers clients in Keycloak*
+This approach provides better security isolation by restricting Keycloak admin credentials to the operator namespace rather than replicating them to every agent namespace.
 
-[View Mermaid Source Code](./diagrams/02-kagenti-client-registration.mmd)
-
-#### Stage 3: Keycloak Client Registration Flow (Secretless with OIDC DCR)
-
-![Keycloak Client Registration Flow (Secretless with OIDC DCR) Flow](./diagrams/images/png/03-kagenti-client-registreation-final.png)
-
-*Figure 3: Keycloak Client Registration Flow (Secretless with OIDC DCR) Flow - Shows how automatic client registration registers clients in Keycloak without credentials*
-
-[View Mermaid Source Code](./diagrams/03-kagenti-client-registreation-final.mmd)
-
-#### Stage 4: Agent Token Exchange
+#### Stage 3: Agent Token Exchange
 
 ![Agent Token Exchange Flow](./diagrams/images/png/04-agent-token-exchange-flow.png)
 
@@ -311,11 +305,11 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 }
 ```
 
-#### Stage 5: Internal Tool Access with Delegated Token
+#### Stage 4: Internal Tool Access with Delegated Token
 
 ![Internal Tool Access with Delegated Token Flow](./diagrams/images/png/05-tool-access-delegated-token-flow.png)
 
-*Figure 5: Internal Tool Access Flow - Shows how agents call internal tools using delegated tokens with proper permission validation*
+*Figure 4: Internal Tool Access Flow - Shows how agents call internal tools using delegated tokens with proper permission validation*
 
 [View Mermaid Source Code](./diagrams/05-tool-access-delegated-token-flow.mmd)
 
@@ -355,11 +349,11 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 
 The **MCP Gateway** acts as an authentication proxy for all Model Context Protocol communications:
 
-#### Stage 6: Gateway Authentication Flow
+#### Stage 5: Gateway Authentication Flow
 
 ![MCP Gateway Authentication Flow](./diagrams/images/png/06-mcp-gateway-authentication-flow.png)
 
-*Figure 6: MCP Gateway Authentication Flow - Illustrates authentication flow through the MCP Gateway proxy for Model Context Protocol communications*
+*Figure 5: MCP Gateway Authentication Flow - Illustrates authentication flow through the MCP Gateway proxy for Model Context Protocol communications*
 
 [View Mermaid Source Code](./diagrams/06-mcp-gateway-authentication-flow.mmd)
 
@@ -439,11 +433,11 @@ def validate_request(request):
         raise AuthorizationError("Insufficient permissions")
 ```
 
-#### Stage 7: External API Access with Delegated Token and Vault
+#### Stage 6: External API Access with Delegated Token and Vault
 
 ![External API Access with Delegated Token and Vault Flow](./diagrams/images/png/07-tool-with-external-api-flow.png)
 
-*Figure 7: External API Access with Vault Flow - Shows how agents call internal tools using delegated tokens with proper permission validation and the Vault exchanges this token for external API key for accessing external APIs*
+*Figure 6: External API Access with Vault Flow - Shows how agents call internal tools using delegated tokens with proper permission validation and the Vault exchanges this token for external API key for accessing external APIs*
 
 [View Mermaid Source Code](./diagrams/07-tool-with-external-api-flow.mmd)
 
@@ -479,77 +473,36 @@ def validate_request(request):
 
 ### Client Registration Process
 
-#### Automatic Registration via Init Container
+#### Operator-Managed Registration
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: slack-researcher
-spec:
-  template:
-    spec:
-      initContainers:
-      - name: client-registration
-        image: ghcr.io/kagenti/client-registration:latest
-        env:
-        - name: KEYCLOAK_URL
-          value: "http://keycloak.keycloak.svc.cluster.local:8080"
-        - name: CLIENT_NAME
-          value: "slack-researcher"
-        - name: KEYCLOAK_REALM
-          value: "master"
-        volumeMounts:
-        - name: spiffe-workload-api
-          mountPath: /spiffe-workload-api
-        - name: shared-secrets
-          mountPath: /shared
-      containers:
-      - name: slack-researcher
-        image: ghcr.io/kagenti/slack-researcher:latest
-        volumeMounts:
-        - name: shared-secrets
-          mountPath: /secrets
-```
+Keycloak client registration is handled automatically by the kagenti-operator's ClientRegistrationReconciler. When you deploy an agent or tool:
 
-#### Manual Client Registration
+1. **Label the workload** with `kagenti.io/type: agent` or `kagenti.io/type: tool`
+2. **The operator watches** for these labeled workloads
+3. **The operator registers** the workload with Keycloak using:
+   - Client ID pattern depends on whether SPIFFE is enabled:
+     - **SPIFFE disabled**: `namespace/workload-name` (e.g., `team1/slack-researcher`)
+     - **SPIFFE enabled**: `spiffe://trustdomain/ns/namespace/sa/serviceaccount` (e.g., `spiffe://localtest.me/ns/team1/sa/slack-researcher-sa`)
+   - Keycloak admin credentials from the `keycloak-admin-secret` in the operator namespace
+4. **The operator creates** a secret in the agent namespace containing client credentials
+
+This is fully automatic and requires no manual intervention or init containers.
+
+#### Reading Client Credentials in Application Code
+
+Applications can read the client credentials from the secret created by the operator:
 
 ```python
-from keycloak import KeycloakAdmin
-import jwt
+import os
 
-# Read SPIFFE JWT SVID
-with open("/opt/jwt_svid.token", "r") as f:
-    jwt_svid = f.read().strip()
+# Read client credentials from operator-created secret
+# Mounted at /secrets by the platform
+client_id = open("/secrets/client-id.txt").read().strip()
+client_secret = open("/secrets/client-secret.txt").read().strip()
 
-# Extract client ID from SPIFFE identity
-payload = jwt.decode(jwt_svid, options={"verify_signature": False})
-client_id = payload["sub"]  # e.g., spiffe://localtest.me/ns/team/sa/slack-researcher
-
-# Register with Keycloak
-keycloak_admin = KeycloakAdmin(
-    server_url="http://keycloak.keycloak.svc.cluster.local:8080",
-    username="admin",
-    password="admin",
-    realm_name="master"
-)
-
-client_payload = {
-    "clientId": client_id,
-    "name": "Slack Researcher Agent",
-    "standardFlowEnabled": True,
-    "directAccessGrantsEnabled": True,
-    "serviceAccountsEnabled": True,
-    "publicClient": False,
-    "attributes": {
-        "oauth2.device.authorization.grant.enabled": "false",
-        "oidc.ciba.grant.enabled": "false",
-        "client.secret.creation.time": str(int(time.time()))
-    }
-}
-
-internal_client_id = keycloak_admin.create_client(client_payload)
-print(f"Registered client: {client_id} with internal ID: {internal_client_id}")
+# Use credentials for OAuth2 flows
+keycloak_url = os.getenv("KEYCLOAK_URL", "http://keycloak.keycloak.svc.cluster.local:8080")
+realm = os.getenv("KEYCLOAK_REALM", "master")
 ```
 
 ### Token Exchange Implementation
@@ -610,15 +563,92 @@ tool_response = requests.post(
 
 ## 🌉 AuthBridge Component
 
-AuthBridge provides platform primitives to secure AI agents by managing agent identity,
-authentication, and authorization transparently. For comprehensive documentation, see:
+The [AuthBridge Component](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) provides a complete, hands-on implementation of Kagenti's identity and authorization patterns. It combines **Client Registration** and **AuthProxy** to demonstrate the full zero-trust authentication flow.
 
-- **[AuthBridge Documentation](./authbridge/README.md)** — Overview, architecture, and persona guides
-- **[Security Model](./authbridge/security-model.md)** — Trust model, token exchange, threat model
-- **[Deployment Guide](./authbridge/deployment-guide.md)** — Modes, configuration, troubleshooting
-- **[Demos](./authbridge/demos.md)** — Progressive hands-on walkthrough
-- **[Roadmap](./authbridge/roadmap.md)** — Vision and upcoming features
-- **[AuthBridge Source](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** — Implementation and demo code
+### What AuthBridge Demonstrates
+
+| Capability | Description |
+|------------|-------------|
+| **Automatic Workload Identity** | Pod registers itself with Keycloak using SPIFFE ID |
+| **Inbound JWT Validation** | Validates incoming token signature, expiration, and issuer via JWKS; optionally validates audience. Returns 401 for invalid tokens. |
+| **Transparent Token Exchange** | Sidecar exchanges outbound tokens for correct target audience via Keycloak |
+| **Target Service Validation** | Target validates token has correct audience |
+
+### AuthBridge Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  1. Operator watches workloads with kagenti.io/type label                       │
+│  2. Operator registers client with Keycloak (using admin credentials from       │
+│     operator namespace) and creates credentials secret in agent namespace       │
+│  3. (If SPIFFE enabled) SPIFFE Helper obtains SVID from SPIRE Agent             │
+│  4. Agent gets token from Keycloak using credentials from secret                │
+│  5. Agent sends request to target with token                                    │
+│  6. Envoy+ext-proc intercepts: validates token signature, expiration, issuer    │
+│     via JWKS (returns 401 if invalid), then exchanges token for target audience │
+│  7. Target receives request with exchanged token and validates audience         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+  Operator                   SPIRE Agent           Keycloak              Target
+       │                         │                     │                    │
+       │ 1. Watch workload       │                     │                    │
+       │ 2. Register client      │                     │                    │
+       ├─────────────────────────┼────────────────────►│                    │
+       │                         │                     │                    │
+       │ Create credentials      │                     │                    │
+       │ secret in agent ns      │                     │                    │
+       │                         │                     │                    │
+       │              ┌─────────┐│  3. Get SVID        │                    │
+       │              │ SPIFFE  ││◄────────────────────┤                    │
+       │              │ Helper  ││                     │                    │
+       │              └─────────┘│                     │                    │
+       │                    │    │                     │                    │
+       │              ┌─────────┐│                     │                    │
+       │              │  Agent  ││  4. Get token       │                    │
+       │              │         ││────────────────────►│                    │
+       │              │         ││◄────────────────────│                    │
+       │              │         ││  (aud: agent's ID)  │                    │
+       │              │         ││                     │                    │
+       │              │         ││  5. Request + token │                    │
+       │              │         ││─────────────────────┼───────────────────►│
+       │              └─────────┘│                     │                    │
+       │                    │    │                     │                    │
+       │         ┌──────────────┐│                     │                    │
+       │         │ Envoy+ext-pr ││  6. Validate &      │                    │
+       │         │              ││     Exchange token  │                    │
+       │         │              ││────────────────────►│                    │
+       │         │              ││◄────────────────────│                    │
+       │         │              ││  (aud: target)      │                    │
+       │         │              ││─────────────────────┼───────────────────►│
+       │         └──────────────┘│                     │  7. Validate aud   │
+       │                         │                     │       "authorized" │
+```
+
+### AuthBridge Components
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| **Kagenti Operator** | Controller | Watches for workloads with `kagenti.io/type` label, registers them as OAuth clients in Keycloak, and creates credentials secrets in agent namespaces |
+| **SPIFFE Helper** | Container | (Optional, when SPIFFE enabled) Obtains SVID from SPIRE Agent for workload identity |
+| **Envoy + Go Processor (Ext Proc)** | Sidecar | Intercepts traffic in both directions: **inbound** — validates JWT (signature, expiration, issuer, optional audience) via JWKS, returns 401 for invalid tokens; **outbound** — exchanges tokens for target audience via Keycloak |
+
+> **Note**: Client registration is fully automatic. The operator reads Keycloak admin credentials from `keycloak-admin-secret` in the operator namespace (not from agent namespaces), providing better security isolation.
+
+### Hands-On Demos
+
+For step-by-step AuthBridge demos with real working examples, see:
+
+- **[AuthBridge Weather Demo](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/demos/weather-agent)** — Complete end-to-end example showing token exchange between a weather agent and weather tool
+- **[AuthBridge Documentation](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** — Component documentation and additional examples
+
+### AuthBridge Documentation
+
+For complete documentation, see:
+
+- **[AuthBridge README](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Full demo instructions
+- **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/authproxy)** - Token validation and exchange proxy
+
+> **Note**: The AuthBridge demo in kagenti-extensions includes client-registration components for demonstration purposes. In production Kagenti deployments, client registration is handled by the kagenti-operator controller.
 
 ---
 

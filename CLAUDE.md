@@ -195,6 +195,7 @@ and lets us decouple merge velocity from release readiness.
 | `kagenti_feature_flag_sandbox` | Sandboxed agent runtime UI and APIs |
 | `kagenti_feature_flag_integrations` | Third-party integration endpoints |
 | `kagenti_feature_flag_triggers` | Event-driven trigger system |
+| `kagenti_feature_flag_admin` | Platform Status card and /platform-status endpoint |
 
 ### TODO
 

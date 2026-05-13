@@ -274,8 +274,9 @@ fi
 # with the old chart binaries. Build from source to match.
 # ============================================================================
 if [ -z "${KAGENTI_DEP_BUILDS:-}" ] || [ "${KAGENTI_DEP_BUILDS:-}" = "[]" ]; then
-    # Default: build webhook from extensions main (proxy-init fix not yet released)
-    # TODO: Remove after bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
+    # Default: build proxy-init from kagenti-extensions main so the packaged
+    # chart deps pick up the latest init-container fixes even when the chart
+    # is pinned to an older release.
     export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
 fi
 if [ "${KAGENTI_DEP_BUILDS:-}" != "[]" ] && [ "$RUN_INSTALL" = "true" ]; then

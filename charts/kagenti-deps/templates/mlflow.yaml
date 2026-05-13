@@ -410,14 +410,14 @@ spec:
           failureThreshold: 30  # Allow up to 5 minutes for startup
         readinessProbe:
           httpGet:
-            path: /version
+            path: /health
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 10
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /version
+            path: /health
             port: 5000
           initialDelaySeconds: 10
           periodSeconds: 30

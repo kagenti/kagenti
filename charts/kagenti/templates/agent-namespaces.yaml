@@ -104,36 +104,18 @@ type: kubernetes.io/dockerconfigjson
 data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
 ---
-{{- if not $root.Values.keycloak.adminExistingSecret }}
-# ——————————————————————————————————————————————————————————————————————————————
-#  Secret for Keycloak Admin Credentials in Namespace: {{ . }}
-#  Used by the client-registration sidecar to register agents as OAuth clients.
-# ——————————————————————————————————————————————————————————————————————————————
-apiVersion: v1
-kind: Secret
-metadata:
-  name: keycloak-admin-secret
-  namespace: {{ . }}
-  labels:
-    {{- include "kagenti.labels" $root | nindent 4 }}
-type: Opaque
-stringData:
-  KEYCLOAK_ADMIN_USERNAME: {{ $root.Values.keycloak.adminUsername | quote }}
-  KEYCLOAK_ADMIN_PASSWORD: {{ $root.Values.keycloak.adminPassword | quote }}
----
-{{- end }}
-
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
-#  Consolidated config consumed by injected sidecars:
-#  - kagenti-webhook (injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS, JWT_AUDIENCE into client-registration)
-#  - client-registration sidecar (reads KEYCLOAK_URL, KEYCLOAK_REALM, CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS, JWT_AUDIENCE)
-#  - envoy-proxy go-processor (reads ISSUER, EXPECTED_AUDIENCE for inbound JWT validation)
+#  Consolidated config consumed by the kagenti-operator and injected sidecars:
+#  - kagenti-operator: Client registration controller (reads KEYCLOAK_URL, KEYCLOAK_REALM)
+#  - kagenti-webhook: Injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS, JWT_AUDIENCE
+#  - authbridge sidecars: Read ISSUER, EXPECTED_AUDIENCE for inbound JWT validation
 #
-#  NOTE: KEYCLOAK_NAMESPACE is NOT used by injected sidecars (credentials come from
-#  local keycloak-admin-secret, replicated to this namespace by agent-oauth-secret Job).
-#  KEYCLOAK_NAMESPACE is only used by Helm-hook Jobs (spiffe-idp-setup, agent-oauth-secret)
+#  NOTE: KEYCLOAK_NAMESPACE is only used by Helm-hook Jobs (spiffe-idp-setup, agent-oauth-secret)
 #  that run at install time with cross-namespace RBAC to read from the Keycloak namespace.
+#  Legacy: Prior to kagenti-operator#321, client-registration sidecars received credentials from
+#  a per-namespace keycloak-admin-secret replicated by agent-oauth-secret Job. Now the operator
+#  controller reads keycloak-admin-secret from its own namespace (kagenti-system) for security.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -141,11 +123,10 @@ metadata:
   name: authbridge-config
   namespace: {{ . }}
 data:
-  # Keycloak connection (used by client-registration sidecar)
+  # Keycloak connection (used by operator client registration controller)
   KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
   KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
-  # KEYCLOAK_NAMESPACE: Not used by sidecars. Included for reference by Helm-hook Jobs.
-  # Sidecars get credentials from local keycloak-admin-secret (replicated by agent-oauth-secret Job).
+  # KEYCLOAK_NAMESPACE: Not used by sidecars or operator. Included for reference by Helm-hook Jobs.
   KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
   # ISSUER: Used by envoy-proxy go-processor for inbound JWT validation.
   # Optional - auto-derived from KEYCLOAK_URL + KEYCLOAK_REALM if not set.
@@ -153,7 +134,7 @@ data:
   # that appears in token "iss" claims (split-horizon DNS).
   ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
   SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
-  # Authentication configuration (used by webhook injector and client-registration)
+  # Authentication configuration (used by operator and webhook injector)
   CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
   JWT_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
@@ -236,7 +217,7 @@ data:
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
+                    response_header_mode: SEND
                     request_body_mode: NONE
                     response_body_mode: NONE
               - name: envoy.filters.http.router
@@ -301,7 +282,7 @@ data:
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
+                    response_header_mode: SEND
                     request_body_mode: NONE
                     response_body_mode: NONE
               - name: envoy.filters.http.router
@@ -412,7 +393,7 @@ subjects:
 #  the webhook-injected AuthBridge stack can run:
 #    - proxy-init init container (NET_ADMIN/NET_RAW, root) for iptables
 #    - envoy-proxy sidecar (UID 1337)
-#    - spiffe-helper / client-registration sidecars (UID 1000)
+#    - authbridge-light / spiffe-helper sidecars (UID 1000)
 #  Agent SAs are created dynamically by the operator (name = agent name),
 #  so we use the namespace service accounts group.
 #

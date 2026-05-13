@@ -66,6 +66,9 @@ MCP_GATEWAY_VERSION="0.6.0"
 KUADRANT_VERSION="1.4.2"
 AGENT_SANDBOX_VERSION="v0.4.3"
 
+KAGENTI_DEPS_VALUES_FILES=()
+KAGENTI_VALUES_FILES=()
+
 # ── Colors & logging ────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 log_info()    { echo -e "${BLUE}→${NC} $1"; }
@@ -103,6 +106,8 @@ while [[ $# -gt 0 ]]; do
     --secrets-file)     SECRETS_FILE_ARG="$2"; shift 2 ;;
     --cluster-name)     CLUSTER_NAME="$2"; shift 2 ;;
     --domain)           DOMAIN="$2"; shift 2 ;;
+    --kagenti-values)   KAGENTI_VALUES_FILES+=("--values" "$2"); shift 2 ;;
+    --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -132,6 +137,10 @@ while [[ $# -gt 0 ]]; do
       echo "                      openaiApiKey, slackBotToken, etc.)"
       echo "  --cluster-name NAME Kind cluster name (default: kagenti)"
       echo "  --domain DOMAIN     Domain for services (default: localtest.me)"
+      echo "  --kagenti-values FILE"
+      echo "                      Helm override file to apply to Kagenti chart"
+      echo "  --kagenti-deps-values FILE"
+      echo "                      Helm override file to apply to Kagenti-deps chart"
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -187,6 +196,8 @@ echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
 echo "    Preload imgs:  $PRELOAD_IMAGES"
+echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]}"
+echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]}"
 echo ""
 
 for cmd in helm kubectl; do
@@ -537,11 +548,11 @@ DEPS_FLAGS=(
   --set "components.tekton.enabled=false"
   --set "components.shipwright.enabled=false"
   --set "components.kiali.enabled=${WITH_KIALI}"
-  --set "components.phoenix.enabled=false"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "components.rhoai.enabled=false"
 )
+DEPS_FLAGS=( "${DEPS_FLAGS[@]}" "${KAGENTI_DEPS_VALUES_FILES[@]}" )
 
 log_info "Installing kagenti-deps..."
 # --skip-crds: Gateway API CRDs already installed in Step 5 at a newer version;
@@ -1088,11 +1099,11 @@ KAGENTI_FLAGS=(
   --set "components.istio.enabled=${WITH_ISTIO}"
   --set "components.mcpGateway.enabled=${WITH_MCP_GATEWAY}"
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
-  --set "components.phoenix.enabled=false"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
 )
+KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" "${KAGENTI_VALUES_FILES[@]}" )
 
 # When --build-images is set, the build step tags images ":latest" and loads
 # them into Kind (see list above). Override the chart's release-pinned tags

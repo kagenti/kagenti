@@ -452,68 +452,40 @@ export interface CreateSkillResponse {
 
 // AuthBridge types
 export interface AuthBridgeConfig {
-  AuthBridge: boolean | null
+  AuthBridge: boolean | null;
   mode: string | null;
-  inbound: InboundConfig | null;
-  outbound: OutboundConfig | null;
-  identity: IdentityConfig | null;
-  listener: ListenerConfig | null;
-  bypass:   BypassConfig | null;
-  routes:   RoutesConfig | null;
-  stats:    StatsConfig | null;
+  pipeline: PipelineConfig | null;
 }
 
-export interface InboundConfig {
-  jwks_url: string;
-  issuer:  string;
+export interface PipelineConfig {
+  inbound: PipelineStageConfig | null;
+  outbound: PipelineStageConfig | null;
 }
 
-export interface OutboundConfig {
-  token_url:      string;
-  keycloak_url:   string;
+export interface PipelineStageConfig {
+  plugins: PluginConfig[];
+}
+
+export interface PluginConfig {
+  name: string;
+  config: Record<string, unknown>;
+}
+
+export interface JwtValidationPluginConfig {
+  issuer: string;
+  keycloak_url: string;
+  keycloak_realm: string;
+}
+
+export interface TokenExchangePluginConfig {
+  keycloak_url: string;
   keycloak_realm: string;
   default_policy: string;
+  identity: IdentityConfig;
 }
 
 export interface IdentityConfig {
-  type:             string; // "spiffe", "client-secret", "k8s-sa"
-  client_id:         string;
-  client_secret:     string;
-  client_id_file:     string;
-  client_secret_file: string;
-  socket_path:       string;
-  jwt_svid_path:      string;
-  jwt_audience:      string[];
-}
-
-export interface ListenerConfig {
-  ext_proc_addr:         string;
-  ext_authz_addr:        string;
-  forward_proxy_addr:    string;
-  reverse_proxy_addr:    string;
-  reverse_proxy_backend: string;
-}
-
-export interface BypassConfig {
-  inbound_paths: string[];
-}
-
-export interface RoutesConfig {
-  file:  string; // path to routes YAML file
-  rules: RouteConfig[]
-}
-
-export interface RouteConfig {
-  host:           string;
-  target_audience: string;
-  token_scopes:    string;
-  token_url:       string;
-  passthrough:    boolean;
-  action:         string;
-}
-
-export interface StatsConfig {
-  address: string; // for example, ":9093"
+  type: string; // "spiffe" | "client-secret"
 }
 
 export interface AuthBridgeStats {

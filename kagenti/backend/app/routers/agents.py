@@ -2032,6 +2032,8 @@ def _build_authbridge_runtime_yaml(
     # public `issuer`. Required for split-horizon deployments where
     # `issuer` isn't reachable from inside the pod. See
     # kagenti-extensions#383.
+    # Note: Remember to keep AuthBridgeConfig in kagenti/ui-v2/src/types/index.ts
+    # in sync with this YAML runtime configuration.
     config = {
         "mode": "envoy-sidecar",
         "pipeline": {
@@ -2525,8 +2527,6 @@ def _build_common_labels(
         labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
     if request.spiffeHelperInject is False:
         labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-    if request.clientRegistrationInject is True:
-        labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
     return labels
 
 

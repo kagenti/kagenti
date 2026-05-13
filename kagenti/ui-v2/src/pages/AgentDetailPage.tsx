@@ -51,7 +51,9 @@ import {
   DropdownItem,
   MenuToggle,
   MenuToggleElement,
+  TreeView,
 } from '@patternfly/react-core';
+import type { TreeViewDataItem } from '@patternfly/react-core';
 import {
   Table,
   Thead,
@@ -71,6 +73,32 @@ import yaml from 'js-yaml';
 import { agentService, authBridgeService, chatService, configService, shipwrightService, ShipwrightBuildInfo } from '@/services/api';
 import { AgentChat } from '@/components/AgentChat';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import type { PluginConfig } from '@/types';
+
+function pluginsToTreeData(plugins: PluginConfig[]): TreeViewDataItem[] {
+  return plugins.map((plugin, idx) => ({
+    id: `plugin-${idx}`,
+    name: plugin.name,
+    defaultExpanded: true,
+    children: Object.entries(plugin.config).map(([key, value]) => {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        return {
+          id: `plugin-${idx}-${key}`,
+          name: key,
+          defaultExpanded: true,
+          children: Object.entries(value as Record<string, unknown>).map(([k, v]) => ({
+            id: `plugin-${idx}-${key}-${k}`,
+            name: <><strong>{k}:</strong> {String(v)}</>,
+          })),
+        };
+      }
+      return {
+        id: `plugin-${idx}-${key}`,
+        name: <><strong>{key}:</strong> {String(value)}</>,
+      };
+    }),
+  }));
+}
 
 interface StatusCondition {
   type: string;
@@ -138,10 +166,10 @@ export const AgentDetailPage: React.FC = () => {
     queryKey: ['agent', namespace, name],
     queryFn: () => agentService.get(namespace!, name!),
     enabled: !!namespace && !!name,
+    retry: 3,
+    retryDelay: 2000,
     refetchInterval: (query) => {
-      // Poll every 5 seconds if agent is not ready
-      // Use readyStatus from backend (handles Deployment, StatefulSet, Job)
-      // For Jobs: stop polling once Completed or Failed, but continue for Running
+      if (!query.state.data) return 5000;
       const readyStatus = query.state.data?.readyStatus;
       const isStable = readyStatus === 'Ready' || readyStatus === 'Completed' || readyStatus === 'Failed';
       return isStable ? false : 5000;
@@ -1054,82 +1082,25 @@ export const AgentDetailPage: React.FC = () => {
                                 <Label isCompact color="blue">{authBridgeConfig.mode}</Label>
                               </DescriptionListDescription>
                             </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Inbound JWKS URL</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.inbound?.jwks_url || '-'}</code>
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Inbound Issuer</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                {authBridgeConfig.inbound?.issuer || '-'}
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Outbound Token URL</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                <code style={{ fontSize: '0.85em' }}>{authBridgeConfig.outbound?.token_url || '-'}</code>
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Outbound Default Policy</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                {authBridgeConfig.outbound?.default_policy || '-'}
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Identity Type</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                <Label isCompact>{authBridgeConfig.identity?.type || '-'}</Label>
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Identity Client ID</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                {authBridgeConfig.identity?.client_id || '-'}
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                              <DescriptionListTerm>Bypass Inbound Paths</DescriptionListTerm>
-                              <DescriptionListDescription>
-                                {(authBridgeConfig.bypass?.inbound_paths?.length ?? 0) > 0 ? (
-                                  <LabelGroup>
-                                    {authBridgeConfig.bypass?.inbound_paths?.map((path) => (
-                                      <Label key={path} isCompact>{path}</Label>
-                                    ))}
-                                  </LabelGroup>
-                                ) : '-'}
-                              </DescriptionListDescription>
-                            </DescriptionListGroup>
-                            {(authBridgeConfig.routes?.rules?.length ?? 0) > 0 && (
+                            {(authBridgeConfig.pipeline?.inbound?.plugins?.length ?? 0) > 0 && (
                               <DescriptionListGroup>
-                                <DescriptionListTerm>Routes</DescriptionListTerm>
+                                <DescriptionListTerm>Inbound Plugins</DescriptionListTerm>
                                 <DescriptionListDescription>
-                                  <Table aria-label="AuthBridge routes" variant="compact">
-                                    <Thead>
-                                      <Tr>
-                                        <Th>Host</Th>
-                                        <Th>Action</Th>
-                                        <Th>Target Audience</Th>
-                                        <Th>Passthrough</Th>
-                                      </Tr>
-                                    </Thead>
-                                    <Tbody>
-                                      {authBridgeConfig.routes?.rules?.map((route, idx) => (
-                                        <Tr key={idx}>
-                                          <Td dataLabel="Host">{route.host}</Td>
-                                          <Td dataLabel="Action">{route.action || '-'}</Td>
-                                          <Td dataLabel="Target Audience">{route.target_audience || '-'}</Td>
-                                          <Td dataLabel="Passthrough">
-                                            <Label isCompact color={route.passthrough ? 'green' : 'gold'}>
-                                              {route.passthrough ? 'Yes' : 'No'}
-                                            </Label>
-                                          </Td>
-                                        </Tr>
-                                      ))}
-                                    </Tbody>
-                                  </Table>
+                                  <TreeView
+                                    data={pluginsToTreeData(authBridgeConfig.pipeline!.inbound!.plugins)}
+                                    aria-label="AuthBridge inbound plugins"
+                                  />
+                                </DescriptionListDescription>
+                              </DescriptionListGroup>
+                            )}
+                            {(authBridgeConfig.pipeline?.outbound?.plugins?.length ?? 0) > 0 && (
+                              <DescriptionListGroup>
+                                <DescriptionListTerm>Outbound Plugins</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                  <TreeView
+                                    data={pluginsToTreeData(authBridgeConfig.pipeline!.outbound!.plugins)}
+                                    aria-label="AuthBridge outbound plugins"
+                                  />
                                 </DescriptionListDescription>
                               </DescriptionListGroup>
                             )}

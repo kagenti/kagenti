@@ -36,7 +36,7 @@
     "@playwright/test": "~1.59.1",
     "playwright": "^1.50.1",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.6.1",
+    "@types/node": "^25.6.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^7.15.0",

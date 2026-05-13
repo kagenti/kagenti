@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     kagenti_feature_flag_agent_sandbox: bool = False
     kagenti_feature_flag_authbridge_api: bool = False
     kagenti_feature_flag_skills: bool = False
+    kagenti_feature_flag_admin: bool = False
     kagenti_feature_flag_sidecars: bool = (
         False  # sidecar agents (looper, hallucination, context guardian)
     )
