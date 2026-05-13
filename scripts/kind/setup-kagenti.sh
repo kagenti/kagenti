@@ -196,8 +196,8 @@ echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
 echo "    Preload imgs:  $PRELOAD_IMAGES"
-echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]}"
-echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]}"
+echo "    Kagenti helm --values overrides: ${KAGENTI_VALUES_FILES[*]:-}"
+echo "    Kagenti-deps helm --values overrides: ${KAGENTI_DEPS_VALUES_FILES[*]:-}"
 echo ""
 
 for cmd in helm kubectl; do
@@ -552,7 +552,7 @@ DEPS_FLAGS=(
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "components.rhoai.enabled=false"
 )
-DEPS_FLAGS=( "${DEPS_FLAGS[@]}" "${KAGENTI_DEPS_VALUES_FILES[@]}" )
+DEPS_FLAGS=( "${DEPS_FLAGS[@]}" ${KAGENTI_DEPS_VALUES_FILES[@]+"${KAGENTI_DEPS_VALUES_FILES[@]}"} )
 
 log_info "Installing kagenti-deps..."
 # --skip-crds: Gateway API CRDs already installed in Step 5 at a newer version;
@@ -1103,7 +1103,7 @@ KAGENTI_FLAGS=(
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
 )
-KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" "${KAGENTI_VALUES_FILES[@]}" )
+KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 
 # When --build-images is set, the build step tags images ":latest" and loads
 # them into Kind (see list above). Override the chart's release-pinned tags
