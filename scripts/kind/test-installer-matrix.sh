@@ -122,6 +122,48 @@ done
 log_success "All prerequisites found"
 
 mkdir -p "$LOG_DIR"
+
+# ── Setup script argument parsing validation ───────────────────────────────
+log_info "Validating setup-kagenti.sh argument parsing..."
+SETUP_SCRIPT="$REPO_ROOT/scripts/kind/setup-kagenti.sh"
+VALIDATION_FAILED=false
+
+# Test 1: Default case (no flags) - would have caught the unbound variable bug
+if ! OUTPUT=$("$SETUP_SCRIPT" --dry-run --skip-cluster </dev/null 2>&1 | head -30 || true); then
+  log_error "Setup script crashed with default settings"
+  VALIDATION_FAILED=true
+elif ! echo "$OUTPUT" | grep -q "Kagenti helm --values overrides:"; then
+  log_error "Setup script didn't reach config display"
+  VALIDATION_FAILED=true
+fi
+
+# Test 2: Verify 'none' is displayed for empty values overrides
+if ! echo "$OUTPUT" | grep -q "Kagenti helm --values overrides: none"; then
+  log_error "Setup script doesn't show 'none' for empty kagenti values"
+  VALIDATION_FAILED=true
+fi
+if ! echo "$OUTPUT" | grep -q "Kagenti-deps helm --values overrides: none"; then
+  log_error "Setup script doesn't show 'none' for empty kagenti-deps values"
+  VALIDATION_FAILED=true
+fi
+
+# Test 3: Verify script handles --kagenti-values override
+OUTPUT=$("$SETUP_SCRIPT" --dry-run --skip-cluster --kagenti-values test.yaml </dev/null 2>&1 | head -30 || true)
+if ! echo "$OUTPUT" | grep -q "Kagenti helm --values overrides: --values test.yaml"; then
+  log_error "Setup script doesn't handle --kagenti-values correctly"
+  VALIDATION_FAILED=true
+fi
+
+# Test 4: Verify strict mode is enabled
+if ! head -30 "$SETUP_SCRIPT" | grep -q "set -euo pipefail"; then
+  log_warn "Setup script missing strict mode (set -euo pipefail)"
+fi
+
+if $VALIDATION_FAILED; then
+  log_error "Setup script validation failed"
+  exit 1
+fi
+log_success "Setup script argument parsing validated"
 echo ""
 
 # ── Result tracking ────────────────────────────────────────────────────────
