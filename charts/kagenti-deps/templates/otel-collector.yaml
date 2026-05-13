@@ -167,3 +167,22 @@ data:
   base.yaml: |
     {{- include "kagenti.otel.collectorConfig" . | nindent 4 }}
 {{- end }}
+{{- if and .Values.components.otel.enabled .Values.components.mcpGateway.enabled }}
+---
+# Allow workloads to push traces to the OTel collector.
+# Covers MCP Gateway router (mcp-system) and agent namespaces (team1, team2, kagenti-system).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: otel-collector-from-mcp-system
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  action: ALLOW
+  rules:
+  - {}
+{{- end }}
