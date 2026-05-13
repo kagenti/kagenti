@@ -27,11 +27,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff pytest pre-commit uv
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          uv tool install ruff==0.15.12
+          uv tool install pytest==9.0.3
+          uv tool install pre-commit==4.6.0
+          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
 
       - name: Lint with ruff
         run: |
@@ -73,7 +77,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev

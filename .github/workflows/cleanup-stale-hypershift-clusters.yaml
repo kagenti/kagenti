@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Install OpenShift CLI
         run: |
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload deletion logs
         if: github.event.inputs.dry_run == 'false' && always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: cleanup-logs-${{ github.run_id }}
           path: /tmp/cleanup-*.log
@@ -117,7 +117,7 @@ jobs:
 
       - name: Create audit issue for deletions
         if: github.event.inputs.dry_run == 'false' && success()
-        uses: actions/github-script@v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             const fs = require('fs');
