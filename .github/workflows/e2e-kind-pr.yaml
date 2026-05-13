@@ -59,11 +59,11 @@ jobs:
       - name: Free up disk space
         run: bash .github/scripts/common/05-free-disk-space.sh
 
-      - name: Install dependencies (jq, uv)
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y jq
-          python -m pip install --upgrade pip
-          pip install uv==0.11.13
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Install dependencies (jq)
+        run: sudo apt-get update -qq && sudo apt-get install -y jq
 
       - name: Create secrets for bash installer
         run: bash .github/scripts/common/20-create-secrets-bash.sh
