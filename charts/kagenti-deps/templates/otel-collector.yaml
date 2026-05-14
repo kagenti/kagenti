@@ -167,3 +167,22 @@ data:
   base.yaml: |
     {{- include "kagenti.otel.collectorConfig" . | nindent 4 }}
 {{- end }}
+{{- if .Values.components.otel.enabled }}
+---
+# Allow any mesh workload to push traces to the OTel collector.
+# Open allow-all on the collector workload avoids hardcoding agent or MCP gateway namespaces.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: otel-collector-from-mcp-system
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  action: ALLOW
+  rules:
+  - {}
+{{- end }}

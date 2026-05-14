@@ -181,6 +181,7 @@ otel:
       tag: "0.122.1"
     service: otel-collector.kagenti-system.svc.cluster.local
     port: 4317
+
     # Base collector configuration rendered as the ConfigMap base.yaml.
     # Override any key via values files or --set flags.
     config:
@@ -295,7 +296,8 @@ otel:
           traces:
             span:
               - 'IsMatch(name, "^a2a\\..*")'
-              - 'attributes["http.method"] != nil'
+              - 'attributes["http.method"] != nil and IsMatch(name, "^(POST|GET|DELETE)$")'
+              - 'IsMatch(name, "^mcp-router\\..*") and (attributes["http.method"] == "GET" or attributes["http.method"] == "DELETE")'
               - 'attributes["mcp.method.name"] == "initialize"'
               - 'attributes["mcp.method.name"] == "notifications/initialized"'
               - 'attributes["mcp.method.name"] == "notifications/cancelled"'
