@@ -2861,18 +2861,7 @@ def _build_sandbox_manifest(
     shipwright_build_name: Optional[str] = None,
 ) -> dict:
     """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation."""
-    # Sandbox controller creates a headless Service with no port translation,
-    # so the container must listen on the same port clients connect to (the
-    # external service port, which is also baked into AGENT_ENDPOINT). For
-    # other workload types the Service port-translates to targetPort, so the
-    # split is fine there.
-    service_port = (
-        request.servicePorts[0].port if request.servicePorts else DEFAULT_OFF_CLUSTER_PORT
-    )
-    env_vars = [
-        {"name": "PORT", "value": str(service_port)} if ev.get("name") == "PORT" else ev
-        for ev in _build_env_vars(request)
-    ]
+    env_vars = _build_env_vars(request)
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
 
     annotations: Dict[str, str] = {
@@ -2881,7 +2870,9 @@ def _build_sandbox_manifest(
     if shipwright_build_name:
         annotations["kagenti.io/shipwright-build"] = shipwright_build_name
 
-    container_port = service_port
+    container_port = DEFAULT_IN_CLUSTER_PORT
+    if request.servicePorts and len(request.servicePorts) > 0:
+        container_port = request.servicePorts[0].targetPort
 
     manifest = {
         "apiVersion": f"{AGENT_SANDBOX_CRD_GROUP}/{AGENT_SANDBOX_CRD_VERSION}",
@@ -2894,6 +2885,7 @@ def _build_sandbox_manifest(
         },
         "spec": {
             "replicas": 1,
+            "service": False,
             "podTemplate": {
                 "metadata": {
                     "labels": {
