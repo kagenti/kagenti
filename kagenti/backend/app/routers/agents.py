@@ -2610,7 +2610,7 @@ def _build_service_manifest(request: "CreateAgentRequest") -> dict:
     Returns:
         Service manifest dictionary.
     """
-    labels = _build_common_labels(request, WORKLOAD_TYPE_DEPLOYMENT)
+    labels = _build_common_labels(request, request.workloadType)
     selector_labels = _build_selector_labels(request)
 
     # Build service ports
@@ -3064,8 +3064,8 @@ async def create_agent(
                 )
                 logger.info(f"Created Sandbox '{request.name}' in namespace '{request.namespace}'")
 
-            # Create Service (not needed for Jobs or Sandboxes)
-            if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+            # Create Service (not needed for Jobs — Sandbox uses backend-managed Service)
+            if request.workloadType != WORKLOAD_TYPE_JOB:
                 service_manifest = _build_service_manifest(request)
                 kube.create_service(
                     namespace=request.namespace,
