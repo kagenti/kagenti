@@ -56,14 +56,14 @@ class TestBuildSandboxManifest:
         port_env = next(ev for ev in container["env"] if ev.get("name") == "PORT")
         assert port_env["value"] == str(DEFAULT_IN_CLUSTER_PORT)
 
-    def test_service_disabled(self):
-        """Sandbox spec must set service: false to disable auto-generated headless Service."""
+    def test_no_service_field_in_spec(self):
+        """Sandbox spec must NOT include a service field (unsupported in released CRD)."""
         from app.routers.agents import _build_sandbox_manifest
 
         request = _make_request()
         manifest = _build_sandbox_manifest(request=request, image="test:latest")
 
-        assert manifest["spec"]["service"] is False
+        assert "service" not in manifest["spec"]
 
     def test_custom_service_ports_override_container_port(self):
         """When servicePorts are provided, containerPort uses targetPort from first entry."""
