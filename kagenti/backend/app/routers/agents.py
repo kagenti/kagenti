@@ -3066,11 +3066,27 @@ async def create_agent(
             # Create Service (not needed for Jobs — Sandbox uses backend-managed Service)
             if request.workloadType != WORKLOAD_TYPE_JOB:
                 service_manifest = _build_service_manifest(request)
-                kube.create_service(
-                    namespace=request.namespace,
-                    body=service_manifest,
-                )
-                logger.info(f"Created Service '{request.name}' in namespace '{request.namespace}'")
+                try:
+                    kube.create_service(
+                        namespace=request.namespace,
+                        body=service_manifest,
+                    )
+                    logger.info(
+                        f"Created Service '{request.name}' in namespace '{request.namespace}'"
+                    )
+                except ApiException as e:
+                    if e.status == 409 and request.workloadType == WORKLOAD_TYPE_SANDBOX:
+                        logger.warning(
+                            f"Service '{request.name}' already exists (Sandbox controller race); "
+                            f"replacing with backend-managed ClusterIP Service"
+                        )
+                        kube.delete_service(namespace=request.namespace, name=request.name)
+                        kube.create_service(namespace=request.namespace, body=service_manifest)
+                        logger.info(
+                            f"Replaced Service '{request.name}' in namespace '{request.namespace}'"
+                        )
+                    else:
+                        raise
 
             # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
             if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):

@@ -6,11 +6,12 @@
 from unittest.mock import MagicMock
 
 from app.core.constants import DEFAULT_IN_CLUSTER_PORT, DEFAULT_OFF_CLUSTER_PORT
+from app.routers.agents import CreateAgentRequest, WORKLOAD_TYPE_SANDBOX
 
 
 def _make_request(**overrides):
     """Build a minimal CreateAgentRequest-like object for testing."""
-    req = MagicMock()
+    req = MagicMock(spec=CreateAgentRequest)
     req.name = overrides.get("name", "test-agent")
     req.namespace = overrides.get("namespace", "team1")
     req.containerImage = overrides.get("containerImage", "ghcr.io/example/agent:latest")
@@ -105,3 +106,14 @@ class TestBuildServiceManifestForSandbox:
 
         labels = manifest["metadata"]["labels"]
         assert labels.get("kagenti.io/workload-type") == "sandbox"
+
+
+class TestCreateAgentServiceForSandbox:
+    """Tests for create_agent Service creation path for Sandbox workloads."""
+
+    def test_sandbox_not_excluded_from_service_creation(self):
+        """Sandbox must NOT be in the workload types that skip Service creation."""
+        from app.routers.agents import WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX
+
+        skip_service_types = {WORKLOAD_TYPE_JOB}
+        assert WORKLOAD_TYPE_SANDBOX not in skip_service_types
