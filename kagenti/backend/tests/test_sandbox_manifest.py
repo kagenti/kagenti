@@ -113,7 +113,7 @@ class TestCreateAgentServiceForSandbox:
 
     def test_sandbox_not_excluded_from_service_creation(self):
         """Sandbox must NOT be in the workload types that skip Service creation."""
-        from app.routers.agents import WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX
+        from app.routers.agents import WORKLOAD_TYPE_JOB
 
         skip_service_types = {WORKLOAD_TYPE_JOB}
         assert WORKLOAD_TYPE_SANDBOX not in skip_service_types
