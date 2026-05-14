@@ -167,7 +167,7 @@ data:
   base.yaml: |
     {{- include "kagenti.otel.collectorConfig" . | nindent 4 }}
 {{- end }}
-{{- if and .Values.components.otel.enabled .Values.components.mcpGateway.enabled }}
+{{- if .Values.components.otel.enabled }}
 ---
 # Allow any mesh workload to push traces to the OTel collector.
 # Open allow-all on the collector workload avoids hardcoding agent or MCP gateway namespaces.
