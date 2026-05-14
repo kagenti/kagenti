@@ -296,7 +296,7 @@ otel:
           traces:
             span:
               - 'IsMatch(name, "^a2a\\..*")'
-              - 'name == "POST" or name == "GET" or name == "DELETE"'
+              - 'attributes["http.method"] != nil and IsMatch(name, "^(POST|GET|DELETE)$")'
               - 'IsMatch(name, "^mcp-router\\..*") and (attributes["http.method"] == "GET" or attributes["http.method"] == "DELETE")'
               - 'attributes["mcp.method.name"] == "initialize"'
               - 'attributes["mcp.method.name"] == "notifications/initialized"'
