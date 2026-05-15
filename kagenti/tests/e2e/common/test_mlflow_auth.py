@@ -251,10 +251,19 @@ class TestMLflowAuth:
     @pytest.mark.asyncio
     async def test_mlflow_version_endpoint(self, require_mlflow_url, is_openshift):
         """
-        Test MLflow /version endpoint is accessible.
+        Test MLflow /version endpoint responds correctly to auth state.
 
-        When OIDC auth is enabled, the /version endpoint may redirect (302/307)
-        to the login page. Both 200 (no auth) and 302/307 (auth enabled) are valid.
+        mlflow-oidc-auth protects /version with session authentication
+        (see commit 63366cb0 where pod probes were moved to /health for
+        the same reason). For an unauthenticated request the endpoint
+        may legitimately return:
+            * 200 — auth is disabled
+            * 302/307 — auth enabled and configured to redirect to the
+              login page
+            * 401/403 — auth enabled and configured to reject directly
+              (the default mlflow-oidc-auth behavior)
+        Any of those means MLflow is up and the auth gate is doing
+        what it's supposed to. Other codes are real failures.
         """
         mlflow_url = require_mlflow_url
         logger.info("=" * 70)
@@ -274,16 +283,19 @@ class TestMLflowAuth:
         logger.info(f"Response status: {response.status_code}")
         logger.info(f"Response body: {response.text}")
 
-        # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
-        assert response.status_code in (200, 302, 307), (
+        assert response.status_code in (200, 302, 307, 401, 403), (
             f"MLflow /version endpoint failed: {response.status_code} - {response.text}"
         )
 
         if response.status_code == 200:
             logger.info("TEST PASSED: MLflow version endpoint accessible (no auth)")
-        else:
+        elif response.status_code in (302, 307):
             logger.info(
                 f"TEST PASSED: MLflow version endpoint redirects to auth ({response.status_code})"
+            )
+        else:
+            logger.info(
+                f"TEST PASSED: MLflow version endpoint enforces auth ({response.status_code})"
             )
 
     @pytest.mark.asyncio
@@ -463,8 +475,11 @@ class TestMLflowBackend:
         """
         Test MLflow responds to health check.
 
-        Uses /version endpoint. When OIDC auth is enabled, a 302/307 redirect
-        to the login page indicates MLflow is healthy and auth is working.
+        Uses /health, not /version: mlflow-oidc-auth protects /version with
+        session auth and returns 401 to unauthenticated probes (commit
+        63366cb0 moved the pod liveness/readiness probes to /health for
+        exactly this reason). /health is unprotected by the OIDC middleware
+        and is the right surface for "is MLflow up."
         """
         mlflow_url = require_mlflow_url
         logger.info("Testing: MLflow Health Check")
@@ -472,25 +487,16 @@ class TestMLflowBackend:
         try:
             response = await query_mlflow_api(
                 mlflow_url=mlflow_url,
-                endpoint="/version",
+                endpoint="/health",
                 token=None,
                 timeout=10,
                 verify_ssl=self.ssl_verify,
             )
 
-            # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
-            assert response.status_code in (200, 302, 307), (
-                f"MLflow health check failed: {response.status_code}"
+            assert response.status_code == 200, (
+                f"MLflow /health failed: {response.status_code} - {response.text}"
             )
-
-            if response.status_code == 200:
-                version = response.text.strip().strip('"')
-                logger.info(f"MLflow version: {version}")
-                logger.info("TEST PASSED: MLflow is healthy (no auth)")
-            else:
-                logger.info(
-                    f"TEST PASSED: MLflow is healthy (auth redirect {response.status_code})"
-                )
+            logger.info("TEST PASSED: MLflow is healthy (/health returned 200)")
 
         except httpx.ConnectError as e:
             pytest.fail(f"Could not connect to MLflow at {mlflow_url}: {e}")
