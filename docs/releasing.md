@@ -68,7 +68,7 @@ artifacts when a tag is pushed:
 | Repository | Artifacts on tag push | CI workflow(s) |
 |------------|----------------------|----------------|
 | [kagenti/kagenti](https://github.com/kagenti/kagenti) | Container images (ui-v2, backend, oauth-secrets), Helm charts (kagenti, kagenti-deps) | `build.yaml` |
-| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (authbridge-envoy, authbridge-light, proxy-init, client-registration, spiffe-helper) | `build.yaml` |
+| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (authbridge, authbridge-envoy, authbridge-lite, proxy-init) | `build.yaml` |
 | [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator) | Operator image, Helm chart (kagenti-operator-chart) | repo-specific |
 | [kagenti/agent-examples](https://github.com/kagenti/agent-examples) | Sample agent/tool images | repo-specific |
 

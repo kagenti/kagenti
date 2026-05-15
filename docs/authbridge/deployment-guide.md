@@ -2,39 +2,68 @@
 
 ## Deployment Modes
 
-AuthBridge supports deployment modes `envoy-sidecar`, `waypoint`, and `proxy-sidecar`.
-The proxy-sidecar mode is the recommended default for most environments.
+AuthBridge ships three combined sidecar images, each hardcoded to its
+deployment shape (kagenti-extensions#411):
 
-| | Proxy-Sidecar (default) | Envoy-Sidecar (advanced) |
-|---|---|---|
-| **Containers per pod** | 1 sidecar | 2+ (Envoy + processor + init) |
-| **Memory overhead** | ~15-30 MB | ~150-200 MB |
-| **Privileged mode** | No | Yes (iptables init) |
-| **Interception** | HTTP_PROXY env vars | iptables NAT rules |
-| **Debugging** | Standard HTTP proxy logs | iptables chains + Envoy stats + ext_proc |
-| **Image** | `authbridge-light` (29 MB, distroless) | `authbridge-envoy` (140 MB, UBI9-micro) |
-| **Use when** | Standard deployments | Need transparent interception of non-HTTP protocols |
+| | `authbridge` (proxy-sidecar, default) | `authbridge-envoy` (envoy-sidecar, advanced) | `authbridge-lite` (proxy-sidecar, auth-only) |
+|---|---|---|---|
+| **Containers per pod** | 1 combined sidecar | 1 combined sidecar + proxy-init container | 1 combined sidecar |
+| **Privileged mode** | No | Yes (iptables init) | No |
+| **Interception** | HTTP_PROXY env vars | iptables NAT rules | HTTP_PROXY env vars |
+| **Plugins included** | jwt-validation + token-exchange + a2a/mcp/inference parsers | Same as proxy-sidecar | jwt-validation + token-exchange only |
+| **Use when** | Standard deployments | Need transparent interception of non-HTTP protocols | Size-constrained / no protocol-aware events |
+
+`spiffe-helper` is bundled inside every combined image and runs only when the
+operator sets `SPIRE_ENABLED=true` on the workload (driven by the
+`kagenti.io/spire: enabled` label). Client registration is handled by the
+operator's reconciler — there's no in-pod client-registration sidecar.
+
+## Selecting a mode
+
+The operator resolves mode per workload from this chain
+(kagenti-operator#361):
+
+1. `AgentRuntime.Spec.AuthBridgeMode` on the workload's CR (canonical).
+2. `mode:` field on the namespace-level `authbridge-runtime-config` ConfigMap.
+3. The deprecated `kagenti.io/authbridge-mode` pod annotation (still honored).
+4. Cluster-wide default (`proxy-sidecar`).
+
+```yaml
+# Canonical: per-workload override on the AgentRuntime CR
+apiVersion: kagenti.io/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-service
+spec:
+  authBridgeMode: envoy-sidecar
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-service
+```
+
+The deprecated annotation is retained for tools and other workloads that
+don't have their own AgentRuntime CR yet:
+
+```yaml
+metadata:
+  labels:
+    kagenti.io/type: tool
+  annotations:
+    kagenti.io/authbridge-mode: "envoy-sidecar"
+```
 
 ## Proxy-Sidecar Mode (Default)
 
 ### How It Works
 
-The Kagenti operator webhook automatically injects the AuthBridge sidecar when it
-detects the `kagenti.io/type: agent` label on a pod:
+The Kagenti operator webhook injects a single `authbridge` container when
+the workload's resolved mode is `proxy-sidecar`:
 
 1. The reverse proxy takes over the agent's original port (e.g., `:8000`)
 2. The agent is moved to a free port (e.g., `:8001`) via `PORT` env var
 3. `HTTP_PROXY` and `HTTPS_PROXY` env vars are injected into the agent container
 4. The Kubernetes Service targetPort remains unchanged — traffic flows through the proxy
-
-```yaml
-# To use proxy-sidecar mode, annotate your workload:
-metadata:
-  labels:
-    kagenti.io/type: agent
-  annotations:
-    kagenti.io/authbridge-mode: "proxy-sidecar"
-```
 
 ### Traffic Flow
 
@@ -46,83 +75,80 @@ Outbound:  Agent → HTTP_PROXY → Forward Proxy → Token Exchange → Externa
 ## Envoy-Sidecar Mode (Advanced)
 
 For environments that require transparent interception of all TCP traffic
-(not just HTTP), the Envoy-sidecar mode uses iptables to redirect traffic:
+(not just HTTP), envoy-sidecar mode uses iptables to redirect traffic
+through Envoy with an ext_proc gRPC filter:
 
 ```yaml
-# Envoy-sidecar is the default if no annotation is set, but will change to
-# proxy-sidecar in a future release
-metadata:
-  labels:
-    kagenti.io/type: agent
-  # No annotation = envoy-sidecar (current default)
+spec:
+  authBridgeMode: envoy-sidecar
 ```
 
-This mode requires privileged mode for the iptables init container and adds
-a sidecar running [Envoy](https://www.envoyproxy.io/docs/envoy/latest/) as a
-dependency. Use it only when you need protocol-level transparent interception.
+This mode requires privileged mode for the `proxy-init` iptables init
+container and uses [Envoy](https://www.envoyproxy.io/docs/envoy/latest/)
+as the data path inside the combined `authbridge-envoy` container. Use it
+only when you need protocol-level transparent interception.
 
 ## Configuration
 
 AuthBridge is configured via YAML with `${ENV_VAR}` expansion. The operator
 mounts the configuration from a ConfigMap such as `authbridge-config-weather-service`.
 
-### Minimal Proxy-Sidecar Config
+After kagenti-extensions#411 the runtime config uses a per-plugin
+schema: every plugin-specific setting lives under its own `config:`
+block inside `pipeline.inbound.plugins[]` or
+`pipeline.outbound.plugins[]`. Plugin-level defaults (audience_file,
+bypass_paths, identity file paths) are applied by the authbridge
+binary itself — see `authbridge/authlib/plugins/CONVENTIONS.md` in
+kagenti-extensions for the full reference. The chart-rendered
+ConfigMaps and the backend's per-agent ConfigMap renderer both emit
+this shape.
+
+### Minimal config (mode-agnostic)
 
 ```yaml
-mode: proxy-sidecar
-listener:
-  reverse_proxy_backend: "http://localhost:8081"
-inbound:
-  issuer: "${ISSUER}"
-outbound:
-  keycloak_url: "${KEYCLOAK_URL}"
-  keycloak_realm: "${KEYCLOAK_REALM}"
-identity:
-  type: spiffe
-  client_id: "${CLIENT_ID}"
-  jwt_svid_path: "/opt/jwt_svid.token"
-routes:
-  rules:
-    - host: "weather-api.example.com"
-      target_audience: "weather-api"
-```
-
-### Minimal Envoy-Sidecar Config
-
-```yaml
-mode: envoy-sidecar
-inbound:
-  issuer: "${ISSUER}"
-outbound:
-  keycloak_url: "${KEYCLOAK_URL}"
-  keycloak_realm: "${KEYCLOAK_REALM}"
-  default_policy: "passthrough"
-identity:
-  type: spiffe
-  client_id: "${CLIENT_ID}"
-  jwt_svid_path: "/opt/jwt_svid.token"
-routes:
-  file: "/etc/authproxy/routes.yaml"
+# No top-level mode: — the operator resolves it per workload (CR →
+# namespace ConfigMap → annotation → cluster default) and layers the
+# resolved value onto each per-agent ConfigMap.
+pipeline:
+  inbound:
+    plugins:
+      - name: jwt-validation
+        config:
+          issuer: "${ISSUER}"
+          keycloak_url: "${KEYCLOAK_URL}"
+          keycloak_realm: "${KEYCLOAK_REALM}"
+  outbound:
+    plugins:
+      - name: token-exchange
+        config:
+          keycloak_url: "${KEYCLOAK_URL}"
+          keycloak_realm: "${KEYCLOAK_REALM}"
+          default_policy: "passthrough"
+          identity:
+            type: spiffe
 ```
 
 ### Configuration Reference
 
-| Field | Description | Default |
-|---|---|---|
-| `mode` | Deployment mode: `proxy-sidecar`, `envoy-sidecar`, `waypoint` | `envoy-sidecar` |
-| `inbound.issuer` | Expected JWT issuer for inbound validation | Derived from keycloak_url |
-| `inbound.jwks_url` | JWKS endpoint for signature verification | Derived from token_url |
-| `outbound.token_url` | Keycloak token endpoint | Derived from keycloak_url + realm |
-| `outbound.keycloak_url` | Keycloak base URL | Required |
-| `outbound.keycloak_realm` | Keycloak realm name | Required |
-| `outbound.default_policy` | `passthrough` or `exchange` | `passthrough` |
-| `identity.type` | `spiffe` or `client-secret` | Required |
-| `identity.client_id` | OAuth client ID (or file path with `client_id_file`) | Required |
-| `identity.jwt_svid_path` | Path to SPIFFE JWT-SVID token file | — |
-| `routes.rules[].host` | Glob pattern for destination host | — |
-| `routes.rules[].target_audience` | OAuth audience for token exchange | — |
-| `routes.rules[].token_scopes` | Space-separated scopes to request | `openid` |
-| `bypass.inbound_paths` | Paths to skip inbound JWT validation | `/.well-known/*, /healthz, /readyz, /livez` |
+The fields below appear inside each plugin's `config:` block, not at
+the top level. See `authbridge/docs/plugin-reference.md` in
+kagenti-extensions for the per-plugin authoritative reference.
+
+| Field | Plugin | Description | Default |
+|---|---|---|---|
+| `mode` (top-level) | — | Deployment mode: `proxy-sidecar`, `envoy-sidecar`, `lite`, `waypoint`. Usually unset; layered in by the operator. | `proxy-sidecar` |
+| `issuer` | jwt-validation | Expected JWT issuer for inbound validation | Derived from keycloak_url |
+| `jwks_url` | jwt-validation | JWKS endpoint for signature verification | Derived from issuer |
+| `keycloak_url` | jwt-validation, token-exchange | Internal Keycloak base URL | Required |
+| `keycloak_realm` | jwt-validation, token-exchange | Keycloak realm name | Required |
+| `token_url` | token-exchange | Keycloak token endpoint | Derived from keycloak_url + realm |
+| `default_policy` | token-exchange | `passthrough` or `exchange` | `passthrough` |
+| `identity.type` | token-exchange | `spiffe` or `client-secret` | Required |
+| `routes.file` | token-exchange | Path to `routes.yaml` (per-host token exchange rules) | `/etc/authproxy/routes.yaml` |
+| `routes.rules[].host` | token-exchange | Glob pattern for destination host | — |
+| `routes.rules[].target_audience` | token-exchange | OAuth audience for token exchange | — |
+| `routes.rules[].token_scopes` | token-exchange | Space-separated scopes to request | `openid` |
+| `bypass_paths` | jwt-validation | Paths to skip inbound JWT validation | `/.well-known/*, /healthz, /readyz, /livez` |
 
 ### URL Derivation
 
