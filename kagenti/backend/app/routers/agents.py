@@ -70,10 +70,6 @@ from app.core.constants import (
     # SPIRE identity constants
     KAGENTI_SPIRE_LABEL,
     KAGENTI_SPIRE_ENABLED_VALUE,
-    # Per-sidecar injection labels
-    KAGENTI_ENVOY_PROXY_INJECT_LABEL,
-    KAGENTI_SPIFFE_HELPER_INJECT_LABEL,
-    KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL,
     # Port exclusion annotations
     KAGENTI_OUTBOUND_PORTS_EXCLUDE,
     KAGENTI_INBOUND_PORTS_EXCLUDE,
@@ -244,13 +240,15 @@ class CreateAgentRequest(BaseModel):
 
     # AuthBridge sidecar injection (default enabled for agents)
     authBridgeEnabled: bool = True
-    # SPIRE identity (spiffe-helper sidecar injection)
+    # SPIRE identity (gates spiffe-helper inside the combined authbridge container)
     spireEnabled: bool = False
 
-    # Per-sidecar injection controls (None = use webhook defaults)
-    envoyProxyInject: Optional[bool] = None
-    spiffeHelperInject: Optional[bool] = None
-    clientRegistrationInject: Optional[bool] = None
+    # Per-workload AuthBridge mode override. Maps to
+    # AgentRuntime.Spec.AuthBridgeMode; when None the operator falls
+    # back through namespace ConfigMap → cluster default
+    # (proxy-sidecar). The lite/waypoint shapes are accepted by the
+    # operator but not surfaced through the UI today.
+    authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
 
     # Port exclusion annotations
     outboundPortsExclude: Optional[str] = None
@@ -2026,8 +2024,11 @@ def _build_authbridge_runtime_yaml(
     # kagenti-extensions#383.
     # Note: Remember to keep AuthBridgeConfig in kagenti/ui-v2/src/types/index.ts
     # in sync with this YAML runtime configuration.
+    # No top-level `mode:` — the operator resolves it per workload from
+    # AgentRuntime.Spec.AuthBridgeMode → namespace ConfigMap →
+    # cluster default (proxy-sidecar). Hardcoding it here would pin
+    # every backend-rendered ConfigMap to one shape regardless of CR.
     config = {
-        "mode": "envoy-sidecar",
         "pipeline": {
             "inbound": {
                 "plugins": [
@@ -2275,9 +2276,7 @@ def _build_agent_shipwright_build_manifest(
         "workloadType": request.workloadType,  # Store workload type for finalization
         "authBridgeEnabled": request.authBridgeEnabled,
         "spireEnabled": request.spireEnabled,
-        "envoyProxyInject": request.envoyProxyInject,
-        "spiffeHelperInject": request.spiffeHelperInject,
-        "clientRegistrationInject": request.clientRegistrationInject,
+        "authBridgeMode": request.authBridgeMode,
     }
     if request.outboundRoutes:
         resource_config["outboundRoutes"] = [r.model_dump() for r in request.outboundRoutes]
@@ -2406,14 +2405,10 @@ def _build_common_labels(
     # Protocol label(s) using new prefix format
     if request.protocol:
         labels[f"{PROTOCOL_LABEL_PREFIX}{request.protocol}"] = ""
-    # SPIRE identity label (triggers spiffe-helper sidecar injection by kagenti-webhook)
+    # SPIRE identity label — the operator's webhook reads this to set
+    # SPIRE_ENABLED=true on the combined sidecar's spiffe-helper.
     if request.spireEnabled:
         labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
-    # Per-sidecar injection labels (opt-out for envoy/spiffe, opt-in for client-registration)
-    if request.envoyProxyInject is False:
-        labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
-    if request.spiffeHelperInject is False:
-        labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
     return labels
 
 
@@ -2448,12 +2443,23 @@ def _build_agentruntime_manifest(
     namespace: str,
     workload_type: str,
     agent_type: str = RESOURCE_TYPE_AGENT,
+    auth_bridge_mode: Optional[str] = None,
 ) -> dict:
     """Build an AgentRuntime CR manifest for the given workload."""
     kind_map = {
         WORKLOAD_TYPE_DEPLOYMENT: "Deployment",
         WORKLOAD_TYPE_STATEFULSET: "StatefulSet",
     }
+    spec: dict = {
+        "type": agent_type,
+        "targetRef": {
+            "apiVersion": "apps/v1",
+            "kind": kind_map.get(workload_type, "Deployment"),
+            "name": name,
+        },
+    }
+    if auth_bridge_mode:
+        spec["authBridgeMode"] = auth_bridge_mode
     return {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "AgentRuntime",
@@ -2465,14 +2471,7 @@ def _build_agentruntime_manifest(
                 APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
             },
         },
-        "spec": {
-            "type": agent_type,
-            "targetRef": {
-                "apiVersion": "apps/v1",
-                "kind": kind_map.get(workload_type, "Deployment"),
-                "name": name,
-            },
-        },
+        "spec": spec,
     }
 
 
@@ -2482,9 +2481,12 @@ def _ensure_agentruntime(
     namespace: str,
     workload_type: str,
     agent_type: str = RESOURCE_TYPE_AGENT,
+    auth_bridge_mode: Optional[str] = None,
 ) -> None:
     """Create an AgentRuntime CR for the workload. Skip if it already exists."""
-    manifest = _build_agentruntime_manifest(name, namespace, workload_type, agent_type)
+    manifest = _build_agentruntime_manifest(
+        name, namespace, workload_type, agent_type, auth_bridge_mode
+    )
     try:
         kube.create_custom_resource(
             group=CRD_GROUP,
@@ -3088,6 +3090,7 @@ async def create_agent(
                     name=request.name,
                     namespace=request.namespace,
                     workload_type=request.workloadType,
+                    auth_bridge_mode=request.authBridgeMode,
                 )
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
@@ -3208,9 +3211,7 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     createHttpRoute: Optional[bool] = None
     authBridgeEnabled: Optional[bool] = None
     imagePullSecret: Optional[str] = None
-    envoyProxyInject: Optional[bool] = None
-    spiffeHelperInject: Optional[bool] = None
-    clientRegistrationInject: Optional[bool] = None
+    authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
     outboundRoutes: Optional[List[OutboundRoute]] = None
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -3457,21 +3458,11 @@ async def finalize_shipwright_build(
         elif stored_routes:
             final_outbound_routes = [OutboundRoute(**r) for r in stored_routes]
 
-        # Per-sidecar injection controls
-        final_envoy_proxy_inject = (
-            request.envoyProxyInject
-            if request.envoyProxyInject is not None
-            else stored_config.get("envoyProxyInject")
-        )
-        final_spiffe_helper_inject = (
-            request.spiffeHelperInject
-            if request.spiffeHelperInject is not None
-            else stored_config.get("spiffeHelperInject")
-        )
-        final_client_registration_inject = (
-            request.clientRegistrationInject
-            if request.clientRegistrationInject is not None
-            else stored_config.get("clientRegistrationInject")
+        # Per-workload AuthBridge mode override
+        final_auth_bridge_mode = (
+            request.authBridgeMode
+            if request.authBridgeMode is not None
+            else stored_config.get("authBridgeMode")
         )
 
         # Step 3: Create workload + Service with the built image
@@ -3490,9 +3481,7 @@ async def finalize_shipwright_build(
             createHttpRoute=final_create_route,
             authBridgeEnabled=final_auth_bridge,
             spireEnabled=final_spire_enabled,
-            envoyProxyInject=final_envoy_proxy_inject,
-            spiffeHelperInject=final_spiffe_helper_inject,
-            clientRegistrationInject=final_client_registration_inject,
+            authBridgeMode=final_auth_bridge_mode,
             outboundRoutes=final_outbound_routes,
             outboundPortsExclude=final_outbound_ports_exclude,
             inboundPortsExclude=final_inbound_ports_exclude,
@@ -3627,6 +3616,7 @@ async def finalize_shipwright_build(
                 name=name,
                 namespace=namespace,
                 workload_type=final_workload_type,
+                auth_bridge_mode=final_auth_bridge_mode,
             )
 
         message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."
