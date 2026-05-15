@@ -237,6 +237,7 @@ export const agentService = {
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
     defaultOutboundPolicy?: string;
+    persistentStorage?: { enabled: boolean; size: string };
     shipwrightConfig?: ShipwrightBuildConfig;
   }): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
     return apiFetch('/agents', {

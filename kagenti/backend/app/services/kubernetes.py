@@ -790,6 +790,19 @@ class KubernetesService:
             body,
         )
 
+    def list_persistent_volume_claims(
+        self, namespace: str, label_selector: Optional[str] = None
+    ) -> List[str]:
+        """List PVC names in a namespace, optionally filtered by label."""
+        result = self.core_api.list_namespaced_persistent_volume_claim(
+            namespace=namespace, label_selector=label_selector or ""
+        )
+        return [pvc.metadata.name for pvc in result.items]
+
+    def delete_persistent_volume_claim(self, namespace: str, name: str) -> None:
+        """Delete a PersistentVolumeClaim by name."""
+        self.core_api.delete_namespaced_persistent_volume_claim(name=name, namespace=namespace)
+
 
 @lru_cache
 def get_kubernetes_service() -> KubernetesService:

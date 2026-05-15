@@ -172,6 +172,9 @@ export const ImportAgentPage: React.FC = () => {
     features.agentSandbox ? 'sandbox' : 'deployment'
   );
 
+  // Persistent storage (Sandbox / StatefulSet)
+  const [persistentStorageSize, setPersistentStorageSize] = useState('1Gi');
+
   // Sync default when feature flags load async (first page load before cache is warm)
   useEffect(() => {
     if (features.agentSandbox) {
@@ -503,6 +506,10 @@ export const ImportAgentPage: React.FC = () => {
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
+        // Persistent storage (Sandbox / StatefulSet)
+        persistentStorage: (workloadType === 'sandbox' || workloadType === 'statefulset')
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
         // Shipwright build configuration (always enabled)
         shipwrightConfig,
       });
@@ -534,6 +541,10 @@ export const ImportAgentPage: React.FC = () => {
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
+        // Persistent storage (Sandbox / StatefulSet)
+        persistentStorage: (workloadType === 'sandbox' || workloadType === 'statefulset')
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
       });
     }
   };
@@ -1021,6 +1032,24 @@ export const ImportAgentPage: React.FC = () => {
                   </HelperText>
                 </FormHelperText>
               </FormGroup>
+
+              {(workloadType === 'sandbox' || workloadType === 'statefulset') && (
+                <FormGroup label="Persistent Volume Size" fieldId="persistentStorageSize">
+                  <TextInput
+                    id="persistentStorageSize"
+                    value={persistentStorageSize}
+                    onChange={(_e, value) => setPersistentStorageSize(value)}
+                    placeholder="1Gi"
+                  />
+                  <FormHelperText>
+                    <HelperText>
+                      <HelperTextItem>
+                        Size of the persistent volume claim (e.g., 1Gi, 5Gi, 10Gi)
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                </FormGroup>
+              )}
 
               {/* HTTPRoute/Route Creation */}
               <FormGroup fieldId="createHttpRoute">

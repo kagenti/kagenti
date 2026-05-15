@@ -6,7 +6,7 @@
 from unittest.mock import MagicMock
 
 from app.core.constants import DEFAULT_IN_CLUSTER_PORT, DEFAULT_OFF_CLUSTER_PORT
-from app.routers.agents import CreateAgentRequest, WORKLOAD_TYPE_SANDBOX
+from app.routers.agents import CreateAgentRequest, PersistentStorageConfig, WORKLOAD_TYPE_SANDBOX
 
 
 def _make_request(**overrides):
@@ -30,6 +30,7 @@ def _make_request(**overrides):
     req.inboundPortsExclude = overrides.get("inboundPortsExclude", None)
     req.outboundRoutes = overrides.get("outboundRoutes", None)
     req.defaultOutboundPolicy = overrides.get("defaultOutboundPolicy", None)
+    req.persistentStorage = overrides.get("persistentStorage", None)
     return req
 
 
@@ -80,6 +81,85 @@ class TestBuildSandboxManifest:
 
         container = manifest["spec"]["podTemplate"]["spec"]["containers"][0]
         assert container["ports"][0]["containerPort"] == 8888
+
+
+class TestBuildSandboxManifestPVC:
+    """Tests for PVC support in _build_sandbox_manifest."""
+
+    def test_no_pvc_by_default(self):
+        """No volumeClaimTemplates when persistentStorage is None."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        request = _make_request()
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        assert "volumeClaimTemplates" not in manifest["spec"]
+        volume_names = [v["name"] for v in manifest["spec"]["podTemplate"]["spec"]["volumes"]]
+        assert "shared-data" in volume_names
+
+    def test_pvc_when_enabled(self):
+        """volumeClaimTemplates present with correct size when persistentStorage enabled."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        storage = PersistentStorageConfig(enabled=True, size="5Gi")
+        request = _make_request(persistentStorage=storage)
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        vct = manifest["spec"]["volumeClaimTemplates"]
+        assert len(vct) == 1
+        assert vct[0]["metadata"]["name"] == "shared-data"
+        assert vct[0]["spec"]["accessModes"] == ["ReadWriteOnce"]
+        assert vct[0]["spec"]["resources"]["requests"]["storage"] == "5Gi"
+
+    def test_pvc_replaces_shared_data_emptydir(self):
+        """shared-data emptyDir is removed from volumes when PVC is enabled."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        storage = PersistentStorageConfig(enabled=True, size="1Gi")
+        request = _make_request(persistentStorage=storage)
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        volume_names = [v["name"] for v in manifest["spec"]["podTemplate"]["spec"]["volumes"]]
+        assert "shared-data" not in volume_names
+        assert "cache" in volume_names
+        assert "marvin" in volume_names
+
+    def test_pvc_volume_mount_unchanged(self):
+        """/shared mount is present regardless of PVC enablement."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        storage = PersistentStorageConfig(enabled=True, size="1Gi")
+        request = _make_request(persistentStorage=storage)
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        container = manifest["spec"]["podTemplate"]["spec"]["containers"][0]
+        mount_names = [m["name"] for m in container["volumeMounts"]]
+        assert "shared-data" in mount_names
+        mount = next(m for m in container["volumeMounts"] if m["name"] == "shared-data")
+        assert mount["mountPath"] == "/shared"
+
+    def test_pvc_disabled_keeps_emptydir(self):
+        """When persistentStorage.enabled is False, shared-data stays as emptyDir."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        storage = PersistentStorageConfig(enabled=False, size="1Gi")
+        request = _make_request(persistentStorage=storage)
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        assert "volumeClaimTemplates" not in manifest["spec"]
+        volume_names = [v["name"] for v in manifest["spec"]["podTemplate"]["spec"]["volumes"]]
+        assert "shared-data" in volume_names
+
+    def test_pvc_default_size(self):
+        """Default PVC size is 1Gi."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        storage = PersistentStorageConfig(enabled=True)
+        request = _make_request(persistentStorage=storage)
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        vct = manifest["spec"]["volumeClaimTemplates"]
+        assert vct[0]["spec"]["resources"]["requests"]["storage"] == "1Gi"
 
 
 class TestBuildServiceManifestForSandbox:

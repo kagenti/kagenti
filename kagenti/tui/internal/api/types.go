@@ -185,30 +185,33 @@ type ServicePort struct {
 	Protocol   string `json:"protocol"`
 }
 
+// PersistentStorageConfig configures PVC storage for Sandbox and StatefulSet workloads.
+type PersistentStorageConfig struct {
+	Enabled bool   `json:"enabled"`
+	Size    string `json:"size"`
+}
+
 // CreateAgentRequest is the request to create an agent.
 type CreateAgentRequest struct {
-	Name             string        `json:"name"`
-	Namespace        string        `json:"namespace"`
-	Protocol         string        `json:"protocol"`
-	Framework        string        `json:"framework"`
-	DeploymentMethod string        `json:"deploymentMethod"`
-	WorkloadType     string        `json:"workloadType"`
-	EnvVars          []EnvVar      `json:"envVars,omitempty"`
-	GitURL           string        `json:"gitUrl,omitempty"`
-	GitPath          string        `json:"gitPath,omitempty"`
-	GitBranch        string        `json:"gitBranch,omitempty"`
-	ImageTag         string        `json:"imageTag,omitempty"`
-	ContainerImage   string        `json:"containerImage,omitempty"`
-	ImagePullSecret  string        `json:"imagePullSecret,omitempty"`
-	ServicePorts     []ServicePort `json:"servicePorts,omitempty"`
-	CreateHTTPRoute  bool          `json:"createHttpRoute"`
-	AuthBridgeEnabled bool         `json:"authBridgeEnabled"`
-	SpireEnabled     bool          `json:"spireEnabled"`
-	// AuthBridgeMode maps to AgentRuntime.Spec.AuthBridgeMode for
-	// agents (the deprecated kagenti.io/authbridge-mode annotation
-	// for tools). Valid values: "proxy-sidecar" (default),
-	// "envoy-sidecar", "lite", "waypoint". Empty = cluster default.
-	AuthBridgeMode string `json:"authBridgeMode,omitempty"`
+	Name              string                   `json:"name"`
+	Namespace         string                   `json:"namespace"`
+	Protocol          string                   `json:"protocol"`
+	Framework         string                   `json:"framework"`
+	DeploymentMethod  string                   `json:"deploymentMethod"`
+	WorkloadType      string                   `json:"workloadType"`
+	EnvVars           []EnvVar                 `json:"envVars,omitempty"`
+	GitURL            string                   `json:"gitUrl,omitempty"`
+	GitPath           string                   `json:"gitPath,omitempty"`
+	GitBranch         string                   `json:"gitBranch,omitempty"`
+	ImageTag          string                   `json:"imageTag,omitempty"`
+	ContainerImage    string                   `json:"containerImage,omitempty"`
+	ImagePullSecret   string                   `json:"imagePullSecret,omitempty"`
+	ServicePorts      []ServicePort            `json:"servicePorts,omitempty"`
+	CreateHTTPRoute   bool                     `json:"createHttpRoute"`
+	AuthBridgeEnabled bool                     `json:"authBridgeEnabled"`
+	SpireEnabled      bool                     `json:"spireEnabled"`
+	AuthBridgeMode    string                   `json:"authBridgeMode,omitempty"`
+	PersistentStorage *PersistentStorageConfig `json:"persistentStorage,omitempty"`
 }
 
 // CreateAgentResponse is the response after creating an agent.
