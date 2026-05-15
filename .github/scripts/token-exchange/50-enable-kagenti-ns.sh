@@ -216,7 +216,6 @@ metadata:
   name: authbridge-runtime-config
 data:
   config.yaml: |
-    mode: envoy-sidecar
     bypass:
       inbound_paths:
         - "/.well-known/*"
