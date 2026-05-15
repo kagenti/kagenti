@@ -314,10 +314,15 @@ data:
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
-#  YAML config for the authbridge binary (cmd/authbridge).
-#  Supports envoy-sidecar and proxy-sidecar modes. The mode is selected
-#  by the operator via annotation; listener addresses are injected as env
-#  vars and expanded via ${...} at startup.
+#  YAML config for the authbridge binaries (authbridge-proxy / -envoy /
+#  -lite — see kagenti-extensions#411). Supports envoy-sidecar,
+#  proxy-sidecar (default), and lite shapes. The operator resolves the
+#  per-workload mode via the chain
+#    AgentRuntime.Spec.AuthBridgeMode → this ConfigMap's `mode:` field
+#    → deprecated kagenti.io/authbridge-mode annotation → cluster default
+#  (kagenti-operator#361) and layers it onto each per-agent ConfigMap.
+#  Listener addresses are injected as env vars and expanded via ${...}
+#  at startup.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -331,8 +336,10 @@ data:
   # bypass_paths, identity file paths, etc.) are applied by the
   # authbridge binary itself — see
   # authbridge/authlib/plugins/CONVENTIONS.md in kagenti-extensions.
+  #
+  # No top-level `mode:` — see the matching template-configmap in
+  # authbridge-template-configmaps.yaml for the rationale.
   config.yaml: |
-    mode: envoy-sidecar
     pipeline:
       inbound:
         plugins:
@@ -390,10 +397,12 @@ subjects:
 # ——————————————————————————————————————————————————————————————————————————————
 #  SCC RoleBinding for AuthBridge in Namespace: {{ . }}
 #  Grants the kagenti-authbridge custom SCC to all service accounts so that
-#  the webhook-injected AuthBridge stack can run:
-#    - proxy-init init container (NET_ADMIN/NET_RAW, root) for iptables
-#    - envoy-proxy sidecar (UID 1337)
-#    - authbridge-light / spiffe-helper sidecars (UID 1000)
+#  the webhook-injected AuthBridge stack can run. After kagenti-extensions#411
+#  there's a single combined sidecar per mode (spiffe-helper bundled inside,
+#  client-registration is operator-managed):
+#    - proxy-sidecar (default): authbridge container (UID 1337)
+#    - envoy-sidecar: proxy-init init container (NET_ADMIN/NET_RAW, root)
+#      for iptables, then authbridge-envoy container (UID 1337)
 #  Agent SAs are created dynamically by the operator (name = agent name),
 #  so we use the namespace service accounts group.
 #
