@@ -807,7 +807,14 @@ class TestMLflowConnectivity:
     def test_mlflow_accessible(
         self, mlflow_url: str, mlflow_configured: bool, openshift_ingress_ca
     ):
-        """Verify MLflow is accessible."""
+        """Verify MLflow is accessible.
+
+        Hits /health rather than /version: mlflow-oidc-auth protects
+        /version with session auth, so unauthenticated probes get 401.
+        /health is unprotected by the OIDC middleware (the same reason
+        commit 63366cb0 moved the pod liveness/readiness probes there)
+        and is the right surface for a connectivity check.
+        """
         import httpx
 
         # Use CA cert for SSL verification on OpenShift
@@ -819,11 +826,10 @@ class TestMLflowConnectivity:
             ssl_ctx = True
 
         try:
-            response = httpx.get(f"{mlflow_url}/version", verify=ssl_ctx, timeout=30.0)
-            # Accept 200 (no auth) or 302/307 (OAuth redirect) as healthy
-            assert response.status_code in (200, 302, 307), (
-                f"MLflow returned unexpected status {response.status_code}. "
-                f"Expected 200, 302, or 307."
+            response = httpx.get(f"{mlflow_url}/health", verify=ssl_ctx, timeout=30.0)
+            assert response.status_code == 200, (
+                f"MLflow /health returned unexpected status {response.status_code}. "
+                f"Expected 200."
             )
         except httpx.RequestError as e:
             pytest.fail(f"Cannot connect to MLflow at {mlflow_url}: {e}")

@@ -29,14 +29,6 @@ spec:
         protocol.kagenti.io/a2a: ""
         kagenti.io/framework: LangGraph
         app.kubernetes.io/name: weather-service
-        # Opt this E2E agent into the legacy client-registration sidecar
-        # (rather than the default operator-managed registration). The
-        # legacy path creates the Keycloak client + agent-*-aud scope
-        # synchronously at pod startup, so the test fixture's scope poll
-        # reliably finds it. The operator-managed reconciler has been
-        # observed stuck on HyperShift CI; see fix/e2e-audience-scope-gate.
-        # Remove this label once the operator-managed path is reliable.
-        kagenti.io/client-registration-inject: "true"
     spec:
       serviceAccountName: weather-service
       containers:

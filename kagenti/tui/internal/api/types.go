@@ -204,9 +204,11 @@ type CreateAgentRequest struct {
 	CreateHTTPRoute  bool          `json:"createHttpRoute"`
 	AuthBridgeEnabled bool         `json:"authBridgeEnabled"`
 	SpireEnabled     bool          `json:"spireEnabled"`
-	EnvoyProxyInject          *bool `json:"envoyProxyInject,omitempty"`
-	SpiffeHelperInject        *bool `json:"spiffeHelperInject,omitempty"`
-	ClientRegistrationInject  *bool `json:"clientRegistrationInject,omitempty"`
+	// AuthBridgeMode maps to AgentRuntime.Spec.AuthBridgeMode for
+	// agents (the deprecated kagenti.io/authbridge-mode annotation
+	// for tools). Valid values: "proxy-sidecar" (default),
+	// "envoy-sidecar", "lite", "waypoint". Empty = cluster default.
+	AuthBridgeMode string `json:"authBridgeMode,omitempty"`
 }
 
 // CreateAgentResponse is the response after creating an agent.
@@ -237,9 +239,11 @@ type CreateToolRequest struct {
 	CreateHTTPRoute  bool          `json:"createHttpRoute"`
 	AuthBridgeEnabled bool         `json:"authBridgeEnabled"`
 	SpireEnabled     bool          `json:"spireEnabled"`
-	EnvoyProxyInject          *bool `json:"envoyProxyInject,omitempty"`
-	SpiffeHelperInject        *bool `json:"spiffeHelperInject,omitempty"`
-	ClientRegistrationInject  *bool `json:"clientRegistrationInject,omitempty"`
+	// AuthBridgeMode maps to AgentRuntime.Spec.AuthBridgeMode for
+	// agents (the deprecated kagenti.io/authbridge-mode annotation
+	// for tools). Valid values: "proxy-sidecar" (default),
+	// "envoy-sidecar", "lite", "waypoint". Empty = cluster default.
+	AuthBridgeMode string `json:"authBridgeMode,omitempty"`
 }
 
 // CreateToolResponse is the response after creating a tool.

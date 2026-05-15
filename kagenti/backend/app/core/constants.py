@@ -34,10 +34,11 @@ APP_KUBERNETES_IO_COMPONENT = "app.kubernetes.io/component"
 KAGENTI_SPIRE_LABEL = "kagenti.io/spire"
 KAGENTI_SPIRE_ENABLED_VALUE = "enabled"
 
-# Per-sidecar injection labels (matched by kagenti-webhook precedence evaluator)
-KAGENTI_ENVOY_PROXY_INJECT_LABEL = "kagenti.io/envoy-proxy-inject"
-KAGENTI_SPIFFE_HELPER_INJECT_LABEL = "kagenti.io/spiffe-helper-inject"
-KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL = "kagenti.io/client-registration-inject"
+# Per-sidecar opt-out labels (envoy-proxy / spiffe-helper /
+# client-registration) are gone after kagenti-extensions#411 — they
+# referenced separate sidecars that no longer exist. The master enable
+# /disable trigger is still KAGENTI_INJECT_LABEL above; per-workload
+# mode now lives on AgentRuntime.Spec.AuthBridgeMode.
 
 # Port exclusion annotations (matched by kagenti-webhook init-iptables.sh)
 KAGENTI_OUTBOUND_PORTS_EXCLUDE = "kagenti.io/outbound-ports-exclude"

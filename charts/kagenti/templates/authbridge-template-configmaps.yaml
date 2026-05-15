@@ -42,8 +42,16 @@ data:
   # bypass_paths, identity file paths, etc.) are applied by the
   # authbridge binary itself — see
   # authbridge/authlib/plugins/CONVENTIONS.md in kagenti-extensions.
+  #
+  # No top-level `mode:` is set here. After kagenti-operator#361 the
+  # operator resolves mode per workload from
+  #   AgentRuntime.Spec.AuthBridgeMode → namespace ConfigMap (this one,
+  #   if it had a `mode:`) → deprecated annotation → cluster default,
+  # then layers the resolved mode onto each per-agent ConfigMap. Leaving
+  # `mode:` unset here keeps this template mode-agnostic so the cluster
+  # default (proxy-sidecar) wins by default, and a namespace-level
+  # override can still be added later by editing this ConfigMap.
   config.yaml: |
-    mode: envoy-sidecar
     pipeline:
       inbound:
         plugins:

@@ -216,6 +216,11 @@ metadata:
   name: authbridge-runtime-config
 data:
   config.yaml: |
+    # Pin this E2E namespace to envoy-sidecar so the TX e2e exercises the
+    # Envoy ext_proc path explicitly (the rest of the test reads JWT SVID
+    # files via `kubectl exec -c envoy-proxy`, which only exists in this
+    # mode). Without the pin, the operator falls back to the cluster
+    # default (proxy-sidecar) and container names diverge.
     mode: envoy-sidecar
     bypass:
       inbound_paths:
