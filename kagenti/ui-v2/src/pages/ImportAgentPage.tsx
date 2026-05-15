@@ -187,9 +187,8 @@ export const ImportAgentPage: React.FC = () => {
   // SPIRE identity
   const [spireEnabled, setSpireEnabled] = useState(true);
 
-  // Per-sidecar injection controls
-  const [envoyProxyInject, setEnvoyProxyInject] = useState<boolean | undefined>(undefined);
-  const [spiffeHelperInject, setSpiffeHelperInject] = useState<boolean | undefined>(undefined);
+  // Use envoy-sidecar mode (false = proxy-sidecar, the default)
+  const [useEnvoyMode, setUseEnvoyMode] = useState(false);
 
   // Outbound routing rules
   const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
@@ -499,8 +498,7 @@ export const ImportAgentPage: React.FC = () => {
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
-        envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
-        spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
+        authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -531,8 +529,7 @@ export const ImportAgentPage: React.FC = () => {
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
-        envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
-        spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
+        authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -1043,68 +1040,35 @@ export const ImportAgentPage: React.FC = () => {
                   isChecked={authBridgeEnabled}
                   onChange={(_e, checked) => {
                     setAuthBridgeEnabled(checked);
-                    if (checked) {
-                      setEnvoyProxyInject(undefined);
-                      setSpiffeHelperInject(undefined);
+                    if (!checked) {
+                      setUseEnvoyMode(false);
                     }
                   }}
-                  description="When enabled, the webhook injects AuthBridge for inbound JWT validation and outbound token exchange. With the default webhook settings this is two sidecars (envoy-proxy, spiffe-helper) plus proxy-init; if the cluster operator enables featureGates.combinedSidecar on kagenti-webhook, a single authbridge container is used instead (see docs linked below)."
+                  description="When enabled, the operator injects a combined AuthBridge sidecar for inbound JWT validation and outbound token exchange. Defaults to proxy-sidecar mode (HTTP_PROXY)."
               />
               </FormGroup>
 
               {authBridgeEnabled && (
-                <Alert
-                  variant="info"
-                  isInline
-                  title="Combined AuthBridge container"
-                  style={{ marginBottom: '16px' }}
-                >
-                  <Text component="p">
-                    There is no toggle here for the single-container mode. When{' '}
-                    <code>featureGates.combinedSidecar</code> is <code>true</code> on the admission
-                    webhook, injected pods get one <code>authbridge</code> container (see{' '}
-                    <a
-                      href="https://github.com/kagenti/kagenti/blob/main/docs/authbridge-combined-sidecar.md"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Combined AuthBridge sidecar
-                    </a>
-                    ). Advanced injection checkboxes still apply as flags inside that container.
-                  </Text>
-                </Alert>
+                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
+                  <Checkbox
+                    id="useEnvoyMode"
+                    label="Use envoy-sidecar mode"
+                    isChecked={useEnvoyMode}
+                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
+                    description="Switch from proxy-sidecar (default) to envoy-sidecar mode (Envoy + ext_proc + iptables interception)."
+                  />
+                </FormGroup>
               )}
 
               {/* SPIRE Identity */}
               <FormGroup fieldId="spireEnabled">
                 <Checkbox
                   id="spireEnabled"
-                  label="Enable SPIRE identity (spiffe-helper sidecar)"
+                  label="Enable SPIRE identity (JWT-SVID via spiffe-helper)"
                   isChecked={spireEnabled}
                   onChange={(_e, checked) => setSpireEnabled(checked)}
                 />
               </FormGroup>
-
-              {authBridgeEnabled && (
-                <>
-                  <FormGroup fieldId="sidecarControls" label="Advanced Injection Controls">
-                    <Checkbox
-                      id="envoyProxyInject"
-                      label="Envoy Proxy"
-                      isChecked={envoyProxyInject !== false}
-                      onChange={(_e, checked) => setEnvoyProxyInject(checked ? undefined : false)}
-                      description="Envoy proxy with go-processor for traffic interception. Disable to skip envoy-proxy sidecar."
-                    />
-                    <Checkbox
-                      id="spiffeHelperInject"
-                      label="SPIFFE Helper"
-                      isChecked={spiffeHelperInject !== false}
-                      onChange={(_e, checked) => setSpiffeHelperInject(checked ? undefined : false)}
-                      description="SPIFFE identity helper for SVID management. Disable to skip spiffe-helper sidecar."
-                    />
-                  </FormGroup>
-                </>
-              )}
 
 
               {authBridgeEnabled && (

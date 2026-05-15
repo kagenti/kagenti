@@ -451,9 +451,11 @@ export interface CreateSkillResponse {
 }
 
 // AuthBridge types
+export type AuthBridgeMode = 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+
 export interface AuthBridgeConfig {
   AuthBridge: boolean | null;
-  mode: string | null;
+  mode: AuthBridgeMode | null;
   pipeline: PipelineConfig | null;
 }
 
