@@ -134,11 +134,15 @@ class TestSidecarInjection:
             f"envoy-proxy sidecar not found in tool pod. Containers: {containers}"
         )
 
-    def test_agent_has_client_registration(self):
-        """Agent pod has client-registration init/sidecar."""
-        containers = self._get_pod_containers("tx-e2e-agent")
-        has_cr = any("client-registration" in c for c in containers)
-        # client-registration may be an init container instead
+    def test_agent_has_operator_managed_credentials(self):
+        """Agent pod mounts the operator-managed Keycloak client Secret.
+
+        Replaces the legacy test_agent_has_client_registration check.
+        After kagenti-operator#361 the in-pod client-registration sidecar
+        is gone — the operator's ClientRegistrationReconciler creates a
+        Secret with client-id.txt + client-secret.txt and the webhook
+        mounts it at /shared/ inside the authbridge sidecar.
+        """
         result = subprocess.run(
             [
                 "kubectl",
@@ -149,15 +153,21 @@ class TestSidecarInjection:
                 "-l",
                 "app=tx-e2e-agent",
                 "-o",
-                "jsonpath={.items[0].spec.initContainers[*].name}",
+                "jsonpath={.items[0].spec.volumes[*].secret.secretName}",
             ],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        init_containers = result.stdout.split() if result.returncode == 0 else []
-        has_cr = has_cr or any("client-registration" in c for c in init_containers)
-        assert has_cr, "client-registration not found in agent pod"
+        secret_names = result.stdout.split() if result.returncode == 0 else []
+        # The operator-managed Secret name is derived from the workload's
+        # CR name; we only assert that *some* keycloak-client secret is
+        # mounted, which is the post-#361 contract.
+        has_kc_secret = any("keycloak-client" in s or "client-credentials" in s for s in secret_names)
+        assert has_kc_secret, (
+            "operator-managed Keycloak client Secret not mounted; "
+            f"volumes referenced: {secret_names}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -786,29 +796,11 @@ class TestAuthbridgeExtProc:
             "ext_proc",
         ]
         has_evidence = any(marker in logs.lower() for marker in exchange_markers)
-        # This is a soft check — log format may vary
-        if not has_evidence:
-            # Also check authbridge-light container if present
-            result2 = subprocess.run(
-                [
-                    "kubectl",
-                    "logs",
-                    "-n",
-                    TX_NAMESPACE,
-                    "-l",
-                    "app=tx-e2e-agent",
-                    "-c",
-                    "authbridge-light",
-                    "--tail=100",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            logs2 = result2.stdout + result2.stderr
-            has_evidence = any(marker in logs2.lower() for marker in exchange_markers)
-        # Don't fail on missing logs — the token comparison tests above
-        # are the definitive proof. This is supplementary evidence.
+        # This is a soft check — log format may vary. The legacy
+        # authbridge-light container is gone after kagenti-extensions#411
+        # (everything's bundled into the envoy-proxy container in
+        # envoy-sidecar mode), so we only inspect that one container now.
+        # The token comparison tests above are the definitive proof.
         if has_evidence:
             pass  # Good: logs confirm exchange
         else:
