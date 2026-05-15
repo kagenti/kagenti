@@ -101,11 +101,11 @@ kubectl set env deployment/weather-service -n <namespace> MCP_URL="http://mcp-ga
 
 When the sandbox feature flag is on, agents run as `Sandbox` resources rather than plain `Deployment`s. The `Sandbox` spec must be updated directly — `kubectl set env` does not apply to `Sandbox` objects.
 
-Patch the `Sandbox` spec and reapply (requires `MCP_URL` to already exist in the spec env array):
+Patch the `Sandbox` spec and reapply. This requires `MCP_URL` to already exist in the env array — if it is missing, add it first via `kubectl edit sandbox weather-service -n <namespace>`.
 
 ```bash
 kubectl get sandbox weather-service -n <namespace> -o json \
-  | jq '(.spec.podTemplate.spec.containers[0].env[] | select(.name == "MCP_URL")).value = "http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp"' \
+  | jq '(.spec.podTemplate.spec.containers[] | select(.name == "agent").env[] | select(.name == "MCP_URL")).value = "http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp"' \
   | kubectl apply -f -
 ```
 
