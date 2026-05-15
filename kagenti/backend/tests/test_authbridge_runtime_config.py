@@ -42,6 +42,10 @@ def test_build_authbridge_runtime_yaml_client_secret():
     # Locking absence here so a future revert that re-pins
     # mode in _build_authbridge_runtime_yaml doesn't go unnoticed.
     assert "mode" not in cfg
+    # Structural sanity: a future change that drops both `mode` and
+    # `pipeline` (e.g., a botched refactor) would still pass the
+    # negative assertion above. Pin the positive too.
+    assert "pipeline" in cfg
 
     jwt = _plugin_config(cfg, "inbound", "jwt-validation")
     assert jwt["issuer"] == "http://keycloak.example.com/realms/kagenti"

@@ -5,12 +5,13 @@
 #  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods.
 #  After kagenti-extensions#411 there's a single combined sidecar per mode
 #  (spiffe-helper bundled inside, client-registration is operator-managed):
-#    - proxy-sidecar (default): authbridge container (UID 1337)
+#    - proxy-sidecar (default): container "authbridge-proxy"
+#      from the "authbridge" image (UID 1337)
 #    - envoy-sidecar:
 #        - proxy-init (init): iptables interception
 #          (NET_ADMIN/NET_RAW, root, non-privileged)
-#        - authbridge-envoy (sidecar): Envoy + ext_proc + spiffe-helper
-#          (UID 1337)
+#        - container "envoy-proxy" from the "authbridge-envoy" image:
+#          Envoy + ext_proc + spiffe-helper (UID 1337)
 #
 #  This SCC grants the minimum permissions needed for AuthBridge sidecars:
 #    - proxy-init needs root + NET_ADMIN/NET_RAW capabilities (not privileged mode)
