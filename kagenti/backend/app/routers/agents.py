@@ -3010,7 +3010,10 @@ def _build_sandbox_manifest(
     if request.persistentStorage and request.persistentStorage.enabled:
         manifest["spec"]["volumeClaimTemplates"] = [
             {
-                "metadata": {"name": "shared-data"},
+                "metadata": {
+                    "name": "shared-data",
+                    "labels": {APP_KUBERNETES_IO_NAME: request.name},
+                },
                 "spec": {
                     "accessModes": ["ReadWriteOnce"],
                     "resources": {"requests": {"storage": request.persistentStorage.size}},

@@ -108,6 +108,7 @@ class TestBuildSandboxManifestPVC:
         vct = manifest["spec"]["volumeClaimTemplates"]
         assert len(vct) == 1
         assert vct[0]["metadata"]["name"] == "shared-data"
+        assert vct[0]["metadata"]["labels"]["app.kubernetes.io/name"] == "test-agent"
         assert vct[0]["spec"]["accessModes"] == ["ReadWriteOnce"]
         assert vct[0]["spec"]["resources"]["requests"]["storage"] == "5Gi"
 
