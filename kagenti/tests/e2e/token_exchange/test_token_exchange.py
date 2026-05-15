@@ -160,12 +160,20 @@ class TestSidecarInjection:
             timeout=30,
         )
         secret_names = result.stdout.split() if result.returncode == 0 else []
-        # The operator-managed Secret name is derived from the workload's
-        # CR name; we only assert that *some* keycloak-client secret is
-        # mounted, which is the post-#361 contract.
-        has_kc_secret = any("keycloak-client" in s or "client-credentials" in s for s in secret_names)
+        # The operator's ClientRegistrationReconciler emits Secrets named
+        # `kagenti-keycloak-client-credentials-<sha256_hex8(ns,workload)>`
+        # (see KeycloakClientCredentialsSecretName in
+        # kagenti-operator/internal/clientreg/names.go — the suffix is a
+        # truncated hash of namespace+workload+a constant). Match the
+        # full prefix so a misnamed Secret can't accidentally satisfy
+        # this gate; do NOT pin the suffix because it is intentionally
+        # deterministic-but-derived. A loose substring match was
+        # flagged in PR review.
+        prefix = "kagenti-keycloak-client-credentials-"
+        has_kc_secret = any(s.startswith(prefix) for s in secret_names)
         assert has_kc_secret, (
             "operator-managed Keycloak client Secret not mounted; "
+            f"expected a Secret starting with {prefix!r}; "
             f"volumes referenced: {secret_names}"
         )
 
