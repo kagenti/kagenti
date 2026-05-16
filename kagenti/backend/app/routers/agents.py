@@ -3601,15 +3601,32 @@ async def finalize_shipwright_build(
             kube.create_sandbox(namespace=namespace, body=sandbox_manifest)
             logger.info(f"Created Sandbox '{name}' in namespace '{namespace}' from build")
 
-        # Create Service (not needed for Jobs or Sandboxes)
-        if final_workload_type not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+        # Create Service (not needed for Jobs — Sandbox uses backend-managed Service).
+        # Mirrors the image-based create flow's handling earlier in this module
+        # (commit c2e656fc): the operator's AgentCardReconciler reads the Service
+        # to build the agent-card URL, and the Sandbox controller sometimes creates
+        # its own short-lived Service that races us — handle the 409 by replacing
+        # it with the backend-managed ClusterIP shape.
+        if final_workload_type != WORKLOAD_TYPE_JOB:
             service_manifest = _build_service_manifest(agent_request)
             # Add additional labels from Build
             service_manifest["metadata"]["labels"].update(
                 {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
             )
-            kube.create_service(namespace=namespace, body=service_manifest)
-            logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+            try:
+                kube.create_service(namespace=namespace, body=service_manifest)
+                logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+            except ApiException as e:
+                if e.status == 409 and final_workload_type == WORKLOAD_TYPE_SANDBOX:
+                    logger.warning(
+                        f"Service '{name}' already exists (Sandbox controller race); "
+                        f"replacing with backend-managed ClusterIP Service"
+                    )
+                    kube.delete_service(namespace=namespace, name=name)
+                    kube.create_service(namespace=namespace, body=service_manifest)
+                    logger.info(f"Replaced Service '{name}' in namespace '{namespace}'")
+                else:
+                    raise
 
         # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
         # Only for agents — tools don't need sidecar injection
