@@ -646,7 +646,7 @@ For step-by-step AuthBridge demos with real working examples, see:
 For complete documentation, see:
 
 - **[AuthBridge README](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Full demo instructions
-- **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/authproxy)** - Token validation and exchange proxy
+- **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** - Token validation and exchange proxy
 
 > **Note**: The AuthBridge demo in kagenti-extensions includes client-registration components for demonstration purposes. In production Kagenti deployments, client registration is handled by the kagenti-operator controller.
 
