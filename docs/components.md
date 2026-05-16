@@ -446,7 +446,7 @@ Kagenti provides a unified framework for identity and authorization in agentic s
 
 | Component | Purpose | Repository |
 |-----------|---------|------------|
-| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/authproxy)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
+| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
 | **[SPIRE](https://spiffe.io/docs/latest/spire-about/)** | Workload identity and attestation | External |
 | **[Keycloak](https://www.keycloak.org/)** | Identity provider and access management | External |
 

@@ -34,7 +34,7 @@ IMAGES=(
   "authbridge:authbridge:cmd/authbridge-proxy/Dockerfile"
   "authbridge-envoy:authbridge:cmd/authbridge-envoy/Dockerfile"
   "authbridge-lite:authbridge:cmd/authbridge-lite/Dockerfile"
-  "proxy-init:authbridge/authproxy:Dockerfile.init"
+  "proxy-init:authbridge/proxy-init:Dockerfile.init"
 )
 
 REGISTRY="ghcr.io/kagenti/kagenti-extensions"
