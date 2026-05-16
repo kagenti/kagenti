@@ -71,7 +71,7 @@ fi
 
 # --- Enable set_key_use on SPIRE OIDC discovery provider ---
 OIDC_CONF=$(kubectl get configmap spire-spiffe-oidc-discovery-provider -n "${SPIRE_NS}" -o jsonpath='{.data.oidc-discovery-provider\.conf}' 2>/dev/null || true)
-if [[ -n "$OIDC_CONF" ]]; then
+if [[ -n "$OIDC_CONF" ]] && echo "$OIDC_CONF" | jq empty 2>/dev/null; then
   HAS_KEY_USE=$(echo "$OIDC_CONF" | jq '.set_key_use // false' 2>/dev/null || echo "false")
   if [[ "$HAS_KEY_USE" != "true" ]]; then
     PATCHED=$(echo "$OIDC_CONF" | jq '. + {"set_key_use": true}')
@@ -84,6 +84,8 @@ if [[ -n "$OIDC_CONF" ]]; then
     fi
     log_info "set_key_use enabled on OIDC discovery provider"
   fi
+elif [[ -n "$OIDC_CONF" ]]; then
+  log_info "OIDC discovery provider config is not JSON (HCL format) — skipping set_key_use patch"
 fi
 
 # --- Create/update SPIFFE Identity Provider ---

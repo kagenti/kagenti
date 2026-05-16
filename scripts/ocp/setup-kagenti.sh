@@ -345,9 +345,8 @@ _mlflow_wait_ready() {
   while ! $KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" &>/dev/null; do
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
-      log_error "MLflow Service '$MLFLOW_INSTANCE_NAME' not found in $MLFLOW_NAMESPACE after 5m"
-      log_error "Check that the mlflowoperator reconciled the CR: kubectl get mlflow -n $MLFLOW_NAMESPACE"
-      exit 1
+      log_warn "MLflow Service '$MLFLOW_INSTANCE_NAME' not found in $MLFLOW_NAMESPACE after 5m — skipping"
+      return 1
     fi
     sleep 5
   done
@@ -390,8 +389,10 @@ _mlflow_wait_ready() {
     [ -n "$gateway_url" ] && break
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
-      log_error "MLflow CR status.url not populated after 5m"
-      exit 1
+      log_warn "MLflow CR status.url not populated after 5m — using in-cluster endpoint"
+      MLFLOW_TRACES_ENDPOINT="http://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:5000/v1/traces"
+      log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
+      return 0
     fi
     sleep 5
   done
@@ -405,11 +406,15 @@ _mlflow_grant_otel_rbac() {
   # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
   # so the collector can send traces with the correct workspace context.
   local cr_name="mlflow-operator-mlflow-integration"
-  if ! $KUBECTL get clusterrole "$cr_name" &>/dev/null; then
-    log_error "ClusterRole '$cr_name' not found — is the RHOAI MLflow operator running?"
-    log_error "The mlflowoperator should create this ClusterRole automatically."
-    return 1
-  fi
+  local tries=0
+  while ! $KUBECTL get clusterrole "$cr_name" &>/dev/null; do
+    tries=$((tries + 1))
+    if [ $tries -ge 24 ]; then
+      log_warn "ClusterRole '$cr_name' not found after 2m — MLflow OTEL RBAC skipped"
+      return 0
+    fi
+    sleep 5
+  done
   log_success "ClusterRole $cr_name exists"
 
   local agent_ns
@@ -437,20 +442,9 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
   done <<< "$agent_ns"
 }
 
-log_info "Step 2.5: MLflow DSC preflight + provisioning"
-if [ "$SKIP_MLFLOW" = true ]; then
-  log_success "Skipping MLflow DSC preflight (--skip-mlflow)"
-elif ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
-  log_warn "RHOAI not installed (DataScienceCluster CRD not found) — skipping MLflow provisioning"
-  SKIP_MLFLOW=true
-elif ! $KUBECTL get datasciencecluster default-dsc &>/dev/null; then
-  log_warn "RHOAI DataScienceCluster 'default-dsc' not found — skipping MLflow provisioning"
-  SKIP_MLFLOW=true
-else
-  _mlflow_check_dsc
-  _mlflow_create_cr
-  _mlflow_wait_ready
-fi
+# MLflow provisioning is deferred to Step 3d (after kagenti-deps installs the
+# RHOAI operator via OLM Subscription and the DataScienceCluster CRD becomes
+# available). See _deferred_mlflow() below.
 echo ""
 
 # ============================================================================
@@ -549,55 +543,51 @@ _wait_kagenti_deps_ready() {
   wait $pid_istio || log_warn "Istio readiness check failed"
 }
 
+# Wait for a CRD to be registered by an operator.
+# Periodically auto-approves pending InstallPlans (OLM batching workaround).
+_wait_for_crd() {
+  local crd="$1" timeout_secs="${2:-300}" label="${3:-$1}"
+  local tries=0 max_tries=$(( timeout_secs / 5 ))
+  log_info "Waiting for $label CRD..."
+  while ! $KUBECTL get crd "$crd" &>/dev/null; do
+    tries=$((tries + 1))
+    if [ $tries -ge $max_tries ]; then
+      log_error "$label CRD ($crd) not found after $(( timeout_secs / 60 ))m"
+      return 1
+    fi
+    if (( tries % 6 == 0 )); then
+      _auto_approve_installplans
+    fi
+    sleep 5
+  done
+  log_success "$label CRD available"
+}
+
+# Auto-approve pending OLM InstallPlans in operator namespaces.
+# OLM sometimes batches multiple operators into a single InstallPlan that
+# requires manual approval even when the Subscription has automatic approval.
+_auto_approve_installplans() {
+  for ns in openshift-operators zero-trust-workload-identity-manager redhat-ods-operator; do
+    if ! $KUBECTL get ns "$ns" &>/dev/null 2>&1; then continue; fi
+    local ip approved
+    for ip in $($KUBECTL get installplan -n "$ns" -o name 2>/dev/null); do
+      approved=$($KUBECTL get "$ip" -n "$ns" -o jsonpath='{.spec.approved}' 2>/dev/null || echo "true")
+      if [ "$approved" = "false" ]; then
+        $KUBECTL patch "$ip" -n "$ns" --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
+        log_info "  Auto-approved $ip in $ns"
+      fi
+    done
+  done
+}
+
 # Apply operand CRs that --no-hooks skipped.
 # Called on both fresh install AND upgrade so reruns fix missing CRs.
 _apply_operand_crs() {
   if $DRY_RUN; then return; fi
 
-  # Wait for the Keycloak CRD before applying — the operator subscription was
-  # just installed and needs time to register the CRD.
-  log_info "Waiting for Keycloak CRD..."
-  local tries=0
-  while ! $KUBECTL get crd keycloaks.k8s.keycloak.org &>/dev/null; do
-    tries=$((tries + 1))
-    if [ $tries -ge 60 ]; then
-      log_error "Keycloak CRD not found after 5m — cannot proceed without Keycloak"
-      return 1
-    fi
-    sleep 5
-  done
-  log_success "Keycloak CRD available"
-
-  # Wait for ZTWIM operator CRDs — the Subscription was just created and
-  # OLM needs time to install the operator CSV which registers the CRDs.
-  log_info "Waiting for ZTWIM (SPIRE) CRDs..."
-  tries=0
-  while ! $KUBECTL get crd spiffecsidrivers.operator.openshift.io &>/dev/null; do
-    tries=$((tries + 1))
-    if [ $tries -ge 120 ]; then
-      log_error "ZTWIM CRDs not found after 10m — check operator subscription"
-      $KUBECTL get subscription -n zero-trust-workload-identity-manager 2>/dev/null || true
-      $KUBECTL get csv -n zero-trust-workload-identity-manager 2>/dev/null || true
-      return 1
-    fi
-    sleep 5
-  done
-  log_success "ZTWIM CRDs available"
-
-  # Wait for Sail Operator CRDs — Istio/ztunnel/CNI operands depend on this.
-  log_info "Waiting for Sail Operator CRDs..."
-  tries=0
-  while ! $KUBECTL get crd istios.sailoperator.io &>/dev/null; do
-    tries=$((tries + 1))
-    if [ $tries -ge 120 ]; then
-      log_error "Sail Operator CRDs not found after 10m — check operator subscription"
-      $KUBECTL get subscription -n openshift-operators 2>/dev/null || true
-      $KUBECTL get csv -n openshift-operators 2>/dev/null | grep -i sail || true
-      return 1
-    fi
-    sleep 5
-  done
-  log_success "Sail Operator CRDs available"
+  _wait_for_crd "keycloaks.k8s.keycloak.org" 300 "Keycloak" || return 1
+  _wait_for_crd "spiffecsidrivers.operator.openshift.io" 600 "ZTWIM (SPIRE)" || return 1
+  _wait_for_crd "istios.sailoperator.io" 600 "Sail Operator" || return 1
 
   log_info "Applying operand CRs..."
   helm get hooks kagenti-deps -n kagenti-system 2>/dev/null | python3 -c "
@@ -972,6 +962,140 @@ if $WITH_AGENT_SANDBOX; then
   fi
   echo ""
 fi
+
+# ============================================================================
+# Step 3d: Deferred MLflow provisioning
+# ============================================================================
+# MLflow provisioning runs AFTER kagenti-deps because the RHOAI operator
+# (installed via OLM Subscription in Step 3) must register its CRDs before we
+# can create DataScienceCluster and MLflow resources.
+_deferred_mlflow() {
+  if [ "$SKIP_MLFLOW" = true ]; then
+    log_success "Skipping MLflow (--skip-mlflow)"
+    return 0
+  fi
+  if $DRY_RUN; then
+    log_info "[dry-run] Would provision MLflow via deferred RHOAI flow"
+    return 0
+  fi
+
+  # Wait for RHOAI operator to register the DataScienceCluster CRD.
+  if ! _wait_for_crd "datascienceclusters.datasciencecluster.opendatahub.io" 600 "DataScienceCluster"; then
+    log_warn "RHOAI operator not installed — skipping MLflow provisioning"
+    SKIP_MLFLOW=true
+    return 0
+  fi
+
+  # Wait for RHOAI operator deployment to be fully ready before creating DSC.
+  # CRD registration happens via OLM CSV install and does NOT require the operator
+  # pods to be running. Without this wait, DSC reconciliation silently fails.
+  _wait_deployment_ready rhods-operator redhat-ods-operator "RHOAI operator" || {
+    log_warn "RHOAI operator deployment not ready — skipping MLflow"
+    SKIP_MLFLOW=true
+    return 0
+  }
+
+  # Create or patch DSC with mlflowoperator=Managed
+  log_info "Ensuring DataScienceCluster has mlflowoperator=Managed..."
+  if $KUBECTL get datasciencecluster default-dsc &>/dev/null; then
+    local state
+    state=$($KUBECTL get datasciencecluster default-dsc \
+      -o jsonpath='{.spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
+    if [ "$state" != "Managed" ]; then
+      $KUBECTL patch datasciencecluster default-dsc --type=merge \
+        -p '{"spec":{"components":{"mlflowoperator":{"managementState":"Managed"}}}}' || true
+      log_success "DSC patched: mlflowoperator=Managed"
+    else
+      log_success "DSC already has mlflowoperator=Managed"
+    fi
+  else
+    # Create DSC with only CRD-schema fields. The RHOAI operator webhook
+    # auto-injects mlflowoperator (defaulting to Removed). We then patch it
+    # to Managed in a second step — putting mlflowoperator directly in the
+    # create spec is silently ignored because it's not in the CRD schema.
+    $KUBECTL apply -f - <<'DSCEOF'
+apiVersion: datasciencecluster.opendatahub.io/v1
+kind: DataScienceCluster
+metadata:
+  name: default-dsc
+spec:
+  components:
+    dashboard:
+      managementState: Removed
+    kserve:
+      managementState: Managed
+    kueue:
+      managementState: Removed
+    modelregistry:
+      managementState: Removed
+    ray:
+      managementState: Removed
+    trainingoperator:
+      managementState: Removed
+    trustyai:
+      managementState: Removed
+    workbenches:
+      managementState: Removed
+DSCEOF
+    log_success "DataScienceCluster created"
+    # Wait for webhook to inject mlflowoperator field, then patch to Managed
+    sleep 5
+    $KUBECTL patch datasciencecluster default-dsc --type=merge \
+      -p '{"spec":{"components":{"mlflowoperator":{"managementState":"Managed"}}}}' || true
+    log_success "DSC patched: mlflowoperator=Managed"
+  fi
+
+  # Wait for MLflow CRD — the RHOAI operator reconciles the DSC and installs
+  # the MLflow operator component, which registers the MLflow CRD.
+  if ! _wait_for_crd "mlflows.mlflow.opendatahub.io" 600 "MLflow"; then
+    log_warn "MLflow CRD not registered after 10m — skipping MLflow"
+    SKIP_MLFLOW=true
+    return 0
+  fi
+
+  # Create MLflow CR and wait for it to be ready
+  _mlflow_create_cr
+  if ! _mlflow_wait_ready; then
+    log_warn "MLflow not ready — OTEL trace export will be skipped"
+    SKIP_MLFLOW=true
+    return 0
+  fi
+
+  # Upgrade kagenti-deps to wire OTEL collector to the MLflow endpoint
+  if [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
+    log_info "Upgrading kagenti-deps with MLflow OTEL endpoint..."
+
+    # Adopt cert-manager resources created by _ensure_rhoai_shared_trust (Step 3b)
+    # so Helm can import them during the upgrade without ownership conflicts.
+    _adopt_for_helm ClusterIssuer istio-mesh-root-selfsigned
+    _adopt_for_helm ClusterIssuer istio-mesh-ca
+    _adopt_for_helm Certificate istio-mesh-root-ca cert-manager
+    _adopt_for_helm Certificate istio-cacerts-default istio-system
+    _adopt_for_helm Certificate istio-cacerts-openshift-gateway openshift-ingress
+
+    local _mlflow_vals_file
+    _mlflow_vals_file=$(mktemp /tmp/kagenti-mlflow-vals-XXXXXX.yaml)
+    cat > "$_mlflow_vals_file" <<EOF
+otel:
+  mlflow:
+    enabled: true
+  collector:
+    mlflowConfig:
+      exporters:
+        otlphttp/mlflow:
+          traces_endpoint: "${MLFLOW_TRACES_ENDPOINT}"
+EOF
+    helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
+      -n kagenti-system \
+      -f "$_mlflow_vals_file" \
+      --reuse-values --no-hooks
+    rm -f "$_mlflow_vals_file"
+    log_success "kagenti-deps upgraded with MLflow OTEL endpoint"
+  fi
+}
+log_info "Step 3d: MLflow provisioning (deferred)"
+_deferred_mlflow
+echo ""
 
 # ============================================================================
 # Step 4: Install Kagenti (operator + webhook + UI)
