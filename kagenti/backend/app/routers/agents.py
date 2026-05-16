@@ -2627,18 +2627,22 @@ def _create_or_replace_service(
     """
     if workload_type == WORKLOAD_TYPE_JOB:
         return
+    # name/namespace are DNS-1123 (validated by Kubernetes API) so no real
+    # log-injection risk, but use lazy %-formatting to satisfy CodeQL's
+    # py/log-injection rule and match Python logging best practice.
     try:
         kube.create_service(namespace=namespace, body=service_manifest)
-        logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+        logger.info("Created Service '%s' in namespace '%s'", name, namespace)
     except ApiException as e:
         if e.status == 409 and workload_type == WORKLOAD_TYPE_SANDBOX:
             logger.warning(
-                f"Service '{name}' already exists (Sandbox controller race); "
-                f"replacing with backend-managed ClusterIP Service"
+                "Service '%s' already exists (Sandbox controller race); "
+                "replacing with backend-managed ClusterIP Service",
+                name,
             )
             kube.delete_service(namespace=namespace, name=name)
             kube.create_service(namespace=namespace, body=service_manifest)
-            logger.info(f"Replaced Service '{name}' in namespace '{namespace}'")
+            logger.info("Replaced Service '%s' in namespace '%s'", name, namespace)
         else:
             raise
 
@@ -3633,9 +3637,16 @@ async def finalize_shipwright_build(
         # same way the image-based create flow does.
         service_manifest = _build_service_manifest(agent_request)
         # Carry forward build-time kagenti.io/* labels onto the Service so
-        # downstream label-based selectors / queries match.
+        # downstream label-based selectors / queries match. The startswith
+        # check filters Kubernetes label keys (DNS-1123 prefixed values),
+        # not URLs — `# lgtm` suppresses CodeQL's URL-sanitization rule
+        # which otherwise flags this identical pattern that appears 7 other
+        # places in this file (the duplication is itself worth cleaning up
+        # but is out of scope for this fix).
         service_manifest["metadata"]["labels"].update(
-            {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
+            {  # lgtm[py/incomplete-url-substring-sanitization]
+                k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")
+            }
         )
         _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
