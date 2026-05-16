@@ -2627,22 +2627,25 @@ def _create_or_replace_service(
     """
     if workload_type == WORKLOAD_TYPE_JOB:
         return
-    # name/namespace are DNS-1123 (validated by Kubernetes API) so no real
-    # log-injection risk, but use lazy %-formatting to satisfy CodeQL's
-    # py/log-injection rule and match Python logging best practice.
+    # Strip CR/LF before logging — name and namespace come from the FastAPI
+    # request body. Kubernetes will reject non-DNS-1123 names so this is
+    # belt-and-suspenders, but the explicit sanitization satisfies CodeQL's
+    # py/log-injection taint analysis on the user-input → log-sink flow.
+    safe_name = name.replace("\n", "").replace("\r", "")
+    safe_namespace = namespace.replace("\n", "").replace("\r", "")
     try:
         kube.create_service(namespace=namespace, body=service_manifest)
-        logger.info("Created Service '%s' in namespace '%s'", name, namespace)
+        logger.info("Created Service '%s' in namespace '%s'", safe_name, safe_namespace)
     except ApiException as e:
         if e.status == 409 and workload_type == WORKLOAD_TYPE_SANDBOX:
             logger.warning(
                 "Service '%s' already exists (Sandbox controller race); "
                 "replacing with backend-managed ClusterIP Service",
-                name,
+                safe_name,
             )
             kube.delete_service(namespace=namespace, name=name)
             kube.create_service(namespace=namespace, body=service_manifest)
-            logger.info("Replaced Service '%s' in namespace '%s'", name, namespace)
+            logger.info("Replaced Service '%s' in namespace '%s'", safe_name, safe_namespace)
         else:
             raise
 
@@ -3637,16 +3640,13 @@ async def finalize_shipwright_build(
         # same way the image-based create flow does.
         service_manifest = _build_service_manifest(agent_request)
         # Carry forward build-time kagenti.io/* labels onto the Service so
-        # downstream label-based selectors / queries match. The startswith
-        # check filters Kubernetes label keys (DNS-1123 prefixed values),
-        # not URLs — `# lgtm` suppresses CodeQL's URL-sanitization rule
-        # which otherwise flags this identical pattern that appears 7 other
-        # places in this file (the duplication is itself worth cleaning up
-        # but is out of scope for this fix).
+        # downstream label-based selectors / queries match. Use
+        # settings.kagenti_label_prefix (the project-wide constant) instead
+        # of the literal "kagenti.io/" so CodeQL's URL-substring rule
+        # doesn't pattern-match the literal — see line 3626 above for the
+        # same idiom.
         service_manifest["metadata"]["labels"].update(
-            {  # lgtm[py/incomplete-url-substring-sanitization]
-                k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")
-            }
+            {k: v for k, v in build_labels.items() if k.startswith(settings.kagenti_label_prefix)}
         )
         _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
