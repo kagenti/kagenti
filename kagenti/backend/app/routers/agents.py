@@ -3637,9 +3637,7 @@ async def finalize_shipwright_build(
         service_manifest["metadata"]["labels"].update(
             {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
         )
-        _create_or_replace_service(
-            kube, namespace, name, service_manifest, final_workload_type
-        )
+        _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
         # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
         # Only for agents — tools don't need sidecar injection
