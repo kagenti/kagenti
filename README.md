@@ -70,7 +70,7 @@ Under each of these pillars are logical components that support the workload run
 │  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
 │  │                  │ │                  │ │                  │ │                │  │
 │  │   Agents/Tools   │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
-│  │   Lifecycle &    │ │    & Policy      │ │   (AuthBridge*)  │ │(MLflow,Langflow│  │
+│  │   Lifecycle &    │ │    & Policy      │ │   (AuthBridge*)  │ │(MLflow,Langfuse│  │
 │  │   Discovery      │ │  (MCP Gateway)   │ │                  │ │ Phoenix)       │  │
 │  │ (k8s workloads,  │ │                  │ │                  │ │                │  │
 │  │ labels,          │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
@@ -167,6 +167,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
 | **Architecture Details** | [Technical Details](./docs/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
+| **LLM Observability** | [Langfuse Integration](./docs/langfuse-integration.md), [MLflow Integration](./docs/mlflow-integration.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |
 | **Troubleshooting** | [Troubleshooting Guide](./docs/troubleshooting.md) |
 | **Blog Posts** | [Kagenti Blog](./docs/blogs.md) |
