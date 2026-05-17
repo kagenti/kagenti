@@ -2602,6 +2602,54 @@ def _build_deployment_manifest(
     return manifest
 
 
+def _create_or_replace_service(
+    kube: "KubernetesService",
+    namespace: str,
+    name: str,
+    service_manifest: dict,
+    workload_type: str,
+) -> None:
+    """Create the Service for an agent / tool, with the Sandbox-controller-race
+    handling that kagenti#1581 introduced.
+
+    Returns silently for ``WORKLOAD_TYPE_JOB`` since Jobs don't need a Service
+    (the operator's `AgentCardReconciler` doesn't reconcile Jobs).
+
+    For ``WORKLOAD_TYPE_SANDBOX`` an existing Service may have been created by
+    the agent-sandbox controller before our admission window — kagenti#1581
+    handles that 409 by deleting the controller's short-lived Service and
+    replacing it with the backend-managed ClusterIP shape. Other workload
+    types (Deployment, StatefulSet) re-raise on 409.
+
+    Used by both the image-based create flow (kagenti#1581) and the
+    source-build / Shipwright finalize flow (kagenti#1593) so the two paths
+    can't drift again.
+    """
+    if workload_type == WORKLOAD_TYPE_JOB:
+        return
+    # Strip CR/LF before logging — name and namespace come from the FastAPI
+    # request body. Kubernetes will reject non-DNS-1123 names so this is
+    # belt-and-suspenders, but the explicit sanitization satisfies CodeQL's
+    # py/log-injection taint analysis on the user-input → log-sink flow.
+    safe_name = name.replace("\n", "").replace("\r", "")
+    safe_namespace = namespace.replace("\n", "").replace("\r", "")
+    try:
+        kube.create_service(namespace=namespace, body=service_manifest)
+        logger.info("Created Service '%s' in namespace '%s'", safe_name, safe_namespace)
+    except ApiException as e:
+        if e.status == 409 and workload_type == WORKLOAD_TYPE_SANDBOX:
+            logger.warning(
+                "Service '%s' already exists (Sandbox controller race); "
+                "replacing with backend-managed ClusterIP Service",
+                safe_name,
+            )
+            kube.delete_service(namespace=namespace, name=name)
+            kube.create_service(namespace=namespace, body=service_manifest)
+            logger.info("Replaced Service '%s' in namespace '%s'", safe_name, safe_namespace)
+        else:
+            raise
+
+
 def _build_service_manifest(request: "CreateAgentRequest") -> dict:
     """
     Build a Kubernetes Service manifest for an agent.
@@ -3065,30 +3113,16 @@ async def create_agent(
                 )
                 logger.info(f"Created Sandbox '{request.name}' in namespace '{request.namespace}'")
 
-            # Create Service (not needed for Jobs — Sandbox uses backend-managed Service)
-            if request.workloadType != WORKLOAD_TYPE_JOB:
-                service_manifest = _build_service_manifest(request)
-                try:
-                    kube.create_service(
-                        namespace=request.namespace,
-                        body=service_manifest,
-                    )
-                    logger.info(
-                        f"Created Service '{request.name}' in namespace '{request.namespace}'"
-                    )
-                except ApiException as e:
-                    if e.status == 409 and request.workloadType == WORKLOAD_TYPE_SANDBOX:
-                        logger.warning(
-                            f"Service '{request.name}' already exists (Sandbox controller race); "
-                            f"replacing with backend-managed ClusterIP Service"
-                        )
-                        kube.delete_service(namespace=request.namespace, name=request.name)
-                        kube.create_service(namespace=request.namespace, body=service_manifest)
-                        logger.info(
-                            f"Replaced Service '{request.name}' in namespace '{request.namespace}'"
-                        )
-                    else:
-                        raise
+            # Create Service (not needed for Jobs — Sandbox uses backend-managed
+            # Service, see _create_or_replace_service for the full rationale).
+            service_manifest = _build_service_manifest(request)
+            _create_or_replace_service(
+                kube,
+                request.namespace,
+                request.name,
+                service_manifest,
+                request.workloadType,
+            )
 
             # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
             if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
@@ -3601,15 +3635,20 @@ async def finalize_shipwright_build(
             kube.create_sandbox(namespace=namespace, body=sandbox_manifest)
             logger.info(f"Created Sandbox '{name}' in namespace '{namespace}' from build")
 
-        # Create Service (not needed for Jobs or Sandboxes)
-        if final_workload_type not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
-            service_manifest = _build_service_manifest(agent_request)
-            # Add additional labels from Build
-            service_manifest["metadata"]["labels"].update(
-                {k: v for k, v in build_labels.items() if k.startswith("kagenti.io/")}
-            )
-            kube.create_service(namespace=namespace, body=service_manifest)
-            logger.info(f"Created Service '{name}' in namespace '{namespace}'")
+        # Create Service via the shared _create_or_replace_service helper —
+        # gates on workload_type and handles the Sandbox controller race the
+        # same way the image-based create flow does.
+        service_manifest = _build_service_manifest(agent_request)
+        # Carry forward build-time kagenti.io/* labels onto the Service so
+        # downstream label-based selectors / queries match. Use
+        # settings.kagenti_label_prefix (the project-wide constant) instead
+        # of the literal "kagenti.io/" so CodeQL's URL-substring rule
+        # doesn't pattern-match the literal — see line 3626 above for the
+        # same idiom.
+        service_manifest["metadata"]["labels"].update(
+            {k: v for k, v in build_labels.items() if k.startswith(settings.kagenti_label_prefix)}
+        )
+        _create_or_replace_service(kube, namespace, name, service_manifest, final_workload_type)
 
         # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
         # Only for agents — tools don't need sidecar injection

@@ -108,12 +108,108 @@ class TestBuildServiceManifestForSandbox:
         assert labels.get("kagenti.io/workload-type") == "sandbox"
 
 
-class TestCreateAgentServiceForSandbox:
-    """Tests for create_agent Service creation path for Sandbox workloads."""
+class TestCreateOrReplaceService:
+    """Tests for `_create_or_replace_service` — the shared helper used by both
+    the image-based agent-create flow and the source-build / Shipwright finalize
+    flow. Covers the workload-type gate (Job → skip) and the Sandbox controller
+    409-race recovery (delete+recreate). Pre-`kagenti#1581` / `#1593` the two
+    call sites had divergent inline copies of this logic; the helper exists to
+    keep them from drifting again, and these tests pin the contract."""
 
-    def test_sandbox_not_excluded_from_service_creation(self):
-        """Sandbox must NOT be in the workload types that skip Service creation."""
-        from app.routers.agents import WORKLOAD_TYPE_JOB
+    def _service_manifest(self, name="test-agent"):
+        # The helper doesn't inspect the manifest content, just passes it
+        # through to create_service / delete_service. A minimal stub is fine.
+        return {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": name, "namespace": "team1", "labels": {}},
+            "spec": {"selector": {}, "ports": []},
+        }
 
-        skip_service_types = {WORKLOAD_TYPE_JOB}
-        assert WORKLOAD_TYPE_SANDBOX not in skip_service_types
+    def test_job_workload_skips_service_creation(self):
+        """Jobs don't get a Service — `kube.create_service` must not be called."""
+        from app.routers.agents import _create_or_replace_service, WORKLOAD_TYPE_JOB
+
+        kube = MagicMock()
+        _create_or_replace_service(
+            kube, "team1", "j", self._service_manifest("j"), WORKLOAD_TYPE_JOB
+        )
+
+        kube.create_service.assert_not_called()
+        kube.delete_service.assert_not_called()
+
+    def test_sandbox_creates_service(self):
+        """Sandbox must NOT be skipped — pre-`kagenti#1581` it was, breaking the
+        operator's AgentCardReconciler. This test would have caught both that
+        regression and the source-build path's parallel bug fixed by `#1593`."""
+        from app.routers.agents import _create_or_replace_service
+
+        kube = MagicMock()
+        manifest = self._service_manifest("sb")
+        _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
+
+        kube.create_service.assert_called_once_with(namespace="team1", body=manifest)
+        kube.delete_service.assert_not_called()
+
+    def test_deployment_creates_service(self):
+        """Deployment workloads always get a Service — the most common path."""
+        from app.routers.agents import _create_or_replace_service
+
+        kube = MagicMock()
+        manifest = self._service_manifest("dep")
+        _create_or_replace_service(kube, "team1", "dep", manifest, "deployment")
+
+        kube.create_service.assert_called_once_with(namespace="team1", body=manifest)
+        kube.delete_service.assert_not_called()
+
+    def test_sandbox_409_replaces_existing_service(self):
+        """The agent-sandbox controller can race us by creating its own
+        short-lived Service. On 409 we delete it and recreate with our
+        backend-managed shape (kagenti#1581's pattern)."""
+        from app.routers.agents import _create_or_replace_service
+        from kubernetes.client import ApiException
+
+        kube = MagicMock()
+        # First create_service raises 409; second succeeds (after delete).
+        kube.create_service.side_effect = [ApiException(status=409), None]
+        manifest = self._service_manifest("sb")
+
+        _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
+
+        assert kube.create_service.call_count == 2
+        kube.delete_service.assert_called_once_with(namespace="team1", name="sb")
+
+    def test_deployment_409_propagates(self):
+        """Deployment workloads do not have a controller-race recovery — a 409
+        is a real conflict (e.g., user re-importing on top of an existing
+        Service) and must propagate so the API caller sees a clear error."""
+        from app.routers.agents import _create_or_replace_service
+        from kubernetes.client import ApiException
+        import pytest
+
+        kube = MagicMock()
+        kube.create_service.side_effect = ApiException(status=409)
+
+        with pytest.raises(ApiException) as exc_info:
+            _create_or_replace_service(
+                kube, "team1", "dep", self._service_manifest("dep"), "deployment"
+            )
+        assert exc_info.value.status == 409
+        kube.delete_service.assert_not_called()
+
+    def test_non_409_propagates_for_sandbox(self):
+        """Even on Sandbox, only a 409 triggers the replace path. Other API
+        errors (403, 500, etc.) propagate so callers can see real failures."""
+        from app.routers.agents import _create_or_replace_service
+        from kubernetes.client import ApiException
+        import pytest
+
+        kube = MagicMock()
+        kube.create_service.side_effect = ApiException(status=500)
+
+        with pytest.raises(ApiException) as exc_info:
+            _create_or_replace_service(
+                kube, "team1", "sb", self._service_manifest("sb"), WORKLOAD_TYPE_SANDBOX
+            )
+        assert exc_info.value.status == 500
+        kube.delete_service.assert_not_called()
