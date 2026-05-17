@@ -481,18 +481,27 @@ export const AgentDetailPage: React.FC = () => {
                           </Label>
                         </DescriptionListDescription>
                       </DescriptionListGroup>
-                      <DescriptionListGroup>
-                        <DescriptionListTerm>Replicas</DescriptionListTerm>
-                        <DescriptionListDescription>
-                          {readyReplicas}/{replicas} ready
-                          {availableReplicas > 0 && ` (${availableReplicas} available)`}
-                          {workloadType === 'statefulset' && updatedReplicas < replicas && (
-                            <Label color="blue" isCompact style={{ marginLeft: 8 }}>
-                              {updatedReplicas}/{replicas} updated
-                            </Label>
-                          )}
-                        </DescriptionListDescription>
-                      </DescriptionListGroup>
+                      {workloadType === 'sandbox' ? (
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>Pods</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {isReady ? (status.replicas ?? 1) : 0}/{status.replicas ?? 1} ready
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                      ) : workloadType !== 'job' && (
+                        <DescriptionListGroup>
+                          <DescriptionListTerm>Replicas</DescriptionListTerm>
+                          <DescriptionListDescription>
+                            {readyReplicas}/{replicas} ready
+                            {availableReplicas > 0 && ` (${availableReplicas} available)`}
+                            {workloadType === 'statefulset' && updatedReplicas < replicas && (
+                              <Label color="blue" isCompact style={{ marginLeft: 8 }}>
+                                {updatedReplicas}/{replicas} updated
+                              </Label>
+                            )}
+                          </DescriptionListDescription>
+                        </DescriptionListGroup>
+                      )}
                       <DescriptionListGroup>
                         <DescriptionListTerm>Created</DescriptionListTerm>
                         <DescriptionListDescription>
