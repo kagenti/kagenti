@@ -64,6 +64,18 @@ if ! kubectl get secret keycloak-admin-secret -n "$OPERATOR_NAMESPACE" &>/dev/nu
 fi
 log_info "Preflight OK: keycloak-admin-secret present in $OPERATOR_NAMESPACE"
 
+# Sync keycloak-admin-secret to the agent namespace.
+# The client-registration sidecar (injected by the webhook) mounts this secret
+# from the pod's namespace. Since operator#321 the secret lives only in
+# kagenti-system, so we replicate it for sidecar compatibility.
+if ! kubectl get secret keycloak-admin-secret -n "$NAMESPACE" &>/dev/null; then
+    log_info "Syncing keycloak-admin-secret to $NAMESPACE for client-registration sidecar..."
+    kubectl get secret keycloak-admin-secret -n "$OPERATOR_NAMESPACE" -o json \
+        | jq --arg ns "$NAMESPACE" '.metadata.namespace = $ns | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .metadata.ownerReferences)' \
+        | kubectl apply -f -
+    log_info "keycloak-admin-secret synced to $NAMESPACE"
+fi
+
 EXT_ROOT="${KAGENTI_EXTENSIONS_ROOT:-}"
 # Trim trailing slash so path joins are never authbridge//...
 if [[ -n "$EXT_ROOT" ]]; then
