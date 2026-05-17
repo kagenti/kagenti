@@ -248,7 +248,7 @@ def setup_mlflow_client(mlflow_url: str) -> bool:
         # Verify connectivity with a lightweight API call
         import httpx
 
-        response = httpx.get(f"{mlflow_url}/version", timeout=5.0, verify=False)
+        response = httpx.get(f"{mlflow_url}/health", timeout=5.0)
         if response.status_code not in (200, 401, 302, 307):
             logger.error(f"MLflow not healthy: {response.status_code}")
             return False
