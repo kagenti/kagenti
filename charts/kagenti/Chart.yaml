@@ -2,8 +2,8 @@ apiVersion: v2
 name: kagenti
 description: A Helm chart for deploying the kagenti platform
 type: application
-version: 0.6.0-rc.1
-appVersion: "0.6.0-rc.1"
+version: 0.7.0-alpha.1
+appVersion: "0.7.0-alpha.1"
 
 dependencies:
 - name: kagenti-operator-chart
