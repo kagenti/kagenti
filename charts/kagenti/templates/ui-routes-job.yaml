@@ -194,7 +194,7 @@ spec:
       serviceAccountName: {{ include "kagenti.fullname" . }}-route-processor-sa
       containers:
       - name: script-runner
-        image: registry.redhat.io/openshift4/ose-cli:latest
+        image: {{ .Values.common.oseCLIImage }}
         command: ["/bin/bash", "-c", "/scripts/process_routes.sh"]
         volumeMounts:
         - name: script-volume
