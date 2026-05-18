@@ -35,7 +35,7 @@ mcp-controller-666f8cf9bf-dcpbc      1/1     Running   0          30h
 ### Register Weather MCP Server
 
 The Weather Service Tool can be installed using the Kagenti UI [as usual](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-3-import-the-weather-tool-via-kagenti-ui). Once it is
-installed, to register it with the Gateway, create an [`HTTPRoute`](https://gateway-api.sigs.k8s.io/api-types/httproute/):
+installed, to register it with the Gateway, create an [`HTTPRoute`](https://gateway-api.sigs.k8s.io/reference/api-types/httproute/):
 
 ```
 echo 'apiVersion: gateway.networking.k8s.io/v1
