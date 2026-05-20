@@ -119,10 +119,6 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
-# Check out the latest stable release (recommended)
-# Find the current version at https://github.com/kagenti/kagenti/releases/latest
-git checkout v0.5.1
-
 # Copy and configure secrets
 cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
 # Edit deployments/envs/.secret_values.yaml with your values
@@ -131,12 +127,7 @@ cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.y
 scripts/kind/setup-kagenti.sh --with-ui --with-spire --with-agent-sandbox --with-builds
 ```
 
-> **Tip:** To find the latest stable version from the command line:
-> ```bash
-> git tag --list 'v*' --sort=-v:refname | grep -v -E '(alpha|rc)' | head -1
-> ```
-
-For all available installer options and detailed instructions (including OpenShift), refer to the [Installation Guide](./docs/install.md).
+Use `scripts/kind/setup-kagenti.sh --help` for all available options. For detailed instructions including OpenShift, refer to the [Installation Guide](./docs/install.md).
 
 ### Access the UI
 
