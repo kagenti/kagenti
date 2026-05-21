@@ -3619,9 +3619,7 @@ async def finalize_shipwright_build(
         # and we read it back here so build-from-source agents inherit
         # the same setting as direct-image agents).
         final_mtls_mode = (
-            request.mtlsMode
-            if request.mtlsMode is not None
-            else stored_config.get("mtlsMode")
+            request.mtlsMode if request.mtlsMode is not None else stored_config.get("mtlsMode")
         )
 
         # Persistent storage

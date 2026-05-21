@@ -124,14 +124,10 @@ def test_finalize_shipwright_request_mirrors_validator():
     from app.routers.agents import FinalizeShipwrightBuildRequest
 
     # Allowed
-    FinalizeShipwrightBuildRequest(
-        authBridgeMode="proxy-sidecar", mtlsMode="strict"
-    )
+    FinalizeShipwrightBuildRequest(authBridgeMode="proxy-sidecar", mtlsMode="strict")
     # Rejected
     with pytest.raises(ValidationError):
-        FinalizeShipwrightBuildRequest(
-            authBridgeMode="envoy-sidecar", mtlsMode="strict"
-        )
+        FinalizeShipwrightBuildRequest(authBridgeMode="envoy-sidecar", mtlsMode="strict")
 
 
 def test_create_agent_request_default_mtls_mode_is_none():
