@@ -453,6 +453,11 @@ export interface CreateSkillResponse {
 // AuthBridge types
 export type AuthBridgeMode = 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
 
+// mTLS posture for AuthBridge sidecars (proxy-sidecar / lite paths only;
+// envoy-sidecar mTLS is not currently configured in the kagenti envoy-config).
+// Maps 1:1 to AgentRuntime.Spec.MTLSMode in the operator.
+export type MtlsMode = 'disabled' | 'permissive' | 'strict';
+
 export interface AuthBridgeConfig {
   AuthBridge: boolean | null;
   mode: AuthBridgeMode | null;

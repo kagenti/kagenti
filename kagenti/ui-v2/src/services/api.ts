@@ -233,6 +233,9 @@ export const agentService = {
     spireEnabled?: boolean;
     // Per-workload AuthBridge mode (maps to AgentRuntime.Spec.AuthBridgeMode)
     authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+    // Per-workload mTLS posture (maps to AgentRuntime.Spec.MTLSMode).
+    // Backend rejects mtlsMode != 'disabled' when authBridgeMode === 'envoy-sidecar'.
+    mtlsMode?: 'disabled' | 'permissive' | 'strict';
     outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
@@ -444,6 +447,7 @@ export const shipwrightService = {
       createHttpRoute?: boolean;
       authBridgeEnabled?: boolean;
       authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+      mtlsMode?: 'disabled' | 'permissive' | 'strict';
       outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
       outboundPortsExclude?: string;
       inboundPortsExclude?: string;

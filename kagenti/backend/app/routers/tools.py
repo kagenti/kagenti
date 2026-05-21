@@ -228,8 +228,15 @@ class CreateToolRequest(BaseModel):
     # SPIRE identity (gates spiffe-helper inside the combined authbridge container)
     spireEnabled: bool = False
 
-    # Per-workload AuthBridge mode override (maps to
-    # AgentRuntime.Spec.AuthBridgeMode; None means cluster default).
+    # Per-workload AuthBridge mode override. Tools don't create an
+    # AgentRuntime CR (they use the deprecated kagenti.io/authbridge-mode
+    # pod annotation, see tools.py:1041-1046), so this field flows
+    # through the annotation path, not via Spec.AuthBridgeMode.
+    #
+    # mtlsMode is intentionally NOT exposed for tools: it lives on the
+    # AgentRuntime CR's Spec, and there's no equivalent pod annotation
+    # for it. Once tools start producing AgentRuntime CRs (tracked as
+    # an operator-side follow-up), mtlsMode can be added here too.
     authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
 
     # Port exclusion annotations

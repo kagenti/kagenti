@@ -211,6 +211,13 @@ type CreateAgentRequest struct {
 	AuthBridgeEnabled bool                     `json:"authBridgeEnabled"`
 	SpireEnabled      bool                     `json:"spireEnabled"`
 	AuthBridgeMode    string                   `json:"authBridgeMode,omitempty"`
+	// MTLSMode maps to AgentRuntime.Spec.MTLSMode. Backend rejects
+	// non-disabled values when AuthBridgeMode is "envoy-sidecar"
+	// (Envoy SDS not currently configured by the kagenti chart).
+	// Empty string sends nothing (operator default applies); the TUI
+	// form does not yet expose this — it's wired through here so
+	// kubectl-style or future-CLI usage paths don't drop the field.
+	MTLSMode          string                   `json:"mtlsMode,omitempty"`
 	PersistentStorage *PersistentStorageConfig `json:"persistentStorage,omitempty"`
 }
 

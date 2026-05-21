@@ -213,6 +213,15 @@ export const ImportAgentPage: React.FC = () => {
   const [inboundPortsExclude, setInboundPortsExclude] = useState('');
   // AuthBridge config overrides
   const [defaultOutboundPolicy, setDefaultOutboundPolicy] = useState('passthrough');
+  // mTLS posture between AuthBridge sidecars. Always sends an explicit
+  // value (default 'disabled') — UI-created agents opt out of any
+  // namespace-level mtls.mode setting via the operator's CR-pin
+  // semantic. Force-reset to 'disabled' when useEnvoyMode flips on
+  // because the operator/backend reject envoy-sidecar + non-disabled.
+  const [mtlsMode, setMtlsMode] = useState<'disabled' | 'permissive' | 'strict'>('disabled');
+  useEffect(() => {
+    if (useEnvoyMode) setMtlsMode('disabled');
+  }, [useEnvoyMode]);
   const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
@@ -503,6 +512,9 @@ export const ImportAgentPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
+        // mTLS posture — only meaningful when AuthBridge is on AND we're
+        // not in envoy-sidecar mode (backend rejects that combo).
+        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -538,6 +550,9 @@ export const ImportAgentPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
+        // mTLS posture — only meaningful when AuthBridge is on AND we're
+        // not in envoy-sidecar mode (backend rejects that combo).
+        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -1206,6 +1221,40 @@ export const ImportAgentPage: React.FC = () => {
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
                     <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
                   </FormSelect>
+                </FormGroup>
+                <FormGroup label="Sidecar mTLS" fieldId="mtlsMode">
+                  <FormSelect
+                    id="mtlsMode"
+                    value={mtlsMode}
+                    onChange={(_e, v) => setMtlsMode(v as 'disabled' | 'permissive' | 'strict')}
+                    aria-label="Sidecar mTLS mode"
+                    isDisabled={useEnvoyMode}
+                  >
+                    <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
+                    <FormSelectOption key="permissive" value="permissive" label="permissive — try mTLS, fall back to plaintext on handshake failure" />
+                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed on handshake failure" />
+                  </FormSelect>
+                  <FormHelperText>
+                    <HelperText>
+                      {useEnvoyMode ? (
+                        <HelperTextItem variant="warning">
+                          envoy-sidecar mode does not currently support mTLS (Envoy SDS not configured by the kagenti chart). Forced to disabled.
+                        </HelperTextItem>
+                      ) : (
+                        <>
+                          <HelperTextItem>
+                            Controls byte-peek mTLS between AuthBridge sidecars on the proxy-sidecar / lite paths.
+                          </HelperTextItem>
+                          <HelperTextItem>
+                            Requires SPIRE in the cluster — selecting permissive or strict auto-enables SPIRE for this workload.
+                          </HelperTextItem>
+                          <HelperTextItem variant="warning">
+                            permissive falls back silently to plaintext on TLS handshake failure (e.g. peer not yet running mTLS); use strict for production posture once rollout completes.
+                          </HelperTextItem>
+                        </>
+                      )}
+                    </HelperText>
+                  </FormHelperText>
                 </FormGroup>
               </ExpandableSection>
               )}
