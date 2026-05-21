@@ -27,102 +27,158 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - ui-v2
-          - backend
-          - ui-oauth-secret
-          - agent-oauth-secret
-          - api-oauth-secret
-          - mlflow-oauth-secret
-          - spiffe-idp-setup
 
     steps:
-      - name: Delete stale SHA-tagged images for ${{ matrix.package }}
+      - name: Cleanup stale SHA-tagged container images
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
         with:
           script: |
-            const package_name = `kagenti/${{ matrix.package }}`;
+            const packages = [
+              'ui-v2',
+              'backend',
+              'ui-oauth-secret',
+              'agent-oauth-secret',
+              'api-oauth-secret',
+              'mlflow-oauth-secret',
+              'spiffe-idp-setup',
+            ];
+
             const retentionDays = ${{ inputs.retention_days || 7 }};
             const dryRun = ${{ inputs.dry_run || false }};
             const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+            // Cap deletions to stay well within the 5000 req/hour rate limit.
+            // Each package needs ~1 GET per 100 versions + 1 DELETE per stale version.
+            // Budget: ~4000 requests total (leave headroom for pagination GETs).
+            const maxDeletesPerRun = 4000;
 
             // Pattern: any branch prefix followed by a 7-12 char hex SHA
             const shaTagPattern = /^.+-[0-9a-f]{7,12}$/;
             // Tags to never delete
             const protectedTagPattern = /^(v\d|latest$)/;
 
-            console.log(`Package: ${package_name}`);
             console.log(`Retention: ${retentionDays} days (cutoff: ${cutoffDate.toISOString()})`);
+            console.log(`Max deletions this run: ${maxDeletesPerRun}`);
             console.log(`Dry run: ${dryRun}`);
-            console.log('---');
+            console.log('===');
 
-            // Phase 1: collect all version IDs to delete (avoids pagination drift)
-            const toDelete = [];
-            let skipped = 0;
-            let page = 1;
-            const perPage = 100;
+            let totalDeleted = 0;
+            let totalSkipped = 0;
+            let hitCap = false;
 
-            while (true) {
-              const versions = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
-                package_type: 'container',
-                package_name: package_name,
-                org: 'kagenti',
-                page: page,
-                per_page: perPage,
-              });
-
-              if (versions.data.length === 0) break;
-
-              for (const version of versions.data) {
-                const tags = version.metadata?.container?.tags || [];
-                const createdAt = new Date(version.created_at);
-
-                if (tags.length === 0) {
-                  if (createdAt < cutoffDate) {
-                    toDelete.push({ id: version.id, label: `untagged ${version.id}`, createdAt });
-                  }
-                  continue;
-                }
-
-                if (tags.some(tag => protectedTagPattern.test(tag))) {
-                  skipped++;
-                  continue;
-                }
-
-                if (!tags.every(tag => shaTagPattern.test(tag))) {
-                  skipped++;
-                  continue;
-                }
-
-                if (createdAt >= cutoffDate) {
-                  skipped++;
-                  continue;
-                }
-
-                toDelete.push({ id: version.id, label: tags.join(', '), createdAt });
-              }
-
-              if (versions.data.length < perPage) break;
-              page++;
+            async function sleepMs(ms) {
+              return new Promise(resolve => setTimeout(resolve, ms));
             }
 
-            // Phase 2: delete collected versions
-            for (const item of toDelete) {
-              if (dryRun) {
-                console.log(`[DRY RUN] Would delete ${item.label} (${item.createdAt.toISOString()})`);
-              } else {
-                await github.rest.packages.deletePackageVersionForOrg({
+            async function checkRateLimit() {
+              const { data } = await github.rest.rateLimit.get();
+              const remaining = data.resources.core.remaining;
+              const resetAt = data.resources.core.reset * 1000;
+              if (remaining < 100) {
+                const waitMs = Math.max(resetAt - Date.now(), 0) + 5000;
+                console.log(`Rate limit low (${remaining} remaining). Waiting ${Math.ceil(waitMs / 1000)}s until reset...`);
+                await sleepMs(waitMs);
+              }
+            }
+
+            // Rotate package order by day-of-year so cap pressure is spread
+            // fairly across all packages during backlog drain.
+            const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+            const startIdx = dayOfYear % packages.length;
+            const rotatedPackages = [...packages.slice(startIdx), ...packages.slice(0, startIdx)];
+            console.log(`Package order (rotated by day ${dayOfYear}): ${rotatedPackages.join(', ')}`);
+
+            for (const pkg of rotatedPackages) {
+              if (hitCap) break;
+              const package_name = `kagenti/${pkg}`;
+              console.log(`\nPackage: ${package_name}`);
+              console.log('---');
+
+              // Check rate limit before listing pages for this package
+              await checkRateLimit();
+
+              // Phase 1: collect versions to delete
+              const toDelete = [];
+              let skipped = 0;
+              let page = 1;
+              const perPage = 100;
+
+              while (true) {
+                const versions = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
                   package_type: 'container',
                   package_name: package_name,
                   org: 'kagenti',
-                  package_version_id: item.id,
+                  page: page,
+                  per_page: perPage,
                 });
-                console.log(`Deleted ${item.label} (${item.createdAt.toISOString()})`);
+
+                if (versions.data.length === 0) break;
+
+                for (const version of versions.data) {
+                  const tags = version.metadata?.container?.tags || [];
+                  const createdAt = new Date(version.created_at);
+
+                  if (tags.length === 0) {
+                    if (createdAt < cutoffDate) {
+                      toDelete.push({ id: version.id, label: `untagged ${version.id}`, createdAt });
+                    }
+                    continue;
+                  }
+
+                  if (tags.some(tag => protectedTagPattern.test(tag))) {
+                    skipped++;
+                    continue;
+                  }
+
+                  if (!tags.every(tag => shaTagPattern.test(tag))) {
+                    skipped++;
+                    continue;
+                  }
+
+                  if (createdAt >= cutoffDate) {
+                    skipped++;
+                    continue;
+                  }
+
+                  toDelete.push({ id: version.id, label: tags.join(', '), createdAt });
+                }
+
+                if (versions.data.length < perPage) break;
+                page++;
+              }
+
+              console.log(`Found ${toDelete.length} to delete, ${skipped} preserved`);
+              totalSkipped += skipped;
+
+              // Phase 2: delete with rate-limit awareness
+              for (const item of toDelete) {
+                if (totalDeleted >= maxDeletesPerRun) {
+                  hitCap = true;
+                  console.log(`Reached per-run cap (${maxDeletesPerRun}). Remaining cleanup deferred to next run.`);
+                  break;
+                }
+
+                if (dryRun) {
+                  console.log(`[DRY RUN] Would delete ${item.label} (${item.createdAt.toISOString()})`);
+                } else {
+                  // Check rate limit every 50 deletions
+                  if (totalDeleted > 0 && totalDeleted % 50 === 0) {
+                    await checkRateLimit();
+                  }
+                  await github.rest.packages.deletePackageVersionForOrg({
+                    package_type: 'container',
+                    package_name: package_name,
+                    org: 'kagenti',
+                    package_version_id: item.id,
+                  });
+                  console.log(`Deleted ${item.label} (${item.createdAt.toISOString()})`);
+                }
+                totalDeleted++;
               }
             }
 
-            console.log('---');
-            console.log(`Summary: ${toDelete.length} deleted, ${skipped} preserved`);
+            console.log('\n===');
+            console.log(`Total: ${totalDeleted} deleted, ${totalSkipped} preserved`);
+            if (hitCap) {
+              console.log('Note: per-run cap reached. Run again or wait for next scheduled run to continue.');
+            }
