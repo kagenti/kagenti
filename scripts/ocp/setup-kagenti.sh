@@ -1202,6 +1202,7 @@ run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL
 
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
+  --reset-values \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
