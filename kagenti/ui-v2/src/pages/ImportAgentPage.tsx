@@ -213,6 +213,14 @@ export const ImportAgentPage: React.FC = () => {
   const [inboundPortsExclude, setInboundPortsExclude] = useState('');
   // AuthBridge config overrides
   const [defaultOutboundPolicy, setDefaultOutboundPolicy] = useState('passthrough');
+  // mTLS posture between AuthBridge sidecars. Always sends an explicit
+  // value (default 'disabled'). Force-reset to 'disabled' when either:
+  //   - useEnvoyMode is on (operator/backend reject envoy-sidecar + non-disabled)
+  //   - spireEnabled is off (mtls requires SPIRE-issued X.509 SVIDs)
+  const [mtlsMode, setMtlsMode] = useState<'disabled' | 'permissive' | 'strict'>('disabled');
+  useEffect(() => {
+    if (useEnvoyMode || !spireEnabled) setMtlsMode('disabled');
+  }, [useEnvoyMode, spireEnabled]);
   const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
@@ -503,6 +511,9 @@ export const ImportAgentPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
+        // mTLS posture — only meaningful when AuthBridge is on AND we're
+        // not in envoy-sidecar mode (backend rejects that combo).
+        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -538,6 +549,9 @@ export const ImportAgentPage: React.FC = () => {
         authBridgeEnabled,
         spireEnabled,
         authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
+        // mTLS posture — only meaningful when AuthBridge is on AND we're
+        // not in envoy-sidecar mode (backend rejects that combo).
+        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -1206,6 +1220,30 @@ export const ImportAgentPage: React.FC = () => {
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
                     <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
                   </FormSelect>
+                </FormGroup>
+                <FormGroup label="mTLS" fieldId="mtlsMode">
+                  <FormSelect
+                    id="mtlsMode"
+                    value={mtlsMode}
+                    onChange={(_e, v) => setMtlsMode(v as 'disabled' | 'permissive' | 'strict')}
+                    aria-label="mTLS mode"
+                    isDisabled={useEnvoyMode || !spireEnabled}
+                  >
+                    <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
+                    <FormSelectOption key="permissive" value="permissive" label="permissive — try mTLS, fall back to plaintext on failure" />
+                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed" />
+                  </FormSelect>
+                  {(useEnvoyMode || !spireEnabled) && (
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem variant="warning">
+                          {useEnvoyMode
+                            ? 'Not supported with envoy mode.'
+                            : 'Requires SPIRE — enable SPIRE to use mTLS.'}
+                        </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
+                  )}
                 </FormGroup>
               </ExpandableSection>
               )}

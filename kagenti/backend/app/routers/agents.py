@@ -20,7 +20,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query
 import kubernetes.client
 from kubernetes.client import ApiException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.auth import ROLE_OPERATOR, ROLE_VIEWER, require_roles
 from app.utils.routes import get_agent_url
@@ -257,6 +257,18 @@ class CreateAgentRequest(BaseModel):
     # operator but not surfaced through the UI today.
     authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
 
+    # Per-workload mTLS posture between AuthBridge sidecars. Maps to
+    # AgentRuntime.Spec.MTLSMode. The kagenti UI sends an explicit
+    # value (default "disabled") so users always see what they get;
+    # this means UI-created agents opt out of any namespace-level
+    # mtls.mode setting (CR-pin semantic in the operator). The
+    # operator's validating webhook rejects the envoy-sidecar +
+    # non-disabled combo because Envoy SDS isn't currently configured
+    # by the kagenti envoy-config — we mirror that check below as a
+    # model_validator so the form gets a fast 422 instead of a
+    # webhook denial after the manifest is built.
+    mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
+
     # Port exclusion annotations
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -283,6 +295,29 @@ class CreateAgentRequest(BaseModel):
                 f"Supported types: {', '.join(SUPPORTED_WORKLOAD_TYPES)}"
             )
         return v
+
+    @model_validator(mode="after")
+    def _check_mtls_compatible_with_mode(self) -> "CreateAgentRequest":
+        """Mirror the operator's AgentRuntime validating webhook check.
+
+        envoy-sidecar mode does not currently support mTLS — the kagenti
+        envoy-config doesn't configure SDS, so a strict/permissive value
+        here would silently produce a workload running plaintext while
+        the user believed mTLS was on. The operator webhook will reject
+        this combo at admission; we reject it earlier so the form gets
+        a clean 422 instead of a webhook denial after the manifest has
+        been constructed.
+        """
+        if self.authBridgeMode == "envoy-sidecar" and self.mtlsMode not in (
+            None,
+            "disabled",
+        ):
+            raise ValueError(
+                "mtlsMode must be 'disabled' when authBridgeMode is "
+                "'envoy-sidecar' (envoy-sidecar mTLS is tracked as a "
+                "follow-up; use proxy-sidecar or lite for mTLS today)"
+            )
+        return self
 
 
 class CreateAgentResponse(BaseModel):
@@ -2308,6 +2343,8 @@ def _build_agent_shipwright_build_manifest(
         resource_config["inboundPortsExclude"] = request.inboundPortsExclude
     if request.defaultOutboundPolicy:
         resource_config["defaultOutboundPolicy"] = request.defaultOutboundPolicy
+    if request.mtlsMode:
+        resource_config["mtlsMode"] = request.mtlsMode
     if request.persistentStorage:
         resource_config["persistentStorage"] = request.persistentStorage.model_dump()
     # Add env vars if present
@@ -2468,6 +2505,7 @@ def _build_agentruntime_manifest(
     workload_type: str,
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
+    mtls_mode: Optional[str] = None,
 ) -> dict:
     """Build an AgentRuntime CR manifest for the given workload."""
     kind_map = {
@@ -2484,6 +2522,8 @@ def _build_agentruntime_manifest(
     }
     if auth_bridge_mode:
         spec["authBridgeMode"] = auth_bridge_mode
+    if mtls_mode:
+        spec["mtlsMode"] = mtls_mode
     return {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "AgentRuntime",
@@ -2506,10 +2546,11 @@ def _ensure_agentruntime(
     workload_type: str,
     agent_type: str = RESOURCE_TYPE_AGENT,
     auth_bridge_mode: Optional[str] = None,
+    mtls_mode: Optional[str] = None,
 ) -> None:
     """Create an AgentRuntime CR for the workload. Skip if it already exists."""
     manifest = _build_agentruntime_manifest(
-        name, namespace, workload_type, agent_type, auth_bridge_mode
+        name, namespace, workload_type, agent_type, auth_bridge_mode, mtls_mode
     )
     try:
         kube.create_custom_resource(
@@ -3174,6 +3215,7 @@ async def create_agent(
                     namespace=request.namespace,
                     workload_type=request.workloadType,
                     auth_bridge_mode=request.authBridgeMode,
+                    mtls_mode=request.mtlsMode,
                 )
 
             message = f"Agent '{request.name}' deployed as {request.workloadType} successfully."
@@ -3295,11 +3337,34 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     authBridgeEnabled: Optional[bool] = None
     imagePullSecret: Optional[str] = None
     authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
+    # Mirrors CreateAgentRequest.mtlsMode. Threaded through the
+    # finalize flow so a build-from-source agent inherits the mtlsMode
+    # the user picked at form-submit time (stashed on the BuildRun via
+    # kagenti.io/agent-config annotation).
+    mtlsMode: Optional[Literal["disabled", "permissive", "strict"]] = None
     outboundRoutes: Optional[List[OutboundRoute]] = None
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
     defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
     persistentStorage: Optional[PersistentStorageConfig] = None
+
+    @model_validator(mode="after")
+    def _check_mtls_compatible_with_mode(self) -> "FinalizeShipwrightBuildRequest":
+        """Same cross-field check as CreateAgentRequest, applied at the
+        Shipwright finalize boundary. Either field may be None here
+        (caller falls back to the stored config); only reject when both
+        are explicitly supplied AND incompatible.
+        """
+        if self.authBridgeMode == "envoy-sidecar" and self.mtlsMode not in (
+            None,
+            "disabled",
+        ):
+            raise ValueError(
+                "mtlsMode must be 'disabled' when authBridgeMode is "
+                "'envoy-sidecar' (envoy-sidecar mTLS is tracked as a "
+                "follow-up; use proxy-sidecar or lite for mTLS today)"
+            )
+        return self
 
 
 @router.post(
@@ -3549,6 +3614,14 @@ async def finalize_shipwright_build(
             else stored_config.get("authBridgeMode")
         )
 
+        # Per-workload mTLS mode (applies to AgentRuntime spec only;
+        # the form stores it on the BuildRun annotation at submit time
+        # and we read it back here so build-from-source agents inherit
+        # the same setting as direct-image agents).
+        final_mtls_mode = (
+            request.mtlsMode if request.mtlsMode is not None else stored_config.get("mtlsMode")
+        )
+
         # Persistent storage
         final_persistent_storage = request.persistentStorage
         if final_persistent_storage is None and stored_config.get("persistentStorage"):
@@ -3571,6 +3644,7 @@ async def finalize_shipwright_build(
             authBridgeEnabled=final_auth_bridge,
             spireEnabled=final_spire_enabled,
             authBridgeMode=final_auth_bridge_mode,
+            mtlsMode=final_mtls_mode,
             outboundRoutes=final_outbound_routes,
             outboundPortsExclude=final_outbound_ports_exclude,
             inboundPortsExclude=final_inbound_ports_exclude,
@@ -3712,6 +3786,7 @@ async def finalize_shipwright_build(
                 namespace=namespace,
                 workload_type=final_workload_type,
                 auth_bridge_mode=final_auth_bridge_mode,
+                mtls_mode=final_mtls_mode,
             )
 
         message = f"Agent '{name}' deployed as {final_workload_type} with image '{output_image}'."
