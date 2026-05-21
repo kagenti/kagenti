@@ -214,14 +214,13 @@ export const ImportAgentPage: React.FC = () => {
   // AuthBridge config overrides
   const [defaultOutboundPolicy, setDefaultOutboundPolicy] = useState('passthrough');
   // mTLS posture between AuthBridge sidecars. Always sends an explicit
-  // value (default 'disabled') — UI-created agents opt out of any
-  // namespace-level mtls.mode setting via the operator's CR-pin
-  // semantic. Force-reset to 'disabled' when useEnvoyMode flips on
-  // because the operator/backend reject envoy-sidecar + non-disabled.
+  // value (default 'disabled'). Force-reset to 'disabled' when either:
+  //   - useEnvoyMode is on (operator/backend reject envoy-sidecar + non-disabled)
+  //   - spireEnabled is off (mtls requires SPIRE-issued X.509 SVIDs)
   const [mtlsMode, setMtlsMode] = useState<'disabled' | 'permissive' | 'strict'>('disabled');
   useEffect(() => {
-    if (useEnvoyMode) setMtlsMode('disabled');
-  }, [useEnvoyMode]);
+    if (useEnvoyMode || !spireEnabled) setMtlsMode('disabled');
+  }, [useEnvoyMode, spireEnabled]);
   const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
@@ -1222,39 +1221,29 @@ export const ImportAgentPage: React.FC = () => {
                     <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
                   </FormSelect>
                 </FormGroup>
-                <FormGroup label="Sidecar mTLS" fieldId="mtlsMode">
+                <FormGroup label="mTLS" fieldId="mtlsMode">
                   <FormSelect
                     id="mtlsMode"
                     value={mtlsMode}
                     onChange={(_e, v) => setMtlsMode(v as 'disabled' | 'permissive' | 'strict')}
-                    aria-label="Sidecar mTLS mode"
-                    isDisabled={useEnvoyMode}
+                    aria-label="mTLS mode"
+                    isDisabled={useEnvoyMode || !spireEnabled}
                   >
                     <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
-                    <FormSelectOption key="permissive" value="permissive" label="permissive — try mTLS, fall back to plaintext on handshake failure" />
-                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed on handshake failure" />
+                    <FormSelectOption key="permissive" value="permissive" label="permissive — try mTLS, fall back to plaintext on failure" />
+                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed" />
                   </FormSelect>
-                  <FormHelperText>
-                    <HelperText>
-                      {useEnvoyMode ? (
+                  {(useEnvoyMode || !spireEnabled) && (
+                    <FormHelperText>
+                      <HelperText>
                         <HelperTextItem variant="warning">
-                          envoy-sidecar mode does not currently support mTLS (Envoy SDS not configured by the kagenti chart). Forced to disabled.
+                          {useEnvoyMode
+                            ? 'Not supported with envoy mode.'
+                            : 'Requires SPIRE — enable SPIRE to use mTLS.'}
                         </HelperTextItem>
-                      ) : (
-                        <>
-                          <HelperTextItem>
-                            Controls byte-peek mTLS between AuthBridge sidecars on the proxy-sidecar / lite paths.
-                          </HelperTextItem>
-                          <HelperTextItem>
-                            Requires SPIRE in the cluster — selecting permissive or strict auto-enables SPIRE for this workload.
-                          </HelperTextItem>
-                          <HelperTextItem variant="warning">
-                            permissive falls back silently to plaintext on TLS handshake failure (e.g. peer not yet running mTLS); use strict for production posture once rollout completes.
-                          </HelperTextItem>
-                        </>
-                      )}
-                    </HelperText>
-                  </FormHelperText>
+                      </HelperText>
+                    </FormHelperText>
+                  )}
                 </FormGroup>
               </ExpandableSection>
               )}
