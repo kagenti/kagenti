@@ -172,6 +172,10 @@ export const ImportAgentPage: React.FC = () => {
     features.agentSandbox ? 'sandbox' : 'deployment'
   );
 
+  // Persistent storage (Sandbox / StatefulSet)
+  const [persistentStorageEnabled, setPersistentStorageEnabled] = useState(true);
+  const [persistentStorageSize, setPersistentStorageSize] = useState('1Gi');
+
   // Sync default when feature flags load async (first page load before cache is warm)
   useEffect(() => {
     if (features.agentSandbox) {
@@ -503,6 +507,10 @@ export const ImportAgentPage: React.FC = () => {
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
+        // Persistent storage (Sandbox / StatefulSet)
+        persistentStorage: (workloadType === 'sandbox' || workloadType === 'statefulset') && persistentStorageEnabled
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
         // Shipwright build configuration (always enabled)
         shipwrightConfig,
       });
@@ -534,6 +542,10 @@ export const ImportAgentPage: React.FC = () => {
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
+        // Persistent storage (Sandbox / StatefulSet)
+        persistentStorage: (workloadType === 'sandbox' || workloadType === 'statefulset') && persistentStorageEnabled
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
       });
     }
   };
@@ -1021,6 +1033,40 @@ export const ImportAgentPage: React.FC = () => {
                   </HelperText>
                 </FormHelperText>
               </FormGroup>
+
+              {(workloadType === 'sandbox' || workloadType === 'statefulset') && (
+                <>
+                  <FormGroup fieldId="persistentStorageEnabled">
+                    <Checkbox
+                      id="persistentStorageEnabled"
+                      label="Enable persistent storage"
+                      isChecked={persistentStorageEnabled}
+                      onChange={(_e, checked) => setPersistentStorageEnabled(checked)}
+                      description="Allocate a PersistentVolumeClaim for the /shared mount. When disabled, an ephemeral emptyDir is used instead."
+                    />
+                  </FormGroup>
+                  {persistentStorageEnabled && (
+                    <FormGroup label="Persistent Volume Size" fieldId="persistentStorageSize">
+                      <TextInput
+                        id="persistentStorageSize"
+                        value={persistentStorageSize}
+                        onChange={(_e, value) => setPersistentStorageSize(value)}
+                        placeholder="1Gi"
+                        validated={/^\d+(Gi|Mi|Ki|Ti|G|M|K|T)$/.test(persistentStorageSize) ? 'default' : 'error'}
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem variant={/^\d+(Gi|Mi|Ki|Ti|G|M|K|T)$/.test(persistentStorageSize) ? 'default' : 'error'}>
+                            {/^\d+(Gi|Mi|Ki|Ti|G|M|K|T)$/.test(persistentStorageSize)
+                              ? 'Size of the persistent volume claim (e.g., 1Gi, 5Gi, 10Gi)'
+                              : 'Invalid size — use a number followed by a unit (e.g., 1Gi, 500Mi)'}
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
+                </>
+              )}
 
               {/* HTTPRoute/Route Creation */}
               <FormGroup fieldId="createHttpRoute">

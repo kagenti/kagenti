@@ -204,6 +204,13 @@ class ServicePort(BaseModel):
     protocol: str = "TCP"
 
 
+class PersistentStorageConfig(BaseModel):
+    """Persistent storage configuration for Sandbox and StatefulSet agents."""
+
+    enabled: bool = False
+    size: str = "1Gi"
+
+
 class CreateAgentRequest(BaseModel):
     """Request to create a new agent."""
 
@@ -259,6 +266,9 @@ class CreateAgentRequest(BaseModel):
 
     # Outbound routing rules (authproxy-routes ConfigMap)
     outboundRoutes: Optional[List["OutboundRoute"]] = None
+
+    # Persistent storage (for Sandbox and StatefulSet workloads)
+    persistentStorage: Optional[PersistentStorageConfig] = None
 
     # Shipwright build configuration
     shipwrightConfig: Optional[ShipwrightBuildConfig] = None
@@ -931,7 +941,7 @@ async def delete_agent(
         else:
             logger.warning("Failed to delete Job '%s': %s", safe_name, e.reason)
 
-    # Delete the Sandbox (if exists)
+    # Delete the Sandbox (if exists) and its PVCs
     if settings.kagenti_feature_flag_agent_sandbox:
         try:
             kube.delete_sandbox(namespace=namespace, name=name)
@@ -941,6 +951,18 @@ async def delete_agent(
                 logger.debug("Sandbox '%s' not found (may be other workload type)", safe_name)
             else:
                 logger.warning("Failed to delete Sandbox '%s': %s", safe_name, e.reason)
+
+        try:
+            pvcs = kube.list_persistent_volume_claims(
+                namespace=namespace,
+                label_selector=f"app.kubernetes.io/name={name}",
+            )
+            for pvc_name in pvcs:
+                kube.delete_persistent_volume_claim(namespace=namespace, name=pvc_name)
+                messages.append(f"PVC '{pvc_name}' deleted")
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning("Failed to clean up PVCs for '%s': %s", safe_name, e.reason)
 
     # Delete the Service
     try:
@@ -2286,6 +2308,8 @@ def _build_agent_shipwright_build_manifest(
         resource_config["inboundPortsExclude"] = request.inboundPortsExclude
     if request.defaultOutboundPolicy:
         resource_config["defaultOutboundPolicy"] = request.defaultOutboundPolicy
+    if request.persistentStorage:
+        resource_config["persistentStorage"] = request.persistentStorage.model_dump()
     # Add env vars if present
     if request.envVars:
         resource_config["envVars"] = [ev.model_dump(exclude_none=True) for ev in request.envVars]
@@ -2972,12 +2996,30 @@ def _build_sandbox_manifest(
                     "volumes": [
                         {"name": "cache", "emptyDir": {}},
                         {"name": "marvin", "emptyDir": {}},
-                        {"name": "shared-data", "emptyDir": {}},
-                    ],
+                    ]
+                    + (
+                        []
+                        if request.persistentStorage and request.persistentStorage.enabled
+                        else [{"name": "shared-data", "emptyDir": {}}]
+                    ),
                 },
             },
         },
     }
+
+    if request.persistentStorage and request.persistentStorage.enabled:
+        manifest["spec"]["volumeClaimTemplates"] = [
+            {
+                "metadata": {
+                    "name": "shared-data",
+                    "labels": {APP_KUBERNETES_IO_NAME: request.name},
+                },
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": request.persistentStorage.size}},
+                },
+            }
+        ]
 
     if request.imagePullSecret:
         manifest["spec"]["podTemplate"]["spec"]["imagePullSecrets"] = [
@@ -3257,6 +3299,7 @@ class FinalizeShipwrightBuildRequest(BaseModel):
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
     defaultOutboundPolicy: Optional[Literal["passthrough", "exchange"]] = None
+    persistentStorage: Optional[PersistentStorageConfig] = None
 
 
 @router.post(
@@ -3506,6 +3549,11 @@ async def finalize_shipwright_build(
             else stored_config.get("authBridgeMode")
         )
 
+        # Persistent storage
+        final_persistent_storage = request.persistentStorage
+        if final_persistent_storage is None and stored_config.get("persistentStorage"):
+            final_persistent_storage = PersistentStorageConfig(**stored_config["persistentStorage"])
+
         # Step 3: Create workload + Service with the built image
         # Build a CreateAgentRequest-like object for manifest builders
         agent_request = CreateAgentRequest(
@@ -3527,6 +3575,7 @@ async def finalize_shipwright_build(
             outboundPortsExclude=final_outbound_ports_exclude,
             inboundPortsExclude=final_inbound_ports_exclude,
             defaultOutboundPolicy=final_default_outbound_policy,
+            persistentStorage=final_persistent_storage,
         )
 
         # Ensure a dedicated ServiceAccount exists so the webhook's
