@@ -19,13 +19,14 @@ on:
         type: number
         default: 7
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
