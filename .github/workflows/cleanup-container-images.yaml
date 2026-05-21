@@ -81,11 +81,21 @@ jobs:
               }
             }
 
-            for (const pkg of packages) {
+            // Rotate package order by day-of-year so cap pressure is spread
+            // fairly across all packages during backlog drain.
+            const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+            const startIdx = dayOfYear % packages.length;
+            const rotatedPackages = [...packages.slice(startIdx), ...packages.slice(0, startIdx)];
+            console.log(`Package order (rotated by day ${dayOfYear}): ${rotatedPackages.join(', ')}`);
+
+            for (const pkg of rotatedPackages) {
               if (hitCap) break;
               const package_name = `kagenti/${pkg}`;
               console.log(`\nPackage: ${package_name}`);
               console.log('---');
+
+              // Check rate limit before listing pages for this package
+              await checkRateLimit();
 
               // Phase 1: collect versions to delete
               const toDelete = [];
