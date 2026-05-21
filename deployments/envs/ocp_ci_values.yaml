@@ -80,6 +80,7 @@ charts:
           enabled: true
         backend:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
+          shipwrightDefaultStrategy: "buildah"
       uiOAuthSecret:
         useServiceAccountCA: true
       keycloak:

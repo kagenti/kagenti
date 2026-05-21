@@ -1200,6 +1200,14 @@ if [ -n "$OPERATOR_IMAGE" ]; then
   log_info "Operator image: ${OPERATOR_IMAGE}"
 fi
 
+# Build-from-source flags: configure the OCP internal registry and build strategy
+BUILD_FLAGS=()
+if [ "$WITH_BUILDS" = true ]; then
+  BUILD_FLAGS+=(--set "ui.backend.defaultRegistryUrl=image-registry.openshift-image-registry.svc:5000")
+  BUILD_FLAGS+=(--set "ui.backend.shipwrightDefaultStrategy=buildah")
+  log_info "Build from source: internal registry + buildah strategy"
+fi
+
 run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL apply -f -
 
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
@@ -1209,6 +1217,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
   ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
+  ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \

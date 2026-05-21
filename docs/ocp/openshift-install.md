@@ -350,27 +350,9 @@ When opening the MCP inspector through the **MCP Gateway** tab on a new installa
 
 *Note: These settings are persisted in your browser and only need to be configured once per browser installation.*
 
-## Running the demo
-
-You may use the pre-built images available at [https://github.com/orgs/kagenti/packages?repo_name=agent-examples](https://github.com/orgs/kagenti/packages?repo_name=agent-examples) or build from source. Agents support both Ollama and OpenAI backends — select the appropriate environment variable set when importing an agent. See the [Local Models Guide](../local-models.md) for details.
-
-Building from source has been tested only with `quay.io`, and requires setting up a robot account on [quay.io](https://quay.io), creating empty repos in your organization for the repos to build (e.g.`a2a-contact-extractor` and `a2a-currency-converter`) and granting the robot account write access to those repos.
-
-Finally, you may get the Kubernetes secret from the robot account you created, and apply the secret to the namespaces
-you enabled for agents and tools (e.g. `team1` and `team2`).
-
-You should now be able to use the UI to:
-
-- Import an agent
-- List the agent
-- Interact with the agent from the agent details page
-- Import a MCP tool
-- List the tool
-- Interact with the tool from the tool details page
-
 # Running the Demo
 
-There are two ways to get the agent images for the demo: using pre-built images (recommended for a quick start) or building them from source. Both Ollama and OpenAI backends are supported — see the [Local Models Guide](../local-models.md) for details.
+There are three ways to get agent images for the demo: using pre-built images (recommended for a quick start), building from source using the OpenShift internal registry, or building from source with an external registry. Both Ollama and OpenAI backends are supported — see the [Local Models Guide](../local-models.md) for details.
 
 ---
 
@@ -383,20 +365,57 @@ This is the fastest way to get started. The required images are already built an
 
 ---
 
-## Option 2: Build from Source
+## Option 2: Build from Source (Internal Registry)
 
-Follow this path if you want to build the agent container images yourself.
+When the installer is run with the `--with-builds` flag, the OpenShift internal image registry is automatically configured as the build target. No external registry account or push secrets are needed.
 
 ### Prerequisites
 
-- A user or organization account on **[quay.io](https://quay.io)**.
-- Namespaces created in your Kubernetes cluster where you will run agents and tools (e.g., `team1` and `team2`).
+- OpenShift cluster with the internal image registry enabled (default on most OCP installations)
+- Installer run with the `--with-builds` flag:
+
+  ```bash
+  ./scripts/ocp/setup-kagenti.sh --with-builds
+  ```
+
+### How it works
+
+The `--with-builds` flag automatically:
+
+1. Installs the **OpenShift Builds operator** (Shipwright) and **Tekton Pipelines**
+2. Configures the backend to use the internal registry (`image-registry.openshift-image-registry.svc:5000`)
+3. Sets the build strategy to `buildah` (TLS-enabled, matching the internal registry)
+4. Grants the `pipeline` ServiceAccount `system:image-builder` permissions in each agent namespace (standard OpenShift RBAC)
+
+### Using Build from Source in the UI
+
+Once installed with `--with-builds`:
+
+1. Navigate to **Agents** or **Tools** in the Kagenti UI
+2. Click **Import** and select **Build from Source**
+3. Provide the git repository URL (and branch/path if needed)
+4. The build runs in-cluster using Shipwright, pushing the image to the internal registry
+5. Once the build completes, the agent/tool is deployed automatically
+
+No registry URL or push secret configuration is needed in the UI — the internal registry is used by default.
+
+---
+
+## Option 3: Build from Source (External Registry)
+
+Use this path if you prefer to push built images to an external registry like Quay.io.
+
+### Prerequisites
+
+- A user or organization account on **[quay.io](https://quay.io)**
+- Installer run with the `--with-builds` flag
+- Namespaces created for agents and tools (e.g., `team1` and `team2`)
 
 ### Steps
 
 1. **Configure Quay.io**
     - [Create a robot account](https://docs.redhat.com/en/documentation/red_hat_quay/3/html/user_guide/managing_robot_accounts) for your organization.
-    - Create empty repositories for the images you need to build (e.g., `a2a-content-extractor` and `a2a-currency-converter`).
+    - Create empty repositories for the images you need to build (e.g., `a2a-contact-extractor` and `a2a-currency-converter`).
     - Grant your robot account **write access** to these new repositories.
 
 2. **Create Kubernetes Image Pull Secret**
@@ -410,14 +429,17 @@ Follow this path if you want to build the agent container images yourself.
       kubectl apply -f quay-secret.yaml -n team2
       ```
 
-3. **Build and Push the Images**
-    - Follow the project's build instructions to build the agent images and push them to your Quay.io repositories.
+3. **Build from Source in the UI**
+    - When importing an agent/tool, select **Build from Source**
+    - Enter the external registry URL (e.g., `quay.io/myorg`)
+    - Select the push secret you created above
+    - The build uses the `buildah` strategy with TLS for external registries
 
 ---
 
 ## Verifying in the UI
 
-After completing either of the setup options above, you should be able to use the UI to:
+After completing any of the setup options above, you should be able to use the UI to:
 
 - **Agents**
     1. Import a new agent.

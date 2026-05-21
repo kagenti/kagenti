@@ -123,6 +123,10 @@ spec:
             - name: DEFAULT_REGISTRY_URL
               value: {{ .Values.ui.backend.defaultRegistryUrl | quote }}
             {{- end }}
+            {{- if .Values.ui.backend.shipwrightDefaultStrategy }}
+            - name: SHIPWRIGHT_DEFAULT_STRATEGY
+              value: {{ .Values.ui.backend.shipwrightDefaultStrategy | quote }}
+            {{- end }}
             # Feature flags
             - name: KAGENTI_FEATURE_FLAG_SANDBOX
               value: "{{ .Values.featureFlags.sandbox }}"
