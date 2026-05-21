@@ -140,9 +140,9 @@ kill %1
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|-------|------|------|-------|
-| test_02_a2a_connectivity | 2 | 2 | 0 | Hello + agent card |
-| test_05_multiturn | 3 | 2 | 1 | Sequential + isolation pass; continuity skips |
-| test_07_skill_execution | 7 | 5 | 2 | PR review, RCA, security, real GH PR, RCA logs |
+| test_T1_1_connectivity | 2 | 2 | 0 | Hello + agent card |
+| test_T2_1_multiturn | 3 | 2 | 1 | Sequential + isolation pass; continuity skips |
+| test_T3_1_skill_execution | 7 | 5 | 2 | PR review, RCA, security, real GH PR, RCA logs |
 
 ## 10. Sandbox Deployment Models
 

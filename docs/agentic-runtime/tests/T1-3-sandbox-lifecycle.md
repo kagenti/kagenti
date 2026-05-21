@@ -1,7 +1,7 @@
 # Sandbox Lifecycle
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_04_sandbox_lifecycle.py`
-> **Tests:** 7 | **Pass:** 7 | **Skip:** 0 (Kind, fresh cluster)
+> **Test file:** `kagenti/tests/e2e/openshell/test_T1_3_sandbox_lifecycle.py`
+> **Tests:** 9
 
 ## What This Tests
 
@@ -141,8 +141,8 @@ In Kagenti's A2A-first model, sandbox status is observed via:
 | Proposal Requirement | Kagenti A2A Equivalent | How Tested |
 |---------------------|----------------------|-----------|
 | `openshell term` shows status | kubectl get pod/deploy/sandbox -o json | test_*_status_queryable |
-| Terminal session active | Agent A2A endpoint responds | test_02_a2a_connectivity |
-| Session reconnect | PVC-backed session restore | test_06_conversation_resume |
+| Terminal session active | Agent A2A endpoint responds | test_T1_1_connectivity |
+| Session reconnect | PVC-backed session restore | test_T2_3_session_resume |
 
 The Kagenti UI PodStatusPanel queries the same Kubernetes API these tests validate.
 

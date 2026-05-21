@@ -1,7 +1,7 @@
 # Skill Execution
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_07_skill_execution.py`
-> **Tests:** 27 | **Pass:** 18 | **Skip:** 9 (Kind, fresh cluster)
+> **Test file:** `kagenti/tests/e2e/openshell/test_T3_1_skill_execution.py`
+> **Tests:** 12
 
 ## What This Tests
 

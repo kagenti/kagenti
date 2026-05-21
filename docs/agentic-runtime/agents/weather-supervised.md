@@ -180,10 +180,10 @@ ENTRYPOINT ["/usr/local/bin/openshell-sandbox", "--", ...]
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|-------|------|------|-------|
-| test_08_supervisor_enforcement | 12 | 12 | 0 | All protection layers verified |
-| test_09_hitl_policy | 3 | 1-2 | 1 | OPA deny/allow tested |
-| test_02_a2a_connectivity | 1 | 1 | 0 | kubectl exec hello |
-| test_05_multiturn | 2 | 1 | 1 | exec-based multi-turn |
+| test_T0_3_infra_supervisor | 12 | 12 | 0 | All protection layers verified |
+| test_T4_1_hitl_network | 3 | 1-2 | 1 | OPA deny/allow tested |
+| test_T1_1_connectivity | 1 | 1 | 0 | kubectl exec hello |
+| test_T2_1_multiturn | 2 | 1 | 1 | exec-based multi-turn |
 
 ## 9. Sandbox Deployment Models
 

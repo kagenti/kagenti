@@ -190,7 +190,7 @@ It **cannot** use OpenAI-compatible proxies (LiteMaaS, LiteLLM, Ollama) because:
 
 ### Path to Enabling Skills (Paolo's Provider Workflow)
 
-Once TLS + ingress are configured (see [architecture alignment](../../plans/2026-04-25-architecture-alignment-review.md#4-openshell-provider-mechanism--zero-trust-credential-delivery)):
+Once TLS + ingress are configured:
 
 ```bash
 # 1. Create provider with real Anthropic key (or LiteLLM with Anthropic routing)
@@ -244,9 +244,9 @@ see the `claude-*` model name and accept it.
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|-------|------|------|-------|
-| test_04_sandbox_lifecycle | 1 | 1 | 0 | Sandbox CR created |
-| test_07_skill_execution | 3 | 0 | 3 | Needs real Anthropic key |
-| test_10_workspace_persistence | 2 | 1 | 1 | PVC write passes; sandbox creation skips |
+| test_T1_3_sandbox_lifecycle | 1 | 1 | 0 | Sandbox CR created |
+| test_T3_1_skill_execution | 3 | 0 | 3 | Needs real Anthropic key |
+| test_T1_4_workspace | 2 | 1 | 1 | PVC write passes; sandbox creation skips |
 
 ## 11. Sandbox Deployment Models
 

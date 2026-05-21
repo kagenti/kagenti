@@ -103,7 +103,7 @@ into a composable, driver-based system with four pluggable subsystems:
 
 ## AuthBridge + Supervisor Integration (Phase 3)
 
-Kagenti's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
+Kagenti's [AuthBridge](../authbridge/README.md) and the OpenShell
 supervisor provide complementary security layers. In the current PoC they
 are **mutually exclusive** — supervised agents disable AuthBridge injection
 via `kagenti.io/inject: disabled`. Phase 3 resolves the architectural

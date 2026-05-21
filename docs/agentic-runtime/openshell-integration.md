@@ -261,7 +261,7 @@ graph TB
 
 ### AuthBridge Integration (Phase 3)
 
-Kagenti's [AuthBridge](../authbridge-combined-sidecar.md) and the OpenShell
+Kagenti's [AuthBridge](../authbridge/README.md) and the OpenShell
 supervisor are complementary security layers that cannot currently coexist in
 the same pod. AuthBridge provides inbound JWT validation, outbound token
 exchange, and SPIFFE identity. The supervisor provides Landlock, seccomp,
@@ -278,52 +278,69 @@ for open questions.
 
 ## 7. OpenShell RFC 0001
 
-OpenShell is being rearchitected via [RFC 0001](https://github.com/NVIDIA/OpenShell/pull/836)
-into a composable, driver-based system with four pluggable subsystems:
+OpenShell was rearchitected via [RFC 0001](https://github.com/NVIDIA/OpenShell/pull/836)
+(merged 2026-04-27) into a composable, driver-based system with four pluggable subsystems:
 
 | Subsystem | Purpose | Kagenti Mapping |
 |-----------|---------|-----------------|
-| **Compute** | Sandbox lifecycle (K8s, Podman, VM) | Kagenti as compute driver (phase 2) |
+| **Compute** | Sandbox lifecycle (K8s, Podman, VM, Docker) | Kagenti as compute driver (phase 2) |
 | **Credentials** | Secret resolution (Vault, K8s Secrets) | Delivers secrets to supervisor proxy |
 | **Control-plane identity** | User/operator auth (mTLS, OIDC) | Keycloak OIDC |
 | **Sandbox identity** | Workload identity (SPIFFE) | SPIRE |
 
-## 8. Security: Init Container Pattern (TODO)
+The RFC is now the canonical architecture reference at `rfc/0001-core-architecture.md`
+in the upstream repo. Key post-RFC changes: compute driver auto-detection
+([#1088](https://github.com/NVIDIA/OpenShell/pull/1088), `--drivers` defaults to
+empty and auto-detects K8s > Podman > Docker), and Docker compute driver
+([#888](https://github.com/NVIDIA/OpenShell/pull/888)).
 
-The PoC uses `privileged: true` on the supervised agent container because
-the OpenShell supervisor needs `CAP_SYS_ADMIN` + `CAP_NET_ADMIN` for
-network namespace creation (`unshare CLONE_NEWNET` + `mount --make-shared`).
+## 8. Supervisor Binary Delivery: Init Container Pattern
 
-**Current (PoC):** Single container with `privileged: true`. The supervisor
-applies Landlock + seccomp after startup, but there is a window before
-isolation is applied where the process has full host access.
+Upstream OpenShell now delivers the supervisor binary via an init container
+([#1154](https://github.com/NVIDIA/OpenShell/pull/1154), merged 2026-05-04),
+replacing the old `hostPath` volume mount. The supervisor image is `FROM scratch`
+and uses a `copy-self` subcommand ([#1208](https://github.com/NVIDIA/OpenShell/pull/1208),
+merged 2026-05-06) since `sh -c "cp ..."` cannot run in a scratch container.
 
-**Target (production):** Use an **init container** for the supervisor:
+**Upstream pattern (v0.0.36+):**
 
 ```yaml
 initContainers:
 - name: supervisor-init
   image: ghcr.io/nvidia/openshell/supervisor:latest
-  securityContext:
-    privileged: true   # Only init container is privileged
-  command: ["/usr/local/bin/openshell-sandbox", "--setup-only"]
-  # Sets up netns, Landlock, seccomp, then exits
+  command: ["/openshell-sandbox", "copy-self", "/opt/openshell/bin/openshell-sandbox"]
+  volumeMounts:
+  - name: supervisor-bin
+    mountPath: /opt/openshell/bin
 
 containers:
 - name: agent
   image: agent:latest
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: [ALL]      # Agent has zero capabilities
+  command: ["/opt/openshell/bin/openshell-sandbox"]
+  volumeMounts:
+  - name: supervisor-bin
+    mountPath: /opt/openshell/bin
+    readOnly: true
+
+volumes:
+- name: supervisor-bin
+  emptyDir: {}
 ```
 
-The init container runs with elevated privileges for ~2 seconds (netns setup),
-then terminates. The agent container starts with `drop: [ALL]` and inherits
-the isolation. This eliminates the privileged window.
+Upstream Helm values for configuring the supervisor image:
+- `supervisor.image.repository` (default: `ghcr.io/nvidia/openshell/supervisor`)
+- `supervisor.image.pullPolicy`
 
-**Requires:** Upstream OpenShell support for `--setup-only` mode (supervisor
-sets up isolation and exits, leaving the netns/Landlock for the next container).
+**Note:** The supervisor binary path changed from `/usr/local/bin/openshell-sandbox`
+to `/openshell-sandbox` in the upstream image. Kagenti's chart
+(`charts/openshell/values.yaml`) makes this configurable via
+`supervisorImage.binaryPath` (PR [#1513](https://github.com/kagenti/kagenti/pull/1513)).
+
+**Security model:** The PoC still uses `privileged: true` on supervised agent
+containers because the supervisor needs `CAP_SYS_ADMIN` + `CAP_NET_ADMIN` for
+network namespace creation. The init container pattern above delivers the binary
+but does not yet implement `--setup-only` mode (supervisor sets up isolation in
+init, then exits). Full privilege reduction remains a TODO.
 
 ## 9. LLM Compatibility Matrix
 
@@ -349,7 +366,6 @@ model validation.
 
 | Agent | Supervisor? | OPA Enforced? | Egress |
 |-------|------------|---------------|--------|
-| weather-agent-supervised | Yes | Yes | Tier 2 |
 | weather-agent-supervised | **Yes** | **Yes** | Restricted to `*.svc.cluster.local` + LiteMaaS |
 | adk-agent-supervised | Yes | Yes (enforced) | Tier 2 |
 | claude-sdk-agent | No | No (policy mounted but not enforced) | **Open** |
@@ -359,12 +375,16 @@ as preparation for supervisor integration. The policies are NOT enforced until t
 supervisor binary is the container entrypoint. Only `weather-agent-supervised`
 enforces egress control through the supervisor's HTTP CONNECT proxy + OPA engine.
 
-**Blocker for full enforcement:** The supervisor creates a network namespace
-that blocks `kubectl port-forward` and K8s readiness probes. A2A tests
-require port-forward to reach agents from the test runner. Solutions:
-1. Upstream: supervisor exposes agent port through the proxy (not yet supported)
-2. Workaround: run tests from inside the cluster (e.g., test runner pod)
-3. Workaround: use a sidecar that bridges the netns port to the pod network
+**Test workaround:** The supervisor's network namespace blocks `kubectl port-forward`.
+Supervised agents use a port-bridge sidecar (socat TCP forwarder `0.0.0.0:8080 →
+10.200.0.2:8080`) to expose the A2A port. This is validated on both Kind and
+HyperShift — `adk-agent-supervised` passes all skill tests through the port bridge.
+
+**Note:** Upstream removed direct gateway-to-sandbox connectivity
+([#867](https://github.com/NVIDIA/OpenShell/pull/867), merged 2026-04-21).
+`ResolveSandboxEndpoint` RPC was deleted. All SSH/exec now goes through
+supervisor-initiated gRPC relay (`RelayStream` RPC). SSH daemon moved to
+Unix socket (`/run/openshell/ssh.sock`); port 2222 is no longer used.
 
 ## 11. Phase 1 PoC Results
 
@@ -476,8 +496,8 @@ unified session management via the UI:
 | Agent Type | Backend Adapter | How it works |
 |-----------|----------------|-------------|
 | Custom A2A (weather, ADK, Claude SDK) | **A2A adapter** (already implemented) | Backend sends A2A `message/send` JSON-RPC, stores response in session DB |
-| OpenShell builtin (Claude, OpenCode) | **ExecSandbox adapter** (Phase 2) | Backend calls gateway's `ExecSandbox` gRPC to send prompts, captures stdout, stores in session DB |
-| OpenShell builtin (interactive SSH) | **Terminal adapter** (Phase 3) | Backend bridges WebSocket (xterm.js in UI) to SSH tunnel via gateway gRPC |
+| OpenShell builtin (Claude, OpenCode) | **ExecSandbox adapter** (Phase 2) | Backend calls gateway's `ExecSandbox` gRPC to send prompts, captures stdout, stores in session DB. Note: upstream moved to supervisor-initiated relay ([#867](https://github.com/NVIDIA/OpenShell/pull/867)); exec now uses `RelayStream` RPC |
+| OpenShell builtin (interactive SSH) | **Terminal adapter** (Phase 3) | Backend bridges WebSocket (xterm.js in UI) to SSH via supervisor gRPC relay (port 2222 removed; SSH uses Unix socket) |
 
 ### Session persistence architecture
 
@@ -526,7 +546,7 @@ OpenShell sandboxes through the same API used for Deployment-backed agents.
 
 | Item | Priority | Description |
 |------|----------|-------------|
-| Init container pattern | HIGH | Replace `privileged: true` with init container (see section 9) |
+| Reduce privileges | HIGH | Init container binary delivery done (section 8); `--setup-only` mode still needed to eliminate `privileged: true` on agent container |
 | Enable TLS + auth on gateway | HIGH | Remove `--disable-tls --disable-gateway-auth`, mount TLS certs |
 | Push agent images to registry | HIGH | Use Shipwright on-cluster builds for OCP (manifests in `shipwright-build.yaml`) |
 | Namespace-scoped NetworkPolicy | MEDIUM | Restrict gateway access to agent namespaces only |
@@ -535,15 +555,23 @@ OpenShell sandboxes through the same API used for Deployment-backed agents.
 | Supervisor-managed A2A port | LOW | Expose agent port through supervisor proxy for netns-compatible testing |
 | Multi-namespace support | LOW | Add RoleBindings for team2, team3, etc. |
 
-## 14. Related PRs
+## 14. Related Upstream PRs
 
-Key upstream PRs relevant to integration:
+Key upstream [NVIDIA/OpenShell](https://github.com/NVIDIA/OpenShell) PRs relevant
+to integration (as of 2026-05-08):
 
 | PR | Status | Impact |
 |----|--------|--------|
-| [#817](https://github.com/NVIDIA/OpenShell/pull/817) | Merged | K8s compute driver extraction |
-| [#836](https://github.com/NVIDIA/OpenShell/pull/836) | Open | RFC 0001 — core architecture |
-| [#858](https://github.com/NVIDIA/OpenShell/pull/858) | Open | VM compute driver (proves out-of-process driver) |
-| [#822](https://github.com/NVIDIA/OpenShell/pull/822) | Merged | L7 deny rules in policy schema |
-| [#860](https://github.com/NVIDIA/OpenShell/pull/860) | Open | Incremental policy updates |
-| [#861](https://github.com/NVIDIA/OpenShell/pull/861) | Open | Supervisor session relay |
+| [#817](https://github.com/NVIDIA/OpenShell/pull/817) | Merged (2026-04-14) | K8s compute driver extraction into `openshell-driver-kubernetes` crate |
+| [#822](https://github.com/NVIDIA/OpenShell/pull/822) | Merged (2026-04-15) | L7 deny rules in policy schema (`deny_rules` field) |
+| [#836](https://github.com/NVIDIA/OpenShell/pull/836) | Merged (2026-04-27) | RFC 0001 — canonical architecture (composable drivers) |
+| [#858](https://github.com/NVIDIA/OpenShell/pull/858) | Merged (2026-04-17) | VM compute driver (proves out-of-process driver model) |
+| [#860](https://github.com/NVIDIA/OpenShell/pull/860) | Merged (2026-04-20) | Incremental policy updates (`merge_operations`, `--add-endpoint`) |
+| [#861](https://github.com/NVIDIA/OpenShell/pull/861) | Closed | Supervisor session relay (superseded by #867) |
+| [#867](https://github.com/NVIDIA/OpenShell/pull/867) | Merged (2026-04-21) | **Supervisor-initiated gRPC relay** — removes `ResolveSandboxEndpoint`, SSH moves to Unix socket |
+| [#903](https://github.com/NVIDIA/OpenShell/pull/903) | Merged (2026-04-21) | Health endpoints on separate port 8081 (probes must target health port) |
+| [#1088](https://github.com/NVIDIA/OpenShell/pull/1088) | Merged (2026-05-01) | Compute driver auto-detection (K8s > Podman > Docker) |
+| [#1154](https://github.com/NVIDIA/OpenShell/pull/1154) | Merged (2026-05-04) | Supervisor binary via init container + `emptyDir` (replaces `hostPath`) |
+| [#1208](https://github.com/NVIDIA/OpenShell/pull/1208) | Merged (2026-05-06) | `copy-self` subcommand for scratch supervisor image |
+| [#1221](https://github.com/NVIDIA/OpenShell/pull/1221) | Merged (2026-05-07) | CLI `gateway start/stop/destroy` removed (only `gateway remove` remains) |
+| [#1237](https://github.com/NVIDIA/OpenShell/pull/1237) | Merged (2026-05-07) | Helm `nameOverride` set to `openshell` (all K8s resources renamed) |

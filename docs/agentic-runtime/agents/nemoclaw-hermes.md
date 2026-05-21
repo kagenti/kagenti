@@ -127,10 +127,10 @@ network_policies:
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|:---:|:---:|:---:|-------|
-| test_11_nemoclaw_smoke (platform) | 3 | 3 | 0 | Deployment, pod running, framework label |
-| test_11_nemoclaw_smoke (health) | 1 | 1 | 0 | TCP connectivity |
-| test_11_nemoclaw_smoke (inference) | 1 | 0 | 1 | Internal protocol, needs NemoClaw plugin |
-| test_11_nemoclaw_smoke (security) | 4 | 4 | 0 | AuthBridge, capabilities, escalation, secret |
+| test_T0_4_infra_nemoclaw (platform) | 3 | 3 | 0 | Deployment, pod running, framework label |
+| test_T0_4_infra_nemoclaw (health) | 1 | 1 | 0 | TCP connectivity |
+| test_T0_4_infra_nemoclaw (inference) | 1 | 0 | 1 | Internal protocol, needs NemoClaw plugin |
+| test_T0_4_infra_nemoclaw (security) | 4 | 4 | 0 | AuthBridge, capabilities, escalation, secret |
 | **Total** | **9** | **8** | **1** | |
 
 ## 9. NemoClaw Source Pinning

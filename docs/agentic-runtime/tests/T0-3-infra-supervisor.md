@@ -1,7 +1,7 @@
 # Supervisor Enforcement
 
-> **Test file:** `kagenti/tests/e2e/openshell/test_08_supervisor_enforcement.py`
-> **Tests:** 11 | **Pass:** 11 | **Skip:** 0 (Kind, fresh cluster)
+> **Test file:** `kagenti/tests/e2e/openshell/test_T0_3_infra_supervisor.py`
+> **Tests:** 12
 
 ## What This Tests
 
@@ -227,9 +227,9 @@ data:
 | Test Type | What's Tested | Limitation |
 |-----------|--------------|------------|
 | Log-based (this test) | Supervisor applied rules | Cannot verify LIVE enforcement (kubectl exec bypasses Landlock) |
-| Exec-based (test_09_hitl_policy) | OPA blocks unauthorized egress | Live enforcement via network calls |
+| Exec-based (test_T4_1_hitl_network) | OPA blocks unauthorized egress | Live enforcement via network calls |
 
-**Why log-based?** kubectl exec runs as root in the pod namespace, bypassing Landlock and seccomp. To test live enforcement, we need the agent process itself to attempt violations — which test_09_hitl_policy does via OPA proxy.
+**Why log-based?** kubectl exec runs as root in the pod namespace, bypassing Landlock and seccomp. To test live enforcement, we need the agent process itself to attempt violations — which test_T4_1_hitl_network does via OPA proxy.
 
 ## Future Expansion
 

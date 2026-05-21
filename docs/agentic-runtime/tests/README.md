@@ -4,40 +4,56 @@
 
 ## Overview
 
-This directory contains detailed documentation for each E2E test category. Each doc explains what's being tested, shows the architecture under test with mermaid diagrams, and maps test functions to agent types.
+This directory contains detailed documentation for each E2E test category.
+Each doc explains what's being tested, shows the architecture under test with
+mermaid diagrams, and maps test functions to agent types.
+
+For current test counts, pass/skip status, and per-agent capability coverage,
+see the **[E2E Test Matrix](../e2e-test-matrix.md)** — that is the canonical
+source of truth.
 
 ## Test Categories
 
-| # | Category | Test File | Tests | Pass | Skip | Focus |
-|---|----------|-----------|-------|------|------|-------|
-| 01 | [Platform Health](01-platform-health.md) | `test_01_platform_health.py` | 7 | 7 | 0 | Gateway, operator, agent pods |
-| 02 | [A2A Connectivity](02-a2a-connectivity.md) | `test_02_a2a_connectivity.py` | 8 | 7 | 1 | JSON-RPC, agent card discovery |
-| 03 | [Credential Security](03-credential-security.md) | `test_T1_6_credential_security.py` | 15 | 15 | 0 | secretKeyRef, policy mounting |
-| 04 | [Sandbox Lifecycle](04-sandbox-lifecycle.md) | `test_04_sandbox_lifecycle.py` | 7 | 7 | 0 | Sandbox CR CRUD, status observability |
-| 05 | [Multi-Turn Conversation](05-multiturn-conversation.md) | `test_05_multiturn_conversation.py` | 12 | 9 | 3 | Sequential messages, context isolation |
-| 06 | [Conversation Resume](06-conversation-resume.md) | `test_06_conversation_resume.py` | 5 | 0 | 5 | Pod restart, PVC session restore |
-| 07 | [Skill Execution](07-skill-execution.md) | `test_07_skill_execution.py` | 27 | 18 | 9 | PR review, RCA, security review |
-| 08 | [Supervisor Enforcement](08-supervisor-enforcement.md) | `test_08_supervisor_enforcement.py` | 11 | 11 | 0 | Landlock, netns, OPA policy |
-| 09 | [HITL Policy](09-hitl-policy.md) | `test_09_hitl_policy.py` | 3 | 2 | 1 | OPA egress blocking |
-| 10 | [Workspace Persistence](10-workspace-persistence.md) | `test_10_workspace_persistence.py` | 8 | 7 | 1 | PVC data persistence |
+Tests use tiered naming: `test_T{tier}_{module}_{description}.py`
 
-**Totals:** 136 tests, 102 passed (local Kind+LLM+NemoClaw), 34 skipped (Kind, fresh cluster)
+### Tier 0: Infrastructure
 
-## Agent Type Coverage
+- [T0-1 Platform Health](T0-1-infra-platform.md) — Gateway, operator, agent pods
+- [T0-3 Supervisor Enforcement](T0-3-infra-supervisor.md) — Landlock, netns, seccomp, OPA
+- [T0-4 NemoClaw Infrastructure](T0-4-infra-nemoclaw.md) — NemoClaw health, security, connectivity
+- [T0-5 LiteLLM Infrastructure](T0-5-infra-litellm.md) — LiteLLM config, waypoint, passthrough
 
-Each test category covers ALL 7 agent types where applicable:
+### Tier 1: Basic Capabilities
 
-| Agent ID | Type | Tests Cover |
-|----------|------|-------------|
-| `weather_agent` | Custom A2A | A2A connectivity, multi-turn, security |
-| `adk_agent` | Custom A2A | Skill execution, LLM interaction |
-| `claude_sdk_agent` | Custom A2A | Skill execution, LLM interaction |
-| `weather_supervised` | Custom A2A + supervisor | Supervisor enforcement, HITL policy |
-| `openshell_claude` | Builtin sandbox | Workspace persistence, sandbox lifecycle |
-| `openshell_opencode` | Builtin sandbox | Workspace persistence, sandbox lifecycle |
-| `openshell_generic` | Builtin sandbox | Workspace persistence, sandbox lifecycle |
+- [T1-1 Connectivity](T1-1-connectivity.md) — A2A JSON-RPC, agent card discovery
+- [T1-2 Credentials](T1-2-credentials.md) — secretKeyRef, no hardcoded keys
+- [T1-3 Sandbox Lifecycle](T1-3-sandbox-lifecycle.md) — Sandbox CR CRUD, status observability
+- [T1-4 Workspace](T1-4-workspace.md) — PVC data persistence
+- [T1-5 Resource Limits](T1-5-resource-limits.md) — CPU/memory limits on all agents
+- T1-6 Credential Security (`test_T1_6_credential_security.py`, 5 tests) — secretKeyRef delivery, no hardcoded secrets, policy ConfigMaps
+- T1-7 Sandbox Connectivity (`test_T1_7_sandbox_connectivity.py`, 5 tests) — Gateway reachable, kubectl exec into sandboxes
 
-Unsupported combinations are explicitly skipped with documented reasons.
+### Tier 2: Conversation
+
+- [T2-1 Multi-Turn](T2-1-multiturn.md) — Sequential messages, context isolation, tool calling
+- [T2-3 Session Resume](T2-3-session-resume.md) — Session resume across pod restarts
+
+### Tier 3: Skills
+
+- [T3-1 Skill Execution](T3-1-skill-execution.md) — PR review, RCA, security review across agents and models
+
+### Tier 4: Security
+
+- [T4-1 HITL Network](T4-1-hitl-network.md) — OPA egress blocking
+- T4-2 Tenant Isolation (`test_T4_2_tenant_isolation.py`, 15 tests) — JWT audience auth, RBAC namespace scoping, credential isolation
+
+### Tier 5: Backend API
+
+- [T5-1 Backend API](T5-1-backend-api.md) — A2A proxy through kagenti-backend
+
+### Tier 6: ACP Protocol
+
+- [T6-1 ACP Protocol](T6-1-acp-protocol.md) — ACP WebSocket JSON-RPC 2.0
 
 ## Using These Docs
 
@@ -56,7 +72,7 @@ Each test doc includes:
 uv run pytest kagenti/tests/e2e/openshell/ -v --timeout=300
 
 # Single category
-uv run pytest kagenti/tests/e2e/openshell/test_01_platform_health.py -v
+uv run pytest kagenti/tests/e2e/openshell/test_T0_1_infra_platform.py -v
 
 # With debug logging
 uv run pytest kagenti/tests/e2e/openshell/ -v --log-cli-level=INFO
@@ -65,26 +81,16 @@ uv run pytest kagenti/tests/e2e/openshell/ -v --log-cli-level=INFO
 export OPENSHELL_DESTRUCTIVE_TESTS=false
 ```
 
-## Test Status Legend
-
-- **✅** — test runs and passes
-- **⏭️** — test skips with documented reason (shown in test matrix)
-- **—** — test not applicable for this agent type
-
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `OPENSHELL_AGENT_NAMESPACE` | `team1` | Agent namespace |
-| `OPENSHELL_GATEWAY_NAMESPACE` | `openshell-system` | Gateway namespace |
+| `OPENSHELL_GATEWAY_NAMESPACE` | `team1` | Gateway namespace |
 | `OPENSHELL_LLM_AVAILABLE` | `false` | Enable LLM-dependent tests |
+| `OPENSHELL_LLM_MODELS` | — | Comma-separated model list |
+| `OPENSHELL_NEMOCLAW_ENABLED` | `false` | Enable NemoClaw tests |
+| `OPENSHELL_BACKEND_AVAILABLE` | `false` | Enable backend API tests (T5/T6) |
 | `OPENSHELL_DESTRUCTIVE_TESTS` | `false` | Enable pod restart tests |
-
-## Test File Organization
-
-Tests are organized by capability, not by agent type. This ensures:
-
-- All agents are tested for each capability
-- Gaps are explicit (skipped with reason)
-- Test structure matches architecture docs
-- Easy to add new agent types (add column to matrix)
+| `OPENSHELL_AGENT_PORT` | `8080` | Agent port for port-forwarding |
+| `OPENSHELL_LLM_PROVIDER` | `remote` | LLM provider type (`remote` or `ollama`) |

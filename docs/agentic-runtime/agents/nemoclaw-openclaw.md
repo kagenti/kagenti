@@ -127,10 +127,10 @@ network_policies:
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|:---:|:---:|:---:|-------|
-| test_11_nemoclaw_smoke (platform) | 3 | 3 | 0 | Deployment, pod running, framework label |
-| test_11_nemoclaw_smoke (health) | 1 | 1 | 0 | HTTP gateway responds |
-| test_11_nemoclaw_smoke (inference) | 1 | 1 | 0 | Gateway interaction verified |
-| test_11_nemoclaw_smoke (security) | 4 | 4 | 0 | AuthBridge, capabilities, escalation, secret |
+| test_T0_4_infra_nemoclaw (platform) | 3 | 3 | 0 | Deployment, pod running, framework label |
+| test_T0_4_infra_nemoclaw (health) | 1 | 1 | 0 | HTTP gateway responds |
+| test_T0_4_infra_nemoclaw (inference) | 1 | 1 | 0 | Gateway interaction verified |
+| test_T0_4_infra_nemoclaw (security) | 4 | 4 | 0 | AuthBridge, capabilities, escalation, secret |
 | **Total** | **9** | **9** | **0** | **100% pass rate** |
 
 ## 9. NemoClaw Source Pinning

@@ -247,9 +247,9 @@ opencode run -m openai/gpt-4o-mini "Review this code for security issues: ..."
 
 | Test File | Tests | Pass | Skip | Notes |
 |-----------|-------|------|------|-------|
-| test_04_sandbox_lifecycle | 1 | 1 | 0 | Sandbox CR created |
-| test_07_skill_execution | 5 | 3 | 2 | PR review, RCA, security pass; real GH PR + CLI check skip |
-| test_10_workspace_persistence | 3 | 3 | 0 | PVC write + sandbox creation pass |
+| test_T1_3_sandbox_lifecycle | 1 | 1 | 0 | Sandbox CR created |
+| test_T3_1_skill_execution | 5 | 3 | 2 | PR review, RCA, security pass; real GH PR + CLI check skip |
+| test_T1_4_workspace | 3 | 3 | 0 | PVC write + sandbox creation pass |
 
 ## 11. Sandbox Deployment Models
 
