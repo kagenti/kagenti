@@ -661,6 +661,7 @@ EOF
     # cluster-monitoring-config is managed by another operator)
     log_info "kagenti-deps already installed — upgrading (hooks skipped)"
     run_cmd helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
+      --reset-values \
       "${KAGENTI_DEPS_HELM_ARGS[@]}"
     # Apply operand CRs on upgrade too — catches CRs missed by a previous
     # failed install (e.g. Keycloak CRD wasn't ready yet on first run)
@@ -928,6 +929,7 @@ _ensure_rhoai_shared_trust
 # .Capabilities.APIVersions.Has (e.g. AuthorizationPolicy, shared-trust certs).
 log_info "Reconciling CRD-dependent resources..."
 run_cmd helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
+  --reset-values \
   "${KAGENTI_DEPS_HELM_ARGS[@]}"
 [ -n "$KAGENTI_DEPS_MLFLOW_VALS_FILE" ] && rm -f "$KAGENTI_DEPS_MLFLOW_VALS_FILE"
 log_success "kagenti-deps reconciled"
@@ -1202,6 +1204,7 @@ run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL
 
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
+  --reset-values \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
