@@ -377,9 +377,28 @@ _mlflow_wait_ready() {
     sleep 5
   done
 
-  # Resolve the gateway URL from the MLflow CR status.url (mirrors the
-  # kagenti-operator's resolveTrackingURI logic). TLS is verified via the
-  # container's system CA pool (Let's Encrypt trusted by default).
+  # Check if the CR reports Available status — RHOAI MLflow operator sets this
+  # condition but never populates status.url (no Route/Ingress is created).
+  local cr_available=""
+  cr_available=$($KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "")
+
+  if [ "$cr_available" = "True" ]; then
+    log_success "MLflow CR reports Available — skipping status.url wait"
+    # Resolve the service port from the actual Service object
+    local svc_port
+    svc_port=$($KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+      -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8443")
+    local proto="https"
+    if [ "$svc_port" = "80" ] || [ "$svc_port" = "5000" ] || [ "$svc_port" = "8080" ]; then
+      proto="http"
+    fi
+    MLFLOW_TRACES_ENDPOINT="${proto}://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:${svc_port}/v1/traces"
+    log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
+    return 0
+  fi
+
+  # Fall back to waiting for status.url (non-RHOAI operators may populate this).
   log_info "Waiting for MLflow gateway URL (status.url)..."
   local gateway_url=""
   tries=0
@@ -390,7 +409,14 @@ _mlflow_wait_ready() {
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
       log_warn "MLflow CR status.url not populated after 5m — using in-cluster endpoint"
-      MLFLOW_TRACES_ENDPOINT="http://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:5000/v1/traces"
+      local svc_port
+      svc_port=$($KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+        -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8443")
+      local proto="https"
+      if [ "$svc_port" = "80" ] || [ "$svc_port" = "5000" ] || [ "$svc_port" = "8080" ]; then
+        proto="http"
+      fi
+      MLFLOW_TRACES_ENDPOINT="${proto}://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:${svc_port}/v1/traces"
       log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
       return 0
     fi
@@ -401,16 +427,23 @@ _mlflow_wait_ready() {
 }
 
 _mlflow_grant_otel_rbac() {
-  # The RHOAI MLflow operator creates the mlflow-operator-mlflow-integration ClusterRole
-  # with pseudo-resources (mlflow.kubeflow.org/*) checked via SubjectAccessReview.
+  # The RHOAI MLflow operator creates ClusterRoles for MLflow access control.
   # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
   # so the collector can send traces with the correct workspace context.
-  local cr_name="mlflow-operator-mlflow-integration"
+  # Prefer mlflow-operator-mlflow-edit (read+write), fall back to older name.
+  local cr_name=""
+  local candidates=("mlflow-operator-mlflow-edit" "mlflow-operator-mlflow-integration")
   local tries=0
-  while ! $KUBECTL get clusterrole "$cr_name" &>/dev/null; do
+  while [ -z "$cr_name" ]; do
+    for candidate in "${candidates[@]}"; do
+      if $KUBECTL get clusterrole "$candidate" &>/dev/null; then
+        cr_name="$candidate"
+        break
+      fi
+    done
     tries=$((tries + 1))
     if [ $tries -ge 24 ]; then
-      log_warn "ClusterRole '$cr_name' not found after 2m — MLflow OTEL RBAC skipped"
+      log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
       return 0
     fi
     sleep 5
@@ -426,6 +459,18 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
     print(ns)
 " 2>/dev/null || echo -e "team1\nteam2")
 
+  # Grant in MLflow namespace (authentication: SA must be permitted to access MLflow)
+  log_info "Creating MLflow RBAC for otel-collector in $MLFLOW_NAMESPACE..."
+  if ! $DRY_RUN; then
+    $KUBECTL create rolebinding otel-collector-mlflow \
+      --clusterrole="$cr_name" \
+      --serviceaccount=kagenti-system:otel-collector \
+      -n "$MLFLOW_NAMESPACE" \
+      --dry-run=client -o yaml | $KUBECTL apply -f -
+  fi
+  log_success "RoleBinding otel-collector-mlflow created in $MLFLOW_NAMESPACE"
+
+  # Grant in each agent namespace (workspace authorization)
   while IFS= read -r ns; do
     [ -z "$ns" ] && continue
     log_info "Creating MLflow RBAC for otel-collector in $ns..."
@@ -1088,11 +1133,150 @@ otel:
           traces_endpoint: "${MLFLOW_TRACES_ENDPOINT}"
 EOF
     helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
-      -n kagenti-system \
       -f "$_mlflow_vals_file" \
-      --reuse-values --no-hooks
+      --reset-values \
+      "${KAGENTI_DEPS_HELM_ARGS[@]}"
     rm -f "$_mlflow_vals_file"
     log_success "kagenti-deps upgraded with MLflow OTEL endpoint"
+  fi
+
+  # Expose MLflow UI via an OpenShift OAuth proxy so browser users can
+  # authenticate through OpenShift SSO. The proxy injects the user's token
+  # as a bearer token which MLflow's kubernetes-auth plugin validates via
+  # SubjectAccessReview.
+  log_info "Ensuring MLflow OAuth proxy exists for browser access..."
+  if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
+    local oauth_proxy_image
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    if [ -z "$oauth_proxy_image" ]; then
+      log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
+      return 0
+    fi
+    # Cookie secret for oauth-proxy session encryption
+    local cookie_secret
+    cookie_secret=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+    $KUBECTL apply -f - <<OAUTH_EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"mlflow"}}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-oauth-proxy-cookie
+  namespace: ${MLFLOW_NAMESPACE}
+type: Opaque
+data:
+  cookie-secret: ${cookie_secret}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-oauth-proxy
+  template:
+    metadata:
+      labels:
+        app: mlflow-oauth-proxy
+    spec:
+      serviceAccountName: mlflow-oauth-proxy
+      containers:
+      - name: oauth-proxy
+        image: ${oauth_proxy_image}
+        args:
+        - --https-address=:8443
+        - --provider=openshift
+        - --openshift-service-account=mlflow-oauth-proxy
+        - --upstream=https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443
+        - --upstream-ca=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - --tls-cert=/etc/tls/private/tls.crt
+        - --tls-key=/etc/tls/private/tls.key
+        - --cookie-secret-file=/etc/oauth/cookie-secret
+        - --pass-access-token=true
+        - --pass-user-bearer-token=true
+        ports:
+        - containerPort: 8443
+          name: https
+        volumeMounts:
+        - name: tls
+          mountPath: /etc/tls/private
+          readOnly: true
+        - name: cookie-secret
+          mountPath: /etc/oauth
+          readOnly: true
+      volumes:
+      - name: tls
+        secret:
+          secretName: mlflow-oauth-proxy-tls
+      - name: cookie-secret
+        secret:
+          secretName: mlflow-oauth-proxy-cookie
+          items:
+          - key: cookie-secret
+            path: cookie-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: mlflow-oauth-proxy-tls
+spec:
+  selector:
+    app: mlflow-oauth-proxy
+  ports:
+  - name: https
+    port: 8443
+    targetPort: https
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: ${MLFLOW_NAMESPACE}
+spec:
+  to:
+    kind: Service
+    name: mlflow-oauth-proxy
+  port:
+    targetPort: https
+  tls:
+    termination: reencrypt
+OAUTH_EOF
+  fi
+
+  # Wait for the oauth-proxy to become ready
+  local tries=0
+  while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
+    -l app=mlflow-oauth-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Running; do
+    tries=$((tries + 1))
+    if [ $tries -ge 24 ]; then
+      log_warn "MLflow OAuth proxy not ready after 2m — dashboard link may not work"
+      break
+    fi
+    sleep 5
+  done
+
+  local mlflow_host=""
+  mlflow_host=$($KUBECTL get route mlflow -n "$MLFLOW_NAMESPACE" \
+    -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+  if [ -n "$mlflow_host" ]; then
+    local mlflow_url="https://${mlflow_host}/mlflow/"
+    $KUBECTL patch configmap kagenti-ui-config -n kagenti-system \
+      --type merge -p "{\"data\":{\"MLFLOW_DASHBOARD_URL\":\"${mlflow_url}\"}}" 2>/dev/null || true
+    log_success "MLflow dashboard URL: $mlflow_url"
+  else
+    log_warn "Could not resolve MLflow Route host — UI link will be empty"
   fi
 }
 log_info "Step 3d: MLflow provisioning (deferred)"
@@ -1235,6 +1419,35 @@ if [ "$SKIP_MLFLOW" = true ]; then
   log_success "Skipping MLflow RBAC grant (--skip-mlflow)"
 else
   _mlflow_grant_otel_rbac
+
+  # Create default MLflow experiment in the workspace namespace.
+  # The otel-collector sends traces with x-mlflow-experiment-id header; the experiment
+  # must exist or MLflow will reject the traces.
+  # Uses kubectl run with a curl pod since the installer runs outside the cluster.
+  if ! $DRY_RUN; then
+    _EXP_WS="${MLFLOW_WORKSPACE:-team1}"
+    _EXP_NAME="kagenti-traces"
+    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null)
+    if [ -n "$_EXP_TOKEN" ]; then
+      _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
+        --image=curlimages/curl -n kagenti-system \
+        --env="TOK=$_EXP_TOKEN" \
+        -- sh -c 'curl -sk -X POST \
+        -H "Authorization: Bearer $TOK" \
+        -H "x-mlflow-workspace: '"$_EXP_WS"'" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"'"$_EXP_NAME"'\"}" \
+        "https://mlflow.'"${MLFLOW_NAMESPACE}"'.svc.cluster.local:8443/api/2.0/mlflow/experiments/create"' 2>/dev/null)
+      if echo "$_EXP_RESP" | grep -q "experiment_id"; then
+        _EXP_ID=$(echo "$_EXP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['experiment_id'])" 2>/dev/null)
+        log_success "Created MLflow experiment '$_EXP_NAME' (id=$_EXP_ID) in workspace $_EXP_WS"
+      elif echo "$_EXP_RESP" | grep -q "RESOURCE_ALREADY_EXISTS"; then
+        log_success "MLflow experiment '$_EXP_NAME' already exists in workspace $_EXP_WS"
+      else
+        log_warn "Failed to create MLflow experiment: $_EXP_RESP"
+      fi
+    fi
+  fi
 fi
 echo ""
 

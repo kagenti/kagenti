@@ -307,6 +307,84 @@ The cleanup script removes:
 - Namespaces: `kagenti-system`, `mcp-system`, `gateway-system`, `keycloak`, `istio-cni`, `istio-system`, `istio-ztunnel`, `openshift-builds`, `zero-trust-workload-identity-manager`, `cert-manager-operator`, `cert-manager`, `team1`, `team2`
 - Istio shared-trust ClusterIssuers and Certificates
 
+## RHOAI MLflow Integration
+
+When Red Hat OpenShift AI (RHOAI) is installed, Kagenti can use RHOAI's managed
+MLflow instance for LLM trace collection instead of deploying its own.
+
+### Enabling RHOAI MLflow
+
+Enable the integration by passing these values to `setup-kagenti.sh` (or the
+equivalent Helm overrides):
+
+```yaml
+components:
+  mlflow:
+    enabled: false        # do NOT deploy standalone MLflow
+  rhoai:
+    enabled: true         # install RHOAI operator + DSC
+
+otel:
+  mlflow:
+    enabled: true         # wire OTEL collector → RHOAI MLflow
+    workspace: "team1"    # RHOAI workspace namespace
+    experimentId: "1"     # target experiment (created automatically)
+```
+
+The installer (`scripts/ocp/setup-kagenti.sh`) automatically:
+
+1. Waits for the RHOAI MLflow CR to become ready
+2. Grants the OTEL collector ServiceAccount `mlflow-edit` in the workspace namespace
+3. Creates the target experiment via the MLflow REST API
+4. Deploys an OAuth proxy with browser SSO for the MLflow dashboard
+5. Adds a "MLflow" link to the Kagenti UI sidebar
+
+### Authentication
+
+The OTEL collector authenticates to RHOAI MLflow using its projected
+ServiceAccount token (`/var/run/secrets/kubernetes.io/serviceaccount/token`).
+MLflow's `kubernetes-auth` plugin validates this token via Kubernetes
+SubjectAccessReview against the workspace namespace.
+
+TLS is verified using the OpenShift service-ca certificate
+(`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt`), which is
+automatically available in every pod.
+
+### RHOAI Version Requirements
+
+RHOAI **3.4.0+** (channel `stable-3.4`) is required for full trace rendering.
+It ships MLflow 3.10.1 which includes the fix for OTEL-ingested trace display.
+
+Earlier versions (RHOAI 3.3.x on channel `fast-3.x`) ship MLflow 3.6.x which
+has a client-side JavaScript bug where clicking a trace shows "Trace failed to
+render" due to a `num_spans` metadata mismatch. The fix landed in upstream
+[MLflow PR #20596](https://github.com/mlflow/mlflow/pull/20596) (v3.10.0).
+
+If you are on RHOAI 3.3.x, switch to the `stable-3.4` channel:
+
+```shell
+oc patch subscription rhods-operator -n redhat-ods-operator --type=merge \
+  -p '{"spec":{"channel":"stable-3.4"}}'
+```
+
+After the operator upgrades, the MLflow deployment will be updated automatically.
+
+### OTEL Collector Configuration
+
+The RHOAI MLflow pipeline differs from the standalone MLflow pipeline:
+
+| Setting | Standalone | RHOAI |
+|---------|-----------|-------|
+| Authentication | OAuth2 client credentials | ServiceAccount bearer token |
+| TLS CA | System CAs / ingress-ca | service-ca.crt (projected volume) |
+| Compression | gzip (default) | none (RHOAI incompatibility) |
+| Retry | enabled (5s→30s backoff) | disabled (response parsing bug) |
+| Endpoint | `http://mlflow:5000/v1/traces` | `https://mlflow.<ns>.svc:8443/v1/traces` |
+
+The retry is disabled because RHOAI MLflow returns a JSON body with
+`Content-Type: application/x-protobuf`, which the OTEL collector cannot parse,
+triggering infinite retries even though traces are successfully ingested.
+
 ## Troubleshooting
 
 ### Pre-flight Validation

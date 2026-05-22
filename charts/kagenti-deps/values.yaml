@@ -323,6 +323,13 @@ otel:
     # Uses the collector's ServiceAccount token for authentication against
     # RHOAI MLflow's Kubernetes authorization plugin.
     rhoaiMlflowAuthConfig:
+      exporters:
+        otlphttp/mlflow:
+          compression: none
+          retry_on_failure:
+            enabled: false
+          tls:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
       extensions:
         bearertokenauth/mlflow:
           filename: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -350,7 +357,7 @@ certManager:
 # ------------------------------------------------------------------
 rhoai:
   namespace: redhat-ods-operator
-  channel: fast-3.x
+  channel: stable-3.4
   installPlanApproval: Automatic
 
 # When true, skip servicemeshoperator3 Subscription creation (RHOAI provides it)
