@@ -94,6 +94,9 @@ ui:
     tag: v0.7.0-alpha.1
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
+    # Default Shipwright build strategy for internal registries
+    # Kind: "buildah-insecure-push" (no TLS), OCP: "buildah" (TLS-enabled registry)
+    shipwrightDefaultStrategy: ""
     resources:
       limits:
         cpu: 250m

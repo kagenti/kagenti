@@ -62,32 +62,39 @@ def select_build_strategy(registry_url: str, requested_strategy: Optional[str] =
     """
     Select the appropriate build strategy based on the registry.
 
-    For internal registries (svc.cluster.local), uses the insecure push strategy.
-    For external registries with TLS, uses the secure strategy.
+    For internal registries, uses the configured default strategy (configurable
+    via SHIPWRIGHT_DEFAULT_STRATEGY env var). On Kind this is "buildah-insecure-push"
+    (no TLS); on OpenShift it should be "buildah" (TLS-enabled internal registry).
+    For external registries, always uses the secure "buildah" strategy.
+
+    Note: for internal registries, any requested_strategy that doesn't match the
+    configured internal strategy is overridden. This ensures the correct TLS
+    behavior regardless of what the caller requests.
 
     Args:
         registry_url: The registry URL to push images to
-        requested_strategy: Optional explicitly requested strategy
+        requested_strategy: Optional explicitly requested strategy (ignored for
+            internal registries if it doesn't match the configured strategy)
 
     Returns:
         The build strategy name to use
     """
+    from app.core.config import settings  # deferred: avoid circular dep with config→constants
+
     is_internal_registry = (
         registry_url == DEFAULT_INTERNAL_REGISTRY or "svc.cluster.local" in registry_url
     )
+    internal_strategy = settings.shipwright_default_strategy
 
-    # If a strategy was explicitly requested, use it unless it's secure for internal registry
     if requested_strategy:
-        if is_internal_registry and requested_strategy == SHIPWRIGHT_STRATEGY_SECURE:
-            # Override to insecure for internal registries
+        if is_internal_registry and requested_strategy != internal_strategy:
             logger.debug(
-                f"Overriding secure strategy to insecure for internal registry: {registry_url}"
+                f"Overriding strategy to {internal_strategy} for internal registry: {registry_url}"
             )
-            return SHIPWRIGHT_STRATEGY_INSECURE
+            return internal_strategy
         return requested_strategy
 
-    # Default strategy based on registry type
-    return SHIPWRIGHT_STRATEGY_INSECURE if is_internal_registry else SHIPWRIGHT_STRATEGY_SECURE
+    return internal_strategy if is_internal_registry else SHIPWRIGHT_STRATEGY_SECURE
 
 
 def build_shipwright_build_manifest(
