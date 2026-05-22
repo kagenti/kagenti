@@ -441,7 +441,6 @@ _mlflow_grant_otel_rbac() {
         break
       fi
     done
-    [ -n "$cr_name" ] && break
     tries=$((tries + 1))
     if [ $tries -ge 24 ]; then
       log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
@@ -1147,9 +1146,15 @@ EOF
   # SubjectAccessReview.
   log_info "Ensuring MLflow OAuth proxy exists for browser access..."
   if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
+    local oauth_proxy_image
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    if [ -z "$oauth_proxy_image" ]; then
+      log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
+      return 0
+    fi
     # Cookie secret for oauth-proxy session encryption
     local cookie_secret
-    cookie_secret=$(openssl rand -base64 32 | tr -d '\n' | head -c 32 | base64)
+    cookie_secret=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
     $KUBECTL apply -f - <<OAUTH_EOF
 apiVersion: v1
 kind: ServiceAccount
@@ -1186,7 +1191,7 @@ spec:
       serviceAccountName: mlflow-oauth-proxy
       containers:
       - name: oauth-proxy
-        image: $(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+        image: ${oauth_proxy_image}
         args:
         - --https-address=:8443
         - --provider=openshift
@@ -1426,12 +1431,13 @@ else
     if [ -n "$_EXP_TOKEN" ]; then
       _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
         --image=curlimages/curl -n kagenti-system \
-        -- curl -sk -X POST \
-        -H "Authorization: Bearer $_EXP_TOKEN" \
-        -H "x-mlflow-workspace: $_EXP_WS" \
+        --env="TOK=$_EXP_TOKEN" \
+        -- sh -c 'curl -sk -X POST \
+        -H "Authorization: Bearer $TOK" \
+        -H "x-mlflow-workspace: '"$_EXP_WS"'" \
         -H "Content-Type: application/json" \
-        -d "{\"name\":\"$_EXP_NAME\"}" \
-        "https://mlflow.${MLFLOW_NAMESPACE}.svc.cluster.local:8443/api/2.0/mlflow/experiments/create" 2>/dev/null)
+        -d "{\"name\":\"'"$_EXP_NAME"'\"}" \
+        "https://mlflow.'"${MLFLOW_NAMESPACE}"'.svc.cluster.local:8443/api/2.0/mlflow/experiments/create"' 2>/dev/null)
       if echo "$_EXP_RESP" | grep -q "experiment_id"; then
         _EXP_ID=$(echo "$_EXP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['experiment_id'])" 2>/dev/null)
         log_success "Created MLflow experiment '$_EXP_NAME' (id=$_EXP_ID) in workspace $_EXP_WS"
