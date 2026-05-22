@@ -2085,33 +2085,46 @@ def _build_authbridge_runtime_yaml(
     # AgentRuntime.Spec.AuthBridgeMode → namespace ConfigMap →
     # cluster default (proxy-sidecar). Hardcoding it here would pin
     # every backend-rendered ConfigMap to one shape regardless of CR.
-    config = {
-        "pipeline": {
-            "inbound": {
-                "plugins": [
-                    {
-                        "name": "jwt-validation",
-                        "config": {
-                            "issuer": issuer,
-                            "keycloak_url": keycloak_url,
-                            "keycloak_realm": realm,
-                        },
-                    }
-                ]
-            },
-            "outbound": {
-                "plugins": [
-                    {
-                        "name": "token-exchange",
-                        "config": {
-                            "keycloak_url": keycloak_url,
-                            "keycloak_realm": realm,
-                            "default_policy": "passthrough",
-                            "identity": {"type": identity_type},
-                        },
-                    }
-                ]
-            },
+    identity: dict[str, str] = {"type": identity_type}
+    if identity_type == "spiffe":
+        # JWT-SVID client-assertion audience — must match what Keycloak's
+        # SPIFFE IdP expects (the realm issuer URL). Required by
+        # authbridge's token-exchange plugin in the spiffe identity path.
+        # See kagenti-extensions#332.
+        identity["jwt_audience"] = issuer
+    config: dict[str, object] = {}
+    if spire_enabled:
+        # Empty spiffe block signals authbridge to construct the in-process
+        # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
+        # tokenexchange). All fields default: socket points at the standard
+        # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation.
+        # The JWT audience lives per-tokenexchange (under identity above).
+        config["spiffe"] = {}
+    config["pipeline"] = {
+        "inbound": {
+            "plugins": [
+                {
+                    "name": "jwt-validation",
+                    "config": {
+                        "issuer": issuer,
+                        "keycloak_url": keycloak_url,
+                        "keycloak_realm": realm,
+                    },
+                }
+            ]
+        },
+        "outbound": {
+            "plugins": [
+                {
+                    "name": "token-exchange",
+                    "config": {
+                        "keycloak_url": keycloak_url,
+                        "keycloak_realm": realm,
+                        "default_policy": "passthrough",
+                        "identity": identity,
+                    },
+                }
+            ]
         },
     }
 

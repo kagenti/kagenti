@@ -26,7 +26,6 @@ data:
   SPIRE_ENABLED: {{ if .Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
   CLIENT_AUTH_TYPE: "{{ .Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ .Values.authBridge.spiffeIdpAlias }}"
-  JWT_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
   EXPECTED_AUDIENCE: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
   CREDENTIAL_WAIT_TIMEOUT: {{ .Values.authBridge.credentialWaitTimeout | quote }}
 ---
@@ -52,6 +51,14 @@ data:
   # default (proxy-sidecar) wins by default, and a namespace-level
   # override can still be added later by editing this ConfigMap.
   config.yaml: |
+    {{- if .Values.spire.enabled }}
+    # Empty spiffe block signals authbridge to construct an in-process
+    # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
+    # tokenexchange). All fields default: socket points at the standard
+    # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation. The
+    # JWT audience is per-tokenexchange (see identity.jwt_audience below).
+    spiffe: {}
+    {{- end }}
     pipeline:
       inbound:
         plugins:
@@ -78,6 +85,12 @@ data:
               default_policy: "passthrough"
               identity:
                 type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
+                {{- if eq .Values.authBridge.clientAuthType "federated-jwt" }}
+                # Audience the JWT-SVID client assertion is minted with —
+                # must equal the audience Keycloak's SPIFFE IdP expects
+                # (the realm issuer URL). Only meaningful when type=spiffe.
+                jwt_audience: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+                {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
