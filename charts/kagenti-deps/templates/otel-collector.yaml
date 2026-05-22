@@ -88,10 +88,14 @@ spec:
           volumeMounts:
             - name: otel-collector-config
               mountPath: /etc/otelcol-config
-            {{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+            {{- $mlflowTLS := or (and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled) (get (default dict $.Values.otel.mlflow) "enabled") }}
+            {{- $mlflowOIDC := and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+            {{- if and $.Values.openshift $mlflowTLS }}
             - name: trusted-ca
               mountPath: /etc/pki/ca-trust/extracted/pem
               readOnly: true
+            {{- end }}
+            {{- if and $.Values.openshift $mlflowOIDC }}
             - name: ingress-ca
               mountPath: /etc/pki/ingress-ca
               readOnly: true
@@ -110,9 +114,10 @@ spec:
         - name: otel-collector-config
           configMap:
             name: otel-collector-config
-        {{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
-        # OpenShift trusted CA bundle — created by Tekton/platform operators.
-        # Optional so the pod starts while waiting for the ConfigMap to appear.
+        {{- if and $.Values.openshift $mlflowTLS }}
+        # OpenShift trusted CA bundle for MLflow TLS verification.
+        # The service-ca operator signs MLflow's serving cert; this bundle
+        # contains the CA so the collector can verify the upstream connection.
         - name: trusted-ca
           configMap:
             name: config-trusted-cabundle
@@ -120,6 +125,8 @@ spec:
             items:
               - key: ca-bundle.crt
                 path: tls-ca-bundle.pem
+        {{- end }}
+        {{- if and $.Values.openshift $mlflowOIDC }}
         # OpenShift ingress CA for Keycloak JWKS verification via ingress route
         # Copied from openshift-config-managed/default-ingress-cert by pre-install Job
         - name: ingress-ca

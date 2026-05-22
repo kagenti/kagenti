@@ -460,6 +460,18 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
     print(ns)
 " 2>/dev/null || echo -e "team1\nteam2")
 
+  # Grant in MLflow namespace (authentication: SA must be permitted to access MLflow)
+  log_info "Creating MLflow RBAC for otel-collector in $MLFLOW_NAMESPACE..."
+  if ! $DRY_RUN; then
+    $KUBECTL create rolebinding otel-collector-mlflow \
+      --clusterrole="$cr_name" \
+      --serviceaccount=kagenti-system:otel-collector \
+      -n "$MLFLOW_NAMESPACE" \
+      --dry-run=client -o yaml | $KUBECTL apply -f -
+  fi
+  log_success "RoleBinding otel-collector-mlflow created in $MLFLOW_NAMESPACE"
+
+  # Grant in each agent namespace (workspace authorization)
   while IFS= read -r ns; do
     [ -z "$ns" ] && continue
     log_info "Creating MLflow RBAC for otel-collector in $ns..."
