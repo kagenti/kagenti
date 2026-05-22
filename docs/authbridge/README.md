@@ -140,7 +140,7 @@ For a progressive walkthrough: [Demos](demos.md)
 
 For deep implementation details:
 
-- [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/authbridge/README.md) — modes, YAML config, logging
+- [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/README.md) — modes, YAML config, logging
 - [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol flows
 - [AuthBridge Demos](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/README.md) — step-by-step demo instructions
 - [Identity Guide](../identity-guide.md) — platform-level SPIFFE/SPIRE and Keycloak architecture
