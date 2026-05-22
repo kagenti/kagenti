@@ -357,7 +357,7 @@ certManager:
 # ------------------------------------------------------------------
 rhoai:
   namespace: redhat-ods-operator
-  channel: fast-3.x
+  channel: stable-3.4
   installPlanApproval: Automatic
 
 # When true, skip servicemeshoperator3 Subscription creation (RHOAI provides it)
