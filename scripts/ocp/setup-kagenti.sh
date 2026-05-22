@@ -1128,6 +1128,139 @@ EOF
     rm -f "$_mlflow_vals_file"
     log_success "kagenti-deps upgraded with MLflow OTEL endpoint"
   fi
+
+  # Expose MLflow UI via an OpenShift OAuth proxy so browser users can
+  # authenticate through OpenShift SSO. The proxy injects the user's token
+  # as a bearer token which MLflow's kubernetes-auth plugin validates via
+  # SubjectAccessReview.
+  log_info "Ensuring MLflow OAuth proxy exists for browser access..."
+  if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
+    # Cookie secret for oauth-proxy session encryption
+    local cookie_secret
+    cookie_secret=$(openssl rand -base64 32 | tr -d '\n' | head -c 32 | base64)
+    $KUBECTL apply -f - <<OAUTH_EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"mlflow"}}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-oauth-proxy-cookie
+  namespace: ${MLFLOW_NAMESPACE}
+type: Opaque
+data:
+  cookie-secret: ${cookie_secret}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-oauth-proxy
+  template:
+    metadata:
+      labels:
+        app: mlflow-oauth-proxy
+    spec:
+      serviceAccountName: mlflow-oauth-proxy
+      containers:
+      - name: oauth-proxy
+        image: $(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+        args:
+        - --https-address=:8443
+        - --provider=openshift
+        - --openshift-service-account=mlflow-oauth-proxy
+        - --upstream=https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443
+        - --upstream-ca=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - --tls-cert=/etc/tls/private/tls.crt
+        - --tls-key=/etc/tls/private/tls.key
+        - --cookie-secret-file=/etc/oauth/cookie-secret
+        - --pass-access-token=true
+        - --pass-user-bearer-token=true
+        ports:
+        - containerPort: 8443
+          name: https
+        volumeMounts:
+        - name: tls
+          mountPath: /etc/tls/private
+          readOnly: true
+        - name: cookie-secret
+          mountPath: /etc/oauth
+          readOnly: true
+      volumes:
+      - name: tls
+        secret:
+          secretName: mlflow-oauth-proxy-tls
+      - name: cookie-secret
+        secret:
+          secretName: mlflow-oauth-proxy-cookie
+          items:
+          - key: cookie-secret
+            path: cookie-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: mlflow-oauth-proxy-tls
+spec:
+  selector:
+    app: mlflow-oauth-proxy
+  ports:
+  - name: https
+    port: 8443
+    targetPort: https
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: ${MLFLOW_NAMESPACE}
+spec:
+  to:
+    kind: Service
+    name: mlflow-oauth-proxy
+  port:
+    targetPort: https
+  tls:
+    termination: reencrypt
+OAUTH_EOF
+  fi
+
+  # Wait for the oauth-proxy to become ready
+  local tries=0
+  while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
+    -l app=mlflow-oauth-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Running; do
+    tries=$((tries + 1))
+    if [ $tries -ge 24 ]; then
+      log_warn "MLflow OAuth proxy not ready after 2m — dashboard link may not work"
+      break
+    fi
+    sleep 5
+  done
+
+  local mlflow_host=""
+  mlflow_host=$($KUBECTL get route mlflow -n "$MLFLOW_NAMESPACE" \
+    -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+  if [ -n "$mlflow_host" ]; then
+    local mlflow_url="https://${mlflow_host}/mlflow/"
+    $KUBECTL patch configmap kagenti-ui-config -n kagenti-system \
+      --type merge -p "{\"data\":{\"MLFLOW_DASHBOARD_URL\":\"${mlflow_url}\"}}" 2>/dev/null || true
+    log_success "MLflow dashboard URL: $mlflow_url"
+  else
+    log_warn "Could not resolve MLflow Route host — UI link will be empty"
+  fi
 }
 log_info "Step 3d: MLflow provisioning (deferred)"
 _deferred_mlflow
