@@ -1,0 +1,266 @@
+{{- if .Values.components.mcpInspector.enabled  }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kagenti.fullname" . }}-mcp-inspector-sa
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kagenti.fullname" . }}-mcp-inspector-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+{{- if .Values.openshift }}
+- apiGroups: ["route.openshift.io"]
+  resources: ["routes"]
+  verbs: ["get", "list", "watch"]
+{{- else }}
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["httproutes"]
+  verbs: ["get", "list", "watch"]
+{{- end }}
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name:  {{ include "kagenti.fullname" . }}-mcp-inspector-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kagenti.fullname" . }}-mcp-inspector-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kagenti.fullname" . }}-mcp-inspector-sa
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-inspector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-inspector
+  template:
+    metadata:
+      labels:
+        app: mcp-inspector
+    spec:
+      serviceAccountName: {{ include "kagenti.fullname" . }}-mcp-inspector-sa
+      initContainers:
+      - name: route-checker-and-config-creator
+        image: "{{ .Values.common.kubectlImage }}"
+        command:
+          - "/bin/sh"
+          - "-c"
+          - |
+            set -e
+            echo "Starting MCP config job..."
+
+            {{- if .Values.openshift }}
+            # Function to wait for a specific route to be admitted
+            wait_for_route() {
+              ROUTE_NAME=$1
+              NAMESPACE=$2
+              echo "Waiting for route '$ROUTE_NAME' in namespace '$NAMESPACE' to be admitted..."
+              until [ "$(kubectl get route $ROUTE_NAME -n $NAMESPACE -o jsonpath='{.status.ingress[0].conditions[?(@.type=="Admitted")].status}' 2>/dev/null)" = "True" ]; do
+                echo "Route '$ROUTE_NAME' not admitted yet. Retrying in 15 seconds..."
+                sleep 15
+              done
+              echo "Route '$ROUTE_NAME' is admitted."
+            }
+
+            # Wait for route
+            wait_for_route mcp-inspector {{ .Release.Namespace }}
+
+            echo "Route is ready. Fetching hostnames..."
+
+              # Get hostnames from the route
+            INSPECTOR_HOST=$(kubectl get route mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}')
+            PROTOCOL=https
+            # Set PORT to an empty string for OpenShift to use the default https port (443)
+            PORT=""
+            {{- else }}
+            # Get hostname from the HTTPRoute hostnames
+            PROTOCOL=http
+            PORT=8080
+            INSPECTOR_HOST=$(kubectl get httproute mcp-inspector -n {{ .Release.Namespace }} -o jsonpath='{.spec.hostnames[0]}')
+
+            # If no hostname in HTTPRoute, construct from domain
+            if [ -z "$INSPECTOR_HOST" ]; then
+              INSPECTOR_HOST="mcp-inspector.{{ .Values.domain }}"
+            fi
+            {{- end }}
+
+            if [ -z "$INSPECTOR_HOST" ]; then
+              echo "Error: Could not retrieve hostname."
+              exit 1
+            fi
+
+            echo "Inspector host: $INSPECTOR_HOST"
+
+            # Create the ConfigMap using a heredoc and apply it
+            echo "Creating/updating mcp-inspector-config ConfigMap..."
+            kubectl apply -n {{ .Release.Namespace }} -f - <<EOF
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: mcp-inspector-config
+            data:
+              # Conditionally include the port if the PORT variable is not empty
+              ALLOWED_ORIGINS: "${PROTOCOL}://${INSPECTOR_HOST}{{ if .Values.openshift | not }}:${PORT}{{ end }}"
+            EOF
+
+            echo "ConfigMap 'mcp-inspector-config' applied successfully."
+      containers:
+        - name: mcp-inspector
+          image: "{{ .Values.mcpInspector.image }}:{{ .Values.mcpInspector.tag }}"
+          ports:
+            - containerPort: 6274
+            - containerPort: 6277
+          resources:
+            limits:
+              cpu: 100m
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          env:
+          - name: DANGEROUSLY_OMIT_AUTH
+            value: "true"
+          - name: ALLOWED_ORIGINS
+            valueFrom:
+              configMapKeyRef:
+                name: mcp-inspector-config
+                key: ALLOWED_ORIGINS
+          - name: HOST
+            value: 0.0.0.0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-inspector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: mcp-inspector
+  ports:
+  - name: ui
+    port: 6274
+    protocol: TCP
+    targetPort: 6274
+  - name: proxy
+    port: 6277
+    protocol: TCP
+    targetPort: 6277
+  type: ClusterIP
+---
+{{- if .Values.openshift }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  name: mcp-inspector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  path: /
+  port:
+    targetPort: ui
+  to:
+    kind: Service
+    name: mcp-inspector
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mcp-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: proxy
+  to:
+    kind: Service
+    name: mcp-inspector
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- else }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-inspector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Values.httpGateway.name | default "http" }}
+    sectionName: {{ .Values.httpGateway.sectionName | default "http" }}
+    namespace: {{ .Values.httpGateway.namespace | default "kagenti-system" }}
+  hostnames:
+  - mcp-inspector.{{ .Values.domain | default "localtest.me" }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: mcp-inspector
+      port: 6274 # from service port defined above
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+  - name: {{ .Values.httpGateway.name | default "http" }}
+    sectionName: {{ .Values.httpGateway.sectionName | default "http" }}
+    namespace: {{ .Values.httpGateway.namespace | default "kagenti-system" }}
+  hostnames:
+  - mcp-proxy.{{ .Values.domain | default "localtest.me" }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: mcp-inspector
+      port: 6277 # from service port defined above
+{{- end }}
+{{- end }}

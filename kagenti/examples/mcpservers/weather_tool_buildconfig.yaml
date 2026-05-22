@@ -1,0 +1,49 @@
+# OpenShift BuildConfig for weather-tool
+# BuildConfig uses the native OpenShift build system for building MCP tools.
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: weather-tool
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-tool
+    kagenti.io/type: tool
+    protocol.kagenti.io/mcp: ""
+    kagenti.io/framework: Python
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: weather-tool
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-tool
+    kagenti.io/type: tool
+    protocol.kagenti.io/mcp: ""
+    kagenti.io/framework: Python
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/kagenti/agent-examples
+      ref: main
+    contextDir: mcp/weather_tool
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: weather-tool:v0.0.1
+  triggers:
+    # Manual trigger only - build starts when explicitly triggered
+    - type: ConfigChange
+  resources:
+    limits:
+      cpu: "2"
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi

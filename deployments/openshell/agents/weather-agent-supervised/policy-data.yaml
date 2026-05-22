@@ -1,0 +1,41 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /home
+    - /bin
+    - /sbin
+  read_write:
+    - /tmp
+    - /.cache
+    - /root/.cache
+    - /home/sandbox/.cache
+    - /var/log
+    - /root
+    - /app
+process:
+  run_as_user: ""
+  run_as_group: ""
+network_policies:
+  internal:
+    name: "Allow internal cluster services"
+    endpoints:
+      - host: "*.svc.cluster.local"
+        port: 8080
+      - host: "*.svc.cluster.local"
+        port: 8000
+      - host: "*.svc.cluster.local"
+        port: 443
+  external:
+    name: "Allow external APIs"
+    endpoints:
+      - host: "*.redhatworkshops.io"
+        port: 443
+      - host: "*.rh-aiservices-bu.com"
+        port: 443
+      - host: "*.openweathermap.org"
+        port: 443

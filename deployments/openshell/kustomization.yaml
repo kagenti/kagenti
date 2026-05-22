@@ -1,0 +1,17 @@
+# OpenShell Gateway Kustomization
+#
+# Deploy:  kubectl apply -k deployments/openshell/
+# Destroy: kubectl delete -k deployments/openshell/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- namespace.yaml
+- agent-sandbox-crd.yaml
+- rbac.yaml
+- gateway.yaml
+# Uncomment for production TLS (PoC uses --disable-tls):
+# - tls-secrets.yaml
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize

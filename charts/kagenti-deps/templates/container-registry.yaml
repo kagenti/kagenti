@@ -1,0 +1,62 @@
+{{- if and .Values.components.containerRegistry.enabled (not .Values.openshift) }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.containerRegistry.namespace | default "cr-system" }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    istio-discovery: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.containerRegistry.name | default "registry" }}
+  namespace: {{ .Values.containerRegistry.namespace | default "cr-system" }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.containerRegistry.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ .Values.containerRegistry.name | default "registry" }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.containerRegistry.name | default "registry" }}
+    spec:
+      containers:
+      - name: registry
+        image: "{{ .Values.containerRegistry.image.repository }}:{{ .Values.containerRegistry.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.containerRegistry.service.port | default 5000 }}
+          name: registry
+        env:
+        - name: OTEL_TRACES_EXPORTER
+          value: {{ .Values.containerRegistry.env.otelTracesExporter | default "none" | quote }}
+        - name: REGISTRY_LOG_LEVEL
+          value: {{ .Values.containerRegistry.env.logLevel | default "info" | quote }}
+        {{- if .Values.containerRegistry.resources }}
+        resources:
+          {{- toYaml .Values.containerRegistry.resources | nindent 10 }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.containerRegistry.name | default "registry" }}
+  namespace: {{ .Values.containerRegistry.namespace | default "cr-system" }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.containerRegistry.service.type | default "ClusterIP" }}
+  ports:
+  - port: {{ .Values.containerRegistry.service.port | default 5000 }}
+    targetPort: {{ .Values.containerRegistry.service.targetPort | default .Values.containerRegistry.service.port | default 5000 }}
+    {{- if .Values.containerRegistry.service.nodePort }}
+    nodePort: {{ .Values.containerRegistry.service.nodePort }}
+    {{- end }}
+  selector:
+    app: {{ .Values.containerRegistry.name | default "registry" }}
+
+{{- end }}
+

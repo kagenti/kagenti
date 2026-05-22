@@ -1,0 +1,13 @@
+# Shipwright BuildRun to trigger weather-service build
+apiVersion: shipwright.io/v1beta1
+kind: BuildRun
+metadata:
+  generateName: weather-service-run-
+  namespace: team1
+  labels:
+    app.kubernetes.io/created-by: e2e-test
+    kagenti.io/build-name: weather-service
+    kagenti.io/type: agent
+spec:
+  build:
+    name: weather-service

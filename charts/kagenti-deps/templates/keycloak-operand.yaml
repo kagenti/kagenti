@@ -1,0 +1,74 @@
+{{- if and .Values.components.keycloak.enabled .Values.openshift }}
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  labels:
+    app: kagenti
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    # Post-install hook ensures CRD exists before this CR is validated
+    # Weight 1 runs after operator subscription (weight 0)
+    "helm.sh/hook": post-install, post-upgrade
+    "helm.sh/hook-weight": "1"
+    # NOTE: No hook-delete-policy - the Keycloak CR persists across reinstalls.
+    # The RHBK operator creates keycloak-initial-admin secret with ownerReference to this CR.
+    # If CR is deleted, the secret is cascade-deleted, then recreated with NEW credentials,
+    # but PostgreSQL PVC persists with OLD credentials, causing authentication failures.
+    # See https://github.com/keycloak/keycloak/issues/35862
+  name: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
+spec:
+  bootstrapAdmin:
+    user:
+      secret: keycloak-initial-admin
+  hostname:
+    strict: false
+  http:
+    httpEnabled: true
+    httpPort: 8080
+  instances: 1
+  networkPolicy:
+    enabled: true
+  update:
+    strategy: RecreateOnImageChange
+  db:
+    host: postgres-kc
+    database: postgres
+    passwordSecret:
+      key: password
+      name: keycloak-db-secret
+    usernameSecret:
+      key: username
+      name: keycloak-db-secret
+    vendor: postgres
+  unsupported:
+    podTemplate:
+      spec:
+        containers:
+          - name: keycloak
+            env:
+              - name: KC_PROXY_HEADERS
+                value: "forwarded"
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: keycloak
+  namespace: {{ .Values.keycloak.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    openshift.io/host.generated: "true"
+spec:
+  path: /
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: keycloak-service
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}
+

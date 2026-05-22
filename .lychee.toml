@@ -1,0 +1,52 @@
+# lychee link checker configuration
+# https://lychee.cli.rs/usage/config/
+
+# Exclude localhost and local dev URLs
+exclude = [
+  "localhost",
+  "127\\.0\\.0\\.1",
+  "localtest\\.me",
+  "host\\.docker\\.internal",
+  # Placeholder URLs in templates and examples
+  "example\\.com",
+  "<your-",
+  # GitHub edit/blame URLs that require authentication
+  "github\\.com/.*/edit/",
+  # Avoid rate-limiting from high-traffic sites
+  "twitter\\.com",
+  "x\\.com",
+  "linkedin\\.com",
+  # Sites that return 403 to automated crawlers
+  "medium\\.com",
+  "redhat\\.com/blog",
+]
+
+# Exclude paths that contain non-documentation content
+exclude_path = [
+  "node_modules",
+  "venv",
+  "vendor",
+  "charts",
+  ".claude",
+]
+
+# Accept these HTTP status codes as valid
+# 403: many legitimate sites (Medium, Red Hat, some GitHub pages) block automated crawlers
+# 429: rate-limited requests — accepted to avoid CI flakes on popular external URLs
+accept = [200, 204, 206, 403, 429]
+
+# Timeout per request
+timeout = 30
+
+# Max retries per request
+max_retries = 3
+
+# Max concurrent requests (be polite to external servers)
+max_concurrency = 8
+
+# Don't follow redirects beyond this depth
+max_redirects = 5
+
+# Only check links that were modified in the PR (speeds up CI)
+# Note: lychee checks all links in matched files; this is handled
+# by the workflow's paths filter instead

@@ -1,0 +1,177 @@
+version: 2
+updates:
+  # GitHub Actions — keep workflow actions up to date
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  # Python (root) — E2E test dependencies
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  # Python (backend) — FastAPI backend dependencies
+  - package-ecosystem: pip
+    directory: /kagenti/backend
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  # npm (UI) — React frontend dependencies
+  - package-ecosystem: npm
+    directory: /kagenti/ui-v2
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+    ignore:
+      # keycloak-js 26.x requires Web Crypto API (crypto.randomUUID, crypto.subtle)
+      # which is unavailable over plain HTTP. Block until all environments use HTTPS.
+      - dependency-name: "keycloak-js"
+        update-types: [version-update:semver-major]
+      # PatternFly packages must be upgraded together (PF5→PF6).
+      # Block major version bumps to prevent partial upgrades.
+      - dependency-name: "@patternfly/*"
+        update-types: [version-update:semver-major]
+      # eslint-plugin-react-refresh 0.5.x requires ESLint 9+.
+      # Block until ESLint 8→9 migration is done (see #905).
+      - dependency-name: "eslint-plugin-react-refresh"
+        versions: [">=0.5.0"]
+      # typescript-eslint parser and plugin must be upgraded together.
+      # Block until ESLint 8→9 migration is done (see #905).
+      - dependency-name: "@typescript-eslint/parser"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@typescript-eslint/eslint-plugin"
+        update-types: [version-update:semver-major]
+      # ESLint 9+/10+ requires flat config and all plugins upgraded together.
+      # Block until ESLint 8→9 migration is done (see #905).
+      - dependency-name: "eslint"
+        update-types: [version-update:semver-major]
+      - dependency-name: "eslint-plugin-react-hooks"
+        update-types: [version-update:semver-major]
+
+  # Go (TUI) — Go module dependencies
+  - package-ecosystem: gomod
+    directory: /kagenti/tui
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  # Docker — CI support images
+  - package-ecosystem: docker
+    directory: /.github/dockerfiles/hypershift-ci
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  # Docker — application images
+  - package-ecosystem: docker
+    directory: /kagenti/backend
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: docker
+    directory: /kagenti/ui-v2
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: docker
+    directory: /kagenti/auth/agent-oauth-secret
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: docker
+    directory: /kagenti/auth/api-oauth-secret
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: docker
+    directory: /kagenti/auth/mlflow-oauth-secret
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]
+
+  - package-ecosystem: docker
+    directory: /kagenti/auth/ui-oauth-secret
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+      major:
+        update-types: [major]

@@ -1,0 +1,50 @@
+# Test Sandbox - creates a pod from the kagenti-agent-sandbox template
+# Used to verify Phase 1: pod lifecycle, hardening defaults, headless service, stable DNS
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: test-sandbox-001
+  namespace: team1
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        sandbox: test-sandbox-001
+        app.kubernetes.io/part-of: kagenti
+        app.kubernetes.io/component: agent-sandbox
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: agent
+        image: python:3.11-slim
+        command: ["/bin/sh", "-c", "echo 'Sandbox ready'; sleep 36000"]
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}

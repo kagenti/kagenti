@@ -1,0 +1,38 @@
+flowchart TD
+    START(["/tdd:ci"]) --> HAS_URL{"Has GH URL?"}
+    HAS_URL -->|Yes| P0["Phase 0: Worktree Setup"]:::tdd
+    HAS_URL -->|No| P1
+
+    P0 --> IS_ISSUE{"Is issue URL?"}
+    IS_ISSUE -->|Yes| P0B["Phase 0b: Research & Plan"]:::tdd
+    IS_ISSUE -->|No, PR| P1
+
+    P0B --> P1["Phase 1: Brainstorm"]:::tdd
+    P1 --> P2["Phase 2: Commit"]:::git
+    P2 --> P3["Phase 3: Local Checks"]:::test
+    P3 -->|Checks fail| P2
+    P3 -->|Checks pass| P4["Phase 4: Push to PR"]:::git
+    P4 --> P5["Phase 5: Wait for CI"]:::ci
+    P5 --> RESULT{"CI Result?"}
+
+    RESULT -->|Pass| P8["Phase 8: Handle Reviews"]:::tdd
+    RESULT -->|Fail| P6["Phase 6: Analyze Failures"]:::rca
+
+    P6 --> FAILCOUNT{"3+ failures?"}
+    FAILCOUNT -->|No| P7["Phase 7: Fix & Iterate"]:::tdd
+    FAILCOUNT -->|Yes| ESCALATE["Escalate to tdd:hypershift"]:::hypershift
+
+    P7 --> P2
+
+    P8 -->|Changes needed| P2
+    P8 -->|Approved| DONE([Merged])
+
+    ESCALATE --> HS["tdd:hypershift"]:::tdd
+
+    classDef tdd fill:#4CAF50,stroke:#333,color:white
+    classDef rca fill:#FF5722,stroke:#333,color:white
+    classDef git fill:#FF9800,stroke:#333,color:white
+    classDef k8s fill:#00BCD4,stroke:#333,color:white
+    classDef hypershift fill:#3F51B5,stroke:#333,color:white
+    classDef ci fill:#2196F3,stroke:#333,color:white
+    classDef test fill:#9C27B0,stroke:#333,color:white

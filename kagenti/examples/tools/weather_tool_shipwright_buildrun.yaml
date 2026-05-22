@@ -1,0 +1,60 @@
+# Copyright 2025 IBM Corp.
+# Licensed under the Apache License, Version 2.0
+#
+# Example Shipwright BuildRun manifest for Weather Tool.
+# This BuildRun resource triggers the actual container image build.
+# Apply this after the Build resource exists.
+
+apiVersion: shipwright.io/v1beta1
+kind: BuildRun
+metadata:
+  # Use generateName for unique BuildRun names (recommended for retries)
+  generateName: weather-tool-run-
+  namespace: team1
+  labels:
+    kagenti.io/type: tool
+    kagenti.io/build-name: weather-tool
+    app.kubernetes.io/name: weather-tool
+    app.kubernetes.io/component: mcp-tool-build
+spec:
+  # Reference to the Build resource
+  build:
+    name: weather-tool
+
+  # Optional: Override output image for this specific run
+  # output:
+  #   image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.2
+
+  # Optional: Service account for the build pod
+  # serviceAccount:
+  #   name: build-sa
+
+# --- Alternative examples (commented out to avoid multi-document issues with kubectl create) ---
+#
+# # BuildRun with explicit name (useful for CI/CD predictable naming)
+# apiVersion: shipwright.io/v1beta1
+# kind: BuildRun
+# metadata:
+#   name: weather-tool-run-manual
+#   namespace: team1
+#   labels:
+#     kagenti.io/type: tool
+#     kagenti.io/build-name: weather-tool
+# spec:
+#   build:
+#     name: weather-tool
+#
+# # BuildRun with output override (for different tags)
+# apiVersion: shipwright.io/v1beta1
+# kind: BuildRun
+# metadata:
+#   generateName: weather-tool-run-v2-
+#   namespace: team1
+#   labels:
+#     kagenti.io/type: tool
+#     kagenti.io/build-name: weather-tool
+# spec:
+#   build:
+#     name: weather-tool
+#   output:
+#     image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.2

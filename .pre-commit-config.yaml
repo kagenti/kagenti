@@ -1,0 +1,35 @@
+repos:
+- repo: local
+  hooks:
+    # Run the linter
+    - id: make-lint
+      name: Run make lint
+      entry: make lint
+      language: system
+      pass_filenames: false
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.14.8
+  hooks:
+    # Run the formatter.
+    - id: ruff-format
+# Rewrite AI Co-authored-by trailers to Assisted-By
+- repo: local
+  hooks:
+    - id: ai-assisted-by-trailer
+      name: Replace Co-Authored-By with Assisted-By
+      entry: scripts/hooks/commit-msg
+      language: script
+      stages: [commit-msg]
+# Warn about Windows-incompatible filenames (colons are intentional, see docs/developer/windows-wsl-setup.md)
+- repo: local
+  hooks:
+    - id: check-windows-paths
+      name: Check for Windows-forbidden characters in filenames
+      entry: scripts/hooks/check-windows-paths.sh
+      language: script
+      pass_filenames: false
+# Secret detection - runs locally (CI action requires license for org repos)
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.21.2
+  hooks:
+    - id: gitleaks

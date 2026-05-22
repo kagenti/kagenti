@@ -1,0 +1,219 @@
+# OpenShell PoC E2E Tests (Kind)
+#
+# Experimental, non-voting workflow for the OpenShell PoC.
+# Runs the openshell-full-test.sh script which handles cluster creation,
+# platform install, OpenShell gateway deployment, agent builds, and E2E tests.
+#
+# This workflow never blocks merge (continue-on-error: true).
+#
+# Triggers:
+#   - /run-e2e-openshell comment: runs with secrets (LLM tests enabled)
+#   - pull_request: runs without secrets on fork PRs (LLM tests skip)
+#   - push to main: post-merge validation with secrets
+#   - workflow_dispatch: manual trigger with secrets
+#
+name: "[Experimental] E2E OpenShell (Kind)"
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'deployments/openshell/**'
+      - 'charts/openshell/**'
+      - 'scripts/openshell/**'
+      - 'kagenti/tests/e2e/openshell/**'
+      - '.github/scripts/local-setup/openshell-full-test.sh'
+      - '.github/scripts/local-setup/openshell-build-agents.sh'
+      - '.github/workflows/e2e-openshell-kind.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'deployments/openshell/**'
+      - 'charts/openshell/**'
+      - 'scripts/openshell/**'
+      - 'kagenti/tests/e2e/openshell/**'
+      - '.github/scripts/local-setup/openshell-full-test.sh'
+      - '.github/scripts/local-setup/openshell-build-agents.sh'
+      - '.github/workflows/e2e-openshell-kind.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: openshell-kind-${{ github.event.issue.number || github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  # ── Authorization (issue_comment only) ─────────────────────────
+  authorize:
+    name: Authorize
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/run-e2e-openshell'))
+    permissions:
+      pull-requests: write
+      contents: read
+      statuses: write
+    outputs:
+      authorized: ${{ steps.check.outputs.has-permission }}
+      pr_sha: ${{ steps.pr-info.outputs.sha }}
+    steps:
+      - name: Check write permission
+        id: check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            if (context.eventName !== 'issue_comment') {
+              core.setOutput('has-permission', 'true');
+              return;
+            }
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner, repo: context.repo.repo,
+              username: context.payload.comment.user.login
+            });
+            const ok = ['admin', 'write'].includes(data.permission);
+            core.setOutput('has-permission', ok.toString());
+            if (!ok) core.setFailed(`No write permission: ${data.permission}`);
+
+      - name: Get PR info
+        id: pr-info
+        if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('sha', pr.head.sha);
+
+      - name: React with rocket
+        if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              comment_id: context.payload.comment.id, content: 'rocket'
+            });
+
+      - name: Create pending commit status
+        if: steps.check.outputs.has-permission == 'true' && github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              sha: '${{ steps.pr-info.outputs.sha }}',
+              state: 'pending',
+              target_url: runUrl,
+              description: 'OpenShell E2E tests running on Kind',
+              context: 'OpenShell PoC (Kind) [/run-e2e-openshell]'
+            });
+
+  # ── E2E Test Job ───────────────────────────────────────────────
+  e2e-openshell:
+    name: OpenShell PoC (Kind)
+    runs-on: ubuntu-latest
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    timeout-minutes: 45
+    continue-on-error: true
+    permissions:
+      contents: read
+      statuses: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ needs.authorize.outputs.pr_sha || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.12'
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d  # v5.1.0
+
+      - name: Install Helm v3
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
+        with:
+          version: 'v3.17.0'
+
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.27.0"
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+
+      - name: Free up disk space
+        run: bash .github/scripts/common/05-free-disk-space.sh
+
+      - name: Setup dependencies
+        run: bash .github/scripts/common/10-setup-dependencies.sh
+
+      - name: Install Python project dependencies
+        run: uv sync --frozen
+
+      - name: Run OpenShell full test
+        id: run-tests
+        run: |
+          SCRIPT="./.github/scripts/local-setup/openshell-full-test.sh"
+          if [ ! -f "$SCRIPT" ]; then
+            echo "::notice::openshell-full-test.sh not found — OpenShell PoC not yet merged. Skipping."
+            exit 0
+          fi
+          exec "$SCRIPT"
+        env:
+          PLATFORM: kind
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENSHELL_LLM_MODELS: "llama-scout-17b,deepseek-r1"
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/kagenti/ci-logs
+          kubectl get pods -A > /tmp/kagenti/ci-logs/all-pods.txt 2>&1 || true
+          kubectl logs -n team1 openshell-server-0 --tail=100 > /tmp/kagenti/ci-logs/gateway.log 2>&1 || true
+          kubectl get events -n team1 --sort-by='.lastTimestamp' > /tmp/kagenti/ci-logs/team1-events.txt 2>&1 || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: openshell-kind-e2e-results
+          path: |
+            test-results/
+            /tmp/kagenti/
+
+      - name: Update commit status
+        if: always() && github.event_name == 'issue_comment' && needs.authorize.outputs.pr_sha
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const passed = '${{ steps.run-tests.outcome }}' === 'success';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              sha: '${{ needs.authorize.outputs.pr_sha }}',
+              state: passed ? 'success' : 'failure',
+              target_url: runUrl,
+              description: `OpenShell E2E ${passed ? 'Passed' : 'Failed'}`,
+              context: 'OpenShell PoC (Kind) [/run-e2e-openshell]'
+            });

@@ -1,0 +1,48 @@
+# Pending HyperShift Check for Pull Requests
+#
+# Sets a pending "E2E HyperShift" commit status on PRs that change
+# relevant paths. This makes it visible in the PR checks UI that
+# /run-e2e is needed before merge.
+#
+# The context string "E2E HyperShift" must match the one used in
+# e2e-hypershift-pr.yaml so that the /run-e2e workflow can update
+# this same status from pending to success/failure.
+#
+name: E2E HyperShift (Pending)
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - 'kagenti/**'
+      - 'charts/**'
+      - 'deployments/**'
+      - '.github/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'kagenti/ui-v2/package.json'
+      - 'kagenti/ui-v2/package-lock.json'
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  pending-status:
+    name: Set Pending Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create pending E2E HyperShift commit status
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: 'pending',
+              context: 'E2E HyperShift',
+              description: 'Waiting for /run-e2e command from maintainer',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${context.payload.pull_request.number}`
+            });

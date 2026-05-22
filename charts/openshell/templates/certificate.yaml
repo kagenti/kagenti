@@ -1,0 +1,41 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openshell-server-tls
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+spec:
+  secretName: openshell-server-tls
+  duration: {{ .Values.tls.duration }}
+  renewBefore: {{ .Values.tls.renewBefore }}
+  dnsNames:
+    - openshell-server
+    - openshell-server.{{ .Values.tenant }}
+    - openshell-server.{{ .Values.tenant }}.svc
+    - openshell-server.{{ .Values.tenant }}.svc.cluster.local
+    - localhost
+    {{- if .Values.ingress.host }}
+    - {{ .Values.ingress.host }}
+    {{- end }}
+  issuerRef:
+    name: {{ .Values.tls.issuerRef }}
+    kind: {{ .Values.tls.issuerKind }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openshell-client-tls
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+spec:
+  secretName: openshell-client-tls
+  duration: {{ .Values.tls.duration }}
+  renewBefore: {{ .Values.tls.renewBefore }}
+  commonName: openshell-client
+  usages:
+    - client auth
+  issuerRef:
+    name: {{ .Values.tls.issuerRef }}
+    kind: {{ .Values.tls.issuerKind }}

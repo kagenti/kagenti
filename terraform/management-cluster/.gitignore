@@ -1,0 +1,25 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+backend.tfvars
+
+# Generated files
+output/
+*.backup
+
+# Credentials
+*.json
+!cluster-metadata.json
+*pullsecret*
+*kubeconfig*
+.env*
+
+# SSH keys
+*.pem
+*_rsa
+*_ed25519

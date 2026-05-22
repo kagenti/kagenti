@@ -1,0 +1,25 @@
+# ============================================================================
+# dev_values_federated-jwt.yaml
+# ============================================================================
+# JWT-SVID authentication overlay for dev_values.yaml
+#
+# USAGE: run-install.sh --env dev --env-file deployments/envs/dev_values_federated-jwt.yaml
+#
+# This file is a PRODUCTION-READY overlay - it only specifies JWT-SVID
+# authentication configuration. All SPIRE infrastructure configuration
+# (set_key_use, jwtTTL, etc.) is already in dev_values.yaml.
+#
+# For local testing with :local images, also add dev_values_local_images.yaml:
+#   run-install.sh --env dev \
+#     --env-file deployments/envs/dev_values_federated-jwt.yaml \
+#     --env-file deployments/envs/dev_values_local_images.yaml
+# ============================================================================
+
+charts:
+  kagenti:
+    values:
+      # Enable JWT-SVID authentication instead of client-secret
+      # This is the ONLY change needed to switch from client-secret to federated-jwt
+      authBridge:
+        clientAuthType: "federated-jwt"
+        spiffeIdpAlias: "spire-spiffe"

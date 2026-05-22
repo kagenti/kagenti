@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Agent as Auth Bridge
+    participant Tool as Internal MCP Tool
+    participant API as Internal API
+    participant KC as Keycloak
+    
+    Agent->>Tool: Call tool with delegated token
+    Tool->>KC: Validate token
+    KC->>Tool: Confirm token + scopes
+    Tool->>API: Make Internal API call
+    API->>Tool: Return data
+    Tool->>Agent: Return processed result

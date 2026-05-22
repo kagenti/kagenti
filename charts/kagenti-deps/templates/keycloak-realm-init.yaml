@@ -1,0 +1,482 @@
+{{- if .Values.components.keycloak.enabled }}
+{{- $realm := .Values.keycloak.realm | default "demo" }}
+{{- $ns := .Values.keycloak.namespace }}
+{{- /*
+  Keycloak Realm Initialization
+  Creates the demo realm with roles and test users (admin, dev-user, ns-admin).
+
+  Kind:      ConfigMap mounted into Keycloak pod via --import-realm
+  OpenShift: KeycloakRealmImport CR managed by RHBK operator
+
+  NOTE: The UI OAuth client is currently registered in the MASTER realm.
+  These demo realm users are for future use when the backend migrates to
+  the demo realm. For current UI login, run kagenti/auth/create-test-users.sh
+  to create users in the master realm.
+*/ -}}
+
+{{- /* Generate random passwords for demo realm test users */ -}}
+{{- $testUsers := .Values.keycloak.testUsers | default dict }}
+{{- $adminPass := $testUsers.adminPassword | default (randAlphaNum 16) }}
+{{- $devPass := $testUsers.devUserPassword | default (randAlphaNum 16) }}
+{{- $nsAdminPass := $testUsers.nsAdminPassword | default (randAlphaNum 16) }}
+
+{{- if .Values.openshift }}
+---
+# Store test user passwords in a K8s secret so show-services.sh can read them
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kagenti-test-users
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/resource-policy": keep
+type: Opaque
+stringData:
+  admin-password: {{ $adminPass | quote }}
+  dev-user-password: {{ $devPass | quote }}
+  ns-admin-password: {{ $nsAdminPass | quote }}
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: {{ $realm }}-realm-import
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "2"
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: {{ $realm }}
+    enabled: true
+    registrationAllowed: false
+    roles:
+      realm:
+        - name: admin
+          description: "Platform administrator"
+        - name: developer
+          description: "Developer with namespace-scoped access"
+        - name: ns-admin
+          description: "Namespace administrator"
+    groups:
+      - name: mlflow-admin
+        path: /mlflow-admin
+      - name: mlflow
+        path: /mlflow
+    users:
+      - username: admin
+        enabled: true
+        emailVerified: true
+        firstName: Admin
+        lastName: User
+        email: admin@kagenti.local
+        credentials:
+          - type: password
+            value: {{ $adminPass | quote }}
+            temporary: false
+        realmRoles:
+          - admin
+        groups:
+          - mlflow-admin
+          - mlflow
+      - username: dev-user
+        enabled: true
+        emailVerified: true
+        firstName: Dev
+        lastName: User
+        email: dev-user@kagenti.local
+        credentials:
+          - type: password
+            value: {{ $devPass | quote }}
+            temporary: false
+        realmRoles:
+          - developer
+        groups:
+          - mlflow
+      - username: ns-admin
+        enabled: true
+        emailVerified: true
+        firstName: Namespace
+        lastName: Admin
+        email: ns-admin@kagenti.local
+        credentials:
+          - type: password
+            value: {{ $nsAdminPass | quote }}
+            temporary: false
+        realmRoles:
+          - ns-admin
+        groups:
+          - mlflow
+    clientScopes:
+      - name: openid
+        description: "OpenID Connect scope"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+      - name: email
+        description: "OpenID Connect email scope"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+        protocolMappers:
+          - name: email
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            config:
+              user.attribute: email
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: email
+              jsonType.label: String
+          - name: email verified
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            config:
+              user.attribute: emailVerified
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: email_verified
+              jsonType.label: boolean
+      - name: profile
+        description: "OpenID Connect profile scope"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+        protocolMappers:
+          - name: username
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            config:
+              user.attribute: username
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: preferred_username
+              jsonType.label: String
+          - name: full name
+            protocol: openid-connect
+            protocolMapper: oidc-full-name-mapper
+            config:
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+      - name: roles
+        description: "OpenID Connect roles scope"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+        protocolMappers:
+          - name: realm roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            config:
+              multivalued: "true"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: realm_access.roles
+              jsonType.label: String
+          - name: client roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-client-role-mapper
+            config:
+              multivalued: "true"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: "resource_access.${client_id}.roles"
+              jsonType.label: String
+      - name: web-origins
+        description: "OpenID Connect web-origins scope"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+        protocolMappers:
+          - name: allowed web origins
+            protocol: openid-connect
+            protocolMapper: oidc-allowed-origins-mapper
+      - name: kagenti-platform-audience
+        description: "Adds the realm issuer URL as an audience claim so AuthBridge ext-proc accepts the token"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+          display.on.consent.screen: "false"
+        protocolMappers:
+          - name: kagenti-platform-audience-mapper
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            config:
+              included.custom.audience: "{{ .Values.keycloak.publicUrl }}/realms/{{ $realm }}"
+              id.token.claim: "false"
+              access.token.claim: "true"
+              introspection.token.claim: "true"
+    defaultDefaultClientScopes:
+      - openid
+      - email
+      - profile
+      - roles
+      - web-origins
+      - kagenti-platform-audience
+    clients:
+      - clientId: mlflow
+        enabled: true
+        publicClient: false
+        clientAuthenticatorType: client-secret
+        serviceAccountsEnabled: true
+        standardFlowEnabled: true
+        redirectUris:
+          - "*"
+        webOrigins:
+          - "+"
+        protocolMappers:
+          - name: groups
+            protocol: openid-connect
+            protocolMapper: oidc-group-membership-mapper
+            config:
+              full.path: "false"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+              claim.name: groups
+{{- else }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-import
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+    app: keycloak
+data:
+  {{ $realm }}-realm.json: |
+    {
+      "realm": {{ $realm | quote }},
+      "enabled": true,
+      "registrationAllowed": false,
+      "roles": {
+        "realm": [
+          { "name": "admin", "description": "Platform administrator" },
+          { "name": "developer", "description": "Developer with namespace-scoped access" },
+          { "name": "ns-admin", "description": "Namespace administrator" }
+        ]
+      },
+      "groups": [
+        { "name": "mlflow-admin", "path": "/mlflow-admin" },
+        { "name": "mlflow", "path": "/mlflow" }
+      ],
+      "users": [
+        {
+          "username": "admin",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Admin",
+          "lastName": "User",
+          "email": "admin@kagenti.local",
+          "credentials": [{ "type": "password", "value": "admin", "temporary": false }],
+          "realmRoles": ["admin"],
+          "groups": ["mlflow-admin", "mlflow"]
+        },
+        {
+          "username": "dev-user",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Dev",
+          "lastName": "User",
+          "email": "dev-user@kagenti.local",
+          "credentials": [{ "type": "password", "value": "dev-user", "temporary": false }],
+          "realmRoles": ["developer"],
+          "groups": ["mlflow"]
+        },
+        {
+          "username": "ns-admin",
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": "Namespace",
+          "lastName": "Admin",
+          "email": "ns-admin@kagenti.local",
+          "credentials": [{ "type": "password", "value": "ns-admin", "temporary": false }],
+          "realmRoles": ["ns-admin"],
+          "groups": ["mlflow"]
+        }
+      ],
+      "clientScopes": [
+        {
+          "name": "openid",
+          "description": "OpenID Connect scope",
+          "protocol": "openid-connect",
+          "attributes": { "include.in.token.scope": "true" }
+        },
+        {
+          "name": "email",
+          "description": "OpenID Connect email scope",
+          "protocol": "openid-connect",
+          "attributes": { "include.in.token.scope": "true" },
+          "protocolMappers": [
+            {
+              "name": "email",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "config": {
+                "user.attribute": "email",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "claim.name": "email",
+                "jsonType.label": "String"
+              }
+            },
+            {
+              "name": "email verified",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "config": {
+                "user.attribute": "emailVerified",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "claim.name": "email_verified",
+                "jsonType.label": "boolean"
+              }
+            }
+          ]
+        },
+        {
+          "name": "profile",
+          "description": "OpenID Connect profile scope",
+          "protocol": "openid-connect",
+          "attributes": { "include.in.token.scope": "true" },
+          "protocolMappers": [
+            {
+              "name": "username",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "config": {
+                "user.attribute": "username",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "claim.name": "preferred_username",
+                "jsonType.label": "String"
+              }
+            },
+            {
+              "name": "full name",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-full-name-mapper",
+              "config": {
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        },
+        {
+          "name": "roles",
+          "description": "OpenID Connect roles scope",
+          "protocol": "openid-connect",
+          "attributes": { "include.in.token.scope": "false" },
+          "protocolMappers": [
+            {
+              "name": "realm roles",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-realm-role-mapper",
+              "config": {
+                "multivalued": "true",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "claim.name": "realm_access.roles",
+                "jsonType.label": "String"
+              }
+            },
+            {
+              "name": "client roles",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-client-role-mapper",
+              "config": {
+                "multivalued": "true",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "claim.name": "resource_access.${client_id}.roles",
+                "jsonType.label": "String"
+              }
+            }
+          ]
+        },
+        {
+          "name": "web-origins",
+          "description": "OpenID Connect web-origins scope",
+          "protocol": "openid-connect",
+          "attributes": { "include.in.token.scope": "false" },
+          "protocolMappers": [
+            {
+              "name": "allowed web origins",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-allowed-origins-mapper"
+            }
+          ]
+        },
+        {
+          "name": "kagenti-platform-audience",
+          "description": "Adds the realm issuer URL as an audience claim so AuthBridge ext-proc accepts the token",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "false",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "kagenti-platform-audience-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.custom.audience": {{ printf "%s/realms/%s" .Values.keycloak.publicUrl $realm | quote }},
+                "id.token.claim": "false",
+                "access.token.claim": "true",
+                "introspection.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "defaultDefaultClientScopes": ["openid", "email", "profile", "roles", "web-origins", "kagenti-platform-audience"],
+      "clients": [
+        {
+          "clientId": "mlflow",
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["+"],
+          "protocolMappers": [
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-group-membership-mapper",
+              "config": {
+                "full.path": "false",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true",
+                "claim.name": "groups"
+              }
+            }
+          ]
+        }
+      ]
+    }
+{{- end }}
+{{- end }}

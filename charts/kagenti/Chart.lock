@@ -1,0 +1,6 @@
+dependencies:
+- name: kagenti-operator-chart
+  repository: oci://ghcr.io/kagenti/kagenti-operator
+  version: 0.3.0-alpha.1
+digest: sha256:a0a720de063f170860ed123257ab450f3a569bdb4e55864df33f47dc4bcb9add
+generated: "2026-05-15T09:55:06.320852-04:00"

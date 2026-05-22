@@ -1,0 +1,71 @@
+# Post-Merge Security Scan - Full repository vulnerability scan after merge to main
+#
+# This workflow runs the blocking Trivy filesystem scan that was made
+# informational on PRs (to avoid blocking unrelated changes with
+# pre-existing vulnerabilities).
+#
+# PR workflow (security-scans.yaml) handles:
+# - Dependency Review: catches NEW vulnerable/GPL dependencies
+# - Trivy fs scan: informational only (shows issues, doesn't block)
+# - Trivy config scan: blocks on IaC misconfigurations (PR-specific)
+#
+# This workflow handles:
+# - Full Trivy fs scan on the merged codebase (never fails)
+# - Uploads SARIF results to GitHub Security tab (code-scanning alerts)
+#
+name: Post-Merge Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'uv.lock'
+      - 'kagenti/backend/uv.lock'
+      - 'kagenti/**/requirements.txt'
+      - 'kagenti/**/package-lock.json'
+      - 'pyproject.toml'
+      - 'kagenti/backend/pyproject.toml'
+  # Allow manual trigger for ad-hoc scanning
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  trivy-full-scan:
+    name: Full Dependency Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write  # For uploading SARIF results
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Full dependency vulnerability scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          # Never fail - results are uploaded to GitHub Security tab (code-scanning)
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'table'
+
+      - name: Upload SARIF results
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-dependencies'

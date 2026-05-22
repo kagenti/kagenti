@@ -1,0 +1,32 @@
+flowchart TD
+    START(["/tdd:kind"]) --> GUARD{"kind get clusters"}
+    GUARD -->|No clusters| CREATE["Create Kind cluster"]:::k8s
+    GUARD -->|Cluster exists, mine| REUSE["Reuse existing cluster"]:::k8s
+    GUARD -->|Cluster exists, not mine| STOP([Stop - another session owns it])
+
+    CREATE --> ITER
+    REUSE --> ITER
+
+    ITER{"Iteration level?"}
+    ITER -->|Level 1| L1["Test only (fastest)"]:::test
+    ITER -->|Level 2| L2["Reinstall + test"]:::test
+    ITER -->|Level 3| L3["Full cluster recreate"]:::test
+
+    L1 --> CHECK{"Tests pass?"}
+    L2 --> CHECK
+    L3 --> CHECK
+
+    CHECK -->|Yes| COMMIT["git:commit"]:::git
+    CHECK -->|No, minor| FIX["Fix code"]:::tdd
+    CHECK -->|No, env issue| ITER
+
+    FIX --> L1
+    COMMIT --> DONE([Push to CI / tdd:ci])
+
+    classDef tdd fill:#4CAF50,stroke:#333,color:white
+    classDef rca fill:#FF5722,stroke:#333,color:white
+    classDef git fill:#FF9800,stroke:#333,color:white
+    classDef k8s fill:#00BCD4,stroke:#333,color:white
+    classDef hypershift fill:#3F51B5,stroke:#333,color:white
+    classDef ci fill:#2196F3,stroke:#333,color:white
+    classDef test fill:#9C27B0,stroke:#333,color:white

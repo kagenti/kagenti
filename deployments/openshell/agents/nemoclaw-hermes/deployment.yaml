@@ -1,0 +1,189 @@
+# NemoClaw Hermes Agent — OpenShell PoC
+#
+# Nous Research Hermes agent running inside an OpenShell sandbox.
+# Exposes an OpenAI-compatible API on port 8642 with /health probe.
+#
+# TODO(nemoclaw-images): Build a proper container image via Shipwright.
+#   The hermes-sandbox-base image at ghcr.io/nvidia/nemoclaw/ requires
+#   GHCR auth. Options:
+#     1. Mirror to our GHCR org (ghcr.io/kagenti/nemoclaw-hermes:latest)
+#     2. Build from NemoClaw source (agents/hermes/Dockerfile + Dockerfile.base)
+#     3. Use Shipwright binary build with the NemoClaw repo as context
+#   Until then, this deployment uses the public OpenShell base image with
+#   a startup script that attempts to install hermes at runtime.
+#   The pod will CrashLoopBackOff if hermes is not pre-installed in the image.
+#
+# Deploy:  kubectl apply -f deployments/openshell/agents/nemoclaw-hermes/deployment.yaml
+# Destroy: kubectl delete -f deployments/openshell/agents/nemoclaw-hermes/deployment.yaml
+---
+# 1. ConfigMap — Hermes agent configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nemoclaw-hermes-config
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: nemoclaw-hermes
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: openshell
+data:
+  policy.yaml: |
+    version: 1
+    filesystem_policy:
+      include_workdir: true
+      read_only:
+        - /usr
+        - /lib
+        - /etc
+        - /app
+        - /sandbox/.hermes
+      read_write:
+        - /sandbox/.hermes-data
+        - /tmp
+    process:
+      run_as_user: sandbox
+      run_as_group: sandbox
+    network_policies:
+      internal:
+        name: "Allow internal cluster services"
+        endpoints:
+          - host: "*.svc.cluster.local"
+            port: 4000
+          - host: "*.svc.cluster.local"
+            port: 8080
+          - host: "*.svc.cluster.local"
+            port: 443
+---
+# 2. Deployment — NemoClaw Hermes agent pod
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nemoclaw-hermes
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/framework: NemoClaw
+    kagenti.io/workload-type: deployment
+    app.kubernetes.io/name: nemoclaw-hermes
+    app.kubernetes.io/managed-by: openshell
+    app.kubernetes.io/component: agent
+  annotations:
+    kagenti.io/description: "Hermes agent (Nous Research) via NemoClaw — OpenAI-compatible API"
+    openshell.kagenti.io/policy: nemoclaw-hermes-config
+    kagenti.io/nemoclaw-image-todo: >
+      Replace base image with ghcr.io/nvidia/nemoclaw/hermes-sandbox-base:latest
+      (requires GHCR auth) or build via Shipwright from NemoClaw source.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      kagenti.io/type: agent
+      app.kubernetes.io/name: nemoclaw-hermes
+  template:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/inject: disabled
+        kagenti.io/framework: NemoClaw
+        app.kubernetes.io/name: nemoclaw-hermes
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: agent
+        # Built from NemoClaw v0.0.28 / Hermes v2026.4.13
+        # Source: deployments/openshell/agents/nemoclaw-hermes/Dockerfile
+        image: nemoclaw-hermes:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        env:
+        - name: AGENT_NAME
+          value: "nemoclaw-hermes"
+        - name: LLM_MODEL
+          value: "gpt-4o-mini"
+        - name: OPENAI_API_BASE
+          value: "http://litellm-model-proxy.team1.svc:4000/v1"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: litellm-virtual-keys
+              key: api-key
+        ports:
+        - containerPort: 8642
+          name: http
+          protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: 8642
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 12
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nemoclaw
+          readOnly: true
+        - name: sandbox
+          mountPath: /sandbox
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: nemoclaw-hermes-config
+          defaultMode: 0755
+      - name: sandbox
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+---
+# 3. Service — ClusterIP on port 8642 (OpenAI-compatible API)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nemoclaw-hermes
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: nemoclaw-hermes
+    app.kubernetes.io/managed-by: openshell
+spec:
+  type: ClusterIP
+  selector:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: nemoclaw-hermes
+  ports:
+  - name: http
+    port: 8642
+    targetPort: 8642
+    protocol: TCP
+---
+# 4. AgentRuntime CR
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: nemoclaw-hermes
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: nemoclaw-hermes
+    app.kubernetes.io/managed-by: openshell
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nemoclaw-hermes

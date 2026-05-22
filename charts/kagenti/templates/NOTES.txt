@@ -1,0 +1,23 @@
+Kagenti UI
+
+The route for kagenti UI can be found with the command:
+
+{{- if .Values.openshift }}
+```
+echo "https://$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}')"
+```
+
+{{- else }}
+```
+{{- $command := `kubectl get httproutes -n kagenti-system kagenti-ui -o go-template='http://{{index .spec.hostnames 0}}:8080{{printf "\n"}}'` -}}
+{{ $command | indent 2 }}
+```
+{{- end }}
+
+Show all service URLs and credentials:
+```
+  .github/scripts/local-setup/show-services.sh
+```
+
+
+

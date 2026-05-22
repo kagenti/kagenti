@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+  labels:
+    app.kubernetes.io/name: spiffe-oidc-discovery-provider
+    app.kubernetes.io/version: 1.11.0
+  name: spire-spiffe-oidc-discovery-provider-http
+  namespace: spire-server
+spec:
+  rules:
+  - host: oidc-discovery-http.$APP_DOMAIN
+    http:
+      paths:
+      - backend:
+          service:
+            name: spire-spiffe-oidc-discovery-provider
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+status:
+  loadBalancer:
+    ingress:
+    - hostname: localhost

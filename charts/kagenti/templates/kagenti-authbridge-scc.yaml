@@ -1,0 +1,85 @@
+{{- if $.Values.openshift }}
+# ——————————————————————————————————————————————————————————————————————————————
+#  Custom SCC for AuthBridge sidecars in agent namespaces.
+#
+#  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods.
+#  After kagenti-extensions#411 there's a single combined sidecar per mode
+#  (spiffe-helper bundled inside, client-registration is operator-managed):
+#    - proxy-sidecar (default): container "authbridge-proxy"
+#      from the "authbridge" image (UID 1337)
+#    - envoy-sidecar:
+#        - proxy-init (init): iptables interception
+#          (NET_ADMIN/NET_RAW, root, non-privileged)
+#        - container "envoy-proxy" from the "authbridge-envoy" image:
+#          Envoy + ext_proc + spiffe-helper (UID 1337)
+#
+#  This SCC grants the minimum permissions needed for AuthBridge sidecars:
+#    - proxy-init needs root + NET_ADMIN/NET_RAW capabilities (not privileged mode)
+#    - the combined authbridge / authbridge-envoy sidecar runs as UID 1337
+#      (matches Envoy's traditional UID for iptables exclusion coordination
+#      and is preserved by authbridge-proxy for image consistency)
+#  RunAsAny is required because proxy-init needs root and the sidecar needs UID 1337.
+#  Bound to agent namespaces via the `groups` field below.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: kagenti-authbridge
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+groups:
+{{- range $.Values.agentNamespaces }}
+  - system:serviceaccounts:{{ . }}
+{{- end }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+# proxy-init uses NET_ADMIN/NET_RAW capabilities (not privileged mode).
+allowPrivilegedContainer: false
+# proxy-init needs privilege escalation for iptables; other sidecars set false.
+allowPrivilegeEscalation: true
+allowedCapabilities:
+  - NET_ADMIN
+  - NET_RAW
+defaultAddCapabilities: []
+requiredDropCapabilities:
+  - MKNOD
+fsGroup:
+  type: RunAsAny
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+seccompProfiles:
+  - runtime/default
+volumes:
+  - configMap
+  - csi
+  - downwardAPI
+  - emptyDir
+  - ephemeral
+  - persistentVolumeClaim
+  - projected
+  - secret
+---
+# ——————————————————————————————————————————————————————————————————————————————
+#  ClusterRole granting "use" on the kagenti-authbridge SCC.
+#  OpenShift auto-creates ClusterRoles for built-in SCCs but may not do so
+#  reliably for custom SCCs. Create it explicitly so RoleBindings work.
+# ——————————————————————————————————————————————————————————————————————————————
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:openshift:scc:kagenti-authbridge
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["kagenti-authbridge"]
+    verbs: ["use"]
+{{- end }}

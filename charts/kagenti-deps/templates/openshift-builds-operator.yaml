@@ -1,0 +1,69 @@
+{{- if and .Values.components.shipwright.enabled .Values.openshift }}
+{{- /*
+  OpenShift Builds Operator Installation
+
+  NOTE: The namespace is NOT created by this template to avoid helm ownership.
+  When helm uninstalls, it would delete the namespace, but the operator's managed
+  resources have finalizers (operator.openshift.io/openshiftbuilds) that can only
+  be removed by the operator controller. Without the operator, the namespace gets
+  stuck in Terminating state.
+
+  The namespace should be created externally or will be auto-created by OLM
+  when the Subscription is created.
+*/}}
+{{- /* Check if namespace exists and is not terminating */}}
+{{- $ns := lookup "v1" "Namespace" "" .Values.shipwright.namespace }}
+{{- if and $ns (eq ($ns.status.phase | default "Active") "Terminating") }}
+{{- fail (printf "Namespace %s is in Terminating state. Please wait for it to be fully deleted or manually remove finalizers from stuck resources." .Values.shipwright.namespace) }}
+{{- end }}
+{{- /* Create Namespace only if it doesn't exist - use helm.sh/resource-policy to prevent deletion */}}
+{{- if not $ns }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.shipwright.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+---
+{{- end }}
+{{- /* Check if ANY OperatorGroup already exists in the namespace (lookup with empty name returns list) */}}
+{{- /* Use len to check items - empty slice [] is truthy but len 0 */}}
+{{- $existingOGs := lookup "operators.coreos.com/v1" "OperatorGroup" .Values.shipwright.namespace "" }}
+{{- if or (not $existingOGs) (eq (len ($existingOGs.items | default list)) 0) }}
+{{- /* OperatorGroup - only create if none exists in the namespace */}}
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-builds-operatorgroup
+  namespace: {{ .Values.shipwright.namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec: {}
+---
+{{- end }}
+{{- /* Check if ANY Subscription already exists in the namespace */}}
+{{- $existingSubs := lookup "operators.coreos.com/v1alpha1" "Subscription" .Values.shipwright.namespace "" }}
+{{- if or (not $existingSubs) (eq (len ($existingSubs.items | default list)) 0) }}
+{{- /* Subscription - only create if none exists in the namespace */}}
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/openshift-builds-operator.openshift-builds: ""
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+  name: openshift-builds-operator
+  namespace: {{ .Values.shipwright.namespace }}
+spec:
+  channel: {{ .Values.shipwright.channel | default "latest" }}
+  installPlanApproval: Automatic
+  name: openshift-builds-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+{{- end }}
+{{- end }}

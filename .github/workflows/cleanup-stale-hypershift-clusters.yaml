@@ -1,0 +1,151 @@
+name: Cleanup Stale HyperShift Clusters
+
+on:
+  # Scheduled cleanup every 3 hours (dry-run only for safety)
+  schedule:
+    - cron: '0 */3 * * *'
+
+  # Manual trigger with configurable options
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (show what would be deleted without actually deleting)'
+        required: false
+        type: boolean
+        default: true
+      pattern:
+        description: 'Cluster name pattern filter (e.g., "*-pr-*", leave empty for all)'
+        required: false
+        type: string
+        default: ''
+      verbose:
+        description: 'Verbose mode (show all clusters, not just stale)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write  # For creating audit trail issues
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  # 2 hours for long-running deletions
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Install OpenShift CLI
+        run: |
+          curl -LO https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz
+          tar -xzf openshift-client-linux.tar.gz
+          sudo mv oc kubectl /usr/local/bin/
+          oc version --client
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Setup management cluster kubeconfig
+        env:
+          KUBECONFIG_BASE64: ${{ secrets.KUBECONFIG_HCP_MGMT }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_BASE64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          export KUBECONFIG=~/.kube/config
+          oc whoami --show-server
+
+      - name: Setup AWS credentials (for cluster deletion)
+        if: github.event.inputs.dry_run == 'false' || github.event_name == 'schedule'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> $GITHUB_ENV
+          echo "AWS_REGION=${AWS_REGION}" >> $GITHUB_ENV
+
+      - name: Run cleanup script (Dry-run - Scheduled)
+        if: github.event_name == 'schedule'
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: |
+          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh --dry-run --verbose
+
+      - name: Run cleanup script (Manual - Dry-run)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true'
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+          INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
+          INPUT_PATTERN: ${{ github.event.inputs.pattern }}
+        run: |
+          ARGS="--dry-run"
+          if [ "$INPUT_VERBOSE" = "true" ]; then
+            ARGS="$ARGS --verbose"
+          fi
+          if [ -n "$INPUT_PATTERN" ]; then
+            ARGS="$ARGS --pattern $INPUT_PATTERN"
+          fi
+          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS
+
+      - name: Run cleanup script (Manual - Apply)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false'
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+          INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
+          INPUT_PATTERN: ${{ github.event.inputs.pattern }}
+        run: |
+          ARGS="--apply"
+          if [ "$INPUT_VERBOSE" = "true" ]; then
+            ARGS="$ARGS --verbose"
+          fi
+          if [ -n "$INPUT_PATTERN" ]; then
+            ARGS="$ARGS --pattern $INPUT_PATTERN"
+          fi
+          bash ./.github/scripts/hypershift/cleanup-stale-clusters.sh $ARGS | tee /tmp/cleanup-output.log
+
+      - name: Upload deletion logs
+        if: github.event.inputs.dry_run == 'false' && always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: cleanup-logs-${{ github.run_id }}
+          path: /tmp/cleanup-*.log
+          retention-days: 90
+
+      - name: Create audit issue for deletions
+        if: github.event.inputs.dry_run == 'false' && success()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const logContent = fs.readFileSync('/tmp/cleanup-output.log', 'utf8');
+            const staleMatch = logContent.match(/STALE: ([\w-]+)/g);
+            const staleClusters = staleMatch ? staleMatch.map(m => m.replace('STALE: ', '')) : [];
+
+            if (staleClusters.length > 0) {
+              const timestamp = new Date().toISOString();
+              const clusterList = staleClusters.map(c => `- \`${c}\``).join('\n');
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[Auto-Cleanup] Deleted ${staleClusters.length} stale cluster(s) - ${timestamp}`,
+                body: `## Automated Cluster Cleanup
+
+            **Timestamp:** ${timestamp}
+            **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+            **Deleted Clusters (${staleClusters.length}):**
+
+            ${clusterList}
+
+            **Logs:** Check workflow artifacts for detailed deletion logs.
+
+            ---
+            _This issue was created automatically by the HyperShift cluster cleanup workflow._
+            `,
+                labels: ['infrastructure', 'automated-cleanup', 'hypershift']
+              });
+            }

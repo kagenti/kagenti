@@ -1,0 +1,24 @@
+# ResourceQuota for limiting HostedCluster count in the clusters namespace
+# This is a safety net - the Lease-based slot locking should prevent hitting this limit
+# under normal operation. This ensures runaway/buggy CI can't create unlimited clusters.
+#
+# Apply with:
+#   oc apply -f .github/scripts/hypershift/ci/resources/resourcequota.yaml
+#
+# Verify with:
+#   oc get resourcequota -n clusters
+#   oc describe resourcequota kagenti-ci-hostedcluster-limit -n clusters
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: kagenti-ci-hostedcluster-limit
+  namespace: clusters
+  labels:
+    app: kagenti-ci
+    managed-by: kagenti-hypershift-ci
+spec:
+  hard:
+    # Hard limit: max 4 HostedClusters in clusters namespace
+    # This should be >= MAX_SLOTS + buffer for clusters being deleted
+    # Example: MAX_SLOTS=2 → ResourceQuota=4 allows 2 active + 2 deleting
+    count/hostedclusters.hypershift.openshift.io: "4"

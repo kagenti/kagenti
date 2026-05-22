@@ -1,0 +1,1137 @@
+#!/usr/bin/env bash
+#
+# Run Full HyperShift Test
+#
+# Creates a HyperShift cluster, deploys Kagenti, deploys test agents, and runs E2E tests.
+# Supports both whitelist (--include-*) and blacklist (--skip-*) modes.
+#
+# USAGE:
+#   ./.github/scripts/local-setup/hypershift-full-test.sh [options] [cluster-suffix]
+#
+# MODES:
+#   Whitelist mode: If ANY include flag (--create, --install, etc.) is used,
+#                   only explicitly enabled phases run (default all OFF)
+#   Blacklist mode: If only --skip-X flags are used,
+#                   all phases run except those skipped (default all ON)
+#
+# OPTIONS:
+#   Include flags (whitelist mode - only run specified phases):
+#     --include-cluster-create     Include cluster creation phase
+#     --include-kagenti-install    Include Kagenti platform installation phase
+#     --include-agents             Include building/deploying test agents phase
+#     --include-test               Include backend E2E test phase (pytest)
+#     --include-ui-tests           Include UI E2E test phase (Playwright)
+#     --include-cluster-destroy    Include cluster destruction phase
+#
+#   Skip flags (blacklist mode - run all except specified):
+#     --skip-cluster-create        Skip cluster creation (reuse existing cluster)
+#     --skip-kagenti-install       Skip Kagenti platform installation
+#     --skip-agents                Skip building/deploying test agents
+#     --skip-test                  Skip running backend E2E tests
+#     --skip-ui-tests              Skip running UI E2E tests
+#     --skip-cluster-destroy       Skip cluster destruction (keep cluster after tests)
+#
+#   Other options:
+#     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
+#     --env ENV          Environment for Kagenti installer (default: ocp)
+#     --pytest-filter, -k FILTER  Filter tests with pytest -k expression
+#     --pytest-args ARGS Additional pytest arguments (e.g., "-x" to stop on first failure)
+#     --dry-run          Check state only, suggest next command (default if no phase flags)
+#     --full             Run everything including cluster destroy
+#
+# EXAMPLES:
+#   # Full run (default - everything)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh
+#
+#   # First dev run - everything except destroy (blacklist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-destroy
+#
+#   # CI deploy step - only install + agents (whitelist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install --include-agents
+#
+#   # CI test step - only tests (whitelist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-test
+#
+#   # Iterate on existing cluster (blacklist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
+#
+#   # Fresh kagenti on existing cluster (whitelist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-kagenti-install --include-agents --include-test --clean-kagenti
+#
+#   # Final cleanup - only destroy (whitelist mode)
+#   ./.github/scripts/local-setup/hypershift-full-test.sh --include-cluster-destroy
+#
+
+set -euo pipefail
+
+# Script name for help text (allows wrapper scripts to override)
+SCRIPT_NAME="${SCRIPT_NAME:-$(basename "$0")}"
+SCRIPT_DESCRIPTION="${SCRIPT_DESCRIPTION:-Run full HyperShift test cycle: create cluster, deploy Kagenti, run tests, destroy cluster.}"
+
+show_help() {
+    cat << EOF
+$SCRIPT_NAME - $SCRIPT_DESCRIPTION
+
+USAGE:
+    $SCRIPT_NAME [options] [cluster-suffix]
+
+MODES:
+    Whitelist mode: If ANY --include-* flag is used, only those phases run
+    Blacklist mode: If only --skip-* flags are used, all phases run except skipped ones
+
+PHASES:
+    cluster-create    Create HyperShift cluster (~15 min)
+    kagenti-install   Install Kagenti platform
+    agents            Build and deploy test agents (weather-tool, weather-agent)
+    test              Run backend E2E tests (pytest)
+    ui-tests          Run UI E2E tests (Playwright)
+    kagenti-uninstall Uninstall Kagenti (opt-in, off by default)
+    cluster-destroy   Destroy HyperShift cluster (~10 min)
+
+OPTIONS:
+    Include flags (whitelist mode):
+        --include-cluster-create     Include cluster creation
+        --include-kagenti-install    Include Kagenti installation
+        --include-agents             Include agent deployment
+        --include-test               Include backend E2E tests (pytest)
+        --include-ui-tests           Include UI E2E tests (Playwright)
+        --include-kagenti-uninstall  Include Kagenti uninstall
+        --include-cluster-destroy    Include cluster destruction
+
+    Skip flags (blacklist mode):
+        --skip-cluster-create        Skip cluster creation (use existing)
+        --skip-kagenti-install       Skip Kagenti installation
+        --skip-agents                Skip agent deployment
+        --skip-test                  Skip backend E2E tests
+        --skip-ui-tests              Skip UI E2E tests
+        --skip-kagenti-uninstall     Skip Kagenti uninstall (default)
+        --skip-cluster-destroy       Skip cluster destruction (keep cluster)
+
+    Run modes:
+        --dry-run                    Check state only, suggest next command (default if no phase flags)
+        --full                       Full run including cluster destroy
+
+    Other options:
+        --clean-kagenti              Uninstall Kagenti before installing
+        --env ENV                    Environment for installer (default: ocp)
+        --rhoai-profile <profile>    Set RHOAI profile (minimal|full). Default: from env values.
+        --no-rhoai                   Disable RHOAI installation.
+        -h, --help                   Show this help message
+
+    Cluster suffix:
+        Optional suffix for cluster name. Default: \$USER (truncated to 5 chars)
+        Full cluster name: \${MANAGED_BY_TAG}-\${suffix}
+
+EXAMPLES:
+    # Check state of cluster (default - dry-run mode)
+    $SCRIPT_NAME mlflow
+
+    # Full run (create -> deploy -> test -> destroy)
+    $SCRIPT_NAME --full
+
+    # Dev flow: run everything, keep cluster for debugging
+    $SCRIPT_NAME --skip-cluster-destroy
+
+    # Iterate on existing cluster
+    $SCRIPT_NAME --skip-cluster-create --skip-cluster-destroy
+
+    # Run only tests on existing deployment
+    $SCRIPT_NAME --include-test
+
+    # Fresh install on existing cluster
+    $SCRIPT_NAME --skip-cluster-create --skip-cluster-destroy --clean-kagenti
+
+    # Custom cluster suffix
+    $SCRIPT_NAME pr529 --skip-cluster-destroy
+
+CREDENTIALS:
+    For cluster create/destroy: source .env.kagenti-hypershift-custom
+    For middle phases only:     export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
+
+EOF
+    exit 0
+}
+
+# Handle Ctrl+C properly - kill child processes only (not the terminal!)
+cleanup() {
+    echo ""
+    echo -e "\033[0;31m✗ Interrupted! Killing child processes...\033[0m"
+    # Kill only direct child processes, not the entire process group
+    # Using pkill -P is safer than kill -$$ which can kill the terminal
+    pkill -P $$ 2>/dev/null || true
+    sleep 1
+    pkill -9 -P $$ 2>/dev/null || true
+    exit 130
+}
+trap cleanup SIGINT SIGTERM
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${GITHUB_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+
+# Parse arguments - track both include and skip flags
+INCLUDE_CREATE=false
+INCLUDE_INSTALL=false
+INCLUDE_AGENTS=false
+INCLUDE_TEST=false
+INCLUDE_UI_TESTS=false
+INCLUDE_DESTROY=false
+SKIP_CREATE=false
+SKIP_INSTALL=false
+SKIP_AGENTS=false
+SKIP_TEST=false
+SKIP_UI_TESTS=false
+SKIP_KAGENTI_UNINSTALL=false
+SKIP_DESTROY=false
+INCLUDE_KAGENTI_UNINSTALL=false
+CLEAN_KAGENTI=false
+KAGENTI_ENV="${KAGENTI_ENV:-ocp}"
+CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-}"  # Preserve env var if set
+WHITELIST_MODE=false
+PYTEST_FILTER=""
+PYTEST_ARGS=""
+DRY_RUN=true  # Default to dry-run if no phase flags provided
+FULL_RUN=false
+HAS_PHASE_FLAGS=false  # Track if any phase flags were provided
+RHOAI_PROFILE="${RHOAI_PROFILE:-}"
+NO_RHOAI="${NO_RHOAI:-false}"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        # Include flags
+        --include-cluster-create)
+            INCLUDE_CREATE=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-kagenti-install)
+            INCLUDE_INSTALL=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-agents)
+            INCLUDE_AGENTS=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-test)
+            INCLUDE_TEST=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-ui-tests)
+            INCLUDE_UI_TESTS=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-kagenti-uninstall)
+            INCLUDE_KAGENTI_UNINSTALL=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --include-cluster-destroy)
+            INCLUDE_DESTROY=true
+            WHITELIST_MODE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        # Skip flags
+        --skip-cluster-create)
+            SKIP_CREATE=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-kagenti-install)
+            SKIP_INSTALL=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-agents)
+            SKIP_AGENTS=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-test)
+            SKIP_TEST=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-ui-tests)
+            SKIP_UI_TESTS=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-kagenti-uninstall)
+            SKIP_KAGENTI_UNINSTALL=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --skip-cluster-destroy)
+            SKIP_DESTROY=true
+            HAS_PHASE_FLAGS=true
+            shift
+            ;;
+        --clean-kagenti)
+            CLEAN_KAGENTI=true
+            shift
+            ;;
+        --env)
+            KAGENTI_ENV="$2"
+            shift 2
+            ;;
+        --pytest-filter|-k)
+            PYTEST_FILTER="$2"
+            shift 2
+            ;;
+        --pytest-args)
+            PYTEST_ARGS="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --full)
+            # Full run: everything including destroy
+            FULL_RUN=true
+            HAS_PHASE_FLAGS=true
+            SKIP_DESTROY=false
+            shift
+            ;;
+        --rhoai-profile)
+            RHOAI_PROFILE="$2"
+            if [[ ! "$RHOAI_PROFILE" =~ ^(minimal|full)$ ]]; then
+                echo "ERROR: --rhoai-profile must be 'minimal' or 'full', got '$RHOAI_PROFILE'" >&2
+                exit 1
+            fi
+            shift 2
+            ;;
+        --no-rhoai)
+            NO_RHOAI=true
+            shift
+            ;;
+        *)
+            CLUSTER_SUFFIX="$1"
+            shift
+            ;;
+    esac
+done
+
+# If any phase flags were provided, disable dry-run (backward compatible)
+if [ "$HAS_PHASE_FLAGS" = "true" ]; then
+    DRY_RUN=false
+fi
+
+# Resolve final phase settings based on mode
+# Whitelist mode: only run phases explicitly included
+# Blacklist mode: run all phases except those skipped
+if [ "$WHITELIST_MODE" = "true" ]; then
+    RUN_CREATE=$INCLUDE_CREATE
+    RUN_INSTALL=$INCLUDE_INSTALL
+    RUN_AGENTS=$INCLUDE_AGENTS
+    RUN_TEST=$INCLUDE_TEST
+    RUN_UI_TESTS=$INCLUDE_UI_TESTS
+    RUN_KAGENTI_UNINSTALL=$INCLUDE_KAGENTI_UNINSTALL
+    RUN_DESTROY=$INCLUDE_DESTROY
+else
+    # Blacklist mode - default all to true, then apply skips
+    # Note: kagenti-uninstall defaults to false in blacklist mode (opt-in)
+    RUN_CREATE=true
+    RUN_INSTALL=true
+    RUN_AGENTS=true
+    RUN_TEST=true
+    RUN_UI_TESTS=true
+    RUN_KAGENTI_UNINSTALL=false
+    RUN_DESTROY=true
+    [ "$SKIP_CREATE" = "true" ] && RUN_CREATE=false
+    [ "$SKIP_INSTALL" = "true" ] && RUN_INSTALL=false
+    [ "$SKIP_AGENTS" = "true" ] && RUN_AGENTS=false
+    [ "$SKIP_TEST" = "true" ] && RUN_TEST=false
+    [ "$SKIP_UI_TESTS" = "true" ] && RUN_UI_TESTS=false
+    [ "$SKIP_KAGENTI_UNINSTALL" = "true" ] && RUN_KAGENTI_UNINSTALL=false
+    [ "$SKIP_DESTROY" = "true" ] && RUN_DESTROY=false
+fi
+
+# Default suffix - use sanitized username for local development
+# Truncate to 5 chars to fit within AWS IAM role name limits with default MANAGED_BY_TAG
+# (default prefix is 26 chars, max cluster name is 32, so 32-26-1=5 chars for suffix)
+SANITIZED_USER=$(echo "${USER:-local}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | cut -c1-5)
+CLUSTER_SUFFIX="${CLUSTER_SUFFIX:-$SANITIZED_USER}"
+
+# Validate cluster suffix for RFC1123 compliance (lowercase, alphanumeric, hyphens only)
+if ! [[ "$CLUSTER_SUFFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+    echo -e "\033[0;31m✗\033[0m Error: Invalid cluster suffix '$CLUSTER_SUFFIX'" >&2
+    echo "" >&2
+    echo "Cluster names must be valid RFC1123 labels:" >&2
+    echo "  - Only lowercase letters (a-z), numbers (0-9), and hyphens (-)" >&2
+    echo "  - Must start and end with an alphanumeric character" >&2
+    echo "  - No underscores, uppercase letters, or special characters" >&2
+    echo "" >&2
+    echo "Examples of valid suffixes: pr529, test-1, my-cluster" >&2
+    echo "Examples of invalid suffixes: PR529, test_1, -cluster-, my.cluster" >&2
+    exit 1
+fi
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_phase() { echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; echo -e "${BLUE}┃${NC} $1"; echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"; }
+log_step() { echo -e "${GREEN}▶${NC} $1"; }
+log_warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+log_error() { echo -e "${RED}✗${NC} $1" >&2; }
+
+cd "$REPO_ROOT"
+
+# ============================================================================
+# Load credentials and determine cluster name
+# ============================================================================
+
+# Detect CI mode (GitHub Actions sets GITHUB_ACTIONS=true)
+CI_MODE="${GITHUB_ACTIONS:-false}"
+
+# MANAGED_BY_TAG controls cluster naming and IAM scoping:
+#   - Local: defaults to kagenti-hypershift-custom (shared by all developers)
+#   - CI: set via secrets (kagenti-hypershift-ci)
+MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+
+# Find .env file - priority: 1) .env.${MANAGED_BY_TAG}, 2) legacy .env.hypershift-ci, 3) any .env.kagenti-*
+find_env_file() {
+    if [ -f "$REPO_ROOT/.env.${MANAGED_BY_TAG}" ]; then
+        echo "$REPO_ROOT/.env.${MANAGED_BY_TAG}"
+    elif [ -f "$REPO_ROOT/.env.hypershift-ci" ]; then
+        echo "$REPO_ROOT/.env.hypershift-ci"
+    else
+        # Find any .env.kagenti-* file
+        ls "$REPO_ROOT"/.env.kagenti-* 2>/dev/null | head -1
+    fi
+}
+
+# Determine if we need management cluster credentials (create/destroy phases)
+# This is computed early so we can skip .env loading if not needed
+NEEDS_MGMT_CREDS_EARLY=false
+[ "$INCLUDE_CREATE" = "true" ] && NEEDS_MGMT_CREDS_EARLY=true
+[ "$INCLUDE_DESTROY" = "true" ] && NEEDS_MGMT_CREDS_EARLY=true
+# In blacklist mode (no --include-* flags), default is to run create/destroy
+if [ "$WHITELIST_MODE" = "false" ]; then
+    [ "$SKIP_CREATE" = "false" ] && NEEDS_MGMT_CREDS_EARLY=true
+    [ "$SKIP_DESTROY" = "false" ] && NEEDS_MGMT_CREDS_EARLY=true
+fi
+
+# Load credentials if not already in environment
+if [ "$CI_MODE" = "true" ]; then
+    # CI mode: credentials are passed via environment variables from GitHub secrets
+    log_step "Using CI credentials from environment"
+elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+    # Credentials already in environment (user ran: source .env.xxx before script)
+    log_step "Using pre-sourced credentials from environment"
+elif [ "$NEEDS_MGMT_CREDS_EARLY" = "true" ]; then
+    # Need management cluster credentials - try to load from .env file
+    ENV_FILE=$(find_env_file)
+    if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+        log_error "No .env file found. Either:"
+        log_error "  1. Run: source .env.${MANAGED_BY_TAG} before this script"
+        log_error "  2. Run setup-hypershift-ci-credentials.sh to create .env file"
+        log_error "Expected: .env.${MANAGED_BY_TAG} or .env.hypershift-ci in repo root"
+        exit 1
+    fi
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+    log_step "Loaded credentials from $(basename "$ENV_FILE")"
+    # Update MANAGED_BY_TAG from env file if it was set there
+    MANAGED_BY_TAG="${MANAGED_BY_TAG:-kagenti-hypershift-custom}"
+else
+    # Only running middle phases - management cluster credentials not required
+    # User just needs KUBECONFIG pointing to the hosted cluster
+    log_step "Skipping .env loading (create/destroy not requested)"
+fi
+
+# Compute cluster name and kubeconfig paths
+CLUSTER_NAME="${MANAGED_BY_TAG}-${CLUSTER_SUFFIX}"
+
+# TWO KUBECONFIGS:
+#   KUBECONFIG       - Hosted cluster kubeconfig (for install/agents/test operations)
+#                      Points to the cluster where Kagenti is deployed
+#   MGMT_KUBECONFIG  - Management cluster kubeconfig (for create/destroy cluster operations)
+#                      Points to the HyperShift management cluster
+#
+# This matches CI behavior where KUBECONFIG always points to the target cluster.
+#
+# USAGE:
+#   For create/destroy: need both MGMT_KUBECONFIG (from .env) and KUBECONFIG will be set after create
+#   For middle phases:  just need KUBECONFIG pointing to the hosted cluster
+#
+#   # Full workflow
+#   source .env.kagenti-hypershift-custom  # Sets MGMT_KUBECONFIG
+#   ./hypershift-full-test.sh --skip-cluster-destroy
+#
+#   # Middle phases only (no create/destroy)
+#   export KUBECONFIG=~/clusters/hcp/<cluster-name>/auth/kubeconfig
+#   ./hypershift-full-test.sh --skip-cluster-create --skip-cluster-destroy
+#
+# Note: MGMT_KUBECONFIG can be set by .env file or explicitly before running
+
+# Default hosted cluster kubeconfig path (used after cluster creation)
+HOSTED_KUBECONFIG_PATH="$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+
+# In CI mode, MGMT_KUBECONFIG is set separately by the workflow
+# In local mode, it comes from the .env file's KUBECONFIG (before we switch to hosted)
+if [ -z "${MGMT_KUBECONFIG:-}" ]; then
+    # MGMT_KUBECONFIG not set - use current KUBECONFIG as management cluster
+    # (This is the case when user sources .env file which sets KUBECONFIG)
+    MGMT_KUBECONFIG="${KUBECONFIG:-}"
+fi
+
+# ============================================================================
+# Validate cluster name length (AWS IAM role name limit)
+# ============================================================================
+# AWS IAM role names have a 64-character limit.
+# HyperShift creates roles with pattern: <cluster-name>-<role-suffix>
+# The longest suffix is "cloud-network-config-controller" (32 chars)
+# So max cluster name = 64 - 32 = 32 characters
+#
+MAX_CLUSTER_NAME_LENGTH=32
+LONGEST_IAM_SUFFIX="cloud-network-config-controller"
+CLUSTER_NAME_LENGTH=${#CLUSTER_NAME}
+
+if [ "$CLUSTER_NAME_LENGTH" -gt "$MAX_CLUSTER_NAME_LENGTH" ]; then
+    echo ""
+    echo -e "${RED}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║   ERROR: Cluster name too long for AWS IAM                                 ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "Cluster name: $CLUSTER_NAME"
+    echo "Length: $CLUSTER_NAME_LENGTH characters (max: $MAX_CLUSTER_NAME_LENGTH)"
+    echo ""
+    echo "WHY THIS LIMIT EXISTS:"
+    echo "  AWS IAM role names have a 64-character limit."
+    echo "  HyperShift creates roles with pattern: <cluster-name>-<role-suffix>"
+    echo "  The longest role suffix is '$LONGEST_IAM_SUFFIX' (${#LONGEST_IAM_SUFFIX} chars)."
+    echo ""
+    echo "  Your cluster name: $CLUSTER_NAME_LENGTH chars"
+    echo "  Longest role suffix: ${#LONGEST_IAM_SUFFIX} chars + 1 hyphen"
+    echo "  Total: $((CLUSTER_NAME_LENGTH + ${#LONGEST_IAM_SUFFIX} + 1)) chars (exceeds 64)"
+    echo ""
+    MAX_SUFFIX_LENGTH=$((MAX_CLUSTER_NAME_LENGTH - ${#MANAGED_BY_TAG} - 1))
+    echo "HOW TO FIX:"
+    echo "  With your current MANAGED_BY_TAG '$MANAGED_BY_TAG' (${#MANAGED_BY_TAG} chars),"
+    echo "  your cluster suffix can be at most $MAX_SUFFIX_LENGTH characters."
+    echo ""
+    echo "  Examples of valid suffixes: ci, dev, pr42, test1"
+    echo ""
+    echo "  Note: If you didn't specify a suffix, your username was used."
+    echo "        Try passing an explicit short suffix as an argument."
+    echo ""
+    exit 1
+fi
+
+# ============================================================================
+# PRE-FLIGHT CHECKS
+# ============================================================================
+# Validate required credentials BEFORE running any phases.
+# Different phases require different credentials:
+#   - cluster-create/destroy: AWS creds + Management cluster KUBECONFIG
+#   - install/agents/test: Hosted cluster KUBECONFIG (created by cluster-create)
+
+echo ""
+echo "╔════════════════════════════════════════════════════════════════════════════╗"
+echo "║                           PRE-FLIGHT CHECKS                                ║"
+echo "╚════════════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+PREFLIGHT_ERRORS=0
+
+# Check if we need management cluster credentials (for create/destroy)
+NEEDS_MGMT_CREDS=false
+[ "$RUN_CREATE" = "true" ] && NEEDS_MGMT_CREDS=true
+[ "$RUN_DESTROY" = "true" ] && NEEDS_MGMT_CREDS=true
+
+# Check if we need hosted cluster kubeconfig (for install/agents/test)
+NEEDS_HOSTED_KUBECONFIG=false
+[ "$RUN_INSTALL" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
+[ "$RUN_AGENTS" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
+[ "$RUN_TEST" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
+[ "$RUN_UI_TESTS" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
+[ "$RUN_KAGENTI_UNINSTALL" = "true" ] && NEEDS_HOSTED_KUBECONFIG=true
+
+echo "Cluster: $CLUSTER_NAME"
+echo ""
+echo "Phases to run:"
+echo "  cluster-create:     $RUN_CREATE"
+echo "  kagenti-install:    $RUN_INSTALL"
+echo "  agents:             $RUN_AGENTS"
+echo "  test:               $RUN_TEST"
+echo "  ui-tests:           $RUN_UI_TESTS"
+echo "  kagenti-uninstall:  $RUN_KAGENTI_UNINSTALL"
+echo "  cluster-destroy:    $RUN_DESTROY"
+echo ""
+
+# --- Check credentials for cluster create/destroy ---
+if [ "$NEEDS_MGMT_CREDS" = "true" ]; then
+    echo "Checking credentials for cluster-create/destroy phases..."
+
+    # AWS credentials
+    if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
+        log_error "AWS_ACCESS_KEY_ID not set (required for cluster operations)"
+        PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+    elif [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        log_error "AWS_SECRET_ACCESS_KEY not set (required for cluster operations)"
+        PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+    else
+        log_step "AWS credentials: configured"
+    fi
+
+    if [ -z "${AWS_REGION:-}" ]; then
+        log_error "AWS_REGION not set (required for cluster operations)"
+        PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+    else
+        log_step "AWS region: $AWS_REGION"
+    fi
+
+    # Management cluster kubeconfig
+    if [ -z "$MGMT_KUBECONFIG" ]; then
+        log_error "KUBECONFIG not set (required for cluster operations)"
+        log_error "  This should point to the HyperShift management cluster"
+        PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+    elif [ ! -f "$MGMT_KUBECONFIG" ]; then
+        # Try to recreate kubeconfig from base64 in .env file
+        if [ -n "${HYPERSHIFT_MGMT_KUBECONFIG_BASE64:-}" ]; then
+            log_step "Kubeconfig file missing, recreating from base64..."
+            mkdir -p "$(dirname "$MGMT_KUBECONFIG")"
+            if echo "$HYPERSHIFT_MGMT_KUBECONFIG_BASE64" | base64 -d > "$MGMT_KUBECONFIG" 2>/dev/null && \
+               grep -q "clusters:" "$MGMT_KUBECONFIG" 2>/dev/null; then
+                chmod 600 "$MGMT_KUBECONFIG"
+                log_step "Management cluster kubeconfig: $MGMT_KUBECONFIG (recreated from base64)"
+            else
+                rm -f "$MGMT_KUBECONFIG"
+                log_error "Failed to decode HYPERSHIFT_MGMT_KUBECONFIG_BASE64 (invalid base64 or content)"
+                log_error "  Run setup-hypershift-ci-credentials.sh to regenerate"
+                PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+            fi
+        else
+            log_error "Management cluster kubeconfig not found: $MGMT_KUBECONFIG"
+            log_error "  Run setup-hypershift-ci-credentials.sh to create it"
+            PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+        fi
+    else
+        log_step "Management cluster kubeconfig: $MGMT_KUBECONFIG"
+    fi
+    echo ""
+fi
+
+# --- Check hosted cluster kubeconfig for install/agents/test ---
+if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
+    echo "Checking credentials for install/agents/test phases..."
+
+    if [ "$RUN_CREATE" = "true" ]; then
+        # Cluster will be created, kubeconfig will be generated
+        log_step "Hosted cluster kubeconfig: will be created by cluster-create phase"
+        log_step "  Expected path: $HOSTED_KUBECONFIG_PATH"
+    else
+        # Cluster creation is skipped, KUBECONFIG must already point to hosted cluster
+        # Check KUBECONFIG first (may be set by CI or user), fallback to computed path
+        HOSTED_KUBECONFIG="${KUBECONFIG:-$HOSTED_KUBECONFIG_PATH}"
+        if [ ! -f "$HOSTED_KUBECONFIG" ]; then
+            log_error "Hosted cluster kubeconfig not found: $HOSTED_KUBECONFIG"
+            log_error ""
+            log_error "  The hosted cluster kubeconfig is required for install/agents/test phases."
+            log_error "  Since --skip-cluster-create was specified, the kubeconfig must already exist."
+            log_error ""
+            log_error "  Either:"
+            log_error "    1. Remove --skip-cluster-create to create the cluster first"
+            log_error "    2. Set KUBECONFIG to the hosted cluster kubeconfig"
+            log_error "    3. Verify the cluster exists at the expected path"
+            PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+        else
+            log_step "Hosted cluster kubeconfig: $HOSTED_KUBECONFIG"
+            # Verify we can connect to the cluster
+            if KUBECONFIG="$HOSTED_KUBECONFIG" kubectl cluster-info &>/dev/null; then
+                log_step "Hosted cluster: reachable"
+            else
+                log_warn "Hosted cluster: not reachable (may be starting up)"
+            fi
+        fi
+    fi
+    echo ""
+fi
+
+# --- Summary ---
+if [ $PREFLIGHT_ERRORS -gt 0 ]; then
+    echo ""
+    echo -e "${RED}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║   PRE-FLIGHT FAILED: $PREFLIGHT_ERRORS error(s) found                                      ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "To fix credential issues:"
+    echo "  source .env.${MANAGED_BY_TAG}"
+    echo ""
+    echo "Or run setup script to create credentials:"
+    echo "  ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh"
+    echo ""
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Pre-flight checks passed"
+echo ""
+
+# Print final configuration summary
+echo "Configuration:"
+echo "  Cluster Name:         $CLUSTER_NAME"
+echo "  Environment:          $KAGENTI_ENV"
+echo "  Mode:                 $([ "$WHITELIST_MODE" = "true" ] && echo "Whitelist (explicit)" || echo "Blacklist (full run)")"
+echo "  Clean Kagenti:        $CLEAN_KAGENTI"
+echo ""
+echo "Kubeconfig usage:"
+if [ "$NEEDS_MGMT_CREDS" = "true" ]; then
+    echo "  Management cluster:   $MGMT_KUBECONFIG (for create/destroy)"
+fi
+if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
+    # Show the kubeconfig that will be used for hosted cluster
+    if [ "$RUN_CREATE" = "true" ]; then
+        echo "  Hosted cluster:       $HOSTED_KUBECONFIG_PATH (after create)"
+    else
+        echo "  Hosted cluster:       ${KUBECONFIG:-$HOSTED_KUBECONFIG_PATH} (for install/agents/test)"
+    fi
+fi
+echo ""
+
+# ============================================================================
+# STATE DETECTION (for dry-run mode)
+# ============================================================================
+
+check_cluster_state() {
+    local suffix="$1"
+    local cluster_name="${MANAGED_BY_TAG}-${suffix}"
+    local kubeconfig_path="$HOME/clusters/hcp/$cluster_name/auth/kubeconfig"
+
+    # State indicators
+    STATE_CLUSTER_EXISTS=false
+    STATE_KAGENTI_DEPS_DEPLOYED=false
+    STATE_KAGENTI_DEPLOYED=false
+    STATE_AGENTS_DEPLOYED=false
+    STATE_TESTS_RAN=false
+    STATE_TESTS_PASSED=false
+
+    # Check cluster exists
+    if [ -f "$kubeconfig_path" ]; then
+        STATE_CLUSTER_EXISTS=true
+        export KUBECONFIG="$kubeconfig_path"
+
+        # Check if we can connect
+        if kubectl cluster-info &>/dev/null; then
+            # Check kagenti-deps helm release
+            if helm list -n kagenti-system 2>/dev/null | grep -q "kagenti-deps"; then
+                STATE_KAGENTI_DEPS_DEPLOYED=true
+            fi
+
+            # Check kagenti helm release
+            if helm list -n kagenti-system 2>/dev/null | grep -q "kagenti[^-]"; then
+                STATE_KAGENTI_DEPLOYED=true
+            fi
+
+            # Check weather-service deployment
+            if kubectl get deployment weather-service -n team1 &>/dev/null; then
+                STATE_AGENTS_DEPLOYED=true
+            fi
+        fi
+    fi
+
+    # Check test results (look for recent XML file)
+    local test_results_file="$REPO_ROOT/test-results/e2e-results.xml"
+    if [ -f "$test_results_file" ]; then
+        # Check if file was modified in the last 24 hours
+        local file_age_hours=$(( ($(date +%s) - $(stat -f %m "$test_results_file" 2>/dev/null || stat -c %Y "$test_results_file" 2>/dev/null || echo 0)) / 3600 ))
+        if [ "$file_age_hours" -lt 24 ]; then
+            STATE_TESTS_RAN=true
+            # Check for failures in the XML
+            if ! grep -q 'failures="[1-9]' "$test_results_file" 2>/dev/null; then
+                STATE_TESTS_PASSED=true
+            fi
+        fi
+    fi
+}
+
+print_state_summary() {
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════════════════╗"
+    echo "║                           CLUSTER STATE                                    ║"
+    echo "╚════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Cluster: $CLUSTER_NAME"
+    echo ""
+
+    local icon_done="${GREEN}✓${NC}"
+    local icon_pending="${YELLOW}○${NC}"
+    local icon_fail="${RED}✗${NC}"
+
+    # Phase 1: Cluster
+    if [ "$STATE_CLUSTER_EXISTS" = "true" ]; then
+        echo -e "  1. Cluster Created:     $icon_done  (kubeconfig exists)"
+    else
+        echo -e "  1. Cluster Created:     $icon_pending  (not found)"
+    fi
+
+    # Phase 2: kagenti-deps
+    if [ "$STATE_KAGENTI_DEPS_DEPLOYED" = "true" ]; then
+        echo -e "  2. kagenti-deps:        $icon_done  (helm release found)"
+    elif [ "$STATE_CLUSTER_EXISTS" = "true" ]; then
+        echo -e "  2. kagenti-deps:        $icon_pending  (not deployed)"
+    else
+        echo -e "  2. kagenti-deps:        ${YELLOW}—${NC}  (requires cluster)"
+    fi
+
+    # Phase 2b: kagenti
+    if [ "$STATE_KAGENTI_DEPLOYED" = "true" ]; then
+        echo -e "  3. kagenti:             $icon_done  (helm release found)"
+    elif [ "$STATE_KAGENTI_DEPS_DEPLOYED" = "true" ]; then
+        echo -e "  3. kagenti:             $icon_pending  (not deployed)"
+    else
+        echo -e "  3. kagenti:             ${YELLOW}—${NC}  (requires kagenti-deps)"
+    fi
+
+    # Phase 3: Agents
+    if [ "$STATE_AGENTS_DEPLOYED" = "true" ]; then
+        echo -e "  4. Agents Deployed:     $icon_done  (weather-service found)"
+    elif [ "$STATE_KAGENTI_DEPLOYED" = "true" ]; then
+        echo -e "  4. Agents Deployed:     $icon_pending  (not deployed)"
+    else
+        echo -e "  4. Agents Deployed:     ${YELLOW}—${NC}  (requires kagenti)"
+    fi
+
+    # Phase 4: Tests
+    if [ "$STATE_TESTS_RAN" = "true" ]; then
+        if [ "$STATE_TESTS_PASSED" = "true" ]; then
+            echo -e "  5. E2E Tests:           $icon_done  (passed <24h ago)"
+        else
+            echo -e "  5. E2E Tests:           $icon_fail  (failures <24h ago)"
+        fi
+    elif [ "$STATE_AGENTS_DEPLOYED" = "true" ]; then
+        echo -e "  5. E2E Tests:           $icon_pending  (not run)"
+    else
+        echo -e "  5. E2E Tests:           ${YELLOW}—${NC}  (requires agents)"
+    fi
+    echo ""
+}
+
+suggest_next_command() {
+    echo "═══════════════════════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Determine what phase to run next
+    if [ "$STATE_CLUSTER_EXISTS" != "true" ]; then
+        echo "Suggested next step: Create cluster"
+        echo ""
+        echo "  source .env.${MANAGED_BY_TAG}"
+        echo "  $0 $CLUSTER_SUFFIX --include-cluster-create"
+        echo ""
+        echo "Or for full deployment (create + install + agents):"
+        echo ""
+        echo "  source .env.${MANAGED_BY_TAG}"
+        echo "  $0 $CLUSTER_SUFFIX --skip-cluster-destroy"
+        echo ""
+    elif [ "$STATE_KAGENTI_DEPS_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Install kagenti-deps + kagenti"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-kagenti-install"
+        echo ""
+    elif [ "$STATE_KAGENTI_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Complete kagenti installation"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-kagenti-install"
+        echo ""
+        echo "Note: kagenti-deps is installed but kagenti chart is missing."
+        echo ""
+    elif [ "$STATE_AGENTS_DEPLOYED" != "true" ]; then
+        echo "Suggested next step: Deploy test agents"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-agents"
+        echo ""
+    elif [ "$STATE_TESTS_RAN" != "true" ] || [ "$STATE_TESTS_PASSED" != "true" ]; then
+        echo "Suggested next step: Run E2E tests"
+        echo ""
+        echo "  export KUBECONFIG=$HOME/clusters/hcp/$CLUSTER_NAME/auth/kubeconfig"
+        echo "  $0 $CLUSTER_SUFFIX --include-test"
+        echo ""
+    else
+        echo -e "${GREEN}All phases complete!${NC}"
+        echo ""
+        echo "To destroy the cluster:"
+        echo ""
+        echo "  source .env.${MANAGED_BY_TAG}"
+        echo "  $0 $CLUSTER_SUFFIX --include-cluster-destroy"
+        echo ""
+        echo "Or keep for further testing."
+        echo ""
+    fi
+}
+
+# ============================================================================
+# DRY-RUN MODE: Check state and suggest next command
+# ============================================================================
+
+if [ "$DRY_RUN" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}┃${NC} DRY-RUN MODE (add phase flags to execute, e.g. --include-test)"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    check_cluster_state "$CLUSTER_SUFFIX"
+    print_state_summary
+    suggest_next_command
+    exit 0
+fi
+
+# ============================================================================
+# PHASE 1: Create Cluster
+# ============================================================================
+
+if [ "$RUN_CREATE" = "true" ]; then
+    log_phase "PHASE 1: Create HyperShift Cluster"
+    log_step "Creating cluster: $CLUSTER_NAME"
+    log_step "Using management cluster: $MGMT_KUBECONFIG"
+
+    # Ensure create-cluster.sh uses the management cluster kubeconfig
+    export KUBECONFIG="$MGMT_KUBECONFIG"
+    ./.github/scripts/hypershift/create-cluster.sh "$CLUSTER_SUFFIX"
+else
+    log_phase "PHASE 1: Skipping Cluster Creation"
+fi
+
+# ============================================================================
+# Switch to hosted cluster kubeconfig (for phases 2-5)
+# ============================================================================
+
+# For phases 2-5 (install, agents, test, uninstall), we need the hosted cluster kubeconfig.
+# This is cluster-admin on the hosted cluster, NOT the management cluster.
+if [ "$NEEDS_HOSTED_KUBECONFIG" = "true" ]; then
+    # In CI, KUBECONFIG is already set to hosted cluster by the workflow
+    # Locally, switch from management cluster to hosted cluster
+    if [ "$CI_MODE" != "true" ]; then
+        # Use KUBECONFIG if already pointing to hosted cluster, otherwise use computed path
+        if [ -f "${KUBECONFIG:-}" ] && [ "$KUBECONFIG" != "$MGMT_KUBECONFIG" ]; then
+            # KUBECONFIG already set to something other than mgmt - assume it's hosted
+            :
+        else
+            # Switch to hosted cluster kubeconfig
+            export KUBECONFIG="$HOSTED_KUBECONFIG_PATH"
+        fi
+    fi
+
+    # Verify the kubeconfig exists (should have been created by phase 1 or pre-existing)
+    if [ ! -f "$KUBECONFIG" ]; then
+        log_error "Hosted cluster kubeconfig not found at $KUBECONFIG"
+        log_error "Cluster creation may have failed, or the cluster doesn't exist."
+        exit 1
+    fi
+
+    log_step "Using hosted cluster: $KUBECONFIG"
+    if ! oc get nodes 2>/dev/null && ! kubectl get nodes 2>/dev/null; then
+        log_warn "Cannot connect to hosted cluster (it may still be initializing)"
+    fi
+fi
+
+# ============================================================================
+# PHASE 2: Install Kagenti Platform
+# ============================================================================
+
+if [ "$RUN_INSTALL" = "true" ]; then
+    log_phase "PHASE 2: Install Kagenti Platform"
+
+    if [ "$CLEAN_KAGENTI" = "true" ]; then
+        log_step "Uninstalling Kagenti (--clean-kagenti)..."
+        ./scripts/ocp/cleanup-kagenti.sh --yes || true
+    fi
+
+    log_step "Installing Kagenti platform..."
+    SETUP_ARGS=(--kagenti-repo "$REPO_ROOT")
+    if [ "$NO_RHOAI" = "true" ]; then
+        # --skip-mlflow disables kagenti-operator MLflow integration (--enable-mlflow flag + RBAC).
+        # RHOAI MLflow CR creation and OTEL endpoint setup still auto-detect via CRD presence.
+        SETUP_ARGS+=(--skip-mlflow)
+    fi
+    ./scripts/ocp/setup-kagenti.sh "${SETUP_ARGS[@]}"
+
+    log_step "Waiting for CRDs..."
+    ./.github/scripts/kagenti-operator/41-wait-crds.sh
+
+else
+    log_phase "PHASE 2: Skipping Kagenti Installation"
+fi
+
+# ============================================================================
+# PHASE 3: Deploy Test Agents
+# ============================================================================
+
+if [ "$RUN_AGENTS" = "true" ]; then
+    log_phase "PHASE 3: Deploy Test Agents"
+
+    log_step "Building weather-tool..."
+    ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
+
+    log_step "Deploying weather-tool..."
+    ./.github/scripts/kagenti-operator/72-deploy-weather-tool.sh
+
+    log_step "Deploying weather-agent..."
+    ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+else
+    log_phase "PHASE 3: Skipping Agent Deployment"
+fi
+
+# ============================================================================
+# PHASE 4: Run E2E Tests
+# ============================================================================
+
+if [ "$RUN_TEST" = "true" ]; then
+    log_phase "PHASE 4: Run E2E Tests"
+
+    log_step "Running E2E tests..."
+    # Get agent URL from route (if not already set)
+    # Wait for the route to be created by kagenti-operator (can take a few seconds after deployment is ready)
+    if [ -z "${AGENT_URL:-}" ]; then
+        log_step "Waiting for weather-service route..."
+        for i in {1..30}; do
+            ROUTE_HOST=$(oc get route -n team1 weather-service -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+            if [ -n "$ROUTE_HOST" ]; then
+                export AGENT_URL="https://$ROUTE_HOST"
+                log_step "Found route: $AGENT_URL"
+                break
+            fi
+            echo "[$i/30] Waiting for route to be created..."
+            sleep 5
+        done
+        if [ -z "${AGENT_URL:-}" ]; then
+            log_error "weather-service route not found after 150 seconds"
+            # Show what routes exist in team1 namespace for debugging
+            echo "Available routes in team1:"
+            oc get routes -n team1 2>/dev/null || echo "  (none)"
+            echo "Available httproutes in team1:"
+            kubectl get httproutes -n team1 2>/dev/null || echo "  (none)"
+            export AGENT_URL="http://localhost:8000"
+        fi
+    fi
+
+    # Get Keycloak URL from route (if not already set)
+    if [ -z "${KEYCLOAK_URL:-}" ]; then
+        KEYCLOAK_HOST=$(oc get route -n keycloak keycloak -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+        if [ -n "$KEYCLOAK_HOST" ]; then
+            export KEYCLOAK_URL="https://$KEYCLOAK_HOST"
+        else
+            log_error "keycloak route not found"
+            export KEYCLOAK_URL="http://localhost:8081"
+        fi
+    fi
+
+    # OpenShift routes use self-signed certs — always disable SSL verification
+    # for E2E tests, regardless of how KEYCLOAK_URL was set.
+    if [ "$KAGENTI_ENV" = "ocp" ]; then
+        export KEYCLOAK_VERIFY_SSL="false"
+    fi
+
+    # Set config file based on environment
+    export KAGENTI_CONFIG_FILE="${KAGENTI_CONFIG_FILE:-deployments/envs/${KAGENTI_ENV}_values.yaml}"
+
+    log_step "AGENT_URL: $AGENT_URL"
+    log_step "KEYCLOAK_URL: $KEYCLOAK_URL"
+    log_step "KAGENTI_CONFIG_FILE: $KAGENTI_CONFIG_FILE"
+
+    # Export pytest filter options if specified
+    if [ -n "$PYTEST_FILTER" ]; then
+        export PYTEST_FILTER
+        log_step "PYTEST_FILTER: $PYTEST_FILTER"
+    fi
+    if [ -n "$PYTEST_ARGS" ]; then
+        export PYTEST_ARGS
+        log_step "PYTEST_ARGS: $PYTEST_ARGS"
+    fi
+
+    # Print deployed image/Helm versions (collapsible in GH Actions)
+    ./.github/scripts/common/86-print-version-matrix.sh
+
+    # Pre-flight checks (OTEL/MLflow pipeline readiness)
+    ./.github/scripts/common/90-preflight-checks.sh
+
+    # Ensure test user and service account exist in Keycloak
+    ./.github/scripts/common/87-setup-test-credentials.sh
+
+    # Backend E2E tests (pytest)
+    ./.github/scripts/kagenti-operator/90-run-e2e-tests.sh
+else
+    log_phase "PHASE 4: Skipping E2E Tests"
+fi
+
+# ============================================================================
+# PHASE 4b: Run UI E2E Tests (Playwright)
+# ============================================================================
+
+if [ "$RUN_UI_TESTS" = "true" ]; then
+    log_phase "PHASE 4b: Run UI E2E Tests (Playwright)"
+
+    if [ -f "./.github/scripts/common/92-run-ui-tests.sh" ]; then
+        ./.github/scripts/common/92-run-ui-tests.sh
+    else
+        log_step "Skipping UI tests (script not found)"
+    fi
+else
+    log_phase "PHASE 4b: Skipping UI E2E Tests"
+fi
+
+# ============================================================================
+# PHASE 5: Kagenti Uninstall (optional)
+# ============================================================================
+
+if [ "$RUN_KAGENTI_UNINSTALL" = "true" ]; then
+    log_phase "PHASE 5: Uninstall Kagenti Platform"
+    log_step "Running cleanup-kagenti.sh..."
+    ./scripts/ocp/cleanup-kagenti.sh --yes || {
+        log_error "Kagenti uninstall failed (non-fatal)"
+    }
+else
+    log_phase "PHASE 5: Skipping Kagenti Uninstall"
+fi
+
+# ============================================================================
+# PHASE 6: Destroy Cluster (optional)
+# ============================================================================
+
+if [ "$RUN_DESTROY" = "true" ]; then
+    log_phase "PHASE 6: Destroy Cluster"
+
+    # Switch back to management cluster kubeconfig for destroy operations
+    log_step "Switching to management cluster: $MGMT_KUBECONFIG"
+    export KUBECONFIG="$MGMT_KUBECONFIG"
+
+    ./.github/scripts/hypershift/destroy-cluster.sh "$CLUSTER_SUFFIX"
+else
+    log_phase "PHASE 6: Skipping Cluster Destruction"
+    echo ""
+    echo "Cluster kept for debugging."
+    echo ""
+    echo "To access the hosted cluster:"
+    echo "  export KUBECONFIG=$HOSTED_KUBECONFIG_PATH"
+    echo "  kubectl get nodes"
+    echo ""
+    echo "To destroy the cluster later:"
+    echo "  source .env.${MANAGED_BY_TAG}  # Load management cluster credentials"
+    echo "  ./.github/scripts/hypershift/destroy-cluster.sh $CLUSTER_SUFFIX"
+    echo ""
+fi
+
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}┃${NC} Full test completed successfully!"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""

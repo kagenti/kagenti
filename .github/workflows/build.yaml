@@ -1,0 +1,193 @@
+name: Build-Publish
+
+on:
+  # Run this workflow on pushes of tags like v1.0.0
+  push:
+    tags:
+    - 'v*'
+    # Trigger on PR merges to main
+    branches:
+    - main
+  # Allows also to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Deny all permissions at workflow level; each job declares only what it needs
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+  REPO: kagenti/kagenti
+  CHARTS_PATH: ./charts
+
+jobs:
+  build-and-push:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Grant GITHUB_TOKEN the permissions to write packages
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        image_config:
+          - name: ui-v2
+            context: ./kagenti
+            dockerfile: ui-v2/Dockerfile
+          - name: backend
+            context: ./kagenti
+            dockerfile: backend/Dockerfile
+            smoke_cmd: "python -c \"from app.main import app; print('smoke-test: ok')\""
+          - name: ui-oauth-secret
+            context: ./kagenti
+            dockerfile: auth/ui-oauth-secret/Dockerfile
+          - name: agent-oauth-secret
+            context: ./kagenti
+            dockerfile: auth/agent-oauth-secret/Dockerfile
+          - name: api-oauth-secret
+            context: ./kagenti
+            dockerfile: auth/api-oauth-secret/Dockerfile
+          - name: mlflow-oauth-secret
+            context: ./kagenti
+            dockerfile: auth/mlflow-oauth-secret/Dockerfile
+          - name: spiffe-idp-setup
+            context: ./kagenti
+            dockerfile: auth/spiffe-idp-setup/Dockerfile
+
+    steps:
+      # 1. Checkout the repository code
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      # 2. Set up QEMU for multi-architecture builds
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4.0.0
+
+      # 3. Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+
+      # 4. Log in to the GitHub Container Registry (ghcr.io)
+      - name: Log in to ghcr.io
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract Docker metadata with retry loop.
+      # The metadata-action calls the GitHub API which can sporadically fail
+      # with "Bad credentials" during token rotation.
+      - name: Extract Docker metadata for ${{ matrix.image_config.name }}
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
+        continue-on-error: true
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix={{branch}}-,enable=${{ github.ref_type != 'tag' }}
+            # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
+            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+
+      - name: Wait before retry
+        if: steps.meta.outcome == 'failure'
+        run: |
+          echo "Metadata extraction failed, retrying in 15s..."
+          sleep 15
+
+      - name: Retry Docker metadata for ${{ matrix.image_config.name }}
+        id: meta_retry
+        if: steps.meta.outcome == 'failure'
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image_config.name }}
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix={{branch}}-,enable=${{ github.ref_type != 'tag' }}
+            # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
+            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+
+      - name: Smoke-test build for ${{ matrix.image_config.name }}
+        if: matrix.image_config.smoke_cmd
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: ${{ matrix.image_config.context }}
+          file: ${{ matrix.image_config.context }}/${{ matrix.image_config.dockerfile }}
+          load: true
+          tags: ${{ matrix.image_config.name }}:smoke-test
+          build-args: |
+            RELEASE_TAG=${{ github.ref_name }}
+
+      - name: Run smoke test for ${{ matrix.image_config.name }}
+        if: matrix.image_config.smoke_cmd
+        run: |
+          docker run --rm ${{ matrix.image_config.name }}:smoke-test \
+            ${{ matrix.image_config.smoke_cmd }}
+
+      - name: Build and push ${{ matrix.image_config.name }}
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: ${{ matrix.image_config.context }}
+          file: ${{ matrix.image_config.context }}/${{ matrix.image_config.dockerfile }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta_retry.outputs.tags || steps.meta.outputs.tags }}
+          labels: ${{ steps.meta_retry.outputs.labels || steps.meta.outputs.labels }}
+          build-args: |
+            RELEASE_TAG=${{ github.ref_name }}
+
+  package-charts:
+    # Package and push Helm charts once, after all images are built.
+    # This avoids the previous issue where chart packaging ran inside the
+    # build matrix (6 times concurrently) and could race on helm push.
+    needs: build-and-push
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package and push kagenti chart
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          chartVersion=$(echo "$REF_NAME" | cut -c 2-)
+          chartPackageName="kagenti-${chartVersion}.tgz"
+          cd ${{ env.CHARTS_PATH }}/kagenti
+          echo "Fetching Helm chart dependencies..."
+          helm dependency update
+          yq e ".ui.frontend.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".ui.backend.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".uiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".agentOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".apiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
+          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
+
+      - name: Package and push kagenti-deps chart
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          chartVersion=$(echo "$REF_NAME" | cut -c 2-)
+          chartPackageName="kagenti-deps-${chartVersion}.tgz"
+          cd ${{ env.CHARTS_PATH }}/kagenti-deps
+          echo "Fetching Helm chart dependencies..."
+          helm dependency update
+          helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
+          helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}

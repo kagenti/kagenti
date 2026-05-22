@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: openshell-server
+  namespace: {{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  serviceName: openshell-server
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "openshell.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "openshell.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      serviceAccountName: openshell-gateway
+      enableServiceLinks: false
+      {{- if .Values.keycloakClusterIP }}
+      hostAliases:
+        - ip: {{ .Values.keycloakClusterIP | quote }}
+          hostnames:
+            - keycloak.localtest.me
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          args:
+            - "--sandbox-namespace"
+            - {{ include "openshell.driverNamespace" . | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: grpc
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: OPENSHELL_BIND_ADDRESS
+              value: "0.0.0.0"
+            - name: OPENSHELL_TLS_CERT
+              value: "/tls/server/tls.crt"
+            - name: OPENSHELL_TLS_KEY
+              value: "/tls/server/tls.key"
+            - name: OPENSHELL_TLS_CLIENT_CA
+              value: "/tls/server/ca.crt"
+            - name: OPENSHELL_SSH_HANDSHAKE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: openshell-gateway-secrets
+                  key: ssh-handshake-secret
+            - name: OPENSHELL_OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: OPENSHELL_OIDC_AUDIENCE
+              value: {{ include "openshell.oidcAudience" . | quote }}
+            - name: OPENSHELL_OIDC_ENABLED
+              value: {{ .Values.oidc.enabled | quote }}
+            {{- if .Values.trustedCABundle }}
+            - name: SSL_CERT_FILE
+              value: "/etc/ssl/certs/ca-certificates.crt"
+            - name: SSL_CERT_DIR
+              value: "/etc/ssl/certs"
+            {{- end }}
+            - name: OPENSHELL_DB_URL
+              value: "sqlite:///data/openshell.db"
+            - name: OPENSHELL_DRIVERS
+              value: "external"
+            - name: OPENSHELL_COMPUTE_DRIVER_SOCKET
+              value: "/run/drivers/compute.sock"
+            - name: OPENSHELL_CREDENTIALS_DRIVER_SOCKET
+              value: "/run/drivers/credentials.sock"
+          volumeMounts:
+            - name: driver-sockets
+              mountPath: /run/drivers
+            - name: data
+              mountPath: /data
+            - name: server-tls
+              mountPath: /tls/server
+              readOnly: true
+            {{- if .Values.trustedCABundle }}
+            - name: trusted-ca
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-bundle.crt
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources.gateway | nindent 12 }}
+        - name: compute-driver
+          image: "{{ .Values.images.computeDriver.repository }}:{{ .Values.images.computeDriver.tag }}"
+          imagePullPolicy: {{ .Values.images.computeDriver.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          args:
+            - "--socket=/run/drivers/compute.sock"
+            - "--namespace={{ include "openshell.driverNamespace" . }}"
+            - "--supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
+            - "--gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
+            - "--supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
+            - "--dtach-binary-path={{ .Values.supervisorImage.binaryPath }}"
+            - "--tls-ca-secret=openshell-server-tls"
+            - "--tls-client-secret=openshell-client-tls"
+            {{- if .Values.sandboxImagePullPolicy }}
+            - "--sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
+            {{- end }}
+          volumeMounts:
+            - name: driver-sockets
+              mountPath: /run/drivers
+          resources:
+            {{- toYaml .Values.resources.computeDriver | nindent 12 }}
+        - name: credentials-driver
+          image: "{{ .Values.images.credentialsDriver.repository }}:{{ .Values.images.credentialsDriver.tag }}"
+          imagePullPolicy: {{ .Values.images.credentialsDriver.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          args:
+            - "--socket=/run/drivers/credentials.sock"
+            - "--config=/etc/openshell/credentials.yaml"
+            - "--secrets-dir=/etc/openshell/secrets"
+          volumeMounts:
+            - name: driver-sockets
+              mountPath: /run/drivers
+            - name: credentials-config
+              mountPath: /etc/openshell
+              readOnly: true
+            - name: credentials-secrets
+              mountPath: /etc/openshell/secrets
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources.credentialsDriver | nindent 12 }}
+      volumes:
+        - name: driver-sockets
+          emptyDir: {}
+        - name: server-tls
+          secret:
+            secretName: openshell-server-tls
+        - name: credentials-config
+          configMap:
+            name: openshell-credentials-config
+        - name: credentials-secrets
+          secret:
+            secretName: openshell-credentials-secrets
+        {{- if .Values.trustedCABundle }}
+        - name: trusted-ca
+          configMap:
+            name: {{ .Values.trustedCABundle }}
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

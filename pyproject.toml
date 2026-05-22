@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kagenti-project"
+version = "0.1.0"
+description = "Monorepo for Kagenti code and Ansible deployments"
+requires-python = ">=3.10"
+
+# List ALL required Python packages for both Ansible and the Kagenti code
+dependencies = [
+    # Ansible dependencies
+    "ansible-core",
+    "ansible",
+
+    # Dependencies Ansible collections or Python code
+    "kubernetes>=34",
+    "PyYAML>=6.0.3",
+
+    # Dependencies for reliable logging in the authentication process.
+    "typer>=0.24.1"
+]
+
+[project.optional-dependencies]
+test = [
+    # Testing framework
+    "pytest>=7.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-xdist>=3.8.0",  # For parallel test execution
+    "pytest-asyncio>=0.21.0",  # For async test support
+
+    # Kubernetes client
+    "kubernetes>=34",
+    "urllib3>=2.6.3",  # Minimum version for CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 fixes
+    "protobuf>=6.33.5",  # Minimum version for CVE-2026-0994 fix
+    "pyasn1>=0.6.3",  # Minimum version for CVE-2026-23490, CVE-2026-30922 fixes
+
+    # HTTP requests
+    "requests>=2.33.1",
+    "httpx>=0.24.0",  # For A2A client
+
+    # A2A protocol client
+    "a2a-sdk>=0.2.5",
+
+    # Keycloak client
+    "python-keycloak>=3.7.0",
+
+    # JSON Web Token handling
+    "PyJWT>=2.12.0",
+
+    # MLflow for observability tests
+    "mlflow>=3.9.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["kagenti/tests"]
+timeout = 300
+
+[tool.coverage.run]
+source = ["kagenti"]
+omit = ["kagenti/tests/*", "kagenti/examples/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 0
+
+[tool.ruff]
+# Target Python 3.11+
+target-version = "py311"
+
+# Exclude generated / third-party / non-Python directories
+exclude = [
+    ".worktrees",
+    "charts",
+    "deployments",
+    "kagenti/ui-v2",
+    "kagenti/tui",
+]
+
+[tool.ruff.lint]
+# Match the previous flake8 enforced rules (syntax errors and critical issues):
+#   E9: runtime errors (syntax, IO)
+#   F63: assertion on tuples/invalid format
+#   F7: syntax errors
+#   F82: undefined names
+# Additional rules can be enabled incrementally as the codebase is cleaned up.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.setuptools]
+# Explicitly include only the kagenti package, exclude charts and deployments
+packages = ["kagenti"]
+
+[tool.setuptools.package-data]
+kagenti = ["**/*"]

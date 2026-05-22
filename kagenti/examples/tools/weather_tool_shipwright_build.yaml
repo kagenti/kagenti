@@ -1,0 +1,63 @@
+# Copyright 2025 IBM Corp.
+# Licensed under the Apache License, Version 2.0
+#
+# Example Shipwright Build manifest for Weather Tool.
+# This Build resource defines how to build the container image from source.
+
+apiVersion: shipwright.io/v1beta1
+kind: Build
+metadata:
+  name: weather-tool
+  namespace: team1
+  labels:
+    kagenti.io/type: tool
+    kagenti.io/managed-by: shipwright
+    app.kubernetes.io/name: weather-tool
+    app.kubernetes.io/component: mcp-tool
+  annotations:
+    # Tool configuration stored in annotation for retrieval after build
+    kagenti.io/tool-config: |
+      {
+        "protocol": "streamable_http",
+        "framework": "Python",
+        "description": "Weather lookup tool that provides weather forecasts",
+        "createHttpRoute": false,
+        "envVars": [
+          {"name": "LOG_LEVEL", "value": "INFO"}
+        ],
+        "servicePorts": [
+          {"containerPort": 8000, "servicePort": 80, "protocol": "TCP"}
+        ]
+      }
+spec:
+  source:
+    type: Git
+    git:
+      url: https://github.com/kagenti/agent-examples
+      revision: main
+    contextDir: mcp/weather_tool
+
+  strategy:
+    # Use buildah-insecure for internal registry (no TLS verification)
+    # Use buildah for external registries with TLS
+    name: buildah-insecure-push
+    kind: ClusterBuildStrategy
+
+  paramValues:
+    - name: dockerfile
+      value: Dockerfile
+
+  output:
+    # Internal cluster registry
+    image: registry.cr-system.svc.cluster.local:5000/weather-tool:v0.0.1
+    # For external registry, uncomment and set push secret:
+    # image: quay.io/myorg/weather-tool:v0.0.1
+    # pushSecret: quay-push-secret
+
+  # Optional: Build timeout (default is 1h)
+  timeout: 20m
+
+  # Optional: Build environment variables
+  # env:
+  #   - name: BUILD_ARG
+  #     value: "production"

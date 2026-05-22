@@ -1,0 +1,602 @@
+# Security Scans - Comprehensive security checks from TODO_IMPORTANT_GH_ACTIONS.md
+#
+# Phases implemented:
+# - Phase 0: Gitleaks (commented - needs license), Dependency Review, Shellcheck
+# - Phase A: Stricter dependency review, YAML lint, Helm lint
+# - Phase B: Python security (Bandit)
+# - Phase C: Container/IaC (Hadolint, Trivy)
+# - Phase D: CodeQL, Action pinning (OpenSSF Scorecard in separate workflow)
+#
+# These scans run on pull_request (not pull_request_target), so they:
+# - Use the workflow file from the PR branch (works without stub PR)
+# - Do NOT have access to secrets (safe for fork PRs)
+# - Run automatically on all PRs
+#
+# Token/License Requirements:
+# - Gitleaks: Requires GITLEAKS_LICENSE for org repos (free at gitleaks.io for OSS)
+# - CodeQL: Free for public repos on GitHub.com (no token needed)
+# - Trivy: Free, no token needed
+# - Bandit/Hadolint: Free, open source (Apache 2.0 / GPL-3)
+# - OpenSSF Scorecard: See .github/workflows/scorecard.yaml (separate workflow)
+#
+name: Security Scans
+
+on:
+  pull_request:
+    branches: [main]
+
+# Explicit permissions - jobs request only what they need
+permissions: {}
+
+jobs:
+  # NOTE: Gitleaks CI action requires a license for organization repos
+  # See: https://github.com/gitleaks/gitleaks-action#-announcement
+  # Gitleaks is run locally via pre-commit hook instead.
+  # To enable in CI: add GITLEAKS_LICENSE secret from gitleaks.io and uncomment below
+  #
+  # gitleaks:
+  #   name: Secret Detection
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #       with:
+  #         fetch-depth: 0
+  #     - name: Run Gitleaks
+  #       uses: gitleaks/gitleaks-action@v2
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: List dependency manifests
+        run: |
+          echo "=== Searching for dependency manifests ==="
+          echo ""
+          # Common manifest files for various ecosystems
+          MANIFESTS=$(find . -type f \( \
+            -name "package-lock.json" -o \
+            -name "package.json" -o \
+            -name "requirements.txt" -o \
+            -name "requirements*.txt" -o \
+            -name "Pipfile.lock" -o \
+            -name "poetry.lock" -o \
+            -name "pyproject.toml" -o \
+            -name "go.sum" -o \
+            -name "go.mod" -o \
+            -name "Cargo.lock" -o \
+            -name "Gemfile.lock" -o \
+            -name "pom.xml" -o \
+            -name "build.gradle" -o \
+            -name "yarn.lock" \
+          \) 2>/dev/null | grep -v node_modules | grep -v ".git/" | sort || true)
+
+          if [ -z "$MANIFESTS" ]; then
+            echo "No dependency manifests found in this repository."
+            echo "The dependency review will compare the dependency graph between base and head."
+          else
+            echo "Found manifests:"
+            echo "$MANIFESTS"
+            echo ""
+            echo "Total: $(echo "$MANIFESTS" | wc -l | tr -d ' ') manifest files"
+          fi
+
+      - name: Dependency Review
+        id: dependency-review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v4
+        with:
+          # Stricter security settings (Phase A improvement)
+          fail-on-severity: moderate
+          # Block strong copyleft licenses that could affect project licensing
+          deny-licenses: GPL-3.0, AGPL-3.0
+          # Note: Packages without detected license will warn but not fail (default behavior)
+          # Scan results are shown in the "Show scan results" step below
+          comment-summary-in-pr: never
+
+      - name: Show scan results
+        if: always()
+        env:
+          # Use env vars to avoid shell interpolation issues with special characters
+          CHANGES: ${{ steps.dependency-review.outputs.dependency-changes }}
+          VULNS: ${{ steps.dependency-review.outputs.vulnerable-changes }}
+          LICENSES: ${{ steps.dependency-review.outputs.invalid-license-changes }}
+        run: |
+          echo "=== Dependency Review Results ==="
+          echo ""
+          echo "--- Dependency Changes ---"
+          if [ -n "$CHANGES" ] && [ "$CHANGES" != "null" ] && [ "$CHANGES" != "[]" ]; then
+            echo "$CHANGES" | jq '.' 2>/dev/null || echo "(raw output available in action logs)"
+          else
+            echo "No dependency changes detected in this PR."
+          fi
+          echo ""
+          echo "--- Vulnerable Dependencies ---"
+          if [ -n "$VULNS" ] && [ "$VULNS" != "null" ] && [ "$VULNS" != "[]" ]; then
+            echo "$VULNS" | jq '.' 2>/dev/null || echo "(raw output available in action logs)"
+          else
+            echo "No vulnerabilities found."
+          fi
+          echo ""
+          echo "--- License Issues ---"
+          if [ -n "$LICENSES" ] && [ "$LICENSES" != "null" ] && [ "$LICENSES" != "[]" ]; then
+            echo "$LICENSES" | jq '.' 2>/dev/null || echo "(raw output available in action logs)"
+          else
+            echo "No license issues found."
+          fi
+
+  shellcheck:
+    name: Shell Script Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on CI scripts
+        run: |
+          echo "Checking .github/scripts for shell scripts..."
+
+          # Find all shell scripts
+          SCRIPTS=$(find .github/scripts -name "*.sh" -type f 2>/dev/null || true)
+
+          if [ -z "$SCRIPTS" ]; then
+            echo "No shell scripts found in .github/scripts"
+            exit 0
+          fi
+
+          echo "Found scripts:"
+          echo "$SCRIPTS"
+          echo ""
+
+          # Run shellcheck with error severity (fail on errors only)
+          # Warnings are reported but don't fail the build
+          FAILED=0
+          for script in $SCRIPTS; do
+            echo "Checking: $script"
+            if ! shellcheck --severity=error "$script"; then
+              FAILED=1
+            fi
+          done
+
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "ERROR: Some scripts have shellcheck errors. Please fix them."
+            exit 1
+          fi
+
+          echo ""
+          echo "All scripts passed shellcheck (error level)"
+
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Install yamllint
+        run: uv tool install yamllint==1.38.0
+
+      - name: Create config
+        run: |
+          cat > .yamllint.yaml << 'EOF'
+          extends: relaxed
+          # Ignore Helm templates - they contain Go templating syntax ({{- if ... }})
+          # that is not valid YAML until rendered by Helm
+          ignore: |
+            charts/*/templates/
+            charts/*/*/templates/
+          rules:
+            line-length:
+              max: 150
+              level: warning
+            truthy:
+              check-keys: false  # Allow 'on:' in workflows
+            document-start: disable
+            comments:
+              min-spaces-from-content: 1
+            indentation:
+              spaces: 2
+              indent-sequences: whatever  # Allow GitHub Actions style (steps at 6 spaces)
+          EOF
+
+      - name: Lint YAML files
+        run: |
+          echo "=== Linting YAML files ==="
+          yamllint -c .yamllint.yaml \
+            .github/workflows/ \
+            charts/ \
+            deployments/ || true
+
+          # Show summary - capture output to file to avoid subshell issues
+          echo ""
+          echo "=== Summary ==="
+          yamllint -c .yamllint.yaml -f parsable \
+            .github/workflows/ charts/ deployments/ 2>&1 > /tmp/yamllint_output.txt || true
+          ERROR_COUNT=$(grep -c ":error:" /tmp/yamllint_output.txt 2>/dev/null || echo "0")
+          WARNING_COUNT=$(grep -c ":warning:" /tmp/yamllint_output.txt 2>/dev/null || echo "0")
+          echo "Errors: $ERROR_COUNT"
+          echo "Warnings: $WARNING_COUNT"
+
+          # Fail only on errors (not warnings)
+          if [ "$ERROR_COUNT" -gt 0 ] 2>/dev/null; then
+            echo ""
+            echo "ERROR: YAML files have syntax errors. Please fix them."
+            exit 1
+          fi
+
+  helm-lint:
+    name: Helm Chart Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
+        with:
+          version: 'v3.14.0'
+
+      - name: Lint Helm charts
+        run: |
+          echo "=== Linting Helm charts ==="
+          echo ""
+          echo "NOTE: Helm lint requires dependency charts to be present."
+          echo "Some warnings about missing dependencies are expected in CI."
+          echo ""
+
+          ISSUES_FOUND=0
+
+          for chart in charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              echo "Linting: $chart"
+              # Don't use --strict since it fails on missing dependencies
+              # which are downloaded at install time, not in CI
+              if ! helm lint "$chart" 2>&1; then
+                ISSUES_FOUND=1
+              fi
+              echo ""
+            fi
+          done
+
+          if [ $ISSUES_FOUND -eq 1 ]; then
+            echo ""
+            echo "WARNING: Some Helm charts have linting issues (see above)."
+            echo "These are informational - fix when possible."
+            # Don't fail initially - charts have pre-existing issues
+            # TODO: Enable strict mode after fixing chart issues
+            # exit 1
+          else
+            echo "All Helm charts passed linting"
+          fi
+
+  # ============================================================================
+  # Phase B: Python Security
+  # ============================================================================
+
+  bandit:
+    name: Python Security (Bandit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Install Bandit
+        run: uv tool install "bandit[toml]==1.9.4"
+
+      - name: Run Bandit security scan
+        run: |
+          echo "=== Bandit Python Security Scan ==="
+          echo ""
+
+          # Check if kagenti directory exists
+          if [ ! -d "kagenti" ]; then
+            echo "No kagenti/ directory found, skipping Python security scan"
+            exit 0
+          fi
+
+          # Run Bandit - scan main code (excluding examples which may have intentional patterns)
+          # First pass: HIGH severity only on main code - this WILL fail the build
+          echo "--- Checking for HIGH severity issues in main code ---"
+          HIGH_ISSUES=$(bandit -r kagenti/ \
+            --severity-level high \
+            --confidence-level high \
+            --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
+            -f json 2>/dev/null | jq '.results | length' 2>/dev/null || echo "0")
+
+          if [ "$HIGH_ISSUES" -gt 0 ]; then
+            echo "Found $HIGH_ISSUES HIGH severity issues in main code:"
+            bandit -r kagenti/ \
+              --severity-level high \
+              --confidence-level high \
+              --exclude '**/tests/*,**/.venv/*,**/node_modules/*,**/examples/*' \
+              -f txt
+            echo ""
+            echo "ERROR: HIGH severity security issues found. Please fix them."
+            exit 1
+          fi
+
+          # Second pass: Show all issues (including examples) for visibility
+          echo ""
+          echo "--- Full scan (informational) ---"
+          bandit -r kagenti/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --exclude '**/tests/*,**/.venv/*,**/node_modules/*' \
+            -f txt || true
+
+          echo ""
+          echo "NOTE: Examples directory issues are informational only."
+
+  # ============================================================================
+  # Phase C: Container/IaC Security
+  # ============================================================================
+
+  hadolint:
+    name: Dockerfile Lint (Hadolint)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Find Dockerfiles
+        id: find-dockerfiles
+        run: |
+          DOCKERFILES=$(find . -name "Dockerfile*" -type f 2>/dev/null | grep -v node_modules | grep -v ".git/" || true)
+          if [ -z "$DOCKERFILES" ]; then
+            echo "No Dockerfiles found"
+            echo "has_dockerfiles=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found Dockerfiles:"
+            echo "$DOCKERFILES"
+            echo "has_dockerfiles=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Hadolint
+        if: steps.find-dockerfiles.outputs.has_dockerfiles == 'true'
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5  # v3.3.0
+        with:
+          dockerfile: "**/Dockerfile*"
+          recursive: true
+          # Fail on warnings and errors
+          failure-threshold: warning
+          # Common ignores for development Dockerfiles
+          # DL3008: Pin versions in apt-get (apt-get install -y without versions)
+          # DL3013: Pin versions in pip (pip install without --no-cache-dir)
+          # DL3018: Pin versions in apk add (examples use unpinned for simplicity)
+          # DL3059: Multiple consecutive RUN instructions (sometimes intentional for clarity)
+          # DL3002: Last USER root — OpenShell supervisor must start as root for namespaces
+          # DL3007: :latest tags — upstream OpenShell images have no versioned tags yet
+          ignore: DL3002,DL3007,DL3008,DL3013,DL3018,DL3059
+
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      # Step 1: Show all dependency vulnerabilities (informational)
+      - name: Show all dependency vulnerabilities (informational)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Don't fail - just display all issues for visibility
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'table'
+
+      # Step 2: Check for CRITICAL and HIGH dependency vulnerabilities (informational on PRs)
+      # Pre-existing vulnerabilities should not block unrelated PRs.
+      # The dependency-review job already catches NEW vulnerable dependencies.
+      # A blocking full-repo scan runs after merge (security-post-merge.yaml).
+      - name: Check for CRITICAL and HIGH dependency vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          # Informational on PRs - full blocking scan runs after merge
+          exit-code: '0'
+          ignore-unfixed: true
+          format: 'table'
+
+      - name: Run Trivy config scan on production code (IaC)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'config'
+          # Scan only production directories, exclude examples
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Skip examples directory - contains intentional simplified configs for demos
+          skip-dirs: 'kagenti/examples'
+          # Use .trivyignore for documented exceptions (base images, CI RBAC)
+          trivyignores: '.trivyignore'
+          # Use trivy.yaml for trusted registries and other config
+          trivy-config: 'trivy.yaml'
+          # Fail on misconfigurations in production code
+          exit-code: '1'
+          format: 'table'
+
+      - name: Run Trivy config scan on examples (informational)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'kagenti/examples'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          # Examples are informational only - don't fail the build
+          exit-code: '0'
+          format: 'table'
+        continue-on-error: true
+
+  # ============================================================================
+  # Phase D: Advanced Security
+  # ============================================================================
+
+  # GitHub Actions Workflow Lint (actionlint)
+  # Catches script injection (${{ github.event.* }} in run: blocks),
+  # invalid workflow syntax, and other workflow issues.
+  # Fails on critical issues (expression injection = critical).
+  actionlint:
+    name: Workflow Lint (actionlint)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
+        with:
+          fail_on_error: true
+          # Only report issues on lines changed in the PR (not pre-existing)
+          filter_mode: diff_context
+          reporter: github-pr-review
+
+  # CodeQL - Free for public repositories on GitHub.com
+  # License: https://github.com/github/codeql/blob/main/LICENSE
+  # "If the Open Source Codebase is hosted and maintained on GitHub.com,
+  #  generate CodeQL databases for or during automated analysis, CI, or CD."
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4
+        with:
+          languages: python
+          # Use security-extended queries for more thorough analysis
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@68bde559dea0fdcac2102bfdf6230c5f70eb485e  # v4
+        with:
+          category: "/language:python"
+
+  action-pinning:
+    name: Verify Action Pinning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Check for unpinned GitHub Actions
+        id: pinning-check
+        # Run check but capture exit code - we report but don't fail
+        run: |
+          echo "=== Checking for unpinned GitHub Actions ==="
+          echo ""
+          echo "Pinning to SHAs prevents supply chain attacks."
+          echo "See: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+          echo ""
+
+          # Find all workflow files and check for unpinned actions
+          UNPINNED=$(grep -rh "uses:" .github/workflows/ | grep -v "#" | grep -E "@v[0-9]|@main|@master" | sort -u || true)
+
+          if [ -n "$UNPINNED" ]; then
+            echo "::warning::Found actions not pinned to SHA commits:"
+            echo ""
+            echo "$UNPINNED"
+            echo ""
+            echo "To pin an action, replace:"
+            echo "  uses: actions/checkout@v6"
+            echo "With:"
+            echo "  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6"
+            echo ""
+            echo "Find SHAs at: https://github.com/<owner>/<repo>/releases"
+            echo ""
+            # Count unpinned actions
+            COUNT=$(echo "$UNPINNED" | wc -l | tr -d ' ')
+            echo "Total unpinned actions: $COUNT"
+            echo ""
+            echo "NOTE: This check is informational. Actions will be pinned incrementally."
+          else
+            echo "All actions are pinned to SHA commits!"
+          fi
+
+          # Always exit 0 - this is informational only
+          # TODO: Change to exit 1 after all actions are pinned
+          exit 0
+
+  # ============================================================================
+  # OpenSSF Scorecard
+  # ============================================================================
+  # NOTE: OpenSSF Scorecard only works on 'schedule' and 'push' triggers,
+  # NOT on 'pull_request'. This is a GitHub/Scorecard limitation.
+  #
+  # To enable Scorecard, create a separate workflow file:
+  #   .github/workflows/scorecard.yaml
+  #
+  # See: https://github.com/ossf/scorecard-action#workflow-restrictions
+  #
+  # Required permissions for Scorecard with publish_results:
+  #   - id-token: write (for OIDC token to verify authenticity)
+  #   - security-events: write (to upload SARIF)
+  #   - contents: read
+  #
+  # Example workflow (create as separate file):
+  # ```yaml
+  # name: OpenSSF Scorecard
+  # on:
+  #   schedule:
+  #     - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM
+  #   push:
+  #     branches: [main]
+  #
+  # permissions:
+  #   security-events: write
+  #   id-token: write
+  #   contents: read
+  #
+  # jobs:
+  #   scorecard:
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+  #         with:
+  #           persist-credentials: false
+  #       - uses: ossf/scorecard-action@v2
+  #         with:
+  #           results_file: scorecard.sarif
+  #           results_format: sarif
+  #           publish_results: true
+  #       - uses: github/codeql-action/upload-sarif@v3
+  #         with:
+  #           sarif_file: scorecard.sarif
+  # ```

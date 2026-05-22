@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant KCR as Keycloak client registration
+    participant KC as Keycloak
+    participant SPIRE as SPIRE
+    participant SH as spiffe-helper
+    participant AB as AuthBridge
+
+    Note over SH,SPIRE: Bootstrapping SPIFFE identity (SVID)
+    SH->>SPIRE: Request SVID
+    SPIRE-->>SH: Return SVID
+
+    Note over KCR,SH: Obtain SVID to register to Keycloak
+    KCR->>SH: Request SVID
+    SH-->>KCR: Return SVID
+
+    Note over KCR,KC: Register application client using SVID
+    KCR->>KC: Register application client using Keycloak credentials
+    KC-->>KCR: Return application client secret
+
+    Note over AB,KC: AuthBridge consumes the client secret to enable token flow
+    AB->>KCR: Read application client secret

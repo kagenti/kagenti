@@ -1,0 +1,30 @@
+sequenceDiagram
+    %% Participant order: KCR, KC, OIDC, SPIRE, spiffe-helper, AuthBridge
+    participant KCR as Keycloak client registration
+    participant KC as Keycloak
+    participant OIDC as Keycloak OIDC endpoint
+    participant SPIRE as SPIRE
+    participant SH as spiffe-helper
+    participant AB as AuthBridge
+
+    %% (1) Bootstrapping SPIFFE identity (SVID)
+    Note over SH,SPIRE: Bootstrapping SPIFFE identity (SVID)
+    SH->>SPIRE: Request SVID
+    SPIRE-->>SH: Return SVID
+
+    %% (2) Obtain SVID to authenticate for KCR
+    Note over KCR,SH: Obtain SVID to authenticate to Keycloak
+    KCR->>SH: Request SVID
+    SH-->>KCR: Return SVID
+
+    %% (3) Register application client (enable DCR via OIDC)
+    Note over KCR,KC: Enable Dynamic Client Registration
+    KCR->>KC: Send SVID + OIDC endpoint (enable DCR)
+    KC->>OIDC: Verify OIDC endpoint & DCR capability
+    OIDC-->>KC: DCR is enabled
+
+    %% (4) AuthBridge self-registration; identity verified via OIDC
+    Note over KC,AB: Register application using DCR
+    AB->>KC: Attempt to register application
+    KC->>OIDC: Verify application identity
+    OIDC-->>KC: Identity verified and register application

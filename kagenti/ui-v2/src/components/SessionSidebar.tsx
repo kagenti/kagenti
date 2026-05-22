@@ -1,0 +1,499 @@
+// Copyright 2025 IBM Corp.
+// Licensed under the Apache License, Version 2.0
+
+import React, { useState, useMemo } from 'react';
+import {
+  Button,
+  SearchInput,
+  Spinner,
+  Label,
+  Switch,
+  Title,
+  Tooltip,
+  Modal,
+  ModalVariant,
+  FormSelect,
+  FormSelectOption,
+} from '@patternfly/react-core';
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { sandboxService } from '../services/api';
+import type { TaskSummary } from '../types/sandbox';
+
+interface SessionSidebarProps {
+  namespace: string;
+  activeContextId?: string;
+  onSelectSession: (contextId: string, agentName?: string) => void;
+  onNewSession: (agentName: string) => void;
+  selectedAgentName?: string;
+}
+
+/** Extract agent name from metadata, or empty string if not set. */
+function agentName(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return (meta?.agent_name as string) || '';
+}
+
+/** Extract display name: custom title, PR/issue ref, or context ID prefix. */
+function sessionName(task: TaskSummary): string {
+  const meta = task.metadata as Record<string, unknown> | null;
+  if (meta?.title) return meta.title as string;
+  if (meta?.ref) return meta.ref as string; // e.g., "#123" or "PR-45"
+  return task.context_id.substring(0, 8);
+}
+
+/** Format a timestamp into compact relative or absolute time. */
+function formatTime(task: TaskSummary): string {
+  const ts = task.status?.timestamp as string | undefined;
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    const now = Date.now();
+    const diffMs = now - d.getTime();
+    if (diffMs < 60_000) return 'just now';
+    if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
+    if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function stateColor(state: string): 'blue' | 'green' | 'red' | 'orange' | 'grey' {
+  switch (state) {
+    case 'working':
+    case 'submitted':
+      return 'blue';
+    case 'completed':
+      return 'green';
+    case 'failed':
+      return 'red';
+    case 'canceled':
+      return 'orange';
+    default:
+      return 'grey';
+  }
+}
+
+function stateLabel(state: string): string {
+  switch (state) {
+    case 'working':
+      return 'Active';
+    case 'submitted':
+      return 'Queued';
+    case 'completed':
+      return 'Done';
+    case 'failed':
+      return 'Failed';
+    case 'canceled':
+      return 'Canceled';
+    default:
+      return state;
+  }
+}
+
+/** Is a session a root session (no parent)? */
+function isRoot(task: TaskSummary): boolean {
+  const meta = task.metadata as Record<string, unknown> | null;
+  return !meta?.parent_context_id;
+}
+
+/** Count sub-sessions for a given parent context_id. */
+function subSessionCount(
+  sessions: TaskSummary[],
+  parentContextId: string
+): number {
+  return sessions.filter((s) => {
+    const meta = s.metadata as Record<string, unknown> | null;
+    return meta?.parent_context_id === parentContextId;
+  }).length;
+}
+
+/** Get child sessions for a given parent context_id. */
+function getChildSessions(
+  sessions: TaskSummary[],
+  parentContextId: string
+): TaskSummary[] {
+  return sessions.filter((s) => {
+    const meta = s.metadata as Record<string, unknown> | null;
+    return meta?.parent_context_id === parentContextId;
+  });
+}
+
+/** Build a plain-text tooltip string for session hover preview. */
+function sessionTooltip(task: TaskSummary, childCount: number): string {
+  const state = task.status?.state ?? 'unknown';
+  const ts = task.status?.timestamp as string | undefined;
+  const created = ts ? new Date(ts).toLocaleString() : 'Unknown';
+  const meta = task.metadata as Record<string, unknown> | null;
+  const lines = [
+    `Agent: ${agentName(task)}`,
+    `Created: ${created}`,
+    `Status: ${stateLabel(state)}`,
+    `ID: ${task.context_id.substring(0, 12)}`,
+  ];
+  if (childCount > 0) lines.push(`Sub-sessions: ${childCount}`);
+  if (typeof meta?.ref === 'string') lines.push(`Ref: ${meta.ref}`);
+  return lines.join('\n');
+}
+
+export const SessionSidebar: React.FC<SessionSidebarProps> = ({
+  namespace,
+  activeContextId,
+  onSelectSession,
+  onNewSession,
+  selectedAgentName,
+}) => {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState('');
+  const [rootOnly, setRootOnly] = useState(true);
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [newSessionAgent, setNewSessionAgent] = useState(selectedAgentName || 'sandbox-legion');
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+
+  const { data: agentsData } = useQuery({
+    queryKey: ['sandbox-agents', namespace],
+    queryFn: () => sandboxService.listAgents(namespace),
+    enabled: !!namespace,
+  });
+  const agents = agentsData ?? [];
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['sandbox-sessions', namespace, search, selectedAgentName],
+    queryFn: () =>
+      sandboxService.listSessions(namespace, {
+        limit: 50,
+        search: search || undefined,
+        // Don't filter by agent_name — old sessions lack this metadata field.
+        // TODO: Enable once all sessions have agent_name set.
+        // agent_name: selectedAgentName || undefined,
+      }),
+    enabled: !!namespace,
+    refetchInterval: 5000,
+  });
+
+  const allSessions = data?.items ?? [];
+
+  const displaySessions = useMemo(
+    () => (rootOnly ? allSessions.filter(isRoot) : allSessions),
+    [allSessions, rootOnly]
+  );
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        padding: '8px',
+        overflow: 'hidden',
+      }}
+    >
+      <Title headingLevel="h3" size="md" style={{ marginBottom: 8 }}>
+        Sessions
+      </Title>
+
+      <SearchInput
+        placeholder="Search sessions"
+        value={search}
+        onChange={(_e, value) => setSearch(value)}
+        onClear={() => setSearch('')}
+        style={{ marginBottom: 4 }}
+      />
+
+      <div style={{ marginBottom: 8 }}>
+        <Switch
+          id="root-only-toggle"
+          label="Root only"
+          labelOff="All sessions"
+          isChecked={rootOnly}
+          onChange={(_e, checked) => setRootOnly(checked)}
+          isReversed
+        />
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {isLoading && <Spinner size="md" />}
+        {!isLoading && displaySessions.length === 0 && (
+          <div
+            style={{
+              padding: 16,
+              color: 'var(--pf-v5-global--Color--200)',
+            }}
+          >
+            No sessions yet
+          </div>
+        )}
+        {!isLoading &&
+          displaySessions.map((session) => {
+            const state = session.status?.state ?? 'unknown';
+            const isActive = session.context_id === activeContextId;
+            const childCount = subSessionCount(
+              allSessions,
+              session.context_id
+            );
+
+            return (
+              <React.Fragment key={session.context_id}>
+              <Tooltip
+                position="right"
+                content={
+                  <span style={{ whiteSpace: 'pre-line' }}>
+                    {sessionTooltip(session, childCount)}
+                  </span>
+                }
+                entryDelay={400}
+              >
+                <div
+                  role="button"
+                  tabIndex={0}
+                  data-testid={`session-${session.context_id}`}
+                  data-context-id={session.context_id}
+                  onClick={() => onSelectSession(session.context_id, agentName(session))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      onSelectSession(session.context_id, agentName(session));
+                  }}
+                  style={{
+                    padding: '6px 8px',
+                    marginBottom: 2,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    backgroundColor: isActive
+                      ? 'var(--pf-v5-global--active-color--100)'
+                      : 'transparent',
+                    color: isActive
+                      ? 'var(--pf-v5-global--Color--light-100)'
+                      : 'var(--pf-v5-global--Color--100)',
+                  }}
+                >
+                  {/* Row 1: agent name + time */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '0.8em',
+                      opacity: 0.7,
+                      marginBottom: 2,
+                    }}
+                  >
+                    <span>{agentName(session)}</span>
+                    <span>{formatTime(session)}</span>
+                  </div>
+                  {/* Row 2: session name + status */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 500,
+                        fontSize: '0.9em',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      {sessionName(session)}
+                    </span>
+                    <Label
+                      color={stateColor(state)}
+                      isCompact
+                      style={{ fontSize: '0.75em' }}
+                    >
+                      {stateLabel(state)}
+                    </Label>
+                  </div>
+                  {/* Row 3: sub-session indicator (clickable to expand) */}
+                  {childCount > 0 && (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedParents((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(session.context_id)) {
+                            next.delete(session.context_id);
+                          } else {
+                            next.add(session.context_id);
+                          }
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.stopPropagation();
+                          setExpandedParents((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(session.context_id)) {
+                              next.delete(session.context_id);
+                            } else {
+                              next.add(session.context_id);
+                            }
+                            return next;
+                          });
+                        }
+                      }}
+                      style={{
+                        fontSize: '0.75em',
+                        opacity: 0.6,
+                        marginTop: 2,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {expandedParents.has(session.context_id) ? '[-]' : '[+]'}{' '}
+                      {childCount} sub-session{childCount > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+              </Tooltip>
+              {/* Expanded child sessions */}
+              {childCount > 0 && expandedParents.has(session.context_id) && (
+                getChildSessions(allSessions, session.context_id).map((child) => {
+                  const childState = child.status?.state ?? 'unknown';
+                  const isChildActive = child.context_id === activeContextId;
+                  return (
+                    <div
+                      key={child.context_id}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`session-${child.context_id}`}
+                      data-context-id={child.context_id}
+                      data-parent-context-id={session.context_id}
+                      onClick={() => onSelectSession(child.context_id, agentName(child))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter')
+                          onSelectSession(child.context_id, agentName(child));
+                      }}
+                      style={{
+                        padding: '4px 8px 4px 20px',
+                        marginBottom: 1,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        backgroundColor: isChildActive
+                          ? 'var(--pf-v5-global--active-color--100)'
+                          : 'transparent',
+                        color: isChildActive
+                          ? 'var(--pf-v5-global--Color--light-100)'
+                          : 'var(--pf-v5-global--Color--100)',
+                        fontSize: '0.85em',
+                        borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)',
+                        marginLeft: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {sessionName(child)}
+                        </span>
+                        <Label
+                          color={stateColor(childState)}
+                          isCompact
+                          style={{ fontSize: '0.7em' }}
+                        >
+                          {stateLabel(childState)}
+                        </Label>
+                      </div>
+                      <div style={{ fontSize: '0.8em', opacity: 0.7 }}>
+                        {agentName(child)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              </React.Fragment>
+            );
+          })}
+      </div>
+
+      <div
+        style={{
+          borderTop: '1px solid var(--pf-v5-global--BorderColor--100)',
+          paddingTop: 8,
+        }}
+      >
+        <Button
+          variant="link"
+          isBlock
+          onClick={() => navigate('/sandbox/sessions')}
+          style={{ marginBottom: 4 }}
+        >
+          View All Sessions
+        </Button>
+        <Button
+          variant="primary"
+          isBlock
+          onClick={() => {
+            setNewSessionAgent(selectedAgentName || 'sandbox-legion');
+            setShowNewSession(true);
+          }}
+          style={{ marginBottom: 4 }}
+        >
+          + New Session
+        </Button>
+        <Button
+          variant="secondary"
+          isBlock
+          onClick={() => navigate('/sandbox/create')}
+        >
+          + Import Agent
+        </Button>
+      </div>
+
+      <Modal
+        variant={ModalVariant.small}
+        title="New Session"
+        isOpen={showNewSession}
+        onClose={() => setShowNewSession(false)}
+        actions={[
+          <Button
+            key="start"
+            variant="primary"
+            onClick={() => {
+              onNewSession(newSessionAgent);
+              setShowNewSession(false);
+            }}
+          >
+            Start
+          </Button>,
+          <Button
+            key="cancel"
+            variant="link"
+            onClick={() => setShowNewSession(false)}
+          >
+            Cancel
+          </Button>,
+        ]}
+      >
+        <FormSelect
+          value={newSessionAgent}
+          onChange={(_e, v) => setNewSessionAgent(v)}
+          aria-label="Select agent"
+        >
+          {agents.map((a) => (
+            <FormSelectOption key={a.name} value={a.name} label={a.name} />
+          ))}
+        </FormSelect>
+      </Modal>
+    </div>
+  );
+};

@@ -1,0 +1,13 @@
+# Test SandboxClaim - requests a Sandbox from the kagenti-agent-sandbox template
+# Tests the extensions controller: template resolution, lifecycle management, NetworkPolicy creation
+apiVersion: extensions.agents.x-k8s.io/v1alpha1
+kind: SandboxClaim
+metadata:
+  name: test-claim-001
+  namespace: team1
+spec:
+  sandboxTemplateRef:
+    name: kagenti-agent-sandbox
+  lifecycle:
+    shutdownPolicy: Delete
+    shutdownTime: "2026-02-25T23:59:59Z"

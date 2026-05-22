@@ -1,0 +1,19 @@
+{{- if and .Values.components.kiali.enabled .Values.openshift }}
+{{- /* Skip Subscription if Kiali operator already exists */}}
+{{- if not (lookup "operators.coreos.com/v1alpha1" "Subscription" "openshift-operators" "kiali-ossm") }}
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  labels:
+    operators.coreos.com/servicemeshoperator3.openshift-operators: ""
+    {{- include "kagenti.labels" . | nindent 4 }}
+  name: kiali-ossm
+  namespace: openshift-operators
+spec:
+  channel: stable
+  installPlanApproval: Automatic
+  name: kiali-ossm
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+{{- end }}
+{{- end }}

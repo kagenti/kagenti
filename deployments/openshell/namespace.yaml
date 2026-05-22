@@ -1,0 +1,11 @@
+# OpenShell System Namespace
+# Hosts the OpenShell Gateway + K8s Compute Driver (in-process).
+# Istio ambient label enables mTLS via ztunnel without sidecars.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshell-system
+  labels:
+    app.kubernetes.io/part-of: kagenti
+    app.kubernetes.io/component: openshell
+    istio.io/dataplane-mode: ambient

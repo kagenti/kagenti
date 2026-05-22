@@ -1,0 +1,74 @@
+global:
+  openshift: false # If running on openshift, set to true
+  spire:
+    recommendations:
+      enabled: true
+    namespaces:
+      create: true
+    ingressControllerType: "ingress-nginx" # If not openshift, and want to expose services, set to a supported option [ingress-nginx]
+    # Update these
+    clusterName: server-cluster
+    trustDomain: $APP_DOMAIN 
+    caSubject:
+      country: SPIFFE
+      organization: TornjakFederationDemo
+      commonName: $APP_DOMAIN
+
+spire-server:
+  ingress:
+    enabled: true
+    #annotations:
+    #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+  federation:
+    enabled: true
+    ingress:
+      enabled: true
+      #annotations:
+      #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+  tornjak:
+    enabled: true
+    ingress:
+      enabled: true
+      #annotations:
+      #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    image:
+      tag: v2.0.0
+  controllerManager:
+    identities:
+      clusterSPIFFEIDs:
+        default:
+          autoPopulateDNSNames: true
+          dnsNameTemplates:
+          - '{{index .PodMeta.Labels "app"}}.$APP_DOMAIN'
+
+spiffe-oidc-discovery-provider:
+  enabled: true
+  ingress:
+    enabled: true
+    annotations: 
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+  tls:
+    spire:
+      enabled: false
+
+tornjak-frontend:
+  enabled: true
+  image:
+    tag: v2.0.0
+  ingress:
+    enabled: true
+    #annotations:
+    #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+  apiServerURL: https://tornjak-backend.$APP_DOMAIN
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 512Mi

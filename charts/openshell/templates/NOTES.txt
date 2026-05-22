@@ -1,0 +1,9 @@
+{{- include "openshell.validateValues" . -}}
+OpenShell gateway deployed for tenant: {{ .Values.tenant }}
+
+Service: openshell-server.{{ .Values.tenant }}.svc.cluster.local:8080
+{{- if eq .Values.ingress.type "istio" }}
+Ingress: Istio TLSRoute ({{ .Values.ingress.host }})
+{{- else if eq .Values.ingress.type "route" }}
+Ingress: OpenShift Route ({{ .Values.ingress.host }})
+{{- end }}

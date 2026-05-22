@@ -1,0 +1,555 @@
+#!/usr/bin/env bash
+#
+# Pre-flight Check for HyperShift CI
+#
+# Verifies all prerequisites for the full HyperShift CI workflow:
+# - Tools: jq, aws, oc, hcp, ansible-playbook, ansible-galaxy
+# - AWS authentication and IAM permissions
+# - OpenShift authentication and cluster-admin permissions
+# - HyperShift CRD installation
+# - OIDC S3 configuration (secret, configmap, operator args)
+# - Pull secret accessibility
+# - Base domain discovery
+#
+# USAGE:
+#   ./.github/scripts/hypershift/preflight-check.sh              # Check only
+#   ./.github/scripts/hypershift/preflight-check.sh --auto-fix   # Check and fix issues
+#
+# OPTIONS:
+#   --auto-fix   Automatically fix detected issues (create OIDC secret/configmap,
+#                patch operator). Requires AWS credentials in environment.
+#
+
+set -euo pipefail
+
+# Parse arguments
+AUTO_FIX=false
+for arg in "$@"; do
+    case $arg in
+        --auto-fix)
+            AUTO_FIX=true
+            ;;
+    esac
+done
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+ERRORS=0
+
+log_info() { echo -e "${BLUE}→${NC} $1"; }
+log_success() { echo -e "${GREEN}✓${NC} $1"; }
+log_warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+log_error() { echo -e "${RED}✗${NC} $1"; ERRORS=$((ERRORS + 1)); }
+
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+if [ "$AUTO_FIX" = true ]; then
+echo "║       HyperShift CI Pre-flight Check (auto-fix enabled)        ║"
+else
+echo "║           HyperShift CI Pre-flight Check                       ║"
+fi
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# ============================================================================
+# 1. TOOLS (for setup script)
+# ============================================================================
+
+log_info "Checking tools for setup..."
+
+# jq
+if command -v jq &>/dev/null; then
+    log_success "jq: $(jq --version)"
+else
+    log_error "jq not found. Install with: brew install jq"
+fi
+
+# AWS CLI
+if command -v aws &>/dev/null; then
+    log_success "aws: $(aws --version 2>&1 | head -1)"
+else
+    log_error "aws CLI not found. Install from: https://aws.amazon.com/cli/"
+fi
+
+# oc CLI
+if command -v oc &>/dev/null; then
+    OC_VERSION=$(oc version --client 2>/dev/null | head -1 || echo "unknown")
+    log_success "oc: $OC_VERSION"
+else
+    log_error "oc CLI not found. Install from: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"
+fi
+
+echo ""
+
+# ============================================================================
+# 1b. TOOLS (for cluster creation)
+# ============================================================================
+
+log_info "Checking tools for cluster creation..."
+
+# hcp CLI (HyperShift)
+if command -v hcp &>/dev/null; then
+    HCP_VERSION=$(hcp version 2>/dev/null | head -1 || echo "unknown")
+    log_success "hcp: $HCP_VERSION"
+else
+    log_warn "hcp CLI not found (will be installed by local-setup.sh from OpenShift console)"
+fi
+
+# ansible-playbook
+if command -v ansible-playbook &>/dev/null; then
+    ANSIBLE_VERSION=$(ansible-playbook --version 2>/dev/null | head -1 || echo "unknown")
+    log_success "ansible-playbook: $ANSIBLE_VERSION"
+else
+    log_error "ansible-playbook not found. Install with: pip install ansible-core"
+fi
+
+# ansible-galaxy
+if command -v ansible-galaxy &>/dev/null; then
+    log_success "ansible-galaxy: available"
+else
+    log_error "ansible-galaxy not found. Install with: pip install ansible-core"
+fi
+
+echo ""
+
+# ============================================================================
+# 2. AWS AUTHENTICATION
+# ============================================================================
+
+log_info "Checking AWS authentication..."
+
+if aws sts get-caller-identity &>/dev/null; then
+    AWS_ARN=$(aws sts get-caller-identity --query Arn --output text)
+    log_success "AWS authenticated: $AWS_ARN"
+else
+    log_error "Not logged into AWS. Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or run: aws configure"
+fi
+
+echo ""
+
+# ============================================================================
+# 3. AWS IAM PERMISSIONS (need admin for setup)
+# ============================================================================
+
+log_info "Checking AWS IAM permissions for setup..."
+
+# Check current identity - warn if using CI user instead of admin
+AWS_ARN=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || echo "")
+if echo "$AWS_ARN" | grep -q "kagenti-hypershift-ci"; then
+    log_error "Logged in as CI user ($AWS_ARN). Setup requires IAM admin."
+    log_info "  Run: unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY"
+    log_info "  Then use admin credentials or default AWS profile"
+else
+    log_success "AWS identity: $AWS_ARN"
+fi
+
+# Check iam:CreatePolicy permission using simulate-principal-policy
+CAN_CREATE_POLICY=$(aws iam simulate-principal-policy \
+    --policy-source-arn "$AWS_ARN" \
+    --action-names iam:CreatePolicy \
+    --query 'EvaluationResults[0].EvalDecision' \
+    --output text 2>/dev/null || echo "error")
+
+if [ "$CAN_CREATE_POLICY" = "allowed" ]; then
+    log_success "AWS IAM: Can create policies"
+elif [ "$CAN_CREATE_POLICY" = "error" ]; then
+    # simulate-principal-policy may not be available, fall back to simple check
+    IAM_CHECK=$(aws iam list-policies --scope Local --max-items 1 2>&1 || true)
+    if echo "$IAM_CHECK" | grep -q "AccessDenied"; then
+        log_error "AWS IAM: Access denied. Need IAM admin permissions"
+    else
+        log_warn "AWS IAM: Cannot verify CreatePolicy permission (will attempt during setup)"
+    fi
+else
+    log_error "AWS IAM: Cannot create policies (got: $CAN_CREATE_POLICY). Need IAM admin"
+fi
+
+# Check iam:CreateRole permission
+CAN_CREATE_ROLE=$(aws iam simulate-principal-policy \
+    --policy-source-arn "$AWS_ARN" \
+    --action-names iam:CreateRole \
+    --query 'EvaluationResults[0].EvalDecision' \
+    --output text 2>/dev/null || echo "error")
+
+if [ "$CAN_CREATE_ROLE" = "allowed" ]; then
+    log_success "AWS IAM: Can create roles"
+elif [ "$CAN_CREATE_ROLE" != "error" ]; then
+    log_error "AWS IAM: Cannot create roles (got: $CAN_CREATE_ROLE). Need IAM admin"
+fi
+
+echo ""
+
+# ============================================================================
+# 4. OPENSHIFT AUTHENTICATION
+# ============================================================================
+
+log_info "Checking OpenShift authentication..."
+
+if oc whoami &>/dev/null; then
+    OC_USER=$(oc whoami)
+    OC_SERVER=$(oc whoami --show-server)
+    log_success "OpenShift authenticated: $OC_USER @ $OC_SERVER"
+else
+    log_error "Not logged into OpenShift. Run: oc login <server>"
+fi
+
+echo ""
+
+# ============================================================================
+# 5. OPENSHIFT PERMISSIONS
+# ============================================================================
+
+log_info "Checking OpenShift permissions..."
+
+# ClusterRole creation
+# Note: "not namespace scoped" warning is expected - ClusterRoles are cluster-wide resources
+CAN_CREATE_CR=$(oc auth can-i create clusterroles 2>&1)
+if echo "$CAN_CREATE_CR" | grep -q "yes"; then
+    log_success "Can create ClusterRoles"
+else
+    log_error "Cannot create ClusterRoles - need cluster-admin"
+fi
+
+# ClusterRoleBinding creation
+# Note: "not namespace scoped" warning is expected - ClusterRoleBindings are cluster-wide resources
+CAN_CREATE_CRB=$(oc auth can-i create clusterrolebindings 2>&1)
+if echo "$CAN_CREATE_CRB" | grep -q "yes"; then
+    log_success "Can create ClusterRoleBindings"
+else
+    log_error "Cannot create ClusterRoleBindings - need cluster-admin"
+fi
+
+# Pull secret access
+if oc auth can-i get secrets -n openshift-config &>/dev/null; then
+    CAN_GET_SECRETS=$(oc auth can-i get secrets -n openshift-config)
+    if [ "$CAN_GET_SECRETS" = "yes" ]; then
+        log_success "Can read secrets in openshift-config namespace"
+    else
+        log_error "Cannot read secrets in openshift-config - need cluster-admin"
+    fi
+else
+    log_error "Cannot check secret read permissions"
+fi
+
+echo ""
+
+# ============================================================================
+# 6. HYPERSHIFT CRD
+# ============================================================================
+
+log_info "Checking HyperShift installation..."
+
+if oc get crd hostedclusters.hypershift.openshift.io &>/dev/null; then
+    log_success "HyperShift CRD found - HyperShift is installed"
+else
+    log_error "HyperShift CRD not found. Is this a HyperShift management cluster?"
+fi
+
+echo ""
+
+# ============================================================================
+# 6b. HYPERSHIFT OPERATOR OIDC CONFIGURATION
+# ============================================================================
+#
+# HyperShift OIDC requires THREE components:
+#   1. Secret: hypershift-operator-oidc-provider-s3-credentials (in hypershift ns)
+#   2. ConfigMap: oidc-storage-provider-s3-config (in kube-public ns, for hcp CLI)
+#   3. Operator deployment: --oidc-storage-provider-s3-* args, volume, volumeMount
+#
+# If AWS credentials are exported, this check will auto-fix all three.
+# ============================================================================
+
+log_info "Checking HyperShift operator OIDC configuration..."
+
+# Get operator args
+OPERATOR_ARGS=$(oc get deployment operator -n hypershift -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || echo "")
+
+if [ -z "$OPERATOR_ARGS" ]; then
+    log_warn "Cannot read HyperShift operator deployment (may need cluster-admin)"
+else
+    # ── Detect bucket/region from all available sources ──────────────
+    OIDC_BUCKET=""
+    OIDC_REGION=""
+
+    # Source 1: Operator deployment args (most authoritative)
+    if echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
+        OIDC_BUCKET=$(echo "$OPERATOR_ARGS" | grep -o 'oidc-storage-provider-s3-bucket-name=[^"]*' | cut -d= -f2 | tr -d '",]' || echo "")
+        OIDC_REGION=$(echo "$OPERATOR_ARGS" | grep -o 'oidc-storage-provider-s3-region=[^"]*' | cut -d= -f2 | tr -d '",]' || echo "")
+    fi
+
+    # Source 2: Kubernetes secret
+    if [ -z "$OIDC_BUCKET" ]; then
+        OIDC_BUCKET=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+            -o jsonpath='{.data.bucket}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+        OIDC_REGION=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift \
+            -o jsonpath='{.data.region}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    fi
+
+    # Source 3: AWS OIDC providers (bucket name embedded in provider URL)
+    if [ -z "$OIDC_BUCKET" ] && command -v aws &>/dev/null && aws sts get-caller-identity &>/dev/null; then
+        log_info "Detecting OIDC bucket from AWS OIDC providers..."
+        OIDC_URLS=$(aws iam list-open-id-connect-providers \
+            --query 'OpenIDConnectProviderList[*].Arn' --output text 2>/dev/null | tr '\t' '\n' || echo "")
+        for arn in $OIDC_URLS; do
+            PROVIDER_URL=$(aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$arn" \
+                --query 'Url' --output text 2>/dev/null || echo "")
+            if echo "$PROVIDER_URL" | grep -qE '\.s3(\.[a-z0-9-]+)?\.amazonaws\.com'; then
+                OIDC_BUCKET=$(echo "$PROVIDER_URL" | sed -E 's|https?://||; s|\.s3(\.[a-z0-9-]+)?\.amazonaws\.com.*||')
+                OIDC_REGION=$(echo "$PROVIDER_URL" | sed -nE 's|.*\.s3\.([a-z0-9-]+)\.amazonaws\.com.*|\1|p')
+                [ -n "$OIDC_BUCKET" ] && break
+            fi
+        done
+    fi
+
+    OIDC_REGION="${OIDC_REGION:-${AWS_REGION:-us-east-1}}"
+
+    if [ -z "$OIDC_BUCKET" ]; then
+        log_error "Cannot determine OIDC S3 bucket from operator, secret, or AWS"
+        echo "  Export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and re-run."
+    else
+        OIDC_NEEDS_FIX=false
+
+        # ── Check 1: Operator deployment args ──────────────────────────
+        if echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
+            log_success "HyperShift operator has OIDC S3 configured (bucket: $OIDC_BUCKET)"
+        else
+            OIDC_NEEDS_FIX=true
+            log_warn "HyperShift operator MISSING OIDC S3 args"
+        fi
+
+        # ── Check 2: OIDC secret ──────────────────────────────────────
+        OIDC_SECRET_EXISTS=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n hypershift -o name 2>/dev/null || echo "")
+        if [ -n "$OIDC_SECRET_EXISTS" ]; then
+            log_success "OIDC secret exists in hypershift namespace"
+        else
+            OIDC_NEEDS_FIX=true
+            log_warn "OIDC secret missing in hypershift namespace"
+        fi
+
+        # ── Check 3: kube-public ConfigMap (required by hcp CLI) ──────
+        OIDC_CM_EXISTS=$(oc get configmap oidc-storage-provider-s3-config -n kube-public -o name 2>/dev/null || echo "")
+        if [ -n "$OIDC_CM_EXISTS" ]; then
+            log_success "OIDC ConfigMap exists in kube-public namespace"
+        else
+            OIDC_NEEDS_FIX=true
+            log_warn "OIDC ConfigMap missing in kube-public namespace (required by hcp CLI)"
+        fi
+
+        # ── Fix or report OIDC issues ────────────────────────────────
+        if [ "$OIDC_NEEDS_FIX" = true ]; then
+            if [ "$AUTO_FIX" = true ]; then
+                # Auto-fix mode: create/patch resources directly
+                if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+                    log_info "Auto-fixing OIDC configuration (bucket: $OIDC_BUCKET, region: $OIDC_REGION)..."
+
+                    # Fix 1: Create secret if missing
+                    if [ -z "$OIDC_SECRET_EXISTS" ]; then
+                        OIDC_CREDS_FILE=$(mktemp)
+                        cat > "$OIDC_CREDS_FILE" <<CREDEOF
+[default]
+aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+CREDEOF
+                        oc create secret generic hypershift-operator-oidc-provider-s3-credentials \
+                            -n hypershift \
+                            --from-literal=bucket="$OIDC_BUCKET" \
+                            --from-literal=region="$OIDC_REGION" \
+                            --from-file=credentials="$OIDC_CREDS_FILE"
+                        rm -f "$OIDC_CREDS_FILE"
+                        log_success "Created OIDC secret"
+                    fi
+
+                    # Fix 2: Create ConfigMap if missing
+                    if [ -z "$OIDC_CM_EXISTS" ]; then
+                        oc create configmap oidc-storage-provider-s3-config \
+                            -n kube-public \
+                            --from-literal=name="$OIDC_BUCKET" \
+                            --from-literal=region="$OIDC_REGION"
+                        log_success "Created OIDC ConfigMap in kube-public"
+                    fi
+
+                    # Fix 3: Patch operator if args missing (only add components not already present)
+                    if ! echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name"; then
+                        OIDC_PATCH_OPS="["
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-bucket-name=$OIDC_BUCKET\"},"
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-region=$OIDC_REGION\"},"
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials\"}"
+
+                        # Check if volume/mount already exist (MCE may add them during upgrade)
+                        OPERATOR_JSON=$(oc get deployment operator -n hypershift -o json 2>/dev/null)
+                        HAS_VOLUME=$(echo "$OPERATOR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if any(v.get('name')=='oidc-storage-provider-s3-creds' for v in d['spec']['template']['spec'].get('volumes',[])) else 'no')" 2>/dev/null || echo "no")
+                        HAS_MOUNT=$(echo "$OPERATOR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if any(vm.get('name')=='oidc-storage-provider-s3-creds' for vm in d['spec']['template']['spec']['containers'][0].get('volumeMounts',[])) else 'no')" 2>/dev/null || echo "no")
+
+                        if [ "$HAS_VOLUME" != "yes" ]; then
+                            OIDC_PATCH_OPS="${OIDC_PATCH_OPS},{\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"oidc-storage-provider-s3-creds\", \"secret\": {\"defaultMode\": 420, \"secretName\": \"hypershift-operator-oidc-provider-s3-credentials\"}}}"
+                        fi
+                        if [ "$HAS_MOUNT" != "yes" ]; then
+                            OIDC_PATCH_OPS="${OIDC_PATCH_OPS},{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/volumeMounts/-\", \"value\": {\"mountPath\": \"/etc/oidc-storage-provider-s3-creds\", \"name\": \"oidc-storage-provider-s3-creds\"}}"
+                        fi
+                        OIDC_PATCH_OPS="${OIDC_PATCH_OPS}]"
+
+                        oc patch deployment operator -n hypershift --type='json' -p="$OIDC_PATCH_OPS"
+                        log_info "Waiting for operator rollout..."
+                        if oc rollout status deployment/operator -n hypershift --timeout=120s; then
+                            log_success "Operator OIDC configuration restored"
+                        else
+                            log_warn "Operator rollout still in progress (patch was applied, will finish shortly)"
+                            log_info "  Verify: oc rollout status deployment/operator -n hypershift"
+                        fi
+                    fi
+                else
+                    log_error "OIDC auto-fix requires AWS credentials"
+                    echo "  Export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and re-run."
+                fi
+            else
+                # Check-only mode: report issues and suggest --auto-fix
+                log_error "OIDC configuration incomplete"
+                echo ""
+                echo "  Detected bucket: $OIDC_BUCKET (region: $OIDC_REGION)"
+                [ -z "$OIDC_SECRET_EXISTS" ] && echo "  ✗ Missing: OIDC secret in hypershift namespace"
+                [ -z "$OIDC_CM_EXISTS" ]      && echo "  ✗ Missing: OIDC ConfigMap in kube-public namespace"
+                ! echo "$OPERATOR_ARGS" | grep -q "oidc-storage-provider-s3-bucket-name" && \
+                                                 echo "  ✗ Missing: OIDC args in operator deployment"
+                echo ""
+                echo "  To auto-fix, re-run with:"
+                echo "    $0 --auto-fix"
+                echo ""
+                echo "  Or fix manually:"
+                if [ -z "$OIDC_SECRET_EXISTS" ]; then
+                    echo "    oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n hypershift \\"
+                    echo "      --from-literal=bucket=$OIDC_BUCKET --from-literal=region=$OIDC_REGION \\"
+                    echo "      --from-file=credentials=<aws-credentials-file>"
+                fi
+                if [ -z "$OIDC_CM_EXISTS" ]; then
+                    echo "    oc create configmap oidc-storage-provider-s3-config -n kube-public \\"
+                    echo "      --from-literal=name=$OIDC_BUCKET --from-literal=region=$OIDC_REGION"
+                fi
+                echo ""
+            fi
+        fi
+    fi
+fi
+
+echo ""
+
+# ============================================================================
+# 7. PULL SECRET
+# ============================================================================
+
+log_info "Checking pull secret accessibility..."
+
+PULL_SECRET_DATA=$(oc get secret pull-secret -n openshift-config -o jsonpath='{.data.\.dockerconfigjson}' 2>/dev/null || echo "")
+if [ -n "$PULL_SECRET_DATA" ]; then
+    # Decode and validate JSON
+    if echo "$PULL_SECRET_DATA" | base64 -d 2>/dev/null | jq -e '.auths' &>/dev/null; then
+        REGISTRY_COUNT=$(echo "$PULL_SECRET_DATA" | base64 -d | jq -r '.auths | keys | length')
+        log_success "Pull secret valid ($REGISTRY_COUNT registries configured)"
+
+        # Show registries
+        REGISTRIES=$(echo "$PULL_SECRET_DATA" | base64 -d | jq -r '.auths | keys | join(", ")')
+        log_info "  Registries: $REGISTRIES"
+    else
+        log_error "Pull secret exists but is not valid JSON"
+    fi
+else
+    log_error "Cannot read pull secret from openshift-config namespace"
+fi
+
+echo ""
+
+# ============================================================================
+# 8. BASE DOMAIN
+# ============================================================================
+
+log_info "Checking base domain discovery..."
+
+APPS_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}' 2>/dev/null || echo "")
+if [ -n "$APPS_DOMAIN" ]; then
+    BASE_DOMAIN="${APPS_DOMAIN#apps.}"
+    log_success "Base domain: $BASE_DOMAIN (from ingress config)"
+else
+    # Try hosted clusters
+    HC_DOMAIN=$(oc get hostedclusters -A -o jsonpath='{.items[0].spec.dns.baseDomain}' 2>/dev/null || echo "")
+    if [ -n "$HC_DOMAIN" ]; then
+        BASE_DOMAIN="$HC_DOMAIN"
+        log_success "Base domain: $BASE_DOMAIN (from existing hosted cluster)"
+    else
+        log_warn "Could not auto-detect base domain. You may need to set it manually."
+        BASE_DOMAIN=""
+    fi
+fi
+
+echo ""
+
+# ============================================================================
+# 9. ROUTE53 PUBLIC HOSTED ZONE
+# ============================================================================
+
+log_info "Checking Route53 public hosted zone..."
+
+if [ -n "$BASE_DOMAIN" ]; then
+    # HyperShift requires a PUBLIC hosted zone for the base domain
+    # Check if a public hosted zone exists for this domain or a parent domain
+    ZONE_FOUND=""
+    DOMAIN_TO_CHECK="$BASE_DOMAIN"
+
+    # Try the domain and progressively shorter parent domains
+    while [ -n "$DOMAIN_TO_CHECK" ] && [ -z "$ZONE_FOUND" ]; do
+        # List hosted zones and check for a public zone matching this domain
+        ZONE_INFO=$(aws route53 list-hosted-zones-by-name --dns-name "$DOMAIN_TO_CHECK" --max-items 1 \
+            --query "HostedZones[?Name=='${DOMAIN_TO_CHECK}.' && Config.PrivateZone==\`false\`].{Name:Name,Id:Id}" \
+            --output text 2>/dev/null || echo "")
+
+        if [ -n "$ZONE_INFO" ] && [ "$ZONE_INFO" != "None" ]; then
+            ZONE_FOUND="$DOMAIN_TO_CHECK"
+            log_success "Route53 public hosted zone found: $ZONE_FOUND"
+        else
+            # Try parent domain (strip first segment)
+            if [[ "$DOMAIN_TO_CHECK" == *.* ]]; then
+                DOMAIN_TO_CHECK="${DOMAIN_TO_CHECK#*.}"
+            else
+                DOMAIN_TO_CHECK=""
+            fi
+        fi
+    done
+
+    if [ -z "$ZONE_FOUND" ]; then
+        log_error "No PUBLIC Route53 hosted zone found for $BASE_DOMAIN"
+        log_info "  HyperShift requires a public hosted zone for DNS records"
+        log_info "  Available public zones:"
+        aws route53 list-hosted-zones --query "HostedZones[?Config.PrivateZone==\`false\`].Name" --output text 2>/dev/null | tr '\t' '\n' | sed 's/\.$//; s/^/    /' || true
+        log_info "  Set BASE_DOMAIN in .env.kagenti-$USER (or .env.hypershift-ci) to match an available zone"
+    elif [ "$ZONE_FOUND" != "$BASE_DOMAIN" ]; then
+        log_warn "Auto-detected BASE_DOMAIN=$BASE_DOMAIN but public zone is: $ZONE_FOUND"
+        log_info "  You may need to update BASE_DOMAIN in .env.kagenti-$USER (or .env.hypershift-ci) to: $ZONE_FOUND"
+    fi
+else
+    log_warn "Cannot check Route53 - no base domain detected"
+fi
+
+echo ""
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+
+echo "╔════════════════════════════════════════════════════════════════╗"
+if [ $ERRORS -eq 0 ]; then
+    echo -e "║  ${GREEN}All checks passed!${NC} Ready to run setup script.              ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Run the setup script:"
+    echo "  ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh"
+    echo ""
+    exit 0
+else
+    echo -e "║  ${RED}$ERRORS error(s) found.${NC} Please fix before running setup.        ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    exit 1
+fi

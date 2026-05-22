@@ -1,0 +1,70 @@
+[MAIN]
+# Specify a score threshold under which the program will exit with error.
+fail-under=8.0
+
+# Ignore import errors since dependencies may not be installed during lint
+extension-pkg-whitelist=pydantic
+
+[MESSAGES CONTROL]
+# Disable the following checks:
+# E0401: import-error (dependencies not installed during lint)
+# R0903: too-few-public-methods (Pydantic models don't need methods)
+# R0801: duplicate-code (some duplication is acceptable in routers)
+# W1203: logging-fstring-interpolation (f-strings in logging are fine for this project)
+# R0913: too-many-arguments (FastAPI handlers often have many params)
+# R0917: too-many-positional-arguments (FastAPI handlers often have many params)
+# C0301: line-too-long (handled by formatter)
+# W0707: raise-missing-from (acceptable in HTTP exception handlers)
+# C2801: unnecessary-dunder-call (async context managers)
+# W1309: f-string-without-interpolation (minor style issue)
+# R1705: no-else-return (style preference)
+# W0621: redefined-outer-name (common in FastAPI lifespan)
+# W0613: unused-argument (common in FastAPI lifespan)
+# R0914: too-many-locals (complex functions in routers)
+# R0912: too-many-branches (complex async handlers)
+# R0915: too-many-statements (complex async handlers)
+# R1702: too-many-nested-blocks (async streaming code)
+# R1724: no-else-continue (style preference)
+# C0415: import-outside-toplevel (lazy imports for optional deps)
+# W0718: broad-exception-caught (acceptable in error handlers)
+# C0116: missing-function-docstring (property methods)
+# W0603: global-statement (used for singleton pattern)
+# E1101: no-member (false positives with async generators)
+# C0103: invalid-name (private module-level variables)
+disable=
+    E0401,
+    R0903,
+    R0801,
+    W1203,
+    R0913,
+    R0917,
+    C0301,
+    W0707,
+    C2801,
+    W1309,
+    R1705,
+    W0621,
+    W0613,
+    R0914,
+    R0912,
+    R0915,
+    R1702,
+    R1724,
+    C0415,
+    W0718,
+    C0116,
+    W0603,
+    E1101,
+    C0103
+
+[FORMAT]
+# Maximum number of characters on a single line.
+max-line-length=120
+
+[DESIGN]
+# Maximum number of arguments for function / method
+max-args=10
+
+[SIMILARITIES]
+# Minimum lines number of a similarity.
+min-similarity-lines=10

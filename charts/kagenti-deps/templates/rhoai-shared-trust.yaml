@@ -1,0 +1,100 @@
+{{- if and .Values.components.rhoai.enabled .Values.openshift (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "certificates.cert-manager.io") (lookup "v1" "Service" "cert-manager" "cert-manager-webhook") }}
+{{- /*
+  Istio Multi-Mesh Shared Trust via cert-manager
+
+  When RHOAI is installed alongside Kagenti, two Istio control planes exist
+  (default + openshift-gateway) with different self-signed CAs. This creates
+  a shared root CA so both istiods trust each other's workload certificates.
+
+  cert-manager generates:
+  1. A self-signed root CA
+  2. An intermediate CA Certificate for each istiod namespace
+
+  The installer transforms these into Istio cacerts format
+  and restarts both istiods to pick up the shared CA.
+*/}}
+---
+# Step 1: Self-signed issuer to bootstrap the root CA
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: istio-mesh-root-selfsigned
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+# Step 2: Root CA certificate (self-signed)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: istio-mesh-root-ca
+  namespace: cert-manager
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: istio-mesh-root-ca
+  duration: 87600h
+  renewBefore: 720h
+  secretName: istio-mesh-root-ca-secret
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: istio-mesh-root-selfsigned
+    kind: ClusterIssuer
+---
+# Step 3: CA issuer using the root CA (signs intermediate certs)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: istio-mesh-ca
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: istio-mesh-root-ca-secret
+---
+# Step 4: Intermediate CA for Kagenti istiod (istio-system)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: istio-cacerts-default
+  namespace: istio-system
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: istio-ca-default
+  duration: 8760h
+  renewBefore: 720h
+  secretName: istio-cacerts-default-cert
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: istio-mesh-ca
+    kind: ClusterIssuer
+---
+# Step 5: Intermediate CA for RHOAI istiod (openshift-ingress)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: istio-cacerts-openshift-gateway
+  namespace: openshift-ingress
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: istio-ca-openshift-gateway
+  duration: 8760h
+  renewBefore: 720h
+  secretName: istio-cacerts-og-cert
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: istio-mesh-ca
+    kind: ClusterIssuer
+{{- end }}

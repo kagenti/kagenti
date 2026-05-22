@@ -1,0 +1,22 @@
+# Issue Self-Assign
+#
+# Thin caller for the org-wide reusable self-assign workflow.
+# Configuration and defaults are managed centrally in kagenti/.github.
+#
+# Reference: https://github.com/kagenti/.github/blob/main/.github/workflows/self-assign-reusable.yml
+#
+name: Issue self-assign
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  self-assign:
+    uses: kagenti/.github/.github/workflows/self-assign-reusable.yml@main
+    secrets:
+      ISSUE_ASSIGN_TOKEN: ${{ secrets.ISSUE_ASSIGN_TOKEN }}

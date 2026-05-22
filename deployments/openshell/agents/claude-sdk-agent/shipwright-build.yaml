@@ -1,0 +1,22 @@
+# Shipwright Build for Claude SDK agent (OpenShell PoC)
+apiVersion: shipwright.io/v1beta1
+kind: Build
+metadata:
+  name: claude-sdk-agent
+  namespace: team1
+  labels:
+    kagenti.io/type: agent
+    app.kubernetes.io/name: claude-sdk-agent
+spec:
+  source:
+    type: Git
+    git:
+      url: https://github.com/kagenti/kagenti
+      revision: feat/openshell-poc
+    contextDir: deployments/openshell/agents/claude-sdk-agent
+  strategy:
+    name: buildah
+    kind: ClusterBuildStrategy
+  output:
+    image: image-registry.openshift-image-registry.svc:5000/team1/claude-sdk-agent:latest
+    pushSecret: builder-dockercfg

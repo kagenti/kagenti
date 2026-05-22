@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: keycloak
+  namespace: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  serviceName: keycloak-service
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name:  keycloak
+          image: docker.io/maiariyer/keycloak:poc0
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin
+            - name: KC_FEATURES
+              value: token-exchange,admin-fine-grained-authz

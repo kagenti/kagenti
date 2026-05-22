@@ -1,0 +1,28 @@
+name: spellcheck
+on:
+  # So we can trigger manually if needed
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "release-*"
+    paths:
+      - ".github/workflows/spellcheck_action.yaml"
+      - ".github/spellcheck/.spellcheck.yml"
+      - ".github/spellcheck/.wordlist.yml"
+
+jobs:
+  spellchecker:
+    # disable spellcheck with 'false' value.
+    if: false
+    name: Spellcheck
+    runs-on: ubuntu-latest
+    steps:
+    # The checkout step
+    - uses: actions/checkout@v4
+    - uses: rojopolis/spellcheck-github-actions@v0
+      name: Spellcheck
+      with:
+        config_path: .github/spellcheck/.spellcheck.yml # put path to configuration file here
+        task_name: Markdown
+#         source_files: docs/content/*

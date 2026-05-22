@@ -1,0 +1,418 @@
+name: E2E OCP 4.20.21 (HyperShift)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kagenti/**'
+      - 'charts/**'
+      - 'deployments/**'
+      - '.github/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'kagenti/ui-v2/package.json'
+      - 'kagenti/ui-v2/package-lock.json'
+  # NOTE: For PR E2E testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
+  # This workflow only handles push to main and manual dispatch.
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'Custom cluster name (optional)'
+        required: false
+        default: ''
+      ocp_version:
+        description: 'OpenShift version'
+        required: false
+        default: '4.20.21'
+      skip_destroy:
+        description: 'Skip cluster destruction (for debugging)'
+        required: false
+        type: boolean
+        default: false
+      max_parallel:
+        description: 'Maximum parallel CI runs (slot count)'
+        required: false
+        default: '6'
+      dep_builds:
+        description: 'JSON array of dependency builds, e.g. [{"repo":"kagenti/kagenti-extensions","ref":"fix/branch"}]'
+        required: false
+        default: '[]'
+
+# Only allow one run per branch to avoid resource conflicts
+concurrency:
+  group: e2e-hypershift-${{ github.ref }}
+  cancel-in-progress: true
+
+# Explicit permissions - principle of least privilege
+permissions:
+  contents: read
+
+# Version tracking - keep workflow name in sync with default OCP_VERSION
+env:
+  # Cluster suffix - for push to main uses run number, for workflow_dispatch uses user input
+  # For PR testing, use /run-e2e comment trigger (see e2e-hypershift-pr.yaml)
+  CLUSTER_SUFFIX: ${{ inputs.cluster_name || github.run_number }}
+  OCP_VERSION: ${{ inputs.ocp_version || '4.20.21' }}  # Update workflow name when changing default
+  # Slot management for parallel CI runs
+  MAX_SLOTS: ${{ inputs.max_parallel || '6' }}
+  SLOT_TIMEOUT: '60'  # Minutes to wait for an available slot
+
+jobs:
+  # ============================================================================
+  # E2E Tests Job - This is the main check that determines PR mergeability
+  # ============================================================================
+  e2e-ocp-kagenti-operator:
+    name: Deploy & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    # This workflow runs on push to main or manual dispatch only.
+    # For PR testing, use /run-e2e comment (see e2e-hypershift-pr.yaml)
+
+    outputs:
+      slot_id: ${{ steps.acquire-slot.outputs.slot_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Validate secrets are configured
+        run: bash .github/scripts/hypershift/ci/00-validate-secrets.sh
+        env:
+          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          PULL_SECRET: ${{ secrets.PULL_SECRET }}
+          BASE_DOMAIN: ${{ secrets.BASE_DOMAIN }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+
+      - name: Setup credentials
+        run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
+        env:
+          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          PULL_SECRET: ${{ secrets.PULL_SECRET }}
+
+      - name: Install tools
+        run: bash .github/scripts/hypershift/ci/20-install-tools.sh
+        env:
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version: '1.24'
+          cache: false  # No go.sum at repo root; hcp CLI builds in /tmp
+
+      - name: Build hcp CLI from source
+        run: bash .github/scripts/hypershift/ci/30-build-hcp-cli.sh
+
+      - name: Clone hypershift-automation
+        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
+
+      - name: Verify management cluster access
+        run: bash .github/scripts/hypershift/ci/50-verify-mgmt-access.sh
+
+      # --- Slot Management (for parallel CI runs) ---
+      - name: Cleanup stale CI slots
+        run: bash .github/scripts/hypershift/ci/slots/cleanup-stale.sh
+        continue-on-error: true  # Don't fail if cleanup has issues
+
+      - name: Acquire CI slot
+        id: acquire-slot
+        run: bash .github/scripts/hypershift/ci/slots/acquire.sh
+        env:
+          MAX_SLOTS: ${{ env.MAX_SLOTS }}
+          SLOT_TIMEOUT: ${{ env.SLOT_TIMEOUT }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Check cluster capacity
+        run: bash .github/scripts/hypershift/ci/slots/check-capacity.sh
+      # --- End Slot Management ---
+
+      - name: Cleanup any existing cluster (from cancelled runs)
+        run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Create HyperShift cluster
+        id: create-cluster
+        run: bash .github/scripts/hypershift/create-cluster.sh "${{ env.CLUSTER_SUFFIX }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+          BASE_DOMAIN: ${{ secrets.BASE_DOMAIN }}
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+
+      - name: Deploy Kagenti
+        if: success()
+        run: bash .github/scripts/hypershift/ci/70-deploy-kagenti.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          KAGENTI_DEP_BUILDS: ${{ inputs.dep_builds }}
+
+      - name: Build platform images from source (backend, ui-v2, agent-oauth-secret)
+        if: success()
+        run: bash .github/scripts/common/26-build-platform-images.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Build ui-oauth-secret image from PR and restart job
+        if: success()
+        run: bash .github/scripts/common/25-build-oauth-secret-image.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Build mlflow-oauth-secret image from PR and restart job
+        if: success()
+        run: bash .github/scripts/common/26-build-mlflow-oauth-secret-image.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Set up Python
+        if: success()
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.11'
+
+      - name: Print version matrix
+        if: success()
+        run: bash .github/scripts/common/86-print-version-matrix.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Pre-flight checks
+        if: success()
+        run: bash .github/scripts/common/90-preflight-checks.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Run backend E2E tests
+        if: success()
+        run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
+
+      # ── Token Exchange E2E (community KC = fatal, RHBK = non-fatal) ──
+      - name: Setup Keycloak realm for token exchange
+        if: success()
+        run: bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Enable kagenti in token exchange namespace
+        if: success()
+        run: bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          PLATFORM: ocp
+
+      - name: Setup SPIFFE Identity Provider
+        if: success()
+        run: bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          PLATFORM: ocp
+
+      - name: Deploy token exchange test workloads
+        if: success()
+        run: bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Enable SPIFFE identity for token exchange
+        if: success()
+        run: bash .github/scripts/token-exchange/56-enable-spiffe.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          PLATFORM: ocp
+
+      - name: Configure FGAP token exchange
+        if: success()
+        run: bash .github/scripts/token-exchange/60-configure-fgap.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Wait for token exchange workloads to stabilize
+        if: success()
+        run: |
+          sleep 30
+          kubectl rollout status deployment/tx-e2e-agent -n tx-e2e --timeout=300s || true
+          kubectl rollout status deployment/tx-e2e-tool -n tx-e2e --timeout=300s || true
+          for i in $(seq 1 30); do
+            CREDS=$(kubectl get secrets -n tx-e2e -o name | grep -c kagenti-keycloak-client-credentials || echo "0")
+            [ "$CREDS" -ge 2 ] && echo "Credentials ready ($CREDS)" && break
+            echo "Waiting for credentials ($CREDS/2)..."
+            sleep 10
+          done
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Run token exchange E2E tests (community KC — fatal)
+        if: success()
+        run: bash .github/scripts/token-exchange/80-run-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          KEYCLOAK_PROVIDER: community
+          PLATFORM: ocp
+
+      - name: Install RHBK and re-run token exchange tests (non-fatal)
+        if: success()
+        continue-on-error: true
+        run: |
+          # Cleanup community phase
+          kubectl delete namespace tx-e2e --ignore-not-found --timeout=60s || true
+          sleep 10
+          # Install RHBK
+          bash .github/scripts/token-exchange/35-install-keycloak-ocp.sh rhbk
+          # Re-run full setup + tests
+          bash .github/scripts/token-exchange/40-setup-keycloak-realm.sh
+          bash .github/scripts/token-exchange/50-enable-kagenti-ns.sh
+          bash .github/scripts/token-exchange/55-setup-spiffe-idp.sh
+          bash .github/scripts/token-exchange/70-deploy-test-workloads.sh
+          bash .github/scripts/token-exchange/56-enable-spiffe.sh
+          bash .github/scripts/token-exchange/60-configure-fgap.sh
+          sleep 30
+          kubectl rollout status deployment/tx-e2e-agent -n tx-e2e --timeout=300s || true
+          kubectl rollout status deployment/tx-e2e-tool -n tx-e2e --timeout=300s || true
+          bash .github/scripts/token-exchange/80-run-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          KEYCLOAK_PROVIDER: rhbk
+          PLATFORM: ocp
+          FORCE: "true"
+      # ── End Token Exchange E2E ───────────────────────────────────────────
+
+      - name: Run UI E2E tests
+        if: success()
+        run: bash .github/scripts/common/92-run-ui-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      # Security: Scan deployed cluster for vulnerabilities and misconfigurations
+      - name: Run Trivy Kubernetes cluster scan
+        if: success()
+        run: |
+          echo "=== Trivy Kubernetes Cluster Security Scan ==="
+          echo ""
+          echo "Scanning deployed Kagenti platform for security issues..."
+          echo ""
+
+          # Install Trivy
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+          # Scan Kagenti namespaces for misconfigurations
+          echo "--- Scanning kagenti-system namespace ---"
+          trivy k8s --kubeconfig "$KUBECONFIG" \
+            --include-namespaces kagenti-system \
+            --severity HIGH,CRITICAL \
+            --report summary \
+            --timeout 10m || true
+
+          echo ""
+          echo "--- Scanning keycloak namespace ---"
+          trivy k8s --kubeconfig "$KUBECONFIG" \
+            --include-namespaces keycloak \
+            --severity HIGH,CRITICAL \
+            --report summary \
+            --timeout 5m || true
+
+          echo ""
+          echo "--- Scanning mcp-system namespace ---"
+          trivy k8s --kubeconfig "$KUBECONFIG" \
+            --include-namespaces mcp-system \
+            --severity HIGH,CRITICAL \
+            --report summary \
+            --timeout 5m || true
+
+          echo ""
+          echo "NOTE: Trivy k8s scan is informational. Issues are logged but don't fail the build."
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+        continue-on-error: true
+
+      - name: Collect cluster info on failure
+        if: failure()
+        run: bash .github/scripts/hypershift/ci/85-collect-failure-info.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+  # ============================================================================
+  # Cleanup Job - Runs after E2E tests, doesn't block PR merge
+  # ============================================================================
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [e2e-ocp-kagenti-operator]
+    # Always run cleanup to destroy any resources with this PR's CLUSTER_SUFFIX
+    # This handles: failed runs, cancelled runs, and stale resources from previous runs
+    # Only skip if skip_destroy is explicitly set (for debugging)
+    if: always() && !inputs.skip_destroy
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Setup credentials
+        run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
+        env:
+          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          PULL_SECRET: ${{ secrets.PULL_SECRET }}
+
+      - name: Install tools
+        run: bash .github/scripts/hypershift/ci/20-install-tools.sh
+        env:
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version: '1.24'
+          cache: false  # No go.sum at repo root; hcp CLI builds in /tmp
+
+      - name: Build hcp CLI from source
+        run: bash .github/scripts/hypershift/ci/30-build-hcp-cli.sh
+
+      - name: Clone hypershift-automation
+        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
+
+      - name: Destroy HyperShift cluster
+        # Use the same cleanup script as pre-cleanup - it handles CLUSTER_SUFFIX
+        # This ensures cleanup works even if e2e job failed before setting outputs
+        run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Release CI slot
+        if: always()
+        run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ needs.e2e-ocp-kagenti-operator.outputs.slot_id }}"
+
+      - name: Summary
+        if: always()
+        run: bash .github/scripts/hypershift/ci/99-summary.sh
+        env:
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          E2E_RESULT: ${{ needs.e2e-ocp-kagenti-operator.result }}
+          SKIP_DESTROY: ${{ inputs.skip_destroy || 'false' }}

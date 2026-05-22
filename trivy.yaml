@@ -1,0 +1,16 @@
+# Trivy configuration for Kagenti
+# See: https://aquasecurity.github.io/trivy/latest/docs/references/configuration/config-file/
+
+misconfiguration:
+  # Trusted container image registries for KSV-0125 checks.
+  # These registries are used in Kagenti deployments:
+  # - registry.redhat.io: Red Hat certified images (PostgreSQL, UBI)
+  # - image-registry.openshift-image-registry.svc:5000: OpenShift internal registry for on-cluster builds
+  # - ghcr.io: GitHub Container Registry (upstream images)
+  # - docker.io: Docker Hub (standard images)
+  kubernetes:
+    trusted-registries:
+      - "docker.io"
+      - "ghcr.io"
+      - "registry.redhat.io"
+      - "image-registry.openshift-image-registry.svc:5000"

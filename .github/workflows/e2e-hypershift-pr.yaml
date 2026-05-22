@@ -1,0 +1,576 @@
+# E2E HyperShift Tests for Pull Requests (Comment Triggered)
+#
+# This workflow runs E2E tests on PRs when a maintainer comments /run-e2e
+# It passes OpenSSF Scorecard's Dangerous-Workflow check by using issue_comment
+# instead of pull_request_target.
+#
+# Usage:
+#   - Maintainer reviews PR code for security
+#   - Maintainer comments: /run-e2e
+#   - Workflow adds 'safe-to-test' label and runs E2E
+#   - If new commits are pushed, label is auto-removed (see remove-safe-to-test.yaml)
+#   - Maintainer must comment /run-e2e again after reviewing new commits
+#
+# Security:
+#   - Only users with write permission can trigger
+#   - Label serves as visual indicator of approval status
+#   - New commits require re-approval (TOCTOU protection)
+#
+name: E2E OCP 4.20.21 (HyperShift PR)
+
+on:
+  issue_comment:
+    types: [created]
+
+# No workflow-level permissions - jobs define their own
+permissions: {}
+
+# Version tracking - keep workflow name in sync with OCP_VERSION
+env:
+  OCP_VERSION: '4.20.21'  # Update workflow name when changing default
+  MAX_SLOTS: '6'
+  SLOT_TIMEOUT: '60'
+
+jobs:
+  # ==========================================================================
+  # Authorization: Validate comment and user permission
+  # ==========================================================================
+  authorize:
+    name: Authorize
+    runs-on: ubuntu-latest
+    # Only run for /run-e2e (not /run-e2e-openshell which is a different workflow)
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/run-e2e') &&
+      !startsWith(github.event.comment.body, '/run-e2e-')
+    permissions:
+      pull-requests: write
+      contents: read
+      statuses: write
+    outputs:
+      authorized: ${{ steps.check-permission.outputs.has-permission }}
+      pr_number: ${{ steps.pr-info.outputs.number }}
+      pr_sha: ${{ steps.pr-info.outputs.sha }}
+      cluster_suffix: ${{ steps.pr-info.outputs.cluster_suffix }}
+      dep_builds: ${{ steps.parse-options.outputs.dep_builds }}
+    steps:
+      - name: Check user write permission
+        id: check-permission
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const username = context.payload.comment.user.login;
+            console.log(`Checking permission for user: ${username}`);
+
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: username
+            });
+
+            const permission = data.permission;
+            const hasWriteAccess = ['admin', 'write'].includes(permission);
+            console.log(`User ${username} has permission: ${permission} (write access: ${hasWriteAccess})`);
+
+            core.setOutput('has-permission', hasWriteAccess.toString());
+            core.setOutput('check-result', hasWriteAccess.toString());
+
+            if (!hasWriteAccess) {
+              core.setFailed(`User ${username} does not have write permission (has: ${permission})`);
+            }
+
+      - name: Get PR information
+        id: pr-info
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('number', pr.number);
+            core.setOutput('sha', pr.head.sha);
+            core.setOutput('cluster_suffix', `pr${pr.number}`);
+            console.log(`PR #${pr.number} at commit ${pr.head.sha}`);
+
+      - name: Parse command options
+        id: parse-options
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const commentBody = context.payload.comment.body;
+            console.log('Parsing comment:', commentBody);
+
+            // Allowed repos (security: only build from trusted orgs/repos)
+            const ALLOWED_REPOS = ['kagenti/kagenti-extensions', 'kagenti/kagenti-operator'];
+            // Allowed ref pattern: alphanumeric, dots, dashes, slashes, underscores
+            const REF_PATTERN = /^[\w.\-\/]+$/;
+
+            const builds = [];
+
+            // Parse --build org/repo=ref flags
+            // Examples:
+            //   /run-e2e --build kagenti/kagenti-extensions=fix/my-branch
+            //   /run-e2e --build kagenti/kagenti-extensions=pr/234
+            //   /run-e2e --build kagenti/kagenti-extensions=pr/234 --build kagenti/kagenti-operator=feat/new-crd
+            const buildPattern = /--build\s+(\S+)/g;
+            let match;
+            while ((match = buildPattern.exec(commentBody)) !== null) {
+              const spec = match[1];
+              const eqIdx = spec.indexOf('=');
+              if (eqIdx === -1) {
+                core.warning(`Invalid --build format: ${spec} (expected org/repo=ref)`);
+                continue;
+              }
+              const repo = spec.substring(0, eqIdx);
+              const ref = spec.substring(eqIdx + 1);
+
+              if (!ALLOWED_REPOS.includes(repo)) {
+                core.warning(`Repo not in allow list: ${repo} (allowed: ${ALLOWED_REPOS.join(', ')})`);
+                continue;
+              }
+              if (!REF_PATTERN.test(ref)) {
+                core.warning(`Invalid ref: ${ref}`);
+                continue;
+              }
+
+              console.log(`Parsed build: repo=${repo} ref=${ref}`);
+              builds.push({ repo, ref });
+            }
+
+            // Legacy: --extensions-ref maps to kagenti/kagenti-extensions build
+            if (builds.length === 0) {
+              const legacyMatch = commentBody.match(/--extensions-ref\s+(\S+)/);
+              if (legacyMatch) {
+                const ref = legacyMatch[1];
+                if (REF_PATTERN.test(ref)) {
+                  console.log(`Legacy --extensions-ref: ${ref}`);
+                  builds.push({ repo: 'kagenti/kagenti-extensions', ref });
+                } else {
+                  core.setFailed(`Invalid extensions-ref: ${ref}`);
+                  return;
+                }
+              }
+            }
+
+            const output = JSON.stringify(builds);
+            console.log('Dependency builds:', output);
+            core.setOutput('dep_builds', output);
+
+      - name: Add safe-to-test label
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['safe-to-test']
+            });
+            console.log('Added safe-to-test label');
+
+      - name: React to comment with rocket
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      - name: Create pending commit status
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ steps.pr-info.outputs.sha }}',
+              state: 'pending',
+              target_url: runUrl,
+              description: 'E2E tests running on OpenShift ${{ env.OCP_VERSION }}',
+              context: 'E2E HyperShift'
+            });
+            console.log('Created pending commit status');
+
+      - name: Post starting comment
+        if: steps.check-permission.outputs.check-result == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### E2E HyperShift Tests Started
+
+            **Triggered by:** @${{ github.event.comment.user.login }}
+            **Commit:** \`${{ steps.pr-info.outputs.sha }}\`
+            **Workflow Run:** [View logs](${runUrl})
+
+            Tests are running on OpenShift ${{ env.OCP_VERSION }}. This typically takes 30-45 minutes.
+
+            ---
+            <sub>To re-run tests after new commits, comment \`/run-e2e\` again.</sub>`
+            });
+
+  # ==========================================================================
+  # E2E Tests Job
+  # ==========================================================================
+  e2e-tests:
+    name: Deploy & Test
+    runs-on: ubuntu-latest
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      slot_id: ${{ steps.acquire-slot.outputs.slot_id }}
+    env:
+      CLUSTER_SUFFIX: ${{ needs.authorize.outputs.cluster_suffix }}
+
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ needs.authorize.outputs.pr_sha }}
+
+      - name: Validate secrets are configured
+        run: bash .github/scripts/hypershift/ci/00-validate-secrets.sh
+        env:
+          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          PULL_SECRET: ${{ secrets.PULL_SECRET }}
+          BASE_DOMAIN: ${{ secrets.BASE_DOMAIN }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+
+      - name: Setup credentials
+        run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
+        env:
+          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          PULL_SECRET: ${{ secrets.PULL_SECRET }}
+
+      - name: Install tools
+        run: bash .github/scripts/hypershift/ci/20-install-tools.sh
+        env:
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version: '1.23'
+
+      - name: Build hcp CLI from source
+        run: bash .github/scripts/hypershift/ci/30-build-hcp-cli.sh
+
+      - name: Clone hypershift-automation
+        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
+
+      - name: Verify management cluster access
+        run: bash .github/scripts/hypershift/ci/50-verify-mgmt-access.sh
+
+      # --- Slot Management ---
+      - name: Cleanup stale CI slots
+        run: bash .github/scripts/hypershift/ci/slots/cleanup-stale.sh
+        continue-on-error: true
+
+      - name: Acquire CI slot
+        id: acquire-slot
+        run: bash .github/scripts/hypershift/ci/slots/acquire.sh
+        env:
+          MAX_SLOTS: ${{ env.MAX_SLOTS }}
+          SLOT_TIMEOUT: ${{ env.SLOT_TIMEOUT }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Check cluster capacity
+        run: bash .github/scripts/hypershift/ci/slots/check-capacity.sh
+
+      - name: Cleanup any existing cluster
+        run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Create HyperShift cluster
+        id: create-cluster
+        run: bash .github/scripts/hypershift/create-cluster.sh "${{ env.CLUSTER_SUFFIX }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+          BASE_DOMAIN: ${{ secrets.BASE_DOMAIN }}
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+
+      - name: Deploy Kagenti
+        if: success()
+        run: bash .github/scripts/hypershift/ci/70-deploy-kagenti.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          KAGENTI_DEP_BUILDS: ${{ needs.authorize.outputs.dep_builds }}
+
+      - name: Build platform images from source (backend, ui-v2, agent-oauth-secret)
+        if: success()
+        run: bash .github/scripts/common/26-build-platform-images.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Build ui-oauth-secret image from PR and restart job
+        if: success()
+        run: bash .github/scripts/common/25-build-oauth-secret-image.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Build mlflow-oauth-secret image from PR and restart job
+        if: success()
+        run: bash .github/scripts/common/26-build-mlflow-oauth-secret-image.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Set up Python
+        if: success()
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Print version matrix
+        if: success()
+        run: bash .github/scripts/common/86-print-version-matrix.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Pre-flight checks
+        if: success()
+        run: bash .github/scripts/common/90-preflight-checks.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Run backend E2E tests
+        if: success()
+        run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+          KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
+
+      - name: Run UI E2E tests
+        if: success()
+        run: bash .github/scripts/common/92-run-ui-tests.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Collect cluster info on failure
+        if: failure()
+        run: bash .github/scripts/hypershift/ci/85-collect-failure-info.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+  # ==========================================================================
+  # Cleanup Job
+  # ==========================================================================
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [authorize, e2e-tests]
+    if: always() && needs.authorize.outputs.authorized == 'true'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CLUSTER_SUFFIX: ${{ needs.authorize.outputs.cluster_suffix }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ needs.authorize.outputs.pr_sha }}
+
+      - name: Setup credentials
+        run: bash .github/scripts/hypershift/ci/10-setup-credentials.sh
+        env:
+          HYPERSHIFT_MGMT_KUBECONFIG: ${{ secrets.HYPERSHIFT_MGMT_KUBECONFIG }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          PULL_SECRET: ${{ secrets.PULL_SECRET }}
+
+      - name: Install tools
+        run: bash .github/scripts/hypershift/ci/20-install-tools.sh
+        env:
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version: '1.23'
+
+      - name: Build hcp CLI from source
+        run: bash .github/scripts/hypershift/ci/30-build-hcp-cli.sh
+
+      - name: Clone hypershift-automation
+        run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
+
+      - name: Destroy HyperShift cluster
+        run: bash .github/scripts/hypershift/ci/55-cleanup-existing-cluster.sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          HCP_ROLE_NAME: ${{ secrets.HCP_ROLE_NAME }}
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+
+      - name: Release CI slot
+        if: always()
+        run: bash .github/scripts/hypershift/ci/slots/release.sh "${{ needs.e2e-tests.outputs.slot_id }}"
+
+      - name: Summary
+        if: always()
+        run: bash .github/scripts/hypershift/ci/99-summary.sh
+        env:
+          CLUSTER_SUFFIX: ${{ env.CLUSTER_SUFFIX }}
+          MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
+          OCP_VERSION: ${{ env.OCP_VERSION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          E2E_RESULT: ${{ needs.e2e-tests.result }}
+          SKIP_DESTROY: 'false'
+
+  # ==========================================================================
+  # Post Results - Reports E2E result immediately, doesn't wait for cleanup
+  # ==========================================================================
+  post-results:
+    name: Post Results
+    runs-on: ubuntu-latest
+    needs: [authorize, e2e-tests]
+    if: always() && needs.authorize.outputs.authorized == 'true'
+    permissions:
+      pull-requests: write
+      statuses: write
+    steps:
+      - name: Update commit status to success
+        if: needs.e2e-tests.result == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.authorize.outputs.pr_sha }}',
+              state: 'success',
+              target_url: runUrl,
+              description: 'E2E tests passed',
+              context: 'E2E HyperShift'
+            });
+
+      - name: Post success comment
+        if: needs.e2e-tests.result == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ needs.authorize.outputs.pr_number }},
+              body: `### E2E HyperShift Tests Passed
+
+            **Commit:** \`${{ needs.authorize.outputs.pr_sha }}\`
+            **Result:** All tests passed
+            **Workflow Run:** [View logs](${runUrl})
+
+            The \`safe-to-test\` label indicates this commit has been approved for E2E testing.
+
+            ---
+            <sub>If you push new commits, the label will be removed and you'll need to comment \`/run-e2e\` again.</sub>`
+            });
+
+      - name: Update commit status to failure
+        if: needs.e2e-tests.result == 'failure'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.authorize.outputs.pr_sha }}',
+              state: 'failure',
+              target_url: runUrl,
+              description: 'E2E tests failed',
+              context: 'E2E HyperShift'
+            });
+
+      - name: Post failure comment
+        if: needs.e2e-tests.result == 'failure'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ needs.authorize.outputs.pr_number }},
+              body: `### E2E HyperShift Tests Failed
+
+            **Commit:** \`${{ needs.authorize.outputs.pr_sha }}\`
+            **Result:** Tests failed - please check the logs
+            **Workflow Run:** [View logs](${runUrl})
+
+            ---
+            <sub>To re-run tests after fixing issues, comment \`/run-e2e\` again.</sub>`
+            });
+
+      - name: Update commit status to error (cancelled)
+        if: needs.e2e-tests.result == 'cancelled'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.authorize.outputs.pr_sha }}',
+              state: 'error',
+              target_url: runUrl,
+              description: 'E2E tests cancelled',
+              context: 'E2E HyperShift'
+            });
+
+      - name: Post cancelled comment
+        if: needs.e2e-tests.result == 'cancelled'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ needs.authorize.outputs.pr_number }},
+              body: `### E2E HyperShift Tests Cancelled
+
+            **Commit:** \`${{ needs.authorize.outputs.pr_sha }}\`
+            **Result:** Tests were cancelled
+            **Workflow Run:** [View logs](${runUrl})
+
+            ---
+            <sub>To re-run tests, comment \`/run-e2e\` again.</sub>`
+            });

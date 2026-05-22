@@ -1,0 +1,357 @@
+# Global settings
+openshift: true
+# Domain name for SPIFFE trust domain and service URLs
+domain: localtest.me
+
+# ------------------------------------------------------------------
+#  Feature flags: experimental features disabled by default
+# ------------------------------------------------------------------
+featureFlags:
+  sandbox: false
+  integrations: false
+  triggers: false
+  agentSandbox: false
+  skills: false
+  authbridgeAPI: false
+  admin: false
+
+# ------------------------------------------------------------------
+#  Control Panel: Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: true
+  mcpGateway:
+    enabled: true
+  agentOperator:
+    enabled: true
+  ui:
+    enabled: true
+  istio:
+    enabled: true
+  phoenix:
+    enabled: false
+  mlflow:
+    enabled: false
+
+# Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
+# githubUser/githubToken are optional: only needed to deploy agents/tools from
+# private GitHub repos or pull images from private registries.
+secrets:
+  githubUser: ""
+  githubToken: ""
+  openaiApiKey: ""
+  slackBotToken: ""
+  adminSlackBotToken: ""
+  quayUser: ""
+  quayToken: ""
+
+common:
+  kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+  oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.17"
+
+# ------------------------------------------------------------------
+#  Components Configurations
+# ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+#  Agents Namespaces
+# ------------------------------------------------------------------
+agentNamespaces:
+- team1
+- team2
+
+# ------------------------------------------------------------------
+#  UI Configuration
+# ------------------------------------------------------------------
+ui:
+  configmap: kagenti-ui-config
+  # Domain name for constructing service URLs (non-OpenShift only)
+  domainName: localtest.me
+  auth:
+    enabled: true
+  namespace: kagenti-system
+  hostname: kagenti-ui.localtest.me
+  url: http://kagenti-ui.localtest.me:8080
+  # Frontend (UI v2) configuration
+  frontend:
+    enabled: true
+    image: ghcr.io/kagenti/kagenti/ui-v2
+    tag: v0.7.0-alpha.1
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 64Mi
+  # Backend API external access
+  api:
+    hostname: kagenti-api.localtest.me
+  # Backend configuration
+  backend:
+    image: ghcr.io/kagenti/kagenti/backend
+    tag: v0.7.0-alpha.1
+    # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
+    defaultRegistryUrl: ""
+    resources:
+      limits:
+        cpu: 250m
+        # Increased from 256Mi to 512Mi to support sandbox agent workloads
+        # (exec streaming, log tailing, and concurrent K8s API calls)
+        memory: 512Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+# ------------------------------------------------------------------
+#  UI OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+uiOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  tag: v0.7.0-alpha.1
+  # When true, mount the in-cluster serviceaccount CA
+  # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
+  # When false, the serviceaccount CA is only for the API server
+  # and will usually not validate external OpenShift route certificates.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  Agent OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+agentOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/agent-oauth-secret
+  tag: v0.7.0-alpha.1
+  # When true, mount the in-cluster serviceaccount CA
+  # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
+  # When false, the serviceaccount CA is only for the API server
+  # and will usually not validate external OpenShift route certificates.
+  useServiceAccountCA: false
+  spiffePrefix: spiffe://localtest.me/sa
+  clientName: kagenti-keycloak-client
+
+# ------------------------------------------------------------------
+#  API OAuth Secret Creator Configuration
+#  Creates a confidential client for programmatic API access via
+#  Client Credentials Grant. The credentials are stored in a K8s secret.
+#  WARNING: This is a shared credential for testing/dev only.
+# ------------------------------------------------------------------
+apiOAuthSecret:
+  enabled: false
+  image: ghcr.io/kagenti/kagenti/api-oauth-secret
+  tag: v0.7.0-alpha.1
+  # Client ID for the API service account
+  clientId: kagenti-api
+  # Name of the K8s secret to store credentials
+  secretName: kagenti-api-oauth-secret
+  # Realm role to assign to the service account
+  serviceAccountRole: kagenti-operator
+  # When true, use the in-cluster serviceaccount CA for SSL verification
+  useServiceAccountCA: false
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  enabled: true
+  namespace: keycloak
+  adminSecretName: keycloak-initial-admin
+  adminUsernameKey: username
+  adminPasswordKey: password
+  # Keycloak admin credentials (keycloak-admin-secret in kagenti-system namespace).
+  # Used by the kagenti-operator client registration controller to register
+  # agents as OAuth clients. For production, override via .secret_values.yaml
+  # or use an existing secret.
+  adminUsername: admin
+  adminPassword: admin
+  # Set to an existing Secret name to skip creating keycloak-admin-secret.
+  # The referenced secret must have KEYCLOAK_ADMIN_USERNAME and KEYCLOAK_ADMIN_PASSWORD keys.
+  # adminExistingSecret: ""
+  url: http://keycloak-service.keycloak:8080
+  publicUrl: http://keycloak.localtest.me:8080
+  realm: kagenti
+  autoBootstrapRealm: true
+  # Session/token lifetimes for long-running dev clusters (e.g. Kind).
+  # Keycloak defaults (30min idle, 10h max) cause "Signature has expired"
+  # errors after a few hours. These values extend lifetimes for dev use.
+  #
+  # ⚠️  PRODUCTION WARNING: These defaults are intentionally permissive for
+  # developer convenience. For production deployments, override with values
+  # appropriate for your security policy (e.g. 30min idle, 8h max session).
+  # Long-lived sessions increase the window for token theft/session hijacking.
+  sessionLifetimes:
+    # SSO Session Idle timeout in seconds (default: 7 days)
+    # Keycloak default is 1800 (30 min)
+    ssoSessionIdle: 604800
+    # SSO Session Max lifespan in seconds (default: 30 days)
+    # Keycloak default is 36000 (10 hours)
+    ssoSessionMax: 2592000
+    # Access token lifespan in seconds (default: 30 min)
+    # Keycloak default is 300 (5 min)
+    accessTokenLifespan: 1800
+
+# ------------------------------------------------------------------
+#  AuthBridge Configuration
+# ------------------------------------------------------------------
+authBridge:
+  # CLIENT_AUTH_TYPE: Controls how Keycloak clients authenticate
+  #   - "client-secret": Traditional client_secret authentication (default)
+  #   - "federated-jwt": JWT-SVID authentication via SPIFFE identity provider
+  # For federated-jwt, you must configure a SPIFFE identity provider in Keycloak
+  clientAuthType: "client-secret"
+  # SPIFFE_IDP_ALIAS: Keycloak SPIFFE identity provider alias (only used with federated-jwt)
+  spiffeIdpAlias: "spire-spiffe"
+  # How long AuthBridge fast-polls for credential files before switching to backoff
+  credentialWaitTimeout: "120s"
+
+# ------------------------------------------------------------------
+#  SPIFFE Identity Provider Setup Job Configuration
+#  (Only runs when SPIRE is enabled)
+# ------------------------------------------------------------------
+spiffeIdp:
+  image:
+    repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
+    tag: v0.7.0-alpha.1
+    pullPolicy: IfNotPresent
+
+# ------------------------------------------------------------------
+#  Kagenti Operator Configuration (includes AuthBridge webhook)
+# ------------------------------------------------------------------
+kagenti-operator-chart:
+  controllerManager:
+    container:
+      cmd: /manager
+      image:
+        tag: 0.3.0-alpha.1
+      args:
+      - "--leader-elect"
+      - "--metrics-bind-address=:8443"
+      - "--health-probe-bind-address=:8081"
+      - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
+      - "--config-path=/etc/kagenti/config.yaml"
+      - "--feature-gates-path=/etc/kagenti/feature-gates/feature-gates.yaml"
+      # Client registration controller is enabled by default (operator-managed)
+      resources:
+        limits:
+          cpu: 150m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+  # SPIRE trust domain for the ClientRegistrationReconciler. Required when
+  # authbridge-config has SPIRE_ENABLED=true: the reconciler builds SPIFFE-shaped
+  # Keycloak client IDs (spiffe://<trust-domain>/ns/<ns>/sa/<sa>).
+  # Kind default: localtest.me (matches kagenti-deps spire.trustDomain).
+  # OpenShift: the ansible installer overrides this with the detected
+  # ocp_trust_domain.
+  signatureVerification:
+    spireTrustDomain: localtest.me
+  # Pin sidecar image tags injected by the AuthBridge webhook.
+  #
+  # After kagenti-extensions#411 there are three combined images:
+  #   * authbridge      — proxy-sidecar mode (default), full plugin set
+  #                       including the a2a/mcp/inference parsers.
+  #   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
+  #                       proxyInit's iptables setup.
+  #   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
+  #                       (parsers dropped). For size-constrained deployments;
+  #                       not selected by default.
+  # Spiffe-helper is bundled inside each combined image and gated per
+  # workload by the SPIRE_ENABLED env var; it is no longer a separate
+  # sidecar. Client registration is operator-managed.
+  defaults:
+    images:
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.3
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.3
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.3
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.3
+
+# ------------------------------------------------------------------
+#  MCP Gateway Configuration
+# ------------------------------------------------------------------
+mcpGateway:
+  namespaces:
+    mcpSystem: mcp-system
+    gatewaySystem: gateway-system
+  # TODO: Investigate why only the hostname 'mcp.127-0-0-1.sslip.io' works for MCP Gateway.
+  # Observed behavior: When using this hostname, the MCP Gateway is accessible and functions as expected.
+  # Other values tried:  'mcp.localtest.me', and 'mcp.sslip.io' were tested but failed to route traffic correctly.
+  # Expected behavior: The MCP Gateway should work with any valid hostname or IP address configured for local development.
+  hostname: 'mcp.127-0-0-1.sslip.io'
+
+# ------------------------------------------------------------------
+#  Phoenix Configuration
+# ------------------------------------------------------------------
+phoenix:
+  namespace: kagenti-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://phoenix.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for Phoenix dashboard
+    enabled: true
+
+# ------------------------------------------------------------------
+#  Phoenix OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+phoenixOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
+  tag: v0.7.0-alpha.1
+  # Keycloak client ID for Phoenix
+  clientId: phoenix
+  # Kubernetes secret name to store OAuth credentials
+  secretName: phoenix-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the phoenix-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  MLflow Configuration
+# ------------------------------------------------------------------
+mlflow:
+  namespace: kagenti-system
+  # Domain name for constructing service URLs (non-OpenShift only)
+  url: http://mlflow.localtest.me:8080
+  auth:
+    # Enable Keycloak OAuth2 authentication for MLflow
+    # Set to true in ocp_values.yaml for production deployments
+    enabled: false
+    # Kubernetes secret name containing OAuth credentials
+    secretName: mlflow-oauth-secret
+
+# ------------------------------------------------------------------
+#  MLflow OAuth Secret Creator Configuration
+# ------------------------------------------------------------------
+mlflowOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/mlflow-oauth-secret
+  tag: v0.7.0-alpha.1
+  # Keycloak client ID for MLflow
+  clientId: mlflow
+  # Kubernetes secret name to store OAuth credentials
+  secretName: mlflow-oauth-secret
+  # When true, mount the in-cluster serviceaccount CA
+  # into the mlflow-oauth-secret job via the SSL_CERT_FILE environment variable.
+  useServiceAccountCA: true
+
+# ------------------------------------------------------------------
+#  Spiffe/Spire configs
+# ------------------------------------------------------------------
+spire:
+  enabled: true
+
+# ------------------------------------------------------------------
+#  OpenShell Configuration
+# ------------------------------------------------------------------
+openshell:
+  enabled: false
+  gateway:
+    image: ghcr.io/kagenti/openshell/gateway
+    tag: mvp-00a418f
+    pullPolicy: IfNotPresent
+  computeDriver:
+    image: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
+    tag: mvp-8c86191
+    pullPolicy: IfNotPresent
+  credentialsDriver:
+    image: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
+    tag: main-d7d8306
+    pullPolicy: IfNotPresent

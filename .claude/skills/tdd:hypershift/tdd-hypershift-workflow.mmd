@@ -1,0 +1,37 @@
+flowchart TD
+    START(["/tdd:hypershift"]) --> CLUSTER{"Cluster available?"}
+    CLUSTER -->|Yes| SETENV["Set KUBECONFIG + env vars"]:::k8s
+    CLUSTER -->|No| ASK{"Create cluster?"}
+    ASK -->|Yes| CREATECLUSTER["hypershift:cluster create"]:::hypershift
+    ASK -->|No| FALLBACK([Use tdd:ci or tdd:kind])
+
+    CREATECLUSTER --> SETENV
+
+    SETENV --> ITER{"Iteration level?"}
+    ITER -->|Level 0| L0["Quick patch (seconds)"]:::test
+    ITER -->|Level 1| L1["Test only"]:::test
+    ITER -->|Level 2| L2["Rebuild images"]:::test
+    ITER -->|Level 3| L3["Full reinstall (~25 min)"]:::test
+    ITER -->|Level 4| L4["Fresh cluster"]:::hypershift
+
+    L0 --> TEST["Run tests"]:::test
+    L1 --> TEST
+    L2 --> TEST
+    L3 --> TEST
+    L4 --> SETENV
+
+    TEST --> RESULT{"Tests pass?"}
+    RESULT -->|Yes| COMMIT["git:commit"]:::git
+    RESULT -->|No| DEBUG["Debug with k8s:pods, k8s:logs"]:::k8s
+    DEBUG --> FIX["Fix code"]:::tdd
+    FIX --> ITER
+
+    COMMIT --> CI([Back to tdd:ci for CI validation])
+
+    classDef tdd fill:#4CAF50,stroke:#333,color:white
+    classDef rca fill:#FF5722,stroke:#333,color:white
+    classDef git fill:#FF9800,stroke:#333,color:white
+    classDef k8s fill:#00BCD4,stroke:#333,color:white
+    classDef hypershift fill:#3F51B5,stroke:#333,color:white
+    classDef ci fill:#2196F3,stroke:#333,color:white
+    classDef test fill:#9C27B0,stroke:#333,color:white

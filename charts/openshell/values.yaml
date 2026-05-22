@@ -1,0 +1,110 @@
+# -- Tenant name (used as namespace and audience)
+tenant: ""
+
+# -- Container images
+images:
+  gateway:
+    repository: ghcr.io/kagenti/openshell/gateway
+    tag: v0.0.36-kagenti.8
+    pullPolicy: IfNotPresent
+  computeDriver:
+    repository: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
+    tag: mvp-a5f33f4
+    pullPolicy: IfNotPresent
+  credentialsDriver:
+    repository: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
+    tag: main-d7d8306
+    pullPolicy: IfNotPresent
+
+# -- OIDC configuration (issuer and audience are set per-tenant by deploy-tenant.sh)
+oidc:
+  issuer: ""
+  audience: ""
+  enabled: true
+
+# -- Keycloak ClusterIP for hostAliases (Kind only, set by deploy-tenant.sh)
+# Needed because localtest.me resolves to 127.0.0.1 inside the pod
+keycloakClusterIP: ""
+
+# -- Supervisor image injected as an init container by the compute driver
+# to copy the openshell-sandbox binary into each sandbox pod.
+# Built from kagenti/OpenShell@mvp as a multi-arch image (linux/amd64 + linux/arm64).
+supervisorImage:
+  repository: ghcr.io/kagenti/openshell/supervisor
+  tag: v0.0.36-kagenti.8
+  binaryPath: /openshell-sandbox
+
+# -- Image pull policy for sandbox pods (init + agent containers).
+# Valid values: Always, IfNotPresent, Never.
+# Empty string means use the Kubernetes default (Always for :latest, IfNotPresent otherwise).
+sandboxImagePullPolicy: "IfNotPresent"
+
+# -- Compute driver settings
+driver:
+  # Target namespace for sandbox pods (defaults to .Values.tenant)
+  namespace: ""
+
+# -- TLS configuration (cert-manager)
+tls:
+  # cert-manager issuer that signs leaf certificates
+  issuerRef: openshell-ca-issuer
+  # Kind of the issuer (ClusterIssuer or Issuer)
+  issuerKind: ClusterIssuer
+  # Certificate duration
+  duration: 8760h # one year
+  # Renew before expiry
+  renewBefore: 720h
+
+# -- Trusted CA bundle ConfigMap name (OpenShift: label a CM with
+# config.openshift.io/inject-cabundle=true to get the cluster CAs injected).
+# When set, the CA bundle is mounted into the gateway so it can verify
+# TLS connections to the Keycloak route.
+trustedCABundle: ""
+
+# -- Ingress configuration
+ingress:
+  # "istio" for Kind (TLSRoute via shared gateway) or "route" for OpenShift (passthrough Route)
+  type: istio
+  # External hostname for the gateway (used for SNI routing)
+  host: ""
+  # Shared Istio Gateway name (Kind only — must exist in gatewayNamespace)
+  gatewayName: tls-passthrough
+  # Namespace of the shared Istio Gateway
+  gatewayNamespace: kagenti-system
+  # Route timeout (OpenShift only)
+  timeout: 24h
+
+# -- Resource quota for sandbox pods
+quota:
+  pods: "10"
+  requestsCpu: "20"
+  requestsMemory: "40Gi"
+  pvcs: "10"
+  # Default resource requests applied via LimitRange to containers that
+  # don't specify their own (e.g. sandbox pods from agent-sandbox-controller)
+  defaultRequestCpu: 100m
+  defaultRequestMemory: 128Mi
+
+# -- Gateway resources
+resources:
+  gateway:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  computeDriver:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  credentialsDriver:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

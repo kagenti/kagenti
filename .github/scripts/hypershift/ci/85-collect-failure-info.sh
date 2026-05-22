@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Collect cluster info on failure for debugging
+set -euo pipefail
+
+# Required environment variables:
+# - CLUSTER_NAME or (MANAGED_BY_TAG + CLUSTER_SUFFIX): The cluster name
+# - MGMT_KUBECONFIG: Management cluster kubeconfig (for HostedCluster/NodePool info)
+# - KUBECONFIG: Hosted cluster kubeconfig (optional, for pod/event info)
+
+CLUSTER_NAME="${CLUSTER_NAME:-${MANAGED_BY_TAG:-kagenti-hypershift-ci}-${CLUSTER_SUFFIX:-}}"
+MGMT_KUBECONFIG="${MGMT_KUBECONFIG:-}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "DIAGNOSTIC INFO FOR CLUSTER: $CLUSTER_NAME"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Management cluster diagnostics
+if [ -n "$MGMT_KUBECONFIG" ] && [ -f "$MGMT_KUBECONFIG" ]; then
+    echo ""
+    echo "=== HostedCluster Status (Management Cluster) ==="
+    KUBECONFIG="$MGMT_KUBECONFIG" oc get hostedcluster -n clusters "$CLUSTER_NAME" -o wide 2>/dev/null || echo "(not found)"
+
+    echo ""
+    echo "=== HostedCluster Conditions ==="
+    KUBECONFIG="$MGMT_KUBECONFIG" oc get hostedcluster -n clusters "$CLUSTER_NAME" \
+        -o jsonpath='{range .status.conditions[*]}{.type}{": "}{.status}{" - "}{.message}{"\n"}{end}' 2>/dev/null || echo "(not available)"
+
+    echo ""
+    echo "=== NodePool Status ==="
+    KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters "$CLUSTER_NAME" -o wide 2>/dev/null || echo "(not found)"
+
+    echo ""
+    echo "=== NodePool Conditions ==="
+    KUBECONFIG="$MGMT_KUBECONFIG" oc get nodepool -n clusters "$CLUSTER_NAME" \
+        -o jsonpath='{range .status.conditions[*]}{.type}{": "}{.status}{" - "}{.message}{"\n"}{end}' 2>/dev/null || echo "(not available)"
+
+    echo ""
+    echo "=== Machine Status ==="
+    KUBECONFIG="$MGMT_KUBECONFIG" oc get machines -n "clusters-$CLUSTER_NAME" 2>/dev/null || echo "(not found)"
+else
+    echo ""
+    echo "(Management cluster diagnostics skipped - MGMT_KUBECONFIG not set or file not found)"
+fi
+
+# AWS diagnostics
+echo ""
+echo "=== EC2 Instances ==="
+aws ec2 describe-instances --region "$AWS_REGION" \
+    --filters "Name=tag-key,Values=kubernetes.io/cluster/$CLUSTER_NAME" \
+    --query 'Reservations[*].Instances[*].[InstanceId,State.Name,InstanceType,LaunchTime]' \
+    --output table 2>/dev/null || echo "(AWS CLI not available or no instances found)"
+
+# Hosted cluster diagnostics (only if KUBECONFIG is set and cluster is reachable)
+if [ -n "${KUBECONFIG:-}" ] && [ -f "${KUBECONFIG:-}" ]; then
+    echo ""
+    echo "=== Hosted Cluster Status ==="
+    oc get nodes 2>/dev/null || echo "(cluster not reachable)"
+    oc get clusterversion 2>/dev/null || true
+
+    echo ""
+    echo "=== Pods in kagenti-system ==="
+    oc get pods -n kagenti-system 2>/dev/null || echo "(namespace not found or cluster not reachable)"
+
+    echo ""
+    echo "=== Pods in team1 ==="
+    oc get pods -n team1 2>/dev/null || echo "(namespace not found)"
+
+    echo ""
+    echo "=== Weather Service Agent Logs (last 50 lines) ==="
+    oc logs -n team1 deployment/weather-service --tail=50 2>/dev/null || echo "(not available)"
+
+    echo ""
+    echo "=== Weather Service Envoy-Proxy Logs (last 50 lines) ==="
+    oc logs -n team1 deployment/weather-service -c envoy-proxy --tail=50 2>/dev/null || echo "(not available)"
+
+    echo ""
+    echo "=== AuthBridge Unified ConfigMap ==="
+    oc get configmap authbridge-runtime-config -n team1 -o jsonpath='{.data.config\.yaml}' 2>/dev/null || echo "(not found)"
+
+    echo ""
+    echo "=== Weather Service Pod Details (containers, labels, annotations) ==="
+    WS_POD=$(oc get pod -n team1 -l app.kubernetes.io/name=weather-service --no-headers 2>/dev/null | head -1 | awk '{print $1}')
+    if [ -n "$WS_POD" ]; then
+        echo "Containers:"
+        oc get pod "$WS_POD" -n team1 -o jsonpath='{range .spec.containers[*]}  {.name} ({.image}){"\n"}{end}' 2>/dev/null
+        echo "Init containers:"
+        oc get pod "$WS_POD" -n team1 -o jsonpath='{range .spec.initContainers[*]}  {.name} ({.image}){"\n"}{end}' 2>/dev/null
+        echo "Pod labels:"
+        oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.labels}' 2>/dev/null | python3 -m json.tool 2>/dev/null || oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.labels}' 2>/dev/null
+        echo ""
+        echo "Pod annotations:"
+        oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.annotations}' 2>/dev/null | python3 -m json.tool 2>/dev/null || oc get pod "$WS_POD" -n team1 -o jsonpath='{.metadata.annotations}' 2>/dev/null
+    else
+        echo "(weather-service pod not found)"
+    fi
+
+    echo ""
+    echo "=== Weather Service Agent Env Vars (LLM config) ==="
+    oc get deployment weather-service -n team1 -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{.valueFrom.secretKeyRef.name}{"\n"}{end}' 2>/dev/null || echo "(not available)"
+
+    echo ""
+    echo "=== SPIFFE IdP Setup Job Logs ==="
+    SPIFFE_POD=$(oc get pods -n kagenti-system -l app=kagenti-spiffe-idp-setup --no-headers 2>/dev/null | head -1 | awk '{print $1}')
+    if [ -n "$SPIFFE_POD" ]; then
+        oc logs "$SPIFFE_POD" -n kagenti-system -c setup-spiffe-idp --tail=50 2>/dev/null || echo "(logs not available)"
+        echo "Previous logs:"
+        oc logs "$SPIFFE_POD" -n kagenti-system -c setup-spiffe-idp --previous --tail=30 2>/dev/null || echo "(no previous logs)"
+    else
+        echo "(spiffe-idp-setup pod not found)"
+    fi
+
+    echo ""
+    echo "=== Kagenti Operator Logs (injection decisions, last 50 lines) ==="
+    oc logs -n kagenti-system deployment/kagenti-controller-manager --tail=50 2>/dev/null | grep -E 'injection decision|inject|client-registration|credential|error|ERROR' | tail -30 || echo "(not available)"
+
+    echo ""
+    echo "=== Weather Tool MCP Logs (last 30 lines) ==="
+    oc logs -n team1 deployment/weather-tool --tail=30 2>/dev/null || echo "(not available)"
+
+    echo ""
+    echo "=== OTEL Collector Errors (last 20 lines) ==="
+    oc logs -n kagenti-system deployment/otel-collector --tail=100 2>/dev/null | grep -iE "error|fail|warn" | tail -20 || echo "(none found)"
+
+    echo ""
+    echo "=== Recent Events ==="
+    oc get events -A --sort-by='.lastTimestamp' 2>/dev/null | tail -50 || echo "(events not available)"
+else
+    echo ""
+    echo "(Hosted cluster diagnostics skipped - KUBECONFIG not set or cluster not reachable)"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
