@@ -259,5 +259,5 @@ injects defaults that can be overridden via Helm values.
 
 ## Further Reading
 
-- [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/authbridge/README.md) — full YAML config reference, all listener modes
+- [AuthBridge Binary README](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/cmd/README.md) — full YAML config reference, all listener modes
 - [AuthBridge Architecture](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/README.md) — sequence diagrams, protocol details
