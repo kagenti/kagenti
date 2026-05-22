@@ -325,8 +325,11 @@ otel:
     rhoaiMlflowAuthConfig:
       exporters:
         otlphttp/mlflow:
+          compression: none
+          retry_on_failure:
+            enabled: false
           tls:
-            ca_file: /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
       extensions:
         bearertokenauth/mlflow:
           filename: /var/run/secrets/kubernetes.io/serviceaccount/token

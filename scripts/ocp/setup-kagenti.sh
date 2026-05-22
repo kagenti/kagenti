@@ -1414,6 +1414,34 @@ if [ "$SKIP_MLFLOW" = true ]; then
   log_success "Skipping MLflow RBAC grant (--skip-mlflow)"
 else
   _mlflow_grant_otel_rbac
+
+  # Create default MLflow experiment in the workspace namespace.
+  # The otel-collector sends traces with x-mlflow-experiment-id header; the experiment
+  # must exist or MLflow will reject the traces.
+  # Uses kubectl run with a curl pod since the installer runs outside the cluster.
+  if ! $DRY_RUN; then
+    _EXP_WS="${MLFLOW_WORKSPACE:-team1}"
+    _EXP_NAME="kagenti-traces"
+    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null)
+    if [ -n "$_EXP_TOKEN" ]; then
+      _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
+        --image=curlimages/curl -n kagenti-system \
+        -- curl -sk -X POST \
+        -H "Authorization: Bearer $_EXP_TOKEN" \
+        -H "x-mlflow-workspace: $_EXP_WS" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"$_EXP_NAME\"}" \
+        "https://mlflow.${MLFLOW_NAMESPACE}.svc.cluster.local:8443/api/2.0/mlflow/experiments/create" 2>/dev/null)
+      if echo "$_EXP_RESP" | grep -q "experiment_id"; then
+        _EXP_ID=$(echo "$_EXP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['experiment_id'])" 2>/dev/null)
+        log_success "Created MLflow experiment '$_EXP_NAME' (id=$_EXP_ID) in workspace $_EXP_WS"
+      elif echo "$_EXP_RESP" | grep -q "RESOURCE_ALREADY_EXISTS"; then
+        log_success "MLflow experiment '$_EXP_NAME' already exists in workspace $_EXP_WS"
+      else
+        log_warn "Failed to create MLflow experiment: $_EXP_RESP"
+      fi
+    fi
+  fi
 fi
 echo ""
 
