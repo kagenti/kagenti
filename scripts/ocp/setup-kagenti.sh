@@ -377,9 +377,28 @@ _mlflow_wait_ready() {
     sleep 5
   done
 
-  # Resolve the gateway URL from the MLflow CR status.url (mirrors the
-  # kagenti-operator's resolveTrackingURI logic). TLS is verified via the
-  # container's system CA pool (Let's Encrypt trusted by default).
+  # Check if the CR reports Available status — RHOAI MLflow operator sets this
+  # condition but never populates status.url (no Route/Ingress is created).
+  local cr_available=""
+  cr_available=$($KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "")
+
+  if [ "$cr_available" = "True" ]; then
+    log_success "MLflow CR reports Available — skipping status.url wait"
+    # Resolve the service port from the actual Service object
+    local svc_port
+    svc_port=$($KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+      -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8443")
+    local proto="https"
+    if [ "$svc_port" = "80" ] || [ "$svc_port" = "5000" ] || [ "$svc_port" = "8080" ]; then
+      proto="http"
+    fi
+    MLFLOW_TRACES_ENDPOINT="${proto}://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:${svc_port}/v1/traces"
+    log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
+    return 0
+  fi
+
+  # Fall back to waiting for status.url (non-RHOAI operators may populate this).
   log_info "Waiting for MLflow gateway URL (status.url)..."
   local gateway_url=""
   tries=0
@@ -390,7 +409,14 @@ _mlflow_wait_ready() {
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
       log_warn "MLflow CR status.url not populated after 5m — using in-cluster endpoint"
-      MLFLOW_TRACES_ENDPOINT="http://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:5000/v1/traces"
+      local svc_port
+      svc_port=$($KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+        -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8443")
+      local proto="https"
+      if [ "$svc_port" = "80" ] || [ "$svc_port" = "5000" ] || [ "$svc_port" = "8080" ]; then
+        proto="http"
+      fi
+      MLFLOW_TRACES_ENDPOINT="${proto}://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:${svc_port}/v1/traces"
       log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
       return 0
     fi
@@ -401,16 +427,24 @@ _mlflow_wait_ready() {
 }
 
 _mlflow_grant_otel_rbac() {
-  # The RHOAI MLflow operator creates the mlflow-operator-mlflow-integration ClusterRole
-  # with pseudo-resources (mlflow.kubeflow.org/*) checked via SubjectAccessReview.
+  # The RHOAI MLflow operator creates ClusterRoles for MLflow access control.
   # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
   # so the collector can send traces with the correct workspace context.
-  local cr_name="mlflow-operator-mlflow-integration"
+  # Prefer mlflow-operator-mlflow-edit (read+write), fall back to older name.
+  local cr_name=""
+  local candidates=("mlflow-operator-mlflow-edit" "mlflow-operator-mlflow-integration")
   local tries=0
-  while ! $KUBECTL get clusterrole "$cr_name" &>/dev/null; do
+  while [ -z "$cr_name" ]; do
+    for candidate in "${candidates[@]}"; do
+      if $KUBECTL get clusterrole "$candidate" &>/dev/null; then
+        cr_name="$candidate"
+        break
+      fi
+    done
+    [ -n "$cr_name" ] && break
     tries=$((tries + 1))
     if [ $tries -ge 24 ]; then
-      log_warn "ClusterRole '$cr_name' not found after 2m — MLflow OTEL RBAC skipped"
+      log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
       return 0
     fi
     sleep 5
@@ -1088,9 +1122,9 @@ otel:
           traces_endpoint: "${MLFLOW_TRACES_ENDPOINT}"
 EOF
     helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
-      -n kagenti-system \
       -f "$_mlflow_vals_file" \
-      --reuse-values --no-hooks
+      --reset-values \
+      "${KAGENTI_DEPS_HELM_ARGS[@]}"
     rm -f "$_mlflow_vals_file"
     log_success "kagenti-deps upgraded with MLflow OTEL endpoint"
   fi
