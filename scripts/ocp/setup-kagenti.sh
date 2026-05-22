@@ -442,6 +442,7 @@ _mlflow_grant_otel_rbac() {
         break
       fi
     done
+    [ -n "$cr_name" ] && break
     tries=$((tries + 1))
     if [ $tries -ge 24 ]; then
       log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
