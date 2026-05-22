@@ -144,7 +144,7 @@ if $DRY_RUN; then
 else
   if openshell gateway info --gateway "$GATEWAY_NAME" &>/dev/null; then
     log_warn "Gateway $GATEWAY_NAME already exists — removing to re-register"
-    openshell gateway destroy --name "$GATEWAY_NAME" 2>/dev/null || true
+    openshell gateway remove "$GATEWAY_NAME" 2>/dev/null || true
   fi
   openshell "${ADD_ARGS[@]}"
   log_success "Gateway registered"
