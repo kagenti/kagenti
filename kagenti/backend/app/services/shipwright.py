@@ -67,14 +67,19 @@ def select_build_strategy(registry_url: str, requested_strategy: Optional[str] =
     (no TLS); on OpenShift it should be "buildah" (TLS-enabled internal registry).
     For external registries, always uses the secure "buildah" strategy.
 
+    Note: for internal registries, any requested_strategy that doesn't match the
+    configured internal strategy is overridden. This ensures the correct TLS
+    behavior regardless of what the caller requests.
+
     Args:
         registry_url: The registry URL to push images to
-        requested_strategy: Optional explicitly requested strategy
+        requested_strategy: Optional explicitly requested strategy (ignored for
+            internal registries if it doesn't match the configured strategy)
 
     Returns:
         The build strategy name to use
     """
-    from app.core.config import settings
+    from app.core.config import settings  # deferred: avoid circular dep with config→constants
 
     is_internal_registry = (
         registry_url == DEFAULT_INTERNAL_REGISTRY or "svc.cluster.local" in registry_url
