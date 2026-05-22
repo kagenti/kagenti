@@ -90,21 +90,41 @@ Tenant endpoints on Kind:
 
 ### OpenShift
 
-For OpenShift clusters, use the Kagenti OpenShift installer which includes
-OpenShell as part of the platform deployment.
+First deploy the Kagenti platform on OpenShift. Refer to
+[docs/ocp/openshift-install.md](ocp/openshift-install.md) for full installation
+instructions including SPIRE setup (ZTWIM operator on OCP 4.19+, Helm charts on
+4.16–4.18).
 
-Refer to [docs/ocp/openshift-install.md](ocp/openshift-install.md) for full
-installation instructions including SPIRE setup (ZTWIM operator on OCP 4.19+,
-Helm charts on 4.16–4.18).
+Once the platform is running (Keycloak, cert-manager, Istio), deploy the
+OpenShell components:
 
-The OpenShift installer handles:
+#### Step 1: Deploy OpenShell Shared Infrastructure
 
-- OpenShell CRDs and shared infrastructure
-- Tenant gateway deployment with OpenShift Routes (instead of Kind NodePorts)
-- cert-manager integration with cluster CA
-- Keycloak realm and client configuration
+```bash
+scripts/openshell/deploy-shared.sh
+```
 
-After installation, continue with [Configure the CLI](#configure-the-cli) below.
+This creates:
+
+- Sandbox controller CRDs
+- cert-manager CA chain (`ClusterIssuer: openshell-ca`)
+- Keycloak realm `openshell` with PKCE client, roles, users, and groups
+
+#### Step 2: Deploy Tenant Gateways
+
+```bash
+scripts/openshell/deploy-tenant.sh team1
+scripts/openshell/deploy-tenant.sh team2
+```
+
+Each deployment creates an OpenShell gateway StatefulSet (gateway +
+compute-driver + credentials-driver), mTLS certificates, RBAC, and an OpenShift
+Route for external access.
+
+Tenant endpoints follow the pattern
+`https://openshell-<tenant>.<apps-domain>`.
+
+After deployment, continue with [Configure the CLI](#configure-the-cli) below.
 
 ---
 
@@ -248,12 +268,47 @@ openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `deploy-tenant.sh` hangs at Helm `--wait` | `openshell` Keycloak realm does not exist (gateway OIDC init fails in a crash loop) | Run `deploy-shared.sh` first; verify realm with `kubectl exec keycloak-0 -n keycloak -- /opt/keycloak/bin/kcadm.sh get realms` |
+| `deploy-shared.sh` hangs at "Logging in to Keycloak" | `keycloak-initial-admin` secret password doesn't match the DB (common after Keycloak pod recreation on RHBK) | See [Keycloak credential mismatch](#keycloak-credential-mismatch) below |
 | `invalid peer certificate: UnknownIssuer` | CLI missing CA/client certs | Re-run `configure-cli.sh` or place `ca.crt`, `tls.crt`, `tls.key` in `~/.config/openshell/gateways/<name>/mtls/` |
 | `POST openshell:80/... not permitted by policy` | URL placed in `--credential` instead of `--config` | Recreate provider with URL in `--config` |
 | `Failed to connect to api.anthropic.com` | CLI auto-created a provider with wrong type | Use `--no-auto-providers` flag |
 | `/v1/v1/messages` double path | `ANTHROPIC_BASE_URL` includes a trailing `/v1` | Remove `/v1` suffix — the SDK appends its own |
 | `context_management: Extra inputs not permitted` | LiteLLM rejects experimental beta parameters | Set `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` in the provider config |
 | `connection not allowed by policy` | Inference bundle not loaded | Run `openshell inference get` and verify route count |
+
+### Keycloak Credential Mismatch
+
+On RHBK (Red Hat Build of Keycloak), the `bootstrapAdmin` user is only created
+on first database initialization. If Keycloak is later redeployed (operator
+reconciliation, pod eviction, etc.), the `keycloak-initial-admin` secret may be
+regenerated with a new password while the database retains the original
+credentials. This causes `deploy-shared.sh` to hang at the kcadm login step.
+
+To fix, reset the admin password via the database:
+
+```bash
+# Generate a new password hash matching the secret
+KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak \
+  -o jsonpath='{.data.password}' | base64 -d)
+
+python3 -c "
+import hashlib, base64, os, json
+dk = hashlib.pbkdf2_hmac('sha256', '$KC_PASS'.encode(), (salt := os.urandom(16)), 27500)
+print(json.dumps({'value': base64.b64encode(dk).decode(), 'salt': base64.b64encode(salt).decode(), 'additionalParameters': {}}))
+" > /tmp/kc-secret-data.json
+
+# Find the admin user ID and update the credential
+ADMIN_ID=$(kubectl exec -n keycloak postgres-kc-0 -- psql -U postgres -d postgres -t -c \
+  "SELECT id FROM user_entity ue JOIN realm r ON ue.realm_id=r.id WHERE r.name='master' AND ue.username='temp-admin';")
+
+kubectl exec -n keycloak postgres-kc-0 -- psql -U postgres -d postgres -c \
+  "UPDATE credential SET secret_data='$(cat /tmp/kc-secret-data.json)',
+   credential_data='{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}'
+   WHERE user_id='${ADMIN_ID// /}';"
+```
+
+After updating, re-run `deploy-shared.sh`.
 
 ## Architecture
 
