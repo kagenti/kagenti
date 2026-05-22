@@ -340,13 +340,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, features }) => {
                   >
                     Tools
                   </NavItem>
-                  <NavItem
-                    itemId="skills"
-                    isActive={isNavItemActive('/skills')}
-                    onClick={() => handleNavSelect('/skills')}
-                  >
-                    Skills
-                  </NavItem>
+                  {features?.skills && (
+                    <NavItem
+                      itemId="skills"
+                      isActive={isNavItemActive('/skills')}
+                      onClick={() => handleNavSelect('/skills')}
+                    >
+                      Skills
+                    </NavItem>
+                  )}
                   {features?.sandbox && (
                     <>
                       <NavItem
