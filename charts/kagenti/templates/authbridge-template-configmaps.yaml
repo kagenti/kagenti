@@ -10,6 +10,7 @@
 
   See: https://github.com/kagenti/kagenti/issues/1336
 */ -}}
+{{- include "kagenti.authBridge.validateSpiffeIdentity" . -}}
 ---
 apiVersion: v1
 kind: ConfigMap

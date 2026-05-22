@@ -1,6 +1,7 @@
 # This template configures the agent namespaces based on the list provided in values.yaml.
 # For each namespace, it creates the namespace itself, applies necessary labels,
 # and creates secrets for GitHub, OpenAI, and Slack.
+{{- include "kagenti.authBridge.validateSpiffeIdentity" . -}}
 {{- if .Values.agentNamespaces }}
 {{- $root := . }}
 {{- range $root.Values.agentNamespaces }}

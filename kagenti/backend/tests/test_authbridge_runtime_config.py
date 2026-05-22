@@ -92,7 +92,7 @@ def test_build_authbridge_runtime_yaml_spire_enabled():
     # Top-level spiffe block (empty mapping) signals authbridge to
     # construct the in-process SPIFFE provider. All fields default.
     assert "spiffe" in cfg
-    assert cfg["spiffe"] == {} or cfg["spiffe"] is None  # yaml.safe_load may surface either
+    assert cfg["spiffe"] == {}
 
     tok = _plugin_config(cfg, "outbound", "token-exchange")
     assert tok["identity"]["type"] == "spiffe"
