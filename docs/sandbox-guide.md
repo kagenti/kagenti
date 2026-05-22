@@ -288,24 +288,35 @@ credentials. This causes `deploy-shared.sh` to hang at the kcadm login step.
 To fix, reset the admin password via the database:
 
 ```bash
-# Generate a new password hash matching the secret
+# Read username and password from the secret (avoids hardcoding env-specific values)
+KC_USER=$(kubectl get secret keycloak-initial-admin -n keycloak \
+  -o jsonpath='{.data.username}' | base64 -d)
 KC_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak \
   -o jsonpath='{.data.password}' | base64 -d)
 
+# Find the admin user ID
+ADMIN_ID=$(kubectl exec -n keycloak postgres-kc-0 -- psql -U postgres -d postgres -tA -c \
+  "SELECT id FROM user_entity ue JOIN realm r ON ue.realm_id=r.id WHERE r.name='master' AND ue.username='${KC_USER}';")
+
+# Read hash iterations from the existing credential (varies by Keycloak version)
+ITERS=$(kubectl exec -n keycloak postgres-kc-0 -- psql -U postgres -d postgres -tA -c \
+  "SELECT credential_data::json->>'hashIterations' FROM credential WHERE user_id='${ADMIN_ID}';")
+
+# Generate a new password hash matching the secret
 python3 -c "
 import hashlib, base64, os, json
-dk = hashlib.pbkdf2_hmac('sha256', '$KC_PASS'.encode(), (salt := os.urandom(16)), 27500)
+dk = hashlib.pbkdf2_hmac('sha256', '${KC_PASS}'.encode(), (salt := os.urandom(16)), ${ITERS})
 print(json.dumps({'value': base64.b64encode(dk).decode(), 'salt': base64.b64encode(salt).decode(), 'additionalParameters': {}}))
 " > /tmp/kc-secret-data.json
+chmod 600 /tmp/kc-secret-data.json
 
-# Find the admin user ID and update the credential
-ADMIN_ID=$(kubectl exec -n keycloak postgres-kc-0 -- psql -U postgres -d postgres -t -c \
-  "SELECT id FROM user_entity ue JOIN realm r ON ue.realm_id=r.id WHERE r.name='master' AND ue.username='temp-admin';")
-
+# Update the credential in the database
 kubectl exec -n keycloak postgres-kc-0 -- psql -U postgres -d postgres -c \
   "UPDATE credential SET secret_data='$(cat /tmp/kc-secret-data.json)',
-   credential_data='{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}'
-   WHERE user_id='${ADMIN_ID// /}';"
+   credential_data='{\"hashIterations\":${ITERS},\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}'
+   WHERE user_id='${ADMIN_ID}';"
+
+rm -f /tmp/kc-secret-data.json
 ```
 
 After updating, re-run `deploy-shared.sh`.
