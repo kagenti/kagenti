@@ -1,0 +1,41 @@
+{{- if .Values.features.agentSandbox }}
+# Supplemental RBAC for kagenti-operator to manage ownerReferences on Sandbox CRs.
+# The operator's bundled ClusterRole (0.2.x) is missing sandboxes/finalizers,
+# which causes blockOwnerDeletion failures when creating keycloak client secrets
+# owned by a Sandbox resource. Fixed upstream in operator PR #363; this template
+# provides the same permission without requiring an operator image rebuild.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kagenti.fullname" . }}-operator-sandbox-finalizers
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - agent.kagenti.dev
+  resources:
+  - agentcards/finalizers
+  verbs:
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kagenti.fullname" . }}-operator-sandbox-finalizers
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kagenti.fullname" . }}-operator-sandbox-finalizers
+subjects:
+- kind: ServiceAccount
+  name: controller-manager
+  namespace: {{ .Release.Namespace }}
+{{- end }}
