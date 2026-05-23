@@ -13,6 +13,7 @@ by both agent and tool routers. It handles:
 - Resource configuration extraction from annotations
 """
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,6 +28,7 @@ from app.core.constants import (
     KAGENTI_FRAMEWORK_LABEL,
     SHIPWRIGHT_CRD_GROUP,
     SHIPWRIGHT_CRD_VERSION,
+    SHIPWRIGHT_BUILDS_PLURAL,
     SHIPWRIGHT_GIT_SECRET_NAME,
     SHIPWRIGHT_DEFAULT_RETENTION_SUCCEEDED,
     SHIPWRIGHT_DEFAULT_RETENTION_FAILED,
@@ -56,6 +58,39 @@ def resolve_clone_secret(core_api: Any, namespace: str) -> Optional[str]:
         return SHIPWRIGHT_GIT_SECRET_NAME
     except Exception:
         return None
+
+
+async def wait_for_build_registered(
+    custom_api: Any, name: str, namespace: str, timeout: float = 10.0, interval: float = 0.5
+) -> bool:
+    """Wait for a Shipwright Build to reach Registered=True before creating a BuildRun.
+
+    The Shipwright controller needs time to validate a Build after creation.
+    Creating a BuildRun before registration completes causes BuildNotFound errors.
+    """
+    elapsed = 0.0
+    while elapsed < timeout:
+        try:
+            build = custom_api.get_namespaced_custom_object(
+                group=SHIPWRIGHT_CRD_GROUP,
+                version=SHIPWRIGHT_CRD_VERSION,
+                namespace=namespace,
+                plural=SHIPWRIGHT_BUILDS_PLURAL,
+                name=name,
+            )
+            registered = build.get("status", {}).get("registered")
+            if registered == "True":
+                return True
+            reason = build.get("status", {}).get("reason", "")
+            if registered == "False" and reason:
+                logger.warning("Build '%s' registration failed: %s", name, reason)
+                return False
+        except Exception:
+            pass
+        await asyncio.sleep(interval)
+        elapsed += interval
+    logger.warning("Build '%s' registration timed out after %.1fs", name, timeout)
+    return False
 
 
 def select_build_strategy(registry_url: str, requested_strategy: Optional[str] = None) -> str:

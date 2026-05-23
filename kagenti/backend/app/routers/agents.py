@@ -118,6 +118,7 @@ from app.services.shipwright import (
     get_latest_buildrun,
     extract_buildrun_info,
     resolve_clone_secret,
+    wait_for_build_registered,
 )
 from app.services.shipwright_builds import collect_kagenti_shipwright_builds
 
@@ -3215,6 +3216,11 @@ async def create_agent(
             )
             logger.info(
                 f"Created Shipwright Build '{request.name}' in namespace '{request.namespace}'"
+            )
+
+            # Wait for Build registration before creating BuildRun
+            await wait_for_build_registered(
+                kube.custom_api, name=request.name, namespace=request.namespace
             )
 
             # Step 2: Create BuildRun CR to trigger the build

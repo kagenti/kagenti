@@ -131,18 +131,30 @@ export const ImportAgentPage: React.FC = () => {
   const [showStartCommand, setShowStartCommand] = useState(false);
 
   // Registry configuration (for build from source)
-  const [registryType, setRegistryType] = useState('local');
+  // Default to 'openshift' when the backend reports the OpenShift internal registry.
+  const defaultRegistryType = features.defaultRegistry.includes('openshift-image-registry')
+    ? 'openshift' : 'local';
+  const [registryType, setRegistryType] = useState(defaultRegistryType);
   const [registryNamespace, setRegistryNamespace] = useState('');
   const [registrySecret, setRegistrySecret] = useState('');
 
   // Update registry secret default when registry type changes
+  // OpenShift internal registry uses SA-based auth (pipeline SA has system:image-builder),
+  // so no push secret is needed — same as 'local'.
   React.useEffect(() => {
-    if (registryType !== 'local') {
+    if (registryType !== 'local' && registryType !== 'openshift') {
       setRegistrySecret(`${registryType}-registry-secret`);
     } else {
       setRegistrySecret('');
     }
   }, [registryType]);
+
+  // For OpenShift internal registry, the registry "namespace" is the K8s namespace.
+  React.useEffect(() => {
+    if (registryType === 'openshift') {
+      setRegistryNamespace(namespace);
+    }
+  }, [registryType, namespace]);
 
   // Shipwright build configuration (always enabled for source builds)
   const [buildStrategy, setBuildStrategy] = useState('buildah-insecure-push');
@@ -497,7 +509,7 @@ export const ImportAgentPage: React.FC = () => {
         // Additional fields for build from source
         deploymentMethod: 'source',
         registryUrl: getRegistryUrl(),
-        registrySecret: registryType !== 'local' ? registrySecret : undefined,
+        registrySecret: (registryType !== 'local' && registryType !== 'openshift') ? registrySecret : undefined,
         startCommand: showStartCommand ? startCommand : undefined,
         servicePorts,
         createHttpRoute,

@@ -64,7 +64,7 @@ const STATUS_COLOR: Record<ComponentStatus['status'], 'green' | 'gold' | 'grey'>
   Unknown: 'grey',
 };
 
-type DisplayedFlag = Exclude<keyof FeatureFlags, 'admin'>;
+type DisplayedFlag = Exclude<keyof FeatureFlags, 'admin' | 'defaultRegistry'>;
 
 const FLAG_LABELS: Record<DisplayedFlag, string> = {
   builds: 'Builds (Shipwright)',

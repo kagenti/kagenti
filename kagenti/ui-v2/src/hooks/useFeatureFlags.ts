@@ -17,6 +17,8 @@ export interface FeatureFlags {
   authbridgeAPI: boolean;
   /** Platform Status card and /platform-status endpoint */
   admin: boolean;
+  /** Configured default registry URL (helps UI pick registry type). */
+  defaultRegistry: string;
 }
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -28,6 +30,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   skills: false,
   authbridgeAPI: false,
   admin: false,
+  defaultRegistry: '',
 };
 
 let cachedFlags: FeatureFlags | null = null;
@@ -50,6 +53,7 @@ export function useFeatureFlags(): FeatureFlags {
           skills: data.skills === true,
           authbridgeAPI: data.authbridgeAPI === true,
           admin: data.admin === true,
+          defaultRegistry: typeof data.defaultRegistry === 'string' ? data.defaultRegistry : '',
           };
         cachedFlags = validated;
         setFlags(validated);
