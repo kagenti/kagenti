@@ -108,19 +108,31 @@ export const ImportToolPage: React.FC = () => {
   const [selectedExample, setSelectedExample] = useState('');
 
   // Registry configuration (for build from source)
-  const [registryType, setRegistryType] = useState('local');
+  // Default to 'openshift' when the backend reports the OpenShift internal registry.
+  const defaultRegistryType = features.defaultRegistry.includes('openshift-image-registry')
+    ? 'openshift' : 'local';
+  const [registryType, setRegistryType] = useState(defaultRegistryType);
   const [registryNamespace, setRegistryNamespace] = useState('');
   const [registrySecret, setRegistrySecret] = useState('');
   const [imageTag, setImageTag] = useState('v0.0.1');
 
   // Update registry secret default when registry type changes
+  // OpenShift internal registry uses SA-based auth (pipeline SA has system:image-builder),
+  // so no push secret is needed — same as 'local'.
   React.useEffect(() => {
-    if (registryType !== 'local') {
+    if (registryType !== 'local' && registryType !== 'openshift') {
       setRegistrySecret(`${registryType}-registry-secret`);
     } else {
       setRegistrySecret('');
     }
   }, [registryType]);
+
+  // For OpenShift internal registry, the registry "namespace" is the K8s namespace.
+  React.useEffect(() => {
+    if (registryType === 'openshift') {
+      setRegistryNamespace(namespace);
+    }
+  }, [registryType, namespace]);
 
   // Shipwright build configuration
   const [buildStrategy, setBuildStrategy] = useState('buildah-insecure-push');

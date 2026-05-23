@@ -36,6 +36,9 @@ class FeatureFlagsResponse(BaseModel):
     skills: bool = Field(description="Skill management system (CRUD + catalog UI)")
     authbridgeAPI: bool = Field(description="AuthBridge statistics (API and UI)")
     admin: bool = Field(description="Platform Status card and /platform-status endpoint")
+    defaultRegistry: str = Field(
+        default="", description="Configured default registry URL (helps UI pick registry type)"
+    )
 
 
 class ComponentStatus(BaseModel):
@@ -85,6 +88,7 @@ async def get_feature_flags(
         skills=settings.kagenti_feature_flag_skills,
         authbridgeAPI=settings.kagenti_feature_flag_authbridge_api,
         admin=settings.kagenti_feature_flag_admin,
+        defaultRegistry=settings.default_registry_url,
     )
 
 

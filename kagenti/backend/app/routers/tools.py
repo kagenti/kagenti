@@ -82,6 +82,7 @@ from app.services.shipwright import (
     is_build_succeeded,
     get_output_image_from_buildrun,
     resolve_clone_secret,
+    wait_for_build_registered,
 )
 from app.utils.routes import (
     create_route_for_agent_or_tool,
@@ -1418,6 +1419,11 @@ async def create_tool(
             )
             logger.info(
                 f"Created Shipwright Build '{request.name}' for tool in namespace '{request.namespace}'"
+            )
+
+            # Wait for Build registration before creating BuildRun
+            await wait_for_build_registered(
+                kube.custom_api, name=request.name, namespace=request.namespace
             )
 
             # Step 2: Create BuildRun CR to trigger the build
