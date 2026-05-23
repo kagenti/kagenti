@@ -62,6 +62,12 @@ def test_build_authbridge_runtime_yaml_client_secret():
     assert tok["keycloak_realm"] == "kagenti"
     assert tok["default_policy"] == "passthrough"
     assert tok["identity"]["type"] == "client-secret"
+    # Without SPIRE, no top-level spiffe block is emitted; authbridge
+    # leaves the in-process Provider unbuilt.
+    assert "spiffe" not in cfg
+    # client-secret identity has no JWT-SVID assertion path; jwt_audience
+    # must NOT be emitted (it would be ignored but is misleading config).
+    assert "jwt_audience" not in tok["identity"]
 
     # Plugin defaults are applied by the authbridge binary, not
     # emitted here. Asserting absence keeps the contract honest.
@@ -72,7 +78,7 @@ def test_build_authbridge_runtime_yaml_client_secret():
 
 
 def test_build_authbridge_runtime_yaml_spire_enabled():
-    """SPIRE-enabled config maps to spiffe identity."""
+    """SPIRE-enabled config maps to spiffe identity with jwt_audience."""
     from app.routers.agents import _build_authbridge_runtime_yaml
 
     result = _build_authbridge_runtime_yaml(
@@ -83,8 +89,16 @@ def test_build_authbridge_runtime_yaml_spire_enabled():
     )
     cfg = yaml.safe_load(result)
 
+    # Top-level spiffe block (empty mapping) signals authbridge to
+    # construct the in-process SPIFFE provider. All fields default.
+    assert "spiffe" in cfg
+    assert cfg["spiffe"] == {}
+
     tok = _plugin_config(cfg, "outbound", "token-exchange")
     assert tok["identity"]["type"] == "spiffe"
+    # JWT-SVID client-assertion audience — must equal the realm issuer
+    # URL Keycloak's SPIFFE IdP expects. See kagenti-extensions#332.
+    assert tok["identity"]["jwt_audience"] == "http://keycloak.example.com/realms/kagenti"
     # jwt_svid_path is not emitted — the plugin applies
     # /opt/jwt_svid.token as its default when identity.type is spiffe.
     assert "jwt_svid_path" not in tok["identity"]

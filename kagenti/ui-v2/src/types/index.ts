@@ -493,6 +493,11 @@ export interface TokenExchangePluginConfig {
 
 export interface IdentityConfig {
   type: string; // "spiffe" | "client-secret"
+  // jwt_audience is required when type === "spiffe": authbridge mints
+  // a JWT-SVID with this audience and sends it as the OAuth client_assertion
+  // to Keycloak. Must match Keycloak's SPIFFE IdP expected audience
+  // (typically the realm issuer URL). Omitted when type === "client-secret".
+  jwt_audience?: string;
 }
 
 export interface AuthBridgeStats {

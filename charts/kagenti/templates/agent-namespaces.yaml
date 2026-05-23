@@ -1,6 +1,7 @@
 # This template configures the agent namespaces based on the list provided in values.yaml.
 # For each namespace, it creates the namespace itself, applies necessary labels,
 # and creates secrets for GitHub, OpenAI, and Slack.
+{{- include "kagenti.authBridge.validateSpiffeIdentity" . -}}
 {{- if .Values.agentNamespaces }}
 {{- $root := . }}
 {{- range $root.Values.agentNamespaces }}
@@ -110,7 +111,7 @@ data:
 #  ConfigMap for AuthBridge in Namespace: {{ . }}
 #  Consolidated config consumed by the kagenti-operator and injected sidecars:
 #  - kagenti-operator: Client registration controller (reads KEYCLOAK_URL, KEYCLOAK_REALM)
-#  - kagenti-webhook: Injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS, JWT_AUDIENCE
+#  - kagenti-webhook: Injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS
 #  - authbridge sidecars: Read ISSUER, EXPECTED_AUDIENCE for inbound JWT validation
 #
 #  NOTE: KEYCLOAK_NAMESPACE is only used by Helm-hook Jobs (spiffe-idp-setup, agent-oauth-secret)
@@ -139,7 +140,6 @@ data:
   # Authentication configuration (used by operator and webhook injector)
   CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
-  JWT_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
   # EXPECTED_AUDIENCE: Read by authbridge-unified ext_proc (envoy-proxy sidecar)
   # for inbound JWT "aud" claim validation. Must match the audience mapper value
   # configured in Keycloak (kagenti-platform-audience scope).
@@ -342,6 +342,14 @@ data:
   # No top-level `mode:` — see the matching template-configmap in
   # authbridge-template-configmaps.yaml for the rationale.
   config.yaml: |
+    {{- if $root.Values.spire.enabled }}
+    # Empty spiffe block signals authbridge to construct an in-process
+    # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
+    # tokenexchange). All fields default: socket points at the standard
+    # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation. The
+    # JWT audience is per-tokenexchange (see identity.jwt_audience below).
+    spiffe: {}
+    {{- end }}
     pipeline:
       inbound:
         plugins:
@@ -372,6 +380,12 @@ data:
                 #   "client-secret"  → "client-secret" (traditional)
                 #   "federated-jwt"  → "spiffe" (SPIFFE JWT-SVID authentication)
                 type: {{ eq $root.Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" $root.Values.authBridge.clientAuthType | quote }}
+                {{- if eq $root.Values.authBridge.clientAuthType "federated-jwt" }}
+                # Audience the JWT-SVID client assertion is minted with —
+                # must equal the audience Keycloak's SPIFFE IdP expects
+                # (the realm issuer URL). Only meaningful when type=spiffe.
+                jwt_audience: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+                {{- end }}
 ---
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————
