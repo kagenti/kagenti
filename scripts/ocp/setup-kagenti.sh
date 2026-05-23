@@ -221,6 +221,7 @@ _clone_kagenti() {
 }
 
 KAGENTI_SOURCE=""
+KAGENTI_REPO_ORIGINAL="$KAGENTI_REPO"
 if [ -z "$KAGENTI_REPO" ]; then
   # No --kagenti-repo given: always clone fresh from upstream main
   KAGENTI_SOURCE="$KAGENTI_GITHUB_URL"
@@ -1307,7 +1308,8 @@ KAGENTI_UI_FLAGS=()
 if $SKIP_UI; then
   log_info "Kagenti UI: skipped (--skip-ui)"
   KAGENTI_UI_FLAGS+=(--set components.ui.enabled=false)
-else
+elif [ -z "$KAGENTI_REPO_ORIGINAL" ]; then
+  # No --kagenti-repo provided: detect latest release tag from remote
   log_info "Detecting latest kagenti release tag..."
   LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
   if [ -z "$LATEST_TAG" ]; then
@@ -1317,6 +1319,9 @@ else
   log_success "Using tag: v${LATEST_TAG}"
   KAGENTI_UI_FLAGS+=(--set "ui.frontend.tag=v${LATEST_TAG}")
   KAGENTI_UI_FLAGS+=(--set "ui.backend.tag=v${LATEST_TAG}")
+else
+  # Local or explicit repo: trust the chart's pinned image tags
+  log_info "Using image tags from chart values (--kagenti-repo provided)"
 fi
 
 # Override operator chart dependency with local repo if provided
