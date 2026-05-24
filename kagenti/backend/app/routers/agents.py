@@ -3117,18 +3117,7 @@ def _build_sandbox_manifest(
     shipwright_build_name: Optional[str] = None,
 ) -> dict:
     """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation."""
-    # Sandbox controller creates a headless Service with no port translation,
-    # so the container must listen on the same port clients connect to (the
-    # external service port, which is also baked into AGENT_ENDPOINT). For
-    # other workload types the Service port-translates to targetPort, so the
-    # split is fine there.
-    service_port = (
-        request.servicePorts[0].port if request.servicePorts else DEFAULT_OFF_CLUSTER_PORT
-    )
-    env_vars = [
-        {"name": "PORT", "value": str(service_port)} if ev.get("name") == "PORT" else ev
-        for ev in _build_env_vars(request)
-    ]
+    env_vars = _build_env_vars(request)
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
 
