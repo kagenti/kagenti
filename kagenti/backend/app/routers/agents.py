@@ -3117,7 +3117,7 @@ def _build_sandbox_manifest(
     shipwright_build_name: Optional[str] = None,
 ) -> dict:
     """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation.
-    
+
     Includes skill volume mounts and persistent storage support.
     """
     env_vars = _build_env_vars(request)
