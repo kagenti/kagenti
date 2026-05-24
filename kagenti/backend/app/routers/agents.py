@@ -3116,7 +3116,10 @@ def _build_sandbox_manifest(
     image: str,
     shipwright_build_name: Optional[str] = None,
 ) -> dict:
-    """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation."""
+    """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation.
+    
+    Includes skill volume mounts and persistent storage support.
+    """
     env_vars = _build_env_vars(request)
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
