@@ -1,4 +1,4 @@
-{{- if .Values.features.agentSandbox }}
+{{- if .Values.featureFlags.agentSandbox }}
 # Supplemental RBAC for kagenti-operator to manage ownerReferences on Sandbox CRs.
 # The operator's bundled ClusterRole (0.2.x) is missing sandboxes/finalizers,
 # which causes blockOwnerDeletion failures when creating keycloak client secrets
