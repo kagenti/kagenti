@@ -192,10 +192,7 @@ class TestBuildServiceManifestForSandbox:
 class TestCreateOrReplaceService:
     """Tests for `_create_or_replace_service` — the shared helper used by both
     the image-based agent-create flow and the source-build / Shipwright finalize
-    flow. Covers the workload-type gate (Job → skip) and the Sandbox controller
-    409-race recovery (delete+recreate). Pre-`kagenti#1581` / `#1593` the two
-    call sites had divergent inline copies of this logic; the helper exists to
-    keep them from drifting again, and these tests pin the contract."""
+    flow. Covers the workload-type gate (Job and Sandbox → skip, others → create)."""
 
     def _service_manifest(self, name="test-agent"):
         # The helper doesn't inspect the manifest content, just passes it
@@ -219,17 +216,16 @@ class TestCreateOrReplaceService:
         kube.create_service.assert_not_called()
         kube.delete_service.assert_not_called()
 
-    def test_sandbox_creates_service(self):
-        """Sandbox must NOT be skipped — pre-`kagenti#1581` it was, breaking the
-        operator's AgentCardReconciler. This test would have caught both that
-        regression and the source-build path's parallel bug fixed by `#1593`."""
+    def test_sandbox_skips_service_creation(self):
+        """Sandbox agents don't get a backend-managed Service — the Sandbox
+        controller manages its own headless Service (ClusterIP=None)."""
         from app.routers.agents import _create_or_replace_service
 
         kube = MagicMock()
         manifest = self._service_manifest("sb")
         _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
 
-        kube.create_service.assert_called_once_with(namespace="team1", body=manifest)
+        kube.create_service.assert_not_called()
         kube.delete_service.assert_not_called()
 
     def test_deployment_creates_service(self):
@@ -243,22 +239,18 @@ class TestCreateOrReplaceService:
         kube.create_service.assert_called_once_with(namespace="team1", body=manifest)
         kube.delete_service.assert_not_called()
 
-    def test_sandbox_409_replaces_existing_service(self):
-        """The agent-sandbox controller can race us by creating its own
-        short-lived Service. On 409 we delete it and recreate with our
-        backend-managed shape (kagenti#1581's pattern)."""
+    def test_sandbox_409_not_applicable(self):
+        """Sandbox workloads are skipped entirely — no race handling needed
+        since the backend never creates a Service for Sandbox agents."""
         from app.routers.agents import _create_or_replace_service
-        from kubernetes.client import ApiException
 
         kube = MagicMock()
-        # First create_service raises 409; second succeeds (after delete).
-        kube.create_service.side_effect = [ApiException(status=409), None]
         manifest = self._service_manifest("sb")
 
         _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
 
-        assert kube.create_service.call_count == 2
-        kube.delete_service.assert_called_once_with(namespace="team1", name="sb")
+        kube.create_service.assert_not_called()
+        kube.delete_service.assert_not_called()
 
     def test_deployment_409_propagates(self):
         """Deployment workloads do not have a controller-race recovery — a 409
@@ -278,9 +270,9 @@ class TestCreateOrReplaceService:
         assert exc_info.value.status == 409
         kube.delete_service.assert_not_called()
 
-    def test_non_409_propagates_for_sandbox(self):
-        """Even on Sandbox, only a 409 triggers the replace path. Other API
-        errors (403, 500, etc.) propagate so callers can see real failures."""
+    def test_non_409_propagates_for_deployment(self):
+        """Non-409 errors propagate for Deployment workloads so callers can
+        see real failures (403, 500, etc.)."""
         from app.routers.agents import _create_or_replace_service
         from kubernetes.client import ApiException
         import pytest
@@ -290,7 +282,7 @@ class TestCreateOrReplaceService:
 
         with pytest.raises(ApiException) as exc_info:
             _create_or_replace_service(
-                kube, "team1", "sb", self._service_manifest("sb"), WORKLOAD_TYPE_SANDBOX
+                kube, "team1", "dep", self._service_manifest("dep"), "deployment"
             )
         assert exc_info.value.status == 500
         kube.delete_service.assert_not_called()

@@ -2632,23 +2632,13 @@ def _create_or_replace_service(
     service_manifest: dict,
     workload_type: str,
 ) -> None:
-    """Create the Service for an agent / tool, with the Sandbox-controller-race
-    handling that kagenti#1581 introduced.
+    """Create the Service for an agent / tool.
 
-    Returns silently for ``WORKLOAD_TYPE_JOB`` since Jobs don't need a Service
-    (the operator's `AgentCardReconciler` doesn't reconcile Jobs).
-
-    For ``WORKLOAD_TYPE_SANDBOX`` an existing Service may have been created by
-    the agent-sandbox controller before our admission window — kagenti#1581
-    handles that 409 by deleting the controller's short-lived Service and
-    replacing it with the backend-managed ClusterIP shape. Other workload
-    types (Deployment, StatefulSet) re-raise on 409.
-
-    Used by both the image-based create flow (kagenti#1581) and the
-    source-build / Shipwright finalize flow (kagenti#1593) so the two paths
-    can't drift again.
+    Returns silently for ``WORKLOAD_TYPE_JOB`` and ``WORKLOAD_TYPE_SANDBOX``
+    since Jobs don't need a Service and the Sandbox controller manages its own
+    headless Service (ClusterIP=None).
     """
-    if workload_type == WORKLOAD_TYPE_JOB:
+    if workload_type in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
         return
     # Strip CR/LF before logging — name and namespace come from the FastAPI
     # request body. Kubernetes will reject non-DNS-1123 names so this is
@@ -2656,21 +2646,8 @@ def _create_or_replace_service(
     # py/log-injection taint analysis on the user-input → log-sink flow.
     safe_name = name.replace("\n", "").replace("\r", "")
     safe_namespace = namespace.replace("\n", "").replace("\r", "")
-    try:
-        kube.create_service(namespace=namespace, body=service_manifest)
-        logger.info("Created Service '%s' in namespace '%s'", safe_name, safe_namespace)
-    except ApiException as e:
-        if e.status == 409 and workload_type == WORKLOAD_TYPE_SANDBOX:
-            logger.warning(
-                "Service '%s' already exists (Sandbox controller race); "
-                "replacing with backend-managed ClusterIP Service",
-                safe_name,
-            )
-            kube.delete_service(namespace=namespace, name=name)
-            kube.create_service(namespace=namespace, body=service_manifest)
-            logger.info("Replaced Service '%s' in namespace '%s'", safe_name, safe_namespace)
-        else:
-            raise
+    kube.create_service(namespace=namespace, body=service_manifest)
+    logger.info("Created Service '%s' in namespace '%s'", safe_name, safe_namespace)
 
 
 def _build_service_manifest(request: "CreateAgentRequest") -> dict:
@@ -3154,16 +3131,17 @@ async def create_agent(
                 )
                 logger.info(f"Created Sandbox '{request.name}' in namespace '{request.namespace}'")
 
-            # Create Service (not needed for Jobs — Sandbox uses backend-managed
-            # Service, see _create_or_replace_service for the full rationale).
-            service_manifest = _build_service_manifest(request)
-            _create_or_replace_service(
-                kube,
-                request.namespace,
-                request.name,
-                service_manifest,
-                request.workloadType,
-            )
+            # Create Service (not needed for Jobs or Sandboxes — the Sandbox
+            # controller manages its own headless Service with ClusterIP=None).
+            if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+                service_manifest = _build_service_manifest(request)
+                _create_or_replace_service(
+                    kube,
+                    request.namespace,
+                    request.name,
+                    service_manifest,
+                    request.workloadType,
+                )
 
             # Create AgentRuntime CR so the webhook injects sidecars on pod rollout
             if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
