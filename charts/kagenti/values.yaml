@@ -48,6 +48,7 @@ secrets:
 
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
+  oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.17"
 
 # ------------------------------------------------------------------
 #  Components Configurations
@@ -76,7 +77,7 @@ ui:
   frontend:
     enabled: true
     image: ghcr.io/kagenti/kagenti/ui-v2
-    tag: v0.6.0-rc.1
+    tag: v0.7.0-alpha.2
     resources:
       limits:
         cpu: 100m
@@ -90,9 +91,12 @@ ui:
   # Backend configuration
   backend:
     image: ghcr.io/kagenti/kagenti/backend
-    tag: v0.6.0-rc.1
+    tag: v0.7.0-alpha.2
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
+    # Default Shipwright build strategy for internal registries
+    # Kind: "buildah-insecure-push" (no TLS), OCP: "buildah" (TLS-enabled registry)
+    shipwrightDefaultStrategy: ""
     resources:
       limits:
         cpu: 250m
@@ -108,7 +112,7 @@ ui:
 # ------------------------------------------------------------------
 uiOAuthSecret:
   image: ghcr.io/kagenti/kagenti/ui-oauth-secret
-  tag: v0.6.0-rc.1
+  tag: v0.7.0-alpha.2
   # When true, mount the in-cluster serviceaccount CA
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -120,7 +124,7 @@ uiOAuthSecret:
 # ------------------------------------------------------------------
 agentOAuthSecret:
   image: ghcr.io/kagenti/kagenti/agent-oauth-secret
-  tag: v0.6.0-rc.1
+  tag: v0.7.0-alpha.2
   # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -138,7 +142,7 @@ agentOAuthSecret:
 apiOAuthSecret:
   enabled: false
   image: ghcr.io/kagenti/kagenti/api-oauth-secret
-  tag: v0.6.0-rc.1
+  tag: v0.7.0-alpha.2
   # Client ID for the API service account
   clientId: kagenti-api
   # Name of the K8s secret to store credentials
@@ -210,7 +214,7 @@ authBridge:
 spiffeIdp:
   image:
     repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
-    tag: v0.6.0-rc.1
+    tag: v0.7.0-alpha.2
     pullPolicy: IfNotPresent
 
 # ------------------------------------------------------------------
@@ -221,7 +225,7 @@ kagenti-operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.2.0-rc.3
+        tag: 0.3.0-alpha.2
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -246,16 +250,24 @@ kagenti-operator-chart:
   signatureVerification:
     spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
-  # NOTE: The client-registration sidecar has been sunset.
-  # v0.5.0-rc.2 includes per-plugin config support (extensions#378) and
-  # keycloak_url/keycloak_realm fields in jwt-validation (extensions#383),
-  # required for compatibility with operator v0.2.0-rc.3's synthesizePipeline output.
+  #
+  # After kagenti-extensions#411 there are three combined images:
+  #   * authbridge      — proxy-sidecar mode (default), full plugin set
+  #                       including the a2a/mcp/inference parsers.
+  #   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
+  #                       proxyInit's iptables setup.
+  #   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
+  #                       (parsers dropped). For size-constrained deployments;
+  #                       not selected by default.
+  # Spiffe-helper is bundled inside each combined image and gated per
+  # workload by the SPIRE_ENABLED env var; it is no longer a separate
+  # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.5.0-rc.2
-      authbridgeLight: ghcr.io/kagenti/kagenti-extensions/authbridge-light:v0.5.0-rc.2
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.5.0-rc.2
-      spiffeHelper: ghcr.io/kagenti/kagenti-extensions/spiffe-helper:v0.5.0-rc.2
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.4
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.4
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.4
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.4
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
@@ -286,7 +298,7 @@ phoenix:
 # ------------------------------------------------------------------
 phoenixOAuthSecret:
   image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
-  tag: v0.6.0-rc.1
+  tag: v0.7.0-alpha.2
   # Keycloak client ID for Phoenix
   clientId: phoenix
   # Kubernetes secret name to store OAuth credentials
@@ -314,7 +326,7 @@ mlflow:
 # ------------------------------------------------------------------
 mlflowOAuthSecret:
   image: ghcr.io/kagenti/kagenti/mlflow-oauth-secret
-  tag: v0.6.0-rc.1
+  tag: v0.7.0-alpha.2
   # Keycloak client ID for MLflow
   clientId: mlflow
   # Kubernetes secret name to store OAuth credentials

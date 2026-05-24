@@ -68,7 +68,7 @@ artifacts when a tag is pushed:
 | Repository | Artifacts on tag push | CI workflow(s) |
 |------------|----------------------|----------------|
 | [kagenti/kagenti](https://github.com/kagenti/kagenti) | Container images (ui-v2, backend, oauth-secrets), Helm charts (kagenti, kagenti-deps) | `build.yaml` |
-| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (authbridge-envoy, authbridge-light, proxy-init, client-registration, spiffe-helper) | `build.yaml` |
+| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (authbridge, authbridge-envoy, authbridge-lite, proxy-init) | `build.yaml` |
 | [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator) | Operator image, Helm chart (kagenti-operator-chart) | repo-specific |
 | [kagenti/agent-examples](https://github.com/kagenti/agent-examples) | Sample agent/tool images | repo-specific |
 
@@ -176,6 +176,79 @@ The `ui.tag` and `backend.tag` fields are already pinned to specific versions
 get different image versions, making it impossible to reproduce issues or
 guarantee a tested set of components. Every image referenced in `values.yaml`
 should resolve to a specific, immutable tag for any RC or GA release.
+
+## Release Pin Validation
+
+Two automated tools enforce image tag pinning and provide E2E validation against
+specific release tags.
+
+### Pin-validation script
+
+`scripts/check-release-pins.sh` checks that all image tags and chart
+dependencies are pinned. It exits non-zero if any release-blocking issue is
+found.
+
+**Run locally:**
+
+```bash
+bash scripts/check-release-pins.sh
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output structured JSON (used by CI for `$GITHUB_STEP_SUMMARY`) |
+| `--verify-images` | Also check that pinned GHCR images exist via `docker manifest inspect` |
+
+**What it checks:**
+
+- No `tag: latest` in `charts/kagenti/values.yaml` (hard fail)
+- No `:latest` in `charts/kagenti/templates/` (hard fail)
+- All dependency versions in `Chart.yaml` are pinned (hard fail)
+- `Chart.lock` is present (warning)
+
+**CI behavior:** The `ci-release-pins.yaml` workflow runs this script on any
+PR that touches `charts/` and posts a summary to the Actions tab for
+visibility. It only *fails* the check when the PR targets a `release/*`
+branch — on `main` it's informational, because `tag: latest` is intentional
+during normal development (tags get pinned during release prep).
+
+Maintainers can also trigger the workflow manually via the Actions tab
+(`workflow_dispatch`) to run the full check on any branch, useful before a
+`release/*` branch exists.
+
+### E2E release validation workflow
+
+`e2e-release-validation.yaml` is a `workflow_dispatch`-only workflow that runs
+the full E2E suite against a specific release tag.
+
+**Trigger from the CLI:**
+
+```bash
+gh workflow run e2e-release-validation.yaml \
+  -f version=v0.6.0-alpha.5 \
+  --repo kagenti/kagenti
+```
+
+**With HyperShift E2E:**
+
+```bash
+gh workflow run e2e-release-validation.yaml \
+  -f version=v0.6.0-alpha.5 \
+  -f run_hypershift=true \
+  --repo kagenti/kagenti
+```
+
+**What it does:**
+
+1. Checks out the specified tag
+2. Runs `scripts/check-release-pins.sh` (fails fast before spinning up clusters)
+3. Runs the Kind E2E suite against the tag
+4. Optionally runs the HyperShift E2E suite
+
+The workflow posts a summary to the GitHub Actions tab. Link the workflow run URL
+in release notes as evidence of validation.
 
 ## Cutting a Release Candidate
 
@@ -345,14 +418,14 @@ prefix). The `appVersion` field may differ if it tracks a different cadence.
 
 If a GA release ships with `tag: latest` in `values.yaml`, users installing at
 different times will get different image versions, making issues unreproducible.
-Search for remaining `latest` references:
+Run the pin-validation script to find all issues:
 
 ```bash
-grep -n 'tag: latest' charts/kagenti/values.yaml
-grep -rn ':latest' charts/kagenti/templates/
+bash scripts/check-release-pins.sh
 ```
 
-Fix any found before tagging.
+Fix any failures before tagging. See
+[Release Pin Validation](#release-pin-validation) for details.
 
 ## Using the Release Skill
 

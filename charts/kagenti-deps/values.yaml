@@ -181,6 +181,7 @@ otel:
       tag: "0.122.1"
     service: otel-collector.kagenti-system.svc.cluster.local
     port: 4317
+
     # Base collector configuration rendered as the ConfigMap base.yaml.
     # Override any key via values files or --set flags.
     config:
@@ -295,7 +296,8 @@ otel:
           traces:
             span:
               - 'IsMatch(name, "^a2a\\..*")'
-              - 'attributes["http.method"] != nil'
+              - 'attributes["http.method"] != nil and IsMatch(name, "^(POST|GET|DELETE)$")'
+              - 'IsMatch(name, "^mcp-router\\..*") and (attributes["http.method"] == "GET" or attributes["http.method"] == "DELETE")'
               - 'attributes["mcp.method.name"] == "initialize"'
               - 'attributes["mcp.method.name"] == "notifications/initialized"'
               - 'attributes["mcp.method.name"] == "notifications/cancelled"'
@@ -321,6 +323,13 @@ otel:
     # Uses the collector's ServiceAccount token for authentication against
     # RHOAI MLflow's Kubernetes authorization plugin.
     rhoaiMlflowAuthConfig:
+      exporters:
+        otlphttp/mlflow:
+          compression: none
+          retry_on_failure:
+            enabled: false
+          tls:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
       extensions:
         bearertokenauth/mlflow:
           filename: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -348,7 +357,7 @@ certManager:
 # ------------------------------------------------------------------
 rhoai:
   namespace: redhat-ods-operator
-  channel: fast-3.x
+  channel: stable-3.4
   installPlanApproval: Automatic
 
 # When true, skip servicemeshoperator3 Subscription creation (RHOAI provides it)

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -716,7 +716,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
-    { name = "kubernetes", specifier = ">=31.0.0" },
+    { name = "kubernetes", specifier = ">=31.0.0,!=36.*" },
     { name = "mcp", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pydantic-settings", specifier = ">=2.5.0" },

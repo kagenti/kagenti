@@ -119,10 +119,57 @@ scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-builds
 | Flag | Description |
 |------|-------------|
 | `--skip-cluster` | Reuse an existing Kind cluster |
+| `--build-images` | Build platform images from source and load into Kind (backend, ui-v2, agent-oauth-secret, mlflow-oauth-secret) |
+| `--preload-images` | Pre-pull third-party images on the host and load them into the Kind node for faster pod startup (see [Preloading Images](#preloading-images)) |
 | `--secrets-file FILE` | YAML file with secrets (see below) |
 | `--cluster-name NAME` | Kind cluster name (default: `kagenti`) |
 | `--domain DOMAIN` | Domain for services (default: `localtest.me`) |
+| `--kagenti-values FILE` | Helm override file applied to the `kagenti` chart |
+| `--kagenti-deps-values FILE` | Helm override file applied to the `kagenti-deps` chart |
 | `--dry-run` | Show commands without executing |
+
+#### Preloading Images
+
+The `--preload-images` flag pulls third-party container images onto the host
+ahead of time and side-loads them into the Kind control-plane node. This avoids
+Docker Hub anonymous-pull rate limits (which can stall a fresh install when
+Istio, Phoenix, OTel collector, and other images are pulled in parallel) and
+shortens overall startup time on slow links by reusing the host's image cache.
+
+> **Why this exists:** the original motivation is shared-NAT environments such
+> as office buildings, conference Wi-Fi, or VPNs, where many users appear to
+> Docker Hub as a single IP and quickly trip the anonymous pull-rate limit.
+> A fresh install pulls dozens of `docker.io/*` images in parallel and is
+> especially likely to hit the cap. Preloading from the host's authenticated
+> daemon cache sidesteps the limit entirely.
+
+The list of images lives in
+[`scripts/kind/preload-images.txt`](../scripts/kind/preload-images.txt) — one
+image per line, comments with `#`. The file is intentionally focused on
+`docker.io/*` images; `ghcr.io` and `quay.io` are not rate-limited and pull
+fine on demand.
+
+```bash
+# Use during a full install
+scripts/kind/setup-kagenti.sh --with-all --preload-images
+```
+
+How it works:
+
+1. Pulls every image in `preload-images.txt` to the host (in parallel for
+   Docker, sequential for Podman).
+2. Bundles them into a single tar via `docker save` / `podman save`.
+3. Copies the tar into the Kind control-plane container and imports it with
+   `ctr --namespace=k8s.io images import`. The load runs in the background so
+   it overlaps with the rest of the install.
+
+Failures during pull are non-fatal — the installer logs a warning and lets
+pods fall back to pulling on demand.
+
+When updating image versions, keep `preload-images.txt` in sync with the
+versions referenced in `scripts/kind/setup-kagenti.sh` and the
+`charts/kagenti-deps/templates/` manifests, otherwise pods will still pull
+the un-preloaded versions at runtime.
 
 #### Providing Secrets
 

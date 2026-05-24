@@ -174,6 +174,10 @@ export const ImportAgentPage: React.FC = () => {
     features.agentSandbox ? 'sandbox' : 'deployment'
   );
 
+  // Persistent storage (Sandbox / StatefulSet)
+  const [persistentStorageEnabled, setPersistentStorageEnabled] = useState(true);
+  const [persistentStorageSize, setPersistentStorageSize] = useState('1Gi');
+
   // Sync default when feature flags load async (first page load before cache is warm)
   useEffect(() => {
     if (features.agentSandbox) {
@@ -189,9 +193,8 @@ export const ImportAgentPage: React.FC = () => {
   // SPIRE identity
   const [spireEnabled, setSpireEnabled] = useState(true);
 
-  // Per-sidecar injection controls
-  const [envoyProxyInject, setEnvoyProxyInject] = useState<boolean | undefined>(undefined);
-  const [spiffeHelperInject, setSpiffeHelperInject] = useState<boolean | undefined>(undefined);
+  // Use envoy-sidecar mode (false = proxy-sidecar, the default)
+  const [useEnvoyMode, setUseEnvoyMode] = useState(false);
 
   // Outbound routing rules
   const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
@@ -212,6 +215,14 @@ export const ImportAgentPage: React.FC = () => {
   const [inboundPortsExclude, setInboundPortsExclude] = useState('');
   // AuthBridge config overrides
   const [defaultOutboundPolicy, setDefaultOutboundPolicy] = useState('passthrough');
+  // mTLS posture between AuthBridge sidecars. Always sends an explicit
+  // value (default 'disabled'). Force-reset to 'disabled' when either:
+  //   - useEnvoyMode is on (operator/backend reject envoy-sidecar + non-disabled)
+  //   - spireEnabled is off (mtls requires SPIRE-issued X.509 SVIDs)
+  const [mtlsMode, setMtlsMode] = useState<'disabled' | 'permissive' | 'strict'>('disabled');
+  useEffect(() => {
+    if (useEnvoyMode || !spireEnabled) setMtlsMode('disabled');
+  }, [useEnvoyMode, spireEnabled]);
   const [showOutboundRouting, setShowOutboundRouting] = useState(false);
 
   // Validation state
@@ -513,12 +524,18 @@ export const ImportAgentPage: React.FC = () => {
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
-        envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
-        spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
+        authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
+        // mTLS posture — only meaningful when AuthBridge is on AND we're
+        // not in envoy-sidecar mode (backend rejects that combo).
+        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
+        // Persistent storage (Sandbox / StatefulSet)
+        persistentStorage: (workloadType === 'sandbox' || workloadType === 'statefulset') && persistentStorageEnabled
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
         // Shipwright build configuration (always enabled)
         shipwrightConfig,
       });
@@ -546,12 +563,18 @@ export const ImportAgentPage: React.FC = () => {
         createHttpRoute,
         authBridgeEnabled,
         spireEnabled,
-        envoyProxyInject: authBridgeEnabled ? envoyProxyInject : undefined,
-        spiffeHelperInject: authBridgeEnabled ? spiffeHelperInject : undefined,
+        authBridgeMode: authBridgeEnabled && useEnvoyMode ? 'envoy-sidecar' : undefined,
+        // mTLS posture — only meaningful when AuthBridge is on AND we're
+        // not in envoy-sidecar mode (backend rejects that combo).
+        mtlsMode: authBridgeEnabled && !useEnvoyMode ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
+        // Persistent storage (Sandbox / StatefulSet)
+        persistentStorage: (workloadType === 'sandbox' || workloadType === 'statefulset') && persistentStorageEnabled
+          ? { enabled: true, size: persistentStorageSize }
+          : undefined,
       });
     }
   };
@@ -1066,6 +1089,40 @@ export const ImportAgentPage: React.FC = () => {
                 </FormHelperText>
               </FormGroup>
 
+              {(workloadType === 'sandbox' || workloadType === 'statefulset') && (
+                <>
+                  <FormGroup fieldId="persistentStorageEnabled">
+                    <Checkbox
+                      id="persistentStorageEnabled"
+                      label="Enable persistent storage"
+                      isChecked={persistentStorageEnabled}
+                      onChange={(_e, checked) => setPersistentStorageEnabled(checked)}
+                      description="Allocate a PersistentVolumeClaim for the /shared mount. When disabled, an ephemeral emptyDir is used instead."
+                    />
+                  </FormGroup>
+                  {persistentStorageEnabled && (
+                    <FormGroup label="Persistent Volume Size" fieldId="persistentStorageSize">
+                      <TextInput
+                        id="persistentStorageSize"
+                        value={persistentStorageSize}
+                        onChange={(_e, value) => setPersistentStorageSize(value)}
+                        placeholder="1Gi"
+                        validated={/^\d+(Gi|Mi|Ki|Ti|G|M|K|T)$/.test(persistentStorageSize) ? 'default' : 'error'}
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem variant={/^\d+(Gi|Mi|Ki|Ti|G|M|K|T)$/.test(persistentStorageSize) ? 'default' : 'error'}>
+                            {/^\d+(Gi|Mi|Ki|Ti|G|M|K|T)$/.test(persistentStorageSize)
+                              ? 'Size of the persistent volume claim (e.g., 1Gi, 5Gi, 10Gi)'
+                              : 'Invalid size — use a number followed by a unit (e.g., 1Gi, 500Mi)'}
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
+                </>
+              )}
+
               {/* HTTPRoute/Route Creation */}
               <FormGroup fieldId="createHttpRoute">
                 <Checkbox
@@ -1084,68 +1141,35 @@ export const ImportAgentPage: React.FC = () => {
                   isChecked={authBridgeEnabled}
                   onChange={(_e, checked) => {
                     setAuthBridgeEnabled(checked);
-                    if (checked) {
-                      setEnvoyProxyInject(undefined);
-                      setSpiffeHelperInject(undefined);
+                    if (!checked) {
+                      setUseEnvoyMode(false);
                     }
                   }}
-                  description="When enabled, the webhook injects AuthBridge for inbound JWT validation and outbound token exchange. With the default webhook settings this is two sidecars (envoy-proxy, spiffe-helper) plus proxy-init; if the cluster operator enables featureGates.combinedSidecar on kagenti-webhook, a single authbridge container is used instead (see docs linked below)."
+                  description="When enabled, the operator injects a combined AuthBridge sidecar for inbound JWT validation and outbound token exchange. Defaults to proxy-sidecar mode (HTTP_PROXY)."
               />
               </FormGroup>
 
               {authBridgeEnabled && (
-                <Alert
-                  variant="info"
-                  isInline
-                  title="Combined AuthBridge container"
-                  style={{ marginBottom: '16px' }}
-                >
-                  <Text component="p">
-                    There is no toggle here for the single-container mode. When{' '}
-                    <code>featureGates.combinedSidecar</code> is <code>true</code> on the admission
-                    webhook, injected pods get one <code>authbridge</code> container (see{' '}
-                    <a
-                      href="https://github.com/kagenti/kagenti/blob/main/docs/authbridge-combined-sidecar.md"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Combined AuthBridge sidecar
-                    </a>
-                    ). Advanced injection checkboxes still apply as flags inside that container.
-                  </Text>
-                </Alert>
+                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
+                  <Checkbox
+                    id="useEnvoyMode"
+                    label="Use envoy-sidecar mode"
+                    isChecked={useEnvoyMode}
+                    onChange={(_e, checked) => setUseEnvoyMode(checked)}
+                    description="Switch from proxy-sidecar (default) to envoy-sidecar mode (Envoy + ext_proc + iptables interception)."
+                  />
+                </FormGroup>
               )}
 
               {/* SPIRE Identity */}
               <FormGroup fieldId="spireEnabled">
                 <Checkbox
                   id="spireEnabled"
-                  label="Enable SPIRE identity (spiffe-helper sidecar)"
+                  label="Enable SPIRE identity (JWT-SVID via spiffe-helper)"
                   isChecked={spireEnabled}
                   onChange={(_e, checked) => setSpireEnabled(checked)}
                 />
               </FormGroup>
-
-              {authBridgeEnabled && (
-                <>
-                  <FormGroup fieldId="sidecarControls" label="Advanced Injection Controls">
-                    <Checkbox
-                      id="envoyProxyInject"
-                      label="Envoy Proxy"
-                      isChecked={envoyProxyInject !== false}
-                      onChange={(_e, checked) => setEnvoyProxyInject(checked ? undefined : false)}
-                      description="Envoy proxy with go-processor for traffic interception. Disable to skip envoy-proxy sidecar."
-                    />
-                    <Checkbox
-                      id="spiffeHelperInject"
-                      label="SPIFFE Helper"
-                      isChecked={spiffeHelperInject !== false}
-                      onChange={(_e, checked) => setSpiffeHelperInject(checked ? undefined : false)}
-                      description="SPIFFE identity helper for SVID management. Disable to skip spiffe-helper sidecar."
-                    />
-                  </FormGroup>
-                </>
-              )}
 
 
               {authBridgeEnabled && (
@@ -1237,6 +1261,30 @@ export const ImportAgentPage: React.FC = () => {
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
                     <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
                   </FormSelect>
+                </FormGroup>
+                <FormGroup label="mTLS" fieldId="mtlsMode">
+                  <FormSelect
+                    id="mtlsMode"
+                    value={mtlsMode}
+                    onChange={(_e, v) => setMtlsMode(v as 'disabled' | 'permissive' | 'strict')}
+                    aria-label="mTLS mode"
+                    isDisabled={useEnvoyMode || !spireEnabled}
+                  >
+                    <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
+                    <FormSelectOption key="permissive" value="permissive" label="permissive — try mTLS, fall back to plaintext on failure" />
+                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed" />
+                  </FormSelect>
+                  {(useEnvoyMode || !spireEnabled) && (
+                    <FormHelperText>
+                      <HelperText>
+                        <HelperTextItem variant="warning">
+                          {useEnvoyMode
+                            ? 'Not supported with envoy mode.'
+                            : 'Requires SPIRE — enable SPIRE to use mTLS.'}
+                        </HelperTextItem>
+                      </HelperText>
+                    </FormHelperText>
+                  )}
                 </FormGroup>
               </ExpandableSection>
               )}
