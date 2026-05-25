@@ -42,52 +42,53 @@ The goal of Kagenti is to provide a pluggable agentic platform blueprint. Key fu
 Under each of these pillars are logical components that support the workload runtime.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                                    KAGENTI PLATFORM                                 │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│  │                              KAGENTI UI*                                      │  │
-│  │      (Dashboard: Deploy, Test, Monitor Agents & Tools + Backend API)          │  │
-│  └───────────────────────────────────────────────────────────────────────────────┘  │
-│                                        │                                            │
-│                                        ▼                                            │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐  │
-│  │                          WORKLOAD RUNTIME                                     │  │
-│  │      ┌─────────────────────────────┐    ┌─────────────────────────────┐       │  │
-│  │      │          AGENTS             │    │           TOOLS             │       │  │
-│  │      │  (A2A - LangGraph, CrewAI   │    │   (MCP Protocol Servers)    │       │  │
-│  │      │   Marvin, Autogen, etc.)    │    │                             │       │  │
-│  │      └─────────────────────────────┘    └─────────────────────────────┘       │  │
-│  └───────────────────────────────────────────────────────────────────────────────┘  │
-│                                        │                                            │
-├────────────────────────────────────────┼────────────────────────────────────────────┤
-│                                PLATFORM PILLARS                                     │
-│                                        │                                            │
-│  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌────────────────┐  │
-│  │    LIFECYCLE     │ │    NETWORKING    │ │     SECURITY     │ │  OBSERVABILITY │  │
-│  │  ORCHESTRATION   │ │                  │ │                  │ │                │  │
-│  ├──────────────────┤ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
-│  │                  │ │                  │ │                  │ │                │  │
-│  │   Agents/Tools   │ │   Tool Routing   │ │  Identity & Auth │ │    Tracing     │  │
-│  │   Lifecycle &    │ │    & Policy      │ │   (AuthBridge*)  │ │(MLflow,Langflow│  │
-│  │   Discovery      │ │  (MCP Gateway)   │ │                  │ │ Phoenix)       │  │
-│  │ (k8s workloads,  │ │                  │ │                  │ │                │  │
-│  │ labels,          │ ├──────────────────┤ ├──────────────────┤ ├────────────────┤  │
-│  │  AgentCard CRD*) │ │                  │ │                  │ │                │  │
-│  │                  │ │  Service Mesh    │ │    OAuth/OIDC    │ │   Network      │  │
-│  │                  │ │ (Istio/Ambient)  │ │    (Keycloak)    │ │ Visualization  │  │
-│  │                  │ │                  │ │                  │ │   (Kiali)      │  │
-│  │   Container      │ ├──────────────────┤ ├──────────────────┤ │                │  │
-│  │     Builds       │ │                  │ │                  │ │                │  │
-│  │  (Shipwright)    │ │ Ingress/Routing  │ │ Workload Identity│ │                │  │
-│  │                  │ │ (Gateway API)    │ │ (SPIFFE/SPIRE)   │ │                │  │
-│  │                  │ │                  │ │                  │ │                │  │
-│  └──────────────────┘ └──────────────────┘ └──────────────────┘ └────────────────┘  │
-│                                                                                     │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                               KUBERNETES / OPENSHIFT                                │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                         KAGENTI PLATFORM                                │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                  KAGENTI UI*                                      │  │
+│  │          (Dashboard: Deploy, Test, Monitor Agents & Tools + Backend API)          │  │
+│  └───────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                 │                                       │
+│                                                 ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
+│  │                                    WORKLOAD RUNTIME                               │  │
+│  │   ┌──────────────────────┐    ┌──────────────────────┐    ┌───────────────────┐   │  │
+│  │   │       AGENTS         │    │        TOOLS         │    │      SKILLS       │   │  │
+│  │   │  (A2A - LangGraph,   │    │  (MCP Protocol       │    │    (Reusable      │   │  │
+│  │   │   CrewAI, Marvin,    │    │   Servers)           │    │   capabilities)   │   │  │
+│  │   │   Autogen, etc.)     │    │                      │    │                   │   │  │
+│  │   └──────────────────────┘    └──────────────────────┘    └───────────────────┘   │  │
+│  └───────────────────────────────────────────────────────────────────────────────────┘  │
+│                                                 │                                       │
+├─────────────────────────────────────────────────┼───────────────────────────────────────┤
+│                                        PLATFORM PILLARS                                 │
+│                                                 │                                       │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────┐   │
+│  │    LIFECYCLE     │  │    NETWORKING    │  │     SECURITY     │  │  OBSERVABILITY │   │
+│  │  ORCHESTRATION   │  │                  │  │                  │  │                │   │
+│  ├──────────────────┤  ├──────────────────┤  ├──────────────────┤  ├────────────────┤   │
+│  │                  │  │                  │  │                  │  │                │   │
+│  │   Agents/Tools   │  │   Tool Routing   │  │  Identity & Auth │  │    Tracing     │   │
+│  │   Lifecycle &    │  │    & Policy      │  │   (AuthBridge*)  │  │(MLflow,Langflow│   │
+│  │   Discovery      │  │  (MCP Gateway)   │  │                  │  │ Phoenix)       │   │
+│  │ (k8s workloads,  │  │                  │  │                  │  │                │   │
+│  │ labels,          │  ├──────────────────┤  ├──────────────────┤  ├────────────────┤   │
+│  │  AgentCard CRD*) │  │                  │  │                  │  │                │   │
+│  │                  │  │  Service Mesh    │  │    OAuth/OIDC    │  │   Network      │   │
+│  │                  │  │ (Istio/Ambient)  │  │    (Keycloak)    │  │ Visualization  │   │
+│  │                  │  │                  │  │                  │  │   (Kiali)      │   │
+│  │   Container      │  ├──────────────────┤  ├──────────────────┤  │                │   │
+│  │     Builds       │  │                  │  │                  │  │                │   │
+│  │  (Shipwright)    │  │ Ingress/Routing  │  │ Workload Identity│  │                │   │
+│  │                  │  │ (Gateway API)    │  │ (SPIFFE/SPIRE)   │  │                │   │
+│  │                  │  │                  │  │                  │  │                │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘  └────────────────┘   │
+│                                                                                         │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│                                 KUBERNETES / OPENSHIFT                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 * = Built by Kagenti
 ```
 
@@ -165,6 +166,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 | **Demos & Tutorials** | [Demo Documentation](./docs/demos/README.md) |
 | **Import Your Own Agent** | [New Agent Guide](./docs/new-agent.md) |
 | **Import Your Own Tool** | [New Tool Guide](./docs/new-tool.md) |
+| **Skills Configuration & Usage** | [Skills Guide](./docs/skills.md) |
 | **Architecture Details** | [Technical Details](./docs/tech-details.md) |
 | **Identity, Security, and Auth Bridge** | [Identity and Auth Bridge](./docs/identity-guide.md) |
 | **Developer Guide** | [Contributing](./docs/dev-guide.md) |
