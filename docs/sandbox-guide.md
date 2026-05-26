@@ -35,24 +35,34 @@ Verify the installation:
 openshell --version
 ```
 
-## Platform Installation
+## Step 1: Deploy Kagenti (Platform-Specific)
 
-Choose the section that matches your target environment.
-
----
+Choose the command that matches your target environment:
 
 ### Kind (Local Development)
 
-#### Step 1: Deploy Kagenti on Kind
-
 ```bash
-scripts/kind/setup-kagenti.sh  --with-ui --with-agent-sandbox --with-spire
+scripts/kind/setup-kagenti.sh --with-ui --with-agent-sandbox --with-spire
 ```
 
 This deploys: Kind cluster, Istio ambient mesh, cert-manager, Keycloak, SPIRE,
 and the Kagenti platform.
 
-#### Step 2: Deploy OpenShell Shared Infrastructure
+### OpenShift
+
+```bash
+scripts/ocp/setup-kagenti.sh --with-agent-sandbox --with-spire
+```
+
+Refer to [docs/ocp/openshift-install.md](ocp/openshift-install.md) for full
+installation instructions including SPIRE setup (ZTWIM operator on OCP 4.19+,
+Helm charts on 4.16–4.18).
+
+> **Note:** If your OpenShift cluster uses a self-signed or private CA, see
+> [OpenShift with Self-Signed Certificates](#openshift-with-self-signed-certificates)
+> at the end of this guide before configuring the CLI.
+
+## Step 2: Deploy OpenShell Shared Infrastructure
 
 ```bash
 scripts/openshell/deploy-shared.sh
@@ -65,7 +75,7 @@ This creates:
 - cert-manager CA chain (`ClusterIssuer: openshell-ca`)
 - Keycloak realm `openshell` with PKCE client, roles, users, and groups
 
-#### Step 3: Deploy Tenant Gateways
+## Step 3: Deploy Tenant Gateways
 
 Each tenant gets an isolated namespace, gateway, and TLS certificates:
 
@@ -77,58 +87,18 @@ scripts/openshell/deploy-tenant.sh team2
 
 Each deployment creates an OpenShell gateway StatefulSet (gateway +
 compute-driver + credentials-driver), mTLS certificates, RBAC, and an Istio
-TLSRoute for external access.
+TLSRoute (Kind) or OpenShift Route for external access.
 
-Tenant endpoints on Kind:
+Tenant endpoints:
 
-| Tenant | Endpoint |
-|--------|----------|
-| team1  | `https://openshell-team1.localtest.me:30443` |
-| team2  | `https://openshell-team2.localtest.me:30443` |
+| Platform | Tenant | Endpoint |
+|----------|--------|----------|
+| Kind | team1 | `https://openshell-team1.localtest.me:30443` |
+| Kind | team2 | `https://openshell-team2.localtest.me:30443` |
+| OpenShift | team1 | `https://openshell-team1.<apps-domain>` |
+| OpenShift | team2 | `https://openshell-team2.<apps-domain>` |
 
----
-
-### OpenShift
-
-First deploy the Kagenti platform on OpenShift. Refer to
-[docs/ocp/openshift-install.md](ocp/openshift-install.md) for full installation
-instructions including SPIRE setup (ZTWIM operator on OCP 4.19+, Helm charts on
-4.16–4.18).
-
-Once the platform is running (Keycloak, cert-manager, Istio), deploy the
-OpenShell components:
-
-#### Step 1: Deploy OpenShell Shared Infrastructure
-
-```bash
-scripts/openshell/deploy-shared.sh
-```
-
-This creates:
-
-- Sandbox controller CRDs
-- cert-manager CA chain (`ClusterIssuer: openshell-ca`)
-- Keycloak realm `openshell` with PKCE client, roles, users, and groups
-
-#### Step 2: Deploy Tenant Gateways
-
-```bash
-scripts/openshell/deploy-tenant.sh team1
-scripts/openshell/deploy-tenant.sh team2
-```
-
-Each deployment creates an OpenShell gateway StatefulSet (gateway +
-compute-driver + credentials-driver), mTLS certificates, RBAC, and an OpenShift
-Route for external access.
-
-Tenant endpoints follow the pattern
-`https://openshell-<tenant>.<apps-domain>`.
-
-After deployment, continue with [Configure the CLI](#configure-the-cli) below.
-
----
-
-## Configure the CLI
+## Step 4: Configure the CLI
 
 Point the CLI at your tenant gateway:
 
@@ -137,11 +107,122 @@ scripts/openshell/configure-cli.sh team1
 ```
 
 The script auto-detects the platform (Kind or OpenShift), registers the gateway
-with the correct endpoint and OIDC issuer, and extracts mTLS certificates from
-the cluster (`openshell-server-tls` and `openshell-client-tls` secrets in the
-tenant namespace).
+with the correct endpoint and OIDC issuer, extracts mTLS certificates from the
+cluster, and authenticates via OIDC.
 
-### OpenShift with Self-Signed Certificates
+> **Important:** Do not run `configure-cli.sh` if you have already registered
+> the gateway in the same CLI session (e.g., from a previous
+> `configure-cli.sh` run). If you need to re-register, first remove the
+> existing gateway:
+>
+> ```bash
+> openshell gateway remove openshell-team1
+> scripts/openshell/configure-cli.sh team1
+> ```
+
+## Step 5: Log In
+
+If you are not already authenticated (the configure-cli script opens a browser
+automatically), log in manually:
+
+```bash
+openshell gateway login
+```
+
+This opens a browser for Keycloak OIDC PKCE authentication. Use one of the
+preconfigured users:
+
+| User  | Password | Teams        | Role  |
+|-------|----------|--------------|-------|
+| alice | alice123 | team1        | admin |
+| bob   | bob123   | team2        | admin |
+| admin | admin123 | team1, team2 | admin |
+
+## Step 6: Create a Provider
+
+Providers define how the sandbox connects to an LLM. You must be logged in as an
+admin user. The guide works with any OpenAI-compatible or Anthropic-compatible
+endpoint — you just supply your own base URL and API key.
+
+```bash
+export ANTHROPIC_AUTH_TOKEN="your-api-key-here"
+
+openshell provider create --name claude --type anthropic \
+  --credential ANTHROPIC_AUTH_TOKEN \
+  --config ANTHROPIC_BASE_URL=<your llm provider URL>
+```
+
+The `ANTHROPIC_BASE_URL` should point to whatever inference endpoint you use.
+Examples for common providers:
+
+| Provider | Base URL |
+|----------|----------|
+| Anthropic (direct) | `https://api.anthropic.com` |
+| LiteLLM proxy | `https://your-litellm-instance.example.com` |
+| Azure OpenAI | `https://<resource>.openai.azure.com` |
+
+For instance, if you run a LiteLLM proxy internally:
+
+```bash
+openshell provider create --name claude --type anthropic \
+  --credential ANTHROPIC_AUTH_TOKEN \
+  --config ANTHROPIC_BASE_URL=https://ete-litellm.bx.cloud9.ibm.com
+```
+
+Key points:
+
+- `--type` must be `anthropic`, `openai`, or `nvidia` (these are the supported
+  inference routing types)
+- API keys go in `--credential` (managed by SecretResolver, never exposed to the
+  sandbox)
+- Base URLs go in `--config` (used for inference route resolution only)
+- Any OpenAI-compatible or Anthropic-compatible endpoint works — the sandbox
+  routes to whatever URL you configure
+
+## Step 7: Configure Inference Routing
+
+```bash
+openshell inference set --provider claude --model claude-sonnet-4-6 --no-verify
+```
+
+This tells the gateway how to route `inference.local` requests from inside the
+sandbox to the upstream LLM endpoint.
+
+## Step 8: Create a Sandbox
+
+```bash
+openshell sandbox create --provider claude --no-auto-providers -- claude
+```
+
+**Note**: The community NVIDIA sandbox image is quite large. On first use,
+Kubernetes may take a few minutes to download the image and start the sandbox.
+
+Flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--provider claude` | Bind the named provider to this sandbox |
+| `--no-auto-providers` | Don't auto-create providers from local env vars |
+| `-- claude` | Command to run inside the sandbox (Claude Code) |
+
+The sandbox pod starts with:
+
+- Network isolation (only `inference.local` allowed outbound)
+- Credential protection (API keys resolved at the proxy layer, never in the
+  sandbox env)
+- Kernel-level enforcement (Landlock, seccomp)
+
+## Connect to an Existing Sandbox
+
+```bash
+# Interactive session
+openshell sandbox connect
+
+# Run a one-off command
+openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
+```
+
+## OpenShift with Self-Signed Certificates
 
 If your OpenShift cluster uses a self-signed or private CA (common in
 disconnected or lab environments), the CLI will reject the gateway's TLS
@@ -180,90 +261,6 @@ export SSL_CERT_FILE=/tmp/ocp-ingress-ca.crt
 openshell gateway login
 ```
 
-## Log In
-
-```bash
-openshell gateway login
-```
-
-This opens a browser for Keycloak OIDC PKCE authentication. Use one of the
-preconfigured users:
-
-| User  | Password | Teams        | Role  |
-|-------|----------|--------------|-------|
-| alice | alice123 | team1        | admin |
-| bob   | bob123   | team2        | admin |
-| admin | admin123 | team1, team2 | admin |
-
-## Create a Provider
-
-Providers define how the sandbox connects to an LLM. You must be logged in as an
-admin user.
-
-```bash
-export ANTHROPIC_AUTH_TOKEN="your-api-key-here"
-
-openshell provider create --name claude --type anthropic \
-  --credential ANTHROPIC_AUTH_TOKEN \
-  --config ANTHROPIC_BASE_URL=<your llm provider URL>
-
-# for example
-openshell provider create --name claude --type anthropic \
-  --credential ANTHROPIC_AUTH_TOKEN \
-  --config ANTHROPIC_BASE_URL=https://ete-litellm.bx.cloud9.ibm.com 
-```
-
-Key points:
-
-- `--type` must be `anthropic`, `openai`, or `nvidia` (these are the supported
-  inference routing types)
-- API keys go in `--credential` (managed by SecretResolver, never exposed to the
-  sandbox)
-- Base URLs go in `--config` (used for inference route resolution only)
-
-## Configure Inference Routing
-
-```bash
-openshell inference set --provider claude --model claude-sonnet-4-6 --no-verify
-```
-
-This tells the gateway how to route `inference.local` requests from inside the
-sandbox to the upstream LLM endpoint.
-
-## Create a Sandbox
-
-```bash
-openshell sandbox create --provider claude --no-auto-providers -- claude
-```
-**Note**: The community NVIDIA sandbox image is quite large. On first use, 
-Kubernetes may take a few minutes to download the image and start the sandbox.
-
-
-Flags:
-
-| Flag | Purpose |
-|------|---------|
-| `--provider claude` | Bind the named provider to this sandbox |
-| `--no-auto-providers` | Don't auto-create providers from local env vars |
-| `-- claude` | Command to run inside the sandbox (Claude Code) |
-
-The sandbox pod starts with:
-
-- Network isolation (only `inference.local` allowed outbound)
-- Credential protection (API keys resolved at the proxy layer, never in the
-  sandbox env)
-- Kernel-level enforcement (Landlock, seccomp)
-
-## Connect to an Existing Sandbox
-
-```bash
-# Interactive session
-openshell sandbox connect
-
-# Run a one-off command
-openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
-```
-
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -271,6 +268,7 @@ openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
 | `deploy-tenant.sh` hangs at Helm `--wait` | `openshell` Keycloak realm does not exist (gateway OIDC init fails in a crash loop) | Run `deploy-shared.sh` first; verify realm with `kubectl exec keycloak-0 -n keycloak -- /opt/keycloak/bin/kcadm.sh get realms` |
 | `deploy-shared.sh` hangs at "Logging in to Keycloak" | `keycloak-initial-admin` secret password doesn't match the DB (common after Keycloak pod recreation on RHBK) | See [Keycloak credential mismatch](#keycloak-credential-mismatch) below |
 | `invalid peer certificate: UnknownIssuer` | CLI missing CA/client certs | Re-run `configure-cli.sh` or place `ca.crt`, `tls.crt`, `tls.key` in `~/.config/openshell/gateways/<name>/mtls/` |
+| `Gateway already exists` on re-registration | CLI gateway not removed before re-running `configure-cli.sh` | Run `openshell gateway remove <name>` first, then re-run the script |
 | `POST openshell:80/... not permitted by policy` | URL placed in `--credential` instead of `--config` | Recreate provider with URL in `--config` |
 | `Failed to connect to api.anthropic.com` | CLI auto-created a provider with wrong type | Use `--no-auto-providers` flag |
 | `/v1/v1/messages` double path | `ANTHROPIC_BASE_URL` includes a trailing `/v1` | Remove `/v1` suffix — the SDK appends its own |
