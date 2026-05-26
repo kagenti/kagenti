@@ -19,6 +19,7 @@
 #   scripts/kind/setup-kagenti.sh                          # Core only
 #   scripts/kind/setup-kagenti.sh --with-all               # Everything
 #   scripts/kind/setup-kagenti.sh --with-istio --with-ui   # Core + Istio + UI
+#   scripts/kind/setup-kagenti.sh --with-all --skip-mlflow --skip-kuadrant  # Lightweight
 #   scripts/kind/setup-kagenti.sh --skip-cluster           # Reuse existing cluster
 #   scripts/kind/setup-kagenti.sh --cluster-name my-test   # Custom cluster name
 #
@@ -109,6 +110,8 @@ while [[ $# -gt 0 ]]; do
     --with-skills)      WITH_SKILLS=true; shift ;;
     --with-all)         WITH_ALL=true; shift ;;
     --skip-cluster)     SKIP_CLUSTER=true; shift ;;
+    --skip-mlflow)      WITH_MLFLOW=false; shift ;;
+    --skip-kuadrant)    WITH_KUADRANT=false; shift ;;
     --build-images)     BUILD_IMAGES=true; shift ;;
     --preload-images)   PRELOAD_IMAGES=true; shift ;;
     --secrets-file)     SECRETS_FILE_ARG="$2"; shift 2 ;;
@@ -134,6 +137,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-kiali        Install Kiali + Prometheus (auto-enables Istio)"
       echo "  --with-agent-sandbox Install agent-sandbox controller (kubernetes-sigs)"
       echo "  --with-all          Enable all optional components"
+      echo ""
+      echo "Skip flags (override --with-all for resource-constrained environments):"
+      echo "  --skip-mlflow       Exclude MLflow even when --with-all is used (~2 GB saved)"
+      echo "  --skip-kuadrant     Exclude Kuadrant even when --with-all is used (~1 GB saved)"
       echo ""
       echo "Other options:"
       echo "  --skip-cluster      Don't create Kind cluster (reuse existing)"
