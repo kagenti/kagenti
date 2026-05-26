@@ -740,3 +740,53 @@ def _build_tool_env_vars(env_var_list=None, service_ports=None):
         for ev in env_var_list:
             env_vars.append({"name": ev["name"], "value": ev["value"]})
     return env_vars
+
+
+class TestBuildToolEnvVarsDedup:
+    """Tests for env var deduplication in the real _build_tool_env_vars."""
+
+    def test_user_env_vars_override_defaults(self):
+        """User-provided envVars with the same name as DEFAULT_ENV_VARS should
+        override the default, not produce duplicates."""
+        from unittest.mock import MagicMock
+        from app.routers.tools import _build_tool_env_vars as real_build
+
+        ev = MagicMock()
+        ev.name = "PORT"
+        ev.value = "9000"
+        ev.valueFrom = None
+
+        result = real_build(env_var_list=[ev])
+        port_entries = [e for e in result if e.get("name") == "PORT"]
+        assert len(port_entries) == 1
+        assert port_entries[0]["value"] == "9000"
+
+    def test_no_duplicate_env_vars(self):
+        """Env var list must never contain duplicate names."""
+        from unittest.mock import MagicMock
+        from app.routers.tools import _build_tool_env_vars as real_build
+
+        ev = MagicMock()
+        ev.name = "HOST"
+        ev.value = "127.0.0.1"
+        ev.valueFrom = None
+
+        result = real_build(env_var_list=[ev])
+        names = [e["name"] for e in result]
+        assert len(names) == len(set(names)), f"Duplicate env vars found: {names}"
+
+    def test_service_ports_and_user_env_both_override(self):
+        """service_ports overrides PORT from defaults, user envVars can override further."""
+        from unittest.mock import MagicMock
+        from app.routers.tools import _build_tool_env_vars as real_build
+
+        ev = MagicMock()
+        ev.name = "PORT"
+        ev.value = "3000"
+        ev.valueFrom = None
+
+        service_ports = [{"name": "http", "port": 8080, "targetPort": 9090, "protocol": "TCP"}]
+        result = real_build(env_var_list=[ev], service_ports=service_ports)
+        port_entries = [e for e in result if e.get("name") == "PORT"]
+        assert len(port_entries) == 1
+        assert port_entries[0]["value"] == "3000"

@@ -83,6 +83,42 @@ class TestBuildSandboxManifest:
         container = manifest["spec"]["podTemplate"]["spec"]["containers"][0]
         assert container["ports"][0]["containerPort"] == 8888
 
+    def test_user_env_vars_override_defaults(self):
+        """User-provided envVars with the same name as DEFAULT_ENV_VARS should
+        override the default, not produce duplicates."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        ev = MagicMock()
+        ev.name = "PORT"
+        ev.value = "9000"
+        ev.valueFrom = None
+        request = _make_request(envVars=[ev])
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        container = manifest["spec"]["podTemplate"]["spec"]["containers"][0]
+        port_entries = [e for e in container["env"] if e.get("name") == "PORT"]
+        assert len(port_entries) == 1
+        assert port_entries[0]["value"] == "9000"
+
+    def test_no_duplicate_env_vars(self):
+        """Env var list must never contain duplicate names."""
+        from app.routers.agents import _build_sandbox_manifest
+
+        ev1 = MagicMock()
+        ev1.name = "HOST"
+        ev1.value = "127.0.0.1"
+        ev1.valueFrom = None
+        ev2 = MagicMock()
+        ev2.name = "UV_CACHE_DIR"
+        ev2.value = "/tmp/uv"
+        ev2.valueFrom = None
+        request = _make_request(envVars=[ev1, ev2])
+        manifest = _build_sandbox_manifest(request=request, image="test:latest")
+
+        container = manifest["spec"]["podTemplate"]["spec"]["containers"][0]
+        names = [e["name"] for e in container["env"]]
+        assert len(names) == len(set(names)), f"Duplicate env vars found: {names}"
+
 
 class TestBuildSandboxManifestPVC:
     """Tests for PVC support in _build_sandbox_manifest."""

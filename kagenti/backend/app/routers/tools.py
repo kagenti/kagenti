@@ -389,7 +389,13 @@ def _build_tool_env_vars(
                     }
 
                 env_vars.append(env_entry)
-    return env_vars
+
+    # Deduplicate environment variables, keeping the last occurrence.
+    # Precedence (last wins): DEFAULT_ENV_VARS (with service_ports override) < user envVars.
+    seen = {}
+    for env in env_vars:
+        seen[env["name"]] = env
+    return list(seen.values())
 
 
 def _format_timestamp(timestamp) -> Optional[str]:

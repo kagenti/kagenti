@@ -2394,7 +2394,14 @@ def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
                     }
 
                 env_vars.append(env_entry)
-    return env_vars
+
+    # Deduplicate environment variables, keeping the last occurrence.
+    # Precedence (last wins): DEFAULT_ENV_VARS < AGENT_ENDPOINT/SKILL_FOLDERS < user envVars.
+    # User overrides of AGENT_ENDPOINT or SKILL_FOLDERS are intentional (advanced use).
+    seen = {}
+    for env in env_vars:
+        seen[env["name"]] = env
+    return list(seen.values())
 
 
 def _build_common_labels(
