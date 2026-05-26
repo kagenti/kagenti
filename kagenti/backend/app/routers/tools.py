@@ -72,7 +72,10 @@ from app.models.shipwright import (
     ShipwrightBuildListResponse,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.services.shipwright_builds import collect_kagenti_shipwright_builds
+from app.services.shipwright_builds import (
+    cleanup_existing_build,
+    collect_kagenti_shipwright_builds,
+)
 from app.services.shipwright import (
     build_shipwright_build_manifest,
     build_shipwright_buildrun_manifest,
@@ -1410,6 +1413,9 @@ async def create_tool(
                     status_code=400,
                     detail="gitUrl is required for source deployment",
                 )
+
+            # Clean up any existing Build/BuildRuns to prevent 409 on re-import
+            cleanup_existing_build(kube, namespace=request.namespace, build_name=request.name)
 
             # Step 1: Create Shipwright Build CR
             clone_secret = resolve_clone_secret(kube.core_api, request.namespace)
