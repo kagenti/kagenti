@@ -826,7 +826,7 @@ async def get_agent(
 
     # Try to get the associated Service (not applicable for Jobs)
     service = None
-    if workload_type not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+    if workload_type != WORKLOAD_TYPE_JOB:
         try:
             service = kube.get_service(namespace=namespace, name=name)
         except ApiException as e:
@@ -2634,11 +2634,12 @@ def _create_or_replace_service(
 ) -> None:
     """Create the Service for an agent / tool.
 
-    Returns silently for ``WORKLOAD_TYPE_JOB`` and ``WORKLOAD_TYPE_SANDBOX``
-    since Jobs don't need a Service and the Sandbox controller manages its own
-    headless Service (ClusterIP=None).
+    Returns silently for ``WORKLOAD_TYPE_JOB`` since Jobs don't need a Service.
+    Sandbox agents get a backend-managed ClusterIP Service for port translation
+    (8080→8000); the agent-sandbox controller's own Service is suppressed via
+    ``spec.service: false`` on the Sandbox CR (v0.4.6+).
     """
-    if workload_type in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+    if workload_type == WORKLOAD_TYPE_JOB:
         return
     # Strip CR/LF before logging — name and namespace come from the FastAPI
     # request body. Kubernetes will reject non-DNS-1123 names so this is
@@ -2935,6 +2936,7 @@ def _build_sandbox_manifest(
         },
         "spec": {
             "replicas": 1,
+            "service": False,
             "podTemplate": {
                 "metadata": {
                     "labels": {
@@ -3131,9 +3133,8 @@ async def create_agent(
                 )
                 logger.info(f"Created Sandbox '{request.name}' in namespace '{request.namespace}'")
 
-            # Create Service (not needed for Jobs or Sandboxes — the Sandbox
-            # controller manages its own headless Service with ClusterIP=None).
-            if request.workloadType not in (WORKLOAD_TYPE_JOB, WORKLOAD_TYPE_SANDBOX):
+            # Create Service (not needed for Jobs).
+            if request.workloadType != WORKLOAD_TYPE_JOB:
                 service_manifest = _build_service_manifest(request)
                 _create_or_replace_service(
                     kube,
@@ -3679,9 +3680,8 @@ async def finalize_shipwright_build(
             kube.create_sandbox(namespace=namespace, body=sandbox_manifest)
             logger.info(f"Created Sandbox '{name}' in namespace '{namespace}' from build")
 
-        # Create Service via the shared _create_or_replace_service helper —
-        # gates on workload_type and handles the Sandbox controller race the
-        # same way the image-based create flow does.
+        # Create Service via the shared _create_or_replace_service helper
+        # (skips only for Job workloads).
         service_manifest = _build_service_manifest(agent_request)
         # Carry forward build-time kagenti.io/* labels onto the Service so
         # downstream label-based selectors / queries match. Use

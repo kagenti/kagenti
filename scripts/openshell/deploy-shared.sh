@@ -29,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # ── Versions (keep in sync with scripts/kind/setup-kagenti.sh) ──────────────
-AGENT_SANDBOX_VERSION="v0.3.10"
+AGENT_SANDBOX_VERSION="v0.4.6"
 GATEWAY_API_VERSION="v1.4.0"
 
 # ── Defaults ────────────────────────────────────────────────────────────────

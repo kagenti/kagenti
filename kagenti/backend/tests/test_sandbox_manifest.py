@@ -58,14 +58,15 @@ class TestBuildSandboxManifest:
         port_env = next(ev for ev in container["env"] if ev.get("name") == "PORT")
         assert port_env["value"] == str(DEFAULT_IN_CLUSTER_PORT)
 
-    def test_no_service_field_in_spec(self):
-        """Sandbox spec must NOT include a service field (unsupported in released CRD)."""
+    def test_service_false_in_spec(self):
+        """Sandbox spec sets service: false to prevent agent-sandbox controller
+        from creating a conflicting headless Service (v0.4.6+ opt-in behavior)."""
         from app.routers.agents import _build_sandbox_manifest
 
         request = _make_request()
         manifest = _build_sandbox_manifest(request=request, image="test:latest")
 
-        assert "service" not in manifest["spec"]
+        assert manifest["spec"]["service"] is False
 
     def test_custom_service_ports_override_container_port(self):
         """When servicePorts are provided, containerPort uses targetPort from first entry."""
@@ -192,7 +193,7 @@ class TestBuildServiceManifestForSandbox:
 class TestCreateOrReplaceService:
     """Tests for `_create_or_replace_service` — the shared helper used by both
     the image-based agent-create flow and the source-build / Shipwright finalize
-    flow. Covers the workload-type gate (Job and Sandbox → skip, others → create)."""
+    flow. Covers the workload-type gate (Job → skip, others → create)."""
 
     def _service_manifest(self, name="test-agent"):
         # The helper doesn't inspect the manifest content, just passes it
@@ -216,17 +217,17 @@ class TestCreateOrReplaceService:
         kube.create_service.assert_not_called()
         kube.delete_service.assert_not_called()
 
-    def test_sandbox_skips_service_creation(self):
-        """Sandbox agents don't get a backend-managed Service — the Sandbox
-        controller manages its own headless Service (ClusterIP=None)."""
+    def test_sandbox_creates_service(self):
+        """Sandbox agents get a backend-managed ClusterIP Service for port
+        translation (8080→8000). The agent-sandbox controller's headless
+        Service is suppressed via spec.service: false on the Sandbox CR."""
         from app.routers.agents import _create_or_replace_service
 
         kube = MagicMock()
         manifest = self._service_manifest("sb")
         _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
 
-        kube.create_service.assert_not_called()
-        kube.delete_service.assert_not_called()
+        kube.create_service.assert_called_once_with(namespace="team1", body=manifest)
 
     def test_deployment_creates_service(self):
         """Deployment workloads always get a Service — the most common path."""
@@ -239,18 +240,19 @@ class TestCreateOrReplaceService:
         kube.create_service.assert_called_once_with(namespace="team1", body=manifest)
         kube.delete_service.assert_not_called()
 
-    def test_sandbox_409_not_applicable(self):
-        """Sandbox workloads are skipped entirely — no race handling needed
-        since the backend never creates a Service for Sandbox agents."""
+    def test_sandbox_409_propagates(self):
+        """Sandbox workloads now create a Service — a 409 is a real conflict
+        and must propagate (same as Deployment workloads)."""
         from app.routers.agents import _create_or_replace_service
+        from kubernetes.client import ApiException
+        import pytest
 
         kube = MagicMock()
+        kube.create_service.side_effect = ApiException(status=409)
         manifest = self._service_manifest("sb")
 
-        _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
-
-        kube.create_service.assert_not_called()
-        kube.delete_service.assert_not_called()
+        with pytest.raises(ApiException):
+            _create_or_replace_service(kube, "team1", "sb", manifest, WORKLOAD_TYPE_SANDBOX)
 
     def test_deployment_409_propagates(self):
         """Deployment workloads do not have a controller-race recovery — a 409
