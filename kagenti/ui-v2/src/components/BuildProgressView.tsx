@@ -317,12 +317,6 @@ export const BuildProgressView: React.FC<BuildProgressViewProps> = ({
                 </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>
-                <DescriptionListTerm>Framework</DescriptionListTerm>
-                <DescriptionListDescription>
-                  <Label color="purple">{resourceConfig.framework}</Label>
-                </DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
                 <DescriptionListTerm>External Access</DescriptionListTerm>
                 <DescriptionListDescription>
                   {resourceConfig.createHttpRoute ? (

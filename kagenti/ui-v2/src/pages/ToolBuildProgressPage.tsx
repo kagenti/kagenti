@@ -390,12 +390,6 @@ export const ToolBuildProgressPage: React.FC = () => {
                   </DescriptionListDescription>
                 </DescriptionListGroup>
                 <DescriptionListGroup>
-                  <DescriptionListTerm>Framework</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Label color="purple">{buildInfo.toolConfig.framework}</Label>
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
                   <DescriptionListTerm>External Access</DescriptionListTerm>
                   <DescriptionListDescription>
                     {buildInfo.toolConfig.createHttpRoute ? (

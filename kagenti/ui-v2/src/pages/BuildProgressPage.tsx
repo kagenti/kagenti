@@ -379,12 +379,6 @@ export const BuildProgressPage: React.FC = () => {
                   </DescriptionListDescription>
                 </DescriptionListGroup>
                 <DescriptionListGroup>
-                  <DescriptionListTerm>Framework</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Label color="purple">{buildInfo.agentConfig.framework}</Label>
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
                   <DescriptionListTerm>External Access</DescriptionListTerm>
                   <DescriptionListDescription>
                     {buildInfo.agentConfig.createHttpRoute ? (

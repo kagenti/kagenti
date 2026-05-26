@@ -402,11 +402,6 @@ export const AgentDetailPage: React.FC = () => {
                   </FlexItem>
                 ));
               })()}
-              {labels['kagenti.io/framework'] && (
-                <FlexItem>
-                  <Label color="purple">{labels['kagenti.io/framework']}</Label>
-                </FlexItem>
-              )}
               <FlexItem>
                 <Dropdown
                   isOpen={actionsMenuOpen}
