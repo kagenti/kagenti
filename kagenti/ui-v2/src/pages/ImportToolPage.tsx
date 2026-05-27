@@ -124,6 +124,8 @@ export const ImportToolPage: React.FC = () => {
       setRegistrySecret(`${registryType}-registry-secret`);
     } else {
       setRegistrySecret('');
+    } else {
+      setRegistrySecret(`${registryType}-registry-secret`);
     }
   }, [registryType]);
 
@@ -737,21 +739,23 @@ export const ImportToolPage: React.FC = () => {
                     </FormGroup>
                   )}
 
-                  <FormGroup label="Registry Secret" fieldId="registrySecret">
-                    <TextInput
-                      id="registrySecret"
-                      value={registrySecret}
-                      onChange={(_e, value) => setRegistrySecret(value)}
-                      placeholder="Leave empty for public registries"
-                    />
-                    <FormHelperText>
-                      <HelperText>
-                        <HelperTextItem>
-                          Kubernetes secret containing registry credentials
-                        </HelperTextItem>
-                      </HelperText>
-                    </FormHelperText>
-                  </FormGroup>
+                  {registryType !== 'local' && registryType !== 'openshift' && (
+                    <FormGroup label="Registry Secret" fieldId="registrySecret">
+                      <TextInput
+                        id="registrySecret"
+                        value={registrySecret}
+                        onChange={(_e, value) => setRegistrySecret(value)}
+                        placeholder="Leave empty for public registries"
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            Kubernetes secret containing registry credentials
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
 
                   <FormGroup label="Image Tag" fieldId="imageTag">
                     <TextInput

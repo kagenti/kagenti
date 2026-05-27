@@ -139,6 +139,8 @@ export const ImportAgentPage: React.FC = () => {
       setRegistrySecret(`${registryType}-registry-secret`);
     } else {
       setRegistrySecret('');
+    } else {
+      setRegistrySecret(`${registryType}-registry-secret`);
     }
   }, [registryType]);
 
@@ -741,28 +743,30 @@ export const ImportAgentPage: React.FC = () => {
                   </FormGroup>
 
                   {registryType !== 'local' && (
-                    <>
-                      <FormGroup
-                        label="Registry Namespace/Organization"
-                        isRequired
-                        fieldId="registryNamespace"
-                      >
-                        <TextInput
-                          id="registryNamespace"
-                          value={registryNamespace}
-                          onChange={(_e, value) => setRegistryNamespace(value)}
-                          placeholder="your-org-name"
-                          validated={validated.registryNamespace}
-                        />
-                        <FormHelperText>
-                          <HelperText>
-                            <HelperTextItem>
-                              Your organization or namespace in the registry
-                            </HelperTextItem>
-                          </HelperText>
-                        </FormHelperText>
-                      </FormGroup>
+                    <FormGroup
+                      label="Registry Namespace/Organization"
+                      isRequired
+                      fieldId="registryNamespace"
+                    >
+                      <TextInput
+                        id="registryNamespace"
+                        value={registryNamespace}
+                        onChange={(_e, value) => setRegistryNamespace(value)}
+                        placeholder="your-org-name"
+                        validated={validated.registryNamespace}
+                      />
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem>
+                            Your organization or namespace in the registry
+                          </HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    </FormGroup>
+                  )}
 
+                  {registryType !== 'local' && registryType !== 'openshift' && (
+                    <>
                       <FormGroup label="Registry Secret Name" fieldId="registrySecret">
                         <TextInput
                           id="registrySecret"
