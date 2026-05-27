@@ -69,6 +69,13 @@ export class ApiError extends Error {
   }
 }
 
+function extractErrorMessage(errorData: Record<string, unknown>, fallback: string): string {
+  const detail = errorData.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((e: { msg?: string }) => e.msg).join(', ');
+  return fallback;
+}
+
 /**
  * Generic fetch wrapper with error handling, optional authentication,
  * and automatic token refresh on 401 responses.
@@ -119,7 +126,7 @@ async function apiFetch<T>(
         if (!retryResponse.ok) {
           const errorData = await retryResponse.json().catch(() => ({}));
           throw new Error(
-            errorData.detail || `API error: ${retryResponse.status} ${retryResponse.statusText}`
+            extractErrorMessage(errorData, `API error: ${retryResponse.status} ${retryResponse.statusText}`)
           );
         }
         return retryResponse.json();
@@ -136,7 +143,7 @@ async function apiFetch<T>(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new ApiError(
-      errorData.detail || `API error: ${response.status} ${response.statusText}`,
+      extractErrorMessage(errorData, `API error: ${response.status} ${response.statusText}`),
       response.status
     );
   }
