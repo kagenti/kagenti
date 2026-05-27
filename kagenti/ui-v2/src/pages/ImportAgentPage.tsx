@@ -139,8 +139,6 @@ export const ImportAgentPage: React.FC = () => {
       setRegistrySecret(`${registryType}-registry-secret`);
     } else {
       setRegistrySecret('');
-    } else {
-      setRegistrySecret(`${registryType}-registry-secret`);
     }
   }, [registryType]);
 
