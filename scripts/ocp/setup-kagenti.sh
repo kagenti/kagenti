@@ -1320,8 +1320,15 @@ elif [ -z "$KAGENTI_REPO_ORIGINAL" ]; then
   KAGENTI_UI_FLAGS+=(--set "ui.frontend.tag=v${LATEST_TAG}")
   KAGENTI_UI_FLAGS+=(--set "ui.backend.tag=v${LATEST_TAG}")
 else
-  # Local or explicit repo: trust the chart's pinned image tags
-  log_info "Using image tags from chart values (--kagenti-repo provided)"
+  # Local or explicit repo: read ui.frontend.tag from the chart (all component tags share the same release version)
+  LATEST_TAG=$(grep -A4 'frontend:' "$KAGENTI_REPO/charts/kagenti/values.yaml" | grep -m1 'tag:' | awk '{print $2}')
+  if [ -n "$LATEST_TAG" ]; then
+    log_success "Using tag from local chart: ${LATEST_TAG}"
+    KAGENTI_UI_FLAGS+=(--set "ui.frontend.tag=${LATEST_TAG}")
+    KAGENTI_UI_FLAGS+=(--set "ui.backend.tag=${LATEST_TAG}")
+  else
+    log_info "Using image tags from chart values (--kagenti-repo provided)"
+  fi
 fi
 
 # Override operator chart dependency with local repo if provided
