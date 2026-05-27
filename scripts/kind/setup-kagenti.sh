@@ -831,6 +831,13 @@ json.dump(cm, sys.stdout)
     fi
   fi
 
+  # Wait for OIDC discovery provider to be fully ready before starting IdP setup
+  log_info "Waiting for OIDC discovery provider to be ready..."
+  kubectl wait --for=condition=Available deployment/spire-spiffe-oidc-discovery-provider \
+    -n "$SPIRE_SERVER_NS" --timeout=300s 2>/dev/null \
+    && log_success "OIDC discovery provider ready" \
+    || log_warn "OIDC discovery provider not ready after 5m — IdP setup may fail"
+
   # 7b: Run SPIFFE IdP setup job (configures Keycloak with SPIRE identity provider)
   log_info "Setting up SPIFFE IdP..."
 
