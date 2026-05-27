@@ -335,6 +335,7 @@ if [ "$SKIP_AGENTS" = "false" ]; then
     TENANT_ARGS+=(--agents)
 fi
 
+# team1: full deployment with agents
 log_step "Deploying tenant: team1"
 scripts/openshell/deploy-tenant.sh "team1" "${TENANT_ARGS[@]}"
 
