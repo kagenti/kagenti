@@ -246,7 +246,7 @@ Common options:
 |------|-------------|
 | `--kagenti-repo PATH\|URL` | Local path or GitHub URL to the repo (default: clones `main` to `~/.cache/kagenti`) |
 | `--realm REALM` | Keycloak realm (default: `kagenti`) |
-| `--skip-ovn-patch` | Skip OVN gateway routing patch |
+| `--skip-ovn-patch` | Skip OVN gateway routing patch (operator logs a warning at startup if not applied) |
 | `--skip-mcp-gateway` | Skip MCP Gateway installation |
 | `--skip-ui` | Skip Kagenti UI and backend installation |
 | `--skip-mlflow` | Skip MLflow integration |
