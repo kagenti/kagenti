@@ -147,6 +147,11 @@ export const SkillCatalogPage: React.FC = () => {
                 >
                   <Td dataLabel="Name">
                     <strong>{skill.name}</strong>
+                    {skill.source === 'external' && (
+                      <Label color="blue" isCompact style={{ marginLeft: '0.5rem' }}>
+                        External
+                      </Label>
+                    )}
                   </Td>
                   <Td dataLabel="Description">
                     {skill.description || <em>No description</em>}
