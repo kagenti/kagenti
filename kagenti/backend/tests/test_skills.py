@@ -142,3 +142,61 @@ class TestConfigmapToSkillSourceField:
         assert skill.source == "external"
         assert skill.externalInfo is not None
         assert skill.externalInfo.registryType == "skillberry"
+
+
+class TestCreateExternalSkill:
+    """Tests for POST /skills/external endpoint."""
+
+    def _make_app(self):
+        from fastapi import FastAPI
+        from app.routers.skills import router
+        app = FastAPI()
+        app.include_router(router)
+        return app
+
+    def test_create_external_skill_success(self):
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch, MagicMock
+
+        mock_kube = MagicMock()
+        mock_kube.core_api.create_namespaced_config_map.return_value = MagicMock()
+
+        with patch("app.routers.skills.get_kubernetes_service", return_value=mock_kube), \
+             patch("app.routers.skills.settings") as mock_settings:
+            mock_settings.kagenti_feature_flag_external_skills = True
+            mock_settings.kagenti_feature_flag_skills = True
+            client = TestClient(self._make_app())
+            resp = client.post("/skills/external", json={
+                "name": "Code Review",
+                "namespace": "team1",
+                "description": "Reviews code quality",
+                "category": "development",
+                "registryType": "skillberry",
+                "registryUrl": "https://skillberry.example.com",
+                "registrySkillName": "code-review",
+                "registrySkillVersion": "1.2.0",
+            })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert body["namespace"] == "team1"
+        mock_kube.core_api.create_namespaced_config_map.assert_called_once()
+
+    def test_create_external_skill_404_when_flag_off(self):
+        from fastapi.testclient import TestClient
+        from unittest.mock import patch, MagicMock
+
+        mock_kube = MagicMock()
+
+        with patch("app.routers.skills.get_kubernetes_service", return_value=mock_kube), \
+             patch("app.routers.skills.settings") as mock_settings:
+            mock_settings.kagenti_feature_flag_external_skills = False
+            client = TestClient(self._make_app())
+            resp = client.post("/skills/external", json={
+                "name": "test",
+                "namespace": "team1",
+                "registryType": "skillberry",
+                "registryUrl": "https://example.com",
+                "registrySkillName": "test",
+            })
+        assert resp.status_code == 404

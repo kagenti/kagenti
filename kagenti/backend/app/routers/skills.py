@@ -10,13 +10,15 @@ Skills are stored as Kubernetes ConfigMaps labeled with `kagenti.io/type=skill`.
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+import kubernetes.client as k8s_client
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client.exceptions import ApiException
 from pydantic import BaseModel
 
 from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
+from app.core.config import settings
 from app.core.constants import (
     SKILL_TYPE_LABEL,
     SKILL_TYPE_VALUE,
@@ -29,6 +31,7 @@ from app.core.constants import (
     SKILL_DISPLAY_NAME_ANNOTATION,
     APP_KUBERNETES_IO_MANAGED_BY,
     APP_KUBERNETES_IO_NAME,
+    KAGENTI_UI_CREATOR_LABEL,
     SKILL_SOURCE_LABEL,
     SKILL_SOURCE_EXTERNAL,
     SKILL_REGISTRY_TYPE_LABEL,
@@ -115,6 +118,20 @@ class CreateSkillResponse(BaseModel):
     name: str
     namespace: str
     message: str
+
+
+class CreateExternalSkillRequest(BaseModel):
+    """Request model for creating an external skill registry reference."""
+
+    name: str
+    namespace: str
+    description: str = ""
+    category: str = ""
+    registryType: str
+    registryUrl: str
+    registrySkillName: str
+    registrySkillVersion: str = "latest"
+    origin: str = ""
 
 
 def _sanitize_k8s_name(name: str) -> str:
@@ -474,6 +491,74 @@ async def create_skill(
             exc,
         )
         raise HTTPException(status_code=exc.status or 500, detail=str(exc))
+
+
+@router.post(
+    "/external",
+    response_model=CreateSkillResponse,
+    dependencies=[Depends(require_roles(ROLE_OPERATOR))],
+)
+async def create_external_skill(
+    request: CreateExternalSkillRequest,
+) -> CreateSkillResponse:
+    """Create an external skill registry reference (feature-flagged)."""
+    if not settings.kagenti_feature_flag_external_skills:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    if not request.registryType:
+        raise HTTPException(status_code=400, detail="registryType is required")
+
+    kube = get_kubernetes_service()
+    resource_name = _sanitize_k8s_name(request.name)
+
+    labels: Dict[str, str] = {
+        SKILL_TYPE_LABEL: SKILL_TYPE_VALUE,
+        SKILL_SOURCE_LABEL: SKILL_SOURCE_EXTERNAL,
+        SKILL_REGISTRY_TYPE_LABEL: request.registryType,
+        APP_KUBERNETES_IO_NAME: resource_name,
+        APP_KUBERNETES_IO_MANAGED_BY: KAGENTI_UI_CREATOR_LABEL,
+    }
+    if request.category:
+        labels[SKILL_CATEGORY_LABEL] = request.category
+
+    annotations: Dict[str, str] = {
+        SKILL_DISPLAY_NAME_ANNOTATION: request.name,
+        SKILL_USAGE_ANNOTATION: "0",
+        SKILL_REGISTRY_URL_ANNOTATION: request.registryUrl,
+        SKILL_REGISTRY_SKILL_NAME_ANNOTATION: request.registrySkillName,
+        SKILL_REGISTRY_SKILL_VERSION_ANNOTATION: request.registrySkillVersion,
+    }
+    if request.description:
+        annotations[SKILL_DESCRIPTION_ANNOTATION] = request.description
+    if request.origin:
+        annotations[SKILL_ORIGIN_ANNOTATION] = request.origin
+
+    body = k8s_client.V1ConfigMap(
+        metadata=k8s_client.V1ObjectMeta(
+            name=resource_name,
+            namespace=request.namespace,
+            labels=labels,
+            annotations=annotations,
+        ),
+        data={},
+    )
+
+    try:
+        kube.core_api.create_namespaced_config_map(namespace=request.namespace, body=body)
+    except ApiException as e:
+        if e.status == 409:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Skill '{resource_name}' already exists in namespace '{request.namespace}'",
+            )
+        raise HTTPException(status_code=500, detail=f"Kubernetes error: {e.reason}")
+
+    return CreateSkillResponse(
+        success=True,
+        name=resource_name,
+        namespace=request.namespace,
+        message=f"External skill reference '{resource_name}' created successfully",
+    )
 
 
 @router.post(
