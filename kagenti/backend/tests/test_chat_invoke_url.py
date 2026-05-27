@@ -102,9 +102,7 @@ class TestResolveInvokeUrl:
     @pytest.mark.asyncio
     async def test_falls_back_on_404(self, mock_kube, mock_resolve_base):
         """When agent card endpoint returns 404, return base URL."""
-        mock_resp = httpx.Response(
-            404, text="not found", request=httpx.Request("GET", "http://x")
-        )
+        mock_resp = httpx.Response(404, text="not found", request=httpx.Request("GET", "http://x"))
 
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
             url = await _resolve_invoke_url("myagent", "ns", mock_kube)
@@ -138,3 +136,65 @@ class TestResolveInvokeUrl:
             url = await _resolve_invoke_url("myagent", "ns", mock_kube)
 
         assert url == "http://myagent.ns.svc.cluster.local:8443/a2a/assistant-123"
+
+    # --- Security hardening tests ---
+
+    @pytest.mark.asyncio
+    async def test_rejects_url_encoded_traversal(self, mock_kube, mock_resolve_base):
+        """URL-encoded '..' (%2e%2e) must be caught after decoding (CWE-22)."""
+        card = {
+            "name": "evil-agent",
+            "url": "http://myagent.ns.svc.cluster.local:8443/%2e%2e/%2e%2e/admin",
+        }
+        mock_resp = httpx.Response(200, json=card, request=httpx.Request("GET", "http://x"))
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+            url = await _resolve_invoke_url("myagent", "ns", mock_kube)
+
+        assert url == "http://myagent.ns.svc.cluster.local:8443"
+
+    @pytest.mark.asyncio
+    async def test_skips_card_fetch_for_invalid_name(self, mock_kube, mock_resolve_base):
+        """Non-K8s names skip the card fetch entirely (SSRF prevention)."""
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+            url = await _resolve_invoke_url("INVALID NAME!", "ns", mock_kube)
+
+        assert url == "http://myagent.ns.svc.cluster.local:8443"
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_card_fetch_for_invalid_namespace(self, mock_kube, mock_resolve_base):
+        """Non-K8s namespaces skip the card fetch entirely (SSRF prevention)."""
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+            url = await _resolve_invoke_url("myagent", "ns with spaces", mock_kube)
+
+        assert url == "http://myagent.ns.svc.cluster.local:8443"
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rejects_path_with_query_string(self, mock_kube, mock_resolve_base):
+        """Card URL paths containing query-string characters are rejected."""
+        card = {
+            "name": "test-agent",
+            "url": "http://myagent.ns.svc.cluster.local:8443/a2a?redirect=http://evil.com",
+        }
+        mock_resp = httpx.Response(200, json=card, request=httpx.Request("GET", "http://x"))
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+            url = await _resolve_invoke_url("myagent", "ns", mock_kube)
+
+        assert url == "http://myagent.ns.svc.cluster.local:8443"
+
+    @pytest.mark.asyncio
+    async def test_ignores_card_url_host(self, mock_kube, mock_resolve_base):
+        """Only the path from the card URL is used; the host is always base_url's."""
+        card = {
+            "name": "test-agent",
+            "url": "http://evil.com:9999/a2a/invoke",
+        }
+        mock_resp = httpx.Response(200, json=card, request=httpx.Request("GET", "http://x"))
+
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+            url = await _resolve_invoke_url("myagent", "ns", mock_kube)
+
+        assert url == "http://myagent.ns.svc.cluster.local:8443/a2a/invoke"
