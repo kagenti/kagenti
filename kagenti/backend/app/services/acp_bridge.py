@@ -179,12 +179,10 @@ class ACPBridge:
 
         except httpx.HTTPStatusError as e:
             logger.error("A2A HTTP error: %s", e)
-            yield _acp_error(
-                f"Agent returned {e.response.status_code}", session_id=session.session_id
-            )
+            yield _acp_error("Agent request failed", session_id=session.session_id)
         except httpx.RequestError as e:
             logger.error("A2A connection error: %s", e)
-            yield _acp_error(f"Cannot reach agent: {e}", session_id=session.session_id)
+            yield _acp_error("Cannot reach agent", session_id=session.session_id)
 
     async def _prompt_sandbox(self, session: ACPSession, text: str) -> AsyncIterator[dict]:
         """Send prompt to sandbox agent via OpenShell gateway ExecSandbox gRPC."""
@@ -240,7 +238,7 @@ class ACPBridge:
                 )
         except Exception as e:
             logger.error("ExecSandbox gRPC failed (session %s): %s", session.session_id, e)
-            yield _acp_error(f"Gateway ExecSandbox failed: {e}", session_id=session.session_id)
+            yield _acp_error("Sandbox execution failed", session_id=session.session_id)
 
     async def _prompt_nemoclaw(self, session: ACPSession, text: str) -> AsyncIterator[dict]:
         """Send prompt to NemoClaw agent via LiteLLM OpenAI-compat format."""
@@ -275,11 +273,11 @@ class ACPBridge:
                         }
 
         except httpx.HTTPStatusError as e:
-            yield _acp_error(
-                f"NemoClaw returned {e.response.status_code}", session_id=session.session_id
-            )
+            logger.error("NemoClaw HTTP error: %s", e)
+            yield _acp_error("Agent request failed", session_id=session.session_id)
         except httpx.RequestError as e:
-            yield _acp_error(f"Cannot reach NemoClaw: {e}", session_id=session.session_id)
+            logger.error("NemoClaw connection error: %s", e)
+            yield _acp_error("Cannot reach agent", session_id=session.session_id)
 
         yield {
             "jsonrpc": "2.0",

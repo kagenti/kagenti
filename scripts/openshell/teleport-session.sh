@@ -132,8 +132,10 @@ do_package() {
 import json, sys
 with open('$REPO_ROOT/.claude/settings.json') as f:
     s = json.load(f)
-for key in ['apiKey', 'token', 'secret', 'password']:
-    s.pop(key, None)
+sensitive = ['key', 'token', 'secret', 'password', 'credential', 'auth']
+for k in list(s.keys()):
+    if any(p in k.lower() for p in sensitive):
+        del s[k]
 json.dump(s, sys.stdout, indent=2)
 " > "$tmpdir/settings.json"
     else

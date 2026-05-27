@@ -90,15 +90,22 @@ class OpenShellGatewayClient:
             tty=False,
         )
 
-        response_stream = stub.ExecSandbox(request)
-        async for event in response_stream:
-            payload = event.WhichOneof("payload")
-            if payload == "stdout":
-                yield ("stdout", event.stdout.data)
-            elif payload == "stderr":
-                yield ("stderr", event.stderr.data)
-            elif payload == "exit":
-                yield ("exit", event.exit.exit_code)
+        try:
+            response_stream = stub.ExecSandbox(request)
+            async for event in response_stream:
+                payload = event.WhichOneof("payload")
+                if payload == "stdout":
+                    yield ("stdout", event.stdout.data)
+                elif payload == "stderr":
+                    yield ("stderr", event.stderr.data)
+                elif payload == "exit":
+                    yield ("exit", event.exit.exit_code)
+        except grpc.aio.AioRpcError as e:
+            if e.code() == grpc.StatusCode.UNAUTHENTICATED:
+                self._tls_cache.pop(namespace, None)
+                self._channels.pop(namespace, None)
+                logger.warning("gRPC auth failed for %s, evicted cached credentials", namespace)
+            raise
 
     async def close(self):
         for channel in self._channels.values():
