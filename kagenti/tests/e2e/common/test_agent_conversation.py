@@ -464,10 +464,7 @@ class TestWeatherAgentConversation:
 
                 if last_result["task_failed"]:
                     error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
-                    is_transient = any(
-                        err in error_text
-                        for err in ("Cannot connect", "Connection error")
-                    )
+                    is_transient = any(err in error_text for err in _TRANSIENT_ERRORS)
                     if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                         logger.warning(
                             "Turn %d: LLM connectivity error on attempt %d/%d, retrying...",

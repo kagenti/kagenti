@@ -313,14 +313,10 @@ cleanup_orphaned_aws_resources() {
                 fi
 
                 echo "  - Attempting manual VPC delete:"
-                VPC_DELETE_OUTPUT=$(aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>&1) || true
-                VPC_DELETE_EXIT=$?
-
-                if [ $VPC_DELETE_EXIT -eq 0 ]; then
+                if aws ec2 delete-vpc --region "$AWS_REGION" --vpc-id "$vpc" 2>/dev/null; then
                     echo "    Successfully deleted VPC: $vpc"
                 else
-                    echo "    Failed to delete VPC: $vpc"
-                    echo "    Error: $VPC_DELETE_OUTPUT"
+                    echo "    Failed to delete VPC: $vpc (dependencies likely remain)"
 
                     # Show remaining dependencies blocking deletion
                     echo "    Checking for remaining dependencies..."
