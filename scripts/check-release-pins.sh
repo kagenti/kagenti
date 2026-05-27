@@ -404,7 +404,7 @@ if [[ -f "$DEPS_VALUES_FILE" ]] && command -v yq >/dev/null 2>&1; then
 
         if [[ -n "$platform_tag" ]] && [[ "$platform_tag" != "null" ]] \
            && [[ "$spiffe_tag" != "$platform_tag" ]]; then
-            add_warning "charts/kagenti-deps/values.yaml" \
+            add_error "charts/kagenti-deps/values.yaml" \
                 "spiffeIdp.image.tag ($spiffe_tag) differs from platform tag ($platform_tag) — run scripts/pin-release-tags.sh"
         else
             add_ok "charts/kagenti-deps/values.yaml" \

@@ -21,6 +21,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 KAGENTI_VALUES="$REPO_ROOT/charts/kagenti/values.yaml"
 KAGENTI_DEPS_VALUES="$REPO_ROOT/charts/kagenti-deps/values.yaml"
+# Only kagenti Chart.yaml is versioned here; kagenti-deps is a dependency chart
+# whose version is managed independently via its own release cadence.
 KAGENTI_CHART="$REPO_ROOT/charts/kagenti/Chart.yaml"
 
 DRY_RUN=false
@@ -92,7 +94,7 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 # Validate version format (must start with v and contain at least major.minor.patch)
-if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
     echo "error: VERSION must match vX.Y.Z[-prerelease] (got: $VERSION)" >&2
     exit 1
 fi
@@ -141,10 +143,11 @@ PINNABLE_IMAGES=(
 # Colors
 # ---------------------------------------------------------------------------
 
-RED=$'\033[0;31m'
-GREEN=$'\033[0;32m'
-YELLOW=$'\033[1;33m'
-NC=$'\033[0m'
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; NC=$'\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; NC=''
+fi
 
 # ---------------------------------------------------------------------------
 # Verify images exist (optional)
@@ -190,9 +193,14 @@ echo ""
 for entry in "${PINNABLE_IMAGES[@]}"; do
     IFS='|' read -r target_file yq_path image_name <<< "$entry"
 
-    # Get current value
-    current=$(yq eval "$yq_path" "$target_file" 2>/dev/null || echo "")
+    # Get current value (yq returns literal "null" for missing paths)
+    current=$(yq eval "$yq_path // \"\"" "$target_file")
     rel_path="${target_file#$REPO_ROOT/}"
+
+    if [[ -z "$current" ]]; then
+        echo "error: yq path $yq_path not found in $rel_path" >&2
+        exit 1
+    fi
 
     if [[ "$current" == "$VERSION" ]]; then
         printf '%s[SKIP]%s %s (%s) — already %s\n' "$GREEN" "$NC" "$image_name" "$rel_path" "$VERSION"
@@ -202,7 +210,7 @@ for entry in "${PINNABLE_IMAGES[@]}"; do
     if [[ "$DRY_RUN" == "true" ]]; then
         printf '%s[DRY]%s  %s (%s): %s → %s\n' "$YELLOW" "$NC" "$image_name" "$rel_path" "$current" "$VERSION"
     else
-        yq eval "$yq_path = \"$VERSION\"" -i "$target_file"
+        yq eval --arg v "$VERSION" "$yq_path = \$v" -i "$target_file"
         printf '%s[PIN]%s  %s (%s): %s → %s\n' "$GREEN" "$NC" "$image_name" "$rel_path" "$current" "$VERSION"
     fi
 done
@@ -223,8 +231,8 @@ if [[ -n "$CHART_VERSION" ]]; then
         printf '%s[DRY]%s  Chart.yaml version: %s → %s\n' "$YELLOW" "$NC" "$current_chart_ver" "$chart_ver"
         printf '%s[DRY]%s  Chart.yaml appVersion: → %s\n' "$YELLOW" "$NC" "$chart_ver"
     else
-        yq eval ".version = \"$chart_ver\"" -i "$KAGENTI_CHART"
-        yq eval ".appVersion = \"$chart_ver\"" -i "$KAGENTI_CHART"
+        yq eval --arg v "$chart_ver" '.version = $v' -i "$KAGENTI_CHART"
+        yq eval --arg v "$chart_ver" '.appVersion = $v' -i "$KAGENTI_CHART"
         printf '%s[PIN]%s  Chart.yaml version + appVersion → %s\n' "$GREEN" "$NC" "$chart_ver"
     fi
 fi
