@@ -117,6 +117,16 @@ _DIAG_TEXT_LIMIT = 200
 _DIAG_ARTIFACT_LIMIT = 100
 _DIAG_ERROR_LIMIT = 500
 
+_TRANSIENT_ERRORS = (
+    "Cannot connect",
+    "Connection error",
+    "Expecting value",
+    "Error calling tool",
+    "timed out",
+    "Read timed out",
+    "ConnectionPool",
+)
+
 
 def _extract_text_from_parts(parts):
     """Extract concatenated text from a list of A2A Part objects."""
@@ -301,17 +311,6 @@ class TestWeatherAgentConversation:
 
             if last_result["task_failed"]:
                 error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
-                # Retry on transient failures — the weather-tool pod may still
-                # be initializing, or the LLM/tool may return transient errors.
-                _TRANSIENT_ERRORS = (
-                    "Cannot connect",
-                    "Connection error",
-                    "Expecting value",
-                    "Error calling tool",
-                    "timed out",
-                    "Read timed out",
-                    "ConnectionPool",
-                )
                 is_transient = any(err in error_text for err in _TRANSIENT_ERRORS)
                 if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                     logger.warning(
