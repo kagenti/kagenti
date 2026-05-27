@@ -47,6 +47,8 @@ WITH_BUILDS=false
 WITH_KIALI=false
 WITH_KUADRANT=false
 WITH_AGENT_SANDBOX=false
+WITH_SKILLS=false
+WITH_ALL=false
 SKIP_CLUSTER=false
 BUILD_IMAGES=false
 PRELOAD_IMAGES=false
@@ -80,6 +82,16 @@ run_cmd() {
   if $DRY_RUN; then echo "  [dry-run] $*"; else "$@"; fi
 }
 
+# Load a single image into the Kind node via docker save piped to ctr import.
+# Avoids 'kind load docker-image' failures (e.g. "failed to detect containerd
+# snapshotter") on WSL2 and Rancher Desktop.
+load_image_into_kind() {
+  local img="$1"
+  $CONTAINER_ENGINE save "$img" | \
+    $CONTAINER_ENGINE exec -i "${CLUSTER_NAME}-control-plane" \
+      ctr --namespace=k8s.io images import -
+}
+
 # ── Argument parsing ────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -94,12 +106,8 @@ while [[ $# -gt 0 ]]; do
     --with-builds)      WITH_BUILDS=true; shift ;;
     --with-kiali)       WITH_KIALI=true; shift ;;
     --with-agent-sandbox) WITH_AGENT_SANDBOX=true; shift ;;
-    --with-all)
-      WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
-      WITH_MCP_GATEWAY=true; WITH_KUADRANT=true; WITH_OTEL=true
-      WITH_MLFLOW=true; WITH_BUILDS=true; WITH_KIALI=true
-      WITH_AGENT_SANDBOX=true
-      shift ;;
+    --with-skills)      WITH_SKILLS=true; shift ;;
+    --with-all)         WITH_ALL=true; shift ;;
     --skip-cluster)     SKIP_CLUSTER=true; shift ;;
     --build-images)     BUILD_IMAGES=true; shift ;;
     --preload-images)   PRELOAD_IMAGES=true; shift ;;
@@ -148,6 +156,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ── Expand --with-all (deferred so --skip-* flags are order-independent) ───
+if $WITH_ALL; then
+  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
+  WITH_MCP_GATEWAY=true; WITH_OTEL=true; WITH_BUILDS=true; WITH_KIALI=true
+  WITH_AGENT_SANDBOX=true; WITH_SKILLS=true
+  $SKIP_MLFLOW    || WITH_MLFLOW=true
+  $SKIP_KUADRANT  || WITH_KUADRANT=true
+fi
+
 # ── Flag dependencies ──────────────────────────────────────────────────────
 # UI requires backend API
 if $WITH_UI && ! $WITH_BACKEND; then
@@ -193,6 +210,7 @@ echo "    MLflow:        $WITH_MLFLOW"
 echo "    Builds:        $WITH_BUILDS"
 echo "    Kiali:         $WITH_KIALI"
 echo "    Agent Sandbox: $WITH_AGENT_SANDBOX"
+echo "    Skills:        $WITH_SKILLS"
 echo "    Skip cluster:  $SKIP_CLUSTER"
 echo "    Build images:  $BUILD_IMAGES"
 echo "    Preload imgs:  $PRELOAD_IMAGES"
@@ -569,7 +587,7 @@ log_success "kagenti-deps installed"
 echo ""
 
 # ── Configure Kind node to reach in-cluster container registry ──────────────
-if $WITH_BUILDS && ! $SKIP_CLUSTER; then
+if $WITH_BUILDS; then
   REGISTRY_NAME="registry"
   REGISTRY_NS="cr-system"
   REGISTRY_HOST="${REGISTRY_NAME}.${REGISTRY_NS}.svc.cluster.local"
@@ -580,9 +598,10 @@ if $WITH_BUILDS && ! $SKIP_CLUSTER; then
   if ! $DRY_RUN; then
     CLUSTER_IP=$(kubectl get svc "$REGISTRY_NAME" -n "$REGISTRY_NS" -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
     if [ -n "$CLUSTER_IP" ]; then
-      # Add registry DNS to Kind node's /etc/hosts
+      # Upsert registry DNS in Kind node's /etc/hosts (replace stale entry if present).
+      # /etc/hosts is a bind mount so sed -i (rename) fails; use grep -v + cat > instead.
       $CONTAINER_ENGINE exec "${CLUSTER_NAME}-control-plane" \
-        sh -c "echo '${CLUSTER_IP} ${REGISTRY_HOST}' >> /etc/hosts"
+        sh -c "{ grep -v '${REGISTRY_HOST}' /etc/hosts || true; } > /tmp/hosts.tmp && cat /tmp/hosts.tmp > /etc/hosts && echo '${CLUSTER_IP} ${REGISTRY_HOST}' >> /etc/hosts"
 
       # Configure containerd registry mirror for insecure in-cluster registry
       $CONTAINER_ENGINE exec "${CLUSTER_NAME}-control-plane" sh -c "
@@ -922,11 +941,11 @@ EOF
   # Build and load spiffe-idp-setup image to ensure correct arch for Kind
   if $BUILD_IMAGES; then
     log_info "Building spiffe-idp-setup image for Kind..."
-    $CONTAINER_ENGINE build --load \
+    $CONTAINER_ENGINE buildx build --load \
       -t "$SPIFFE_IDP_IMAGE" \
       -f "$REPO_ROOT/kagenti/auth/spiffe-idp-setup/Dockerfile" \
       "$REPO_ROOT/kagenti"
-    kind load docker-image "$SPIFFE_IDP_IMAGE" --name "$CLUSTER_NAME"
+    load_image_into_kind "$SPIFFE_IDP_IMAGE"
   fi
 
   # Delete existing job (jobs are immutable)
@@ -1076,8 +1095,8 @@ if $BUILD_IMAGES && ! $DRY_RUN; then
   for spec in "${_BUILD_IMAGES[@]}"; do
     IFS='|' read -r img dockerfile <<< "$spec"
     log_info "  Building ${img}..."
-    $CONTAINER_ENGINE build --load -t "$img" -f "$BUILD_CONTEXT/$dockerfile" "$BUILD_CONTEXT"
-    kind load docker-image "$img" --name "$CLUSTER_NAME"
+    $CONTAINER_ENGINE buildx build --load -t "$img" -f "$BUILD_CONTEXT/$dockerfile" "$BUILD_CONTEXT"
+    load_image_into_kind "$img"
   done
   log_success "Platform images built and loaded into Kind"
 fi
@@ -1099,6 +1118,7 @@ KAGENTI_FLAGS=(
   --set "components.istio.enabled=${WITH_ISTIO}"
   --set "components.mcpGateway.enabled=${WITH_MCP_GATEWAY}"
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
+  --set "featureFlags.skills=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"

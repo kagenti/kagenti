@@ -60,10 +60,29 @@ After enabling the feature flag and restarting/upgrading your deployment:
 2. **Look for Skills Section**: The Skills management interface should now be visible in the navigation menu
 3. **Verify Backend**: Check the backend logs to confirm skills routes are registered:
    ```bash
-   kubectl logs -n kagenti-system -l app=kagenti-backend | grep "skills routes registered"
+   kubectl logs -n kagenti-system -l app.kubernetes.io/name=kagenti-backend | grep "skills routes registered"
    ```
 
 Once enabled, the Skills management interface will be accessible through the UI, allowing you to configure and deploy skills for your agents.
+
+## Troubleshooting
+
+### Skills not appearing after setup
+
+If the skills feature was not enabled during initial setup (e.g., the `KAGENTI_FEATURE_FLAG_SKILLS` env var was set but `--with-skills` was not passed, or `--with-all` was used with an older script version), you can enable it without redeploying the full cluster:
+
+```bash
+helm upgrade kagenti charts/kagenti -n kagenti-system \
+  --set featureFlags.skills=true \
+  --set openshift=false \
+  -f charts/kagenti/values.yaml
+```
+
+This triggers a rolling restart of the backend and UI pods with the flag enabled. Verify afterwards:
+
+```bash
+kubectl logs -n kagenti-system -l app.kubernetes.io/name=kagenti-backend | grep "skills routes registered"
+```
 
 ## Accessing Skills via REST API
 
