@@ -305,18 +305,17 @@ class TestWeatherAgentConversation:
                 # be initializing, or the LLM/tool may return transient errors.
                 _TRANSIENT_ERRORS = (
                     "Cannot connect",
+                    "Connection error",
                     "Expecting value",
                     "Error calling tool",
                     "timed out",
                     "Read timed out",
                     "ConnectionPool",
                 )
-                if (
-                    any(err in error_text for err in _TRANSIENT_ERRORS)
-                    and attempt < _LLM_QUERY_MAX_ATTEMPTS
-                ):
+                is_transient = any(err in error_text for err in _TRANSIENT_ERRORS)
+                if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                     logger.warning(
-                        "MCP connectivity error on attempt %d/%d, retrying in %ds...\n  %s",
+                        "LLM connectivity error on attempt %d/%d, retrying in %ds...\n  %s",
                         attempt,
                         _LLM_QUERY_MAX_ATTEMPTS,
                         _LLM_QUERY_RETRY_DELAY_S,
@@ -465,12 +464,13 @@ class TestWeatherAgentConversation:
 
                 if last_result["task_failed"]:
                     error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
-                    if (
-                        "Cannot connect" in error_text
-                        and attempt < _LLM_QUERY_MAX_ATTEMPTS
-                    ):
+                    is_transient = any(
+                        err in error_text
+                        for err in ("Cannot connect", "Connection error")
+                    )
+                    if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                         logger.warning(
-                            "Turn %d: MCP connectivity error on attempt %d/%d, retrying...",
+                            "Turn %d: LLM connectivity error on attempt %d/%d, retrying...",
                             turn,
                             attempt,
                             _LLM_QUERY_MAX_ATTEMPTS,
