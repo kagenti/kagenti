@@ -200,9 +200,7 @@ def _configmap_to_external_skill_info(cm) -> ExternalSkillInfo:
         registryType=labels.get(SKILL_REGISTRY_TYPE_LABEL, ""),
         registryUrl=annotations.get(SKILL_REGISTRY_URL_ANNOTATION, ""),
         registrySkillName=annotations.get(SKILL_REGISTRY_SKILL_NAME_ANNOTATION, ""),
-        registrySkillVersion=annotations.get(
-            SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest"
-        ),
+        registrySkillVersion=annotations.get(SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest"),
     )
 
 

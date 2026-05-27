@@ -11,16 +11,27 @@ from app.routers.agents import (
     _get_external_skill_data,
 )
 from app.core.constants import (
-    SKILL_SOURCE_LABEL, SKILL_SOURCE_EXTERNAL, SKILL_TYPE_LABEL, SKILL_TYPE_VALUE,
-    SKILL_REGISTRY_TYPE_LABEL, SKILL_REGISTRY_URL_ANNOTATION,
-    SKILL_REGISTRY_SKILL_NAME_ANNOTATION, SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
-    SKILL_FETCHER_SCRIPTS_CM, SKILL_FETCHER_IMAGE, AGENT_SKILLS_MOUNT_ROOT,
+    SKILL_SOURCE_LABEL,
+    SKILL_SOURCE_EXTERNAL,
+    SKILL_TYPE_LABEL,
+    SKILL_TYPE_VALUE,
+    SKILL_REGISTRY_TYPE_LABEL,
+    SKILL_REGISTRY_URL_ANNOTATION,
+    SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
+    SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
+    SKILL_FETCHER_SCRIPTS_CM,
+    SKILL_FETCHER_IMAGE,
+    AGENT_SKILLS_MOUNT_ROOT,
 )
 
 
-def _make_ext_cm(name="my-skill", registry_type="skillberry",
-                 registry_url="https://example.com",
-                 skill_name="my-skill", skill_version="1.0.0"):
+def _make_ext_cm(
+    name="my-skill",
+    registry_type="skillberry",
+    registry_url="https://example.com",
+    skill_name="my-skill",
+    skill_version="1.0.0",
+):
     cm = MagicMock()
     cm.metadata.name = name
     cm.metadata.labels = {

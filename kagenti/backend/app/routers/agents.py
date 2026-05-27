@@ -2617,9 +2617,7 @@ def _ensure_fetcher_scripts_cm(kube: "KubernetesService", namespace: str) -> Non
         data=_build_fetcher_scripts_data(),
     )
     try:
-        kube.core_api.read_namespaced_config_map(
-            name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace
-        )
+        kube.core_api.read_namespaced_config_map(name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace)
         kube.core_api.replace_namespaced_config_map(
             name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace, body=body
         )
@@ -2663,9 +2661,7 @@ def _get_external_skill_data(
         cm_annotations = cm.metadata.annotations or {}
         registry_type = cm_labels.get(SKILL_REGISTRY_TYPE_LABEL, "generic")
         registry_url = cm_annotations.get(SKILL_REGISTRY_URL_ANNOTATION, "")
-        registry_skill_name = cm_annotations.get(
-            SKILL_REGISTRY_SKILL_NAME_ANNOTATION, skill_name
-        )
+        registry_skill_name = cm_annotations.get(SKILL_REGISTRY_SKILL_NAME_ANNOTATION, skill_name)
         registry_skill_version = cm_annotations.get(
             SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest"
         )
@@ -2675,48 +2671,54 @@ def _get_external_skill_data(
         mount_path = f"{AGENT_SKILLS_MOUNT_ROOT}/{cm_name}"
 
         if not fetcher_vol_added:
-            volumes.append({
-                "name": "fetcher-scripts-vol",
-                "configMap": {"name": SKILL_FETCHER_SCRIPTS_CM},
-            })
+            volumes.append(
+                {
+                    "name": "fetcher-scripts-vol",
+                    "configMap": {"name": SKILL_FETCHER_SCRIPTS_CM},
+                }
+            )
             fetcher_vol_added = True
 
         volumes.append({"name": emptydir_vol_name, "emptyDir": {}})
 
-        init_containers.append({
-            "name": f"fetch-skill-{index}",
-            "image": SKILL_FETCHER_IMAGE,
-            "command": [
-                "/bin/sh",
-                "-c",
-                (
-                    f"SCRIPT=/fetcher-scripts/{registry_type}.sh; "
-                    '[ -f "$SCRIPT" ] || SCRIPT=/fetcher-scripts/generic.sh; '
-                    '/bin/sh "$SCRIPT"'
-                ),
-            ],
-            "env": [
-                {"name": "REGISTRY_TYPE", "value": registry_type},
-                {"name": "REGISTRY_URL", "value": registry_url},
-                {"name": "SKILL_NAME", "value": registry_skill_name},
-                {"name": "SKILL_VERSION", "value": registry_skill_version},
-                {"name": "TARGET_DIR", "value": mount_path},
-            ],
-            "volumeMounts": [
-                {"name": emptydir_vol_name, "mountPath": mount_path},
-                {
-                    "name": "fetcher-scripts-vol",
-                    "mountPath": "/fetcher-scripts",
-                    "readOnly": True,
-                },
-            ],
-        })
+        init_containers.append(
+            {
+                "name": f"fetch-skill-{index}",
+                "image": SKILL_FETCHER_IMAGE,
+                "command": [
+                    "/bin/sh",
+                    "-c",
+                    (
+                        f"SCRIPT=/fetcher-scripts/{registry_type}.sh; "
+                        '[ -f "$SCRIPT" ] || SCRIPT=/fetcher-scripts/generic.sh; '
+                        '/bin/sh "$SCRIPT"'
+                    ),
+                ],
+                "env": [
+                    {"name": "REGISTRY_TYPE", "value": registry_type},
+                    {"name": "REGISTRY_URL", "value": registry_url},
+                    {"name": "SKILL_NAME", "value": registry_skill_name},
+                    {"name": "SKILL_VERSION", "value": registry_skill_version},
+                    {"name": "TARGET_DIR", "value": mount_path},
+                ],
+                "volumeMounts": [
+                    {"name": emptydir_vol_name, "mountPath": mount_path},
+                    {
+                        "name": "fetcher-scripts-vol",
+                        "mountPath": "/fetcher-scripts",
+                        "readOnly": True,
+                    },
+                ],
+            }
+        )
 
-        main_mounts.append({
-            "name": emptydir_vol_name,
-            "mountPath": mount_path,
-            "readOnly": True,
-        })
+        main_mounts.append(
+            {
+                "name": emptydir_vol_name,
+                "mountPath": mount_path,
+                "readOnly": True,
+            }
+        )
         skill_paths.append(mount_path)
 
     return init_containers, volumes, main_mounts, skill_paths
@@ -2750,9 +2752,7 @@ def _build_env_vars(
     )
 
     _, _, local_folders = _get_linked_skill_mounts(request, skills_override=local_skills)
-    all_paths = (
-        ([local_folders] if local_folders else []) + (ext_skill_paths or [])
-    )
+    all_paths = ([local_folders] if local_folders else []) + (ext_skill_paths or [])
     if all_paths:
         env_vars.append({"name": "SKILL_FOLDERS", "value": ",".join(all_paths)})
 
@@ -2949,9 +2949,7 @@ def _build_deployment_manifest(
     ext_volumes = ext_volumes or []
     ext_volume_mounts = ext_volume_mounts or []
     ext_skill_paths = ext_skill_paths or []
-    env_vars = _build_env_vars(
-        request, local_skills=local_skills, ext_skill_paths=ext_skill_paths
-    )
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
         request, skills_override=local_skills
     )
@@ -3153,9 +3151,7 @@ def _build_statefulset_manifest(
     ext_volumes = ext_volumes or []
     ext_volume_mounts = ext_volume_mounts or []
     ext_skill_paths = ext_skill_paths or []
-    env_vars = _build_env_vars(
-        request, local_skills=local_skills, ext_skill_paths=ext_skill_paths
-    )
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
         request, skills_override=local_skills
     )
@@ -3281,9 +3277,7 @@ def _build_job_manifest(
     ext_volumes = ext_volumes or []
     ext_volume_mounts = ext_volume_mounts or []
     ext_skill_paths = ext_skill_paths or []
-    env_vars = _build_env_vars(
-        request, local_skills=local_skills, ext_skill_paths=ext_skill_paths
-    )
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
         request, skills_override=local_skills
     )
@@ -3393,9 +3387,7 @@ def _build_sandbox_manifest(
     ext_volumes = ext_volumes or []
     ext_volume_mounts = ext_volume_mounts or []
     ext_skill_paths = ext_skill_paths or []
-    env_vars = _build_env_vars(
-        request, local_skills=local_skills, ext_skill_paths=ext_skill_paths
-    )
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
     skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
         request, skills_override=local_skills
     )
@@ -3549,8 +3541,7 @@ async def create_agent(
             _get_external_skill_data(kube, request.namespace, request.skills)
         )
         local_skills = [
-            s for s in request.skills
-            if s and not _is_skill_external(kube, request.namespace, s)
+            s for s in request.skills if s and not _is_skill_external(kube, request.namespace, s)
         ]
 
     try:
@@ -4075,12 +4066,14 @@ async def finalize_shipwright_build(
 
         if final_skills and settings.kagenti_feature_flag_external_skills:
             _ensure_fetcher_scripts_cm(kube, namespace)
-            build_ext_init_containers, build_ext_volumes, build_ext_volume_mounts, build_ext_skill_paths = (
-                _get_external_skill_data(kube, namespace, final_skills)
-            )
+            (
+                build_ext_init_containers,
+                build_ext_volumes,
+                build_ext_volume_mounts,
+                build_ext_skill_paths,
+            ) = _get_external_skill_data(kube, namespace, final_skills)
             build_local_skills = [
-                s for s in final_skills
-                if s and not _is_skill_external(kube, namespace, s)
+                s for s in final_skills if s and not _is_skill_external(kube, namespace, s)
             ]
 
         final_service_ports = request.servicePorts
