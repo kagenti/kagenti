@@ -58,14 +58,14 @@ PYTEST_ARGS=(-v --tb=short --junitxml="$REPO_ROOT/test-results/token-exchange-${
 if [[ "$KEYCLOAK_PROVIDER" == "rhbk" ]]; then
   log_info "Running tests against RHBK (non-fatal)"
   # --no-header to reduce noise; failures are warnings not errors
-  python -m pytest "$TEST_DIR" "${PYTEST_ARGS[@]}" || {
+  uv run pytest "$TEST_DIR" "${PYTEST_ARGS[@]}" || {
     RC=$?
     log_warn "RHBK tests failed (exit code $RC) — non-fatal as per policy"
     exit 0  # Non-fatal
   }
 else
   log_info "Running tests against community Keycloak (fatal)"
-  python -m pytest "$TEST_DIR" "${PYTEST_ARGS[@]}"
+  uv run pytest "$TEST_DIR" "${PYTEST_ARGS[@]}"
 fi
 
 log_success "Token exchange E2E tests passed ($KEYCLOAK_PROVIDER)"
