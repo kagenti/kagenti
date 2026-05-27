@@ -261,6 +261,54 @@ export SSL_CERT_FILE=/tmp/ocp-ingress-ca.crt
 openshell gateway login
 ```
 
+## Uninstall
+
+To remove OpenShell resources from your cluster, use the cleanup scripts in
+`scripts/openshell/`.
+
+### Remove everything
+
+```bash
+scripts/openshell/cleanup-all.sh
+```
+
+This discovers all deployed tenants and removes them, then removes the shared
+infrastructure. Add `--delete-namespaces` to also delete tenant namespaces.
+
+### Remove a single tenant
+
+```bash
+scripts/openshell/cleanup-tenant.sh team1
+scripts/openshell/cleanup-tenant.sh team1 --delete-namespace
+```
+
+### Remove shared infrastructure only
+
+```bash
+scripts/openshell/cleanup-shared.sh
+```
+
+Skip specific components with `--skip-*` flags (mirrors `deploy-shared.sh`):
+
+```bash
+scripts/openshell/cleanup-shared.sh --skip-keycloak  # Keep the Keycloak realm
+scripts/openshell/cleanup-shared.sh --skip-backend   # Keep kagenti-backend + DB
+```
+
+### Dry run
+
+All cleanup scripts support `--dry-run` to preview what would be deleted:
+
+```bash
+scripts/openshell/cleanup-all.sh --dry-run
+```
+
+### Ordering
+
+Tenants must be cleaned up before shared infrastructure. `cleanup-all.sh`
+handles this automatically. If running scripts manually, always run
+`cleanup-tenant.sh` for each tenant first, then `cleanup-shared.sh`.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
