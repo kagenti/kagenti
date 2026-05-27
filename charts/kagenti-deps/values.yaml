@@ -219,6 +219,7 @@ otel:
             span:
               - 'IsMatch(name, "^a2a\\..*")'
               - 'attributes["http.method"] != nil'
+              - 'attributes["openinference.span.kind"] != nil'
               - 'attributes["mcp.method.name"] == "initialize"'
               - 'attributes["mcp.method.name"] == "notifications/initialized"'
               - 'attributes["mcp.method.name"] == "notifications/cancelled"'
@@ -277,6 +278,7 @@ otel:
               - 'IsMatch(name, "^a2a\\..*")'
               - 'attributes["http.method"] != nil and IsMatch(name, "^(POST|GET|DELETE)$")'
               - 'IsMatch(name, "^mcp-router\\..*") and (attributes["http.method"] == "GET" or attributes["http.method"] == "DELETE")'
+              - 'attributes["openinference.span.kind"] != nil'
               - 'attributes["mcp.method.name"] == "initialize"'
               - 'attributes["mcp.method.name"] == "notifications/initialized"'
               - 'attributes["mcp.method.name"] == "notifications/cancelled"'
