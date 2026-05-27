@@ -26,6 +26,13 @@ import {
   ListItem,
   Label,
   Spinner,
+  Tabs,
+  Tab,
+  TabTitleText,
+  Select,
+  SelectList,
+  SelectOption,
+  MenuToggle,
 } from '@patternfly/react-core';
 import { PlusCircleIcon, TrashIcon, GithubIcon } from '@patternfly/react-icons';
 import { useMutation } from '@tanstack/react-query';
@@ -33,6 +40,8 @@ import { useMutation } from '@tanstack/react-query';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { importSkillFromGitHub, isValidGitHubUrl } from '@/utils/githubSkillImporter';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { CreateExternalSkillRequest } from '@/types';
 
 interface AdditionalFile {
   id: string;
@@ -55,6 +64,17 @@ export const ImportSkillPage: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState(false);
+
+  const features = useFeatureFlags();
+  const [activeTab, setActiveTab] = React.useState<string>('upload');
+  const [registryType, setRegistryType] = React.useState('skillberry');
+  const [registryTypeOpen, setRegistryTypeOpen] = React.useState(false);
+  const [registryUrl, setRegistryUrl] = React.useState('');
+  const [registrySkillName, setRegistrySkillName] = React.useState('');
+  const [registrySkillVersion, setRegistrySkillVersion] = React.useState('');
+  const [registryName, setRegistryName] = React.useState('');
+  const [registryDescription, setRegistryDescription] = React.useState('');
+  const [registryCategory, setRegistryCategory] = React.useState('');
 
   const addFile = () => {
     setAdditionalFiles([
@@ -185,22 +205,42 @@ export const ImportSkillPage: React.FC = () => {
     },
   });
 
+  const registryMutation = useMutation({
+    mutationFn: () =>
+      skillService.createExternal({
+        name: registryName,
+        namespace,
+        description: registryDescription || undefined,
+        category: registryCategory || undefined,
+        registryType,
+        registryUrl,
+        registrySkillName,
+        registrySkillVersion: registrySkillVersion || 'latest',
+      } as CreateExternalSkillRequest),
+    onSuccess: () => navigate('/skills'),
+  });
+
   return (
     <>
       <PageSection variant="light">
-        <TextContent>
-          <Title headingLevel="h1">Import Skill</Title>
-          <Text component="p">
-            Import a skill by providing its content directly or a Git URL.
-            The skill must contain a SKILL.md file with YAML frontmatter.
-          </Text>
-        </TextContent>
+        <Title headingLevel="h1">Import Skill</Title>
       </PageSection>
 
       <PageSection>
+        <Tabs
+          activeKey={activeTab}
+          onSelect={(_e, key) => setActiveTab(key as string)}
+        >
+          <Tab eventKey="upload" title={<TabTitleText>Upload Files</TabTitleText>}>
         <Card>
           <CardTitle>Skill Information</CardTitle>
           <CardBody>
+            <TextContent style={{ marginBottom: '1rem' }}>
+              <Text component="p">
+                Import a skill by providing its content directly or a Git URL.
+                The skill must contain a SKILL.md file with YAML frontmatter.
+              </Text>
+            </TextContent>
             <Form>
               <FormGroup label="Namespace" isRequired>
                 <NamespaceSelector
@@ -411,6 +451,113 @@ export const ImportSkillPage: React.FC = () => {
             </Form>
           </CardBody>
         </Card>
+          </Tab>
+          {features.externalSkills && (
+            <Tab eventKey="registry" title={<TabTitleText>From Registry</TabTitleText>}>
+              <Card>
+                <CardBody>
+                  <Form>
+                    <FormGroup label="Namespace" isRequired fieldId="reg-namespace">
+                      <NamespaceSelector namespace={namespace} onNamespaceChange={setNamespace} />
+                    </FormGroup>
+                    <FormGroup label="Registry Type" isRequired fieldId="reg-type">
+                      <Select
+                        isOpen={registryTypeOpen}
+                        onOpenChange={(isOpen) => setRegistryTypeOpen(isOpen)}
+                        selected={registryType}
+                        onSelect={(_e, val) => {
+                          setRegistryType(val as string);
+                          setRegistryTypeOpen(false);
+                        }}
+                        toggle={(ref) => (
+                          <MenuToggle
+                            ref={ref}
+                            onClick={() => setRegistryTypeOpen(!registryTypeOpen)}
+                          >
+                            {registryType}
+                          </MenuToggle>
+                        )}
+                      >
+                        <SelectList>
+                          <SelectOption value="skillberry">skillberry</SelectOption>
+                          <SelectOption value="generic">generic</SelectOption>
+                        </SelectList>
+                      </Select>
+                    </FormGroup>
+                    <FormGroup label="Registry URL" isRequired fieldId="reg-url">
+                      <TextInput
+                        id="reg-url"
+                        value={registryUrl}
+                        onChange={(_e, v) => setRegistryUrl(v)}
+                        placeholder="https://skillberry.example.com"
+                      />
+                    </FormGroup>
+                    <FormGroup label="Skill Name in Registry" isRequired fieldId="reg-skill-name">
+                      <TextInput
+                        id="reg-skill-name"
+                        value={registrySkillName}
+                        onChange={(_e, v) => setRegistrySkillName(v)}
+                        placeholder="code-review"
+                      />
+                    </FormGroup>
+                    <FormGroup label="Version" fieldId="reg-version">
+                      <TextInput
+                        id="reg-version"
+                        value={registrySkillVersion}
+                        onChange={(_e, v) => setRegistrySkillVersion(v)}
+                        placeholder="latest"
+                      />
+                    </FormGroup>
+                    <FormGroup label="Display Name" isRequired fieldId="reg-name">
+                      <TextInput
+                        id="reg-name"
+                        value={registryName}
+                        onChange={(_e, v) => setRegistryName(v)}
+                      />
+                    </FormGroup>
+                    <FormGroup label="Description" fieldId="reg-description">
+                      <TextArea
+                        id="reg-description"
+                        value={registryDescription}
+                        onChange={(_e, v) => setRegistryDescription(v)}
+                        rows={3}
+                      />
+                    </FormGroup>
+                    <FormGroup label="Category" fieldId="reg-category">
+                      <TextInput
+                        id="reg-category"
+                        value={registryCategory}
+                        onChange={(_e, v) => setRegistryCategory(v)}
+                      />
+                    </FormGroup>
+                    {registryMutation.isError && (
+                      <Alert variant="danger" isInline title="Error creating external skill reference">
+                        {registryMutation.error instanceof Error
+                          ? registryMutation.error.message
+                          : 'An error occurred'}
+                      </Alert>
+                    )}
+                    <ActionGroup>
+                      <Button
+                        variant="primary"
+                        onClick={() => registryMutation.mutate()}
+                        isDisabled={
+                          !registryName || !registryUrl || !registrySkillName || registryMutation.isPending
+                        }
+                        isLoading={registryMutation.isPending}
+                      >
+                        Register External Skill
+                      </Button>
+                      <Button variant="link" onClick={() => navigate('/skills')}>
+                        Cancel
+                      </Button>
+                    </ActionGroup>
+                  </Form>
+                </CardBody>
+              </Card>
+            </Tab>
+          )}
+        </Tabs>
       </PageSection>
     </>
   );
