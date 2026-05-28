@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 import { describe, it, expect } from 'vitest';
-import { isValidEnvVarName, isValidContainerImage, isValidImageTag } from './validation';
+import { isValidEnvVarName, isValidContainerImage, isValidImageTag, isValidUrl } from './validation';
 
 describe('isValidEnvVarName', () => {
   it('accepts names starting with a letter', () => {
@@ -161,5 +161,30 @@ describe('isValidImageTag', () => {
     expect(isValidImageTag('tag/1')).toBe(false);
     expect(isValidImageTag('tag!')).toBe(false);
     expect(isValidImageTag('tàg')).toBe(false);
+  });
+});
+
+describe('isValidUrl', () => {
+  it('accepts http URLs', () => {
+    expect(isValidUrl('http://localhost:8000')).toBe(true);
+    expect(isValidUrl('http://172.26.89.33:8000')).toBe(true);
+    expect(isValidUrl('http://host.docker.internal:8000')).toBe(true);
+  });
+
+  it('accepts https URLs', () => {
+    expect(isValidUrl('https://skillberry.example.com')).toBe(true);
+  });
+
+  it('rejects empty string', () => {
+    expect(isValidUrl('')).toBe(false);
+  });
+
+  it('rejects plain text without protocol', () => {
+    expect(isValidUrl('notaurl')).toBe(false);
+    expect(isValidUrl('localhost:8000')).toBe(false);
+  });
+
+  it('rejects partial URLs', () => {
+    expect(isValidUrl('http://')).toBe(false);
   });
 });
