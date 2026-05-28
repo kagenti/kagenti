@@ -276,6 +276,7 @@ export const ImportSkillPage: React.FC = () => {
 
   const isSkillNameDisabled =
     registryType !== 'skillberry' || !isValidUrl(registryUrl) || registrySkillsLoading;
+  const isRegistryFieldDisabled = isSkillNameDisabled || !registrySkillName;
 
   return (
     <>
@@ -548,6 +549,11 @@ export const ImportSkillPage: React.FC = () => {
                         onChange={(_e, v) => setRegistryUrl(v)}
                         placeholder="http://host.docker.internal:8000"
                       />
+                      <HelperText>
+                        <HelperTextItem>
+                          Include <strong>http://</strong> or <strong>https://</strong> — e.g. <code>http://172.26.89.33:8000</code>
+                        </HelperTextItem>
+                      </HelperText>
                       {registrySkillsError && (
                         <Alert
                           variant="danger"
@@ -652,6 +658,7 @@ export const ImportSkillPage: React.FC = () => {
                         value={registrySkillVersion}
                         onChange={(_e, v) => setRegistrySkillVersion(v)}
                         placeholder="latest"
+                        isDisabled={isRegistryFieldDisabled}
                       />
                     </FormGroup>
                     <FormGroup label="Display Name" isRequired fieldId="reg-name">
@@ -659,6 +666,7 @@ export const ImportSkillPage: React.FC = () => {
                         id="reg-name"
                         value={registryName}
                         onChange={(_e, v) => setRegistryName(v)}
+                        isDisabled={isRegistryFieldDisabled}
                       />
                     </FormGroup>
                     <FormGroup label="Description" fieldId="reg-description">
@@ -667,6 +675,7 @@ export const ImportSkillPage: React.FC = () => {
                         value={registryDescription}
                         onChange={(_e, v) => setRegistryDescription(v)}
                         rows={3}
+                        isDisabled={isRegistryFieldDisabled}
                       />
                     </FormGroup>
                     <FormGroup label="Category" fieldId="reg-category">
@@ -674,6 +683,7 @@ export const ImportSkillPage: React.FC = () => {
                         id="reg-category"
                         value={registryCategory}
                         onChange={(_e, v) => setRegistryCategory(v)}
+                        isDisabled={isRegistryFieldDisabled}
                       />
                     </FormGroup>
                     {registryMutation.isError && (
