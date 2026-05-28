@@ -34,6 +34,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Skill } from '@/types';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
+import { getSkillberryUiUrl } from '@/utils/validation';
 
 export const SkillCatalogPage: React.FC = () => {
   const navigate = useNavigate();
@@ -134,6 +135,7 @@ export const SkillCatalogPage: React.FC = () => {
                 <Th>Category</Th>
                 <Th>Usage Count</Th>
                 <Th>Created</Th>
+                <Th>Registry</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -168,6 +170,22 @@ export const SkillCatalogPage: React.FC = () => {
                     {skill.createdAt
                       ? new Date(skill.createdAt).toLocaleDateString()
                       : 'N/A'}
+                  </Td>
+                  <Td dataLabel="Registry">
+                    {skill.source === 'external' &&
+                    skill.externalInfo?.registryType === 'skillberry' &&
+                    getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName) ? (
+                      <a
+                        href={getSkillberryUiUrl(skill.externalInfo.registryUrl, skill.externalInfo.registrySkillName)}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        View ↗
+                      </a>
+                    ) : (
+                      <span>—</span>
+                    )}
                   </Td>
                 </Tr>
               ))}
