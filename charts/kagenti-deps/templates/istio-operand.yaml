@@ -13,6 +13,10 @@ spec:
   namespace:  "{{ .Values.istio.namespace }}"
   values:
     pilot:
+      # Required by ztunnel in ambient mode; without this, ztunnel fails XDS
+      # with "ztunnel requires PILOT_ENABLE_AMBIENT=true".
+      env:
+        PILOT_ENABLE_AMBIENT: "true"
       trustedZtunnelNamespace: "{{ .Values.istio.ztunnel.namespace }}"
       # Reduce default resource requests to fit on resource-constrained
       # dev clusters with limited CPUs.
