@@ -14,6 +14,9 @@ import {
   Form,
   FormGroup,
   TextInput,
+  TextInputGroup,
+  TextInputGroupMain,
+  TextInputGroupUtilities,
   TextArea,
   Button,
   Alert,
@@ -34,7 +37,7 @@ import {
   SelectOption,
   MenuToggle,
 } from '@patternfly/react-core';
-import { PlusCircleIcon, TrashIcon, GithubIcon } from '@patternfly/react-icons';
+import { PlusCircleIcon, TrashIcon, GithubIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import { useMutation } from '@tanstack/react-query';
 
 import { skillService } from '@/services/api';
@@ -270,6 +273,9 @@ export const ImportSkillPage: React.FC = () => {
       } as CreateExternalSkillRequest),
     onSuccess: () => navigate('/skills'),
   });
+
+  const isSkillNameDisabled =
+    registryType !== 'skillberry' || !isValidUrl(registryUrl) || registrySkillsLoading;
 
   return (
     <>
@@ -555,12 +561,90 @@ export const ImportSkillPage: React.FC = () => {
                       )}
                     </FormGroup>
                     <FormGroup label="Skill Name in Registry" isRequired fieldId="reg-skill-name">
-                      <TextInput
-                        id="reg-skill-name"
-                        value={registrySkillName}
-                        onChange={(_e, v) => setRegistrySkillName(v)}
-                        placeholder="code-review"
-                      />
+                      <Select
+                        isOpen={registrySkillNameOpen}
+                        onOpenChange={(isOpen) => setRegistrySkillNameOpen(isOpen)}
+                        onSelect={(_e, val) => {
+                          const skill = registrySkills.find((s) => s.name === val);
+                          if (skill) {
+                            setRegistrySkillName(skill.name);
+                            setRegistrySkillNameFilter(skill.name);
+                            setRegistrySkillVersion(skill.version);
+                            setRegistryName(skill.name);
+                            setRegistryDescription(skill.description);
+                          }
+                          setRegistrySkillNameOpen(false);
+                        }}
+                        toggle={(ref) => (
+                          <MenuToggle
+                            ref={ref}
+                            variant="typeahead"
+                            onClick={() => {
+                              if (!isSkillNameDisabled) setRegistrySkillNameOpen(!registrySkillNameOpen);
+                            }}
+                            isExpanded={registrySkillNameOpen}
+                            isDisabled={isSkillNameDisabled}
+                            style={{ width: '100%' }}
+                          >
+                            {registrySkillsLoading ? (
+                              <Split hasGutter>
+                                <SplitItem><Spinner size="sm" /></SplitItem>
+                                <SplitItem>Loading skills...</SplitItem>
+                              </Split>
+                            ) : (
+                              <TextInputGroup isPlain>
+                                <TextInputGroupMain
+                                  value={registrySkillNameFilter}
+                                  onClick={() => setRegistrySkillNameOpen(true)}
+                                  onChange={(_e, val) => {
+                                    setRegistrySkillNameFilter(val);
+                                    if (val !== registrySkillName) setRegistrySkillName('');
+                                    if (!registrySkillNameOpen) setRegistrySkillNameOpen(true);
+                                  }}
+                                  autoComplete="off"
+                                  placeholder={isSkillNameDisabled ? 'Enter a valid Registry URL first' : 'Select or type a skill name'}
+                                />
+                                {registrySkillNameFilter && (
+                                  <TextInputGroupUtilities>
+                                    <Button
+                                      variant="plain"
+                                      onClick={() => {
+                                        setRegistrySkillNameFilter('');
+                                        setRegistrySkillName('');
+                                        setRegistrySkillVersion('');
+                                        setRegistryName('');
+                                        setRegistryDescription('');
+                                      }}
+                                      aria-label="Clear skill selection"
+                                    >
+                                      <TimesCircleIcon />
+                                    </Button>
+                                  </TextInputGroupUtilities>
+                                )}
+                              </TextInputGroup>
+                            )}
+                          </MenuToggle>
+                        )}
+                      >
+                        <SelectList>
+                          {registrySkills
+                            .filter(
+                              (s) =>
+                                !registrySkillNameFilter ||
+                                s.name.toLowerCase().includes(registrySkillNameFilter.toLowerCase())
+                            )
+                            .map((s) => (
+                              <SelectOption key={s.uuid} value={s.name} description={s.description}>
+                                {s.name}
+                              </SelectOption>
+                            ))}
+                          {!registrySkillsLoading && registrySkills.length === 0 && !registrySkillsError && isValidUrl(registryUrl) && (
+                            <SelectOption key="empty" isDisabled value="">
+                              No skills found in registry
+                            </SelectOption>
+                          )}
+                        </SelectList>
+                      </Select>
                     </FormGroup>
                     <FormGroup label="Version" fieldId="reg-version">
                       <TextInput
