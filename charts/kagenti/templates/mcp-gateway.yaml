@@ -12,6 +12,8 @@ metadata:
   labels:
     gateway.io/name: mcp-gateway
     istio: ingressgateway
+    # Keep generated gateway pods out of ambient capture.
+    istio.io/dataplane-mode: none
     {{- include "kagenti.labels" . | nindent 4 }}
 spec:
   gatewayClassName: istio
