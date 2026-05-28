@@ -43,7 +43,7 @@ import { useMutation } from '@tanstack/react-query';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { importSkillFromGitHub, isValidGitHubUrl } from '@/utils/githubSkillImporter';
-import { isValidUrl } from '@/utils/validation';
+import { isValidUrl, getSkillberryUiUrl } from '@/utils/validation';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { CreateExternalSkillRequest } from '@/types';
 
@@ -652,6 +652,17 @@ export const ImportSkillPage: React.FC = () => {
                         </SelectList>
                       </Select>
                     </FormGroup>
+                    {registryType === 'skillberry' && registrySkillName && getSkillberryUiUrl(registryUrl, registrySkillName) && (
+                      <div style={{ marginTop: '0.25rem', fontSize: 'var(--pf-v5-global--FontSize--sm)' }}>
+                        <a
+                          href={getSkillberryUiUrl(registryUrl, registrySkillName)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View in skillberry-store ↗
+                        </a>
+                      </div>
+                    )}
                     <FormGroup label="Version" fieldId="reg-version">
                       <TextInput
                         id="reg-version"
