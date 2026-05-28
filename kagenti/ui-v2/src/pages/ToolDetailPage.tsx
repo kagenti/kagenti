@@ -158,6 +158,12 @@ export const ToolDetailPage: React.FC = () => {
     queryFn: () => configService.getDashboards(),
   });
 
+
+  // Check if MCP Inspector is actually installed
+  const { data: mcpInspectorStatus } = useQuery({
+    queryKey: ["mcp-inspector-status"],
+    queryFn: () => configService.getMcpInspectorStatus(),
+  });
   // Check if an HTTPRoute/Route exists for this tool
   const { data: routeStatusData } = useQuery({
     queryKey: ['tool-route-status', namespace, name],
@@ -301,6 +307,7 @@ export const ToolDetailPage: React.FC = () => {
   // Construct MCP Inspector URL with pre-configured server
   // MCP Inspector runs in-cluster, so it needs the in-cluster URL
   const getMcpInspectorUrl = () => {
+    if (mcpInspectorStatus && !mcpInspectorStatus.installed) return null;
     if (!dashboardConfig?.mcpInspector) return null;
     const encodedServerUrl = encodeURIComponent(mcpInClusterUrl);
     return `${dashboardConfig.mcpInspector}?serverUrl=${encodedServerUrl}&transport=streamable-http`;
@@ -875,7 +882,7 @@ export const ToolDetailPage: React.FC = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Open MCP Inspector
+                    {getMcpInspectorUrl() ? "Open MCP Inspector" : "MCP Inspector not installed"}
                   </Button>
                 ) : (
                   <Alert variant="info" title="MCP Inspector not configured" isInline>

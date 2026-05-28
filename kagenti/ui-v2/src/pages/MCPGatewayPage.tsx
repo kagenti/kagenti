@@ -48,6 +48,12 @@ export const MCPGatewayPage: React.FC = () => {
   const { data: dashboardConfig, isLoading: isConfigLoading } = useQuery({
     queryKey: ['dashboards'],
     queryFn: () => configService.getDashboards(),
+
+  // Check if MCP Inspector is actually installed
+  const { data: mcpInspectorStatus, isLoading: isInspectorStatusLoading } = useQuery({
+    queryKey: ["mcp-inspector-status"],
+    queryFn: () => configService.getMcpInspectorStatus(),
+  });
   });
 
   // MCP Gateway in-cluster URL (used by MCP Inspector which runs in-cluster)
@@ -56,6 +62,7 @@ export const MCPGatewayPage: React.FC = () => {
 
   // Build MCP Inspector URL using config from backend
   const getMcpInspectorUrl = () => {
+    if (mcpInspectorStatus && !mcpInspectorStatus.installed) return null;
     if (!dashboardConfig?.mcpInspector) return null;
     return `${dashboardConfig.mcpInspector}?serverUrl=${encodedServerUrl}&transport=streamable-http`;
   };
@@ -190,9 +197,9 @@ export const MCPGatewayPage: React.FC = () => {
                   rel="noopener noreferrer"
                   icon={<ExternalLinkAltIcon />}
                   iconPosition="end"
-                  isDisabled={isConfigLoading || !mcpInspectorUrl}
+                  isDisabled={isConfigLoading || isInspectorStatusLoading || !mcpInspectorUrl}
                 >
-                  Open MCP Inspector
+                  {mcpInspectorUrl ? "Open MCP Inspector" : "MCP Inspector not installed"}
                 </Button>
               </CardFooter>
             </Card>

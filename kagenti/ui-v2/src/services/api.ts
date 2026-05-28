@@ -739,14 +739,17 @@ export interface PlatformStatusResponse {
  */
 export const configService = {
   async getDashboards(): Promise<DashboardConfig> {
-    return apiFetch('/config/dashboards');
+    return apiFetch("/config/dashboards");
   },
 
   async getPlatformStatus(): Promise<PlatformStatusResponse> {
-    return apiFetch('/config/platform-status');
+    return apiFetch("/config/platform-status");
+  },
+
+  async getMcpInspectorStatus(): Promise<{ installed: boolean; url: string }> {
+    return apiFetch("/config/mcp-inspector-status");
   },
 };
-
 /**
  * Session Graph types and service (Session E)
  */
