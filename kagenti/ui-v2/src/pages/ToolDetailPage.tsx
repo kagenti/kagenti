@@ -483,9 +483,13 @@ export const ToolDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>MCP Server URL</DescriptionListTerm>
                         <DescriptionListDescription>
-                          <a href={toolExternalUrl} target="_blank" rel="noopener noreferrer">
-                            {toolExternalUrl}
-                          </a>
+                          {hasRoute ? (
+                            <a href={toolExternalUrl} target="_blank" rel="noopener noreferrer">
+                              {toolExternalUrl}
+                            </a>
+                          ) : (
+                            <code>{toolExternalUrl}</code>
+                          )}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                     </DescriptionList>
@@ -846,9 +850,7 @@ export const ToolDetailPage: React.FC = () => {
                   <DescriptionListGroup>
                     <DescriptionListTerm>MCP Server URL (in-cluster)</DescriptionListTerm>
                     <DescriptionListDescription>
-                      <a href={mcpInClusterUrl} target="_blank" rel="noopener noreferrer">
-                        {mcpInClusterUrl}
-                      </a>
+                      <code>{mcpInClusterUrl}</code>
                     </DescriptionListDescription>
                   </DescriptionListGroup>
                   <DescriptionListGroup>
