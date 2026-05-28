@@ -191,8 +191,8 @@ describe('isValidUrl', () => {
 
 describe('getSkillberryUiUrl', () => {
   it('replaces port 8000 with 8002 and appends skill path', () => {
-    expect(getSkillberryUiUrl('http://172.26.89.33:8000', 'summarizer'))
-      .toBe('http://172.26.89.33:8002/skills/summarizer');
+    expect(getSkillberryUiUrl('http://192.0.2.1:8000', 'summarizer'))
+      .toBe('http://192.0.2.1:8002/skills/summarizer');
   });
 
   it('replaces localhost port 8000 with 8002', () => {
