@@ -40,6 +40,7 @@ import { useMutation } from '@tanstack/react-query';
 import { skillService } from '@/services/api';
 import { NamespaceSelector } from '@/components/NamespaceSelector';
 import { importSkillFromGitHub, isValidGitHubUrl } from '@/utils/githubSkillImporter';
+import { isValidUrl } from '@/utils/validation';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { CreateExternalSkillRequest } from '@/types';
 
@@ -47,6 +48,13 @@ interface AdditionalFile {
   id: string;
   path: string;
   content: string;
+}
+
+interface SkillberrySkill {
+  name: string;
+  description: string;
+  version: string;
+  uuid: string;
 }
 
 export const ImportSkillPage: React.FC = () => {
@@ -75,6 +83,12 @@ export const ImportSkillPage: React.FC = () => {
   const [registryName, setRegistryName] = React.useState('');
   const [registryDescription, setRegistryDescription] = React.useState('');
   const [registryCategory, setRegistryCategory] = React.useState('');
+
+  const [registrySkills, setRegistrySkills] = useState<SkillberrySkill[]>([]);
+  const [registrySkillsLoading, setRegistrySkillsLoading] = useState(false);
+  const [registrySkillsError, setRegistrySkillsError] = useState<string | null>(null);
+  const [registrySkillNameOpen, setRegistrySkillNameOpen] = useState(false);
+  const [registrySkillNameFilter, setRegistrySkillNameFilter] = useState('');
 
   const addFile = () => {
     setAdditionalFiles([
@@ -161,6 +175,43 @@ export const ImportSkillPage: React.FC = () => {
 
     return () => clearTimeout(timeoutId);
   }, [url]); // Only depend on url
+
+  useEffect(() => {
+    if (registryType !== 'skillberry' || !isValidUrl(registryUrl)) {
+      setRegistrySkills([]);
+      setRegistrySkillsError(null);
+      setRegistrySkillNameFilter('');
+      setRegistrySkillName('');
+      return;
+    }
+
+    setRegistrySkillsLoading(true);
+    setRegistrySkillsError(null);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      fetch(`${registryUrl}/skills/`, { signal: controller.signal })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((skills: SkillberrySkill[]) => {
+          setRegistrySkills(skills);
+          setRegistrySkillsLoading(false);
+        })
+        .catch((err) => {
+          if (err.name === 'AbortError') return;
+          setRegistrySkillsError(err.message || 'Failed to load skills from registry');
+          setRegistrySkills([]);
+          setRegistrySkillsLoading(false);
+        });
+    }, 500);
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [registryUrl, registryType]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -489,8 +540,19 @@ export const ImportSkillPage: React.FC = () => {
                         id="reg-url"
                         value={registryUrl}
                         onChange={(_e, v) => setRegistryUrl(v)}
-                        placeholder="https://skillberry.example.com"
+                        placeholder="http://host.docker.internal:8000"
                       />
+                      {registrySkillsError && (
+                        <Alert
+                          variant="danger"
+                          title="Could not load skills from registry"
+                          isInline
+                          isPlain
+                          style={{ marginTop: '0.5rem' }}
+                        >
+                          {registrySkillsError}
+                        </Alert>
+                      )}
                     </FormGroup>
                     <FormGroup label="Skill Name in Registry" isRequired fieldId="reg-skill-name">
                       <TextInput
