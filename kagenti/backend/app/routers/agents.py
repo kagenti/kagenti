@@ -2549,6 +2549,8 @@ _SKILLBERRY_SH = """\
 #!/bin/sh
 set -e
 
+apk add -q --no-cache curl unzip 2>/dev/null || true
+
 URL="${REGISTRY_URL}/skills/${SKILL_NAME}/export-anthropic"
 
 echo "Fetching ${SKILL_NAME} from ${URL}"
@@ -2567,7 +2569,6 @@ for i in $(seq 1 $RETRIES); do
     sleep $DELAY
 done
 
-apk add -q --no-cache curl unzip 2>/dev/null || true
 mkdir -p "${TARGET_DIR}" /tmp/skill-extract
 unzip -q /tmp/skill.zip -d /tmp/skill-extract/
 SKILL_DIR=$(ls /tmp/skill-extract/ | head -1)
