@@ -31,6 +31,12 @@ components:
     enabled: false
   mlflow:
     enabled: false
+    # Namespace where the MLflow Route lives on OpenShift.
+    # Defaults to the release namespace (kagenti-system).
+    # RHOAI-managed MLflow creates its Route in redhat-ods-applications;
+    # set routeNamespace: "redhat-ods-applications" when using RHOAI.
+    routeNamespace: ""
+
 # Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
 # githubUser/githubToken are optional: only needed to deploy agents/tools from
 # private GitHub repos or pull images from private registries.

@@ -69,7 +69,7 @@ data:
 
     # --- Function Definition ---
     get_route_host() {
-        local TIMEOUT_SECONDS=5
+        local TIMEOUT_SECONDS=30
         local CHECK_INTERVAL_SECONDS=1
         local NAMESPACE="$1"
         local ROUTE_NAME="$2"
@@ -113,7 +113,7 @@ data:
       "kagenti-system,phoenix,true,TRACES_DASHBOARD_URL"
       {{- end }}
       {{- if .Values.components.mlflow.enabled }}
-      "kagenti-system,mlflow,true,MLFLOW_DASHBOARD_URL"
+      "{{ .Values.components.mlflow.routeNamespace | default .Release.Namespace }},mlflow,true,MLFLOW_DASHBOARD_URL"
       {{- end }}
       "kagenti-system,kagenti-api,true,API_URL"
       "istio-system,kiali,true,NETWORK_TRAFFIC_DASHBOARD_URL"
