@@ -303,7 +303,10 @@ if $PRELOAD_IMAGES && ! $DRY_RUN; then
     exit 1
   fi
 
-  mapfile -t PRELOAD_LIST < <(grep -v '^\s*#' "$PRELOAD_FILE" | grep -v '^\s*$')
+  PRELOAD_LIST=()
+  while IFS= read -r line; do
+    PRELOAD_LIST+=("$line")
+  done < <(grep -v '^[[:space:]]*#' "$PRELOAD_FILE" | grep -v '^[[:space:]]*$')
   if [ ${#PRELOAD_LIST[@]} -eq 0 ]; then
     log_warn "Preload images file is empty — skipping"
   else
