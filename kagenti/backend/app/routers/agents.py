@@ -2549,15 +2549,14 @@ _SKILLBERRY_SH = """\
 #!/bin/sh
 set -e
 
-SKILL_VERSION="${SKILL_VERSION:-latest}"
-URL="${REGISTRY_URL}/api/v1/skills/${SKILL_NAME}/${SKILL_VERSION}/archive"
+URL="${REGISTRY_URL}/skills/${SKILL_NAME}/export-anthropic"
 
-echo "Fetching ${SKILL_NAME}@${SKILL_VERSION} from ${URL}"
+echo "Fetching ${SKILL_NAME} from ${URL}"
 
 RETRIES=3
 DELAY=2
 for i in $(seq 1 $RETRIES); do
-    if curl -fsSL -o /tmp/skill.tar.gz "${URL}"; then
+    if curl -fsSL -o /tmp/skill.zip "${URL}"; then
         break
     fi
     if [ "$i" -eq "$RETRIES" ]; then
@@ -2568,9 +2567,12 @@ for i in $(seq 1 $RETRIES); do
     sleep $DELAY
 done
 
-mkdir -p "${TARGET_DIR}"
-tar -xzf /tmp/skill.tar.gz -C "${TARGET_DIR}"
-echo "OK: ${SKILL_NAME}@${SKILL_VERSION} -> ${TARGET_DIR}"
+apk add -q --no-cache unzip 2>/dev/null || true
+mkdir -p "${TARGET_DIR}" /tmp/skill-extract
+unzip -q /tmp/skill.zip -d /tmp/skill-extract/
+SKILL_DIR=$(ls /tmp/skill-extract/ | head -1)
+cp -r "/tmp/skill-extract/${SKILL_DIR}/." "${TARGET_DIR}/"
+echo "OK: ${SKILL_NAME} -> ${TARGET_DIR}"
 """
 
 _GENERIC_SH = """\

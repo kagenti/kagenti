@@ -62,9 +62,11 @@ This flow differs from the [local skill demo](./demo-generic-agent-skill.md): th
 
 ### Skillberry store
 
-- A running instance of [skillberry-store](https://github.ibm.com/skillberry/skillberry-store) that is **network-reachable from the Kagenti cluster**. The agent init container must be able to reach the registry URL at pod startup time.
+- A running instance of [skillberry-store](https://github.ibm.com/skillberry/skillberry-store) accessible at:
+  - **UI**: `http://localhost:8002/`
+  - **FastAPI / REST API**: `http://localhost:8000/`
 - You have credentials or access to publish a skill to that instance (follow skillberry-store's own [onboarding documentation](https://github.com/skillberry-ai/skillberry-store/blob/main/README.md) and [CLI guide](https://github.com/skillberry-ai/skillberry-store/blob/main/docs/cli.md)).
-- Note the base URL of your instance, for example `https://skillberry.example.com`. This is used throughout as `SKILLBERRY_URL`.
+- **Kind cluster note**: the `sbs` CLI and `curl` commands in this guide run from your workstation and use `http://localhost:8000`. However, the registry URL you register in Kagenti (Step 2) is fetched by an init container running **inside** the Kind cluster — it cannot reach `localhost` on the host. Use `http://host.docker.internal:8000` (Docker Desktop / WSL2) or your host's LAN IP (e.g. `http://192.168.1.10:8000`) for that field.
 
 ## Repositories and paths used in this demo
 
@@ -73,7 +75,9 @@ This flow differs from the [local skill demo](./demo-generic-agent-skill.md): th
 | Example agent repository | `https://github.com/kagenti/agent-examples` |
 | Skill source path | `skills/summarizer` |
 | Agent source path | `a2a/generic_agent` |
-| Skillberry base URL | `https://skillberry.example.com` *(replace with your instance)* |
+| Skillberry UI | `http://localhost:8002/` |
+| Skillberry API (FastAPI / `sbs` CLI) | `http://localhost:8000/` |
+| Registry URL for Kind init container | `http://host.docker.internal:8000` or host LAN IP |
 | Skill name in registry | `summarizer` |
 | Skill version | `1.0.0` |
 
@@ -88,28 +92,43 @@ ls
 # SKILL.md  (and any additional files)
 ```
 
-Use the skillberry-store CLI or API to publish the skill. The exact command depends on your skillberry-store version — refer to the [skillberry-store documentation](https://github.ibm.com/skillberry/skillberry-store) for the authoritative publishing steps. A typical publish looks like:
+Use `curl` to import the skill into skillberry-store via the `POST /skills/import-anthropic` endpoint:
 
 ```bash
-skillberry publish \
-  --name summarizer \
-  --version 1.0.0 \
-  --source . \
-  --registry "${SKILLBERRY_URL}"
+curl -s -X POST "http://localhost:8000/skills/import-anthropic" \
+  -F "source_type=folder" \
+  -F "folder_path=/path/to/agent-examples/skills/summarizer" \
+  -F "treat_all_as_documents=true"
 ```
 
-After publishing, verify the skill is accessible. The skillberry-store REST API should return a `tar.gz` archive when you request:
+Replace `/path/to/agent-examples` with the actual path where you cloned the repository. A successful response looks like:
 
-```
-GET ${SKILLBERRY_URL}/api/v1/skills/summarizer/1.0.0/archive
+```json
+{
+  "success": true,
+  "message": "Successfully imported Anthropic skill 'summarizer' (created)",
+  "skill_name": "summarizer",
+  "tools_created": 29,
+  "snippets_created": 2
+}
 ```
 
-You can confirm this with curl:
+Optional form fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `snippet_mode` | `file` | How text files are split: `file` (one snippet per file) or `paragraph` |
+| `tags` | `[]` | Additional tags to attach to all imported objects |
+| `treat_all_as_documents` | `false` | Treat all files as documents (set to `true` in this demo) |
+
+After importing, verify the skill is visible in the skillberry-store UI at `http://localhost:8002/`.
+
+You can also verify via the export endpoint, which returns a ZIP archive:
 
 ```bash
-curl -fsSL "${SKILLBERRY_URL}/api/v1/skills/summarizer/1.0.0/archive" -o /tmp/test-summarizer.tar.gz
-tar -tzf /tmp/test-summarizer.tar.gz
-# Expected: SKILL.md listed in archive contents
+curl -fsSL "http://localhost:8000/skills/summarizer/export-anthropic" -o /tmp/test-summarizer.zip
+unzip -l /tmp/test-summarizer.zip
+# Expected: summarizer/SKILL.md and other skill files listed
 ```
 
 ## Step 2: Register the external skill reference in the Kagenti UI
@@ -125,9 +144,11 @@ The Kagenti UI "From Registry" tab creates a lightweight ConfigMap that points t
 
 5. In **Namespace**, select the namespace you will also use for the agent, for example `team1`.
 6. In **Registry Type**, select `skillberry`.
-7. In **Registry URL**, enter your skillberry-store base URL:
+7. In **Registry URL**, enter the skillberry-store API URL that is reachable from **inside the Kind cluster** (not from your workstation). On Docker Desktop or WSL2 use:
 
-   `https://skillberry.example.com`
+   `http://host.docker.internal:8000`
+
+   If `host.docker.internal` does not resolve in your environment, use your host's LAN IP instead (e.g. `http://192.168.1.10:8000`). The init container that fetches the skill archive at pod startup must be able to reach this URL.
 
 8. In **Skill Name in Registry**, enter:
 
@@ -157,6 +178,7 @@ After the reference is created, the skill appears in the skill catalog with an *
 If you prefer the API:
 
 ```bash
+# Use the URL reachable from inside the Kind cluster, not localhost
 curl -s -X POST "${KAGENTI_URL}/api/v1/skills/external" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -166,7 +188,7 @@ curl -s -X POST "${KAGENTI_URL}/api/v1/skills/external" \
     "description": "Summarization skill for converting long source text into concise structured summaries.",
     "category": "summarization",
     "registryType": "skillberry",
-    "registryUrl": "https://skillberry.example.com",
+    "registryUrl": "http://host.docker.internal:8000",
     "registrySkillName": "summarizer",
     "registrySkillVersion": "1.0.0"
   }'
@@ -211,7 +233,7 @@ In the **Linked Skills** section of the import form:
 
 Kagenti records the skill linkage. At agent pod startup, an `alpine:3` init container will:
 
-1. fetch `${SKILLBERRY_URL}/api/v1/skills/summarizer/1.0.0/archive`,
+1. fetch `<registry-url>/skills/summarizer/export-anthropic` (the URL registered in Step 2, e.g. `http://host.docker.internal:8000/skills/summarizer/export-anthropic`),
 2. extract the archive to `/app/skills/summarizer/`,
 3. and allow the main agent container to mount the result read-only.
 
@@ -236,8 +258,8 @@ To confirm the init container fetched the skill successfully, inspect the pod:
 ```bash
 kubectl logs <agent-pod-name> -n team1 -c fetch-skill-0
 # Expected output includes:
-# Fetching summarizer@1.0.0 from https://skillberry.example.com/api/v1/skills/summarizer/1.0.0/archive
-# OK: summarizer@1.0.0 -> /app/skills/summarizer
+# Fetching summarizer from http://host.docker.internal:8000/skills/summarizer/export-anthropic
+# OK: summarizer -> /app/skills/summarizer
 ```
 
 You can also verify the mounted files and environment variable:
@@ -311,7 +333,7 @@ The skill is working if all of the following are true:
 
 For a live demo:
 
-1. Show the skillberry-store UI or API confirming the `summarizer` skill is published.
+1. Show the skillberry-store UI at `http://localhost:8002/` confirming the `summarizer` skill is published, or run `curl -o /dev/null -w "%{http_code}" http://localhost:8000/skills/summarizer/export-anthropic` to confirm `200`.
 2. Show the **Import Skill → From Registry** tab and register the external reference.
 3. Point out the **External** badge in the skill catalog and open the detail page to show the Registry Information card instead of a file tree.
 4. Show the **Import New Agent** page, select `a2a/generic_agent`, and check `summarizer` in **Linked Skills**.
@@ -353,8 +375,13 @@ kubectl logs <agent-pod-name> -n team1 -c fetch-skill-0
 
 Common causes:
 
-- The skillberry-store URL is not reachable from inside the cluster. Verify network connectivity from a test pod in the same namespace.
-- The skill name or version does not exist in the registry. Verify with `curl "${SKILLBERRY_URL}/api/v1/skills/summarizer/1.0.0/archive"` from inside the cluster.
+- The skillberry-store URL is not reachable from inside the cluster. The registered URL must be reachable from the Kind pod, not just from your workstation. `localhost:8000` does not resolve inside a Kind pod — use `http://host.docker.internal:8000` (Docker Desktop / WSL2) or your host's LAN IP.
+  Verify from a test pod in the same namespace:
+  ```bash
+  kubectl run -it --rm nettest --image=alpine --restart=Never -n team1 -- \
+    wget -qO- http://host.docker.internal:8000/skills/summarizer/export-anthropic | wc -c
+  ```
+- The skill does not exist in the registry. Verify from your workstation: `curl -o /dev/null -w "%{http_code}" "http://localhost:8000/skills/summarizer/export-anthropic"` — expect `200`.
 - The archive format is not a valid `tar.gz`. Check the skillberry-store publish step.
 
 ### The external skill does not appear in the Linked Skills list
