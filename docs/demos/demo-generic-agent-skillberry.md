@@ -148,28 +148,26 @@ The Kagenti UI "From Registry" tab creates a lightweight ConfigMap that points t
 
    `http://host.docker.internal:8000`
 
-   If `host.docker.internal` does not resolve in your environment, use your host's LAN IP instead (e.g. `http://192.168.1.10:8000`). The init container that fetches the skill archive at pod startup must be able to reach this URL.
+   If `host.docker.internal` does not resolve in your environment, use your host's LAN IP instead (e.g. `http://172.26.89.33:8000`). The init container that fetches the skill archive at pod startup must be able to reach this URL.
 
-8. In **Skill Name in Registry**, enter:
+   > **Important:** The URL must include the `http://` prefix (e.g. `http://172.26.89.33:8000`, not `172.26.89.33:8000`). The form shows a hint as a reminder.
 
-   `summarizer`
+   Once you enter a valid URL, the **Skill Name in Registry** field automatically becomes a combobox populated with all skills available in the registry. The remaining fields stay disabled until you select a skill.
 
-9. In **Version**, enter:
+8. In **Skill Name in Registry**, open the combobox and select `summarizer` (or type to filter the list).
 
-   `1.0.0`
+   As soon as you select a skill, the following fields are filled in automatically:
 
-   Leave blank to use `latest`.
+   | Field | Auto-filled value |
+   |---|---|
+   | **Version** | skill version from the registry (e.g. `1.0.0`) |
+   | **Display Name** | skill name (e.g. `summarizer`) |
+   | **Description** | skill description from the registry |
 
-10. In **Display Name**, enter:
+   You can edit any auto-filled value before registering. **Category** is not populated automatically (skillberry does not have a category field) — enter `summarization` manually if desired.
 
-    `summarizer`
-
-11. In **Description**, enter:
-
-    `Summarization skill for converting long source text into concise structured summaries.`
-
-12. In **Category**, enter `summarization` (optional).
-13. Click **Register External Skill**.
+9. Review the auto-filled fields and adjust if needed.
+10. Click **Register External Skill**.
 
 After the reference is created, the skill appears in the skill catalog with an **External** badge. If you open the skill detail page, you will see a **Registry Information** card rather than a file tree — the file content is not stored locally.
 
