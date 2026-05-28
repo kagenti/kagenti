@@ -12,6 +12,7 @@ featureFlags:
   triggers: false
   agentSandbox: false
   skills: false
+  externalSkills: false  # External skill registry references (skillberry-store, etc.)
   authbridgeAPI: false
   admin: false
 

@@ -25,19 +25,18 @@ This flow differs from the [local skill demo](./demo-generic-agent-skill.md): th
 - You have access to a Kagenti-enabled namespace, for example `team1`.
 - The cluster can build example agents from GitHub.
 - You have LLM credentials ready for the generic agent (`LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY`).
-- **Both** of the following feature flags must be enabled:
+- **Both** `featureFlags.skills` and `featureFlags.externalSkills` must be enabled.
+
+  When using the Kind setup script, use `--with-skills` (enables both flags and auto-enables backend and UI):
 
   ```bash
-  KAGENTI_FEATURE_FLAG_SKILLS=true
-  KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS=true
+  scripts/kind/setup-kagenti.sh --with-skills --with-builds
   ```
 
-  When using the setup script:
+  To also build images from source:
 
   ```bash
-  export KAGENTI_FEATURE_FLAG_SKILLS=true
-  export KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS=true
-  ./scripts/kind/setup-kagenti.sh --with-backend --with-ui
+  scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-cluster
   ```
 
   When using the Ansible installer, add to your values file:
@@ -51,10 +50,20 @@ This flow differs from the [local skill demo](./demo-generic-agent-skill.md): th
           externalSkills: true
   ```
 
+  When enabling on an already-running cluster with Helm:
+
+  ```bash
+  helm upgrade kagenti ./charts/kagenti/ \
+    --reuse-values \
+    --set featureFlags.skills=true \
+    --set featureFlags.externalSkills=true \
+    -n kagenti-system
+  ```
+
 ### Skillberry store
 
 - A running instance of [skillberry-store](https://github.ibm.com/skillberry/skillberry-store) that is **network-reachable from the Kagenti cluster**. The agent init container must be able to reach the registry URL at pod startup time.
-- You have credentials or access to publish a skill to that instance (follow skillberry-store's own onboarding documentation).
+- You have credentials or access to publish a skill to that instance (follow skillberry-store's own [onboarding documentation](https://github.com/skillberry-ai/skillberry-store/blob/main/README.md) and [CLI guide](https://github.com/skillberry-ai/skillberry-store/blob/main/docs/cli.md)).
 - Note the base URL of your instance, for example `https://skillberry.example.com`. This is used throughout as `SKILLBERRY_URL`.
 
 ## Repositories and paths used in this demo
@@ -314,7 +323,25 @@ For a live demo:
 
 ### The "From Registry" tab is not visible
 
-Check that `KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS=true` is set. The tab is hidden when the feature flag is disabled. If you enabled it after the UI started, refresh the page.
+The tab is hidden when `featureFlags.externalSkills` is false. Verify both flags are enabled:
+
+```bash
+kubectl get deployment kagenti-backend -n kagenti-system \
+  -o jsonpath='{.spec.template.spec.containers[0].env}' \
+  | python3 -m json.tool | grep -A1 "FEATURE_FLAG_SKILLS\|FEATURE_FLAG_EXTERNAL"
+```
+
+If either flag shows `"false"`, enable both with:
+
+```bash
+helm upgrade kagenti ./charts/kagenti/ \
+  --reuse-values \
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true \
+  -n kagenti-system
+```
+
+Wait for the pods to restart, then refresh the page. If you deployed with the Kind setup script, use `--with-skills` on the next run.
 
 ### The skill reference was created but the agent pod fails to start
 
@@ -366,7 +393,7 @@ Check that:
 | Skill catalog badge | None | **External** |
 | Pod skill delivery | ConfigMap volume mount | `alpine:3` init container fetch |
 | Registry reachability required | No | Yes, at pod startup |
-| Feature flags required | `KAGENTI_FEATURE_FLAG_SKILLS` | Both skills and `KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS` |
+| Feature flags required | `featureFlags.skills` | `featureFlags.skills` + `featureFlags.externalSkills` |
 
 ## Related references
 

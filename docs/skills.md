@@ -8,19 +8,28 @@ Skills are a key component of the Kagenti workload runtime, working alongside Ag
 
 ## Enabling Skills
 
-Skills are currently a feature flag in Kagenti and must be explicitly enabled before use. The method for enabling skills depends on your deployment approach:
+Skills are a feature-flagged capability in Kagenti and must be explicitly enabled before use. Two flags control the feature:
 
-### Using Kind and OpenShift Setup Script
+| Flag | Controls |
+|------|----------|
+| `featureFlags.skills` | Core skills management: import, list, delete skills; link skills to agents |
+| `featureFlags.externalSkills` | External skill registry references (e.g. skillberry-store). Requires `skills` to also be true. |
 
-When using the `scripts/kind/setup-kagenti.sh` script, skills can be enabled by setting the environment variable before running the script:
+The easiest way to enable both is the `--with-skills` flag described below.
+
+### Using the Kind Setup Script
+
+Pass `--with-skills` to enable both flags at once. It automatically enables `--with-backend` and `--with-ui`:
 
 ```bash
-# Enable skills with the setup script
-export KAGENTI_FEATURE_FLAG_SKILLS=true
-./scripts/kind/setup-kagenti.sh --with-backend --with-ui
+scripts/kind/setup-kagenti.sh --with-skills
 ```
 
-**Note**: The `--with-backend` and `--with-ui` flags are required to deploy the Kagenti backend and UI components where the skills feature is used.
+To combine with other options, for example builds and locally-built images:
+
+```bash
+scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-cluster
+```
 
 ### Using the Kagenti Installer
 
@@ -30,6 +39,7 @@ When using the installer, enable skills by modifying your values file (e.g., `de
 cat <<EOF > /tmp/enable-flag-skills.yaml
 featureFlags:
   skills: true
+  externalSkills: true
 EOF
 ```
 
@@ -41,13 +51,23 @@ Then run the installer:
 
 ### Using Helm
 
-When installing or upgrading Kagenti with Helm, enable skills by setting the feature flag in your values:
+When installing or upgrading Kagenti with Helm directly:
 
 ```bash
-# Using --set flag
 helm upgrade --install kagenti ./charts/kagenti/ \
   -n kagenti-system --create-namespace \
-  --set featureFlags.skills=true
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true
+```
+
+To enable on an already-running cluster without full redeploy:
+
+```bash
+helm upgrade kagenti ./charts/kagenti/ \
+  --reuse-values \
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true \
+  -n kagenti-system
 ```
 
 ### Verifying Skills Are Enabled
