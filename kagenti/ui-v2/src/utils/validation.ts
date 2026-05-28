@@ -65,3 +65,18 @@ export const isValidUrl = (url: string): boolean => {
     return false;
   }
 };
+
+/**
+ * Derive the skillberry-store web UI URL from the API URL.
+ * Substitutes port 8002 (UI) for the stored API port and appends the skill path.
+ * Returns '' if registryUrl is not a valid URL.
+ */
+export const getSkillberryUiUrl = (registryUrl: string, skillName: string): string => {
+  try {
+    const url = new URL(registryUrl);
+    url.port = '8002';
+    return `${url.origin}/skills/${skillName}`;
+  } catch {
+    return '';
+  }
+};

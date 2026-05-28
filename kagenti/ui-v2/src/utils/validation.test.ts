@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 
 import { describe, it, expect } from 'vitest';
-import { isValidEnvVarName, isValidContainerImage, isValidImageTag, isValidUrl } from './validation';
+import { isValidEnvVarName, isValidContainerImage, isValidImageTag, isValidUrl, getSkillberryUiUrl } from './validation';
 
 describe('isValidEnvVarName', () => {
   it('accepts names starting with a letter', () => {
@@ -186,5 +186,27 @@ describe('isValidUrl', () => {
 
   it('rejects partial URLs', () => {
     expect(isValidUrl('http://')).toBe(false);
+  });
+});
+
+describe('getSkillberryUiUrl', () => {
+  it('replaces port 8000 with 8002 and appends skill path', () => {
+    expect(getSkillberryUiUrl('http://172.26.89.33:8000', 'summarizer'))
+      .toBe('http://172.26.89.33:8002/skills/summarizer');
+  });
+
+  it('replaces localhost port 8000 with 8002', () => {
+    expect(getSkillberryUiUrl('http://localhost:8000', 'my-skill'))
+      .toBe('http://localhost:8002/skills/my-skill');
+  });
+
+  it('appends port 8002 when no port specified', () => {
+    expect(getSkillberryUiUrl('https://skillberry.example.com', 'summarizer'))
+      .toBe('https://skillberry.example.com:8002/skills/summarizer');
+  });
+
+  it('returns empty string for invalid URL', () => {
+    expect(getSkillberryUiUrl('notaurl', 'summarizer')).toBe('');
+    expect(getSkillberryUiUrl('', 'summarizer')).toBe('');
   });
 });
