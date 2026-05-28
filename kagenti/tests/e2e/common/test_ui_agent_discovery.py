@@ -24,6 +24,7 @@ import pytest
 import httpx
 
 
+@pytest.mark.requires_features(["ui"])
 class TestUIAgentDiscovery:
     """Test agent discovery through the UI backend API."""
 
@@ -230,6 +231,7 @@ class TestUIAgentDiscovery:
         )
 
 
+@pytest.mark.requires_features(["ui"])
 class TestToolDiscovery:
     """Test tool discovery through the UI backend API."""
 

@@ -65,7 +65,7 @@ charts:
         platformWebhook:
           enabled: true
         ui:
-          enabled: true
+          enabled: false
         mcpGateway:
           enabled: true
         istio:

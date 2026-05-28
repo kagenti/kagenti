@@ -6,6 +6,12 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "25" "Building ui-oauth-secret image from source"
 
+# Skip if UI is not deployed
+if ! kubectl get deployment kagenti-ui -n kagenti-system &>/dev/null; then
+    log_info "Kagenti UI not deployed — skipping ui-oauth-secret build"
+    exit 0
+fi
+
 IMAGE_NAME="$(grep -A5 'uiOAuthSecret:' "$REPO_ROOT/charts/kagenti/values.yaml" | grep 'image:' | grep -v '#' | awk '{print $2}')"
 IMAGE_TAG="$(grep -A5 'uiOAuthSecret:' "$REPO_ROOT/charts/kagenti/values.yaml" | grep 'tag:' | awk '{print $2}')"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"

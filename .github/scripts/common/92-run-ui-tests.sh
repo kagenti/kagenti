@@ -6,6 +6,12 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 
 log_step "92" "Running UI E2E tests (Playwright)"
 
+# Skip if UI is not deployed
+if ! kubectl get deployment kagenti-ui -n kagenti-system &>/dev/null; then
+    log_info "Kagenti UI not deployed — skipping UI tests"
+    exit 0
+fi
+
 # Ensure Node.js >= 22 (required by mermaid/chevrotain)
 MIN_NODE_MAJOR=22
 if ! command -v node &>/dev/null; then

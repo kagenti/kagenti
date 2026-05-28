@@ -70,6 +70,11 @@ COMPONENTS=(
 for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
     IFS=: read -r NAME DOCKERFILE TAG <<< "$COMPONENT_SPEC"
 
+    if ! kubectl get deployment "$NAME" -n "$NS" &>/dev/null; then
+        log_info "Deployment $NAME not found — skipping build"
+        continue
+    fi
+
     log_info "Building $NAME..."
 
     # Create ImageStream if needed
