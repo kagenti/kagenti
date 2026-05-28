@@ -332,8 +332,8 @@ The skill is working if all of the following are true:
 For a live demo:
 
 1. Show the skillberry-store UI at `http://localhost:8002/` confirming the `summarizer` skill is published, or run `curl -o /dev/null -w "%{http_code}" http://localhost:8000/skills/summarizer/export-anthropic` to confirm `200`.
-2. Show the **Import Skill → From Registry** tab and register the external reference.
-3. Point out the **External** badge in the skill catalog and open the detail page to show the Registry Information card instead of a file tree.
+2. Show the **Import Skill → From Registry** tab. Enter the registry URL and watch the **Skill Name in Registry** field become a combobox populated from the registry. Select `summarizer` and show the other fields auto-filling.
+3. Point out the **External** badge in the skill catalog, the **View ↗** link in the Registry column, and open the detail page to show the Registry Information card instead of a file tree.
 4. Show the **Import New Agent** page, select `a2a/generic_agent`, and check `summarizer` in **Linked Skills**.
 5. After deployment, show the `kubectl logs ... -c fetch-skill-0` output confirming the fetch.
 6. Open chat and paste the long project-update prompt.
@@ -380,7 +380,7 @@ Common causes:
     wget -qO- http://host.docker.internal:8000/skills/summarizer/export-anthropic | wc -c
   ```
 - The skill does not exist in the registry. Verify from your workstation: `curl -o /dev/null -w "%{http_code}" "http://localhost:8000/skills/summarizer/export-anthropic"` — expect `200`.
-- The archive format is not a valid `tar.gz`. Check the skillberry-store publish step.
+- The downloaded archive is not a valid ZIP file. Verify the export endpoint returns a ZIP: `curl -fsSL "http://localhost:8000/skills/summarizer/export-anthropic" -o /tmp/test.zip && file /tmp/test.zip` — should say `Zip archive data`.
 
 ### The external skill does not appear in the Linked Skills list
 
