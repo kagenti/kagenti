@@ -175,6 +175,10 @@ spec:
           export _MLFLOW_SERVER_FILE_STORE="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow" && \
           export MLFLOW_HOST="0.0.0.0" && \
           export MLFLOW_PORT="5000" && \
+          # Job execution requires Huey storage (normally set by `mlflow server` CLI)
+          export _MLFLOW_HUEY_STORAGE_PATH=$(mktemp -d /dev/shm/mlflow-huey-XXXXXX) && \
+          # Gateway URI for job subprocesses to route LLM calls through the server
+          export MLFLOW_GATEWAY_URI="http://localhost:5000" && \
           # Initialize MLflow database (create tables + run alembic upgrades)
           # Uses _initialize_tables which does create_all() first (safe for fresh DB)
           # then _upgrade_db() for any pending migrations.
@@ -199,17 +203,17 @@ spec:
           assert hasattr(fpm, "_find_fastapi_validator"), \
               "mlflow-oidc-auth API changed: _find_fastapi_validator not found"
 
-          # Patch 1: Exclude /v1/traces from OIDC auth
-          # The OTel collector authenticates via OAuth2 client credentials (Bearer token)
-          # but may not have a user profile in the MLflow users table.
-          # Skip auth entirely — Istio mTLS protects this path.
+          # Patch 1: Exclude health/version probes and /v1/traces from OIDC auth
+          # - /health, /version: kubelet probes have no session/cookie
+          # - /v1/traces: OTel collector uses Bearer token, no MLflow user profile
           original_is_unprotected = AuthMiddleware._is_unprotected_route
+          _UNPROTECTED_PREFIXES = ("/v1/traces", "/health", "/version", "/ping", "/endpoints/", "/gateway/", "/api/2.0/endpoints/")
           def patched_is_unprotected(self, path: str) -> bool:
-              if path.startswith("/v1/traces"):
+              if path.startswith(_UNPROTECTED_PREFIXES):
                   return True
               return original_is_unprotected(self, path)
           AuthMiddleware._is_unprotected_route = patched_is_unprotected
-          print("Excluded /v1/traces from OIDC auth (mTLS via Istio)")
+          print("Excluded /health, /version, /ping, /v1/traces from OIDC auth")
 
           # Patch 2: Skip permission validation for /v1/traces
           # mlflow-oidc-auth v7+ adds a FastAPI permission middleware that checks
@@ -217,11 +221,23 @@ spec:
           # above (no username), the permission check would return 401.
           original_find_validator = fpm._find_fastapi_validator
           def patched_find_validator(path: str):
-              if path.startswith("/v1/traces"):
+              if path.startswith(("/v1/traces", "/endpoints/", "/gateway/", "/api/2.0/endpoints/")):
                   return None
               return original_find_validator(path)
           fpm._find_fastapi_validator = patched_find_validator
-          print("Skipped permission validation for /v1/traces")
+          print("Skipped permission validation for /v1/traces, /endpoints/, /gateway/")
+
+          # Patch 2b: Also exempt /endpoints/ from Flask-level auth (before_request_hook)
+          # The /endpoints/ path falls through to the Flask WSGI mount, which has its own
+          # _is_unprotected_route check in the before_request hook.
+          import mlflow_oidc_auth.hooks.before_request as _br
+          _original_flask_is_unprotected = _br._is_unprotected_route
+          def _patched_flask_is_unprotected(path: str) -> bool:
+              if path.startswith(("/endpoints/", "/gateway/", "/api/2.0/endpoints/")):
+                  return True
+              return _original_flask_is_unprotected(path)
+          _br._is_unprotected_route = _patched_flask_is_unprotected
+          print("Excluded /endpoints/, /gateway/, /api/2.0/endpoints/ from Flask OIDC auth")
 
           # Patch 3: Rewrite OIDC discovery jwks_uri to use internal Keycloak URL
           # Keycloak returns the public hostname (KC_HOSTNAME) in its discovery
@@ -363,6 +379,22 @@ spec:
           init_thread.start()
           print("Started database initialization thread")
 
+          # Launch the job runner (Huey consumer) as a background subprocess
+          # This is normally done by `mlflow server` CLI but we bypass it.
+          import subprocess, sys, time as _time
+          _server_up_time = str(int(_time.time() * 1000))
+          _job_runner_proc = subprocess.Popen(
+              [sys.executable, "-m", "mlflow.server.jobs._job_runner"],
+              env={
+                  **os.environ,
+                  "MLFLOW_SERVER_PID": str(os.getpid()),
+                  "_MLFLOW_SERVER_UP_TIME": _server_up_time,
+                  "MLFLOW_TRACKING_URI": os.environ["MLFLOW_BACKEND_STORE_URI"],
+                  "MLFLOW_DEPLOYMENTS_TARGET": "http://localhost:5000",
+              },
+          )
+          print(f"Started job runner (PID {_job_runner_proc.pid})")
+
           import uvicorn
           uvicorn.run(app, host="0.0.0.0", port=5000, log_level="info")
           '
@@ -427,7 +459,7 @@ spec:
             memory: "512Mi"
             cpu: "100m"
           limits:
-            memory: "2Gi"
+            memory: "4Gi"
             cpu: "1000m"
         volumeMounts:
         - name: mlflow-artifacts
