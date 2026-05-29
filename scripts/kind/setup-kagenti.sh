@@ -1320,17 +1320,8 @@ if [ -n "$KC_ADMIN_PASS" ]; then
 else
   echo "    Keycloak admin console: (pending — secret keycloak-initial-admin not ready)"
 fi
-if $WITH_UI; then
-  UI_USER=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-  UI_PASS=$(kubectl get secret kagenti-test-user -n keycloak -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-  if [ -n "$UI_PASS" ]; then
-    echo "    Kagenti UI login:       ${UI_USER} / ${UI_PASS}"
-  else
-    echo "    Kagenti UI login:       (pending — run show-services.sh once platform is ready)"
-  fi
-fi
 echo ""
-echo "  For full service URLs and credentials, run:"
+echo "  For service URLs and credentials (including UI login), run:"
 echo "    .github/scripts/local-setup/show-services.sh"
 echo ""
 
