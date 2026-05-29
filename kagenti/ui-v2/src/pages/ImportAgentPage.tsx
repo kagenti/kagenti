@@ -191,28 +191,29 @@ export const ImportAgentPage: React.FC = () => {
   // Use envoy-sidecar mode (false = proxy-sidecar, the default)
   const [useEnvoyMode, setUseEnvoyMode] = useState(false);
 
-  // Outbound routing rules
-  const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
-  const [draftRoute, setDraftRoute] = useState<{ host: string; target_audience: string; token_scopes: string }>({
+  // Outbound routing rules. The table always renders a trailing empty row
+  // (host='', target_audience='', token_scopes='openid'). Editing any field
+  // commits that row to state and a fresh empty row appears below it.
+  type RouteRow = { id: string; host: string; target_audience: string; token_scopes: string };
+  const makeEmptyRoute = (): RouteRow => ({
+    id: newRouteRowId(),
     host: '',
     target_audience: '',
     token_scopes: 'openid',
   });
-  const addRoute = () => {
-    setOutboundRoutes((prev) => [
-      ...prev,
-      { id: newRouteRowId(), ...draftRoute },
-    ]);
-    setDraftRoute({ host: '', target_audience: '', token_scopes: 'openid' });
-  };
-  const removeRoute = (i: number) => setOutboundRoutes(outboundRoutes.filter((_, idx) => idx !== i));
-  const updateRoute = (i: number, field: string, value: string) => {
-    const updated = [...outboundRoutes];
-    updated[i] = { ...updated[i], [field]: value };
-    setOutboundRoutes(updated);
-  };
-  const updateDraftRoute = (field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
-    setDraftRoute((prev) => ({ ...prev, [field]: value }));
+  const [outboundRoutes, setOutboundRoutes] = useState<RouteRow[]>([makeEmptyRoute()]);
+  const isEmptyRoute = (r: RouteRow) => !r.host && !r.target_audience;
+  const removeRoute = (i: number) => setOutboundRoutes((prev) => prev.filter((_, idx) => idx !== i));
+  const updateRoute = (i: number, field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
+    setOutboundRoutes((prev) => {
+      const updated = [...prev];
+      updated[i] = { ...updated[i], [field]: value };
+      // If the user edited the trailing empty row, append a fresh empty row.
+      if (i === prev.length - 1 && (value || updated[i].host || updated[i].target_audience)) {
+        updated.push(makeEmptyRoute());
+      }
+      return updated;
+    });
 
   // Port exclusion annotations
   const [outboundPortsExclude, setOutboundPortsExclude] = useState('');
@@ -535,7 +536,9 @@ export const ImportAgentPage: React.FC = () => {
         // and envoy-sidecar support the full disabled/permissive/strict
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.some((r) => !isEmptyRoute(r))
+          ? outboundRoutes.filter((r) => !isEmptyRoute(r)).map(({ id, ...r }) => r)
+          : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
@@ -575,7 +578,9 @@ export const ImportAgentPage: React.FC = () => {
         // and envoy-sidecar support the full disabled/permissive/strict
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.length > 0 ? outboundRoutes.map(({ id, ...r }) => r) : undefined,
+        outboundRoutes: authBridgeEnabled && outboundRoutes.some((r) => !isEmptyRoute(r))
+          ? outboundRoutes.filter((r) => !isEmptyRoute(r)).map(({ id, ...r }) => r)
+          : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
         defaultOutboundPolicy: authBridgeEnabled && defaultOutboundPolicy ? defaultOutboundPolicy : undefined,
@@ -1154,7 +1159,7 @@ export const ImportAgentPage: React.FC = () => {
                     label="Use Envoy + iptables interception"
                     isChecked={useEnvoyMode}
                     onChange={(_e, checked) => setUseEnvoyMode(checked)}
-                    description="AuthBridge secures agent with iptables and Envoy proxy"
+                    description="Enforce transparent outbound interception (vs HTTP_PROXY env vars)"
                   />
                 </FormGroup>
               )}
@@ -1172,7 +1177,10 @@ export const ImportAgentPage: React.FC = () => {
 
               {authBridgeEnabled && (
               <ExpandableSection
-                toggleText={`Outbound Authorization header control (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
+                toggleText={(() => {
+                  const n = outboundRoutes.filter((r) => !isEmptyRoute(r)).length;
+                  return `Outbound Authorization header control (${n} route${n !== 1 ? 's' : ''})`;
+                })()}
                 isExpanded={showOutboundRouting}
                 onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
               >
@@ -1189,74 +1197,44 @@ export const ImportAgentPage: React.FC = () => {
                     </Tr>
                   </Thead>
                   <Tbody>
-                    {outboundRoutes.map((route, index) => (
-                      <Tr key={route.id}>
-                        <Td>
-                          <TextInput
-                            aria-label="Host pattern"
-                            value={route.host}
-                            onChange={(_e, v) => updateRoute(index, 'host', v)}
-                            placeholder="e.g. github-tool-mcp"
-                          />
-                        </Td>
-                        <Td>
-                          <TextInput
-                            aria-label="Target audience"
-                            value={route.target_audience}
-                            onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
-                            placeholder="e.g. github-tool"
-                          />
-                        </Td>
-                        <Td>
-                          <TextInput
-                            aria-label="Token scopes"
-                            value={route.token_scopes}
-                            onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
-                            placeholder="openid"
-                          />
-                        </Td>
-                        <Td>
-                          <Button variant="link" onClick={() => removeRoute(index)}>
-                            Remove
-                          </Button>
-                        </Td>
-                      </Tr>
-                    ))}
-                    <Tr>
-                      <Td>
-                        <TextInput
-                          aria-label="Host pattern"
-                          value={draftRoute.host}
-                          onChange={(_e, v) => updateDraftRoute('host', v)}
-                          placeholder="e.g. github-tool-mcp"
-                        />
-                      </Td>
-                      <Td>
-                        <TextInput
-                          aria-label="Target audience"
-                          value={draftRoute.target_audience}
-                          onChange={(_e, v) => updateDraftRoute('target_audience', v)}
-                          placeholder="e.g. github-tool"
-                        />
-                      </Td>
-                      <Td>
-                        <TextInput
-                          aria-label="Token scopes"
-                          value={draftRoute.token_scopes}
-                          onChange={(_e, v) => updateDraftRoute('token_scopes', v)}
-                          placeholder="openid"
-                        />
-                      </Td>
-                      <Td>
-                        <Button
-                          variant="link"
-                          isDisabled={!draftRoute.host || !draftRoute.target_audience }
-                          onClick={addRoute}
-                        >
-                          Add Route
-                        </Button>
-                      </Td>
-                    </Tr>
+                    {outboundRoutes.map((route, index) => {
+                      const isTrailingEmpty = isEmptyRoute(route) && index === outboundRoutes.length - 1;
+                      return (
+                        <Tr key={route.id}>
+                          <Td>
+                            <TextInput
+                              aria-label="Host pattern"
+                              value={route.host}
+                              onChange={(_e, v) => updateRoute(index, 'host', v)}
+                              placeholder="e.g. github-tool-mcp"
+                            />
+                          </Td>
+                          <Td>
+                            <TextInput
+                              aria-label="Target audience"
+                              value={route.target_audience}
+                              onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                              placeholder="e.g. github-tool"
+                            />
+                          </Td>
+                          <Td>
+                            <TextInput
+                              aria-label="Token scopes"
+                              value={route.token_scopes}
+                              onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                              placeholder="openid"
+                            />
+                          </Td>
+                          <Td>
+                            {!isTrailingEmpty && (
+                              <Button variant="link" onClick={() => removeRoute(index)}>
+                                Remove
+                              </Button>
+                            )}
+                          </Td>
+                        </Tr>
+                      );
+                    })}
                   </Tbody>
                 </Table>
               </ExpandableSection>
@@ -1280,7 +1258,7 @@ export const ImportAgentPage: React.FC = () => {
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
-                <FormGroup label="Disable inbound security on ports" fieldId="inboundPortsExclude">
+                <FormGroup label="Disable AuthBridge inbound security on ports" fieldId="inboundPortsExclude">
                   <TextInput
                     id="inboundPortsExclude"
                     value={inboundPortsExclude}
