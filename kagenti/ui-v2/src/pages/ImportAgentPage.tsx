@@ -1135,7 +1135,7 @@ export const ImportAgentPage: React.FC = () => {
               <FormGroup fieldId="authBridgeEnabled">
                 <Checkbox
                   id="authBridgeEnabled"
-                  label="Secure with AuthBridge"
+                  label="Secure with Kagenti AuthBridge"
                   isChecked={authBridgeEnabled}
                   onChange={(_e, checked) => {
                     setAuthBridgeEnabled(checked);
@@ -1143,7 +1143,7 @@ export const ImportAgentPage: React.FC = () => {
                       setUseEnvoyMode(false);
                     }
                   }}
-                  description="When enabled, the agent will reject inbound messages without valid Authorization JWT"
+                  description="When enabled, the agent will reject inbound messages without valid JWT and can perform outbound token exchange."
               />
               </FormGroup>
 
@@ -1151,7 +1151,7 @@ export const ImportAgentPage: React.FC = () => {
                 <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
                   <Checkbox
                     id="useEnvoyMode"
-                    label="Sandbox networking with Envoy proxy"
+                    label="Use Envoy + iptables interception"
                     isChecked={useEnvoyMode}
                     onChange={(_e, checked) => setUseEnvoyMode(checked)}
                     description="AuthBridge secures agent with iptables and Envoy proxy"
@@ -1250,7 +1250,7 @@ export const ImportAgentPage: React.FC = () => {
                       <Td>
                         <Button
                           variant="link"
-                          isDisabled={!draftRoute.host || !draftRoute.target_audience || !draftRoute.token_scopes}
+                          isDisabled={!draftRoute.host || !draftRoute.target_audience }
                           onClick={addRoute}
                         >
                           Add Route
