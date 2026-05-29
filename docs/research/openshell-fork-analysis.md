@@ -203,6 +203,171 @@ If upstream K8s driver gains multi-tenancy features, we can deprecate
 
 ---
 
+## Upgrade Plan: Safe Branch Strategy
+
+### Principle: Never Touch mvp
+
+The `mvp` branch is the production build target. All upgrade work happens
+on parallel branches. Old branches are preserved for rollback.
+
+```mermaid
+flowchart TB
+    subgraph NVIDIA["NVIDIA Upstream"]
+        NM["main (v0.0.49)"]
+    end
+
+    subgraph KAGENTI["kagenti/openshell"]
+        KM["main"] -->|"Sync Fork"| NM
+        MVP["mvp\n(v0.0.36-kagenti.8)\nUNTOUCHED"]
+        NEW["mvp-2026-05-29\n(branched from synced main)"]
+        KM --> NEW
+        NEW -->|"cherry-pick\nkagenti patches"| NEW
+        NEW -->|"after testing"| MVP2["mvp\n(updated)"]
+        MVP -->|"archive"| ARCHIVE["mvp-v0.0.36-archive"]
+    end
+
+    style MVP fill:#4a7c59,color:#fff,stroke:#666,stroke-width:2px
+    style NEW fill:#8a6d3b,color:#fff,stroke:#666,stroke-width:2px
+    style ARCHIVE fill:#555,color:#fff,stroke:#666,stroke-width:2px
+
+    linkStyle default stroke:#444,stroke-width:3px
+```
+
+### Branch Naming
+
+| Repo | Current Build Branch | New Test Branch | Archive |
+|------|---------------------|-----------------|---------|
+| kagenti/openshell | `mvp` | `mvp-2026-05-29` | `mvp-v0.0.36-archive` |
+| kagenti/openshell-driver-openshift | `mvp` | `mvp-2026-05-29` | `mvp-v0.0.36-archive` |
+| kagenti/openshell-credentials-keycloak | `main` | `main-2026-05-29` | (no change needed) |
+
+### Step-by-Step Procedure
+
+**Step 1: Sync kagenti/openshell main with NVIDIA upstream**
+- Use GitHub "Sync Fork" button on kagenti/openshell
+- This updates `main` to NVIDIA v0.0.49+
+- `mvp` is NOT affected
+
+**Step 2: Create new branch from synced main**
+```bash
+cd /tmp && git clone git@github.com:kagenti/openshell.git openshell-upgrade
+cd openshell-upgrade
+git checkout -b mvp-2026-05-29 origin/main
+```
+
+**Step 3: Cherry-pick kagenti patches (9 essential patches)**
+
+All patches verified as still needed (no upstream equivalent in v0.0.49):
+
+| # | Commit | Description | Category |
+|---|--------|-------------|----------|
+| 1 | `9f830673` | `--compute-driver-socket` flag (External driver) | Gateway core |
+| 2 | `136441fe` | `--credentials-driver-socket` flag + gRPC service | Gateway core |
+| 3 | `906f3995` | OIDC/Keycloak JWT auth with RBAC | Gateway auth |
+| 4 | `0f56d6e4` | `credentials_driver.proto` contract | Proto |
+| 5 | `124128bd` | Stop SSH from overwriting `/tmp` to 0700 | Sandbox fix |
+| 6 | `9a02d72e` | Ensure read_write dirs writable (mode 1777) | Sandbox fix |
+| 7 | `6aef2e86` | Pass inference env vars through SSH sessions | Inference routing |
+| 8 | `0dea760e` | GHCR gateway image publish workflow | CI |
+| 9 | `abc24202` | Multi-arch supervisor build (amd64 + arm64) | CI |
+
+Patches NOT cherry-picked (evaluate if upstream fixed):
+- `9468139f` (portable `MetadataExt::uid()`) — minor, test if upstream compiles
+- macOS CLI build fixes — platform-specific, test separately
+
+```bash
+# Cherry-pick in dependency order
+git cherry-pick 0f56d6e4   # proto first
+git cherry-pick 9f830673   # compute socket
+git cherry-pick 136441fe   # credentials socket
+git cherry-pick 906f3995   # OIDC auth
+git cherry-pick 124128bd   # /tmp fix
+git cherry-pick 9a02d72e   # dir permissions
+git cherry-pick 6aef2e86   # inference routing
+git cherry-pick 0dea760e   # CI gateway
+git cherry-pick abc24202   # CI supervisor
+```
+
+**Step 4: Push test branch (not mvp)**
+```bash
+git push origin mvp-2026-05-29
+```
+
+**Step 5: Build test images from new branch**
+- Tag: `v0.0.49-kagenti.1-rc1`
+- Build gateway + supervisor images
+- Do NOT push to `:latest` tag
+
+**Step 6: Test on Kind**
+```bash
+# Update kagenti Helm chart to use new images
+# In a worktree or branch of kagenti/kagenti:
+# charts/openshell/values.yaml:
+#   gateway.tag: v0.0.49-kagenti.1-rc1
+#   supervisorImage.tag: v0.0.49-kagenti.1-rc1
+```
+
+Run full test suite:
+- T0-T7 openshell tests
+- T7 teleport (12 tests)
+- Policy validation (#1647 wildcards)
+- Port normalization (#1669)
+- Agent connectivity (hermes + claude-code)
+
+**Step 7: Create PR (mvp-2026-05-29 → mvp)**
+- Only after all tests pass
+- Only after v0.6.0 ships
+- Include test results in PR description
+
+**Step 8: Archive old mvp**
+```bash
+git branch mvp-v0.0.36-archive mvp  # preserve
+git checkout mvp
+git reset --hard mvp-2026-05-29     # update
+git push --force-with-lease origin mvp
+```
+
+### Same process for driver repos
+
+**openshell-driver-openshift:**
+```bash
+git checkout -b mvp-2026-05-29 origin/main
+# Merge the 1 trailing commit from mvp
+git cherry-pick <trailing-commit>
+git push origin mvp-2026-05-29
+```
+
+**openshell-credentials-keycloak:**
+- No branch needed — stays on `main`
+- Test compatibility with v0.0.49 gateway
+
+### Proto Compatibility
+
+Verified: `compute_driver.proto` interface is stable between v0.0.36 and
+v0.0.49. The ComputeDriver gRPC service (GetCapabilities, ValidateSandboxCreate,
+GetSandbox, ListSandboxes) has no breaking changes. Existing drivers work
+without modification.
+
+### Rollback Plan
+
+If the upgrade fails:
+1. `mvp` branch was never touched (until Step 8)
+2. Archive branch `mvp-v0.0.36-archive` preserves the exact state
+3. Helm chart rollback: change image tags back to `v0.0.36-kagenti.8`
+4. Driver repos: same rollback pattern
+
+### Timeline
+
+| When | Action |
+|------|--------|
+| **Now** | Create `mvp-2026-05-29` branches, cherry-pick patches |
+| **Now** | Build RC images, test on Kind |
+| **After v0.6.0** | Create PR from `mvp-2026-05-29` → `mvp` |
+| **After PR review** | Merge, tag `v0.0.49-kagenti.1`, push images |
+| **After CI green** | Update kagenti Helm chart to new tags |
+
+---
+
 ## Hermes Agent Integration
 
 ### Current State (v0.15.1)
@@ -230,11 +395,11 @@ The correct config for v0.15.1 uses `custom_providers`:
 
 ```yaml
 model:
-  name: claude-sonnet-4-20250514
-  provider: kagenti-litellm
+  default: claude-sonnet-4-20250514  # MUST use "default" not "name"
+  provider: kagenti
 
 custom_providers:
-  - name: kagenti-litellm
+  - name: kagenti
     base_url: http://litellm-model-proxy.team1.svc:4000/v1
     api_key: <litellm-virtual-key>
     models:
@@ -243,8 +408,10 @@ custom_providers:
       - llama-scout-17b
 ```
 
-**Known bug**: Model name not forwarded to API request body. Workaround:
-file upstream issue on NousResearch/hermes-agent.
+**Known bug** (NousResearch/hermes-agent#34500): `custom_providers` model
+list not resolved by `provider_model_ids()`. Fixed with a patch in our
+Dockerfile (`patch-custom-providers.py`). Config key must be `model.default`
+(not `model.name`) — hermes reads `default` or `model` subkeys only.
 
 ---
 
