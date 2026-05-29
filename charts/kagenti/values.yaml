@@ -36,6 +36,9 @@ components:
     # RHOAI-managed MLflow creates its Route in redhat-ods-applications;
     # set routeNamespace: "redhat-ods-applications" when using RHOAI.
     routeNamespace: ""
+    # Path prefix where MLflow UI is served (appended to the route URL).
+    # RHOAI MLflow uses --static-prefix=/mlflow by default.
+    routePath: "/mlflow"
 
 # Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
 # githubUser/githubToken are optional: only needed to deploy agents/tools from
