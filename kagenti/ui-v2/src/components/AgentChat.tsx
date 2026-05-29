@@ -192,7 +192,9 @@ export const AgentChat: React.FC<AgentChatProps> = ({ namespace, name }) => {
         }
 
         if (!response.ok) {
-          throw new Error(`HTTP error: ${response.status}`);
+          const errorData = await response.json().catch(() => ({}));
+          const detail = typeof errorData.detail === 'string' ? errorData.detail : '';
+          throw new Error(detail || `HTTP error: ${response.status}`);
         }
 
         const reader = response.body?.getReader();
