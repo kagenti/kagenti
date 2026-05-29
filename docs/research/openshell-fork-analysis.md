@@ -241,10 +241,23 @@ flowchart TB
 | kagenti/openshell-driver-openshift | `mvp` | `mvp-2026-05-29` | `mvp-v0.0.36-archive` |
 | kagenti/openshell-credentials-keycloak | `main` | `main-2026-05-29` | (no change needed) |
 
+### Current Status (2026-05-29)
+
+- `mvp-2026-05-29` branch created on kagenti/openshell at NVIDIA v0.0.49 HEAD
+- `mvp` branch untouched (v0.0.36-kagenti.8)
+- Cherry-pick attempted: **3 conflicts in core gateway Rust code**
+  - `crates/openshell-core/src/config.rs` — driver config struct changed
+  - `crates/openshell-server/src/cli.rs` — CLI args refactored
+  - `crates/openshell-server/src/lib.rs` — server initialization rewritten
+- These conflicts are in the `--compute-driver-socket` patch where upstream
+  refactored the driver architecture. **Needs Rust developer** to resolve.
+- Earlier patches (README, CI workflows, sandbox fixes) cherry-pick cleanly.
+
 ### Step-by-Step Procedure
 
 **Step 1: Sync kagenti/openshell main with NVIDIA upstream**
 - Use GitHub "Sync Fork" button on kagenti/openshell
+- Branch protection prevents API sync — must use GitHub UI
 - This updates `main` to NVIDIA v0.0.49+
 - `mvp` is NOT affected
 
