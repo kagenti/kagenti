@@ -431,9 +431,10 @@ _mlflow_grant_otel_rbac() {
   # The RHOAI MLflow operator creates ClusterRoles for MLflow access control.
   # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
   # so the collector can send traces with the correct workspace context.
-  # Prefer mlflow-operator-mlflow-edit (read+write), fall back to older name.
+  # Prefer mlflow-operator-mlflow-integration (has get/list/create/update on
+  # experiments — required by the /v1/traces OTLP endpoint), fall back to edit.
   local cr_name=""
-  local candidates=("mlflow-operator-mlflow-edit" "mlflow-operator-mlflow-integration")
+  local candidates=("mlflow-operator-mlflow-integration" "mlflow-operator-mlflow-edit")
   local tries=0
   while [ -z "$cr_name" ]; do
     for candidate in "${candidates[@]}"; do
