@@ -200,6 +200,17 @@ class ACPBridge:
         gateway = get_openshell_client()
         stdout_parts: list[str] = []
 
+        logger.info(
+            "Sandbox prompt via ExecSandbox",
+            extra={
+                "session_id": session.session_id,
+                "agent_name": session.agent_name,
+                "namespace": session.namespace,
+                "cli": cli,
+                "prompt_length": len(text),
+            },
+        )
+
         try:
             async for event_type, data in gateway.exec_sandbox(
                 sandbox_id=session.agent_name,
@@ -211,18 +222,31 @@ class ACPBridge:
                     stdout_parts.append(data.decode("utf-8", errors="replace"))
                 elif event_type == "stderr":
                     logger.warning(
-                        "Sandbox stderr (session %s): %s",
-                        session.session_id,
-                        data.decode("utf-8", errors="replace")[:200],
+                        "Sandbox stderr",
+                        extra={
+                            "session_id": session.session_id,
+                            "stderr": data.decode("utf-8", errors="replace")[:200],
+                        },
                     )
                 elif event_type == "exit":
                     if data != 0:
                         logger.warning(
-                            "Sandbox exit code %d (session %s)", data, session.session_id
+                            "Sandbox non-zero exit",
+                            extra={
+                                "session_id": session.session_id,
+                                "exit_code": data,
+                            },
                         )
 
             output = "".join(stdout_parts).strip()
             if output:
+                logger.info(
+                    "Sandbox prompt completed",
+                    extra={
+                        "session_id": session.session_id,
+                        "response_length": len(output),
+                    },
+                )
                 yield {
                     "jsonrpc": "2.0",
                     "method": "session/update",
@@ -233,11 +257,22 @@ class ACPBridge:
                     },
                 }
             else:
+                logger.warning(
+                    "Sandbox returned empty output",
+                    extra={"session_id": session.session_id},
+                )
                 yield _acp_error(
                     "Sandbox exec returned empty output", session_id=session.session_id
                 )
         except Exception as e:
-            logger.error("ExecSandbox gRPC failed (session %s): %s", session.session_id, e)
+            logger.error(
+                "ExecSandbox failed",
+                extra={
+                    "session_id": session.session_id,
+                    "error_type": type(e).__name__,
+                },
+                exc_info=True,
+            )
             yield _acp_error("Sandbox execution failed", session_id=session.session_id)
 
     async def _prompt_nemoclaw(self, session: ACPSession, text: str) -> AsyncIterator[dict]:

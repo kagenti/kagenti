@@ -6,7 +6,6 @@ instead of kubectl exec, providing session management, credential injection,
 and audit logging.
 """
 
-import asyncio
 import base64
 import logging
 import time
@@ -38,6 +37,10 @@ class OpenShellGatewayClient:
         if cached and (time.monotonic() - cached[0]) < TLS_CACHE_TTL:
             return cached[1]
 
+        logger.info(
+            "Loading TLS credentials",
+            extra={"namespace": namespace, "secret": CLIENT_TLS_SECRET},
+        )
         kube = get_kubernetes_service()
         secret = kube.core_api.read_namespaced_secret(name=CLIENT_TLS_SECRET, namespace=namespace)
         cert = base64.b64decode(secret.data["tls.crt"])
@@ -58,6 +61,10 @@ class OpenShellGatewayClient:
 
         creds = self._load_tls_credentials(namespace)
         target = f"{GATEWAY_SERVICE}.{namespace}.svc:{GATEWAY_PORT}"
+        logger.info(
+            "Creating gRPC channel",
+            extra={"target": target, "namespace": namespace},
+        )
         channel = grpc.aio.secure_channel(target, creds)
         self._channels[namespace] = channel
         return channel
@@ -81,6 +88,16 @@ class OpenShellGatewayClient:
         channel = self._get_channel(namespace)
         stub = exec_pb2_grpc.OpenShellStub(channel)
 
+        logger.info(
+            "ExecSandbox request",
+            extra={
+                "sandbox_id": sandbox_id,
+                "namespace": namespace,
+                "command_count": len(command),
+                "timeout_seconds": timeout_seconds,
+            },
+        )
+
         request = exec_pb2.ExecSandboxRequest(
             sandbox_id=sandbox_id,
             command=command,
@@ -92,22 +109,45 @@ class OpenShellGatewayClient:
 
         try:
             response_stream = stub.ExecSandbox(request)
+            chunk_count = 0
             async for event in response_stream:
                 payload = event.WhichOneof("payload")
                 if payload == "stdout":
+                    chunk_count += 1
                     yield ("stdout", event.stdout.data)
                 elif payload == "stderr":
                     yield ("stderr", event.stderr.data)
                 elif payload == "exit":
+                    logger.info(
+                        "ExecSandbox completed",
+                        extra={
+                            "sandbox_id": sandbox_id,
+                            "exit_code": event.exit.exit_code,
+                            "stdout_chunks": chunk_count,
+                        },
+                    )
                     yield ("exit", event.exit.exit_code)
         except grpc.aio.AioRpcError as e:
+            logger.error(
+                "ExecSandbox gRPC error",
+                extra={
+                    "sandbox_id": sandbox_id,
+                    "namespace": namespace,
+                    "grpc_code": e.code().name,
+                    "grpc_details": str(e.details())[:200],
+                },
+            )
             if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                 self._tls_cache.pop(namespace, None)
                 self._channels.pop(namespace, None)
-                logger.warning("gRPC auth failed for %s, evicted cached credentials", namespace)
+                logger.warning(
+                    "Evicted cached TLS credentials after auth failure",
+                    extra={"namespace": namespace},
+                )
             raise
 
     async def close(self):
+        logger.info("Closing gateway channels", extra={"count": len(self._channels)})
         for channel in self._channels.values():
             await channel.close()
         self._channels.clear()
