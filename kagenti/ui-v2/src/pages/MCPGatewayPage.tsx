@@ -192,7 +192,7 @@ export const MCPGatewayPage: React.FC = () => {
                   iconPosition="end"
                   isDisabled={isConfigLoading || !mcpInspectorUrl}
                 >
-                  Open MCP Inspector
+                  {mcpInspectorUrl ? 'Open MCP Inspector' : 'MCP Inspector not installed'}
                 </Button>
               </CardFooter>
             </Card>
