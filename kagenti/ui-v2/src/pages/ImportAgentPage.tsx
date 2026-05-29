@@ -35,6 +35,7 @@ import {
   Checkbox,
 } from '@patternfly/react-core';
 import { TrashIcon, PlusCircleIcon, UploadIcon } from '@patternfly/react-icons';
+import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { agentService, ShipwrightBuildConfig, skillService } from '@/services/api';
@@ -1147,7 +1148,7 @@ export const ImportAgentPage: React.FC = () => {
               </FormGroup>
 
               {authBridgeEnabled && (
-                <div style={{ marginLeft: '24px' }}>
+                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
                   <Checkbox
                     id="useEnvoyMode"
                     label="Sandbox networking with Envoy proxy"
@@ -1155,7 +1156,7 @@ export const ImportAgentPage: React.FC = () => {
                     onChange={(_e, checked) => setUseEnvoyMode(checked)}
                     description="AuthBridge secures agent with iptables and Envoy proxy"
                   />
-                </div>
+                </FormGroup>
               )}
 
               {/* SPIRE Identity */}
@@ -1179,93 +1180,86 @@ export const ImportAgentPage: React.FC = () => {
                   RFC 8693 / OAuth 2.0 Token Exchange -
                   Restrict outbound to certain hosts and OIDC audiences and scopes.
                 </Text>
-                <div style={{ border: '1px solid var(--pf-v5-global--BorderColor--100)', marginBottom: '8px' }}>
-                  <Grid style={{ background: 'var(--pf-v5-global--BackgroundColor--200)', fontWeight: 'bold', fontSize: '0.85em', textTransform: 'uppercase' }}>
-                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>Host Pattern</GridItem>
-                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>Target OIDC Audience</GridItem>
-                    <GridItem span={4} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>OIDC Token Scopes</GridItem>
-                    <GridItem span={2} style={{ padding: '8px' }}></GridItem>
-                  </Grid>
-                  {outboundRoutes.map((route, index) => (
-                    <Grid key={route.id} style={{ borderTop: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
-                      <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                <Table aria-label="Outbound routes" variant="compact">
+                  <Thead>
+                    <Tr>
+                      <Th width={25}>Host Pattern</Th>
+                      <Th width={25}>Target OIDC Audience</Th>
+                      <Th width={30}>OIDC Token Scopes</Th>
+                      <Th width={20} screenReaderText="Actions" />
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {outboundRoutes.map((route, index) => (
+                      <Tr key={route.id}>
+                        <Td>
+                          <TextInput
+                            aria-label="Host pattern"
+                            value={route.host}
+                            onChange={(_e, v) => updateRoute(index, 'host', v)}
+                            placeholder="e.g. github-tool-mcp"
+                          />
+                        </Td>
+                        <Td>
+                          <TextInput
+                            aria-label="Target audience"
+                            value={route.target_audience}
+                            onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                            placeholder="e.g. github-tool"
+                          />
+                        </Td>
+                        <Td>
+                          <TextInput
+                            aria-label="Token scopes"
+                            value={route.token_scopes}
+                            onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                            placeholder="openid"
+                          />
+                        </Td>
+                        <Td>
+                          <Button variant="link" onClick={() => removeRoute(index)}>
+                            Remove
+                          </Button>
+                        </Td>
+                      </Tr>
+                    ))}
+                    <Tr>
+                      <Td>
                         <TextInput
                           aria-label="Host pattern"
-                          value={route.host}
-                          onChange={(_e, v) => updateRoute(index, 'host', v)}
+                          value={draftRoute.host}
+                          onChange={(_e, v) => updateDraftRoute('host', v)}
                           placeholder="e.g. github-tool-mcp"
                         />
-                      </GridItem>
-                      <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                      </Td>
+                      <Td>
                         <TextInput
                           aria-label="Target audience"
-                          value={route.target_audience}
-                          onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                          value={draftRoute.target_audience}
+                          onChange={(_e, v) => updateDraftRoute('target_audience', v)}
                           placeholder="e.g. github-tool"
                         />
-                      </GridItem>
-                      <GridItem span={4} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                      </Td>
+                      <Td>
                         <TextInput
                           aria-label="Token scopes"
-                          value={route.token_scopes}
-                          onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
-                          placeholder="openid scope1 scope2"
+                          value={draftRoute.token_scopes}
+                          onChange={(_e, v) => updateDraftRoute('token_scopes', v)}
+                          placeholder="openid"
                         />
-                      </GridItem>
-                      <GridItem span={2} style={{ padding: '8px' }}>
-                        <Button variant="plain" onClick={() => removeRoute(index)}>
-                          Remove
+                      </Td>
+                      <Td>
+                        <Button
+                          variant="link"
+                          isDisabled={!draftRoute.host || !draftRoute.target_audience || !draftRoute.token_scopes}
+                          onClick={addRoute}
+                        >
+                          Add Route
                         </Button>
-                      </GridItem>
-                    </Grid>
-                  ))}
-                  <Grid style={{ borderTop: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
-                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
-                      <TextInput
-                        aria-label="Host pattern"
-                        value={draftRoute.host}
-                        onChange={(_e, v) => updateDraftRoute('host', v)}
-                        placeholder="e.g. github-tool-mcp"
-                      />
-                    </GridItem>
-                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
-                      <TextInput
-                        aria-label="Target audience"
-                        value={draftRoute.target_audience}
-                        onChange={(_e, v) => updateDraftRoute('target_audience', v)}
-                        placeholder="e.g. github-tool"
-                      />
-                    </GridItem>
-                    <GridItem span={4} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
-                      <TextInput
-                        aria-label="Token scopes"
-                        value={draftRoute.token_scopes}
-                        onChange={(_e, v) => updateDraftRoute('token_scopes', v)}
-                        placeholder="openid scope1 scope2"
-                      />
-                    </GridItem>
-                    <GridItem span={2} style={{ padding: '8px' }}>
-                      {(() => {
-                        const canAdd = !!(draftRoute.host && draftRoute.target_audience && draftRoute.token_scopes);
-                        return (
-                          <Button
-                            variant="plain"
-                            onClick={(e) => {
-                              if (canAdd) {
-                                addRoute();
-                              }
-                              (e.currentTarget as HTMLButtonElement).blur();
-                            }}
-                            style={!canAdd ? { color: 'var(--pf-v5-global--disabled-color--100)', cursor: 'not-allowed' } : undefined}
-                            aria-disabled={!canAdd}
-                          >
-                            Add Route
-                          </Button>
-                        );
-                      })()}
-                    </GridItem>
-                  </Grid>
-                </div>
+                      </Td>
+                    </Tr>
+                  </Tbody>
+                </Table>
               </ExpandableSection>
               )}
 
