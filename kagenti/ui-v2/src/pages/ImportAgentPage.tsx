@@ -1177,8 +1177,7 @@ export const ImportAgentPage: React.FC = () => {
                 onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
               >
                 <Text component="p" style={{ marginBottom: '8px' }}>
-                  RFC 8693 / OAuth 2.0 Token Exchange -
-                  Restrict outbound to certain hosts and OIDC audiences and scopes.
+                  RFC 8693 / OAuth 2.0 Token Exchange - Restrict outbound to certain hosts and OIDC audiences and scopes.
                 </Text>
                 <Table aria-label="Outbound routes" variant="compact">
                   <Thead>
@@ -1302,7 +1301,7 @@ export const ImportAgentPage: React.FC = () => {
                     aria-label="Default outbound policy"
                   >
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
-                    <FormSelectOption key="exchange" value="exchange" label="exchange — require RFC 8693 / OAuth 2.0 Token Exchange exchange for all outbound traffic" />
+                    <FormSelectOption key="exchange" value="exchange" label="exchange — require RFC 8693 / OAuth 2.0 Token Exchange for all outbound traffic" />
                   </FormSelect>
                 </FormGroup>
                 <FormGroup label="Mutual TLS (mTLS)" fieldId="mtlsMode">
