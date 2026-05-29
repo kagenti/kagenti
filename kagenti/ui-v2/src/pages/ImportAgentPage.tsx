@@ -203,13 +203,19 @@ export const ImportAgentPage: React.FC = () => {
   });
   const [outboundRoutes, setOutboundRoutes] = useState<RouteRow[]>([makeEmptyRoute()]);
   const isEmptyRoute = (r: RouteRow) => !r.host && !r.target_audience;
+  const isCommittedRoute = (r: RouteRow) => !!r.host && !!r.target_audience;
   const removeRoute = (i: number) => setOutboundRoutes((prev) => prev.filter((_, idx) => idx !== i));
   const updateRoute = (i: number, field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
     setOutboundRoutes((prev) => {
       const updated = [...prev];
       updated[i] = { ...updated[i], [field]: value };
-      // If the user edited the trailing empty row, append a fresh empty row.
-      if (i === prev.length - 1 && (value || updated[i].host || updated[i].target_audience)) {
+      // Once the trailing row has both Host Pattern and Target OIDC Audience
+      // filled in, promote it by appending a fresh empty row below.
+      if (
+        i === prev.length - 1 &&
+        updated[i].host &&
+        updated[i].target_audience
+      ) {
         updated.push(makeEmptyRoute());
       }
       return updated;
@@ -1179,13 +1185,13 @@ export const ImportAgentPage: React.FC = () => {
               <ExpandableSection
                 toggleText={(() => {
                   const n = outboundRoutes.filter((r) => !isEmptyRoute(r)).length;
-                  return `Outbound Authorization header control (${n} route${n !== 1 ? 's' : ''})`;
+                  return `Outbound OIDC token exchange rules (${n} route${n !== 1 ? 's' : ''})`;
                 })()}
                 isExpanded={showOutboundRouting}
                 onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
               >
                 <Text component="p" style={{ marginBottom: '8px' }}>
-                  RFC 8693 / OAuth 2.0 Token Exchange - Restrict outbound to certain hosts and OIDC audiences and scopes.
+                  RFC 8693 / OAuth 2.0 Token Exchange - Restrict outbound to certain hosts, OIDC audiences, and scopes.
                 </Text>
                 <Table aria-label="Outbound routes" variant="compact">
                   <Thead>
@@ -1198,7 +1204,7 @@ export const ImportAgentPage: React.FC = () => {
                   </Thead>
                   <Tbody>
                     {outboundRoutes.map((route, index) => {
-                      const isTrailingEmpty = isEmptyRoute(route) && index === outboundRoutes.length - 1;
+                      const showRemove = isCommittedRoute(route);
                       return (
                         <Tr key={route.id}>
                           <Td>
@@ -1226,7 +1232,7 @@ export const ImportAgentPage: React.FC = () => {
                             />
                           </Td>
                           <Td>
-                            {!isTrailingEmpty && (
+                            {showRemove && (
                               <Button variant="link" onClick={() => removeRoute(index)}>
                                 Remove
                               </Button>
