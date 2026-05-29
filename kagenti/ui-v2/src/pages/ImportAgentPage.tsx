@@ -192,17 +192,26 @@ export const ImportAgentPage: React.FC = () => {
 
   // Outbound routing rules
   const [outboundRoutes, setOutboundRoutes] = useState<Array<{ id: string; host: string; target_audience: string; token_scopes: string }>>([]);
-  const addRoute = () =>
+  const [draftRoute, setDraftRoute] = useState<{ host: string; target_audience: string; token_scopes: string }>({
+    host: '',
+    target_audience: '',
+    token_scopes: 'openid',
+  });
+  const addRoute = () => {
     setOutboundRoutes((prev) => [
       ...prev,
-      { id: newRouteRowId(), host: '', target_audience: '', token_scopes: 'openid' },
+      { id: newRouteRowId(), ...draftRoute },
     ]);
+    setDraftRoute({ host: '', target_audience: '', token_scopes: 'openid' });
+  };
   const removeRoute = (i: number) => setOutboundRoutes(outboundRoutes.filter((_, idx) => idx !== i));
   const updateRoute = (i: number, field: string, value: string) => {
     const updated = [...outboundRoutes];
     updated[i] = { ...updated[i], [field]: value };
     setOutboundRoutes(updated);
   };
+  const updateDraftRoute = (field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
+    setDraftRoute((prev) => ({ ...prev, [field]: value }));
 
   // Port exclusion annotations
   const [outboundPortsExclude, setOutboundPortsExclude] = useState('');
@@ -1125,7 +1134,7 @@ export const ImportAgentPage: React.FC = () => {
               <FormGroup fieldId="authBridgeEnabled">
                 <Checkbox
                   id="authBridgeEnabled"
-                  label="Enable AuthBridge sidecar injection"
+                  label="Secure with AuthBridge"
                   isChecked={authBridgeEnabled}
                   onChange={(_e, checked) => {
                     setAuthBridgeEnabled(checked);
@@ -1133,20 +1142,20 @@ export const ImportAgentPage: React.FC = () => {
                       setUseEnvoyMode(false);
                     }
                   }}
-                  description="When enabled, the operator injects a combined AuthBridge sidecar for inbound JWT validation and outbound token exchange. Defaults to proxy-sidecar mode (HTTP_PROXY)."
+                  description="When enabled, the agent will reject inbound messages without valid Authorization JWT"
               />
               </FormGroup>
 
               {authBridgeEnabled && (
-                <FormGroup fieldId="useEnvoyMode" style={{ marginLeft: '24px' }}>
+                <div style={{ marginLeft: '24px' }}>
                   <Checkbox
                     id="useEnvoyMode"
-                    label="Use envoy-sidecar mode"
+                    label="Sandbox networking with Envoy proxy"
                     isChecked={useEnvoyMode}
                     onChange={(_e, checked) => setUseEnvoyMode(checked)}
-                    description="Switch from proxy-sidecar (default) to envoy-sidecar mode (Envoy + ext_proc + iptables interception)."
+                    description="AuthBridge secures agent with iptables and Envoy proxy"
                   />
-                </FormGroup>
+                </div>
               )}
 
               {/* SPIRE Identity */}
@@ -1162,49 +1171,101 @@ export const ImportAgentPage: React.FC = () => {
 
               {authBridgeEnabled && (
               <ExpandableSection
-                toggleText={`Outbound Routing Rules (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
+                toggleText={`Outbound Authorization header control (${outboundRoutes.length} route${outboundRoutes.length !== 1 ? 's' : ''})`}
                 isExpanded={showOutboundRouting}
                 onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
               >
                 <Text component="p" style={{ marginBottom: '8px' }}>
-                  Configure token exchange rules for outbound HTTP requests. Each route matches a service host and specifies the target audience and OAuth scopes for the exchanged token.
+                  RFC 8693 / OAuth 2.0 Token Exchange -
+                  Restrict outbound to certain hosts and OIDC audiences and scopes.
                 </Text>
-                {outboundRoutes.map((route, index) => (
-                  <Grid hasGutter key={route.id} style={{ marginBottom: '8px' }}>
-                    <GridItem span={3}>
+                <div style={{ border: '1px solid var(--pf-v5-global--BorderColor--100)', marginBottom: '8px' }}>
+                  <Grid style={{ background: 'var(--pf-v5-global--BackgroundColor--200)', fontWeight: 'bold', fontSize: '0.85em', textTransform: 'uppercase' }}>
+                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>Host Pattern</GridItem>
+                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>Target OIDC Audience</GridItem>
+                    <GridItem span={4} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>OIDC Token Scopes</GridItem>
+                    <GridItem span={2} style={{ padding: '8px' }}></GridItem>
+                  </Grid>
+                  {outboundRoutes.map((route, index) => (
+                    <Grid key={route.id} style={{ borderTop: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                      <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                        <TextInput
+                          aria-label="Host pattern"
+                          value={route.host}
+                          onChange={(_e, v) => updateRoute(index, 'host', v)}
+                          placeholder="e.g. github-tool-mcp"
+                        />
+                      </GridItem>
+                      <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                        <TextInput
+                          aria-label="Target audience"
+                          value={route.target_audience}
+                          onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                          placeholder="e.g. github-tool"
+                        />
+                      </GridItem>
+                      <GridItem span={4} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                        <TextInput
+                          aria-label="Token scopes"
+                          value={route.token_scopes}
+                          onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                          placeholder="openid scope1 scope2"
+                        />
+                      </GridItem>
+                      <GridItem span={2} style={{ padding: '8px' }}>
+                        <Button variant="plain" onClick={() => removeRoute(index)}>
+                          Remove
+                        </Button>
+                      </GridItem>
+                    </Grid>
+                  ))}
+                  <Grid style={{ borderTop: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
+                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
                       <TextInput
                         aria-label="Host pattern"
-                        value={route.host}
-                        onChange={(_e, v) => updateRoute(index, 'host', v)}
+                        value={draftRoute.host}
+                        onChange={(_e, v) => updateDraftRoute('host', v)}
                         placeholder="e.g. github-tool-mcp"
                       />
                     </GridItem>
-                    <GridItem span={3}>
+                    <GridItem span={3} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
                       <TextInput
                         aria-label="Target audience"
-                        value={route.target_audience}
-                        onChange={(_e, v) => updateRoute(index, 'target_audience', v)}
+                        value={draftRoute.target_audience}
+                        onChange={(_e, v) => updateDraftRoute('target_audience', v)}
                         placeholder="e.g. github-tool"
                       />
                     </GridItem>
-                    <GridItem span={4}>
+                    <GridItem span={4} style={{ padding: '8px', borderRight: '1px solid var(--pf-v5-global--BorderColor--100)' }}>
                       <TextInput
                         aria-label="Token scopes"
-                        value={route.token_scopes}
-                        onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
+                        value={draftRoute.token_scopes}
+                        onChange={(_e, v) => updateDraftRoute('token_scopes', v)}
                         placeholder="openid scope1 scope2"
                       />
                     </GridItem>
-                    <GridItem span={2}>
-                      <Button variant="plain" onClick={() => removeRoute(index)}>
-                        Remove
-                      </Button>
+                    <GridItem span={2} style={{ padding: '8px' }}>
+                      {(() => {
+                        const canAdd = !!(draftRoute.host && draftRoute.target_audience && draftRoute.token_scopes);
+                        return (
+                          <Button
+                            variant="plain"
+                            onClick={(e) => {
+                              if (canAdd) {
+                                addRoute();
+                              }
+                              (e.currentTarget as HTMLButtonElement).blur();
+                            }}
+                            style={!canAdd ? { color: 'var(--pf-v5-global--disabled-color--100)', cursor: 'not-allowed' } : undefined}
+                            aria-disabled={!canAdd}
+                          >
+                            Add Route
+                          </Button>
+                        );
+                      })()}
                     </GridItem>
                   </Grid>
-                ))}
-                <Button variant="link" onClick={addRoute}>
-                  Add Route
-                </Button>
+                </div>
               </ExpandableSection>
               )}
 
@@ -1213,7 +1274,7 @@ export const ImportAgentPage: React.FC = () => {
               <ExpandableSection
                 toggleText="AuthBridge Advanced Configuration"
               >
-                <FormGroup label="Outbound Ports to Exclude" fieldId="outboundPortsExclude">
+                <FormGroup label="Disable outbound security for some ports" fieldId="outboundPortsExclude">
                   <TextInput
                     id="outboundPortsExclude"
                     value={outboundPortsExclude}
@@ -1222,11 +1283,11 @@ export const ImportAgentPage: React.FC = () => {
                   />
                   <FormHelperText>
                     <HelperText>
-                      <HelperTextItem>Comma-separated ports to bypass outbound proxy interception.</HelperTextItem>
+                      <HelperTextItem>Comma-separated TCP ports.</HelperTextItem>
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
-                <FormGroup label="Inbound Ports to Exclude" fieldId="inboundPortsExclude">
+                <FormGroup label="Disable inbound security on ports" fieldId="inboundPortsExclude">
                   <TextInput
                     id="inboundPortsExclude"
                     value={inboundPortsExclude}
@@ -1235,7 +1296,7 @@ export const ImportAgentPage: React.FC = () => {
                   />
                   <FormHelperText>
                     <HelperText>
-                      <HelperTextItem>Comma-separated ports to bypass inbound proxy interception.</HelperTextItem>
+                      <HelperTextItem>Comma-separated TCP ports.</HelperTextItem>
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
@@ -1247,10 +1308,10 @@ export const ImportAgentPage: React.FC = () => {
                     aria-label="Default outbound policy"
                   >
                     <FormSelectOption key="passthrough" value="passthrough" label="passthrough — pass traffic through unchanged (default)" />
-                    <FormSelectOption key="exchange" value="exchange" label="exchange — require token exchange for all outbound traffic" />
+                    <FormSelectOption key="exchange" value="exchange" label="exchange — require RFC 8693 / OAuth 2.0 Token Exchange exchange for all outbound traffic" />
                   </FormSelect>
                 </FormGroup>
-                <FormGroup label="mTLS" fieldId="mtlsMode">
+                <FormGroup label="Mutual TLS (mTLS)" fieldId="mtlsMode">
                   <FormSelect
                     id="mtlsMode"
                     value={mtlsMode}
@@ -1258,9 +1319,9 @@ export const ImportAgentPage: React.FC = () => {
                     aria-label="mTLS mode"
                     isDisabled={!spireEnabled}
                   >
-                    <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
-                    <FormSelectOption key="permissive" value="permissive" label="permissive — allow non-mTLS peers (rollout-friendly)" />
-                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail closed" />
+                    <FormSelectOption key="disabled" value="disabled" label="disabled — don't use mTLS between sidecars (default)" />
+                    <FormSelectOption key="permissive" value="permissive" label="permissive — use, but allow non-mTLS peers (rollout-friendly)" />
+                    <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail without" />
                   </FormSelect>
                   {!spireEnabled && (
                     <FormHelperText>
