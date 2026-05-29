@@ -9,7 +9,7 @@
 
 FROM python:3.12-slim@sha256:4386a385d81dba9f72ed72a6fe4237755d7f5440c84b417650f38336bbc43117
 
-ARG HERMES_VERSION=v2026.4.13
+ARG HERMES_VERSION=v2026.5.29
 
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
