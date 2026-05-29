@@ -230,3 +230,29 @@ async def get_platform_status(
     )
 
     return PlatformStatusResponse(components=components, registry=registry)
+
+
+@router.get(
+    "/mcp-inspector-status",
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def get_mcp_inspector_status():
+    """
+    Check if MCP Inspector is accessible.
+    
+    Returns a JSON object with 'installed' boolean indicating whether
+    the MCP Inspector service is reachable.
+    """
+    import httpx
+    
+    domain = settings.domain_name
+    mcp_inspector_url = settings.mcp_inspector_url or f"http://mcp-inspector.{domain}:8080"
+    
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            response = await client.head(mcp_inspector_url)
+            # If we get any response (even 4xx/5xx), the service exists
+            return {"installed": True, "url": mcp_inspector_url}
+    except (httpx.ConnectError, httpx.TimeoutException, Exception) as e:
+        logger.debug("MCP Inspector not accessible: %s", e)
+        return {"installed": False, "url": mcp_inspector_url}
