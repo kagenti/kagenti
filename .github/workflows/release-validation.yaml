@@ -141,13 +141,22 @@ jobs:
         run: bash .github/scripts/common/40-wait-platform-ready.sh
 
       - name: Install Ollama
-        run: bash .github/scripts/common/45-install-ollama.sh
+        run: bash .github/scripts/common/50-install-ollama.sh
+
+      - name: Start Ollama and pull model
+        run: bash .github/scripts/common/60-pull-ollama-model.sh
 
       - name: Configure dockerhost service
-        run: bash .github/scripts/kind/50-setup-dockerhost.sh
+        run: bash .github/scripts/common/70-configure-dockerhost.sh
 
-      - name: Deploy weather-tool image and service
-        run: bash .github/scripts/common/55-deploy-weather-tool.sh
+      - name: Wait for kagenti-operator CRDs
+        run: bash .github/scripts/kagenti-operator/41-wait-crds.sh
+
+      - name: Build weather-tool image
+        run: bash .github/scripts/kagenti-operator/71-build-weather-tool.sh
+
+      - name: Deploy weather-tool via Deployment + Service
+        run: bash .github/scripts/kagenti-operator/72-deploy-weather-tool.sh
 
       - name: Resolve extensions git ref from dep_builds
         id: resolve-deps
@@ -164,15 +173,24 @@ jobs:
           echo "Using kagenti-extensions ref: ${EXTENSIONS_REF}"
 
       - name: Deploy weather-service agent
-        run: bash .github/scripts/common/60-deploy-weather-agent.sh
+        run: bash .github/scripts/kagenti-operator/74-deploy-weather-agent.sh
         env:
           KAGENTI_EXTENSIONS_GIT_REF: ${{ steps.resolve-deps.outputs.extensions_ref }}
 
-      - name: Deploy verification and test setup
-        run: bash .github/scripts/common/70-verify-deploy.sh
+      - name: Install test dependencies
+        run: bash .github/scripts/common/80-install-test-deps.sh
+
+      - name: Start port-forward for agent service
+        run: bash .github/scripts/common/85-start-port-forward.sh
+
+      - name: Setup test credentials
+        run: bash .github/scripts/common/87-setup-test-credentials.sh
+
+      - name: Pre-flight checks
+        run: bash .github/scripts/common/90-preflight-checks.sh
 
       - name: Run backend E2E tests
-        run: bash .github/scripts/common/90-run-e2e-tests.sh
+        run: bash .github/scripts/kagenti-operator/90-run-e2e-tests.sh
         env:
           KAGENTI_CONFIG_FILE: deployments/envs/dev_values.yaml
           AGENT_URL: http://localhost:8000
@@ -225,7 +243,7 @@ jobs:
 
       - name: Collect logs on failure
         if: failure()
-        run: bash .github/scripts/kind/99-collect-logs.sh || true
+        run: bash .github/scripts/common/99-collect-logs.sh || true
 
       - name: Upload failure logs
         if: failure()
@@ -317,7 +335,7 @@ jobs:
 
       - name: Create HyperShift cluster
         id: create-cluster
-        run: bash .github/scripts/hypershift/ci/60-create-cluster.sh
+        run: bash .github/scripts/hypershift/create-cluster.sh
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -336,7 +354,7 @@ jobs:
           KAGENTI_DEP_BUILDS: ${{ inputs.dep_builds }}
 
       - name: Build platform images
-        run: bash .github/scripts/hypershift/ci/75-build-images.sh
+        run: bash .github/scripts/common/26-build-platform-images.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
@@ -349,12 +367,12 @@ jobs:
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
 
       - name: Pre-flight checks
-        run: bash .github/scripts/hypershift/ci/78-preflight-checks.sh
+        run: bash .github/scripts/common/90-preflight-checks.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
       - name: Run backend E2E tests
-        run: bash .github/scripts/common/90-run-e2e-tests.sh
+        run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
           KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
