@@ -232,10 +232,138 @@ Test coverage (12 tests):
 | `test_teleport__skills_packaged` | `TELEPORT_SKILLS` includes skills in ConfigMap |
 | `test_teleport__spawn_creates_sandbox` | `--spawn` creates running sandbox, responds to prompts |
 | `test_teleport__spawn_credential_isolation` | Only LiteLLM virtual key visible, no real API keys |
+| `test_teleport__hermes_responds` | Hermes chat returns response via LiteLLM |
+| `test_teleport__hermes_uses_litellm` | Hermes env vars point to LiteLLM proxy |
 | `test_teleport__no_action` | Script fails without action flag |
 | `test_teleport__deploy_without_session` | Deploy requires `--session` |
 | `test_teleport__prompt_without_session` | Prompt requires `--session` |
 | `test_teleport__cleanup_without_session` | Cleanup requires `--session` |
+
+## Example: Delegating a GitHub Issue
+
+Solve a GitHub issue by delegating analysis to a sandbox agent:
+
+```bash
+# One-shot: teleport context and ask the sandbox to analyze an issue
+scripts/openshell/teleport-session.sh --full \
+  "Read CLAUDE.md. GitHub issue #1132 says the feature flag endpoint path
+   '/api/config/features' in the docs is incorrect. Check what the actual
+   path should be based on the project structure. Report your finding."
+```
+
+For iterative work, use a persistent session:
+
+```bash
+# Spawn a session
+SESSION=$(scripts/openshell/teleport-session.sh --spawn 2>/dev/null | tail -1)
+
+# Send multiple prompts
+scripts/openshell/teleport-session.sh --session $SESSION \
+  --prompt "List all Python files that define FastAPI routes"
+
+scripts/openshell/teleport-session.sh --session $SESSION \
+  --prompt "What endpoints does the config router expose?"
+
+# Cleanup
+scripts/openshell/teleport-session.sh --cleanup --session $SESSION
+```
+
+**Limitation**: The sandbox only has teleported context (CLAUDE.md, skills,
+settings), not the full git repo. For source code analysis, the agent can
+only reason about what's described in CLAUDE.md. Full repo access requires
+a PVC-backed workspace (future).
+
+## Using Hermes Agent
+
+Hermes (Nous Research) runs as a persistent deployment with its own tool
+ecosystem (17 tools: file access, code execution, memory, browser).
+
+```bash
+# Quick query
+kubectl exec deploy/nemoclaw-hermes -n team1 -- \
+  timeout 30 hermes chat -q "What is the capital of France?"
+
+# Longer task with tool use
+kubectl exec deploy/nemoclaw-hermes -n team1 -- \
+  timeout 60 hermes chat -q "Write a Python function that calculates fibonacci numbers"
+```
+
+Hermes uses the same LiteLLM proxy → Vertex AI path as Claude Code sandboxes.
+It identifies itself as "Hermes Agent by Nous Research" even when the
+underlying LLM is Claude.
+
+## Vertex AI Setup (Real Claude Models)
+
+By default, LiteLLM routes `claude-sonnet-4-20250514` through MaaS
+(llama-scout-17b). To use real Anthropic Claude via Vertex AI:
+
+**1. Create credentials secret from your GCP application default credentials:**
+
+```bash
+kubectl create secret generic vertex-ai-credentials \
+  --from-file=credentials.json=$HOME/.config/gcloud/application_default_credentials.json \
+  -n team1
+```
+
+**2. Mount into LiteLLM deployment:**
+
+```bash
+kubectl patch deploy litellm-model-proxy -n team1 --type=json -p='[
+  {"op":"add","path":"/spec/template/spec/volumes/-",
+   "value":{"name":"vertex-creds","secret":{"secretName":"vertex-ai-credentials"}}},
+  {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-",
+   "value":{"name":"vertex-creds","mountPath":"/vertex-creds","readOnly":true}}
+]'
+```
+
+**3. Add Vertex AI model to LiteLLM config:**
+
+Update the `litellm-config` ConfigMap — change the `claude-sonnet-4-20250514`
+model from MaaS to Vertex:
+
+```yaml
+- model_name: "claude-sonnet-4-20250514"
+  litellm_params:
+    model: "vertex_ai/claude-sonnet-4@20250514"
+    vertex_project: "<your-gcp-project>"
+    vertex_location: "us-east5"
+    vertex_credentials: "/vertex-creds/credentials.json"
+```
+
+Available Vertex AI model IDs:
+- `claude-sonnet-4@20250514` (Sonnet 4)
+- `claude-sonnet-4-6` (Sonnet 4.6, latest)
+- `claude-haiku-4-5@20251001` (Haiku 4.5)
+- `claude-opus-4-8` (Opus 4.8)
+
+**4. Restart LiteLLM:**
+
+```bash
+kubectl rollout restart deploy/litellm-model-proxy -n team1
+```
+
+The sandbox agents don't need any changes — they still use `ANTHROPIC_BASE_URL`
+pointing to LiteLLM with the virtual key. Only LiteLLM knows about Vertex AI.
+
+## Agent Budget Control
+
+LiteLLM virtual keys support per-key spending limits:
+
+```bash
+# Set $5 max budget on the sandbox virtual key
+MASTER_KEY=$(kubectl get secret litellm-proxy-secret -n kagenti-system \
+  -o jsonpath='{.data.master-key}' | base64 -d)
+
+kubectl port-forward deploy/litellm-model-proxy -n team1 4000:4000 &
+curl -X POST http://localhost:4000/key/update \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "sk-<virtual-key>", "max_budget": 5.0, "budget_duration": "30d"}'
+```
+
+Budget enforcement happens at LiteLLM — agents see HTTP 429 when budget
+is exceeded. Per-agent budgets can be set by creating separate virtual keys
+for each agent.
 
 ## Limitations
 
