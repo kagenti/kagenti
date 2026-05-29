@@ -333,3 +333,89 @@ class TestT6Error:
             assert resp["error"]["code"] == -32601
         finally:
             await ws.close()
+
+
+@pytest.mark.asyncio
+class TestT6SandboxAgent:
+    """ACP WebSocket tests for sandbox agents (openshell-claude).
+
+    These agents use ExecSandbox gRPC path instead of A2A HTTP.
+    """
+
+    @skip_no_backend
+    async def test_T6_sandbox__initialize(self, backend_url):
+        """ACP initialize works for sandbox agent name."""
+        ws = await _acp_connect(backend_url, AGENT_NS, "openshell-claude")
+        try:
+            resp = await _acp_rpc(ws, "initialize")
+            assert "result" in resp, f"Expected result: {resp}"
+            assert resp["result"]["agentCapabilities"]["streaming"] is True
+        finally:
+            await ws.close()
+
+    @skip_no_backend
+    async def test_T6_sandbox__session_lifecycle(self, backend_url):
+        """Create and close session for sandbox agent."""
+        ws = await _acp_connect(backend_url, AGENT_NS, "openshell-claude")
+        try:
+            await _acp_rpc(ws, "initialize")
+            session = await _acp_rpc(ws, "session/new", rpc_id="new-1")
+            assert "result" in session
+            sid = session["result"]["sessionId"]
+            assert len(sid) == 32
+
+            close = await _acp_rpc(
+                ws, "session/close", {"sessionId": sid}, rpc_id="close-1"
+            )
+            assert close["result"]["closed"] is True
+        finally:
+            await ws.close()
+
+    @skip_no_backend
+    @skip_no_llm
+    async def test_T6_sandbox__prompt_response(self, backend_url):
+        """Send prompt to openshell-claude via ACP and get response.
+
+        Requires backend with ExecSandbox gRPC client (PR #1689).
+        """
+        import asyncio
+
+        ws = await _acp_connect(backend_url, AGENT_NS, "openshell-claude")
+        try:
+            await _acp_rpc(ws, "initialize")
+            session = await _acp_rpc(ws, "session/new", rpc_id="new-1")
+            sid = session["result"]["sessionId"]
+
+            await ws.send(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "prompt-1",
+                        "method": "session/prompt",
+                        "params": {
+                            "sessionId": sid,
+                            "text": "What is 2+2? Reply with just the number.",
+                        },
+                    }
+                )
+            )
+
+            messages = []
+            for _ in range(10):
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=120)
+                    msg = json.loads(raw)
+                    messages.append(msg)
+                    if msg.get("id") == "prompt-1":
+                        break
+                except asyncio.TimeoutError:
+                    break
+
+            assert len(messages) > 0, "No response from sandbox agent"
+            has_content = any(
+                m.get("params", {}).get("sessionUpdate") == "agent_message_chunk"
+                for m in messages
+            )
+            assert has_content, f"No content in ACP messages: {messages}"
+        finally:
+            await ws.close()
