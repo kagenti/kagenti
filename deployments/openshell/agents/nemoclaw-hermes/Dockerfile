@@ -58,4 +58,4 @@ WORKDIR /sandbox
 
 EXPOSE 8642
 ENTRYPOINT ["/usr/local/bin/start-hermes.sh"]
-CMD ["hermes", "chat", "-q", "Hello"]
+CMD ["sleep", "infinity"]

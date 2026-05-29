@@ -126,11 +126,11 @@ spec:
           name: http
           protocol: TCP
         readinessProbe:
-          tcpSocket:
-            port: 8642
-          initialDelaySeconds: 15
-          periodSeconds: 10
-          failureThreshold: 12
+          exec:
+            command: ["hermes", "--version"]
+          initialDelaySeconds: 5
+          periodSeconds: 30
+          failureThreshold: 3
         resources:
           requests:
             cpu: 100m
