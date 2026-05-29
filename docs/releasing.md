@@ -6,6 +6,491 @@ through GA, including the stabilization loop between RCs.
 > **AI-assisted:** Use `/release` in Claude Code for interactive guidance
 > through any step below. See [Using the Release Skill](#using-the-release-skill).
 
+## Versioning Scheme
+
+Kagenti follows [Semantic Versioning 2.0](https://semver.org/) with three
+pre-release stages:
+
+```
+vX.Y.0-alpha.N   →   vX.Y.0-rc.N   →   vX.Y.0   →   vX.Y.Z (patches)
+```
+
+| Tag pattern | Stage | GitHub Release type |
+|-------------|-------|---------------------|
+| `vX.Y.0-alpha.N` | **Alpha** — active development, may break | Pre-release |
+| `vX.Y.0-rc.N` | **Release Candidate** — feature-complete, stabilization only | Pre-release |
+| `vX.Y.0` | **General Availability (GA)** — stable, production-ready | Latest |
+| `vX.Y.Z` | **Patch** — critical fixes against a GA release | Latest |
+
+GoReleaser's `prerelease: auto` setting automatically marks tags containing
+`-alpha` or `-rc` as pre-releases on GitHub. No manual intervention is needed.
+
+## Release Governance
+
+Any Kagenti maintainer (member of the
+[kagenti-maintainers](mailto:kagenti-maintainers@googlegroups.com) team) can
+cut a release. For GA releases, at least one other maintainer must sign off
+before tagging.
+
+## Version Compatibility
+
+Each `kagenti/kagenti` release tag represents a tested set of component versions
+across the organization. The Helm chart (`charts/kagenti/Chart.yaml`) pins the
+exact sub-chart versions, and `charts/kagenti/values.yaml` pins the container
+image tags.
+
+GA release notes should include a compatibility table:
+
+```markdown
+## Component Versions
+
+| Component | Version |
+|-----------|---------|
+| kagenti (platform) | v0.6.0 |
+| kagenti-extensions (webhook) | v0.5.0 |
+| kagenti-operator | v0.3.0 |
+| agent-examples | v0.2.0 |
+```
+
+Users who install via Helm charts do not need to manage
+version compatibility manually — checking out a Kagenti release tag gives a
+consistent, tested set of components.
+
+## Repositories and Artifacts
+
+The Kagenti platform spans multiple repositories. Each produces different
+artifacts when a tag is pushed:
+
+| Repository | Artifacts on tag push | CI workflow(s) |
+|------------|----------------------|----------------|
+| [kagenti/kagenti](https://github.com/kagenti/kagenti) | Container images (ui-v2, backend, oauth-secrets), Helm charts (kagenti, kagenti-deps) | `build.yaml` |
+| [kagenti/kagenti-extensions](https://github.com/kagenti/kagenti-extensions) | Container images (envoy-with-processor, proxy-init, client-registration), webhook binary + ko image, Helm chart (kagenti-webhook-chart) | `build.yaml`, `goreleaser.yml` |
+| [kagenti/kagenti-operator](https://github.com/kagenti/kagenti-operator) | Operator image, Helm chart (kagenti-operator-chart) | repo-specific |
+| [kagenti/agent-examples](https://github.com/kagenti/agent-examples) | Sample agent/tool images | repo-specific |
+
+## Release Order
+
+The `kagenti/kagenti` Helm chart depends on sub-charts from other repos
+(defined in `charts/kagenti/Chart.yaml`). Dependency repos must be tagged
+**before** the main repo:
+
+```
+1. kagenti/kagenti-operator     →  tag & wait for CI
+2. kagenti/kagenti-extensions   →  tag & wait for CI
+3. kagenti/agent-examples       →  tag (if applicable)
+4. kagenti/kagenti              →  update Chart.yaml, tag
+```
+
+## Cutting an Alpha Release
+
+Alpha releases are tagged from `main` during active development.
+
+### Steps (repeat for each repo)
+
+1. Ensure CI passes on `main`.
+
+2. Determine the next alpha number:
+
+   ```bash
+   git tag --list 'vX.Y.0-alpha.*' --sort=-v:refname | head -1
+   ```
+
+3. Create and push the tag:
+
+   ```bash
+   git tag -s vX.Y.0-alpha.N -m "vX.Y.0-alpha.N"
+   git push origin vX.Y.0-alpha.N
+   ```
+
+4. Verify CI completes:
+   - [ ] Container images pushed to `ghcr.io`
+   - [ ] GitHub Release created and marked as **Pre-release**
+   - [ ] Helm charts published (if applicable)
+
+5. Release notes are auto-generated from the changelog. If there are known
+   breaking changes or significant issues since the previous alpha, add a brief
+   note to the GitHub Release body (even for alphas, this helps early testers).
+
+### Updating kagenti/kagenti after dependency alphas
+
+After tagging `kagenti-extensions` and `kagenti-operator`, update the sub-chart
+versions in `charts/kagenti/Chart.yaml`:
+
+```yaml
+dependencies:
+- name: kagenti-webhook-chart
+  version: X.Y.0-alpha.N    # <-- new version
+  repository: oci://ghcr.io/kagenti/kagenti-extensions
+- name: kagenti-operator-chart
+  version: X.Y.0-alpha.N    # <-- new version
+  repository: oci://ghcr.io/kagenti/kagenti-operator
+```
+
+Run `helm dependency update charts/kagenti/` to regenerate `Chart.lock`, commit,
+merge, then tag `kagenti/kagenti`.
+
+## Pinning Image Tags Before Release
+
+The `charts/kagenti/values.yaml` file references internal container images.
+Some of these currently use `tag: latest`, which must be pinned to the release
+version before cutting an RC or GA tag.
+
+### Images that require pinning
+
+Check `charts/kagenti/values.yaml` for any `tag: latest` entries. As of v0.5.0,
+these include:
+
+| Image | values.yaml key | Purpose |
+|-------|----------------|---------|
+| `ghcr.io/kagenti/kagenti/ui-oauth-secret` | `uiOAuthSecret.tag` | UI Keycloak client registration |
+| `ghcr.io/kagenti/kagenti/agent-oauth-secret` | `agentOAuthSecret.tag` | Agent Keycloak client registration |
+| `ghcr.io/kagenti/kagenti/api-oauth-secret` | `apiOAuthSecret.tag` | API Keycloak client registration |
+| `ghcr.io/kagenti/kagenti/phoenix-oauth-secret` | `phoenixOAuthSecret.tag` | Phoenix observability auth |
+| `quay.io/ladas/mlflow-oauth-secret` | `mlflowOAuthSecret.tag` | MLflow auth (move to `ghcr.io/kagenti/kagenti/mlflow-oauth-secret` once published) |
+
+Additionally, some Helm templates hardcode `:latest` for utility images
+(`bitnami/kubectl:latest`, `ose-cli:latest`). These should be pinned to
+specific versions over time.
+
+### What to do
+
+Before tagging an RC or GA release, update `charts/kagenti/values.yaml`:
+
+```yaml
+uiOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  tag: vX.Y.0       # <-- pin to release tag, not "latest"
+
+agentOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/agent-oauth-secret
+  tag: vX.Y.0       # <-- pin to release tag
+
+# ... repeat for all oauth-secret images
+```
+
+The `ui.tag` and `backend.tag` fields are already pinned to specific versions
+(e.g., `v0.5.0-alpha.11`). Ensure these are also updated to the release tag.
+
+**Why this matters:** Using `latest` means different installs at different times
+get different image versions, making it impossible to reproduce issues or
+guarantee a tested set of components. Every image referenced in `values.yaml`
+should resolve to a specific, immutable tag for any RC or GA release.
+
+## Cutting a Release Candidate
+
+Release candidates signal feature-complete code ready for broader testing.
+
+### Prerequisites
+
+- All planned features for `vX.Y.0` are merged.
+- No known critical or blocking bugs.
+- Feature freeze declared by maintainers.
+
+### Steps
+
+1. **Tag dependency repos first** with their RC tags (following the
+   [release order](#release-order)).
+
+2. **Update `charts/kagenti/Chart.yaml`** in `kagenti/kagenti` to reference
+   the new sub-chart RC versions. Run `helm dependency update charts/kagenti/`
+   to regenerate `Chart.lock`.
+
+3. **Pin all image tags** in `charts/kagenti/values.yaml` to the RC tag.
+   Replace any `tag: latest` entries with the RC version (see
+   [Pinning Image Tags Before Release](#pinning-image-tags-before-release)).
+
+4. **Create a release branch** for stabilization:
+
+   ```bash
+   git checkout -b release-X.Y main
+   git push origin release-X.Y
+   ```
+
+   Release branches are the target for cherry-picks and patch releases. If no
+   parallel work is planned, you may tag directly from `main`, but the release
+   branch will still be needed for any future patches.
+
+5. **Tag the RC:**
+
+   ```bash
+   git tag -s vX.Y.0-rc.1 -m "vX.Y.0-rc.1"
+   git push origin vX.Y.0-rc.1
+   ```
+
+6. **Verify all artifacts:**
+   - [ ] Container images pushed with the RC tag
+   - [ ] Helm charts pushed to OCI registry
+   - [ ] GitHub Release created as **Pre-release**
+   - [ ] No `tag: latest` remains in `charts/kagenti/values.yaml`
+
+7. **Run RC validation CI** (see
+   [Validating an RC with CI](#validating-an-rc-with-ci) below):
+
+   ```bash
+   gh workflow run release-validation.yaml -f ref=vX.Y.0-rc.N
+   ```
+
+   This runs Kind and HyperShift E2E tests in parallel. Both must pass.
+
+   - [ ] RC Validation workflow passes (Kind + HyperShift)
+   - [ ] Upgrade from previous GA version works (manual)
+   - [ ] Documentation reviewed and updated for new features
+
+8. **If bugs are found:** Fix on the release branch (or `main`), cherry-pick as
+   needed, bump to `rc.2`, and repeat from step 5.
+
+## Cutting a GA Release
+
+A GA release is the final, stable, production-ready version.
+
+### Prerequisites
+
+- At least one RC has been validated with no open release-blocking issues.
+- Minimum soak period of 1 week since the last RC (recommended).
+- At least one maintainer sign-off.
+
+### Steps
+
+1. **Tag dependency repos first** with their GA tags (following the
+   [release order](#release-order)).
+
+2. **Update `charts/kagenti/Chart.yaml`** to pin sub-chart versions to their
+   GA versions. Run `helm dependency update charts/kagenti/` to regenerate
+   `Chart.lock`.
+
+3. **Pin all image tags** in `charts/kagenti/values.yaml` to the GA tag.
+   Verify no `tag: latest` entries remain (see
+   [Pinning Image Tags Before Release](#pinning-image-tags-before-release)).
+
+4. **Tag the GA release:**
+
+   ```bash
+   git tag -s vX.Y.0 -m "vX.Y.0"
+   git push origin vX.Y.0
+   ```
+
+5. **Write release notes** using the following template:
+
+   ```markdown
+   ## Highlights
+   - <key feature or improvement>
+   - <key feature or improvement>
+
+   ## Breaking Changes
+   - <any breaking changes, or "None">
+
+   ## Component Versions
+
+   | Component | Version |
+   |-----------|---------|
+   | kagenti (platform) | vX.Y.0 |
+   | kagenti-extensions (webhook) | vA.B.0 |
+   | kagenti-operator | vC.D.0 |
+   | agent-examples | vE.F.0 |
+
+   ## Upgrade Notes
+   - <any special steps for upgrading from the previous GA>
+
+   ## Full Changelog
+   <auto-generated by GitHub>
+   ```
+
+   Use GitHub's auto-generated changelog as the base and prepend the sections
+   above.
+
+6. **Verify:**
+   - [ ] GitHub Release is marked as **Latest** (not Pre-release)
+   - [ ] All container images tagged and pushed
+   - [ ] Helm charts published to OCI registry
+   - [ ] No `tag: latest` remains in `charts/kagenti/values.yaml`
+   - [ ] Installation guide version references are up to date
+
+7. **Announce** the release:
+   - [Slack](https://ibm.biz/kagenti-slack)
+   - [Mailing list](mailto:kagenti-maintainers@googlegroups.com)
+   - Consider a blog post for major releases
+
+## Cutting a Patch Release
+
+Patch releases deliver critical fixes against an existing GA version.
+
+1. Cherry-pick the fix(es) into the `release-X.Y` branch.
+2. Tag as `vX.Y.Z` (e.g., `v0.5.1`).
+3. Follow the same verification steps as a GA release.
+4. For non-trivial fixes, consider cutting a patch RC (`vX.Y.Z-rc.1`) first.
+
+## Validating an RC with CI
+
+The `release-validation.yaml` workflow runs the full E2E test suite on both Kind
+and HyperShift clusters in parallel. Use it to validate an RC before promoting
+to GA.
+
+### Running the validation
+
+```bash
+# Validate an RC tag (most common usage)
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9
+
+# Validate with a specific extensions dependency
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
+  -f dep_builds='[{"repo":"kagenti/kagenti-extensions","ref":"v0.6.0-rc.1"}]'
+
+# Quick iteration: HyperShift only, keep cluster alive for debugging
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
+  -f skip_kind=true -f skip_destroy=true
+
+# Kind only (faster feedback, no AWS resources consumed)
+gh workflow run release-validation.yaml -f ref=v0.6.0-rc.9 \
+  -f skip_hypershift=true
+```
+
+### Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `ref` | Yes | — | Git ref to validate (tag, branch, or SHA) |
+| `ocp_version` | No | `4.20.21` | OpenShift version for HyperShift cluster |
+| `skip_kind` | No | `false` | Skip Kind E2E tests |
+| `skip_hypershift` | No | `false` | Skip HyperShift E2E tests |
+| `skip_destroy` | No | `false` | Keep HyperShift cluster alive after tests |
+| `dep_builds` | No | `[]` | JSON array of dependency builds to test with |
+
+### What it runs
+
+| Platform | Tests included | Duration |
+|----------|---------------|----------|
+| Kind (K8s 1.35.0) | Backend E2E, token exchange, UI E2E | ~90 min |
+| HyperShift (OCP) | Backend E2E, token exchange (community + RHBK), UI E2E, Trivy scan | ~120 min |
+
+Both platforms run in parallel. The workflow reports a combined pass/fail — both
+must succeed for the RC to be considered validated.
+
+### Checking results
+
+```bash
+# Watch the run
+gh run watch
+
+# Check the summary after completion
+gh run view <run-id>
+```
+
+The workflow produces a step summary with a clear go/no-go verdict. Test
+artifacts (Playwright reports, E2E results) are uploaded and retained for 30
+days.
+
+### When to run
+
+- After tagging every RC (mandatory for GA promotion)
+- After cherry-picking a fix to the release branch
+- Before signing off on a GA release
+
+## Troubleshooting
+
+### Stale `Chart.lock`
+
+After updating dependency versions in `Chart.yaml`, always run
+`helm dependency update` before committing:
+
+```bash
+helm dependency update charts/kagenti/
+helm dependency update charts/kagenti-deps/
+```
+
+Forgetting this step causes Helm install failures because `Chart.lock` still
+references the old versions.
+
+### Pre-release detection
+
+GoReleaser's `prerelease: auto` detects pre-release tags by the presence of a
+hyphen after the version (e.g., `-alpha.1`, `-rc.2`). Tags like `v0.5.0` are
+treated as stable. No workflow changes are needed to support new pre-release
+stages.
+
+### Helm chart version vs. app version
+
+The `version` field in `Chart.yaml` should match the release tag (minus the `v`
+prefix). The `appVersion` field may differ if it tracks a different cadence.
+
+### `tag: latest` in values.yaml
+
+If a GA release ships with `tag: latest` in `values.yaml`, users installing at
+different times will get different image versions, making issues unreproducible.
+Search for remaining `latest` references:
+
+```bash
+grep -n 'tag: latest' charts/kagenti/values.yaml
+grep -rn ':latest' charts/kagenti/templates/
+```
+
+Fix any found before tagging.
+
+## Using the Release Skill
+
+The `.claude/skills/release/SKILL.md` skill (see [PR #1021](https://github.com/kagenti/kagenti/pull/1021))
+provides an interactive, AI-assisted workflow that automates the steps in this
+guide. It handles multi-repo coordination, artifact verification, and release
+notes generation.
+
+### Quick examples
+
+**Check the current release state across all repos:**
+
+```
+/release status
+```
+
+This shows the latest tags for each repo, the current `Chart.yaml` dependency
+versions, and flags any `tag: latest` entries in `values.yaml` that need
+pinning.
+
+**Cut an alpha release:**
+
+```
+/release alpha v0.6.0-alpha.1
+```
+
+The skill will:
+1. Check CI status on `main` for each repo
+2. Guide you through tagging dependency repos first (operator, extensions)
+3. Prompt you to update `Chart.yaml` and tag `kagenti/kagenti` last
+4. Verify all GitHub Releases and container images were produced
+
+**Cut a release candidate:**
+
+```
+/release rc v0.6.0-rc.1
+```
+
+In addition to the alpha steps, the skill will:
+1. Verify feature freeze prerequisites
+2. Help pin all `tag: latest` entries in `values.yaml`
+3. Create the `release-0.6` branch
+4. Run the full verification suite (images, Helm charts, pre-release flags)
+5. Generate an RC release notes template with a testing checklist
+
+**Cut a GA release:**
+
+```
+/release ga v0.6.0
+```
+
+The skill will:
+1. Verify an RC was validated and a maintainer has signed off
+2. Pin all image and chart versions to GA tags
+3. Tag all repos in order and verify artifacts
+4. Generate full release notes with a component compatibility table
+5. Draft an announcement for Slack and the mailing list
+
+**Cut a patch release:**
+
+```
+/release patch v0.5.1
+```
+
+The skill guides cherry-picking fixes into the `release-0.5` branch and follows
+the same verification and release notes flow.
+
 ---
 
 ## Overview
@@ -382,63 +867,6 @@ These happen automatically on tag push (via `build.yaml`):
 - Container images built and pushed to `ghcr.io/kagenti/`
 - Helm charts packaged and pushed to OCI registry
 - GitHub Release created (pre-release flag auto-detected from tag)
-
----
-
-## Troubleshooting
-
-**Stale Chart.lock:** Always run `helm dependency update charts/kagenti/`
-after changing `Chart.yaml`.
-
-**`tag: latest` in values.yaml:** Run `bash scripts/check-release-pins.sh` —
-it catches this.
-
-**GoReleaser pre-release detection:** Tags with `-` after the version (e.g.,
-`-rc.1`) are auto-marked as pre-release. No config needed.
-
-**Chart version vs app version:** `version` in `Chart.yaml` should match the
-tag (minus `v` prefix).
-
----
-
-## Using the Release Skill
-
-The `/release` skill in Claude Code provides interactive, guided assistance
-for all steps above. It tracks state, discovers candidate fixes, and asks
-questions at decision points.
-
-### Commands
-
-```
-/release                    # Full assessment → asks what to do
-/release status             # Current state across all repos + fix tracker
-/release alpha vX.Y.0-alpha.N
-/release rc vX.Y.0-rc.N    # First RC creates release branches
-/release stabilize          # Find fixes, cherry-pick, tag next RC
-/release cherry-pick <PR#>  # Cherry-pick a specific PR
-/release ga vX.Y.0          # Promote to GA
-/release patch vX.Y.Z
-```
-
-### What the skill does
-
-| Command | Actions |
-|---------|---------|
-| `/release` | Checks tags, Chart.yaml, image pins across all repos. Asks what you want to do. |
-| `/release rc` | Verifies prerequisites, tags dependency repos in order, creates release branches, pins images, tags RC. |
-| `/release stabilize` | Finds PRs merged since last RC (all repos), asks which to include, cherry-picks in dependency order, pins images, tags next RC. |
-| `/release ga` | Checks soak time and sign-off, tags dependency repos with GA, pins images, tags GA, generates release notes. |
-
-### Fix tracking
-
-The skill maintains a local tracker at `/tmp/kagenti/release/<version>/rc-fixes.md`
-that records:
-- Cherry-picked fixes (ready to tag)
-- Pending fixes (merged to main, not yet cherry-picked)
-- In-progress fixes (PR open, not merged yet)
-- Dependency repo fixes
-
-This persists across sessions and feeds into RC release notes.
 
 ### Interactive guidance
 

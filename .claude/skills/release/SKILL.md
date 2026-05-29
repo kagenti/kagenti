@@ -172,6 +172,16 @@ bash scripts/check-release-pins.sh
 - [ ] Run `helm dependency update charts/kagenti/`
 - [ ] Commit, merge to main, then tag `kagenti/kagenti`
 
+- [ ] At least one RC validated via `release-validation.yaml` (Kind + HyperShift pass)
+- [ ] Minimum 1 week soak since last RC (recommended)
+- [ ] No open release-blocking issues
+- [ ] At least one maintainer sign-off
+- [ ] Dependency repos tagged with GA first
+- [ ] `charts/kagenti/Chart.yaml` updated with GA sub-chart versions
+- [ ] `helm dependency update charts/kagenti/` regenerates `Chart.lock`
+- [ ] **All image tags in `charts/kagenti/values.yaml` pinned to GA tag**
+- [ ] Documentation reviewed and updated
+
 ### 2.2 For First RC (creates release branch)
 
 The first RC marks feature freeze. This is when release branches are created.
@@ -562,6 +572,56 @@ Auto-generated is sufficient:
 ```bash
 gh release edit <version> --repo kagenti/kagenti \
   --notes "Alpha release — known issues: <list any>"
+```
+
+### 4.5 Run RC Validation CI (RC and GA only)
+
+After verifying artifacts for an RC tag, ask the user:
+
+```
+RC artifacts verified. Would you like to trigger the RC Validation workflow?
+This runs Kind + HyperShift E2E tests in parallel (~2 hours).
+
+Options:
+1. Run full validation (Kind + HyperShift)
+2. Run Kind only (faster, ~90 min)
+3. Run HyperShift only (~120 min)
+4. Skip — I'll validate manually
+```
+
+If the user chooses to run validation:
+
+```bash
+# Full validation (default)
+gh workflow run release-validation.yaml -f ref=<version>
+
+# Kind only
+gh workflow run release-validation.yaml -f ref=<version> -f skip_hypershift=true
+
+# HyperShift only
+gh workflow run release-validation.yaml -f ref=<version> -f skip_kind=true
+```
+
+If dependency repos were also tagged, include them:
+
+```bash
+gh workflow run release-validation.yaml -f ref=<version> \
+  -f dep_builds='[{"repo":"kagenti/kagenti-extensions","ref":"<ext-version>"}]'
+```
+
+After triggering, show the run URL:
+
+```bash
+sleep 5
+gh run list --workflow=release-validation.yaml --limit 1 --json databaseId,url --jq '.[0].url'
+```
+
+For GA releases, this validation MUST have passed on the final RC before
+tagging GA. Remind the user:
+
+```
+GA prerequisite: Has the RC Validation workflow passed for the latest RC?
+Check with: gh run list --workflow=release-validation.yaml --limit 5
 ```
 
 ### For RC
