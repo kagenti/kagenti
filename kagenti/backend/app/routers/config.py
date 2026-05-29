@@ -234,3 +234,23 @@ async def get_platform_status(
     )
 
     return PlatformStatusResponse(components=components, registry=registry)
+
+
+class MCPGatewayStatusResponse(BaseModel):
+    """Status of the MCP Gateway component."""
+
+    status: Literal["Ready", "Degraded", "Missing"]
+
+
+@router.get(
+    "/mcp-gateway-status",
+    response_model=MCPGatewayStatusResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def get_mcp_gateway_status(
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> MCPGatewayStatusResponse:
+    """Return the health status of the MCP Gateway deployment."""
+    # TODO: parameterize namespace/deployment if install location ever varies
+    status = _check_deployment_ready(kube, "gateway-system", "mcp-gateway-istio")
+    return MCPGatewayStatusResponse(status=status)

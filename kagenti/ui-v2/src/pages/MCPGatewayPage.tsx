@@ -34,14 +34,9 @@ import { useQuery } from '@tanstack/react-query';
 import { configService } from '@/services/api';
 
 export const MCPGatewayPage: React.FC = () => {
-  // Placeholder query - will be replaced with actual API call
-  const { isLoading } = useQuery({
+  const { data: gatewayStatus, isLoading, isError } = useQuery({
     queryKey: ['mcp-gateway-status'],
-    queryFn: async () => {
-      // Placeholder - return mock data for now
-      return { status: 'running', tools: 12, uptime: '5d 12h' };
-    },
-    enabled: false, // Disabled until API is ready
+    queryFn: () => configService.getMCPGatewayStatus(),
   });
 
   // Fetch dashboard config for MCP Inspector URL
@@ -103,7 +98,16 @@ export const MCPGatewayPage: React.FC = () => {
                     <DescriptionListGroup>
                       <DescriptionListTerm>Status</DescriptionListTerm>
                       <DescriptionListDescription>
-                        <Label color="green">Running</Label>
+                        {isError && <Label color="red">Status unknown</Label>}
+                        {gatewayStatus?.status === 'Ready' && (
+                          <Label color="green">Running</Label>
+                        )}
+                        {gatewayStatus?.status === 'Degraded' && (
+                          <Label color="orange">Degraded</Label>
+                        )}
+                        {gatewayStatus?.status === 'Missing' && (
+                          <Label color="grey">Not Installed</Label>
+                        )}
                       </DescriptionListDescription>
                     </DescriptionListGroup>
                     <DescriptionListGroup>
