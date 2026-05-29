@@ -324,15 +324,15 @@ fi
 if $STEP_SANDBOX; then
   log_info "Step 8: Removing agent-sandbox-controller..."
 
-  SANDBOX_BASE_URL="https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/refs/tags/${AGENT_SANDBOX_VERSION}"
+  SANDBOX_BASE_URL="https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}"
 
   if kubectl get namespace agent-sandbox-system &>/dev/null; then
     # URL-based deletes use || true to tolerate network failures
     log_info "  Deleting extensions..."
-    run_cmd kubectl delete -f "${SANDBOX_BASE_URL}/config/extensions.yaml" --ignore-not-found || true
+    run_cmd kubectl delete -f "${SANDBOX_BASE_URL}/extensions.yaml" --ignore-not-found || true
 
     log_info "  Deleting controller..."
-    run_cmd kubectl delete -f "${SANDBOX_BASE_URL}/config/install.yaml" --ignore-not-found || true
+    run_cmd kubectl delete -f "${SANDBOX_BASE_URL}/manifest.yaml" --ignore-not-found || true
 
     log_success "agent-sandbox-controller removed"
   else
