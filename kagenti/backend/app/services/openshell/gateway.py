@@ -38,8 +38,8 @@ class OpenShellGatewayClient:
             return cached[1]
 
         logger.info(
-            "Loading TLS credentials",
-            extra={"namespace": namespace, "secret": CLIENT_TLS_SECRET},
+            "Loading TLS credentials for namespace %s",
+            namespace,
         )
         kube = get_kubernetes_service()
         secret = kube.core_api.read_namespaced_secret(name=CLIENT_TLS_SECRET, namespace=namespace)
