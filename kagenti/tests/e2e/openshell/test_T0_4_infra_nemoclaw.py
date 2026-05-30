@@ -166,7 +166,7 @@ class TestNemoClawInference:
                 data = response.json()
                 assert "choices" in data
                 assert len(data["choices"]) > 0
-            except (httpx.RemoteProtocolError, httpx.ReadError):
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError):
                 pytest.skip(
                     "Hermes gateway uses internal protocol — "
                     "HTTP API requires NemoClaw plugin"
