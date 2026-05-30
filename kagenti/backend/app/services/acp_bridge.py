@@ -215,7 +215,7 @@ class ACPBridge:
                 "session_id": session.session_id,
                 "agent_name": session.agent_name,
                 "namespace": session.namespace,
-                "cli": cli,
+                "cli": cmd[2] if len(cmd) > 2 else "unknown",
                 "prompt_length": len(text),
             },
         )

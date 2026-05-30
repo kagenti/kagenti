@@ -66,11 +66,7 @@ async def acp_websocket(
             azp = token_data.raw_token.get("azp", "")
             allowed = {*aud, azp} if azp else set(aud)
             if allowed and namespace not in allowed and "account" not in allowed:
-                safe_ns = namespace.replace("\n", "").replace("\r", "")
-                logger.warning(
-                    "ACP namespace mismatch (conn=%s)",
-                    uuid4().hex[:8],
-                )
+                logger.warning("ACP namespace mismatch (conn=%s)", uuid4().hex[:8])
                 await websocket.close(code=4003, reason="Access denied for this namespace")
                 return
         except Exception:
