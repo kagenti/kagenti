@@ -26,8 +26,8 @@ ACP_PROTOCOL_VERSION = 1
 A2A_STREAM_TIMEOUT = 120.0
 SANDBOX_EXEC_TIMEOUT = 120
 
-SANDBOX_AGENTS = {"openshell-claude", "openshell-opencode"}
-NEMOCLAW_AGENTS = {"nemoclaw-openclaw", "nemoclaw-hermes"}
+SANDBOX_AGENTS = {"openshell-claude", "openshell-opencode", "nemoclaw-hermes"}
+NEMOCLAW_AGENTS = {"nemoclaw-openclaw"}
 
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
@@ -190,12 +190,21 @@ class ACPBridge:
             yield _acp_error("Invalid namespace or agent_name", session_id=session.session_id)
             return
 
-        cli = "claude" if "claude" in session.agent_name else "opencode"
-        cmd = ["timeout", "90", cli]
-        if cli == "claude":
-            cmd += ["--print", "--bare", "--model", "claude-sonnet-4-20250514", text]
+        if "hermes" in session.agent_name:
+            cmd = ["timeout", "90", "hermes", "chat", "-q", text]
+        elif "claude" in session.agent_name:
+            cmd = [
+                "timeout",
+                "90",
+                "claude",
+                "--print",
+                "--bare",
+                "--model",
+                "claude-sonnet-4-20250514",
+                text,
+            ]
         else:
-            cmd += ["run", text]
+            cmd = ["timeout", "90", "opencode", "run", text]
 
         gateway = get_openshell_client()
         stdout_parts: list[str] = []
