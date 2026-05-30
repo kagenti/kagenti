@@ -1446,7 +1446,7 @@ else
   if ! $DRY_RUN; then
     _EXP_WS="${MLFLOW_WORKSPACE:-team1}"
     _EXP_NAME="kagenti-traces"
-    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null)
+    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null || true)
     if [ -n "$_EXP_TOKEN" ]; then
       _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
         --image=curlimages/curl -n kagenti-system \
