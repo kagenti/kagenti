@@ -46,6 +46,8 @@ spec:
       app: otel-collector
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include "kagenti.otel.collectorConfig" . | sha256sum }}
       labels:
         app: otel-collector
     spec:
