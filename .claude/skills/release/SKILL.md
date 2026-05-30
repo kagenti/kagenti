@@ -160,9 +160,10 @@ Alphas are tagged directly from `main`:
 
 - [ ] Confirm CI passes on `main` for each repo being tagged
 - [ ] Determine next alpha number
-- [ ] Pin all image tags (no `tag: latest` allowed, even for alphas):
+- [ ] Pin image tags and chart version (no `tag: latest` allowed, even for alphas):
 
 ```bash
+# Pins image tags AND updates Chart.yaml version/appVersion to match
 bash scripts/pin-release-tags.sh <version>
 bash scripts/check-release-pins.sh
 ```
@@ -220,7 +221,7 @@ The first RC marks feature freeze. This is when release branches are created.
 
 2. **Update kagenti/kagenti Chart.yaml** with new sub-chart RC versions
 
-3. **Pin all image tags:**
+3. **Pin image tags and chart version:**
 
    ```bash
    bash scripts/pin-release-tags.sh <version>
@@ -491,9 +492,10 @@ gh run list --repo kagenti/kagenti --branch release-X.Y --limit 3
 git tag --list 'vX.Y.0-rc.*' --sort=-v:refname | head -1
 ```
 
-**Pin image tags for the new RC:**
+**Pin image tags and chart version for the new RC:**
 
 ```bash
+# Pins image tags AND updates Chart.yaml version/appVersion to match
 bash scripts/pin-release-tags.sh <next-rc-version>
 bash scripts/check-release-pins.sh
 git add charts/
@@ -536,9 +538,10 @@ When the latest RC has soaked with no blocking issues.
 
 2. **Update kagenti Chart.yaml** with GA sub-chart versions
 
-3. **Pin image tags to GA version:**
+3. **Pin image tags and chart version to GA:**
 
    ```bash
+   # Pins image tags AND updates Chart.yaml version/appVersion to match
    bash scripts/pin-release-tags.sh vX.Y.0
    bash scripts/check-release-pins.sh
    git add charts/

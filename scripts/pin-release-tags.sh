@@ -42,10 +42,11 @@ Arguments:
   VERSION             The release version tag (e.g., v0.6.0-rc.6, v0.7.0-alpha.1)
 
 Options:
-  --dry-run           Show what would change without modifying files
-  --verify-images     Check that images exist in ghcr.io before pinning
-  --chart-version V   Also update Chart.yaml version (strip 'v' prefix automatically)
-  -h, --help          Show this help message
+  --dry-run              Show what would change without modifying files
+  --verify-images        Check that images exist in ghcr.io before pinning
+  --chart-version V      Override Chart.yaml version (default: derived from VERSION)
+  --skip-chart-version   Do NOT update Chart.yaml version/appVersion
+  -h, --help             Show this help message
 
 Images pinned (charts/kagenti/values.yaml):
   - ui.frontend.tag
@@ -68,14 +69,16 @@ EOF
 
 VERSION=""
 CHART_VERSION=""
+SKIP_CHART_VERSION=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --dry-run)         DRY_RUN=true; shift ;;
-        --verify-images)   VERIFY_IMAGES=true; shift ;;
-        --chart-version)   CHART_VERSION="$2"; shift 2 ;;
-        -h|--help)         usage ;;
-        -*)                echo "Unknown option: $1" >&2; usage ;;
+        --dry-run)             DRY_RUN=true; shift ;;
+        --verify-images)       VERIFY_IMAGES=true; shift ;;
+        --chart-version)       CHART_VERSION="$2"; shift 2 ;;
+        --skip-chart-version)  SKIP_CHART_VERSION=true; shift ;;
+        -h|--help)             usage ;;
+        -*)                    echo "Unknown option: $1" >&2; usage ;;
         *)
             if [[ -z "$VERSION" ]]; then
                 VERSION="$1"
@@ -216,10 +219,19 @@ for entry in "${PINNABLE_IMAGES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# Pin Chart.yaml version (optional)
+# Pin Chart.yaml version
+#
+# By default, Chart.yaml version and appVersion are set to match VERSION
+# (strip 'v' prefix). Use --chart-version to override, or --skip-chart-version
+# to leave Chart.yaml untouched.
 # ---------------------------------------------------------------------------
 
-if [[ -n "$CHART_VERSION" ]]; then
+if [[ "$SKIP_CHART_VERSION" != "true" ]]; then
+    # Default to VERSION if --chart-version was not explicitly passed
+    if [[ -z "$CHART_VERSION" ]]; then
+        CHART_VERSION="$VERSION"
+    fi
+
     echo ""
     echo "Updating Chart.yaml version..."
 
