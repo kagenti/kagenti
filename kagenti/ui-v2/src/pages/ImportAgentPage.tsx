@@ -203,6 +203,10 @@ export const ImportAgentPage: React.FC = () => {
   });
   const [outboundRoutes, setOutboundRoutes] = useState<RouteRow[]>([makeEmptyRoute()]);
   const isCommittedRoute = (r: RouteRow) => !!r.host && !!r.target_audience;
+  const serializeRoute = ({ id, token_scopes, ...r }: RouteRow) => ({
+    ...r,
+    token_scopes: token_scopes || 'openid',
+  });
   const removeRoute = (i: number) => setOutboundRoutes((prev) => prev.filter((_, idx) => idx !== i));
   const updateRoute = (i: number, field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
     setOutboundRoutes((prev) => {
@@ -544,10 +548,7 @@ export const ImportAgentPage: React.FC = () => {
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
-          ? outboundRoutes.filter(isCommittedRoute).map(({ id, token_scopes, ...r }) => ({
-              ...r,
-              token_scopes: token_scopes || 'openid',
-            }))
+          ? outboundRoutes.filter(isCommittedRoute).map(serializeRoute)
           : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -589,10 +590,7 @@ export const ImportAgentPage: React.FC = () => {
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
-          ? outboundRoutes.filter(isCommittedRoute).map(({ id, token_scopes, ...r }) => ({
-              ...r,
-              token_scopes: token_scopes || 'openid',
-            }))
+          ? outboundRoutes.filter(isCommittedRoute).map(serializeRoute)
           : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -1198,7 +1196,7 @@ export const ImportAgentPage: React.FC = () => {
                 onToggle={(_event, expanded) => setShowOutboundRouting(expanded)}
               >
                 <Text component="p" style={{ marginBottom: '8px' }}>
-                  RFC 8693 / OAuth 2.0 Token Exchange - Restrict outbound to certain hosts, OIDC audiences, and scopes.
+                  RFC 8693 / OAuth 2.0 Token Exchange — Restrict outbound to certain hosts, OIDC audiences, and scopes.
                 </Text>
                 <Table aria-label="Outbound routes" variant="compact">
                   <Thead>
@@ -1211,7 +1209,7 @@ export const ImportAgentPage: React.FC = () => {
                   </Thead>
                   <Tbody>
                     {outboundRoutes.map((route, index) => {
-                      const showRemove = isCommittedRoute(route);
+                      const showRemove = index < outboundRoutes.length - 1;
                       return (
                         <Tr key={route.id}>
                           <Td>
