@@ -544,7 +544,10 @@ export const ImportAgentPage: React.FC = () => {
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
-          ? outboundRoutes.filter(isCommittedRoute).map(({ id, ...r }) => r)
+          ? outboundRoutes.filter(isCommittedRoute).map(({ id, token_scopes, ...r }) => ({
+              ...r,
+              token_scopes: token_scopes || 'openid',
+            }))
           : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -586,7 +589,10 @@ export const ImportAgentPage: React.FC = () => {
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
         outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
-          ? outboundRoutes.filter(isCommittedRoute).map(({ id, ...r }) => r)
+          ? outboundRoutes.filter(isCommittedRoute).map(({ id, token_scopes, ...r }) => ({
+              ...r,
+              token_scopes: token_scopes || 'openid',
+            }))
           : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -1265,7 +1271,7 @@ export const ImportAgentPage: React.FC = () => {
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
-                <FormGroup label="Bypass AuthBridge on some inbound ports" fieldId="inboundPortsExclude">
+                <FormGroup label="Bypass AuthBridge on these inbound ports" fieldId="inboundPortsExclude">
                   <TextInput
                     id="inboundPortsExclude"
                     value={inboundPortsExclude}
