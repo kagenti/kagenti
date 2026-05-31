@@ -202,7 +202,6 @@ export const ImportAgentPage: React.FC = () => {
     token_scopes: 'openid',
   });
   const [outboundRoutes, setOutboundRoutes] = useState<RouteRow[]>([makeEmptyRoute()]);
-  const isEmptyRoute = (r: RouteRow) => !r.host && !r.target_audience;
   const isCommittedRoute = (r: RouteRow) => !!r.host && !!r.target_audience;
   const removeRoute = (i: number) => setOutboundRoutes((prev) => prev.filter((_, idx) => idx !== i));
   const updateRoute = (i: number, field: 'host' | 'target_audience' | 'token_scopes', value: string) =>
@@ -211,6 +210,8 @@ export const ImportAgentPage: React.FC = () => {
       updated[i] = { ...updated[i], [field]: value };
       // Once the trailing row has both Host Pattern and Target OIDC Audience
       // filled in, promote it by appending a fresh empty row below.
+      // (Promotion runs on every per-field onChange; both fields are read fresh
+      // inside the setter so order doesn't matter.)
       if (
         i === prev.length - 1 &&
         updated[i].host &&
@@ -542,8 +543,8 @@ export const ImportAgentPage: React.FC = () => {
         // and envoy-sidecar support the full disabled/permissive/strict
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.some((r) => !isEmptyRoute(r))
-          ? outboundRoutes.filter((r) => !isEmptyRoute(r)).map(({ id, ...r }) => r)
+        outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
+          ? outboundRoutes.filter(isCommittedRoute).map(({ id, ...r }) => r)
           : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -584,8 +585,8 @@ export const ImportAgentPage: React.FC = () => {
         // and envoy-sidecar support the full disabled/permissive/strict
         // matrix end-to-end (kagenti-operator#381 + extensions#441).
         mtlsMode: authBridgeEnabled ? mtlsMode : undefined,
-        outboundRoutes: authBridgeEnabled && outboundRoutes.some((r) => !isEmptyRoute(r))
-          ? outboundRoutes.filter((r) => !isEmptyRoute(r)).map(({ id, ...r }) => r)
+        outboundRoutes: authBridgeEnabled && outboundRoutes.some(isCommittedRoute)
+          ? outboundRoutes.filter(isCommittedRoute).map(({ id, ...r }) => r)
           : undefined,
         outboundPortsExclude: authBridgeEnabled && outboundPortsExclude ? outboundPortsExclude : undefined,
         inboundPortsExclude: authBridgeEnabled && inboundPortsExclude ? inboundPortsExclude : undefined,
@@ -1184,7 +1185,7 @@ export const ImportAgentPage: React.FC = () => {
               {authBridgeEnabled && (
               <ExpandableSection
                 toggleText={(() => {
-                  const n = outboundRoutes.filter((r) => !isEmptyRoute(r)).length;
+                  const n = outboundRoutes.filter(isCommittedRoute).length;
                   return `Outbound OIDC token exchange rules (${n} route${n !== 1 ? 's' : ''})`;
                 })()}
                 isExpanded={showOutboundRouting}
@@ -1251,7 +1252,7 @@ export const ImportAgentPage: React.FC = () => {
               <ExpandableSection
                 toggleText="AuthBridge Advanced Configuration"
               >
-                <FormGroup label="Disable outbound security for some ports" fieldId="outboundPortsExclude">
+                <FormGroup label="Bypass AuthBridge on these outbound ports" fieldId="outboundPortsExclude">
                   <TextInput
                     id="outboundPortsExclude"
                     value={outboundPortsExclude}
@@ -1264,7 +1265,7 @@ export const ImportAgentPage: React.FC = () => {
                     </HelperText>
                   </FormHelperText>
                 </FormGroup>
-                <FormGroup label="Disable AuthBridge inbound security on ports" fieldId="inboundPortsExclude">
+                <FormGroup label="Bypass AuthBridge on some inbound ports" fieldId="inboundPortsExclude">
                   <TextInput
                     id="inboundPortsExclude"
                     value={inboundPortsExclude}
