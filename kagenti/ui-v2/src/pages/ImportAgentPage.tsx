@@ -1235,7 +1235,7 @@ export const ImportAgentPage: React.FC = () => {
                               aria-label="Token scopes"
                               value={route.token_scopes}
                               onChange={(_e, v) => updateRoute(index, 'token_scopes', v)}
-                              placeholder="openid"
+                              placeholder="openid scope1 scope2"
                             />
                           </Td>
                           <Td>
@@ -1303,7 +1303,7 @@ export const ImportAgentPage: React.FC = () => {
                     aria-label="mTLS mode"
                     isDisabled={!spireEnabled}
                   >
-                    <FormSelectOption key="disabled" value="disabled" label="disabled — don't use mTLS between sidecars (default)" />
+                    <FormSelectOption key="disabled" value="disabled" label="disabled — no mTLS between sidecars (default)" />
                     <FormSelectOption key="permissive" value="permissive" label="permissive — use, but allow non-mTLS peers (rollout-friendly)" />
                     <FormSelectOption key="strict" value="strict" label="strict — require mTLS, fail without" />
                   </FormSelect>
