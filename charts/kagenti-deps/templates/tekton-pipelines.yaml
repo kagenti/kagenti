@@ -1,0 +1,85 @@
+{{- if and .Values.components.tekton.enabled (not .Values.openshift) }}
+{{- /*
+  Tekton Pipelines Installation for Vanilla Kubernetes
+
+  This template installs Tekton Pipelines on non-OpenShift Kubernetes clusters
+  by applying the upstream release manifest. On OpenShift, Tekton is installed
+  via the OpenShift Pipelines Operator (see tekton-operator.yaml).
+
+  The installation uses a Job with a pre-install/pre-upgrade hook to ensure
+  Tekton is available before Shipwright attempts to install.
+*/}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tekton-pipelines
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-installer
+  namespace: tekton-pipelines
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-installer
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: tekton-installer
+  namespace: tekton-pipelines
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tekton-pipelines-installer
+  namespace: tekton-pipelines
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "kagenti.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: tekton-installer
+      restartPolicy: OnFailure
+      containers:
+      - name: installer
+        image: {{ .Values.common.kubectlImage }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Installing Tekton Pipelines from upstream release..."
+          kubectl apply --filename https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml --server-side=true
+          echo "Waiting for Tekton Pipelines controller to be ready..."
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/part-of=tekton-pipelines,app.kubernetes.io/component=controller -n tekton-pipelines --timeout=300s
+          echo "Tekton Pipelines installation complete"
+{{- end }}
