@@ -39,7 +39,6 @@ components:
     # Path prefix where MLflow UI is served (appended to the route URL).
     # RHOAI MLflow uses --static-prefix=/mlflow by default.
     routePath: "/mlflow"
-
 # Secrets — override via a .secrets.yaml file or --set secrets.<key>=<value>.
 # githubUser/githubToken are optional: only needed to deploy agents/tools from
 # private GitHub repos or pull images from private registries.
@@ -54,7 +53,6 @@ secrets:
 common:
   kubectlImage: "quay.io/kubestellar/kubectl:1.30.14"
   oseCLIImage: "registry.redhat.io/openshift4/ose-cli:v4.15"
-
 # ------------------------------------------------------------------
 #  Components Configurations
 # ------------------------------------------------------------------
@@ -81,7 +79,7 @@ ui:
   frontend:
     enabled: true
     image: ghcr.io/kagenti/kagenti/ui-v2
-    tag: v0.6.0-rc.11
+    tag: v0.6.0-rc.12
     resources:
       limits:
         cpu: 100m
@@ -95,7 +93,7 @@ ui:
   # Backend configuration
   backend:
     image: ghcr.io/kagenti/kagenti/backend
-    tag: v0.6.0-rc.11
+    tag: v0.6.0-rc.12
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
     # Default Shipwright build strategy for internal registries
@@ -110,12 +108,14 @@ ui:
       requests:
         cpu: 50m
         memory: 128Mi
+  image:
+    tag: v0.6.0-rc.12
 # ------------------------------------------------------------------
 #  UI OAuth Secret Creator Configuration
 # ------------------------------------------------------------------
 uiOAuthSecret:
   image: ghcr.io/kagenti/kagenti/ui-oauth-secret
-  tag: v0.6.0-rc.11
+  tag: v0.6.0-rc.12
   # When true, mount the in-cluster serviceaccount CA
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -126,7 +126,7 @@ uiOAuthSecret:
 # ------------------------------------------------------------------
 agentOAuthSecret:
   image: ghcr.io/kagenti/kagenti/agent-oauth-secret
-  tag: v0.6.0-rc.11
+  tag: v0.6.0-rc.12
   # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -143,7 +143,7 @@ agentOAuthSecret:
 apiOAuthSecret:
   enabled: false
   image: ghcr.io/kagenti/kagenti/api-oauth-secret
-  tag: v0.6.0-rc.11
+  tag: v0.6.0-rc.12
   # Client ID for the API service account
   clientId: kagenti-api
   # Name of the K8s secret to store credentials
@@ -212,7 +212,7 @@ authBridge:
 spiffeIdp:
   image:
     repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
-    tag: v0.6.0-rc.11
+    tag: v0.6.0-rc.12
     pullPolicy: IfNotPresent
 # ------------------------------------------------------------------
 #  Kagenti Operator Configuration (includes AuthBridge webhook)
@@ -269,7 +269,6 @@ mcpGateway:
   # On OpenShift, the Gateway listener hostname is auto-constructed from this
   # domain to match the auto-generated Route hostname. Override in ocp_values.yaml.
   openshiftDomain: ''
-
 # ------------------------------------------------------------------
 #  Phoenix Configuration
 # ------------------------------------------------------------------
@@ -285,7 +284,7 @@ phoenix:
 # ------------------------------------------------------------------
 phoenixOAuthSecret:
   image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
-  tag: v0.6.0-rc.11
+  tag: v0.6.0-rc.12
   # Keycloak client ID for Phoenix
   clientId: phoenix
   # Kubernetes secret name to store OAuth credentials
@@ -311,7 +310,7 @@ mlflow:
 # ------------------------------------------------------------------
 mlflowOAuthSecret:
   image: ghcr.io/kagenti/kagenti/mlflow-oauth-secret
-  tag: v0.6.0-rc.11
+  tag: v0.6.0-rc.12
   # Keycloak client ID for MLflow
   clientId: mlflow
   # Kubernetes secret name to store OAuth credentials
@@ -341,3 +340,15 @@ openshell:
     image: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
     tag: main-d7d8306
     pullPolicy: IfNotPresent
+backend:
+  image:
+    tag: v0.6.0-rc.12
+uiOauthSecret:
+  image:
+    tag: v0.6.0-rc.12
+agentOauthSecret:
+  image:
+    tag: v0.6.0-rc.12
+apiOauthSecret:
+  image:
+    tag: v0.6.0-rc.12
