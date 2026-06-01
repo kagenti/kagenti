@@ -362,27 +362,32 @@ fi
 # appVersion should be 0.6.0-rc.11 (without the 'v' prefix).
 # ---------------------------------------------------------------------------
 
-if [[ -f "$CHART_FILE" ]] && [[ -f "$VALUES_FILE" ]] && command -v yq >/dev/null 2>&1; then
-    chart_version=$(yq eval '.version' "$CHART_FILE" 2>/dev/null || echo "")
-    chart_app_version=$(yq eval '.appVersion' "$CHART_FILE" 2>/dev/null || echo "")
-    platform_tag=$(yq eval '.ui.frontend.tag' "$VALUES_FILE" 2>/dev/null || echo "")
+if [[ -f "$CHART_FILE" ]] && [[ -f "$VALUES_FILE" ]]; then
+    if ! command -v yq >/dev/null 2>&1; then
+        add_warning "charts/kagenti/Chart.yaml" \
+            "yq not found — skipping Chart.yaml version/appVersion consistency check"
+    else
+        chart_version=$(yq eval '.version' "$CHART_FILE" 2>/dev/null || echo "")
+        chart_app_version=$(yq eval '.appVersion' "$CHART_FILE" 2>/dev/null || echo "")
+        platform_tag=$(yq eval '.ui.frontend.tag' "$VALUES_FILE" 2>/dev/null || echo "")
 
-    # Strip 'v' prefix from platform tag for comparison
-    platform_tag_stripped="${platform_tag#v}"
+        # Strip 'v' prefix from platform tag for comparison
+        platform_tag_stripped="${platform_tag#v}"
 
-    if [[ -n "$platform_tag_stripped" ]] && [[ "$platform_tag_stripped" != "null" ]]; then
-        if [[ "$chart_version" != "$platform_tag_stripped" ]]; then
-            add_error "charts/kagenti/Chart.yaml" 0 \
-                "version ($chart_version) does not match image tags ($platform_tag_stripped) — run scripts/pin-release-tags.sh"
-        else
-            add_ok "charts/kagenti/Chart.yaml" "version ($chart_version) matches image tags"
-        fi
+        if [[ -n "$platform_tag_stripped" ]] && [[ "$platform_tag_stripped" != "null" ]]; then
+            if [[ "$chart_version" != "$platform_tag_stripped" ]]; then
+                add_error "charts/kagenti/Chart.yaml" 0 \
+                    "version ($chart_version) does not match image tags ($platform_tag_stripped) — run scripts/pin-release-tags.sh"
+            else
+                add_ok "charts/kagenti/Chart.yaml" "version ($chart_version) matches image tags"
+            fi
 
-        if [[ "$chart_app_version" != "$platform_tag_stripped" ]]; then
-            add_error "charts/kagenti/Chart.yaml" 0 \
-                "appVersion ($chart_app_version) does not match image tags ($platform_tag_stripped) — run scripts/pin-release-tags.sh"
-        else
-            add_ok "charts/kagenti/Chart.yaml" "appVersion ($chart_app_version) matches image tags"
+            if [[ "$chart_app_version" != "$platform_tag_stripped" ]]; then
+                add_error "charts/kagenti/Chart.yaml" 0 \
+                    "appVersion ($chart_app_version) does not match image tags ($platform_tag_stripped) — run scripts/pin-release-tags.sh"
+            else
+                add_ok "charts/kagenti/Chart.yaml" "appVersion ($chart_app_version) matches image tags"
+            fi
         fi
     fi
 fi
@@ -428,20 +433,25 @@ fi
 # Its tag must not drift from the main chart's platform image tags.
 # ---------------------------------------------------------------------------
 
-if [[ -f "$DEPS_VALUES_FILE" ]] && command -v yq >/dev/null 2>&1; then
-    spiffe_tag=$(yq eval '.spiffeIdp.image.tag' "$DEPS_VALUES_FILE" 2>/dev/null || echo "")
+if [[ -f "$DEPS_VALUES_FILE" ]]; then
+    if ! command -v yq >/dev/null 2>&1; then
+        add_warning "charts/kagenti-deps/values.yaml" \
+            "yq not found — skipping spiffeIdp tag consistency check"
+    else
+        spiffe_tag=$(yq eval '.spiffeIdp.image.tag' "$DEPS_VALUES_FILE" 2>/dev/null || echo "")
 
-    if [[ -n "$spiffe_tag" ]] && [[ "$spiffe_tag" != "null" ]]; then
-        # Compare against the first platform image tag in the main chart
-        platform_tag=$(yq eval '.ui.frontend.tag' "$VALUES_FILE" 2>/dev/null || echo "")
+        if [[ -n "$spiffe_tag" ]] && [[ "$spiffe_tag" != "null" ]]; then
+            # Compare against the first platform image tag in the main chart
+            platform_tag=$(yq eval '.ui.frontend.tag' "$VALUES_FILE" 2>/dev/null || echo "")
 
-        if [[ -n "$platform_tag" ]] && [[ "$platform_tag" != "null" ]] \
-           && [[ "$spiffe_tag" != "$platform_tag" ]]; then
-            add_error "charts/kagenti-deps/values.yaml" 0 \
-                "spiffeIdp.image.tag ($spiffe_tag) differs from platform tag ($platform_tag) — run scripts/pin-release-tags.sh"
-        else
-            add_ok "charts/kagenti-deps/values.yaml" \
-                "spiffeIdp.image.tag ($spiffe_tag) consistent with platform"
+            if [[ -n "$platform_tag" ]] && [[ "$platform_tag" != "null" ]] \
+               && [[ "$spiffe_tag" != "$platform_tag" ]]; then
+                add_error "charts/kagenti-deps/values.yaml" 0 \
+                    "spiffeIdp.image.tag ($spiffe_tag) differs from platform tag ($platform_tag) — run scripts/pin-release-tags.sh"
+            else
+                add_ok "charts/kagenti-deps/values.yaml" \
+                    "spiffeIdp.image.tag ($spiffe_tag) consistent with platform"
+            fi
         fi
     fi
 fi
