@@ -556,7 +556,6 @@ For detailed overview of Identity and Authorization Patterns, see the [Identity 
 ### Tornjak (SPIRE Management UI)
 
 ```bash
-# API
 # UI
 open http://spire-tornjak-ui.localtest.me:8080/
 ```
