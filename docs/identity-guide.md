@@ -106,10 +106,6 @@ curl http://spire-oidc.localtest.me:8080/keys
 #### 2. Tornjak Management Interface
 
 ```bash
-# Test Tornjak API
-curl http://spire-tornjak-api.localtest.me:8080/
-# Expected: "Welcome to the Tornjak Backend!"
-
 # Access Tornjak UI
 open http://spire-tornjak-ui.localtest.me:8080/
 ```
