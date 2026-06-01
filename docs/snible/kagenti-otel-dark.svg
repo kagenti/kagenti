@@ -1,0 +1,274 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" font-family="'JetBrains Mono','Menlo','Consolas',monospace">
+  <defs>
+    <linearGradient id="bgD" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#06090f"/>
+      <stop offset="100%" stop-color="#0c1422"/>
+    </linearGradient>
+    <radialGradient id="glowEmit" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff5fd1" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ff5fd1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCollect" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#39c2ff" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#39c2ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowStore" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#43e89c" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#43e89c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowView" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff9b3d" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ff9b3d" stop-opacity="0"/>
+    </radialGradient>
+
+    <pattern id="dotGrid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="1.2" fill="#1d2a3d"/>
+    </pattern>
+
+    <filter id="neonEmit" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#ff5fd1"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="neonCollect" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#39c2ff"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="neonStore" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#43e89c"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="neonView" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#ff9b3d"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <marker id="arrowD" markerWidth="14" markerHeight="14" refX="11" refY="5" orient="auto">
+      <path d="M0,0 L11,5 L0,10 Z" fill="#9bd6ff"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bgD)"/>
+  <rect width="1920" height="1080" fill="url(#dotGrid)"/>
+
+  <!-- soft glow halos behind each stage column -->
+  <circle cx="280" cy="540" r="280" fill="url(#glowEmit)"/>
+  <circle cx="780" cy="540" r="280" fill="url(#glowCollect)"/>
+  <circle cx="1240" cy="540" r="280" fill="url(#glowStore)"/>
+  <circle cx="1700" cy="540" r="280" fill="url(#glowView)"/>
+
+  <!-- Title -->
+  <g>
+    <text x="80" y="100" font-size="40" font-weight="700" fill="#e6f1ff" letter-spacing="2">KAGENTI ▸ OTEL TRACE FABRIC</text>
+    <text x="80" y="135" font-size="16" fill="#7eb8e6">// what the platform provides — and where it ends</text>
+  </g>
+  <g text-anchor="end">
+    <text x="1840" y="100" font-size="14" fill="#7eb8e6">rev. collector-contrib 0.122.1</text>
+    <text x="1840" y="122" font-size="14" fill="#7eb8e6">otlp/grpc · :8335 · plaintext</text>
+    <text x="1840" y="144" font-size="14" fill="#7eb8e6">ns: kagenti-system</text>
+  </g>
+
+  <!-- horizontal axis baseline -->
+  <line x1="80" y1="200" x2="1840" y2="200" stroke="#1d3a5e" stroke-width="1"/>
+
+  <!-- column headers -->
+  <g font-size="14" letter-spacing="3" fill="#7eb8e6">
+    <text x="280" y="232" text-anchor="middle">[ 01 ] EMIT</text>
+    <text x="780" y="232" text-anchor="middle">[ 02 ] COLLECT</text>
+    <text x="1240" y="232" text-anchor="middle">[ 03 ] STORE</text>
+    <text x="1700" y="232" text-anchor="middle">[ 04 ] VIEW</text>
+  </g>
+
+  <!-- column 1: workloads -->
+  <g filter="url(#neonEmit)">
+    <rect x="120" y="270" width="320" height="100" rx="6" fill="#0c1422" stroke="#ff5fd1" stroke-width="1.5"/>
+    <text x="280" y="305" text-anchor="middle" font-size="18" font-weight="700" fill="#ff5fd1">a2a-agent-pods</text>
+    <text x="280" y="330" text-anchor="middle" font-size="12" fill="#f7c8e6">LangChain · Claude · custom</text>
+    <text x="280" y="352" text-anchor="middle" font-size="11" fill="#a06b94">replicas: 1..N</text>
+  </g>
+  <g filter="url(#neonEmit)">
+    <rect x="120" y="400" width="320" height="100" rx="6" fill="#0c1422" stroke="#ff5fd1" stroke-width="1.5"/>
+    <text x="280" y="435" text-anchor="middle" font-size="18" font-weight="700" fill="#ff5fd1">mcp-tool-pods</text>
+    <text x="280" y="460" text-anchor="middle" font-size="12" fill="#f7c8e6">stdio · http · sse</text>
+    <text x="280" y="482" text-anchor="middle" font-size="11" fill="#a06b94">replicas: 1..N</text>
+  </g>
+  <g filter="url(#neonEmit)">
+    <rect x="120" y="530" width="320" height="100" rx="6" fill="#0c1422" stroke="#ff5fd1" stroke-width="1.5"/>
+    <text x="280" y="565" text-anchor="middle" font-size="18" font-weight="700" fill="#ff5fd1">kagenti-backend</text>
+    <text x="280" y="590" text-anchor="middle" font-size="12" fill="#f7c8e6">FastAPI · python 3.11</text>
+    <text x="280" y="612" text-anchor="middle" font-size="11" fill="#a06b94">deployment</text>
+  </g>
+
+  <!-- env injection terminal -->
+  <g>
+    <rect x="120" y="680" width="320" height="190" rx="6" fill="#0a121e" stroke="#1d3a5e"/>
+    <rect x="120" y="680" width="320" height="22" rx="6" fill="#1d3a5e"/>
+    <circle cx="134" cy="691" r="4" fill="#ff5f57"/>
+    <circle cx="148" cy="691" r="4" fill="#febc2e"/>
+    <circle cx="162" cy="691" r="4" fill="#28c840"/>
+    <text x="430" y="695" text-anchor="end" font-size="11" fill="#7eb8e6">env.injected</text>
+    <text x="138" y="730" font-size="13" fill="#7eb8e6">$ env | grep OTEL</text>
+    <text x="138" y="752" font-size="13" fill="#43e89c">OTEL_EXPORTER_OTLP_</text>
+    <text x="138" y="772" font-size="13" fill="#43e89c">  ENDPOINT=http://otel-</text>
+    <text x="138" y="792" font-size="13" fill="#43e89c">  collector.kagenti-</text>
+    <text x="138" y="812" font-size="13" fill="#43e89c">  system.svc:8335</text>
+    <text x="138" y="840" font-size="13" fill="#7eb8e6">OTEL_SERVICE_NAME=$pod</text>
+    <text x="138" y="860" font-size="11" fill="#39557a">// injected by Kagenti operator</text>
+  </g>
+
+  <!-- column 2: collector stack -->
+  <g filter="url(#neonCollect)">
+    <rect x="620" y="270" width="320" height="80" rx="6" fill="#0c1422" stroke="#39c2ff" stroke-width="1.5"/>
+    <text x="780" y="304" text-anchor="middle" font-size="18" font-weight="700" fill="#39c2ff">otel-collector ▸ Service</text>
+    <text x="780" y="328" text-anchor="middle" font-size="12" fill="#bfe2f0">.kagenti-system.svc:8335</text>
+  </g>
+  <g filter="url(#neonCollect)">
+    <rect x="620" y="380" width="320" height="160" rx="6" fill="#0c1422" stroke="#39c2ff" stroke-width="1.5"/>
+    <text x="780" y="412" text-anchor="middle" font-size="18" font-weight="700" fill="#39c2ff">otel-collector ▸ Pod</text>
+    <text x="780" y="438" text-anchor="middle" font-size="12" fill="#bfe2f0">image:</text>
+    <text x="780" y="460" text-anchor="middle" font-size="13" fill="#9bd6ff">otel/opentelemetry-</text>
+    <text x="780" y="480" text-anchor="middle" font-size="13" fill="#9bd6ff">collector-contrib</text>
+    <text x="780" y="510" text-anchor="middle" font-size="13" fill="#bfe2f0">tag: 0.122.1</text>
+  </g>
+  <g filter="url(#neonCollect)">
+    <rect x="620" y="570" width="320" height="120" rx="6" fill="#0c1422" stroke="#39c2ff" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="780" y="604" text-anchor="middle" font-size="18" font-weight="700" fill="#39c2ff">otel-collector-config</text>
+    <text x="780" y="628" text-anchor="middle" font-size="12" fill="#bfe2f0">ConfigMap</text>
+    <text x="780" y="654" text-anchor="middle" font-size="11" fill="#9bd6ff">receivers: [otlp]</text>
+    <text x="780" y="672" text-anchor="middle" font-size="11" fill="#9bd6ff">exporters: [otlphttp/mlflow, postgres]</text>
+  </g>
+  <g stroke="#39c2ff" stroke-opacity="0.5" stroke-dasharray="4 3" stroke-width="1.2" fill="none" marker-end="url(#arrowD)">
+    <path d="M780,570 L780,540"/>
+  </g>
+
+  <!-- pipeline mini summary -->
+  <g>
+    <rect x="620" y="720" width="320" height="150" rx="6" fill="#0a121e" stroke="#1d3a5e"/>
+    <rect x="620" y="720" width="320" height="22" rx="6" fill="#1d3a5e"/>
+    <text x="930" y="735" text-anchor="end" font-size="11" fill="#7eb8e6">pipeline.yaml</text>
+    <text x="638" y="770" font-size="12" fill="#7eb8e6">service:</text>
+    <text x="638" y="788" font-size="12" fill="#9bd6ff">  pipelines:</text>
+    <text x="638" y="806" font-size="12" fill="#9bd6ff">    traces:</text>
+    <text x="638" y="824" font-size="12" fill="#43e89c">      receivers:  [otlp]</text>
+    <text x="638" y="842" font-size="12" fill="#43e89c">      processors: [batch, attrs]</text>
+    <text x="638" y="860" font-size="12" fill="#43e89c">      exporters:  [otlphttp, pg]</text>
+  </g>
+
+  <!-- column 3: store -->
+  <g filter="url(#neonStore)">
+    <g transform="translate(1080,270)">
+      <ellipse cx="160" cy="14" rx="160" ry="14" fill="#0c1422" stroke="#43e89c" stroke-width="1.5"/>
+      <rect x="0" y="14" width="320" height="200" fill="#0c1422" stroke="#43e89c" stroke-width="1.5"/>
+      <ellipse cx="160" cy="214" rx="160" ry="14" fill="#0c1422" stroke="#43e89c" stroke-width="1.5"/>
+      <text x="160" y="100" text-anchor="middle" font-size="20" font-weight="700" fill="#43e89c">postgres-otel</text>
+      <text x="160" y="128" text-anchor="middle" font-size="12" fill="#bff5d8">Service · :5432</text>
+      <text x="160" y="160" text-anchor="middle" font-size="12" fill="#bff5d8">tables: spans · attributes</text>
+      <text x="160" y="180" text-anchor="middle" font-size="12" fill="#bff5d8">retention: 7d (default)</text>
+    </g>
+  </g>
+
+  <!-- pvc -->
+  <g filter="url(#neonStore)">
+    <rect x="1100" y="540" width="280" height="64" rx="6" fill="#0c1422" stroke="#43e89c" stroke-dasharray="4 3"/>
+    <text x="1240" y="568" text-anchor="middle" font-size="14" font-weight="700" fill="#43e89c">pv / pvc</text>
+    <text x="1240" y="590" text-anchor="middle" font-size="11" fill="#bff5d8">PersistentVolumeClaim</text>
+  </g>
+  <g stroke="#43e89c" stroke-opacity="0.6" stroke-dasharray="4 3" stroke-width="1.2" fill="none" marker-end="url(#arrowD)">
+    <path d="M1240,540 L1240,498"/>
+  </g>
+
+  <!-- store mini stats -->
+  <g>
+    <rect x="1080" y="640" width="320" height="230" rx="6" fill="#0a121e" stroke="#1d3a5e"/>
+    <rect x="1080" y="640" width="320" height="22" rx="6" fill="#1d3a5e"/>
+    <text x="1390" y="655" text-anchor="end" font-size="11" fill="#7eb8e6">postgres-otel.live</text>
+    <text x="1098" y="690" font-size="12" fill="#7eb8e6">spans/sec ............ <tspan fill="#43e89c">▮▮▮▮▮▯▯▯</tspan></text>
+    <text x="1098" y="712" font-size="12" fill="#7eb8e6">storage_used ......... <tspan fill="#43e89c">▮▮▮▯▯▯▯▯</tspan></text>
+    <text x="1098" y="734" font-size="12" fill="#7eb8e6">connections .......... <tspan fill="#43e89c">▮▮▮▮▮▮▯▯</tspan></text>
+    <text x="1098" y="770" font-size="12" fill="#7eb8e6">latest_trace:</text>
+    <text x="1098" y="790" font-size="11" fill="#9bd6ff">  trace_id=4af1...c93b</text>
+    <text x="1098" y="808" font-size="11" fill="#9bd6ff">  service=langchain-claude</text>
+    <text x="1098" y="826" font-size="11" fill="#9bd6ff">  span_count=42</text>
+    <text x="1098" y="850" font-size="11" fill="#39557a">// sample, not live</text>
+  </g>
+
+  <!-- column 4: view -->
+  <g filter="url(#neonView)">
+    <rect x="1540" y="270" width="320" height="240" rx="6" fill="#0c1422" stroke="#ff9b3d" stroke-width="1.5"/>
+    <rect x="1540" y="270" width="320" height="28" fill="#3a230f"/>
+    <circle cx="1556" cy="284" r="4" fill="#ff5f57"/>
+    <circle cx="1570" cy="284" r="4" fill="#febc2e"/>
+    <circle cx="1584" cy="284" r="4" fill="#28c840"/>
+    <text x="1850" y="290" text-anchor="end" font-size="11" fill="#ffd9b8">mlflow.localtest.me</text>
+
+    <!-- waterfall mock -->
+    <g transform="translate(1560,320)">
+      <text x="0" y="0" font-size="11" fill="#ff9b3d">trace · langchain-claude · 1.4s</text>
+      <rect y="14" width="280" height="12" rx="2" fill="#ff9b3d"/>
+      <rect y="32" x="20" width="240" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="48" x="40" width="200" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="64" x="60" width="160" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="80" x="80" width="120" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="96" x="40" width="180" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="112" x="20" width="220" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="128" x="0" width="260" height="10" rx="2" fill="#ffb27a"/>
+      <rect y="144" x="60" width="140" height="10" rx="2" fill="#ffb27a"/>
+    </g>
+    <text x="1700" y="498" text-anchor="middle" font-size="14" font-weight="700" fill="#ff9b3d">mlflow ▸ traces</text>
+  </g>
+  <g>
+    <rect x="1540" y="540" width="320" height="64" rx="6" fill="#0a121e" stroke="#1d3a5e"/>
+    <text x="1700" y="566" text-anchor="middle" font-size="13" fill="#ff9b3d">http://mlflow:5000</text>
+    <text x="1700" y="588" text-anchor="middle" font-size="13" fill="#ffd9b8">/v1/traces · gRPC plaintext</text>
+  </g>
+
+  <!-- horizontal flow path with labels -->
+  <g stroke="#9bd6ff" stroke-width="2" fill="none" marker-end="url(#arrowD)">
+    <path d="M440,310 L620,310"/>
+    <path d="M440,440 L620,420"/>
+    <path d="M440,570 L620,500"/>
+    <path d="M940,420 L1080,360"/>
+    <path d="M940,460 L1080,400"/>
+    <path d="M1400,330 L1540,330"/>
+    <path d="M1400,400 L1540,400"/>
+  </g>
+  <g font-size="11" fill="#7eb8e6">
+    <text x="530" y="302">otlp/grpc</text>
+    <text x="1010" y="354">batch · attrs</text>
+    <text x="1470" y="322">otlphttp/mlflow</text>
+    <text x="1470" y="392">postgres exporter</text>
+  </g>
+
+  <!-- legend / footer -->
+  <g>
+    <rect x="80" y="930" width="1760" height="120" rx="6" fill="#0a121e" stroke="#1d3a5e"/>
+    <text x="100" y="958" font-size="13" fill="#7eb8e6">// legend</text>
+
+    <g transform="translate(100,975)">
+      <rect width="14" height="14" fill="none" stroke="#ff5fd1"/>
+      <text x="22" y="12" font-size="12" fill="#e6f1ff">emit · workload pods</text>
+    </g>
+    <g transform="translate(310,975)">
+      <rect width="14" height="14" fill="none" stroke="#39c2ff"/>
+      <text x="22" y="12" font-size="12" fill="#e6f1ff">collect · otel-collector</text>
+    </g>
+    <g transform="translate(540,975)">
+      <rect width="14" height="14" fill="none" stroke="#43e89c"/>
+      <text x="22" y="12" font-size="12" fill="#e6f1ff">store · postgres + pvc</text>
+    </g>
+    <g transform="translate(770,975)">
+      <rect width="14" height="14" fill="none" stroke="#ff9b3d"/>
+      <text x="22" y="12" font-size="12" fill="#e6f1ff">view · mlflow ui</text>
+    </g>
+
+    <text x="100" y="1015" font-size="13" fill="#e6f1ff">Kagenti provides observability <tspan fill="#43e89c">configuration</tspan>; 100% of the implementation is <tspan fill="#43e89c">open source</tspan>.</text>
+    <text x="100" y="1036" font-size="13" fill="#e6f1ff">LangChain and Claude are pre-instrumented — workloads only need <tspan fill="#43e89c">OTEL_EXPORTER_OTLP_ENDPOINT</tspan>, the rest is wired by the platform.</text>
+  </g>
+</svg>

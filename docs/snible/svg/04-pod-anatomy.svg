@@ -1,0 +1,228 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1150" font-family="RedHatText, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .deployment-box { fill: #f0f4ff; stroke: #326ce5; stroke-width: 2; rx: 8; }
+      .pod-box { fill: #ffffff; stroke: #326ce5; stroke-width: 1.5; rx: 6; stroke-dasharray: 6,3; }
+      .container-agent { fill: #e8f5e9; stroke: #3e8635; stroke-width: 1.5; rx: 4; }
+      .container-injected { fill: #fff3e0; stroke: #f0ab00; stroke-width: 1.5; rx: 4; }
+      .container-init { fill: #fce4ec; stroke: #c9190b; stroke-width: 1.5; rx: 4; }
+      .volume-box { fill: #f3e5f5; stroke: #6c3483; stroke-width: 1; rx: 3; }
+      .webhook-box { fill: #e7f1fa; stroke: #0066cc; stroke-width: 2; rx: 6; }
+      .title { fill: #151515; font-size: 15px; font-weight: 700; }
+      .section-title { fill: #326ce5; font-size: 12px; font-weight: 700; }
+      .container-title { fill: #151515; font-size: 12px; font-weight: 700; }
+      .container-text { fill: #151515; font-size: 10px; }
+      .container-detail { fill: #6a6e73; font-size: 9.5px; }
+      .label-text { fill: #151515; font-size: 10px; font-family: 'Red Hat Mono', monospace; }
+      .volume-text { fill: #4a148c; font-size: 10px; }
+      .inject-arrow { fill: none; stroke: #0066cc; stroke-width: 2; stroke-dasharray: 5,3; marker-end: url(#inject-arrow-head); }
+      .create-arrow { fill: none; stroke: #326ce5; stroke-width: 1.5; marker-end: url(#create-arrow-head); }
+    </style>
+    <marker id="inject-arrow-head" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0066cc"/>
+    </marker>
+    <marker id="create-arrow-head" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#326ce5"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1000" height="1150"/>
+
+  <!-- Title -->
+  <text class="title" x="20" y="28">Deployment → Pod → Sidecar Injection (Mutating Admission Webhook)</text>
+
+  <!-- Webhook box -->
+  <rect class="webhook-box" x="550" y="45" width="430" height="120"/>
+  <text x="565" y="65" fill="#0066cc" font-size="12" font-weight="700">MutatingWebhookConfiguration: inject.kagenti.io</text>
+  <text class="label-text" x="565" y="82">Path: /mutate-workloads-authbridge</text>
+  <text class="label-text" x="565" y="97">Triggers when:</text>
+  <text class="label-text" x="580" y="112">- namespace label: kagenti-enabled="true"</text>
+  <text class="label-text" x="580" y="127">- pod label: kagenti.io/type = agent|tool</text>
+  <text class="label-text" x="580" y="142">- pod label: kagenti.io/inject != disabled</text>
+  <text class="label-text" x="580" y="157">- operation: CREATE (pods only)</text>
+
+  <!-- Deployment box -->
+  <rect class="deployment-box" x="20" y="45" width="500" height="130"/>
+  <text class="section-title" x="35" y="65">Deployment: {agent-name}</text>
+  <text class="label-text" x="35" y="82">metadata.labels:</text>
+  <text class="label-text" x="48" y="96">kagenti.io/inject: "enabled"</text>
+  <text class="label-text" x="48" y="110">kagenti.io/spire: "enabled"</text>
+  <text class="label-text" x="48" y="124">kagenti.io/envoy-proxy-inject: (opt-out)</text>
+  <text class="label-text" x="48" y="138">kagenti.io/spiffe-helper-inject: (opt-out)</text>
+  <text class="label-text" x="48" y="152">kagenti.io/client-registration-inject: (opt-in)</text>
+  <text class="label-text" x="48" y="166">spec.template.metadata.annotations: port exclusions</text>
+
+  <!-- Arrow from Deployment to Pod -->
+  <path class="create-arrow" d="M 270,175 L 270,195"/>
+  <text x="280" y="190" fill="#326ce5" font-size="9">Kubernetes creates</text>
+
+  <!-- Arrow from Webhook to Pod -->
+  <path class="inject-arrow" d="M 700,165 L 700,240 L 520,240 L 520,260"/>
+  <text x="590" y="230" fill="#0066cc" font-size="9">Webhook intercepts &amp; mutates pod spec</text>
+
+  <!-- Pod box -->
+  <rect class="pod-box" x="20" y="200" width="960" height="930"/>
+  <text class="section-title" x="35" y="222">Pod: {agent-name}-{rs-hash}-{pod-hash}</text>
+  <text class="label-text" x="35" y="237">serviceAccountName: {agent-name}</text>
+
+  <!-- Init Containers section -->
+  <text x="35" y="265" fill="#c9190b" font-size="11" font-weight="700">Init Containers</text>
+
+  <!-- proxy-init -->
+  <rect class="container-init" x="40" y="275" width="440" height="100"/>
+  <text class="container-title" x="55" y="293">proxy-init</text>
+  <text class="container-detail" x="150" y="293">(injected by webhook)</text>
+  <text class="container-text" x="55" y="310">Image: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.5.0-alpha.14</text>
+  <text class="container-text" x="55" y="325">Purpose: iptables rules to redirect traffic through envoy-proxy</text>
+  <text class="container-text" x="55" y="340">SecurityContext: runAsUser: 0, capabilities: [NET_ADMIN, NET_RAW]</text>
+  <text class="container-text" x="55" y="355">Reads pod annotations for port exclusion configuration</text>
+  <text class="container-detail" x="55" y="370">Resources: 10m CPU / 10Mi memory</text>
+
+  <!-- sign-agentcard -->
+  <rect class="container-init" x="500" y="275" width="460" height="100"/>
+  <text class="container-title" x="515" y="293">sign-agentcard</text>
+  <text class="container-detail" x="625" y="293">(injected by webhook, only if spireEnabled)</text>
+  <text class="container-text" x="515" y="310">Purpose: Signs the A2A agent card with SPIFFE identity at startup</text>
+  <text class="container-text" x="515" y="325">Mounts: {name}-card-unsigned ConfigMap</text>
+  <text class="container-text" x="515" y="340">Outputs signed agent-card to shared volume</text>
+  <text class="container-text" x="515" y="355">Verifiable identity for agent-to-agent trust</text>
+
+  <!-- Containers section -->
+  <text x="35" y="400" fill="#3e8635" font-size="11" font-weight="700">Containers</text>
+
+  <!-- agent container -->
+  <rect class="container-agent" x="40" y="410" width="440" height="110"/>
+  <text class="container-title" x="55" y="430">agent</text>
+  <text class="container-detail" x="100" y="430">(original workload — NOT injected)</text>
+  <text class="container-text" x="55" y="447">Image: {user-specified-image}</text>
+  <text class="container-text" x="55" y="462">Ports: [{containerPort}/TCP]</text>
+  <text class="container-text" x="55" y="477">VolumeMounts:</text>
+  <text class="container-text" x="70" y="492">- cache → /app/.cache (emptyDir)</text>
+  <text class="container-text" x="70" y="507">- marvin → /.marvin (emptyDir)</text>
+  <text class="container-text" x="70" y="517">- shared-data → /shared (emptyDir)</text>
+
+  <!-- envoy-proxy container -->
+  <rect class="container-injected" x="500" y="410" width="460" height="130"/>
+  <text class="container-title" x="515" y="430">envoy-proxy</text>
+  <text class="container-detail" x="605" y="430">(injected by webhook)</text>
+  <text class="container-text" x="515" y="447">Image: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.5.0-alpha.14</text>
+  <text class="container-text" x="515" y="462">SecurityContext: runAsUser: 1337 (excluded from iptables redirect)</text>
+  <text class="container-text" x="515" y="477">Ports: 15123 (outbound), 15124 (inbound), 9901 (admin)</text>
+  <text class="container-text" x="515" y="492">VolumeMounts:</text>
+  <text class="container-text" x="530" y="507">- envoy-config CM → /etc/envoy/envoy.yaml</text>
+  <text class="container-text" x="530" y="522">- authbridge-runtime-config CM → /etc/authbridge/config.yaml</text>
+  <text class="container-text" x="530" y="537">- authproxy-routes CM → (routes file)</text>
+  <text class="container-detail" x="515" y="537">Resources: 50m/64Mi req, 200m/256Mi limit</text>
+
+  <!-- spiffe-helper container -->
+  <rect class="container-injected" x="40" y="555" width="440" height="120"/>
+  <text class="container-title" x="55" y="575">spiffe-helper</text>
+  <text class="container-detail" x="155" y="575">(injected by webhook)</text>
+  <text class="container-text" x="55" y="592">Image: ghcr.io/kagenti/kagenti-extensions/spiffe-helper:v0.5.0-alpha.14</text>
+  <text class="container-text" x="55" y="607">VolumeMounts:</text>
+  <text class="container-text" x="70" y="622">- spiffe-helper-config CM → /etc/spiffe-helper/helper.conf</text>
+  <text class="container-text" x="70" y="637">- spiffe-workload-api (emptyDir) → /spiffe-workload-api</text>
+  <text class="container-text" x="55" y="652">Outputs: /opt/svid.pem, /opt/svid_key.pem, /opt/svid_bundle.pem</text>
+  <text class="container-text" x="55" y="667">         /opt/jwt_svid.token (audience: "kagenti")</text>
+  <text class="container-detail" x="55" y="672">Resources: 50m/64Mi req, 100m/128Mi limit</text>
+
+  <!-- client-registration container -->
+  <rect class="container-injected" x="500" y="555" width="460" height="120"/>
+  <text class="container-title" x="515" y="575">client-registration</text>
+  <text class="container-detail" x="645" y="575">(injected by webhook)</text>
+  <text class="container-text" x="515" y="592">Image: ghcr.io/kagenti/kagenti-extensions/client-registration:v0.5.0-alpha.14</text>
+  <text class="container-text" x="515" y="607">VolumeMounts:</text>
+  <text class="container-text" x="530" y="622">- authbridge-config CM → env vars (envFrom)</text>
+  <text class="container-text" x="530" y="637">- authbridge-shared (emptyDir) → /shared</text>
+  <text class="container-text" x="530" y="652">- spiffe-workload-api (emptyDir) → /spiffe-workload-api</text>
+  <text class="container-text" x="515" y="667">Env from Secret: keycloak-admin-secret</text>
+  <text class="container-detail" x="515" y="672">Resources: 50m/64Mi req, 100m/128Mi limit</text>
+
+  <!-- Volumes section -->
+  <text x="35" y="705" fill="#4a148c" font-size="11" font-weight="700">Volumes</text>
+
+  <!-- Volume boxes - Row 1 -->
+  <rect class="volume-box" x="40" y="715" width="170" height="50"/>
+  <text class="volume-text" x="50" y="733">cache</text>
+  <text class="container-detail" x="50" y="748">(emptyDir)</text>
+  <text class="container-detail" x="50" y="760">agent work cache</text>
+
+  <rect class="volume-box" x="220" y="715" width="170" height="50"/>
+  <text class="volume-text" x="230" y="733">marvin</text>
+  <text class="container-detail" x="230" y="748">(emptyDir)</text>
+  <text class="container-detail" x="230" y="760">agent metadata</text>
+
+  <rect class="volume-box" x="400" y="715" width="170" height="50"/>
+  <text class="volume-text" x="410" y="733">shared-data</text>
+  <text class="container-detail" x="410" y="748">(emptyDir)</text>
+  <text class="container-detail" x="410" y="760">agent shared files</text>
+
+  <rect class="volume-box" x="580" y="715" width="190" height="50"/>
+  <text class="volume-text" x="590" y="733">spiffe-workload-api</text>
+  <text class="container-detail" x="590" y="748">(emptyDir)</text>
+  <text class="container-detail" x="590" y="760">SPIRE agent socket</text>
+
+  <rect class="volume-box" x="780" y="715" width="180" height="50"/>
+  <text class="volume-text" x="790" y="733">authbridge-shared</text>
+  <text class="container-detail" x="790" y="748">(emptyDir)</text>
+  <text class="container-detail" x="790" y="760">inter-sidecar comms</text>
+
+  <!-- Volume boxes - Row 2 (ConfigMaps) -->
+  <rect class="volume-box" x="40" y="775" width="170" height="50"/>
+  <text class="volume-text" x="50" y="793">envoy-config</text>
+  <text class="container-detail" x="50" y="808">(ConfigMap)</text>
+  <text class="container-detail" x="50" y="820">Envoy proxy YAML</text>
+
+  <rect class="volume-box" x="220" y="775" width="200" height="50"/>
+  <text class="volume-text" x="230" y="793">authbridge-runtime-config</text>
+  <text class="container-detail" x="230" y="808">(ConfigMap)</text>
+  <text class="container-detail" x="230" y="820">AuthBridge pipeline config</text>
+
+  <rect class="volume-box" x="430" y="775" width="170" height="50"/>
+  <text class="volume-text" x="440" y="793">authbridge-config</text>
+  <text class="container-detail" x="440" y="808">(ConfigMap)</text>
+  <text class="container-detail" x="440" y="820">Keycloak URLs, flags</text>
+
+  <rect class="volume-box" x="610" y="775" width="180" height="50"/>
+  <text class="volume-text" x="620" y="793">spiffe-helper-config</text>
+  <text class="container-detail" x="620" y="808">(ConfigMap)</text>
+  <text class="container-detail" x="620" y="820">SPIFFE helper TOML</text>
+
+  <rect class="volume-box" x="800" y="775" width="160" height="50"/>
+  <text class="volume-text" x="810" y="793">authproxy-routes</text>
+  <text class="container-detail" x="810" y="808">(ConfigMap)</text>
+  <text class="container-detail" x="810" y="820">Outbound routing rules</text>
+
+  <!-- Volume boxes - Row 3 (Secrets) -->
+  <rect x="40" y="835" width="200" height="50" fill="#ffebee" stroke="#c9190b" stroke-width="1" rx="3"/>
+  <text x="50" y="853" fill="#c9190b" font-size="10">keycloak-admin-secret</text>
+  <text class="container-detail" x="50" y="868">(Secret)</text>
+  <text class="container-detail" x="50" y="880">KEYCLOAK_ADMIN_USERNAME/PASSWORD</text>
+
+  <!-- Legend -->
+  <rect x="40" y="900" width="920" height="110" fill="#f8f9fa" stroke="#d2d2d2" rx="4"/>
+  <text x="55" y="920" fill="#151515" font-size="11" font-weight="600">Legend</text>
+
+  <rect x="55" y="930" width="20" height="14" fill="#e8f5e9" stroke="#3e8635" rx="2"/>
+  <text x="80" y="941" fill="#151515" font-size="10">Original workload container (from Deployment spec)</text>
+
+  <rect x="55" y="952" width="20" height="14" fill="#fff3e0" stroke="#f0ab00" rx="2"/>
+  <text x="80" y="963" fill="#151515" font-size="10">Sidecar container (injected by webhook at pod admission)</text>
+
+  <rect x="55" y="974" width="20" height="14" fill="#fce4ec" stroke="#c9190b" rx="2"/>
+  <text x="80" y="985" fill="#151515" font-size="10">Init container (injected by webhook)</text>
+
+  <rect x="55" y="996" width="20" height="14" fill="#f3e5f5" stroke="#6c3483" rx="2"/>
+  <text x="80" y="1007" fill="#151515" font-size="10">Volume (emptyDir / ConfigMap / Secret)</text>
+
+  <line x1="400" y1="935" x2="450" y2="935" stroke="#0066cc" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="460" y="939" fill="#151515" font-size="10">Webhook injection (mutating admission)</text>
+
+  <line x1="400" y1="955" x2="450" y2="955" stroke="#326ce5" stroke-width="1.5"/>
+  <text x="460" y="959" fill="#151515" font-size="10">Kubernetes creates (from Deployment spec)</text>
+
+  <rect x="400" y="970" width="590" height="35" fill="none"/>
+  <text x="400" y="984" fill="#151515" font-size="10" font-weight="600">Pod dashed border = created by Kubernetes from Deployment template,</text>
+  <text x="400" y="998" fill="#151515" font-size="10" font-weight="600">then mutated by the kagenti-operator webhook before scheduling.</text>
+</svg>

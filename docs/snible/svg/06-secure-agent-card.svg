@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 760" font-family="RedHatText, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <style>
+      .card-bg { fill: #ffffff; stroke: #d2d2d2; stroke-width: 1; }
+      .card-header { fill: #151515; font-size: 16px; font-weight: 700; }
+      .label-text { fill: #151515; font-size: 13px; }
+      .label-bold { fill: #151515; font-size: 13px; font-weight: 600; }
+      .desc-text { fill: #6a6e73; font-size: 11px; }
+      .checkbox-box { fill: #0066cc; stroke: #0066cc; stroke-width: 1.5; rx: 2; }
+      .checkmark { fill: none; stroke: #ffffff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .section-header { fill: #151515; font-size: 13px; font-weight: 600; }
+      .input-box { fill: #ffffff; stroke: #d2d2d2; stroke-width: 1; rx: 3; }
+      .input-placeholder { fill: #6a6e73; font-size: 12px; }
+      .form-label { fill: #151515; font-size: 12px; font-weight: 600; }
+      .helper-text { fill: #6a6e73; font-size: 11px; }
+      .separator { stroke: #d2d2d2; stroke-width: 1; }
+      .grid-header { fill: #6a6e73; font-size: 11px; font-weight: 600; }
+      .radio-outer { fill: #ffffff; stroke: #0066cc; stroke-width: 1.5; }
+      .radio-outer-unselected { fill: #ffffff; stroke: #8a8d90; stroke-width: 1.5; }
+      .radio-inner { fill: #0066cc; }
+      .btn-add { fill: #0066cc; stroke: #0066cc; stroke-width: 1; rx: 3; }
+      .btn-add-text { fill: #ffffff; font-size: 12px; font-weight: 600; }
+      .table-header-bg { fill: #f5f5f5; stroke: #d2d2d2; stroke-width: 1; }
+      .table-cell { fill: #ffffff; stroke: #d2d2d2; stroke-width: 1; }
+      .group-label { fill: #151515; font-size: 13px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <!-- Card background -->
+  <rect class="card-bg" x="10" y="10" width="760" height="740" rx="4"/>
+
+  <!-- Card header -->
+  <text class="card-header" x="30" y="42">Agent Security</text>
+  <line class="separator" x1="10" y1="55" x2="770" y2="55"/>
+
+  <!-- Secure with AuthBridge -->
+  <rect class="checkbox-box" x="30" y="72" width="16" height="16"/>
+  <polyline class="checkmark" points="33,80 37,84 43,76"/>
+  <text class="label-bold" x="54" y="85">Secure with AuthBridge</text>
+  <text class="desc-text" x="54" y="102">When enabled, the agent will reject inbound A2A without a valid JWT.</text>
+
+  <!-- Secure with SPIRE identity -->
+  <rect class="checkbox-box" x="30" y="122" width="16" height="16"/>
+  <polyline class="checkmark" points="33,130 37,134 43,126"/>
+  <text class="label-bold" x="54" y="135">Secure with SPIRE identity</text>
+
+  <!-- Sandbox networking with Envoy proxy -->
+  <rect class="checkbox-box" x="30" y="158" width="16" height="16"/>
+  <polyline class="checkmark" points="33,166 37,170 43,162"/>
+  <text class="label-text" x="54" y="171">Sandbox networking with Envoy proxy</text>
+
+  <!-- Disable inbound security on ports -->
+  <text class="form-label" x="30" y="208">Disable inbound security on ports:</text>
+  <rect class="input-box" x="260" y="194" width="380" height="28"/>
+  <text class="input-placeholder" x="268" y="212"></text>
+  <text class="helper-text" x="260" y="237">Comma-separated TCP ports</text>
+
+  <!-- Separator before outbound section -->
+  <line class="separator" x1="30" y1="265" x2="750" y2="265"/>
+
+  <!-- Outbound Authorization header control - selected radio -->
+  <circle class="radio-outer" cx="38" cy="290" r="9"/>
+  <circle class="radio-inner" cx="38" cy="290" r="4.5"/>
+  <text class="group-label" x="54" y="294">Outbound Authorization header control</text>
+  <text class="desc-text" x="54" y="311">RFC 8693 / OAuth 2.0 Token Exchange</text>
+  <text class="desc-text" x="54" y="328">Restrict outbound to certain hosts and OIDC audiences and scopes.</text>
+
+  <!-- Routing rules table -->
+  <!-- Header row -->
+  <rect class="table-header-bg" x="54" y="348" width="190" height="28"/>
+  <rect class="table-header-bg" x="244" y="348" width="190" height="28"/>
+  <rect class="table-header-bg" x="434" y="348" width="190" height="28"/>
+  <text class="grid-header" x="64" y="367">Host Pattern</text>
+  <text class="grid-header" x="254" y="367">Target OIDC Audience</text>
+  <text class="grid-header" x="444" y="367">OIDC Token Scopes</text>
+
+  <!-- Input row -->
+  <rect class="table-cell" x="54" y="376" width="190" height="34"/>
+  <rect class="table-cell" x="244" y="376" width="190" height="34"/>
+  <rect class="table-cell" x="434" y="376" width="190" height="34"/>
+  <text class="input-placeholder" x="64" y="397">e.g. github-tool-mcp</text>
+  <text class="input-placeholder" x="254" y="397">e.g. github-tool</text>
+  <text class="input-placeholder" x="444" y="397">scope1 scope2</text>
+
+  <!-- Add button -->
+  <rect class="btn-add" x="638" y="378" width="56" height="30"/>
+  <text class="btn-add-text" x="654" y="397">Add</text>
+
+  <!-- No outbound token restriction - unselected radio -->
+  <circle class="radio-outer-unselected" cx="38" cy="450" r="9"/>
+  <text class="label-text" x="54" y="455">No outbound token restriction</text>
+
+  <!-- Separator -->
+  <line class="separator" x1="30" y1="490" x2="750" y2="490"/>
+
+  <!-- Disable outbound security on ports -->
+  <text class="form-label" x="30" y="528">Disable outbound security on ports:</text>
+  <rect class="input-box" x="260" y="514" width="380" height="28"/>
+  <text class="input-placeholder" x="268" y="532"></text>
+  <text class="helper-text" x="260" y="557">Comma-separated TCP ports</text>
+
+</svg>

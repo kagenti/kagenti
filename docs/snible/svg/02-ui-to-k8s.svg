@@ -1,0 +1,213 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 980" font-family="RedHatText, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .ui-card { fill: #f8f9fa; stroke: #0066cc; stroke-width: 2; rx: 6; }
+      .k8s-resource { fill: #ffffff; stroke: #326ce5; stroke-width: 1.5; rx: 4; }
+      .k8s-header { fill: #326ce5; font-size: 11px; font-weight: 700; fill: #ffffff; }
+      .k8s-header-bg { fill: #326ce5; rx: 4; }
+      .k8s-body-text { fill: #151515; font-size: 11px; font-family: 'Red Hat Mono', monospace; }
+      .ui-field { fill: #151515; font-size: 12px; }
+      .ui-id { fill: #0066cc; font-size: 11px; font-family: 'Red Hat Mono', monospace; }
+      .title { fill: #151515; font-size: 16px; font-weight: 700; }
+      .subtitle { fill: #6a6e73; font-size: 11px; }
+      .arrow { fill: none; stroke: #c9190b; stroke-width: 1.2; marker-end: url(#arrowhead); }
+      .arrow-alt { fill: none; stroke: #3e8635; stroke-width: 1.2; marker-end: url(#arrowhead-green); }
+      .arrow-blue { fill: none; stroke: #0066cc; stroke-width: 1.2; marker-end: url(#arrowhead-blue); }
+      .condition { fill: #f0ab00; font-size: 9px; font-style: italic; }
+      .resource-name { fill: #326ce5; font-size: 12px; font-weight: 600; }
+      .field-label { fill: #6a6e73; font-size: 10px; }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#c9190b"/>
+    </marker>
+    <marker id="arrowhead-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3e8635"/>
+    </marker>
+    <marker id="arrowhead-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0066cc"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1100" height="980"/>
+
+  <!-- Title -->
+  <text class="title" x="20" y="30">UI Form Fields → Kubernetes Resources</text>
+  <text class="subtitle" x="20" y="46">Arrows show which UI input populates which Kubernetes resource field</text>
+
+  <!-- UI Card (left side) -->
+  <rect class="ui-card" x="20" y="60" width="280" height="520"/>
+  <rect x="20" y="60" width="280" height="28" fill="#0066cc" rx="6"/>
+  <rect x="20" y="74" width="280" height="14" fill="#0066cc"/>
+  <text x="30" y="80" fill="#ffffff" font-size="13" font-weight="600">Agent Configuration (AuthBridge)</text>
+
+  <!-- UI Fields -->
+  <rect x="32" y="100" width="12" height="12" fill="#0066cc" rx="2"/>
+  <text class="ui-field" x="50" y="111">authBridgeEnabled</text>
+  <text class="ui-id" x="50" y="124">id="authBridgeEnabled"</text>
+
+  <rect x="32" y="140" width="12" height="12" fill="#0066cc" rx="2"/>
+  <text class="ui-field" x="50" y="151">spireEnabled</text>
+  <text class="ui-id" x="50" y="164">id="spireEnabled"</text>
+
+  <rect x="32" y="180" width="12" height="12" fill="#0066cc" rx="2"/>
+  <text class="ui-field" x="50" y="191">envoyProxyInject</text>
+  <text class="ui-id" x="50" y="204">id="envoyProxyInject"</text>
+
+  <rect x="32" y="220" width="12" height="12" fill="#0066cc" rx="2"/>
+  <text class="ui-field" x="50" y="231">spiffeHelperInject</text>
+  <text class="ui-id" x="50" y="244">id="spiffeHelperInject"</text>
+
+  <rect x="32" y="260" width="12" height="12" fill="#0066cc" rx="2"/>
+  <text class="ui-field" x="50" y="271">clientRegistrationInject</text>
+  <text class="ui-id" x="50" y="284">id="clientRegistrationInject"</text>
+
+  <rect x="32" y="305" width="256" height="22" fill="#ffffff" stroke="#d2d2d2" rx="3"/>
+  <text class="ui-field" x="50" y="320">outboundPortsExclude</text>
+  <text class="ui-id" x="50" y="338">id="outboundPortsExclude"</text>
+
+  <rect x="32" y="355" width="256" height="22" fill="#ffffff" stroke="#d2d2d2" rx="3"/>
+  <text class="ui-field" x="50" y="370">inboundPortsExclude</text>
+  <text class="ui-id" x="50" y="388">id="inboundPortsExclude"</text>
+
+  <rect x="32" y="405" width="256" height="22" fill="#ffffff" stroke="#d2d2d2" rx="3"/>
+  <text class="ui-field" x="50" y="420">outboundRoutes[]</text>
+  <text class="ui-id" x="50" y="438">.host / .target_audience / .token_scopes</text>
+
+  <rect x="32" y="458" width="256" height="22" fill="#ffffff" stroke="#d2d2d2" rx="3"/>
+  <text class="ui-field" x="50" y="473">defaultOutboundPolicy</text>
+  <text class="ui-id" x="50" y="491">id="defaultOutboundPolicy"</text>
+
+  <!-- Kubernetes Resources (right side) -->
+
+  <!-- Deployment -->
+  <rect class="k8s-resource" x="420" y="60" width="340" height="210"/>
+  <rect x="420" y="60" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="74" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="76" fill="#ffffff" font-size="11" font-weight="700">Deployment: {agent-name}</text>
+  <text class="k8s-body-text" x="432" y="100">metadata.labels:</text>
+  <text class="k8s-body-text" x="444" y="115">kagenti.io/inject: "enabled"|"disabled"</text>
+  <text class="k8s-body-text" x="444" y="130">kagenti.io/spire: "enabled"</text>
+  <text class="k8s-body-text" x="444" y="145">kagenti.io/envoy-proxy-inject: "false"</text>
+  <text class="k8s-body-text" x="444" y="160">kagenti.io/spiffe-helper-inject: "false"</text>
+  <text class="k8s-body-text" x="444" y="175">kagenti.io/client-registration-inject: "true"</text>
+  <text class="k8s-body-text" x="432" y="200">spec.template.metadata.annotations:</text>
+  <text class="k8s-body-text" x="444" y="215">kagenti.io/outbound-ports-exclude</text>
+  <text class="k8s-body-text" x="444" y="230">kagenti.io/inbound-ports-exclude</text>
+  <text class="k8s-body-text" x="444" y="250">spec.template.spec.serviceAccountName: {name}</text>
+
+  <!-- ConfigMap: authbridge-config -->
+  <rect class="k8s-resource" x="420" y="290" width="340" height="130"/>
+  <rect x="420" y="290" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="304" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="306" fill="#ffffff" font-size="11" font-weight="700">ConfigMap: authbridge-config</text>
+  <text class="k8s-body-text" x="432" y="330">data:</text>
+  <text class="k8s-body-text" x="444" y="345">KEYCLOAK_URL: (server config)</text>
+  <text class="k8s-body-text" x="444" y="360">KEYCLOAK_REALM: (server config)</text>
+  <text class="k8s-body-text" x="444" y="375">ISSUER: (server config)</text>
+  <text class="k8s-body-text" x="444" y="390">SPIRE_ENABLED: "true"|"false"</text>
+  <text class="k8s-body-text" x="444" y="405">DEFAULT_OUTBOUND_POLICY: "passthrough"|"exchange"</text>
+
+  <!-- ConfigMap: authbridge-runtime-config -->
+  <rect class="k8s-resource" x="420" y="440" width="340" height="100"/>
+  <rect x="420" y="440" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="454" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="456" fill="#ffffff" font-size="11" font-weight="700">ConfigMap: authbridge-runtime-config</text>
+  <text class="k8s-body-text" x="432" y="480">data.config.yaml:</text>
+  <text class="k8s-body-text" x="444" y="495">pipeline.outbound.plugins[0].config</text>
+  <text class="k8s-body-text" x="452" y="510">.identity.type: "spiffe"|"client-secret"</text>
+  <text class="k8s-body-text" x="452" y="525">.default_policy: "passthrough"|"exchange"</text>
+
+  <!-- ConfigMap: authproxy-routes -->
+  <rect class="k8s-resource" x="420" y="560" width="340" height="75"/>
+  <rect x="420" y="560" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="574" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="576" fill="#ffffff" font-size="11" font-weight="700">ConfigMap: authproxy-routes</text>
+  <text class="k8s-body-text" x="432" y="600">data.routes.yaml:</text>
+  <text class="k8s-body-text" x="444" y="615">- host / target_audience / token_scopes</text>
+  <text class="condition" x="432" y="630">(only created if outboundRoutes has entries)</text>
+
+  <!-- ConfigMap: envoy-config (static) -->
+  <rect class="k8s-resource" x="420" y="655" width="340" height="50"/>
+  <rect x="420" y="655" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="669" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="671" fill="#ffffff" font-size="11" font-weight="700">ConfigMap: envoy-config</text>
+  <text class="k8s-body-text" x="432" y="693">(static Envoy YAML -- no UI-driven values)</text>
+
+  <!-- ConfigMap: spiffe-helper-config (static) -->
+  <rect class="k8s-resource" x="420" y="720" width="340" height="50"/>
+  <rect x="420" y="720" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="734" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="736" fill="#ffffff" font-size="11" font-weight="700">ConfigMap: spiffe-helper-config</text>
+  <text class="k8s-body-text" x="432" y="758">(static TOML -- no UI-driven values)</text>
+
+  <!-- AgentRuntime CR -->
+  <rect class="k8s-resource" x="420" y="790" width="340" height="65"/>
+  <rect x="420" y="790" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="804" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="806" fill="#ffffff" font-size="11" font-weight="700">AgentRuntime CR: {agent-name}</text>
+  <text class="k8s-body-text" x="432" y="828">apiVersion: agent.kagenti.dev/v1alpha1</text>
+  <text class="k8s-body-text" x="432" y="843">spec.targetRef: Deployment/{agent-name}</text>
+
+  <!-- ServiceAccount -->
+  <rect class="k8s-resource" x="420" y="875" width="340" height="45"/>
+  <rect x="420" y="875" width="340" height="22" fill="#326ce5" rx="4"/>
+  <rect x="420" y="889" width="340" height="8" fill="#326ce5"/>
+  <text x="430" y="891" fill="#ffffff" font-size="11" font-weight="700">ServiceAccount: {agent-name}</text>
+  <text class="k8s-body-text" x="432" y="910">(always created for SPIFFE identity mapping)</text>
+
+  <!-- Arrows from UI fields to K8s resources (direct lines) -->
+
+  <!-- authBridgeEnabled → Deployment kagenti.io/inject -->
+  <line class="arrow" x1="300" y1="108" x2="420" y2="115"/>
+
+  <!-- spireEnabled → Deployment kagenti.io/spire -->
+  <line class="arrow" x1="300" y1="148" x2="420" y2="130"/>
+
+  <!-- spireEnabled → authbridge-config SPIRE_ENABLED -->
+  <line class="arrow-alt" x1="300" y1="155" x2="420" y2="390"/>
+
+  <!-- spireEnabled → runtime-config identity.type -->
+  <line class="arrow-alt" x1="300" y1="160" x2="420" y2="510"/>
+
+  <!-- envoyProxyInject → Deployment label -->
+  <line class="arrow" x1="300" y1="188" x2="420" y2="145"/>
+
+  <!-- spiffeHelperInject → Deployment label -->
+  <line class="arrow" x1="300" y1="228" x2="420" y2="160"/>
+
+  <!-- clientRegistrationInject → Deployment label -->
+  <line class="arrow" x1="300" y1="268" x2="420" y2="175"/>
+
+  <!-- outboundPortsExclude → Deployment annotation -->
+  <line class="arrow-blue" x1="300" y1="318" x2="420" y2="215"/>
+
+  <!-- inboundPortsExclude → Deployment annotation -->
+  <line class="arrow-blue" x1="300" y1="368" x2="420" y2="230"/>
+
+  <!-- outboundRoutes → authproxy-routes -->
+  <line class="arrow-alt" x1="300" y1="418" x2="420" y2="615"/>
+
+  <!-- defaultOutboundPolicy → authbridge-config -->
+  <line class="arrow-blue" x1="300" y1="468" x2="420" y2="405"/>
+
+  <!-- defaultOutboundPolicy → runtime-config -->
+  <line class="arrow-blue" x1="300" y1="475" x2="420" y2="525"/>
+
+  <!-- authBridgeEnabled → AgentRuntime (creates it) -->
+  <line class="arrow" x1="300" y1="115" x2="420" y2="828"/>
+
+  <!-- Legend -->
+  <rect x="800" y="60" width="280" height="120" fill="#f8f9fa" stroke="#d2d2d2" rx="4"/>
+  <text x="812" y="82" fill="#151515" font-size="12" font-weight="600">Legend</text>
+  <line x1="812" y1="95" x2="850" y2="95" stroke="#c9190b" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="856" y="99" fill="#151515" font-size="11">→ Deployment label/annotation</text>
+  <line x1="812" y1="115" x2="850" y2="115" stroke="#3e8635" stroke-width="1.5" marker-end="url(#arrowhead-green)"/>
+  <text x="856" y="119" fill="#151515" font-size="11">→ ConfigMap data field</text>
+  <line x1="812" y1="135" x2="850" y2="135" stroke="#0066cc" stroke-width="1.5" marker-end="url(#arrowhead-blue)"/>
+  <text x="856" y="139" fill="#151515" font-size="11">→ Annotation or config override</text>
+  <rect x="812" y="148" width="10" height="10" fill="#326ce5" rx="2"/>
+  <text x="828" y="157" fill="#151515" font-size="11">= Kubernetes resource</text>
+  <rect x="812" y="165" width="10" height="10" fill="#f8f9fa" stroke="#0066cc" rx="2"/>
+  <text x="828" y="174" fill="#151515" font-size="11">= UI form card</text>
+</svg>

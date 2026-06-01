@@ -22,23 +22,21 @@ export KAGENTI_FEATURE_FLAG_SKILLS=true
 
 **Note**: The `--with-backend` and `--with-ui` flags are required to deploy the Kagenti backend and UI components where the skills feature is used.
 
-### Using Ansible Installer
+### Using the Kagenti Installer
 
-When using the Ansible installer, enable skills by modifying your values file (e.g., `deployments/envs/.secret_values.yaml` or a custom values file):
+When using the installer, enable skills by modifying your values file (e.g., `deployments/envs/.secret_values.yaml` or a custom values file):
 
-```yaml
-charts:
-  kagenti:
-    values:
-      featureFlags:
-        skills: true
+```bash
+cat <<EOF > /tmp/enable-flag-skills.yaml
+featureFlags:
+  skills: true
+EOF
 ```
 
 Then run the installer:
 
 ```bash
-cd deployments/ansible
-./run-install.sh
+./scripts/kind/setup-kagenti.sh --with-all --kagenti-values /tmp/enable-flag-skills.yaml
 ```
 
 ### Using Helm

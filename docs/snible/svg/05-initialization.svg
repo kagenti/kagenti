@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 850" font-family="RedHatText, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .pod-box { fill: #f8f9fa; stroke: #326ce5; stroke-width: 2; rx: 8; }
+      .container-box { fill: #ffffff; stroke: #6a6e73; stroke-width: 1.5; rx: 4; }
+      .external-box { fill: #ffffff; stroke: #151515; stroke-width: 2; rx: 6; }
+      .title { fill: #151515; font-size: 15px; font-weight: 700; }
+      .entity-title { fill: #151515; font-size: 12px; font-weight: 700; }
+      .entity-text { fill: #151515; font-size: 10.5px; }
+      .entity-detail { fill: #6a6e73; font-size: 10px; }
+      .arrow-label { fill: #151515; font-size: 9.5px; font-weight: 600; }
+      .arrow-detail { fill: #6a6e73; font-size: 9px; }
+      .comm-arrow { fill: none; stroke: #c9190b; stroke-width: 2; marker-end: url(#comm-head); }
+      .comm-arrow-bi { fill: none; stroke: #0066cc; stroke-width: 2; marker-end: url(#comm-head-blue); marker-start: url(#comm-tail-blue); }
+      .data-arrow { fill: none; stroke: #3e8635; stroke-width: 1.5; marker-end: url(#data-head); stroke-dasharray: 4,2; }
+      .flow-num { fill: #ffffff; font-size: 10px; font-weight: 700; }
+      .flow-circle { fill: #c9190b; }
+      .flow-circle-green { fill: #3e8635; }
+      .flow-circle-blue { fill: #0066cc; }
+      .summary-box { fill: #f8f9fa; stroke: #d2d2d2; stroke-width: 1; rx: 4; }
+    </style>
+    <marker id="comm-head" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#c9190b"/>
+    </marker>
+    <marker id="comm-head-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0066cc"/>
+    </marker>
+    <marker id="comm-tail-blue" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <polygon points="8 0, 0 3, 8 6" fill="#0066cc"/>
+    </marker>
+    <marker id="data-head" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3e8635"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1000" height="850"/>
+
+  <!-- Title -->
+  <text class="title" x="20" y="28">AuthBridge Initialization — Pod Startup Communication</text>
+
+  <!-- SPIRE Server (external, top) -->
+  <rect class="external-box" x="60" y="50" width="250" height="80"/>
+  <text class="entity-title" x="75" y="70">SPIRE Server</text>
+  <text class="entity-text" x="75" y="87">Namespace: kagenti-system</text>
+  <text class="entity-text" x="75" y="102">Issues X.509 SVIDs and JWT-SVIDs</text>
+  <text class="entity-text" x="75" y="117">Validates workload attestation</text>
+
+  <!-- Keycloak (external, right) -->
+  <rect class="external-box" x="700" y="50" width="280" height="100"/>
+  <text class="entity-title" x="715" y="70">Keycloak</text>
+  <text class="entity-text" x="715" y="87">Namespace: keycloak</text>
+  <text class="entity-text" x="715" y="102">Realm: kagenti</text>
+  <text class="entity-text" x="715" y="117">Dynamic Client Registration endpoint</text>
+  <text class="entity-text" x="715" y="132">JWKS endpoint for JWT validation</text>
+
+  <!-- Pod box -->
+  <rect class="pod-box" x="20" y="180" width="960" height="400"/>
+  <text x="35" y="200" fill="#326ce5" font-size="12" font-weight="700">Pod: {agent-name}-xxxxx</text>
+  <text x="35" y="215" fill="#6a6e73" font-size="10">serviceAccountName: {agent-name}</text>
+
+  <!-- spiffe-helper container -->
+  <rect class="container-box" x="40" y="230" width="280" height="150"/>
+  <text class="entity-title" x="55" y="250">spiffe-helper</text>
+  <text class="entity-text" x="55" y="270">Connects to SPIRE agent via</text>
+  <text class="entity-text" x="55" y="285">/spiffe-workload-api/spire-agent.sock</text>
+  <text class="entity-text" x="55" y="305">Outputs:</text>
+  <text class="entity-detail" x="70" y="320">/opt/svid.pem (X.509 certificate)</text>
+  <text class="entity-detail" x="70" y="335">/opt/svid_key.pem (private key)</text>
+  <text class="entity-detail" x="70" y="350">/opt/svid_bundle.pem (CA bundle)</text>
+  <text class="entity-detail" x="70" y="365">/opt/jwt_svid.token (JWT-SVID)</text>
+
+  <!-- client-registration container -->
+  <rect class="container-box" x="380" y="230" width="300" height="150"/>
+  <text class="entity-title" x="395" y="250">client-registration</text>
+  <text class="entity-text" x="395" y="270">Reads X.509 SVID from shared volume</text>
+  <text class="entity-text" x="395" y="285">Uses SPIFFE identity for mTLS to Keycloak</text>
+  <text class="entity-text" x="395" y="305">Registers as OAuth2 client:</text>
+  <text class="entity-detail" x="410" y="320">- client_id (from SPIFFE trust domain)</text>
+  <text class="entity-detail" x="410" y="335">- grant_types: client_credentials</text>
+  <text class="entity-detail" x="410" y="350">- token_endpoint_auth: tls_client_auth</text>
+  <text class="entity-text" x="395" y="370">Writes credentials to /shared</text>
+
+  <!-- envoy-proxy container -->
+  <rect class="container-box" x="730" y="230" width="230" height="150"/>
+  <text class="entity-title" x="745" y="250">envoy-proxy</text>
+  <text class="entity-text" x="745" y="270">Listens on:</text>
+  <text class="entity-detail" x="760" y="285">:15123 (outbound)</text>
+  <text class="entity-detail" x="760" y="300">:15124 (inbound)</text>
+  <text class="entity-text" x="745" y="320">ext_proc → :9090</text>
+  <text class="entity-detail" x="760" y="335">(AuthBridge binary)</text>
+  <text class="entity-text" x="745" y="355">Reads credentials from</text>
+  <text class="entity-text" x="745" y="370">/shared for token exchange</text>
+
+  <!-- agent container -->
+  <rect class="container-box" x="40" y="420" width="280" height="80"/>
+  <text class="entity-title" x="55" y="440">agent (workload)</text>
+  <text class="entity-text" x="55" y="460">HTTP traffic transparently intercepted</text>
+  <text class="entity-text" x="55" y="475">by iptables → envoy-proxy</text>
+  <text class="entity-text" x="55" y="490">No awareness of AuthBridge</text>
+
+  <!-- Shared volume -->
+  <rect x="380" y="420" width="300" height="55" fill="#f3e5f5" stroke="#6c3483" rx="4"/>
+  <text x="395" y="440" fill="#4a148c" font-size="11" font-weight="600">Shared Volumes</text>
+  <text x="395" y="458" fill="#4a148c" font-size="10">spiffe-workload-api — SPIRE agent socket</text>
+  <text x="395" y="472" fill="#4a148c" font-size="10">authbridge-shared — credentials exchange</text>
+
+  <!-- Flow arrows -->
+
+  <!-- (1) spiffe-helper → SPIRE Server -->
+  <path class="comm-arrow" d="M 180,230 L 180,130"/>
+  <circle class="flow-circle" cx="180" cy="175" r="9"/>
+  <text class="flow-num" x="176" y="179">1</text>
+
+  <!-- Label for flow 1 -->
+  <text class="arrow-label" x="195" y="165">gRPC via Unix socket</text>
+  <text class="arrow-detail" x="195" y="178">Workload attestation →</text>
+  <text class="arrow-detail" x="195" y="191">← X.509 SVID + JWT-SVID</text>
+
+  <!-- (2) spiffe-helper → shared volume (writes SVIDs) -->
+  <path class="data-arrow" d="M 320,350 L 380,430"/>
+  <circle class="flow-circle-green" cx="345" cy="385" r="9"/>
+  <text class="flow-num" x="341" y="389">2</text>
+
+  <!-- Label for flow 2 -->
+  <text class="arrow-label" x="350" y="402">Filesystem write</text>
+  <text class="arrow-detail" x="350" y="414">SVID cert + key + bundle</text>
+
+  <!-- (2b) shared volume → client-registration (reads SVIDs) -->
+  <path class="data-arrow" d="M 520,420 L 520,380"/>
+
+  <!-- (3) client-registration → Keycloak -->
+  <path class="comm-arrow" d="M 680,280 L 700,280 L 830,150"/>
+  <circle class="flow-circle" cx="770" cy="210" r="9"/>
+  <text class="flow-num" x="766" y="214">3</text>
+
+  <!-- Label for flow 3 -->
+  <text class="arrow-label" x="780" y="195">HTTPS + mTLS</text>
+  <text class="arrow-detail" x="780" y="207">(X.509 SVID as client cert)</text>
+  <text class="arrow-detail" x="690" y="220">OAuth2 Dynamic Client Registration</text>
+
+  <!-- (4) client-registration → shared volume (writes creds) -->
+  <path class="data-arrow" d="M 530,380 L 540,420"/>
+  <circle class="flow-circle-green" cx="535" cy="395" r="9"/>
+  <text class="flow-num" x="531" y="399">4</text>
+
+  <!-- (5) envoy-proxy reads from shared -->
+  <path class="data-arrow" d="M 680,447 L 730,380"/>
+  <circle class="flow-circle-green" cx="705" cy="414" r="9"/>
+  <text class="flow-num" x="701" y="418">5</text>
+
+  <!-- Label for flow 4/5 -->
+  <text class="arrow-label" x="640" y="485">Credentials written to /shared;</text>
+  <text class="arrow-detail" x="640" y="497">AuthBridge reads for token exchange</text>
+
+  <!-- Summary box -->
+  <rect class="summary-box" x="20" y="600" width="960" height="235"/>
+  <text x="35" y="622" fill="#151515" font-size="12" font-weight="700">Communication Summary (Initialization Sequence)</text>
+
+  <!-- Step 1 -->
+  <circle class="flow-circle" cx="45" cy="648" r="9"/>
+  <text class="flow-num" x="41" y="652">1</text>
+  <text class="entity-text" x="60" y="644" font-weight="600">spiffe-helper → SPIRE Server (via SPIRE Agent DaemonSet)</text>
+  <text class="entity-detail" x="60" y="658">Protocol: gRPC over Unix domain socket (/spiffe-workload-api/spire-agent.sock)</text>
+  <text class="entity-detail" x="60" y="672">Data sent: Workload attestation (pod UID, service account, namespace)</text>
+  <text class="entity-detail" x="60" y="686">Data received: X.509 SVID certificate, JWT-SVID (audience: kagenti), CA trust bundle</text>
+
+  <!-- Step 2 -->
+  <circle class="flow-circle-green" cx="45" cy="710" r="9"/>
+  <text class="flow-num" x="41" y="714">2</text>
+  <text class="entity-text" x="60" y="706" font-weight="600">spiffe-helper → shared volume → client-registration</text>
+  <text class="entity-detail" x="60" y="720">Protocol: Filesystem (emptyDir volume)</text>
+  <text class="entity-detail" x="60" y="734">Data: X.509 certificate (/opt/svid.pem), private key (/opt/svid_key.pem), JWT token (/opt/jwt_svid.token)</text>
+
+  <!-- Step 3 -->
+  <circle class="flow-circle" cx="45" cy="758" r="9"/>
+  <text class="flow-num" x="41" y="762">3</text>
+  <text class="entity-text" x="60" y="754" font-weight="600">client-registration → Keycloak</text>
+  <text class="entity-detail" x="60" y="768">Protocol: HTTPS with mTLS (X.509 SVID as client certificate)</text>
+  <text class="entity-detail" x="60" y="782">Data sent: OAuth2 Dynamic Client Registration request (client_id from SPIFFE trust domain)</text>
+  <text class="entity-detail" x="60" y="796">Data received: Confirmed client_id, client_secret (or confirmation of mTLS-only auth)</text>
+
+  <!-- Step 4-5 -->
+  <circle class="flow-circle-green" cx="45" cy="815" r="9"/>
+  <text class="flow-num" x="38" y="819">4-5</text>
+  <text class="entity-text" x="60" y="813" font-weight="600">client-registration → shared volume → envoy-proxy (AuthBridge binary)</text>
+  <text class="entity-detail" x="60" y="827">Protocol: Filesystem (/shared volume), then gRPC ext_proc on localhost:9090</text>
+
+</svg>

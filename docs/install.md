@@ -42,7 +42,7 @@ brew install podman    # recommended for macOS
 # or: brew install --cask docker   # Docker Desktop
 
 # If using Podman, create and start a machine with sufficient resources:
-podman machine init --memory 18432 --cpus 4
+podman machine init --memory 18432 --cpus 6
 podman machine start
 ```
 
@@ -113,6 +113,7 @@ scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-builds
 | `--with-builds` | Tekton + Shipwright (build agents from source) |
 | `--with-kiali` | Kiali + Prometheus (auto-enables Istio ambient) |
 | `--with-all` | All of the above |
+| `--with-examples` | Weather agent and tool sample |
 
 **Other options:**
 
@@ -441,10 +442,6 @@ kubectl get secret keycloak-admin-secret -n team1
 # SPIRE OIDC (Kind)
 curl http://spire-oidc.localtest.me:8080/keys
 curl http://spire.localtest.me:8080/.well-known/openid-configuration
-
-# Tornjak API
-curl http://spire-tornjak-api.localtest.me:8080/
-# Expected: "Welcome to the Tornjak Backend!"
 
 # Tornjak UI
 open http://spire-tornjak-ui.localtest.me:8080/
