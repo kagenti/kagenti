@@ -264,11 +264,12 @@ mcpGateway:
   namespaces:
     mcpSystem: mcp-system
     gatewaySystem: gateway-system
-  # TODO: Investigate why only the hostname 'mcp.127-0-0-1.sslip.io' works for MCP Gateway.
-  # Observed behavior: When using this hostname, the MCP Gateway is accessible and functions as expected.
-  # Other values tried:  'mcp.localtest.me', and 'mcp.sslip.io' were tested but failed to route traffic correctly.
-  # Expected behavior: The MCP Gateway should work with any valid hostname or IP address configured for local development.
+  # Hostname used for the Gateway listener on non-OpenShift (Kind) clusters.
   hostname: 'mcp.127-0-0-1.sslip.io'
+  # On OpenShift, the Gateway listener hostname is auto-constructed from this
+  # domain to match the auto-generated Route hostname. Override in ocp_values.yaml.
+  openshiftDomain: ''
+
 # ------------------------------------------------------------------
 #  Phoenix Configuration
 # ------------------------------------------------------------------

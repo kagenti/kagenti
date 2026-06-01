@@ -54,7 +54,7 @@ SKIP_MCP_GATEWAY=true
 SKIP_UI=false
 SKIP_MLFLOW=false
 SHOW_SECRETS=false
-MCP_GATEWAY_VERSION="0.5.1"
+MCP_GATEWAY_VERSION="0.6.0"
 OPERATOR_REPO=""
 OPERATOR_IMAGE=""
 DRY_RUN=false
@@ -1426,6 +1426,7 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set mlflow.auth.enabled=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}" \
+  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
   --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
@@ -1517,10 +1518,15 @@ if $SKIP_MCP_GATEWAY; then
 elif helm status mcp-gateway -n mcp-system &>/dev/null; then
   log_info "MCP Gateway already installed — skipping"
 else
-  log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION}..."
+  MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"
+  log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION} (publicHost=${MCP_GW_PUBLIC_HOST})..."
   run_cmd helm install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
-    --create-namespace --namespace mcp-system --version "$MCP_GATEWAY_VERSION"
+    --create-namespace --namespace mcp-system --version "$MCP_GATEWAY_VERSION" \
+    --set "gateway.publicHost=${MCP_GW_PUBLIC_HOST}"
   log_success "MCP Gateway installed"
+
+  log_info "Waiting for MCP Gateway broker-router deployment..."
+  _wait_deployment_ready mcp-gateway mcp-system "MCP Gateway broker-router"
 fi
 echo ""
 

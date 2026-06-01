@@ -19,7 +19,14 @@ spec:
   gatewayClassName: istio
   listeners:
     - name: mcp
+      {{- if .Values.openshift }}
+      {{- if not .Values.mcpGateway.openshiftDomain }}
+      {{- fail "mcpGateway.openshiftDomain is required on OpenShift (set by scripts/ocp/setup-kagenti.sh)" }}
+      {{- end }}
+      hostname: "mcp-gateway-{{ .Values.mcpGateway.namespaces.gatewaySystem }}.{{ .Values.mcpGateway.openshiftDomain }}"
+      {{- else }}
       hostname: "{{ .Values.mcpGateway.hostname }}"
+      {{- end }}
       port: 8080
       protocol: HTTP
       allowedRoutes:

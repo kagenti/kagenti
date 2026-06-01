@@ -110,6 +110,9 @@ charts:
         useServiceAccountCA: true
       keycloak:
         url: http://keycloak-service.keycloak:8080
+      # mcpGateway.openshiftDomain is set dynamically by the installer via:
+      #   --set "mcpGateway.openshiftDomain=${DOMAIN}"
+      # See scripts/ocp/setup-kagenti.sh. Example: apps.kagenti1.kubestellar.org
       agentNamespaces:
         - team1
         - team2
