@@ -2072,54 +2072,118 @@ async def get_shipwright_build_info(
         raise HTTPException(status_code=e.status, detail=str(e.reason))
 
 
+def _get_authbridge_runtime_yaml() -> str:
+    """Read the authbridge runtime config from the Helm-managed ConfigMap.
+
+    The pipeline configuration is defined in values.yaml (authBridge.pipeline),
+    rendered by the Helm chart into the authbridge-runtime-config ConfigMap,
+    and mounted into the backend pod. This is the single source of truth.
+
+    Falls back to legacy in-memory construction when the file does not
+    exist (e.g. local development outside the cluster).
+    """
+    config_path = settings.authbridge_runtime_config_path
+    try:
+        with open(config_path, "r") as f:
+            content = f.read()
+        if content.strip():
+            return content
+    except FileNotFoundError:
+        logger.warning(
+            "AuthBridge runtime config not found at %s; "
+            "falling back to legacy in-memory construction",
+            config_path,
+        )
+    except OSError as e:
+        logger.warning(
+            "Failed to read AuthBridge runtime config from %s: %s; "
+            "falling back to legacy construction",
+            config_path,
+            e,
+        )
+
+    return _build_authbridge_runtime_yaml_fallback()
+
+
 def _build_authbridge_runtime_yaml(
     keycloak_url: str,
     realm: str,
     issuer: str,
-    spire_enabled: bool,
+    spire_enabled: bool = False,
 ) -> str:
-    """Build the YAML config for the unified authbridge binary.
+    """Build authbridge runtime config YAML with explicit parameters.
 
-    The operator reads this as the base for per-agent ConfigMap generation,
-    merging in mode and listener addresses at injection time. The Helm chart
-    creates an equivalent ConfigMap for pre-declared namespaces
-    (see charts/kagenti/templates/agent-namespaces.yaml).
+    This function is used by tests to generate authbridge configuration
+    with specific parameters, independent of the settings object.
 
-    Emits the per-plugin schema: every plugin-specific setting lives under
-    its own `config:` block inside pipeline.inbound.plugins[] or
-    pipeline.outbound.plugins[]. Plugin-level defaults (audience_file,
-    bypass_paths, identity file paths) are intentionally omitted — the
-    authbridge binary applies them from its own convention layer
-    (see authbridge/authlib/plugins/CONVENTIONS.md). Leaving them out
-    here keeps the backend-generated ConfigMap minimal and the schema
-    source-of-truth in one place.
+    Args:
+        keycloak_url: Internal Keycloak URL for JWKS and token exchange
+        realm: Keycloak realm name
+        issuer: Public issuer URL (must match JWT "iss" claim)
+        spire_enabled: Whether to enable SPIFFE/SPIRE identity
+
+    Returns:
+        YAML string containing the authbridge runtime configuration
     """
     identity_type = "spiffe" if spire_enabled else "client-secret"
-    # jwt-validation receives keycloak_url + keycloak_realm so it can
-    # derive jwks_url from the INTERNAL keycloak URL rather than the
-    # public `issuer`. Required for split-horizon deployments where
-    # `issuer` isn't reachable from inside the pod. See
-    # kagenti-extensions#383.
-    # Note: Remember to keep AuthBridgeConfig in kagenti/ui-v2/src/types/index.ts
-    # in sync with this YAML runtime configuration.
-    # No top-level `mode:` — the operator resolves it per workload from
-    # AgentRuntime.Spec.AuthBridgeMode → namespace ConfigMap →
-    # cluster default (proxy-sidecar). Hardcoding it here would pin
-    # every backend-rendered ConfigMap to one shape regardless of CR.
     identity: dict[str, str] = {"type": identity_type}
     if identity_type == "spiffe":
-        # JWT-SVID client-assertion audience — must match what Keycloak's
-        # SPIFFE IdP expects (the realm issuer URL). Required by
-        # authbridge's token-exchange plugin in the spiffe identity path.
-        # See kagenti-extensions#332.
+        identity["jwt_audience"] = issuer
+
+    config: dict[str, object] = {}
+    if spire_enabled:
+        config["spiffe"] = {}
+
+    config["pipeline"] = {
+        "inbound": {
+            "plugins": [
+                {
+                    "name": "jwt-validation",
+                    "config": {
+                        "issuer": issuer,
+                        "keycloak_url": keycloak_url,
+                        "keycloak_realm": realm,
+                    },
+                }
+            ]
+        },
+        "outbound": {
+            "plugins": [
+                {
+                    "name": "token-exchange",
+                    "config": {
+                        "keycloak_url": keycloak_url,
+                        "keycloak_realm": realm,
+                        "default_policy": "passthrough",
+                        "identity": identity,
+                    },
+                }
+            ]
+        },
+    }
+
+    return yaml.dump(config, default_flow_style=False)
+
+
+def _build_authbridge_runtime_yaml_fallback() -> str:
+    """Legacy fallback: construct authbridge runtime config in-memory.
+
+    Used when the mounted ConfigMap is unavailable (local dev, tests).
+    The canonical source of truth is values.yaml authBridge.pipeline,
+    rendered by the Helm chart and mounted at the path specified by
+    settings.authbridge_runtime_config_path.
+    """
+    keycloak_url = settings.keycloak_url or DEFAULT_KEYCLOAK_INTERNAL_URL
+    realm = settings.effective_keycloak_realm or DEFAULT_KEYCLOAK_REALM
+    issuer = f"{settings.effective_keycloak_url}/realms/{realm}"
+    spire_enabled = False
+
+    identity_type = "spiffe" if spire_enabled else "client-secret"
+    identity: dict[str, str] = {"type": identity_type}
+    if identity_type == "spiffe":
         identity["jwt_audience"] = issuer
     config: dict[str, object] = {}
     if spire_enabled:
-        # Empty spiffe block signals authbridge to construct the in-process
-        # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
-        # tokenexchange). All fields default: socket points at the standard
-        # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation.
-        # The JWT audience lives per-tokenexchange (under identity above).
         config["spiffe"] = {}
     config["pipeline"] = {
         "inbound": {
@@ -2193,17 +2257,12 @@ def _ensure_authbridge_configmaps(
     # 2. authbridge-runtime-config (YAML config for the unified authbridge binary)
     # The operator reads this at admission time and creates a per-agent ConfigMap
     # with mode and listener addresses merged in.
+    # Source of truth: values.yaml authBridge.pipeline → Helm renders ConfigMap →
+    # mounted into this pod → _get_authbridge_runtime_yaml() reads it.
     kube.ensure_configmap(
         namespace=namespace,
         name="authbridge-runtime-config",
-        data={
-            "config.yaml": _build_authbridge_runtime_yaml(
-                keycloak_url=keycloak_url,
-                realm=realm,
-                issuer=issuer,
-                spire_enabled=spire_enabled,
-            )
-        },
+        data={"config.yaml": _get_authbridge_runtime_yaml()},
     )
 
     # 3. envoy-config

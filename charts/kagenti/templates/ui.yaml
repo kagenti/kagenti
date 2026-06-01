@@ -64,6 +64,8 @@ spec:
       labels:
         app.kubernetes.io/name: kagenti-backend
         app.kubernetes.io/component: backend
+      annotations:
+        checksum/authbridge-runtime-config: {{ include "kagenti.authbridge-runtime-config-yaml" . | sha256sum }}
     spec:
       serviceAccountName: kagenti-backend
       {{- if .Values.ui.auth.enabled }}
@@ -257,6 +259,9 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: authbridge-runtime-config
+              mountPath: /etc/kagenti/authbridge
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
@@ -266,6 +271,9 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: authbridge-runtime-config
+          configMap:
+            name: authbridge-runtime-config
 ---
 # Backend Service
 apiVersion: v1
