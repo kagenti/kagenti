@@ -65,8 +65,10 @@ async def acp_websocket(
                 aud = [aud]
             azp = token_data.raw_token.get("azp", "")
             allowed = {*aud, azp} if azp else set(aud)
-            if allowed and namespace not in allowed and "account" not in allowed:
-                logger.warning("ACP namespace mismatch (conn=%s)", uuid4().hex[:8])
+            # Deny if: no audience claims at all, or namespace not in allowed set
+            # "account" is Keycloak's default audience for all tokens
+            if not allowed or (namespace not in allowed and "account" not in allowed):
+                logger.warning("ACP namespace denied (conn=%s)", uuid4().hex[:8])
                 await websocket.close(code=4003, reason="Access denied for this namespace")
                 return
         except Exception:
