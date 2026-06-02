@@ -169,15 +169,6 @@ keycloak:
   adminSecretName: keycloak-initial-admin
   adminUsernameKey: username
   adminPasswordKey: password
-  # Keycloak admin credentials (keycloak-admin-secret in kagenti-system namespace).
-  # Used by the kagenti-operator client registration controller to register
-  # agents as OAuth clients. For production, override via .secret_values.yaml
-  # or use an existing secret.
-  adminUsername: admin
-  adminPassword: admin
-  # Set to an existing Secret name to skip creating keycloak-admin-secret.
-  # The referenced secret must have KEYCLOAK_ADMIN_USERNAME and KEYCLOAK_ADMIN_PASSWORD keys.
-  # adminExistingSecret: ""
   url: http://keycloak-service.keycloak:8080
   publicUrl: http://keycloak.localtest.me:8080
   realm: kagenti
@@ -249,14 +240,10 @@ kagenti-operator-chart:
         requests:
           cpu: 50m
           memory: 128Mi
-  # SPIRE trust domain for the ClientRegistrationReconciler. Required when
-  # authbridge-config has SPIRE_ENABLED=true: the reconciler builds SPIFFE-shaped
-  # Keycloak client IDs (spiffe://<trust-domain>/ns/<ns>/sa/<sa>).
-  # Kind default: localtest.me (matches kagenti-deps spire.trustDomain).
-  # OpenShift: the ansible installer overrides this with the detected
-  # ocp_trust_domain.
-  signatureVerification:
-    spireTrustDomain: localtest.me
+  # SPIRE trust domain is auto-discovered by the operator from ZTWIM CR or spire-bundle ConfigMap.
+  # Set signatureVerification.spireTrustDomain only to override auto-discovery.
+  # signatureVerification:
+  #   spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
   #
   # After kagenti-extensions#411 there are three combined images:
