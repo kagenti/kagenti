@@ -390,6 +390,7 @@ def main() -> None:
             "OIDC_REDIRECT_URI": redirect_uri,
             "OIDC_SCOPE": "openid email profile",
             "OIDC_GROUPS_CLAIM": "groups",
+            "DEFAULT_LANDING_PAGE_IS_PERMISSIONS": "false",
         }
 
         create_or_update_k8s_resource(
