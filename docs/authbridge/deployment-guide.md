@@ -15,6 +15,87 @@ The proxy-sidecar mode is the recommended default for most environments.
 | **Image** | `authbridge-light` (29 MB, distroless) | `authbridge-envoy` (140 MB, UBI9-micro) |
 | **Use when** | Standard deployments | Need transparent interception of non-HTTP protocols |
 
+## Verifying and Tuning Sidecar Injection
+
+The number of containers in a Kagenti agent pod depends on the resolved
+AuthBridge mode (above) **and** on per-workload labels that opt individual
+sidecars in or out. If you see a different `READY` count than you expect
+(e.g. `3/3` instead of `2/2`), the labels on the pod template — not a
+cluster-wide setting — are usually responsible.
+
+### Verify the current mode and container layout
+
+```bash
+# List containers in the pod
+kubectl get pod -n <namespace> -l app.kubernetes.io/name=<workload> \
+  -o jsonpath='{.items[0].spec.containers[*].name}'
+
+# Inspect injection-relevant labels
+kubectl get pod -n <namespace> -l app.kubernetes.io/name=<workload> \
+  -o jsonpath='{.items[0].metadata.labels}' | jq
+```
+
+### Containers per mode + label combination
+
+`spiffe-helper` and `envoy-proxy` are **injected by default** when their
+respective feature gates are on (which is the default Helm config).
+`kagenti-client-registration` is **not** an in-pod sidecar in operator
+0.2+ — the operator's reconciler handles registration outside the pod
+and mounts the resulting Secret. The legacy sidecar can still be
+requested via `kagenti.io/client-registration-inject=true` for
+compatibility.
+
+| Workload labels | Resolved mode | Containers (READY count) | Init containers |
+|---|---|---|---|
+| `kagenti.io/type=agent` (Helm defaults) | `envoy-sidecar` | `agent`, `envoy-proxy`, `spiffe-helper` (`3/3`) | `proxy-init` |
+| `kagenti.io/type=agent` (Helm defaults) | `proxy-sidecar` | `agent`, `authbridge-proxy`, `spiffe-helper` (`3/3`) | — |
+| `kagenti.io/type=agent` + `kagenti.io/spiffe-helper-inject=false` | `envoy-sidecar` | `agent`, `envoy-proxy` (`2/2`) | `proxy-init` |
+| `kagenti.io/type=agent` + `kagenti.io/spiffe-helper-inject=false` | `proxy-sidecar` | `agent`, `authbridge-proxy` (`2/2`) | — |
+| `kagenti.io/type=agent` + `kagenti.io/spire=disabled` | any | (same as `spiffe-helper-inject=false` row above) | as above |
+| `kagenti.io/type=agent` + `kagenti.io/inject=disabled` | n/a — opted out | `agent` only (`1/1`) | — |
+
+### Workload-level controls
+
+These labels go on the **pod template** (e.g.
+`spec.template.metadata.labels` on a Deployment), not on the workload
+itself. All controls are **opt-out**: the absence of a label leaves the
+sidecar enabled. Only the listed disable values block injection — any
+other value is treated as "no opinion."
+
+| Label | Default | Effect |
+|---|---|---|
+| `kagenti.io/type` | (required) | Must be `agent` or `tool` — without it the webhook skips the workload entirely. |
+| `kagenti.io/inject` | (allow) | Set to `disabled` to opt the whole workload out of all sidecars. |
+| `kagenti.io/spire` | (allow) | Set to `disabled` to skip `spiffe-helper` (no SPIFFE identity / JWT-SVID for this workload). |
+| `kagenti.io/envoy-proxy-inject` | (allow) | Set to `false` to skip `envoy-proxy` (and the `proxy-init` init container) in envoy-sidecar mode. |
+| `kagenti.io/spiffe-helper-inject` | (allow) | Set to `false` to skip the `spiffe-helper` sidecar. |
+| `kagenti.io/client-registration-inject` | (skip) | Set to `true` to opt back into the legacy in-pod client-registration sidecar. |
+
+The full label vocabulary (and precedence) lives in the webhook source —
+see [`kagenti-operator/internal/webhook/injector/`](https://github.com/kagenti/kagenti-operator/tree/main/kagenti-operator/internal/webhook/injector)
+(`pod_mutator.go` for label constants, `precedence.go` for the per-sidecar
+decision chain).
+
+### Cluster-admin controls (feature gates)
+
+Cluster operators can disable injection globally or per-sidecar via the
+`kagenti-feature-gates` ConfigMap in `kagenti-system`:
+
+```yaml
+# kubectl get cm kagenti-feature-gates -n kagenti-system -o yaml
+data:
+  feature-gates.yaml: |
+    globalEnabled: true       # kill switch — false disables ALL injection
+    injectTools: false        # tool workloads are not injected by default
+    envoyProxy: true          # per-sidecar enable
+    spiffeHelper: true
+    clientRegistration: true  # legacy in-pod client-registration sidecar
+    combinedSidecar: false
+```
+
+Workload-level labels are evaluated against these gates: a sidecar is
+injected only when both the cluster gate and the workload label allow it.
+
 ## Proxy-Sidecar Mode (Default)
 
 ### How It Works
