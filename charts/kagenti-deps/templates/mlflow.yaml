@@ -131,7 +131,7 @@ spec:
           export HOME=/tmp && \
           pip install --no-cache-dir --quiet "psycopg[binary]" && \
           {{- if .Values.mlflow.auth.enabled }}
-          pip install --no-cache-dir --quiet "mlflow-oidc-auth" && \
+          pip install --no-cache-dir --quiet "mlflow-oidc-auth>=7.3.1,<8" && \
           {{- end }}
           {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
           # Combine system CAs with the ingress CA so Python can verify both
@@ -205,11 +205,11 @@ spec:
           # Skip auth entirely — Istio mTLS protects this path.
           original_is_unprotected = AuthMiddleware._is_unprotected_route
           def patched_is_unprotected(self, path: str) -> bool:
-              if path.startswith("/v1/traces"):
+              if path.startswith("/v1/traces") or path in ("/version", "/health", "/ping"):
                   return True
               return original_is_unprotected(self, path)
           AuthMiddleware._is_unprotected_route = patched_is_unprotected
-          print("Excluded /v1/traces from OIDC auth (mTLS via Istio)")
+          print("Excluded /v1/traces, /version, /health, /ping from OIDC auth")
 
           # Patch 2: Skip permission validation for /v1/traces
           # mlflow-oidc-auth v7+ adds a FastAPI permission middleware that checks
