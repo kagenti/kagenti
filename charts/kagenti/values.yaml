@@ -9,7 +9,6 @@ domain: localtest.me
 featureFlags:
   # Sandbox runtime (session management, file browser, sidecars).
   # NOT YET FULLY IMPLEMENTED — backend modules not merged. Do not enable.
-  # See 2026-04-21-agent-sandbox-workload-type-design.md
   # See PR #996
   sandbox: false
   # Third-party integration endpoints.
@@ -21,6 +20,7 @@ featureFlags:
   # kubernetes-sigs/agent-sandbox Sandbox workload type.
   # Requires agent-sandbox CRDs (Enabled by `--with-agent-sandbox`).
   # See docs/architecture/agent-sandbox.md
+  # See docs/superpowers/specs/2026-04-21-agent-sandbox-workload-type-design.md
   agentSandbox: false
   # Pluggable skills system.
   # See PR #1344
