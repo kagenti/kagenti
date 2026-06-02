@@ -32,7 +32,7 @@ import {
   CheckCircleIcon,
   PlusCircleIcon,
 } from '@patternfly/react-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 
 import { agentService, toolService, skillService, namespaceService } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -157,20 +157,27 @@ export const HomePage: React.FC = () => {
     queryFn: () => namespaceService.list(true),
   });
 
-  // Fetch agents from first namespace (for demo stats)
-  const defaultNamespace = namespaces[0] || 'team1';
-  const { data: agents = [], isLoading: agentsLoading } = useQuery({
-    queryKey: ['agents', defaultNamespace],
-    queryFn: () => agentService.list(defaultNamespace),
-    enabled: namespaces.length > 0,
+  // Fetch agents from ALL enabled namespaces and aggregate
+  const agentQueries = useQueries({
+    queries: namespaces.map((ns: string) => ({
+      queryKey: ['agents', ns],
+      queryFn: () => agentService.list(ns),
+      enabled: namespaces.length > 0,
+    })),
   });
+  const agentsLoading = agentQueries.some((q) => q.isLoading);
+  const agents = agentQueries.flatMap((q) => q.data ?? []);
 
-  // Fetch tools from first namespace
-  const { data: tools = [], isLoading: toolsLoading } = useQuery({
-    queryKey: ['tools', defaultNamespace],
-    queryFn: () => toolService.list(defaultNamespace),
-    enabled: namespaces.length > 0,
+  // Fetch tools from ALL enabled namespaces and aggregate
+  const toolQueries = useQueries({
+    queries: namespaces.map((ns: string) => ({
+      queryKey: ['tools', ns],
+      queryFn: () => toolService.list(ns),
+      enabled: namespaces.length > 0,
+    })),
   });
+  const toolsLoading = toolQueries.some((q) => q.isLoading);
+  const tools = toolQueries.flatMap((q) => q.data ?? []);
 
   // Get feature flags
   const features = useFeatureFlags();
