@@ -8,11 +8,13 @@ and audit logging.
 
 import base64
 import logging
+import os
 import time
 from functools import lru_cache
 from typing import AsyncIterator
 
 import grpc
+import httpx
 
 from app.services.kubernetes import get_kubernetes_service
 from app.services.openshell.v1 import exec_pb2, exec_pb2_grpc
@@ -23,6 +25,7 @@ GATEWAY_SERVICE = "openshell-server"
 GATEWAY_PORT = 8080
 CLIENT_TLS_SECRET = "openshell-client-tls"
 TLS_CACHE_TTL = 300
+TOKEN_REFRESH_MARGIN = 30
 
 
 class OpenShellGatewayClient:
@@ -31,16 +34,14 @@ class OpenShellGatewayClient:
     def __init__(self):
         self._channels: dict[str, grpc.aio.Channel] = {}
         self._tls_cache: dict[str, tuple[float, grpc.ChannelCredentials]] = {}
+        self._token_cache: dict[str, tuple[float, str]] = {}
 
     def _load_tls_credentials(self, namespace: str) -> grpc.ChannelCredentials:
         cached = self._tls_cache.get(namespace)
         if cached and (time.monotonic() - cached[0]) < TLS_CACHE_TTL:
             return cached[1]
 
-        logger.info(
-            "Loading TLS credentials for namespace %s",
-            namespace,
-        )
+        logger.info("Loading TLS credentials for namespace %s", namespace)
         kube = get_kubernetes_service()
         secret = kube.core_api.read_namespaced_secret(name=CLIENT_TLS_SECRET, namespace=namespace)
         cert = base64.b64decode(secret.data["tls.crt"])
@@ -54,6 +55,67 @@ class OpenShellGatewayClient:
         )
         self._tls_cache[namespace] = (time.monotonic(), creds)
         return creds
+
+    def _get_oidc_token(self, namespace: str) -> str:
+        """Get a JWT for the gateway from Keycloak using client credentials."""
+        cached = self._token_cache.get(namespace)
+        if cached and (time.monotonic() - cached[0]) < TLS_CACHE_TTL:
+            return cached[1]
+
+        kube = get_kubernetes_service()
+        secrets = kube.core_api.list_namespaced_secret(
+            namespace=namespace,
+            label_selector="kagenti.io/managed-by=kagenti-ui",
+        )
+        client_id = ""
+        client_secret = ""
+        for s in secrets.items:
+            if s.data and "client-id.txt" in s.data and "client-secret.txt" in s.data:
+                client_id = base64.b64decode(s.data["client-id.txt"]).decode()
+                client_secret = base64.b64decode(s.data["client-secret.txt"]).decode()
+                break
+
+        if not client_id:
+            keycloak_secrets = kube.core_api.list_namespaced_secret(namespace=namespace)
+            for s in keycloak_secrets.items:
+                if s.data and "client-id.txt" in s.data:
+                    client_id = base64.b64decode(s.data["client-id.txt"]).decode()
+                    client_secret = base64.b64decode(s.data["client-secret.txt"]).decode()
+                    break
+
+        if not client_id:
+            logger.warning("No Keycloak client credentials found in %s", namespace)
+            return ""
+
+        keycloak_url = os.getenv(
+            "KEYCLOAK_URL",
+            "http://keycloak.localtest.me:8080",
+        )
+        token_url = f"{keycloak_url}/realms/openshell/protocol/openid-connect/token"
+
+        try:
+            resp = httpx.post(
+                token_url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "scope": "openid",
+                },
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            token = resp.json()["access_token"]
+            expires_in = resp.json().get("expires_in", 300)
+            self._token_cache[namespace] = (
+                time.monotonic() + expires_in - TOKEN_REFRESH_MARGIN,
+                token,
+            )
+            logger.info("Obtained OIDC token for gateway (expires in %ds)", expires_in)
+            return token
+        except Exception as e:
+            logger.warning("Failed to get OIDC token: %s", type(e).__name__)
+            return ""
 
     def _get_channel(self, namespace: str) -> grpc.aio.Channel:
         if namespace in self._channels:
@@ -107,8 +169,13 @@ class OpenShellGatewayClient:
             tty=False,
         )
 
+        metadata = []
+        token = self._get_oidc_token(namespace)
+        if token:
+            metadata.append(("authorization", f"Bearer {token}"))
+
         try:
-            response_stream = stub.ExecSandbox(request)
+            response_stream = stub.ExecSandbox(request, metadata=metadata)
             chunk_count = 0
             async for event in response_stream:
                 payload = event.WhichOneof("payload")
@@ -140,8 +207,9 @@ class OpenShellGatewayClient:
             if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                 self._tls_cache.pop(namespace, None)
                 self._channels.pop(namespace, None)
+                self._token_cache.pop(namespace, None)
                 logger.warning(
-                    "Evicted cached TLS credentials after auth failure",
+                    "Evicted cached credentials after auth failure",
                     extra={"namespace": namespace},
                 )
             raise
@@ -152,6 +220,7 @@ class OpenShellGatewayClient:
             await channel.close()
         self._channels.clear()
         self._tls_cache.clear()
+        self._token_cache.clear()
 
 
 @lru_cache

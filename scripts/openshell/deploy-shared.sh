@@ -890,6 +890,9 @@ rules:
   resources: ["secrets"]
   verbs: ["get"]
   resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
