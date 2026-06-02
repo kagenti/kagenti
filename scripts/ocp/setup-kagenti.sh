@@ -1509,14 +1509,19 @@ if $WITH_KUADRANT; then
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
 
-    log_info "Creating Kuadrant CR..."
-    $KUBECTL apply -f - <<EOF
-apiVersion: kuadrant.io/v1beta1
+    if $KUBECTL get crd kuadrants.kuadrant.io &>/dev/null; then
+      log_info "Creating Kuadrant CR..."
+      _kuadrant_api=$($KUBECTL get crd kuadrants.kuadrant.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' | awk '{print $NF}')
+      $KUBECTL apply -f - <<EOF
+apiVersion: kuadrant.io/${_kuadrant_api}
 kind: Kuadrant
 metadata:
   name: kuadrant
   namespace: ${KUADRANT_NS}
 EOF
+    else
+      log_info "Kuadrant CRD not present (v1.4+) — skipping CR creation"
+    fi
   fi
 
   log_success "Kuadrant installed"
