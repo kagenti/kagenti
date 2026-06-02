@@ -6,6 +6,6 @@ version: 0.6.0-rc.12
 appVersion: "0.6.0-rc.12"
 dependencies:
   - name: kagenti-operator-chart
-    version: 0.2.0-rc.5
+    version: 0.2.0-rc.6
     repository: oci://ghcr.io/kagenti/kagenti-operator
     condition: components.agentOperator.enabled
