@@ -397,6 +397,8 @@ spec:
           value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/mlflow"
         - name: OIDC_ALEMBIC_VERSION_TABLE
           value: "mlflow_oidc_alembic_version"
+        - name: DEFAULT_LANDING_PAGE_IS_PERMISSIONS
+          value: "false"
         {{- end }}
         ports:
         - containerPort: 5000
