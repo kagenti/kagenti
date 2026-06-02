@@ -1215,6 +1215,28 @@ if $WITH_MCP_GATEWAY; then
   kubectl create namespace mcp-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
   kubectl create namespace gateway-system --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
 
+  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+  # version that used a different API group). A stuck finalizer prevents the controller
+  # from creating the broker-router deployment on reinstall.
+  for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
+    _stuck=$(kubectl get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
+      | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('metadata', {}).get('deletionTimestamp'):
+        print(item['metadata']['name'])
+" 2>/dev/null || echo "")
+    if [ -n "$_stuck" ]; then
+      echo "$_stuck" | while read -r _name; do
+        log_warn "Removing stuck finalizer from MCPGatewayExtension/${_name} (${_crd_group})"
+        kubectl patch "mcpgatewayextensions.${_crd_group}/${_name}" -n mcp-system \
+          --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
+      done
+      sleep 2
+    fi
+  done
+
   log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION}..."
   run_cmd helm upgrade --install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
     -n mcp-system --create-namespace --version "$MCP_GATEWAY_VERSION" \

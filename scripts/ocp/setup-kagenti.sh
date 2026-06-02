@@ -1515,12 +1515,34 @@ log_info "Step 5b: Install MCP Gateway"
 
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
-elif helm status mcp-gateway -n mcp-system &>/dev/null; then
-  log_info "MCP Gateway already installed — skipping"
 else
+  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+  # version that used a different API group). A stuck finalizer prevents the controller
+  # from creating the broker-router deployment on reinstall.
+  if ! $DRY_RUN; then
+    for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
+      _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
+        | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('metadata', {}).get('deletionTimestamp'):
+        print(item['metadata']['name'])
+" 2>/dev/null || echo "")
+      if [ -n "$_stuck" ]; then
+        echo "$_stuck" | while read -r _name; do
+          log_warn "Removing stuck finalizer from MCPGatewayExtension/${_name} (${_crd_group})"
+          $KUBECTL patch "mcpgatewayextensions.${_crd_group}/${_name}" -n mcp-system \
+            --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
+        done
+        sleep 2
+      fi
+    done
+  fi
+
   MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"
   log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION} (publicHost=${MCP_GW_PUBLIC_HOST})..."
-  run_cmd helm install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
+  run_cmd helm upgrade --install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
     --create-namespace --namespace mcp-system --version "$MCP_GATEWAY_VERSION" \
     --set "gateway.publicHost=${MCP_GW_PUBLIC_HOST}"
   log_success "MCP Gateway installed"
