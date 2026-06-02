@@ -131,7 +131,7 @@ spec:
           export HOME=/tmp && \
           pip install --no-cache-dir --quiet "psycopg[binary]" && \
           {{- if .Values.mlflow.auth.enabled }}
-          pip install --no-cache-dir --quiet "mlflow-oidc-auth" && \
+          pip install --no-cache-dir --quiet "mlflow-oidc-auth>=7.3.1,<8" && \
           {{- end }}
           {{- if and .Values.openshift .Values.mlflow.auth.enabled }}
           # Combine system CAs with the ingress CA so Python can verify both
@@ -192,24 +192,41 @@ spec:
           # IMPORTANT: Patch BEFORE importing app (app is created at import time)
           from mlflow_oidc_auth.middleware.auth_middleware import AuthMiddleware
           import mlflow_oidc_auth.middleware.fastapi_permission_middleware as fpm
+          import mlflow_oidc_auth.hooks.before_request as _before_request
 
           # Assert patched APIs exist — fail fast on mlflow-oidc-auth upgrades
           assert hasattr(AuthMiddleware, "_is_unprotected_route"), \
               "mlflow-oidc-auth API changed: AuthMiddleware._is_unprotected_route not found"
           assert hasattr(fpm, "_find_fastapi_validator"), \
               "mlflow-oidc-auth API changed: _find_fastapi_validator not found"
+          assert hasattr(_before_request, "_is_unprotected_route"), \
+              "mlflow-oidc-auth API changed: before_request._is_unprotected_route not found"
 
-          # Patch 1: Exclude /v1/traces from OIDC auth
+          # Patch 1: Exclude /v1/traces, /version, /ping from OIDC auth (FastAPI gate)
           # The OTel collector authenticates via OAuth2 client credentials (Bearer token)
           # but may not have a user profile in the MLflow users table.
-          # Skip auth entirely — Istio mTLS protects this path.
+          # /version and /ping are health-check endpoints that should never require auth.
+          # Skip auth entirely — Istio mTLS protects /v1/traces.
           original_is_unprotected = AuthMiddleware._is_unprotected_route
           def patched_is_unprotected(self, path: str) -> bool:
-              if path.startswith("/v1/traces"):
+              if path.startswith("/v1/traces") or path in ("/version", "/ping"):
                   return True
               return original_is_unprotected(self, path)
           AuthMiddleware._is_unprotected_route = patched_is_unprotected
-          print("Excluded /v1/traces from OIDC auth (mTLS via Istio)")
+          print("Excluded /v1/traces, /version, /ping from OIDC auth (FastAPI gate)")
+
+          # Patch 1b: Exclude /version, /ping from Flask before_request auth gate
+          # /version and /ping are Flask routes that pass through both FastAPI middleware
+          # AND the Flask before_request hook. Without this patch, Gate A (above) skips
+          # auth (so no username is set), then Gate B returns 401 because username is None.
+          # /health is already natively exempt at this layer.
+          _original_flask_is_unprotected = _before_request._is_unprotected_route
+          def _patched_flask_is_unprotected(path: str) -> bool:
+              if path in ("/version", "/ping"):
+                  return True
+              return _original_flask_is_unprotected(path)
+          _before_request._is_unprotected_route = _patched_flask_is_unprotected
+          print("Excluded /version, /ping from Flask before_request auth gate")
 
           # Patch 2: Skip permission validation for /v1/traces
           # mlflow-oidc-auth v7+ adds a FastAPI permission middleware that checks
