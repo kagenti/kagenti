@@ -125,8 +125,8 @@ cd kagenti
 git checkout v0.5.1
 
 # Copy and configure secrets
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
-# Edit deployments/envs/.secret_values.yaml with your values
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
+# Edit charts/kagenti/.secrets.yaml with your values
 
 # Deploy to Kind cluster
 scripts/kind/setup-kagenti.sh --with-ui --with-spire --with-agent-sandbox --with-builds

@@ -41,30 +41,27 @@ Do you have an OpenShift cluster?
 Before deploying to any environment, create the secrets file:
 
 ```bash
-# Copy the example file
-cp deployments/envs/secret_values.yaml.example deployments/envs/.secret_values.yaml
+# Copy the template
+cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
 
 # Edit with your values
-vi deployments/envs/.secret_values.yaml
+vi charts/kagenti/.secrets.yaml
 ```
 
-Required values in `.secret_values.yaml`:
+Required values in `.secrets.yaml`:
 
 ```yaml
-charts:
-  kagenti:
-    values:
-      secrets:
-        # Required for agent LLM features (weather-service chat, etc.)
-        openaiApiKey: "sk-..."
+secrets:
+  # Required for agent LLM features (weather-service chat, etc.)
+  openaiApiKey: "sk-..."
 
-        # Required for private repos and Shipwright builds
-        githubUser: "your-username"
-        githubToken: "ghp_..."
+  # Required for private repos and Shipwright builds
+  githubUser: "your-username"
+  githubToken: "ghp_..."
 
-        # Optional: Slack integration
-        slackBotToken: "xoxb-..."
-        adminSlackBotToken: "xoxb-..."
+  # Optional: Slack integration
+  slackBotToken: "xoxb-..."
+  adminSlackBotToken: "xoxb-..."
 ```
 
 ### Alternative: Environment Variables
@@ -77,7 +74,7 @@ export GITHUB_USER="your-username"
 export GITHUB_TOKEN_VALUE="ghp_..."
 
 # Force regeneration from env vars
-rm -f deployments/envs/.secret_values.yaml
+rm -f charts/kagenti/.secrets.yaml
 ```
 
 ## Documentation Structure

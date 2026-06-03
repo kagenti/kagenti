@@ -381,17 +381,14 @@ The installer automatically creates `keycloak-admin-secret` in every agent names
 
 If your Keycloak admin credentials differ from the defaults, override them using a values file (preferred over `--set` to avoid exposing passwords in shell history and process listings):
 
-**OCP installer** (via `.secret_values.yaml`):
+**Secrets file** (via `.secrets.yaml`):
 
-Add to your `deployments/envs/.secret_values.yaml`:
+Add to your `charts/kagenti/.secrets.yaml`:
 
 ```yaml
-charts:
-  kagenti:
-    values:
-      keycloak:
-        adminUsername: myadmin
-        adminPassword: mypassword
+keycloak:
+  adminUsername: myadmin
+  adminPassword: mypassword
 ```
 
 **Helm install** (via values file):
