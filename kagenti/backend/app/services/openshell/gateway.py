@@ -63,33 +63,19 @@ class OpenShellGatewayClient:
             return cached[1]
 
         kube = get_kubernetes_service()
-        secrets = kube.core_api.list_namespaced_secret(
-            namespace=namespace,
-            label_selector="kagenti.io/managed-by=kagenti-ui",
-        )
-        client_id = ""
-        client_secret = ""
-        for s in secrets.items:
-            if s.data and "client-id.txt" in s.data and "client-secret.txt" in s.data:
-                client_id = base64.b64decode(s.data["client-id.txt"]).decode()
-                client_secret = base64.b64decode(s.data["client-secret.txt"]).decode()
-                break
-
-        if not client_id:
-            keycloak_secrets = kube.core_api.list_namespaced_secret(namespace=namespace)
-            for s in keycloak_secrets.items:
-                if s.data and "client-id.txt" in s.data:
-                    client_id = base64.b64decode(s.data["client-id.txt"]).decode()
-                    client_secret = base64.b64decode(s.data["client-secret.txt"]).decode()
-                    break
-
-        if not client_id:
-            logger.warning("No Keycloak client credentials found in %s", namespace)
+        try:
+            secret = kube.core_api.read_namespaced_secret(
+                name="kagenti-backend-oidc", namespace=namespace
+            )
+            client_id = base64.b64decode(secret.data["client-id"]).decode()
+            client_secret = base64.b64decode(secret.data["client-secret"]).decode()
+        except Exception:
+            logger.warning("No kagenti-backend-oidc secret in %s", namespace)
             return ""
 
         keycloak_url = os.getenv(
             "KEYCLOAK_URL",
-            "http://keycloak.localtest.me:8080",
+            "http://keycloak-service.keycloak.svc:8080",
         )
         token_url = f"{keycloak_url}/realms/openshell/protocol/openid-connect/token"
 
@@ -100,13 +86,13 @@ class OpenShellGatewayClient:
                     "grant_type": "client_credentials",
                     "client_id": client_id,
                     "client_secret": client_secret,
-                    "scope": "openid",
                 },
                 timeout=10.0,
             )
             resp.raise_for_status()
-            token = resp.json()["access_token"]
-            expires_in = resp.json().get("expires_in", 300)
+            token_data = resp.json()
+            token = token_data["access_token"]
+            expires_in = token_data.get("expires_in", 300)
             self._token_cache[namespace] = (
                 time.monotonic() + expires_in - TOKEN_REFRESH_MARGIN,
                 token,

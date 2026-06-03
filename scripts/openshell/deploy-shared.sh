@@ -403,6 +403,24 @@ if $STEP_KEYCLOAK; then
       -s 'attributes={\"pkce.code.challenge.method\":\"S256\"}' \
       2>/dev/null" 2>/dev/null || true
 
+    # 4b2: Create confidential client for backend → gateway gRPC
+    log_info "Creating client: kagenti-backend (confidential, service account)"
+    kc_exec "$KCADM create clients --config $KC_CONFIG -r openshell \
+      -s clientId=kagenti-backend \
+      -s enabled=true \
+      -s publicClient=false \
+      -s serviceAccountsEnabled=true \
+      -s clientAuthenticatorType=client-secret \
+      -s secret=kagenti-backend-secret \
+      -s directAccessGrantsEnabled=false \
+      2>/dev/null" 2>/dev/null || true
+
+    # Store backend client credentials as K8s secret
+    kubectl create secret generic kagenti-backend-oidc \
+      --from-literal=client-id=kagenti-backend \
+      --from-literal=client-secret=kagenti-backend-secret \
+      -n "$BACKEND_NS" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+
     # 4c: Create roles
     for role in openshell-admin openshell-user; do
       log_info "Creating role: $role"
@@ -889,10 +907,7 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["get"]
-  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls"]
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["list"]
+  resourceNames: ["postgres-sessions-secret", "litemaas-credentials", "litellm-virtual-keys", "openshell-client-tls", "kagenti-backend-oidc"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
