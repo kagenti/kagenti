@@ -61,6 +61,31 @@ fi
 
 log_success "All Kagenti Operator CRDs established"
 
+# ── Ensure keycloak-admin-secret exists in kagenti-system ────────────────────
+# The operator's ClientRegistrationReconciler reads admin credentials from
+# keycloak-admin-secret in its own namespace to register Keycloak clients.
+# PR #1791 removed the Helm template that created this; the operator blocks
+# with "waiting for keycloak-admin-secret" without it.  Copy from
+# keycloak-initial-admin (created by the Keycloak operator in the keycloak ns).
+KC_NS="${KEYCLOAK_NAMESPACE:-keycloak}"
+OPERATOR_NS="${KAGENTI_NAMESPACE:-kagenti-system}"
+if ! kubectl get secret keycloak-admin-secret -n "$OPERATOR_NS" &>/dev/null; then
+    log_info "Creating keycloak-admin-secret in $OPERATOR_NS from keycloak-initial-admin..."
+    KC_USER=$(kubectl get secret keycloak-initial-admin -n "$KC_NS" -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+    KC_PASS=$(kubectl get secret keycloak-initial-admin -n "$KC_NS" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+    if [ -n "$KC_USER" ] && [ -n "$KC_PASS" ]; then
+        kubectl create secret generic keycloak-admin-secret -n "$OPERATOR_NS" \
+            --from-literal=KEYCLOAK_ADMIN_USERNAME="$KC_USER" \
+            --from-literal=KEYCLOAK_ADMIN_PASSWORD="$KC_PASS" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "keycloak-admin-secret created in $OPERATOR_NS"
+    else
+        log_warn "Could not read keycloak-initial-admin from $KC_NS — operator may block"
+    fi
+else
+    log_info "keycloak-admin-secret already exists in $OPERATOR_NS"
+fi
+
 # Wait for kagenti-operator pod to be ready.
 # The operator's ClientRegistrationReconciler creates per-workload credential
 # secrets when agent pods are admitted by the webhook.  If the operator isn't
