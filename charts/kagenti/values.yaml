@@ -223,6 +223,30 @@ authBridge:
   spiffeIdpAlias: "spire-spiffe"
   # How long AuthBridge fast-polls for credential files before switching to backoff
   credentialWaitTimeout: "120s"
+  # Full authbridge pipeline configuration (single source of truth).
+  # SREs modify this block to change inbound/outbound plugins.
+  # Helm template expressions ({{ .Values.* }}) are supported — they are
+  # evaluated at render time via tpl().
+  pipeline: |
+    inbound:
+      plugins:
+        - name: jwt-validation
+          config:
+            issuer: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+            keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+            keycloak_realm: {{ .Values.keycloak.realm | quote }}
+    outbound:
+      plugins:
+        - name: token-exchange
+          config:
+            keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
+            keycloak_realm: {{ .Values.keycloak.realm | quote }}
+            default_policy: "passthrough"
+            identity:
+              type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
+              {{- if eq .Values.authBridge.clientAuthType "federated-jwt" }}
+              jwt_audience: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
+              {{- end }}
 
 # ------------------------------------------------------------------
 #  SPIFFE Identity Provider Setup Job Configuration

@@ -260,6 +260,7 @@ static_resources:
                 envoy_grpc:
                   cluster_name: ext_proc_cluster
                 timeout: 300s
+              message_timeout: 310s
               processing_mode:
                 request_header_mode: SEND
                 response_header_mode: SKIP
@@ -321,6 +322,7 @@ static_resources:
                 envoy_grpc:
                   cluster_name: ext_proc_cluster
                 timeout: 300s
+              message_timeout: 310s
               processing_mode:
                 request_header_mode: SEND
                 response_header_mode: SKIP

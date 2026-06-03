@@ -34,46 +34,7 @@ data:
   # default (proxy-sidecar) wins by default, and a namespace-level
   # override can still be added later by editing this ConfigMap.
   config.yaml: |
-    {{- if .Values.spire.enabled }}
-    # Empty spiffe block signals authbridge to construct an in-process
-    # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
-    # tokenexchange). All fields default: socket points at the standard
-    # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation. The
-    # JWT audience is per-tokenexchange (see identity.jwt_audience below).
-    spiffe: {}
-    {{- end }}
-    pipeline:
-      inbound:
-        plugins:
-          - name: jwt-validation
-            config:
-              # `issuer` carries the PUBLIC Keycloak URL because that is what
-              # Keycloak stamps into the `iss` claim of issued tokens (must
-              # match bit-for-bit for validation to pass).
-              issuer: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
-              # `keycloak_url` + `keycloak_realm` let jwt-validation derive
-              # `jwks_url` from the INTERNAL Keycloak URL — the sidecar
-              # fetches JWKS from inside the cluster, and the public
-              # hostname in `issuer` isn't reachable from inside the pod.
-              # Mirrors the pair already passed to token-exchange below.
-              # See kagenti-extensions#383.
-              keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
-              keycloak_realm: {{ .Values.keycloak.realm | quote }}
-      outbound:
-        plugins:
-          - name: token-exchange
-            config:
-              keycloak_url: "http://keycloak-service.{{ .Values.keycloak.namespace }}.svc:8080"
-              keycloak_realm: {{ .Values.keycloak.realm | quote }}
-              default_policy: "passthrough"
-              identity:
-                type: {{ eq .Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" .Values.authBridge.clientAuthType | quote }}
-                {{- if eq .Values.authBridge.clientAuthType "federated-jwt" }}
-                # Audience the JWT-SVID client assertion is minted with —
-                # must equal the audience Keycloak's SPIFFE IdP expects
-                # (the realm issuer URL). Only meaningful when type=spiffe.
-                jwt_audience: "{{ .Values.keycloak.publicUrl }}/realms/{{ .Values.keycloak.realm }}"
-                {{- end }}
+    {{- include "kagenti.authbridge-runtime-config-yaml" . | nindent 4 }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -142,6 +103,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
@@ -195,6 +157,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND

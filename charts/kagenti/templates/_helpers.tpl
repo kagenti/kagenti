@@ -87,3 +87,17 @@ CrashLoopBackOff. See kagenti-extensions#332.
 {{- fail "authBridge.clientAuthType=federated-jwt requires spire.enabled=true (the in-process SPIFFE provider is needed to mint JWT-SVID client assertions)" -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+AuthBridge runtime config YAML (config.yaml content for authbridge-runtime-config ConfigMap).
+Single source of truth: evaluates authBridge.pipeline from values.yaml via tpl(),
+prepends the conditional spiffe block when SPIRE is enabled.
+Both authbridge-template-configmaps.yaml and agent-namespaces.yaml include this.
+*/}}
+{{- define "kagenti.authbridge-runtime-config-yaml" -}}
+{{- if .Values.spire.enabled }}
+spiffe: {}
+{{- end }}
+pipeline:
+{{ tpl .Values.authBridge.pipeline . | indent 2 }}
+{{- end -}}
