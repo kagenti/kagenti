@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 import kubernetes.client as k8s_client
 from fastapi import APIRouter, Depends, HTTPException, Query
 from kubernetes.client.exceptions import ApiException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import require_roles, ROLE_VIEWER, ROLE_OPERATOR
 from app.core.config import settings
@@ -123,15 +123,32 @@ class CreateSkillResponse(BaseModel):
 class CreateExternalSkillRequest(BaseModel):
     """Request model for creating an external skill registry reference."""
 
-    name: str
-    namespace: str
-    description: str = ""
-    category: str = ""
-    registryType: str
-    registryUrl: str
-    registrySkillName: str
-    registrySkillVersion: str = "latest"
-    origin: str = ""
+    name: str = Field(..., max_length=253)
+    namespace: str = Field(..., max_length=63)
+    description: str = Field("", max_length=1000)
+    category: str = Field("", max_length=63)
+    registryType: str = Field(..., max_length=63)
+    registryUrl: str = Field(..., max_length=2048)
+    registrySkillName: str = Field(..., max_length=253)
+    registrySkillVersion: str = Field("latest", max_length=63)
+    origin: str = Field("", max_length=253)
+
+    @field_validator("registryUrl")
+    @classmethod
+    def validate_registry_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("registryUrl must use http:// or https:// scheme")
+        return v
+
+    @field_validator("registrySkillName")
+    @classmethod
+    def validate_registry_skill_name(cls, v: str) -> str:
+        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$", v):
+            raise ValueError(
+                "registrySkillName must start with alphanumeric and contain only "
+                "letters, digits, '.', '_', or '-'"
+            )
+        return v
 
 
 def _sanitize_k8s_name(name: str) -> str:
