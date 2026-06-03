@@ -80,8 +80,10 @@ if kubectl get pods -n kagenti-system -l "$OPERATOR_LABEL" --no-headers 2>/dev/n
     fi
 else
     log_info "kagenti-operator pod not found by label ($OPERATOR_LABEL), checking by deployment..."
+    FOUND_OPERATOR=false
     for NAME in kagenti-operator kagenti-kagenti-operator-controller-manager; do
         if kubectl get deployment "$NAME" -n kagenti-system &>/dev/null; then
+            FOUND_OPERATOR=true
             if wait_for_deployment "$NAME" "kagenti-system" 120; then
                 log_success "$NAME is ready"
             else
@@ -90,4 +92,9 @@ else
             break
         fi
     done
+    if [ "$FOUND_OPERATOR" != "true" ]; then
+        log_warn "No kagenti-operator deployment found — listing kagenti-system contents for diagnostics:"
+        kubectl get deployments -n kagenti-system 2>&1 || true
+        kubectl get pods -n kagenti-system 2>&1 || true
+    fi
 fi
