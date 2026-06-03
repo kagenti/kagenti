@@ -59,15 +59,17 @@ async def acp_websocket(
             from app.core.auth import validate_token
 
             token_data = await validate_token(token)
-            # Verify the token's audience includes this namespace (tenant)
+            # Verify the token's audience or authorized party includes the namespace.
+            # Keycloak requirement: each tenant client must set azp to the namespace
+            # name, or use namespace-specific audiences via client scope mappers.
+            # The generic "account" audience alone is NOT sufficient.
             aud = token_data.raw_token.get("aud", [])
             if isinstance(aud, str):
                 aud = [aud]
             azp = token_data.raw_token.get("azp", "")
             allowed = {*aud, azp} if azp else set(aud)
-            # Deny if: no audience claims at all, or namespace not in allowed set
-            # "account" is Keycloak's default audience for all tokens
-            if not allowed or (namespace not in allowed and "account" not in allowed):
+            allowed.discard("account")
+            if not allowed or namespace not in allowed:
                 logger.warning("ACP namespace denied (conn=%s)", uuid4().hex[:8])
                 await websocket.close(code=4003, reason="Access denied for this namespace")
                 return

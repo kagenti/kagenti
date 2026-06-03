@@ -29,6 +29,12 @@ SANDBOX_EXEC_TIMEOUT = 120
 SANDBOX_AGENTS = {"openshell-claude", "openshell-opencode", "nemoclaw-hermes"}
 NEMOCLAW_AGENTS = {"nemoclaw-openclaw"}
 
+_SANDBOX_CLI: dict[str, list[str]] = {
+    "nemoclaw-hermes": ["hermes", "chat", "-q"],
+    "openshell-claude": ["claude", "--print", "--bare", "--model", "claude-sonnet-4-20250514"],
+    "openshell-opencode": ["opencode", "run"],
+}
+
 _K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -190,21 +196,8 @@ class ACPBridge:
             yield _acp_error("Invalid namespace or agent_name", session_id=session.session_id)
             return
 
-        if "hermes" in session.agent_name:
-            cmd = ["timeout", "90", "hermes", "chat", "-q", text]
-        elif "claude" in session.agent_name:
-            cmd = [
-                "timeout",
-                "90",
-                "claude",
-                "--print",
-                "--bare",
-                "--model",
-                "claude-sonnet-4-20250514",
-                text,
-            ]
-        else:
-            cmd = ["timeout", "90", "opencode", "run", text]
+        cli_args = _SANDBOX_CLI.get(session.agent_name, ["echo", "unsupported agent"])
+        cmd = ["timeout", "90", *cli_args, text]
 
         gateway = get_openshell_client()
         stdout_parts: list[str] = []
@@ -215,7 +208,7 @@ class ACPBridge:
                 "session_id": session.session_id,
                 "agent_name": session.agent_name,
                 "namespace": session.namespace,
-                "cli": cmd[2] if len(cmd) > 2 else "unknown",
+                "cli": cli_args[0],
                 "prompt_length": len(text),
             },
         )

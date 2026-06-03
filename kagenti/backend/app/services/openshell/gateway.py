@@ -192,7 +192,9 @@ class OpenShellGatewayClient:
             )
             if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                 self._tls_cache.pop(namespace, None)
-                self._channels.pop(namespace, None)
+                old_channel = self._channels.pop(namespace, None)
+                if old_channel:
+                    await old_channel.close()
                 self._token_cache.pop(namespace, None)
                 logger.warning(
                     "Evicted cached credentials after auth failure",
