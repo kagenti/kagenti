@@ -81,6 +81,7 @@ class Settings(BaseSettings):
         False  # sidecar agents (looper, hallucination, context guardian)
     )
     kagenti_feature_flag_acp: bool = False  # ACP WebSocket protocol gateway
+    kagenti_feature_flag_external_skills: bool = False  # External skill registry references
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"

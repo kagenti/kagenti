@@ -10,7 +10,7 @@
 # Optional:        --with-istio (ambient mesh), --with-spire, --with-backend,
 #                  --with-ui, --with-mcp-gateway, --with-kuadrant, --with-otel,
 #                  --with-mlflow, --with-builds, --with-kiali,
-#                  --with-agent-sandbox, --with-all
+#                  --with-agent-sandbox, --with-skills, --with-all
 #
 # Idempotent: safe to re-run. Uses helm upgrade --install and kubectl apply.
 # Re-running with additional --with-* flags adds components incrementally.
@@ -140,6 +140,9 @@ while [[ $# -gt 0 ]]; do
       echo "  --with-builds       Install Tekton + Shipwright"
       echo "  --with-kiali        Install Kiali + Prometheus (auto-enables Istio)"
       echo "  --with-agent-sandbox Install agent-sandbox controller (kubernetes-sigs)"
+      echo "  --with-skills       Enable skills and external skill registries"
+      echo "                      (enables featureFlags.skills and featureFlags.externalSkills;"
+      echo "                      auto-enables --with-backend and --with-ui)"
       echo "  --with-all          Enable all optional components"
       echo ""
       echo "Skip flags (override --with-all for resource-constrained environments):"
@@ -183,6 +186,10 @@ fi
 # UI requires backend API
 if $WITH_UI && ! $WITH_BACKEND; then
   WITH_BACKEND=true
+fi
+# Skills requires UI (and transitively backend)
+if $WITH_SKILLS && ! $WITH_UI; then
+  WITH_UI=true
 fi
 # Kiali requires full ambient mesh for service mesh telemetry
 if $WITH_KIALI && ! $WITH_ISTIO; then
@@ -1144,6 +1151,7 @@ KAGENTI_FLAGS=(
   --set "components.mcpGateway.enabled=${WITH_MCP_GATEWAY}"
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
   --set "featureFlags.skills=${WITH_SKILLS}"
+  --set "featureFlags.externalSkills=${WITH_SKILLS}"
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"

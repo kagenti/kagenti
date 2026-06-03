@@ -26,6 +26,7 @@ import type {
   SkillFile,
   CreateSkillRequest,
   CreateSkillResponse,
+  CreateExternalSkillRequest,
   AuthBridgeConfig,
   AuthBridgeStats,
 } from '@/types';
@@ -1541,6 +1542,13 @@ export const skillService = {
         method: 'DELETE',
       }
     );
+  },
+
+  async createExternal(data: CreateExternalSkillRequest): Promise<CreateSkillResponse> {
+    return apiFetch('/skills/external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 };
 

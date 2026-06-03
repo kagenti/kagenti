@@ -84,6 +84,15 @@ from app.core.constants import (
     DEFAULT_KEYCLOAK_REALM,
     DEFAULT_SPIFFE_HELPER_CONF,
     DEFAULT_ENVOY_YAML,
+    # External skill registry constants
+    SKILL_SOURCE_LABEL,
+    SKILL_SOURCE_EXTERNAL,
+    SKILL_REGISTRY_TYPE_LABEL,
+    SKILL_REGISTRY_URL_ANNOTATION,
+    SKILL_REGISTRY_SKILL_NAME_ANNOTATION,
+    SKILL_REGISTRY_SKILL_VERSION_ANNOTATION,
+    SKILL_FETCHER_SCRIPTS_CM,
+    SKILL_FETCHER_IMAGE,
 )
 from app.core.config import settings
 from app.models.responses import (
@@ -2484,16 +2493,18 @@ def _build_agent_shipwright_buildrun_manifest(
 
 def _get_linked_skill_mounts(
     request: "CreateAgentRequest",
+    skills_override: Optional[List[str]] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Optional[str]]:
-    """Build volume and mount definitions for linked skill ConfigMaps."""
-    if not request.skills:
+    """Build volume and mount definitions for linked skill ConfigMaps (local only)."""
+    skills = skills_override if skills_override is not None else (request.skills or [])
+    if not skills:
         return [], [], None
 
     volumes: List[Dict[str, Any]] = []
     volume_mounts: List[Dict[str, Any]] = []
     skill_paths: List[str] = []
 
-    for index, skill_name in enumerate(request.skills):
+    for index, skill_name in enumerate(skills):
         if not skill_name:
             continue
         cm_name = _sanitize_k8s_name(skill_name)
@@ -2522,12 +2533,217 @@ def _get_linked_skill_mounts(
     return volumes, volume_mounts, ",".join(skill_paths)
 
 
-def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
+def _is_skill_external(kube: "KubernetesService", namespace: str, skill_name: str) -> bool:
+    """Return True if the named skill ConfigMap is an external registry reference."""
+    try:
+        cm = kube.core_api.read_namespaced_config_map(
+            name=_sanitize_k8s_name(skill_name), namespace=namespace
+        )
+        labels = cm.metadata.labels or {}
+        return labels.get(SKILL_SOURCE_LABEL) == SKILL_SOURCE_EXTERNAL
+    except ApiException:
+        return False
+
+
+_SKILLBERRY_SH = """\
+#!/bin/sh
+set -e
+
+apk add -q --no-cache curl unzip 2>/dev/null || true
+
+URL="${REGISTRY_URL}/skills/${SKILL_NAME}/export-anthropic"
+
+echo "Fetching ${SKILL_NAME} from ${URL}"
+
+RETRIES=3
+DELAY=2
+for i in $(seq 1 $RETRIES); do
+    if curl -fsSL --max-filesize 52428800 -o /tmp/skill.zip "${URL}"; then
+        break
+    fi
+    if [ "$i" -eq "$RETRIES" ]; then
+        echo "FATAL: fetch failed after ${RETRIES} attempts"
+        exit 1
+    fi
+    echo "Attempt ${i} failed; retrying in ${DELAY}s..."
+    sleep $DELAY
+done
+
+mkdir -p "${TARGET_DIR}" /tmp/skill-extract
+unzip -q /tmp/skill.zip -d /tmp/skill-extract/
+SKILL_DIR=$(ls /tmp/skill-extract/ | head -1)
+cp -r "/tmp/skill-extract/${SKILL_DIR}/." "${TARGET_DIR}/"
+echo "OK: ${SKILL_NAME} -> ${TARGET_DIR}"
+"""
+
+_GENERIC_SH = """\
+#!/bin/sh
+set -e
+
+apk add -q --no-cache curl 2>/dev/null || true
+echo "Fetching skill from ${REGISTRY_URL}"
+
+RETRIES=3
+DELAY=2
+for i in $(seq 1 $RETRIES); do
+    if curl -fsSL --max-filesize 52428800 -o /tmp/skill.tar.gz "${REGISTRY_URL}"; then
+        break
+    fi
+    if [ "$i" -eq "$RETRIES" ]; then
+        echo "FATAL: fetch failed after ${RETRIES} attempts"
+        exit 1
+    fi
+    echo "Attempt ${i} failed; retrying in ${DELAY}s..."
+    sleep $DELAY
+done
+
+mkdir -p "${TARGET_DIR}"
+tar -xzf /tmp/skill.tar.gz -C "${TARGET_DIR}"
+echo "OK: ${REGISTRY_URL} -> ${TARGET_DIR}"
+"""
+
+
+def _build_fetcher_scripts_data() -> Dict[str, str]:
+    """Return ConfigMap data dict containing per-registry-type fetch scripts."""
+    return {"skillberry.sh": _SKILLBERRY_SH, "generic.sh": _GENERIC_SH}
+
+
+def _ensure_fetcher_scripts_cm(kube: "KubernetesService", namespace: str) -> None:
+    """Create or replace the kagenti-skill-fetcher-scripts ConfigMap in namespace."""
+    import kubernetes.client as k8s_client
+
+    body = k8s_client.V1ConfigMap(
+        metadata=k8s_client.V1ObjectMeta(
+            name=SKILL_FETCHER_SCRIPTS_CM,
+            namespace=namespace,
+            labels={"app.kubernetes.io/managed-by": "kagenti"},
+        ),
+        data=_build_fetcher_scripts_data(),
+    )
+    try:
+        kube.core_api.read_namespaced_config_map(name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace)
+        kube.core_api.replace_namespaced_config_map(
+            name=SKILL_FETCHER_SCRIPTS_CM, namespace=namespace, body=body
+        )
+    except ApiException as e:
+        if e.status == 404:
+            kube.core_api.create_namespaced_config_map(namespace=namespace, body=body)
+        else:
+            raise
+
+
+def _get_external_skill_data(
+    kube: "KubernetesService",
+    namespace: str,
+    all_skills: List[str],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+    """Build init containers, volumes, and mounts for external-registry skills.
+
+    Returns (init_containers, volumes, main_volume_mounts, skill_paths).
+    One fetcher-scripts-vol is shared across all init containers in the pod.
+    """
+    init_containers: List[Dict[str, Any]] = []
+    volumes: List[Dict[str, Any]] = []
+    main_mounts: List[Dict[str, Any]] = []
+    skill_paths: List[str] = []
+    fetcher_vol_added = False
+
+    for index, skill_name in enumerate(all_skills):
+        if not skill_name:
+            continue
+        if not _is_skill_external(kube, namespace, skill_name):
+            continue
+
+        try:
+            cm = kube.core_api.read_namespaced_config_map(
+                name=_sanitize_k8s_name(skill_name), namespace=namespace
+            )
+        except ApiException:
+            continue
+
+        cm_labels = cm.metadata.labels or {}
+        cm_annotations = cm.metadata.annotations or {}
+        registry_type = cm_labels.get(SKILL_REGISTRY_TYPE_LABEL, "generic")
+        registry_url = cm_annotations.get(SKILL_REGISTRY_URL_ANNOTATION, "")
+        registry_skill_name = cm_annotations.get(SKILL_REGISTRY_SKILL_NAME_ANNOTATION, skill_name)
+        registry_skill_version = cm_annotations.get(
+            SKILL_REGISTRY_SKILL_VERSION_ANNOTATION, "latest"
+        )
+
+        cm_name = _sanitize_k8s_name(skill_name)
+        emptydir_vol_name = f"skill-ext-{index}"
+        mount_path = f"{AGENT_SKILLS_MOUNT_ROOT}/{cm_name}"
+
+        if not fetcher_vol_added:
+            volumes.append(
+                {
+                    "name": "fetcher-scripts-vol",
+                    "configMap": {"name": SKILL_FETCHER_SCRIPTS_CM},
+                }
+            )
+            fetcher_vol_added = True
+
+        volumes.append({"name": emptydir_vol_name, "emptyDir": {}})
+
+        init_containers.append(
+            {
+                "name": f"fetch-skill-{index}",
+                "image": SKILL_FETCHER_IMAGE,
+                "command": [
+                    "/bin/sh",
+                    "-c",
+                    (
+                        "SCRIPT=/fetcher-scripts/${REGISTRY_TYPE}.sh; "
+                        '[ -f "$SCRIPT" ] || SCRIPT=/fetcher-scripts/generic.sh; '
+                        '/bin/sh "$SCRIPT"'
+                    ),
+                ],
+                "env": [
+                    {"name": "REGISTRY_TYPE", "value": registry_type},
+                    {"name": "REGISTRY_URL", "value": registry_url},
+                    {"name": "SKILL_NAME", "value": registry_skill_name},
+                    {"name": "SKILL_VERSION", "value": registry_skill_version},
+                    {"name": "TARGET_DIR", "value": mount_path},
+                ],
+                "resources": {
+                    "requests": {"memory": "32Mi", "cpu": "50m"},
+                    "limits": {"memory": "128Mi", "cpu": "200m"},
+                },
+                "volumeMounts": [
+                    {"name": emptydir_vol_name, "mountPath": mount_path},
+                    {
+                        "name": "fetcher-scripts-vol",
+                        "mountPath": "/fetcher-scripts",
+                        "readOnly": True,
+                    },
+                ],
+            }
+        )
+
+        main_mounts.append(
+            {
+                "name": emptydir_vol_name,
+                "mountPath": mount_path,
+                "readOnly": True,
+            }
+        )
+        skill_paths.append(mount_path)
+
+    return init_containers, volumes, main_mounts, skill_paths
+
+
+def _build_env_vars(
+    request: "CreateAgentRequest",
+    local_skills: Optional[List[str]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
+) -> List[dict]:
     """
     Build environment variables list with support for valueFrom references.
 
     Args:
         request: The agent creation request containing envVars.
+        local_skills: Optional override list of local skill names.
+        ext_skill_paths: Optional list of external skill mount paths.
 
     Returns:
         List of environment variable dictionaries.
@@ -2543,9 +2759,10 @@ def _build_env_vars(request: "CreateAgentRequest") -> List[dict]:
         }
     )
 
-    _, _, skill_folders = _get_linked_skill_mounts(request)
-    if skill_folders:
-        env_vars.append({"name": "SKILL_FOLDERS", "value": skill_folders})
+    _, _, local_folders = _get_linked_skill_mounts(request, skills_override=local_skills)
+    all_paths = ([local_folders] if local_folders else []) + (ext_skill_paths or [])
+    if all_paths:
+        env_vars.append({"name": "SKILL_FOLDERS", "value": ",".join(all_paths)})
 
     if request.envVars:
         for ev in request.envVars:
@@ -2718,6 +2935,11 @@ def _build_deployment_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """
     Build a Kubernetes Deployment manifest for an agent.
@@ -2731,8 +2953,14 @@ def _build_deployment_manifest(
     Returns:
         Deployment manifest dictionary.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_DEPLOYMENT)
     selector_labels = _build_selector_labels(request)
 
@@ -2795,6 +3023,7 @@ def _build_deployment_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -2803,11 +3032,16 @@ def _build_deployment_manifest(
                         {"name": "marvin", "emptyDir": {}},
                         {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ],
                 },
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -2898,6 +3132,11 @@ def _build_statefulset_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """
     Build a Kubernetes StatefulSet manifest for an agent.
@@ -2916,8 +3155,14 @@ def _build_statefulset_manifest(
     Returns:
         StatefulSet manifest dictionary.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_STATEFULSET)
     selector_labels = _build_selector_labels(request)
 
@@ -2981,6 +3226,7 @@ def _build_statefulset_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -2989,11 +3235,16 @@ def _build_statefulset_manifest(
                         {"name": "marvin", "emptyDir": {}},
                         {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ],
                 },
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -3008,6 +3259,11 @@ def _build_job_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """
     Build a Kubernetes Job manifest for an agent.
@@ -3025,8 +3281,14 @@ def _build_job_manifest(
     Returns:
         Job manifest dictionary.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_JOB)
 
     # Build annotations
@@ -3086,6 +3348,7 @@ def _build_job_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -3094,11 +3357,16 @@ def _build_job_manifest(
                         {"name": "marvin", "emptyDir": {}},
                         {"name": "shared-data", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ],
                 },
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["template"]["spec"]["initContainers"] = ext_init_containers
 
     # Add image pull secrets if specified
     if request.imagePullSecret:
@@ -3113,13 +3381,24 @@ def _build_sandbox_manifest(
     request: "CreateAgentRequest",
     image: str,
     shipwright_build_name: Optional[str] = None,
+    local_skills: Optional[List[str]] = None,
+    ext_init_containers: Optional[List[Dict[str, Any]]] = None,
+    ext_volumes: Optional[List[Dict[str, Any]]] = None,
+    ext_volume_mounts: Optional[List[Dict[str, Any]]] = None,
+    ext_skill_paths: Optional[List[str]] = None,
 ) -> dict:
     """Build a Sandbox manifest (agents.x-k8s.io/v1alpha1) for direct creation.
 
     Includes skill volume mounts and persistent storage support.
     """
-    env_vars = _build_env_vars(request)
-    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(request)
+    ext_init_containers = ext_init_containers or []
+    ext_volumes = ext_volumes or []
+    ext_volume_mounts = ext_volume_mounts or []
+    ext_skill_paths = ext_skill_paths or []
+    env_vars = _build_env_vars(request, local_skills=local_skills, ext_skill_paths=ext_skill_paths)
+    skill_volumes, skill_volume_mounts, _ = _get_linked_skill_mounts(
+        request, skills_override=local_skills
+    )
     labels = _build_common_labels(request, WORKLOAD_TYPE_SANDBOX)
 
     annotations: Dict[str, str] = {
@@ -3178,6 +3457,7 @@ def _build_sandbox_manifest(
                                 {"name": "marvin", "mountPath": "/.marvin"},
                                 {"name": "shared-data", "mountPath": "/shared"},
                                 *skill_volume_mounts,
+                                *ext_volume_mounts,
                             ],
                         }
                     ],
@@ -3185,6 +3465,7 @@ def _build_sandbox_manifest(
                         {"name": "cache", "emptyDir": {}},
                         {"name": "marvin", "emptyDir": {}},
                         *skill_volumes,
+                        *ext_volumes,
                     ]
                     + (
                         []
@@ -3195,6 +3476,10 @@ def _build_sandbox_manifest(
             },
         },
     }
+
+    # Add init containers for external skills
+    if ext_init_containers:
+        manifest["spec"]["podTemplate"]["spec"]["initContainers"] = ext_init_containers
 
     if request.persistentStorage and request.persistentStorage.enabled:
         manifest["spec"]["volumeClaimTemplates"] = [
@@ -3250,6 +3535,22 @@ async def create_agent(
             status_code=400,
             detail="Skill linking is disabled. Enable KAGENTI_FEATURE_FLAG_SKILLS to use this feature.",
         )
+
+    # Compute external skill data when feature is enabled
+    local_skills: Optional[List[str]] = None
+    ext_init_containers: List[Dict[str, Any]] = []
+    ext_volumes: List[Dict[str, Any]] = []
+    ext_volume_mounts: List[Dict[str, Any]] = []
+    ext_skill_paths: List[str] = []
+
+    if request.skills and settings.kagenti_feature_flag_external_skills:
+        _ensure_fetcher_scripts_cm(kube, request.namespace)
+        ext_init_containers, ext_volumes, ext_volume_mounts, ext_skill_paths = (
+            _get_external_skill_data(kube, request.namespace, request.skills)
+        )
+        local_skills = [
+            s for s in request.skills if s and not _is_skill_external(kube, request.namespace, s)
+        ]
 
     try:
         if request.deploymentMethod == "image":
@@ -3313,6 +3614,11 @@ async def create_agent(
                 workload_manifest = _build_deployment_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_deployment(
                     namespace=request.namespace,
@@ -3325,6 +3631,11 @@ async def create_agent(
                 workload_manifest = _build_statefulset_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_statefulset(
                     namespace=request.namespace,
@@ -3337,6 +3648,11 @@ async def create_agent(
                 workload_manifest = _build_job_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_job(
                     namespace=request.namespace,
@@ -3347,6 +3663,11 @@ async def create_agent(
                 sandbox_manifest = _build_sandbox_manifest(
                     request=request,
                     image=request.containerImage,
+                    local_skills=local_skills,
+                    ext_init_containers=ext_init_containers,
+                    ext_volumes=ext_volumes,
+                    ext_volume_mounts=ext_volume_mounts,
+                    ext_skill_paths=ext_skill_paths,
                 )
                 kube.create_sandbox(
                     namespace=request.namespace,
@@ -3744,6 +4065,25 @@ async def finalize_shipwright_build(
                 detail="Skill linking is disabled. Enable KAGENTI_FEATURE_FLAG_SKILLS to use this feature.",
             )
 
+        # Compute external skill data when feature is enabled (build path)
+        build_local_skills: Optional[List[str]] = None
+        build_ext_init_containers: List[Dict[str, Any]] = []
+        build_ext_volumes: List[Dict[str, Any]] = []
+        build_ext_volume_mounts: List[Dict[str, Any]] = []
+        build_ext_skill_paths: List[str] = []
+
+        if final_skills and settings.kagenti_feature_flag_external_skills:
+            _ensure_fetcher_scripts_cm(kube, namespace)
+            (
+                build_ext_init_containers,
+                build_ext_volumes,
+                build_ext_volume_mounts,
+                build_ext_skill_paths,
+            ) = _get_external_skill_data(kube, namespace, final_skills)
+            build_local_skills = [
+                s for s in final_skills if s and not _is_skill_external(kube, namespace, s)
+            ]
+
         final_service_ports = request.servicePorts
         if final_service_ports is None and "servicePorts" in stored_config:
             # Convert stored dict format back to ServicePort objects
@@ -3865,6 +4205,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
@@ -3883,6 +4228,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
@@ -3901,6 +4251,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             # Add additional labels from Build
             workload_manifest["metadata"]["labels"].update(
@@ -3919,6 +4274,11 @@ async def finalize_shipwright_build(
                 request=agent_request,
                 image=container_image,
                 shipwright_build_name=name,
+                local_skills=build_local_skills,
+                ext_init_containers=build_ext_init_containers,
+                ext_volumes=build_ext_volumes,
+                ext_volume_mounts=build_ext_volume_mounts,
+                ext_skill_paths=build_ext_skill_paths,
             )
             kagenti_build_labels = {
                 k: v for k, v in build_labels.items() if k.startswith(settings.kagenti_label_prefix)

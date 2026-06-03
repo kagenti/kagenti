@@ -409,6 +409,13 @@ export interface SkillLabels {
   type?: string;
 }
 
+export interface ExternalSkillInfo {
+  registryType: string;
+  registryUrl: string;
+  registrySkillName: string;
+  registrySkillVersion: string;
+}
+
 export interface Skill {
   name: string;
   namespace: string;
@@ -419,6 +426,8 @@ export interface Skill {
   createdAt?: string;
   origin?: string;
   usageCount: number;
+  source?: 'local' | 'external';
+  externalInfo?: ExternalSkillInfo;
 }
 
 export interface SkillFile {
@@ -448,6 +457,18 @@ export interface CreateSkillResponse {
   name: string;
   namespace: string;
   message: string;
+}
+
+export interface CreateExternalSkillRequest {
+  name: string;
+  namespace: string;
+  description?: string;
+  category?: string;
+  registryType: string;
+  registryUrl: string;
+  registrySkillName: string;
+  registrySkillVersion?: string;
+  origin?: string;
 }
 
 // AuthBridge types

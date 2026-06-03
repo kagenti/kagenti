@@ -143,6 +143,8 @@ spec:
               value: "{{ .Values.featureFlags.agentSandbox }}"
             - name: KAGENTI_FEATURE_FLAG_SKILLS
               value: "{{ .Values.featureFlags.skills }}"
+            - name: KAGENTI_FEATURE_FLAG_EXTERNAL_SKILLS
+              value: "{{ .Values.featureFlags.externalSkills }}"
             - name: KAGENTI_FEATURE_FLAG_AUTHBRIDGE_API
               value: "{{ .Values.featureFlags.authbridgeAPI }}"
             - name: KAGENTI_FEATURE_FLAG_ADMIN
