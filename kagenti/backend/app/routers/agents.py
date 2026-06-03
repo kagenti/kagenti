@@ -2558,7 +2558,7 @@ echo "Fetching ${SKILL_NAME} from ${URL}"
 RETRIES=3
 DELAY=2
 for i in $(seq 1 $RETRIES); do
-    if curl -fsSL -o /tmp/skill.zip "${URL}"; then
+    if curl -fsSL --max-filesize 52428800 -o /tmp/skill.zip "${URL}"; then
         break
     fi
     if [ "$i" -eq "$RETRIES" ]; then
@@ -2586,7 +2586,7 @@ echo "Fetching skill from ${REGISTRY_URL}"
 RETRIES=3
 DELAY=2
 for i in $(seq 1 $RETRIES); do
-    if curl -fsSL -o /tmp/skill.tar.gz "${REGISTRY_URL}"; then
+    if curl -fsSL --max-filesize 52428800 -o /tmp/skill.tar.gz "${REGISTRY_URL}"; then
         break
     fi
     if [ "$i" -eq "$RETRIES" ]; then
@@ -2705,6 +2705,10 @@ def _get_external_skill_data(
                     {"name": "SKILL_VERSION", "value": registry_skill_version},
                     {"name": "TARGET_DIR", "value": mount_path},
                 ],
+                "resources": {
+                    "requests": {"memory": "32Mi", "cpu": "50m"},
+                    "limits": {"memory": "128Mi", "cpu": "200m"},
+                },
                 "volumeMounts": [
                     {"name": emptydir_vol_name, "mountPath": mount_path},
                     {
