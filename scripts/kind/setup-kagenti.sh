@@ -281,6 +281,25 @@ _wait_deployment_ready() {
     log_warn "$label rollout not ready within timeout"
 }
 
+_wait_crds_established() {
+  # kubectl wait --for=condition=Established can fail with a nil accessor error
+  # if .status.conditions hasn't been populated yet on a freshly-applied CRD.
+  # Retry the wait to handle this race condition.
+  local timeout="${1:-60s}"; shift
+  local attempts=0 max_attempts=5
+  while true; do
+    if kubectl wait --for=condition=Established crd "$@" --timeout="$timeout" 2>/dev/null; then
+      return 0
+    fi
+    if [ $((++attempts)) -ge $max_attempts ]; then
+      # Last attempt: let stderr through for diagnostics
+      kubectl wait --for=condition=Established crd "$@" --timeout="$timeout"
+      return $?
+    fi
+    sleep 2
+  done
+}
+
 # ============================================================================
 # Step 1: Create Kind Cluster
 # ============================================================================
@@ -526,10 +545,9 @@ else
     "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
   if ! $DRY_RUN; then
     log_info "Waiting for Gateway API CRDs to become established..."
-    kubectl wait --for=condition=Established crd \
+    _wait_crds_established 60s \
       httproutes.gateway.networking.k8s.io \
-      gateways.gateway.networking.k8s.io \
-      --timeout=60s
+      gateways.gateway.networking.k8s.io
   fi
   log_success "Gateway API CRDs installed"
 fi
@@ -555,9 +573,8 @@ if $WITH_AGENT_SANDBOX; then
 
     if ! $DRY_RUN; then
       log_info "Waiting for agent-sandbox CRDs to become established..."
-      kubectl wait --for=condition=Established crd \
-        sandboxes.agents.x-k8s.io \
-        --timeout=60s
+      _wait_crds_established 60s \
+        sandboxes.agents.x-k8s.io
     fi
     _wait_deployment_ready agent-sandbox-controller agent-sandbox-system agent-sandbox
     log_success "agent-sandbox installed"
