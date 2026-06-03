@@ -108,45 +108,6 @@ data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for AuthBridge in Namespace: {{ . }}
-#  Consolidated config consumed by the kagenti-operator and injected sidecars:
-#  - kagenti-operator: Client registration controller (reads KEYCLOAK_URL, KEYCLOAK_REALM)
-#  - kagenti-webhook: Injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS
-#  - authbridge sidecars: Read ISSUER, EXPECTED_AUDIENCE for inbound JWT validation
-#
-#  NOTE: KEYCLOAK_NAMESPACE is only used by Helm-hook Jobs (spiffe-idp-setup, agent-oauth-secret)
-#  that run at install time with cross-namespace RBAC to read from the Keycloak namespace.
-#  Legacy: Prior to kagenti-operator#321, client-registration sidecars received credentials from
-#  a per-namespace keycloak-admin-secret replicated by agent-oauth-secret Job. Now the operator
-#  controller reads keycloak-admin-secret from its own namespace (kagenti-system) for security.
-# ——————————————————————————————————————————————————————————————————————————————
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: authbridge-config
-  namespace: {{ . }}
-data:
-  # Keycloak connection (used by operator client registration controller)
-  KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-  KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
-  # KEYCLOAK_NAMESPACE: Not used by sidecars or operator. Included for reference by Helm-hook Jobs.
-  KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
-  # ISSUER: Used by envoy-proxy go-processor for inbound JWT validation.
-  # Optional - auto-derived from KEYCLOAK_URL + KEYCLOAK_REALM if not set.
-  # Set explicitly when the internal KEYCLOAK_URL differs from the frontend URL
-  # that appears in token "iss" claims (split-horizon DNS).
-  ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-  SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
-  # Authentication configuration (used by operator and webhook injector)
-  CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
-  SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
-  # EXPECTED_AUDIENCE: Read by authbridge-unified ext_proc (envoy-proxy sidecar)
-  # for inbound JWT "aud" claim validation. Must match the audience mapper value
-  # configured in Keycloak (kagenti-platform-audience scope).
-  EXPECTED_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-  CREDENTIAL_WAIT_TIMEOUT: {{ $root.Values.authBridge.credentialWaitTimeout | quote }}
----
-# ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
