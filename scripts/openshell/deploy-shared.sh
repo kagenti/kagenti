@@ -415,11 +415,13 @@ if $STEP_KEYCLOAK; then
       -s directAccessGrantsEnabled=false \
       2>/dev/null" 2>/dev/null || true
 
-    # Store backend client credentials as K8s secret
-    kubectl create secret generic kagenti-backend-oidc \
-      --from-literal=client-id=kagenti-backend \
-      --from-literal=client-secret=kagenti-backend-secret \
-      -n "$BACKEND_NS" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    # Store backend client credentials in each tenant namespace
+    for _ns in team1 team2; do
+      kubectl create secret generic kagenti-backend-oidc \
+        --from-literal=client-id=kagenti-backend \
+        --from-literal=client-secret=kagenti-backend-secret \
+        -n "$_ns" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    done
 
     # 4c: Create roles
     for role in openshell-admin openshell-user; do
