@@ -180,7 +180,7 @@ SKILL_REGISTRY_URL_ANNOTATION = "kagenti.io/registry-url"
 SKILL_REGISTRY_SKILL_NAME_ANNOTATION = "kagenti.io/registry-skill-name"
 SKILL_REGISTRY_SKILL_VERSION_ANNOTATION = "kagenti.io/registry-skill-version"
 SKILL_FETCHER_SCRIPTS_CM = "kagenti-skill-fetcher-scripts"
-SKILL_FETCHER_IMAGE = "alpine:3"
+SKILL_FETCHER_IMAGE = "alpine:3.21.3"
 
 # Default Keycloak in-cluster URL (used by AuthBridge ConfigMaps)
 DEFAULT_KEYCLOAK_INTERNAL_URL = "http://keycloak-service.keycloak.svc:8080"
