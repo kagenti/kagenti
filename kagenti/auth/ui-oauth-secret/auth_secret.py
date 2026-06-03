@@ -481,7 +481,7 @@ def main() -> None:
                         {"username": demo_username, "exact": True}
                     )
                     if not existing:
-                        keycloak_admin.create_user(
+                        demo_user_id = keycloak_admin.create_user(
                             {
                                 "username": demo_username,
                                 "enabled": True,
@@ -506,6 +506,7 @@ def main() -> None:
                             f"in realm '{keycloak_realm}'"
                         )
                     else:
+                        demo_user_id = existing[0]["id"]
                         logger.info(
                             f"Demo user '{demo_username}' already exists "
                             f"in realm '{keycloak_realm}', skipping"
@@ -516,24 +517,14 @@ def main() -> None:
                     role_name = DEFAULT_DEMO_USER_ROLES.get(demo_username)
                     if role_name:
                         try:
-                            users = keycloak_admin.get_users(
-                                {"username": demo_username, "exact": True}
+                            role = keycloak_admin.get_realm_role(role_name)
+                            keycloak_admin.assign_realm_roles(
+                                demo_user_id, [role]
                             )
-                            if not users:
-                                logger.warning(
-                                    f"Cannot assign '{role_name}' to "
-                                    f"'{demo_username}': user not found "
-                                    f"in '{keycloak_realm}'"
-                                )
-                            else:
-                                role = keycloak_admin.get_realm_role(role_name)
-                                keycloak_admin.assign_realm_roles(
-                                    users[0]["id"], [role]
-                                )
-                                logger.info(
-                                    f"Assigned realm role '{role_name}' to "
-                                    f"'{demo_username}' in '{keycloak_realm}'"
-                                )
+                            logger.info(
+                                f"Assigned realm role '{role_name}' to "
+                                f"'{demo_username}' in '{keycloak_realm}'"
+                            )
                         except Exception as role_err:
                             logger.warning(
                                 f"Could not assign '{role_name}' to "
