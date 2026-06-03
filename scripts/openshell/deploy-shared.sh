@@ -522,6 +522,23 @@ if $STEP_KEYCLOAK; then
       log_warn "Could not find openshell-cli client ID — audience scopes created but not linked"
     fi
 
+    # Also assign audience scopes to kagenti-backend client
+    BACKEND_CLIENT_ID=$(kc_exec "$KCADM get clients --config $KC_CONFIG -r openshell \
+      -q clientId=kagenti-backend --fields id 2>/dev/null" | \
+      grep '"id"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+    if [[ -n "$BACKEND_CLIENT_ID" ]]; then
+      for tenant in team1 team2; do
+        SCOPE_ID=$(kc_exec "$KCADM get client-scopes --config $KC_CONFIG -r openshell \
+          --fields id,name 2>/dev/null" | \
+          grep -B1 "\"${tenant}-audience\"" | grep '"id"' | sed 's/.*: "\(.*\)".*/\1/')
+        if [[ -n "$SCOPE_ID" ]]; then
+          kc_exec "$KCADM update clients/$BACKEND_CLIENT_ID/default-client-scopes/$SCOPE_ID \
+            --config $KC_CONFIG -r openshell 2>/dev/null" 2>/dev/null || true
+        fi
+      done
+      log_info "Assigned audience scopes to kagenti-backend client"
+    fi
+
     log_success "Keycloak openshell realm configured"
     echo ""
   fi
