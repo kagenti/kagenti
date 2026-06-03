@@ -6,12 +6,30 @@ domain: localtest.me
 #  Feature flags: experimental features disabled by default
 # ------------------------------------------------------------------
 featureFlags:
+  # Sandbox runtime (session management, file browser, sidecars).
+  # NOT YET FULLY IMPLEMENTED — backend modules not merged. Do not enable.
+  # See PR #996
   sandbox: false
+  # Third-party integration endpoints.
+  # (Currently undocumented)
   integrations: false
+  # Event-driven trigger system.
+  # See PR #996
   triggers: false
+  # kubernetes-sigs/agent-sandbox Sandbox workload type.
+  # Requires agent-sandbox CRDs (Enabled by `--with-agent-sandbox`).
+  # See docs/architecture/agent-sandbox.md
+  # See docs/superpowers/specs/2026-04-21-agent-sandbox-workload-type-design.md
   agentSandbox: false
+  # Pluggable skills system.
+  # See PR #1344
   skills: false
+  # External skill registry references (skillberry-store, etc.)
+  externalSkills: false
+  # Enables AuthBridge tab on Agent details page
   authbridgeAPI: false
+  # Enables Platform Status card
+  # on http://kagenti-ui.localtest.me:8080/admin
   admin: false
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
