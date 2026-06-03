@@ -287,10 +287,14 @@ _wait_crds_established() {
   # Retry the wait to handle this race condition.
   local timeout="${1:-60s}"; shift
   local attempts=0 max_attempts=5
-  until kubectl wait --for=condition=Established crd "$@" --timeout="$timeout" 2>/dev/null; do
+  while true; do
+    if kubectl wait --for=condition=Established crd "$@" --timeout="$timeout" 2>/dev/null; then
+      return 0
+    fi
     if [ $((++attempts)) -ge $max_attempts ]; then
-      log_error "CRDs not established after $max_attempts attempts: $*"
-      return 1
+      # Last attempt: let stderr through for diagnostics
+      kubectl wait --for=condition=Established crd "$@" --timeout="$timeout"
+      return $?
     fi
     sleep 2
   done
