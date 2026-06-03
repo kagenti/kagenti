@@ -32,7 +32,7 @@ You should also open the Agent Platform Demo Dashboard as instructed in the [Acc
 
 In this demo, the Slack MCP Server will access the Slack API using Slack bot tokens. We will be using two bot tokens: a general `SLACK_BOT_TOKEN` that is used by default and an `ADMIN_SLACK_BOT_TOKEN` that is used when the access token has the `slack-full-access` scope.
 
-For this demo, prior to installing Kagenti, you need to add two variables to the `deployments/envs/.secret_values.yaml` file. Visit
+For this demo, prior to installing Kagenti, you need to add two variables to the `charts/kagenti/.secrets.yaml` file. Visit
 [Slack Bot Token](https://docs.slack.dev/quickstart) page and follow instructions to generate the bot token:
 
 1. Create a pre-configured app
@@ -51,7 +51,7 @@ For this demo, prior to installing Kagenti, you need to add two variables to the
 
 Repeat the above for another app with a new name. This time limit the scope to `connections:write` only. This will be your `SLACK_BOT_TOKEN`.
 
-Add both variables (`slackBotToken` and `adminSlackBotToken`) to `deployments/envs/.secret_values.yaml` before executing Kagenti install.
+Add both variables (`slackBotToken` and `adminSlackBotToken`) to `charts/kagenti/.secrets.yaml` before executing Kagenti install.
 
 ---
 

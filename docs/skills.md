@@ -33,7 +33,7 @@ scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-
 
 ### Using the Kagenti Installer
 
-When using the installer, enable skills by modifying your values file (e.g., `deployments/envs/.secret_values.yaml` or a custom values file):
+When using the installer, enable skills by modifying your values file (e.g., `charts/kagenti/.secrets.yaml` or a custom values file):
 
 ```bash
 cat <<EOF > /tmp/enable-flag-skills.yaml
