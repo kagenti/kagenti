@@ -518,9 +518,7 @@ def main() -> None:
                     if role_name:
                         try:
                             role = keycloak_admin.get_realm_role(role_name)
-                            keycloak_admin.assign_realm_roles(
-                                demo_user_id, [role]
-                            )
+                            keycloak_admin.assign_realm_roles(demo_user_id, [role])
                             logger.info(
                                 f"Assigned realm role '{role_name}' to "
                                 f"'{demo_username}' in '{keycloak_realm}'"
