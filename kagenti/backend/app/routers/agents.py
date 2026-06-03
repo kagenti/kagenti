@@ -2586,7 +2586,7 @@ echo "Fetching skill from ${REGISTRY_URL}"
 RETRIES=3
 DELAY=2
 for i in $(seq 1 $RETRIES); do
-    if curl -fsSL -o /tmp/skill.tar.gz "${URL}"; then
+    if curl -fsSL -o /tmp/skill.tar.gz "${REGISTRY_URL}"; then
         break
     fi
     if [ "$i" -eq "$RETRIES" ]; then
