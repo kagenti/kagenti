@@ -60,3 +60,15 @@ else
 fi
 
 log_success "All Kagenti Operator CRDs established"
+
+# Wait for kagenti-operator deployment to be ready.
+# The operator's ClientRegistrationReconciler creates per-workload credential
+# secrets when agent pods are admitted by the webhook.  If the operator isn't
+# Running/Ready by the time agents are deployed (scripts 70+), pods get stuck
+# in ContainerCreating waiting for the secret volume.
+log_info "Waiting for kagenti-operator deployment to be ready..."
+wait_for_deployment "kagenti-operator" "kagenti-system" 120 || {
+    log_error "kagenti-operator not ready — credential secrets won't be created for agent pods"
+    exit 1
+}
+log_success "kagenti-operator is ready"
