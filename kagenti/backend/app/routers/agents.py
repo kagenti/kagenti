@@ -2693,7 +2693,7 @@ def _get_external_skill_data(
                     "/bin/sh",
                     "-c",
                     (
-                        f"SCRIPT=/fetcher-scripts/{registry_type}.sh; "
+                        'SCRIPT=/fetcher-scripts/${REGISTRY_TYPE}.sh; '
                         '[ -f "$SCRIPT" ] || SCRIPT=/fetcher-scripts/generic.sh; '
                         '/bin/sh "$SCRIPT"'
                     ),
