@@ -61,14 +61,33 @@ fi
 
 log_success "All Kagenti Operator CRDs established"
 
-# Wait for kagenti-operator deployment to be ready.
+# Wait for kagenti-operator pod to be ready.
 # The operator's ClientRegistrationReconciler creates per-workload credential
 # secrets when agent pods are admitted by the webhook.  If the operator isn't
 # Running/Ready by the time agents are deployed (scripts 70+), pods get stuck
 # in ContainerCreating waiting for the secret volume.
-log_info "Waiting for kagenti-operator deployment to be ready..."
-wait_for_deployment "kagenti-operator" "kagenti-system" 120 || {
-    log_error "kagenti-operator not ready — credential secrets won't be created for agent pods"
-    exit 1
-}
-log_success "kagenti-operator is ready"
+#
+# The deployment name varies (subchart naming, alias, etc.) so we wait by pod
+# label instead.  Non-fatal: the credential secret wait in 74-deploy-weather-agent.sh
+# provides a second gate.
+OPERATOR_LABEL="app.kubernetes.io/name=kagenti-operator"
+if kubectl get pods -n kagenti-system -l "$OPERATOR_LABEL" --no-headers 2>/dev/null | grep -q .; then
+    log_info "Waiting for kagenti-operator pod to be ready..."
+    if wait_for_pod "$OPERATOR_LABEL" "kagenti-system" 120; then
+        log_success "kagenti-operator is ready"
+    else
+        log_warn "kagenti-operator pod not ready — credential secret creation may be delayed"
+    fi
+else
+    log_info "kagenti-operator pod not found by label ($OPERATOR_LABEL), checking by deployment..."
+    for NAME in kagenti-operator kagenti-kagenti-operator-controller-manager; do
+        if kubectl get deployment "$NAME" -n kagenti-system &>/dev/null; then
+            if wait_for_deployment "$NAME" "kagenti-system" 120; then
+                log_success "$NAME is ready"
+            else
+                log_warn "$NAME not ready — credential secret creation may be delayed"
+            fi
+            break
+        fi
+    done
+fi
