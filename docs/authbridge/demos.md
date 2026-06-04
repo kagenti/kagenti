@@ -36,6 +36,11 @@ If missing: `kubectl wait --for=condition=complete job/kagenti-agent-oauth-secre
 
 Run `87-setup-test-credentials.sh` **after** `weather-service` is registered in Keycloak.
 
+### Gotchas
+
+- **`admin-cli` lives in the `master` realm, not `kagenti`.** When fetching an admin token for Keycloak Admin API calls, post to `/realms/master/protocol/openid-connect/token`, not `/realms/kagenti/...`. The Keycloak admin user is registered in `master`; the `kagenti` realm has its own user store and rejects `admin/admin` with a `null` `access_token`.
+- **`"aud" not satisfied` from AuthBridge for `client_credentials` tokens.** On clusters running operator ≤ v0.2.0-rc.5, the agent's Keycloak client may have been registered before the realm-level audience scope existed, so the SPIFFE-ID audience claim is missing from the token. Tracked and fixed in [kagenti-operator#395](https://github.com/kagenti/kagenti-operator/pull/395) (issue [kagenti-operator#394](https://github.com/kagenti/kagenti-operator/issues/394)).
+
 ## Verify deployment
 
 After the UI deploy steps in [demo-ui.md](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md):
