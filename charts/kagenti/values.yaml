@@ -274,7 +274,6 @@ kagenti-operator-chart:
       - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
       - "--config-path=/etc/kagenti/config.yaml"
       - "--feature-gates-path=/etc/kagenti/feature-gates/feature-gates.yaml"
-      - "--spire-trust-domain=localtest.me"
       # Client registration controller is enabled by default (operator-managed)
       resources:
         limits:
@@ -283,10 +282,11 @@ kagenti-operator-chart:
         requests:
           cpu: 50m
           memory: 128Mi
-  # SPIRE trust domain is auto-discovered by the operator from ZTWIM CR or spire-bundle ConfigMap.
-  # Set signatureVerification.spireTrustDomain only to override auto-discovery.
-  # signatureVerification:
-  #   spireTrustDomain: localtest.me
+  # SPIRE trust domain — used by the operator's ClientRegistrationReconciler to derive
+  # SPIFFE-based client IDs. On OCP, auto-discovery from ZTWIM CR works; on Kind,
+  # the explicit value is required because neither ZTWIM nor spire-bundle exist at startup.
+  signatureVerification:
+    spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
   #
   # After kagenti-extensions#411 there are three combined images:

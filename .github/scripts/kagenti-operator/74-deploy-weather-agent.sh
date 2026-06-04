@@ -148,33 +148,13 @@ log_success "Weather-service deployed via Deployment + Service (operator-indepen
 # Keycloak and creates the Secret.  Wait here to avoid a flaky timeout later.
 # ============================================================================
 log_info "Waiting for operator to create client credentials secret..."
-CREDS_TIMEOUT=120
-CREDS_FOUND=false
-for i in $(seq 1 $((CREDS_TIMEOUT / 5))); do
-    # grep -c exits 1 when count=0; wrap in subshell to avoid pipefail interaction
-    SECRET_COUNT=$(kubectl get secrets -n team1 -o name 2>/dev/null \
-        | { grep -c "kagenti-keycloak-client-credentials" || true; })
-    if [ "${SECRET_COUNT:-0}" -ge 1 ]; then
-        CREDS_FOUND=true
-        log_success "Client credentials secret created by operator"
-        break
-    fi
-    echo "[$i/$((CREDS_TIMEOUT / 5))] Credentials secret not yet created, waiting..."
-    sleep 5
-done
-
-if [ "$CREDS_FOUND" != "true" ]; then
-    log_warn "Credentials secret not found after ${CREDS_TIMEOUT}s — pod may be stuck in ContainerCreating"
-    log_info "All pods in kagenti-system:"
+if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
+    log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
     kubectl get pods -n kagenti-system 2>&1 || true
-    log_info "All deployments in kagenti-system:"
-    kubectl get deployments -n kagenti-system 2>&1 || true
-    log_info "Operator logs (by any kagenti label):"
-    kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
-    log_info "Secrets in team1:"
     kubectl get secrets -n team1 2>&1 || true
-    log_info "keycloak-admin-secret in kagenti-system:"
-    kubectl get secret keycloak-admin-secret -n kagenti-system 2>&1 || echo "  NOT FOUND"
+    kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
+else
+    log_success "Client credentials secret created by operator"
 fi
 
 # WORKAROUND: Fix Service targetPort mismatch

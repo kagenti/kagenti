@@ -126,6 +126,7 @@ data:
   CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
   EXPECTED_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  CREDENTIAL_WAIT_TIMEOUT: {{ $root.Values.authBridge.credentialWaitTimeout | quote }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
