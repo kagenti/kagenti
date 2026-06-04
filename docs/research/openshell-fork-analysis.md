@@ -52,10 +52,15 @@ flowchart TB
 
 | Component | Image | Tag | Source |
 |-----------|-------|-----|--------|
-| Gateway | `ghcr.io/kagenti/openshell/gateway` | `v0.0.36-kagenti.8` | mvp branch |
-| Supervisor | `ghcr.io/kagenti/openshell/supervisor` | `v0.0.36-kagenti.8` | mvp branch |
+| Gateway | `ghcr.io/kagenti/openshell/gateway` | `mvp-v2-3a1bbea7` | mvp-v2 branch (upstream v0.0.49+) |
+| Supervisor | `ghcr.io/kagenti/openshell/supervisor` | `mvp-v2-3a1bbea7` | mvp-v2 branch (upstream v0.0.49+) |
 | Compute Driver | `ghcr.io/kagenti/openshell-driver-openshift/compute-driver` | `mvp-a5f33f4` | mvp branch |
 | Credentials Driver | `ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver` | `main-d7d8306` | main branch |
+
+> **Update (2026-06-04)**: Gateway and supervisor upgraded to `mvp-v2` branch
+> which is based on upstream v0.0.49+. The `mvp-v2` branch was created by
+> pdettori with all kagenti patches rebased and Rust compilation fixes applied.
+> Old `mvp` branch (v0.0.36-kagenti.8) preserved for rollback.
 
 ---
 
