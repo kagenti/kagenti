@@ -15,6 +15,8 @@ spec:
       app.kubernetes.io/component: gateway
   template:
     metadata:
+      annotations:
+        checksum/gateway-config: {{ include (print $.Template.BasePath "/gateway-config.yaml") . | sha256sum }}
       labels:
         {{- include "openshell.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: gateway
@@ -38,8 +40,10 @@ spec:
           image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
           imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
           args:
-            - "--sandbox-namespace"
-            - {{ include "openshell.driverNamespace" . | quote }}
+            - --config
+            - /etc/openshell/gateway.toml
+            - --db-url
+            - "sqlite:///data/openshell.db"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -49,47 +53,39 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            - name: OPENSHELL_BIND_ADDRESS
-              value: "0.0.0.0"
-            - name: OPENSHELL_TLS_CERT
-              value: "/tls/server/tls.crt"
-            - name: OPENSHELL_TLS_KEY
-              value: "/tls/server/tls.key"
-            - name: OPENSHELL_TLS_CLIENT_CA
-              value: "/tls/server/ca.crt"
             - name: OPENSHELL_SSH_HANDSHAKE_SECRET
               valueFrom:
                 secretKeyRef:
                   name: openshell-gateway-secrets
                   key: ssh-handshake-secret
-            - name: OPENSHELL_OIDC_ISSUER
-              value: {{ .Values.oidc.issuer | quote }}
-            - name: OPENSHELL_OIDC_AUDIENCE
-              value: {{ include "openshell.oidcAudience" . | quote }}
-            - name: OPENSHELL_OIDC_ENABLED
-              value: {{ .Values.oidc.enabled | quote }}
-            {{- if .Values.trustedCABundle }}
-            - name: SSL_CERT_FILE
-              value: "/etc/ssl/certs/ca-certificates.crt"
-            - name: SSL_CERT_DIR
-              value: "/etc/ssl/certs"
-            {{- end }}
-            - name: OPENSHELL_DB_URL
-              value: "sqlite:///data/openshell.db"
             - name: OPENSHELL_DRIVERS
               value: "external"
             - name: OPENSHELL_COMPUTE_DRIVER_SOCKET
               value: "/run/drivers/compute.sock"
             - name: OPENSHELL_CREDENTIALS_DRIVER_SOCKET
               value: "/run/drivers/credentials.sock"
+            {{- if .Values.trustedCABundle }}
+            - name: SSL_CERT_FILE
+              value: "/etc/ssl/certs/ca-certificates.crt"
+            - name: SSL_CERT_DIR
+              value: "/etc/ssl/certs"
+            {{- end }}
           volumeMounts:
             - name: driver-sockets
               mountPath: /run/drivers
             - name: data
               mountPath: /data
-            - name: server-tls
-              mountPath: /tls/server
+            - name: gateway-config
+              mountPath: /etc/openshell
               readOnly: true
+            - name: server-tls
+              mountPath: /etc/openshell-tls/server
+              readOnly: true
+            {{- if .Values.gatewayJwt.enabled }}
+            - name: jwt-keys
+              mountPath: /etc/openshell-jwt
+              readOnly: true
+            {{- end }}
             {{- if .Values.trustedCABundle }}
             - name: trusted-ca
               mountPath: /etc/ssl/certs/ca-certificates.crt
@@ -106,17 +102,18 @@ spec:
             capabilities:
               drop: [ALL]
           args:
-            - "--socket=/run/drivers/compute.sock"
-            - "--namespace={{ include "openshell.driverNamespace" . }}"
-            - "--supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
-            - "--gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
-            - "--supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
-            - "--dtach-binary-path={{ .Values.supervisorImage.binaryPath }}"
-            - "--tls-ca-secret=openshell-server-tls"
-            - "--tls-client-secret=openshell-client-tls"
+            - "-socket=/run/drivers/compute.sock"
+            - "-namespace={{ include "openshell.driverNamespace" . }}"
+            - "-supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
+            - "-gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
+            - "-supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
+            - "-tls-ca-secret=openshell-server-tls"
+            - "-tls-client-secret=openshell-client-tls"
             {{- if .Values.sandboxImagePullPolicy }}
-            - "--sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
+            - "-sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
             {{- end }}
+            - "-sa-token-audience=openshell-gateway"
+            - "-sa-token-ttl-secs={{ .Values.sandboxServiceAccount.tokenTtlSecs }}"
           volumeMounts:
             - name: driver-sockets
               mountPath: /run/drivers
@@ -147,9 +144,18 @@ spec:
       volumes:
         - name: driver-sockets
           emptyDir: {}
+        - name: gateway-config
+          configMap:
+            name: openshell-gateway-config
         - name: server-tls
           secret:
             secretName: openshell-server-tls
+        {{- if .Values.gatewayJwt.enabled }}
+        - name: jwt-keys
+          secret:
+            secretName: {{ .Values.gatewayJwt.signingSecretName | default "openshell-gateway-jwt-keys" }}
+            defaultMode: 0400
+        {{- end }}
         - name: credentials-config
           configMap:
             name: openshell-credentials-config

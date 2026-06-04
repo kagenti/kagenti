@@ -5,11 +5,11 @@ tenant: ""
 images:
   gateway:
     repository: ghcr.io/kagenti/openshell/gateway
-    tag: v0.0.36-kagenti.8
+    tag: mvp-v2-3a1bbea
     pullPolicy: IfNotPresent
   computeDriver:
     repository: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
-    tag: mvp-a5f33f4
+    tag: v0.1.0-rc.4
     pullPolicy: IfNotPresent
   credentialsDriver:
     repository: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
@@ -28,16 +28,34 @@ keycloakClusterIP: ""
 
 # -- Supervisor image injected as an init container by the compute driver
 # to copy the openshell-sandbox binary into each sandbox pod.
-# Built from kagenti/OpenShell@mvp as a multi-arch image (linux/amd64 + linux/arm64).
+# Built from kagenti/OpenShell@mvp-v2 as a multi-arch image (linux/amd64 + linux/arm64).
 supervisorImage:
   repository: ghcr.io/kagenti/openshell/supervisor
-  tag: v0.0.36-kagenti.8
+  tag: mvp-v2-3a1bbea
   binaryPath: /openshell-sandbox
 
 # -- Image pull policy for sandbox pods (init + agent containers).
 # Valid values: Always, IfNotPresent, Never.
 # Empty string means use the Kubernetes default (Always for :latest, IfNotPresent otherwise).
 sandboxImagePullPolicy: "IfNotPresent"
+
+# -- Gateway JWT configuration for sandbox token minting (Ed25519 keypair)
+# When enabled, the gateway mints short-lived JWTs for sandbox pods after
+# validating their projected ServiceAccount token via TokenReview.
+gatewayJwt:
+  enabled: true
+  # Token TTL in seconds
+  ttlSecs: 3600
+  # Gateway identity embedded in iss/aud claims (defaults to "openshell-<tenant>")
+  gatewayId: ""
+  # Secret name for the JWT signing keypair (defaults to "openshell-gateway-jwt-keys")
+  signingSecretName: ""
+
+# -- Sandbox service account used by sandbox pods for the IssueSandboxToken bootstrap
+sandboxServiceAccount:
+  name: openshell-sandbox
+  # Lifetime of the projected SA token injected into sandbox pods by the compute driver
+  tokenTtlSecs: 3600
 
 # -- Compute driver settings
 driver:
