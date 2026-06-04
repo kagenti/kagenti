@@ -103,16 +103,15 @@ spec:
             capabilities:
               drop: [ALL]
           args:
-            - "--socket=/run/drivers/compute.sock"
-            - "--namespace={{ include "openshell.driverNamespace" . }}"
-            - "--supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
-            - "--gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
-            - "--supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
-            - "--dtach-binary-path={{ .Values.supervisorImage.binaryPath }}"
-            - "--tls-ca-secret=openshell-server-tls"
-            - "--tls-client-secret=openshell-client-tls"
+            - "-socket=/run/drivers/compute.sock"
+            - "-namespace={{ include "openshell.driverNamespace" . }}"
+            - "-supervisor-image={{ .Values.supervisorImage.repository }}:{{ .Values.supervisorImage.tag }}"
+            - "-gateway-endpoint=https://openshell-server.{{ .Values.tenant }}.svc:8080"
+            - "-supervisor-binary-path={{ .Values.supervisorImage.binaryPath }}"
+            - "-tls-ca-secret=openshell-server-tls"
+            - "-tls-client-secret=openshell-client-tls"
             {{- if .Values.sandboxImagePullPolicy }}
-            - "--sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
+            - "-sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
             {{- end }}
           volumeMounts:
             - name: driver-sockets
