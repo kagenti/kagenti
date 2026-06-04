@@ -255,9 +255,46 @@ if $DRY_RUN; then
   echo "  [dry-run] kubectl wait --for=condition=Ready certificate -n $TENANT --all --timeout=${TIMEOUT}s"
 else
   if kubectl get certificate -n "$TENANT" --no-headers 2>/dev/null | grep -q .; then
-    kubectl wait --for=condition=Ready certificate --all \
-      -n "$TENANT" --timeout="${TIMEOUT}s"
-    log_success "All certificates ready"
+    # Retry loop: cert-manager may need time to reconcile on resource-constrained
+    # CI runners. Try 3 times with increasing wait between attempts.
+    CERT_READY=false
+    for attempt in 1 2 3; do
+      CERT_WAIT_TIMEOUT=$((TIMEOUT / 3))
+      if kubectl wait --for=condition=Ready certificate --all \
+          -n "$TENANT" --timeout="${CERT_WAIT_TIMEOUT}s" 2>/dev/null; then
+        CERT_READY=true
+        break
+      fi
+
+      log_warn "Certificate wait attempt $attempt/3 failed — collecting diagnostics"
+
+      # Show certificate status
+      kubectl get certificate -n "$TENANT" -o wide 2>/dev/null || true
+
+      # Show CertificateRequest status (reveals why signing is stuck)
+      kubectl get certificaterequest -n "$TENANT" -o wide 2>/dev/null || true
+
+      # Check if the ClusterIssuer is still ready
+      kubectl get clusterissuer openshell-ca-issuer -o jsonpath='{.status.conditions[0].message}' 2>/dev/null
+      echo ""
+
+      # Check cert-manager controller logs for errors
+      kubectl logs deployment/cert-manager -n cert-manager --tail=10 2>/dev/null | \
+        grep -i "error\|failed\|unable" || true
+
+      if [ "$attempt" -lt 3 ]; then
+        log_info "Retrying in 15s (cert-manager controller may need reconcile time)..."
+        sleep 15
+      fi
+    done
+
+    if $CERT_READY; then
+      log_success "All certificates ready"
+    else
+      log_error "Certificates not ready after 3 attempts. Final state:"
+      kubectl describe certificate -n "$TENANT" 2>/dev/null | tail -30
+      exit 1
+    fi
   else
     log_warn "No certificates found in namespace $TENANT (may be handled by Helm --wait)"
   fi
