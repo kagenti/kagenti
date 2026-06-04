@@ -9,8 +9,10 @@ Capability: acp_lifecycle, acp_bridge, acp_session
 Convention: test_T6_{capability}__{description}[agent]
 """
 
+import asyncio
 import json
 import os
+import subprocess
 
 import pytest
 
@@ -387,10 +389,12 @@ class TestT6SandboxAgent:
         if not sandbox_crd_installed():
             pytest.fail("Sandbox CRD not installed")
 
-        # Create a sandbox using the teleport script
+        # Create a sandbox using the teleport script (run in thread to avoid
+        # blocking the async event loop during the up-to-120s pod creation)
         repo_root = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
         script = os.path.join(repo_root, "scripts", "openshell", "teleport-session.sh")
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             [script, "--spawn", "--namespace", AGENT_NS],
             capture_output=True,
             text=True,
@@ -441,7 +445,8 @@ class TestT6SandboxAgent:
             finally:
                 await ws.close()
         finally:
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 [script, "--cleanup", "--session", session_id, "--namespace", AGENT_NS],
                 capture_output=True,
                 timeout=30,

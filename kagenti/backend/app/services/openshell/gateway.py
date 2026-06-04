@@ -59,7 +59,7 @@ class OpenShellGatewayClient:
     def _get_oidc_token(self, namespace: str) -> str:
         """Get a JWT for the gateway from Keycloak using client credentials."""
         cached = self._token_cache.get(namespace)
-        if cached and (time.monotonic() - cached[0]) < TLS_CACHE_TTL:
+        if cached and time.monotonic() < cached[0]:
             return cached[1]
 
         kube = get_kubernetes_service()

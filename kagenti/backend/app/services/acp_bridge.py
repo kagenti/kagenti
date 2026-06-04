@@ -90,12 +90,16 @@ class ACPBridge:
         return False
 
     async def cleanup_sessions(self, namespace: str, agent_name: str) -> int:
-        """Remove all sessions for a namespace/agent pair (called on WebSocket disconnect)."""
+        """Remove all sessions for a namespace/agent pair (called on WebSocket disconnect).
+
+        Removes both open and closed sessions — the WebSocket is gone so all
+        sessions for this connection are orphaned.
+        """
         async with self._lock:
             to_remove = [
                 sid
                 for sid, s in self._sessions.items()
-                if s.namespace == namespace and s.agent_name == agent_name and s.closed
+                if s.namespace == namespace and s.agent_name == agent_name
             ]
             for sid in to_remove:
                 del self._sessions[sid]
