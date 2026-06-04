@@ -256,7 +256,7 @@ if $DRY_RUN; then
 else
   if kubectl get certificate -n "$TENANT" --no-headers 2>/dev/null | grep -q .; then
     # Retry loop: cert-manager may need time to reconcile on resource-constrained
-    # CI runners. Try 3 times with increasing wait between attempts.
+    # CI runners. Try 3 times with recovery between attempts.
     CERT_READY=false
     for attempt in 1 2 3; do
       CERT_WAIT_TIMEOUT=$((TIMEOUT / 3))
@@ -280,11 +280,34 @@ else
 
       # Check cert-manager controller logs for errors
       kubectl logs deployment/cert-manager -n cert-manager --tail=10 2>/dev/null | \
-        grep -i "error\|failed\|unable" || true
+        grep -i "error\|failed\|unable\|IncorrectIssuer\|modified" || true
 
       if [ "$attempt" -lt 3 ]; then
-        log_info "Retrying in 15s (cert-manager controller may need reconcile time)..."
-        sleep 15
+        # Recovery: if certificates are stuck due to issuer mismatch or stale
+        # secrets from a prior deployment, delete the secrets and certificate
+        # requests so cert-manager creates fresh ones.
+        NOT_READY=$(kubectl get certificate -n "$TENANT" --no-headers 2>/dev/null | \
+          grep -v "True" | awk '{print $1}')
+        if [ -n "$NOT_READY" ]; then
+          log_info "Deleting stale secrets/requests for stuck certificates..."
+          for cert in $NOT_READY; do
+            kubectl delete secret "$cert" -n "$TENANT" --ignore-not-found 2>/dev/null || true
+            kubectl delete certificaterequest -n "$TENANT" -l cert-manager.io/certificate-name="$cert" \
+              --ignore-not-found 2>/dev/null || true
+          done
+          # Trigger re-reconciliation by touching the Certificate annotation
+          for cert in $NOT_READY; do
+            kubectl annotate certificate "$cert" -n "$TENANT" \
+              --overwrite cert-manager.io/issue-temporary-certificate="" 2>/dev/null || true
+            kubectl annotate certificate "$cert" -n "$TENANT" \
+              --overwrite cert-manager.io/issue-temporary-certificate- 2>/dev/null || true
+          done
+          log_info "Waiting 10s for cert-manager to re-reconcile..."
+          sleep 10
+        else
+          log_info "Retrying in 15s..."
+          sleep 15
+        fi
       fi
     done
 
