@@ -39,6 +39,24 @@ supervisorImage:
 # Empty string means use the Kubernetes default (Always for :latest, IfNotPresent otherwise).
 sandboxImagePullPolicy: "IfNotPresent"
 
+# -- Gateway JWT configuration for sandbox token minting (Ed25519 keypair)
+# When enabled, the gateway mints short-lived JWTs for sandbox pods after
+# validating their projected ServiceAccount token via TokenReview.
+gatewayJwt:
+  enabled: true
+  # Token TTL in seconds
+  ttlSecs: 3600
+  # Gateway identity embedded in iss/aud claims (defaults to "openshell-<tenant>")
+  gatewayId: ""
+  # Secret name for the JWT signing keypair (defaults to "openshell-gateway-jwt-keys")
+  signingSecretName: ""
+
+# -- Sandbox service account used by sandbox pods for the IssueSandboxToken bootstrap
+sandboxServiceAccount:
+  name: openshell-sandbox
+  # Lifetime of the projected SA token injected into sandbox pods by the compute driver
+  tokenTtlSecs: 3600
+
 # -- Compute driver settings
 driver:
   # Target namespace for sandbox pods (defaults to .Values.tenant)
