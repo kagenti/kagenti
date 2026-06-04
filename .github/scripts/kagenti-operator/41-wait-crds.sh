@@ -60,3 +60,66 @@ else
 fi
 
 log_success "All Kagenti Operator CRDs established"
+
+# ── Ensure keycloak-admin-secret exists in kagenti-system ────────────────────
+# The operator's ClientRegistrationReconciler reads admin credentials from
+# keycloak-admin-secret in its own namespace to register Keycloak clients.
+# PR #1791 removed the Helm template that created this; the operator blocks
+# with "waiting for keycloak-admin-secret" without it.  Copy from
+# keycloak-initial-admin (created by the Keycloak operator in the keycloak ns).
+KC_NS="${KEYCLOAK_NAMESPACE:-keycloak}"
+OPERATOR_NS="${KAGENTI_NAMESPACE:-kagenti-system}"
+if ! kubectl get secret keycloak-admin-secret -n "$OPERATOR_NS" &>/dev/null; then
+    log_info "Creating keycloak-admin-secret in $OPERATOR_NS from keycloak-initial-admin..."
+    KC_USER=$(kubectl get secret keycloak-initial-admin -n "$KC_NS" -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+    KC_PASS=$(kubectl get secret keycloak-initial-admin -n "$KC_NS" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+    if [ -n "$KC_USER" ] && [ -n "$KC_PASS" ]; then
+        kubectl create secret generic keycloak-admin-secret -n "$OPERATOR_NS" \
+            --from-literal=KEYCLOAK_ADMIN_USERNAME="$KC_USER" \
+            --from-literal=KEYCLOAK_ADMIN_PASSWORD="$KC_PASS" \
+            --dry-run=client -o yaml | kubectl apply -f -
+        log_success "keycloak-admin-secret created in $OPERATOR_NS"
+    else
+        log_warn "Could not read keycloak-initial-admin from $KC_NS — operator may block"
+    fi
+else
+    log_info "keycloak-admin-secret already exists in $OPERATOR_NS"
+fi
+
+# Wait for kagenti-operator pod to be ready.
+# The operator's ClientRegistrationReconciler creates per-workload credential
+# secrets when agent pods are admitted by the webhook.  If the operator isn't
+# Running/Ready by the time agents are deployed (scripts 70+), pods get stuck
+# in ContainerCreating waiting for the secret volume.
+#
+# The deployment name varies (subchart naming, alias, etc.) so we wait by pod
+# label instead.  Non-fatal: the credential secret wait in 74-deploy-weather-agent.sh
+# provides a second gate.
+OPERATOR_LABEL="app.kubernetes.io/name=kagenti-operator"
+if kubectl get pods -n kagenti-system -l "$OPERATOR_LABEL" --no-headers 2>/dev/null | grep -q .; then
+    log_info "Waiting for kagenti-operator pod to be ready..."
+    if wait_for_pod "$OPERATOR_LABEL" "kagenti-system" 120; then
+        log_success "kagenti-operator is ready"
+    else
+        log_warn "kagenti-operator pod not ready — credential secret creation may be delayed"
+    fi
+else
+    log_info "kagenti-operator pod not found by label ($OPERATOR_LABEL), checking by deployment..."
+    FOUND_OPERATOR=false
+    for NAME in kagenti-operator kagenti-kagenti-operator-controller-manager; do
+        if kubectl get deployment "$NAME" -n kagenti-system &>/dev/null; then
+            FOUND_OPERATOR=true
+            if wait_for_deployment "$NAME" "kagenti-system" 120; then
+                log_success "$NAME is ready"
+            else
+                log_warn "$NAME not ready — credential secret creation may be delayed"
+            fi
+            break
+        fi
+    done
+    if [ "$FOUND_OPERATOR" != "true" ]; then
+        log_warn "No kagenti-operator deployment found — listing kagenti-system contents for diagnostics:"
+        kubectl get deployments -n kagenti-system 2>&1 || true
+        kubectl get pods -n kagenti-system 2>&1 || true
+    fi
+fi

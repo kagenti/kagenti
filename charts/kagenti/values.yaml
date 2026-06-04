@@ -256,12 +256,9 @@ kagenti-operator-chart:
         requests:
           cpu: 50m
           memory: 128Mi
-  # SPIRE trust domain for the ClientRegistrationReconciler. Required when
-  # authbridge-config has SPIRE_ENABLED=true: the reconciler builds SPIFFE-shaped
-  # Keycloak client IDs (spiffe://<trust-domain>/ns/<ns>/sa/<sa>).
-  # Kind default: localtest.me (matches kagenti-deps spire.trustDomain).
-  # OpenShift: the ansible installer overrides this with the detected
-  # ocp_trust_domain.
+  # SPIRE trust domain — used by the operator's ClientRegistrationReconciler to derive
+  # SPIFFE-based client IDs. On OCP, auto-discovery from ZTWIM CR works; on Kind,
+  # the explicit value is required because neither ZTWIM nor spire-bundle exist at startup.
   signatureVerification:
     spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
