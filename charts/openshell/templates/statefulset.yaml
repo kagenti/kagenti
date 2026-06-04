@@ -112,6 +112,8 @@ spec:
             {{- if .Values.sandboxImagePullPolicy }}
             - "-sandbox-image-pull-policy={{ .Values.sandboxImagePullPolicy }}"
             {{- end }}
+            - "-sa-token-audience=openshell-gateway"
+            - "-sa-token-ttl-secs={{ .Values.sandboxServiceAccount.tokenTtlSecs }}"
           volumeMounts:
             - name: driver-sockets
               mountPath: /run/drivers
