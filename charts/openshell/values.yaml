@@ -5,7 +5,7 @@ tenant: ""
 images:
   gateway:
     repository: ghcr.io/kagenti/openshell/gateway
-    tag: latest
+    tag: mvp-v2-3a1bbea
     pullPolicy: IfNotPresent
   computeDriver:
     repository: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
@@ -31,7 +31,7 @@ keycloakClusterIP: ""
 # Built from kagenti/OpenShell@mvp-v2 as a multi-arch image (linux/amd64 + linux/arm64).
 supervisorImage:
   repository: ghcr.io/kagenti/openshell/supervisor
-  tag: latest
+  tag: mvp-v2-9a6a0ed
   binaryPath: /openshell-sandbox
 
 # -- Image pull policy for sandbox pods (init + agent containers).
