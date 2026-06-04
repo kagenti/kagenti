@@ -27,6 +27,7 @@ A2A_STREAM_TIMEOUT = 120.0
 SANDBOX_EXEC_TIMEOUT = 120
 
 SANDBOX_AGENTS = {"openshell-claude", "openshell-opencode", "nemoclaw-hermes"}
+SANDBOX_PREFIXES = ("teleport-",)
 NEMOCLAW_AGENTS = {"nemoclaw-openclaw"}
 
 _SANDBOX_CLI: dict[str, list[str]] = {
@@ -125,7 +126,7 @@ class ACPBridge:
             yield _acp_error("Session not found", session_id=session_id)
             return
 
-        if session.agent_name in SANDBOX_AGENTS:
+        if session.agent_name in SANDBOX_AGENTS or session.agent_name.startswith(SANDBOX_PREFIXES):
             async for update in self._prompt_sandbox(session, text):
                 yield update
         elif session.agent_name in NEMOCLAW_AGENTS:
@@ -196,7 +197,10 @@ class ACPBridge:
             yield _acp_error("Invalid namespace or agent_name", session_id=session.session_id)
             return
 
-        cli_args = _SANDBOX_CLI.get(session.agent_name, ["echo", "unsupported agent"])
+        cli_args = _SANDBOX_CLI.get(
+            session.agent_name,
+            ["claude", "--print", "--bare", "--model", "claude-sonnet-4-20250514"],
+        )
         cmd = ["timeout", "90", *cli_args, text]
 
         gateway = get_openshell_client()

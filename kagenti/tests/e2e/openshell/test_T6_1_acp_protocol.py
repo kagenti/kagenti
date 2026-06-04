@@ -376,46 +376,73 @@ class TestT6SandboxAgent:
     async def test_T6_sandbox__prompt_response(self, backend_url):
         """Send prompt to openshell-claude via ACP and get response.
 
-        Requires backend with ExecSandbox gRPC client (PR #1689).
+        Creates a sandbox first (ExecSandbox requires a running sandbox),
+        then sends prompt via ACP → ExecSandbox gRPC → gateway → sandbox.
         """
         import asyncio
+        import subprocess
 
-        ws = await _acp_connect(backend_url, AGENT_NS, "openshell-claude")
+        from kagenti.tests.e2e.openshell.conftest import sandbox_crd_installed
+
+        if not sandbox_crd_installed():
+            pytest.fail("Sandbox CRD not installed")
+
+        # Create a sandbox using the teleport script
+        repo_root = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+        script = os.path.join(repo_root, "scripts", "openshell", "teleport-session.sh")
+        result = subprocess.run(
+            [script, "--spawn", "--namespace", AGENT_NS],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Spawn failed: {result.stderr[-300:]}"
+        session_id = result.stdout.strip().split("\n")[-1]
+        sandbox_name = f"teleport-{session_id}"
+
         try:
-            await _acp_rpc(ws, "initialize")
-            session = await _acp_rpc(ws, "session/new", rpc_id="new-1")
-            sid = session["result"]["sessionId"]
+            ws = await _acp_connect(backend_url, AGENT_NS, sandbox_name)
+            try:
+                await _acp_rpc(ws, "initialize")
+                session = await _acp_rpc(ws, "session/new", rpc_id="new-1")
+                sid = session["result"]["sessionId"]
 
-            await ws.send(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": "prompt-1",
-                        "method": "session/prompt",
-                        "params": {
-                            "sessionId": sid,
-                            "text": "What is 2+2? Reply with just the number.",
-                        },
-                    }
+                await ws.send(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": "prompt-1",
+                            "method": "session/prompt",
+                            "params": {
+                                "sessionId": sid,
+                                "text": "What is 2+2? Reply with just the number.",
+                            },
+                        }
+                    )
                 )
-            )
 
-            messages = []
-            for _ in range(10):
-                try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=120)
-                    msg = json.loads(raw)
-                    messages.append(msg)
-                    if msg.get("id") == "prompt-1":
+                messages = []
+                for _ in range(10):
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=120)
+                        msg = json.loads(raw)
+                        messages.append(msg)
+                        if msg.get("id") == "prompt-1":
+                            break
+                    except asyncio.TimeoutError:
                         break
-                except asyncio.TimeoutError:
-                    break
 
-            assert len(messages) > 0, "No response from sandbox agent"
-            has_content = any(
-                m.get("params", {}).get("sessionUpdate") == "agent_message_chunk"
-                for m in messages
-            )
-            assert has_content, f"No content in ACP messages: {messages}"
+                assert len(messages) > 0, "No response from sandbox agent"
+                has_content = any(
+                    m.get("params", {}).get("sessionUpdate") == "agent_message_chunk"
+                    for m in messages
+                )
+                assert has_content, f"No content in ACP messages: {messages}"
+            finally:
+                await ws.close()
         finally:
-            await ws.close()
+            subprocess.run(
+                [script, "--cleanup", "--session", session_id, "--namespace", AGENT_NS],
+                capture_output=True,
+                timeout=30,
+            )

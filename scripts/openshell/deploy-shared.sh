@@ -527,6 +527,11 @@ if $STEP_KEYCLOAK; then
       -q clientId=kagenti-backend --fields id 2>/dev/null" | \
       grep '"id"' | head -1 | sed 's/.*: "\(.*\)".*/\1/')
     if [[ -n "$BACKEND_CLIENT_ID" ]]; then
+      # Assign openshell-user role to the service account
+      kc_exec "$KCADM add-roles --config $KC_CONFIG -r openshell \
+        --uusername service-account-kagenti-backend \
+        --rolename openshell-user 2>/dev/null" 2>/dev/null || true
+
       for tenant in team1 team2; do
         SCOPE_ID=$(kc_exec "$KCADM get client-scopes --config $KC_CONFIG -r openshell \
           --fields id,name 2>/dev/null" | \
