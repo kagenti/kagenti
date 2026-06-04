@@ -445,9 +445,19 @@ class TestT6SandboxAgent:
             finally:
                 await ws.close()
         finally:
-            await asyncio.to_thread(
-                subprocess.run,
-                [script, "--cleanup", "--session", session_id, "--namespace", AGENT_NS],
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                await asyncio.to_thread(
+                    subprocess.run,
+                    [
+                        script,
+                        "--cleanup",
+                        "--session",
+                        session_id,
+                        "--namespace",
+                        AGENT_NS,
+                    ],
+                    capture_output=True,
+                    timeout=60,
+                )
+            except subprocess.TimeoutExpired:
+                pass  # best-effort cleanup; pod will be GC'd by TTL
