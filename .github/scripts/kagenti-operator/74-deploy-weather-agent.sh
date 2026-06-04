@@ -140,6 +140,23 @@ kubectl apply -f "$REPO_ROOT/kagenti/examples/agents/weather_service_service.yam
 
 log_success "Weather-service deployed via Deployment + Service (operator-independent)"
 
+# ============================================================================
+# Step 3: Wait for operator to create the client credentials secret
+# The webhook injects a volume mount for kagenti-keycloak-client-credentials-*
+# into the pod at admission time.  The pod stays in ContainerCreating until
+# the operator's ClientRegistrationReconciler registers the workload in
+# Keycloak and creates the Secret.  Wait here to avoid a flaky timeout later.
+# ============================================================================
+log_info "Waiting for operator to create client credentials secret..."
+if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
+    log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
+    kubectl get pods -n kagenti-system 2>&1 || true
+    kubectl get secrets -n team1 2>&1 || true
+    kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
+else
+    log_success "Client credentials secret created by operator"
+fi
+
 # WORKAROUND: Fix Service targetPort mismatch
 # The kagenti-operator creates Service with targetPort: 8080, but the agent listens on 8000
 # Patch the Service to use the correct targetPort until the operator is fixed
@@ -151,6 +168,21 @@ kubectl patch svc weather-service -n team1 --type=json \
     kubectl get svc weather-service -n team1 -o yaml
     exit 1
 }
+
+# ============================================================================
+# Step 4: Wait for pod to be Ready (common for Kind and OpenShift)
+# After the credentials secret exists, the pod transitions from
+# ContainerCreating → Running.  Wait for the deployment rollout to complete
+# so subsequent scripts can rely on the agent being up.
+# ============================================================================
+log_info "Waiting for weather-service pod to be ready..."
+wait_for_deployment "weather-service" "team1" 180 || {
+    log_error "weather-service deployment not ready"
+    kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 || true
+    kubectl describe pods -n team1 -l app.kubernetes.io/name=weather-service 2>&1 | tail -30 || true
+    exit 1
+}
+log_success "weather-service pod is ready"
 
 # Create OpenShift Route for the agent (on OpenShift only)
 # The kagenti-operator doesn't create routes automatically - they're created by the UI backend

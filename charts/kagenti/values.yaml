@@ -282,10 +282,11 @@ kagenti-operator-chart:
         requests:
           cpu: 50m
           memory: 128Mi
-  # SPIRE trust domain is auto-discovered by the operator from ZTWIM CR or spire-bundle ConfigMap.
-  # Set signatureVerification.spireTrustDomain only to override auto-discovery.
-  # signatureVerification:
-  #   spireTrustDomain: localtest.me
+  # SPIRE trust domain — used by the operator's ClientRegistrationReconciler to derive
+  # SPIFFE-based client IDs. On OCP, auto-discovery from ZTWIM CR works; on Kind,
+  # the explicit value is required because neither ZTWIM nor spire-bundle exist at startup.
+  signatureVerification:
+    spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
   #
   # After kagenti-extensions#411 there are three combined images:
