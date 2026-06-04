@@ -17,7 +17,7 @@ flowchart TB
     end
 
     subgraph KAGENTI["Kagenti Fork"]
-        KOS["kagenti/openshell\n(gateway + supervisor)\nmvp branch → v0.0.36-kagenti.8"]
+        KOS["kagenti/openshell\n(gateway + supervisor)\nmvp-v2 branch (v0.0.49+)"]
         KDR["kagenti/openshell-driver-openshift\n(Go compute driver)\nmvp branch"]
         KCR["kagenti/openshell-credentials-keycloak\n(credentials driver)\nmain branch"]
     end
@@ -34,19 +34,28 @@ flowchart TB
 
 ### Branch Strategy
 
-| Repo | Main Branch | Build Branch | Relationship |
-|------|-------------|-------------|--------------|
-| kagenti/openshell | `main` (synced with NVIDIA) | `mvp` (32 commits ahead) | `main` = upstream mirror, `mvp` = kagenti patches |
-| kagenti/openshell-driver-openshift | `main` | `mvp` | Kagenti-specific, no upstream equivalent |
-| kagenti/openshell-credentials-keycloak | `main` | `main` | Kagenti-specific, no upstream equivalent |
+| Repo | Main Branch | Build Branch | Previous Build Branch | Status |
+|------|-------------|-------------|----------------------|--------|
+| kagenti/openshell | `main` (synced with NVIDIA) | **`mvp-v2`** (17 commits ahead, v0.0.49+) | `mvp` (v0.0.36-kagenti.8) | Active |
+| kagenti/openshell-driver-openshift | `main` | `mvp` | — | Needs compat testing with mvp-v2 |
+| kagenti/openshell-credentials-keycloak | `main` | `main` | — | Compatible |
 
 ### How Builds Work
 
 1. **Sync Fork**: GitHub "Sync Fork" button syncs `kagenti/openshell:main` with `NVIDIA/OpenShell:main`
-2. **Rebase mvp**: Claude Code rebases the `mvp` branch onto the updated `main`
-3. **Evaluate patches**: Check if kagenti-specific PRs on `mvp` are still needed (some may have been fixed upstream)
-4. **Tag release**: Create `v0.0.XX-kagenti.N` tag from the rebased `mvp`
-5. **Build images**: CI builds gateway + supervisor multi-arch images from the tagged commit
+2. **Create mvp-v2**: Branch from synced `main`, cherry-pick kagenti patches
+3. **Fix compilation**: Resolve Rust conflicts, add missing match arms, fix clippy
+4. **CI publishes**: Publish workflow on `mvp-v2` push builds gateway + supervisor images
+5. **Tag format**: `mvp-v2-<sha7>` (e.g., `mvp-v2-3a1bbea`)
+
+### Key CLI Change in v0.0.49
+
+The gateway CLI args changed:
+- **Old (v0.0.36)**: `--sandbox-namespace team1`
+- **New (v0.0.49)**: `--drivers=external --compute-driver-socket=/run/drivers/compute.sock --credentials-driver-socket=/run/drivers/credentials.sock`
+
+The `--sandbox-namespace` flag was removed. The Helm chart `statefulset.yaml`
+must use the new args format.
 
 ### Current Image Tags
 
@@ -64,22 +73,40 @@ flowchart TB
 
 ---
 
-## Custom Patches on mvp Branch
+## Custom Patches on mvp-v2 Branch
 
-These PRs were merged into the kagenti/openshell `mvp` branch and represent
-our divergence from upstream:
+The `mvp-v2` branch (created by pdettori, June 3 2026) carries 17 commits
+on top of synced upstream `main` (v0.0.49+). These are the rebased and
+fixed kagenti patches:
 
-### Gateway Patches
+### Gateway/Core Patches (mvp-v2)
 
-| PR | Title | Still needed? |
-|----|-------|---------------|
-| #1 | Gateway fork: `--compute-driver-socket` and `--credentials-driver-socket` flags with OIDC | **Yes** — upstream K8s driver is in-process Rust, ours is out-of-process Go via Unix socket |
-| #2 | Multi-arch supervisor images (linux/amd64 + linux/arm64) | **Maybe not** — upstream v0.0.49 ships multi-arch binaries |
-| #3 | Remove NVIDIA self-hosted CI runners | **Yes** — CI infrastructure difference |
-| #4 | Custom Kagenti CI workflows for gateway/supervisor publishing | **Yes** — our GHCR registry |
-| #5 | OpenShell CLI release workflow | **Maybe not** — depends on whether we ship the CLI |
-| #6 | Sandbox fixes: SSH permissions, `/tmp` writability | **Check** — may be fixed upstream |
-| #7 | Inference routing on Kind (sandbox-system route) | **Check** — upstream may handle differently |
+| Commit | Title | Category |
+|--------|-------|----------|
+| `d6abdad4` | Add credentials driver client with `--credentials-driver-socket` | Core |
+| `56c8ffdb` | Use native root certificates for OIDC discovery | Auth |
+| `2b64b515` | Add Debug impl for CredentialsDriverHandle | Fix |
+| `7d651381` | Add External arm to config_file inheritable_keys match | Fix |
+| `d555d98a` | Gate tracing::debug import behind cfg(unix) in credentials module | Fix |
+| `d5059da6` | Handle External variant in telemetry driver kind mapping | Fix |
+
+### CI/Build Patches (mvp-v2)
+
+| Commit | Title |
+|--------|-------|
+| `9941162f` | Trigger workflows on mvp-v2 branch |
+| `f9f98b62` | Use cargo-zigbuild for musl targets and fix clippy lint |
+| `9a6a0ed5` | Use correct Dockerfile paths for gateway and supervisor |
+| `3a1bbea7` | Increase publish timeout to 90min for source builds |
+
+### What Changed from mvp to mvp-v2
+
+The old `mvp` branch (v0.0.36-kagenti.8) had patches for:
+- `--compute-driver-socket` flag — **still needed**, now in mvp-v2
+- `--credentials-driver-socket` flag — **still needed**, now in mvp-v2
+- SSH `/tmp` permissions fix — **check if upstream v0.0.49 includes it**
+- Inference routing — **check if upstream v0.0.49 handles differently**
+- Multi-arch supervisor build — **now built from upstream Dockerfiles**
 
 ### Compute Driver Patches (openshell-driver-openshift)
 
@@ -107,9 +134,9 @@ authentication. No upstream equivalent exists.
 matches one DNS label only. `*.svc.cluster.local` matches `foo.svc.cluster.local`
 but NOT `litellm-model-proxy.team1.svc.cluster.local` (two labels before `.svc`).
 
-**Status**: Upstream v0.0.49 rego uses `**` for cross-label matching. Our v0.0.36
-may not have this. The rego file itself supports `**` — the issue is that our
-**policy-data.yaml files** use `*` instead of `**`.
+**Status (mvp-v2)**: Upstream v0.0.49 rego supports `**` for cross-label matching.
+With the mvp-v2 upgrade, this should work. Our policy-data.yaml files use explicit
+endpoints (not wildcards) as a belt-and-suspenders fix.
 
 **Fix in PR #1689**: Replaced wildcard policies with explicit service endpoints
 (e.g., `litellm-model-proxy.team1.svc.cluster.local:4000`).
@@ -123,10 +150,9 @@ may not have this. The rego file itself supports `**` — the issue is that our
 and `ports` (field 9, repeated uint32). The gateway's response serialization
 normalizes `ports` back to `port` — a **gateway serialization bug**.
 
-**Status**: The rego evaluator correctly uses `endpoint.ports[_]` (plural).
-The normalization from `port` → `ports` happens on input. But the **inverse
-normalization on output** strips the list back to scalar. This may be fixed in
-upstream v0.0.49 but needs verification after fork sync.
+**Status (mvp-v2)**: The rego evaluator correctly uses `endpoint.ports[_]` (plural).
+The normalization bug (stripping `ports` → `port` on output) may be fixed in
+upstream v0.0.49. **Needs verification** on mvp-v2 — test with `openshell sandbox get --policy-only`.
 
 ### Issue: glibc Compatibility
 
@@ -136,6 +162,45 @@ upstream v0.0.49 but needs verification after fork sync.
 agent Dockerfiles used `python:3.12-slim` (Debian bookworm, glibc 2.36).
 
 **Fixed in PR #1689**: Upgraded to `python:3.13-slim` (Debian trixie, glibc 2.40).
+
+### Issue #1815: Supervisor scratch image breaks init container (mvp-v2)
+
+**Symptom**: Supervised agents fail to start — init container crashes with
+`sh: not found` or `cp: not found`.
+
+**Root cause**: The compute driver (`openshell-driver-openshift`) creates init
+containers with `command: ["sh", "-c", "cp /openshell-sandbox /opt/openshell/bin/"]`.
+The mvp-v2 supervisor image is a scratch/distroless image — no shell, no cp.
+
+**Affects**: Supervised agents (ADK, weather) that use the supervisor binary.
+Does NOT affect teleport sandboxes (use base image directly).
+
+**Fix needed**: Either:
+1. Update compute driver to use a different copy mechanism (e.g., multi-stage
+   Dockerfile with `COPY --from=supervisor`)
+2. Or build supervisor image with a minimal shell (busybox)
+3. Or use the agent Dockerfile pattern (already copies supervisor at build time)
+
+**Workaround**: Agent Dockerfiles in PR #1689 already `COPY --from=supervisor`
+at build time, so they don't depend on the init container copy.
+
+### Issue: ExecSandbox vs Sandbox CRD Mismatch
+
+**Symptom**: ExecSandbox gRPC returns `NOT_FOUND` for sandboxes created via
+the Sandbox CRD (kubectl apply).
+
+**Root cause**: The gateway's ExecSandbox looks up sandboxes in its SQLite
+database. Sandboxes created via `CreateSandbox` RPC are stored there.
+Sandboxes created via the Sandbox CRD (agent-sandbox-controller) are NOT
+registered in the gateway's database.
+
+**Affects**: The ACP bridge → ExecSandbox → gateway path for teleport
+sandboxes. The teleport script creates sandboxes via CRD, but ExecSandbox
+expects gateway-managed sandboxes.
+
+**Status**: T6 sandbox prompt test marked xfail with full explanation.
+Fix requires vendoring `CreateSandbox` proto and creating sandboxes via
+the gateway RPC instead of kubectl apply.
 
 ---
 
@@ -163,100 +228,53 @@ driver could replace ours if we upstream the multi-tenancy features.
 
 ---
 
-## Upgrade Plan
+## Upgrade Status: mvp-v2 (COMPLETED)
 
-### Immediate (v0.6.0 stabilization window)
-
-Per colleague's request, **hold the fork sync** until v0.6.0 RC is stable.
-Current work continues on the existing `v0.0.36-kagenti.8` images.
-
-### Step 1: Sync Fork (after v0.6.0)
-
-```bash
-# On kagenti/openshell — Sync Fork button on GitHub
-# Then rebase mvp:
-git fetch origin main
-git checkout mvp
-git rebase origin/main
-# Resolve conflicts in kagenti-specific patches
-```
-
-### Step 2: Evaluate Patches
-
-For each PR on `mvp`, check if upstream v0.0.49 includes the fix:
-- SSH permissions → likely fixed
-- Multi-arch builds → upstream ships multi-arch now
-- Socket flags → still needed (our Go driver is out-of-process)
-- CI workflows → still needed (our GHCR)
-
-### Step 3: Test
-
-1. Build new images from rebased `mvp`
-2. Deploy to Kind with updated Helm chart tags
-3. Run T7 teleport tests (12 tests)
-4. Test policy normalization (#1669)
-5. Test wildcard matching (#1647)
-6. Verify glibc compatibility
-
-### Step 4: Evaluate Compute Driver Migration
-
-If upstream K8s driver gains multi-tenancy features, we can deprecate
-`openshell-driver-openshift`. Key upstream PRs to track:
-- Namespace isolation per tenant
-- Scoped RBAC (not cluster-admin)
-- OpenShift SCC support
-
----
-
-## Upgrade Plan: Safe Branch Strategy
-
-### Principle: Never Touch mvp
-
-The `mvp` branch is the production build target. All upgrade work happens
-on parallel branches. Old branches are preserved for rollback.
+The upgrade from v0.0.36 to v0.0.49+ is **done** via the `mvp-v2` branch,
+created by pdettori on June 3, 2026.
 
 ```mermaid
-flowchart TB
-    subgraph NVIDIA["NVIDIA Upstream"]
-        NM["main (v0.0.49)"]
-    end
+flowchart LR
+    MVP["mvp\n(v0.0.36-kagenti.8)\narchived"] -->|"upgrade"| MVPV2["mvp-v2\n(v0.0.49+ upstream)\nACTIVE"]
+    NVIDIA["NVIDIA v0.0.49"] -->|"sync + rebase"| MVPV2
 
-    subgraph KAGENTI["kagenti/openshell"]
-        KM["main"] -->|"Sync Fork"| NM
-        MVP["mvp\n(v0.0.36-kagenti.8)\nUNTOUCHED"]
-        NEW["mvp-2026-05-29\n(branched from synced main)"]
-        KM --> NEW
-        NEW -->|"cherry-pick\nkagenti patches"| NEW
-        NEW -->|"after testing"| MVP2["mvp\n(updated)"]
-        MVP -->|"archive"| ARCHIVE["mvp-v0.0.36-archive"]
-    end
-
-    style MVP fill:#4a7c59,color:#fff,stroke:#666,stroke-width:2px
-    style NEW fill:#8a6d3b,color:#fff,stroke:#666,stroke-width:2px
-    style ARCHIVE fill:#555,color:#fff,stroke:#666,stroke-width:2px
+    style MVP fill:#555,color:#fff,stroke:#666,stroke-width:2px
+    style MVPV2 fill:#4a7c59,color:#fff,stroke:#666,stroke-width:2px
+    style NVIDIA fill:#3d6b8e,color:#fff,stroke:#666,stroke-width:2px
 
     linkStyle default stroke:#444,stroke-width:3px
 ```
 
-### Branch Naming
+### What Was Done
 
-| Repo | Current Build Branch | New Test Branch | Archive |
-|------|---------------------|-----------------|---------|
-| kagenti/openshell | `mvp` | `mvp-2026-05-29` | `mvp-v0.0.36-archive` |
-| kagenti/openshell-driver-openshift | `mvp` | `mvp-2026-05-29` | `mvp-v0.0.36-archive` |
-| kagenti/openshell-credentials-keycloak | `main` | `main-2026-05-29` | (no change needed) |
+1. Synced `main` with NVIDIA upstream via GitHub "Sync Fork"
+2. Created `mvp-v2` from synced `main`
+3. Rebased kagenti patches (credentials driver, External driver, OIDC)
+4. Fixed Rust compilation: Debug impl, match arms, clippy lints, cfg gates
+5. Updated CI workflows to trigger on `mvp-v2` branch
+6. Built and published gateway + supervisor images to GHCR
 
-### Current Status (2026-05-29)
+### Remaining Work
 
-- `mvp-2026-05-29` branch created on kagenti/openshell at NVIDIA v0.0.49 HEAD
-- `mvp` branch untouched (v0.0.36-kagenti.8)
-- Cherry-pick attempted: **3 conflicts in core gateway Rust code**
-  - `crates/openshell-core/src/config.rs` — driver config struct changed
-  - `crates/openshell-server/src/cli.rs` — CLI args refactored
-  - `crates/openshell-server/src/lib.rs` — server initialization rewritten
-- These conflicts are in the `--compute-driver-socket` patch where upstream
-  refactored the driver architecture. **Needs Rust developer** to resolve.
-- Earlier patches (README, CI workflows, sandbox fixes) cherry-pick cleanly.
+| Item | Status |
+|------|--------|
+| Gateway + supervisor images | **DONE** — `mvp-v2-3a1bbea` |
+| Helm chart args update | **DONE** — `--drivers=external` (PR #1689) |
+| Compute driver compat | **Needs testing** — may need update for #1815 |
+| Policy wildcards (#1647) | **Needs verification** on mvp-v2 |
+| Port normalization (#1669) | **Needs verification** on mvp-v2 |
+| Supervised agent init (#1815) | **Blocked** — scratch image has no shell |
+
+### Rollback
+
+If mvp-v2 causes issues:
+```yaml
+# charts/openshell/values.yaml — revert to old tags:
+gateway.tag: v0.0.36-kagenti.8
+supervisorImage.tag: v0.0.36-kagenti.8
+# statefulset.yaml — revert args:
+args: ["--sandbox-namespace", "team1"]
+```
 
 ### Step-by-Step Procedure
 
