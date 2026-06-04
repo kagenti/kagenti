@@ -20,6 +20,11 @@ model** — **Core** and **Incubator** — signaled through three reinforcing su
 Tier changes are governed by a **lightweight checklist + maintainer vote** (7-day
 lazy consensus, simple majority of Core repo maintainers).
 
+CI for any repo is owned by **that repo's own maintainers**. Org-wide CI
+enforcement applies only to Core repos. Incubator repos can opt into a shared
+CI workflow library to easily run the same checks Core uses, on their own
+schedule.
+
 The proposal stays within a **single GitHub org** — no sub-orgs, no repo moves,
 no renames as part of this proposal. Renames may be considered as a separate
 future step.
@@ -53,6 +58,9 @@ This proposal addresses three goals together:
   revisitable later if pain emerges.
 - Tiering private repositories until/if they are made public.
 - Per-component tiering within a single repository.
+- Org-wide enforcement of CI on Incubator repos. CI for Incubator repos
+  remains the responsibility of those repos' own maintainers; the proposal
+  provides shared, **opt-in** CI workflows but does not mandate them.
 
 ---
 
@@ -86,7 +94,7 @@ activity level, or perceived importance.
 | API stability | Breaking changes follow a deprecation policy (≥1 minor release of notice). |
 | Security | Vulnerabilities handled per documented SLA in `SECURITY.md`. |
 | Maintainership | ≥2 active maintainers (commits in last 90 days). |
-| CI | Green on `main`. |
+| CI | Green on `main`. CI is owned and operated by the repo's own maintainers. |
 | Releases | Tagged releases, on a documented cadence. |
 | Discoverability | Listed prominently in the index; recommended for production. |
 
@@ -97,9 +105,38 @@ activity level, or perceived importance.
 | API stability | None. May change shape, may be abandoned. |
 | Security | Best-effort; clearly disclaimed in README. |
 | Maintainership | At least one identifiable maintainer; otherwise eligible for archival. |
-| CI | Encouraged but not required. |
+| CI | Owned by the **repo's own maintainers**. Not enforced org-wide. Encouraged but not required. Shared CI workflows are available to opt into (see [Shared CI](#shared-ci-for-incubator-repos)). |
 | Releases | Optional. |
 | Discoverability | Listed in a separate "Incubator" section; README banner labels as experimental. |
+
+### CI ownership
+
+CI for any repo — Core or Incubator — is owned and operated by **that repo's
+own maintainers**. Core repo maintainers are not on the hook for keeping
+Incubator repos green, and vice versa. Org-level CI enforcement (Phase 4
+rulesets) applies only to Core repos.
+
+### Shared CI for Incubator repos
+
+To make it easy for Incubator maintainers to test their repo against the same
+CI pipeline Core uses, the proposal includes a **shared, opt-in CI workflow
+library** maintained alongside the platform:
+
+- A set of reusable GitHub Actions workflows (e.g., lint, security scan,
+  container build, e2e against a Kind cluster) lives in a well-known
+  location — likely `kagenti/kagenti/.github/workflows/` exposed as
+  `workflow_call` reusables, or a dedicated `kagenti/ci-workflows` repo if it
+  grows large enough to justify its own home.
+- Incubator repos opt in by adding a one-line `uses:` reference in their own
+  workflow file. They control which checks run and on what triggers.
+- The shared workflows are versioned (tagged) so an Incubator repo can pin to
+  a known-good version and isn't broken by changes in Core's CI.
+- Documentation in `docs/ci/shared-workflows.md` (added in Phase 2 alongside
+  the index) describes how to opt in.
+
+This keeps the boundary clean: Core defines and maintains the CI it cares
+about; Incubator repos pick up whichever pieces are useful, on their own
+schedule, without org-wide enforcement.
 
 ### Archival
 
@@ -281,12 +318,18 @@ Apply Custom Property `tier` and the matching topic to all 17 public repos per
 the classification table. No renames, no content changes.
 **Output:** every repo is labeled; labels are queryable.
 
-### Phase 2 — Stand up the index
+### Phase 2 — Stand up the index and shared CI workflows
 
 Create `kagenti/.github/profile/README.md` and
 `kagenti/kagenti/docs/governance/repositories.md` with Core and Incubator
-sections. First edit done manually. **Output:** the org landing page and main
-docs reflect the tier model.
+sections. First edit done manually.
+
+In the same phase, publish the **shared CI workflow library** (lint, security
+scan, container build, e2e against Kind) as `workflow_call` reusables in a
+known location, with `docs/ci/shared-workflows.md` describing how Incubator
+repos opt in. **Output:** the org landing page and main docs reflect the tier
+model; Incubator maintainers have a clear, optional on-ramp to the same CI
+that Core uses.
 
 ### Phase 3 — Automate the index
 
@@ -300,10 +343,14 @@ Triggered weekly on schedule and on the `repository.edited` org webhook.
 **Output:** indexes self-heal; manual edits are no longer required for
 tier-driven content.
 
-### Phase 4 — Apply governance
+### Phase 4 — Apply governance (Core repos only)
 
-Use Custom Properties as inputs to GitHub org rulesets. Likely starting set
-for `tier=core`:
+Use Custom Properties as inputs to GitHub org rulesets. **Rulesets in this
+phase apply only to `tier=core` repos.** Incubator repos are explicitly
+excluded — their CI, branch protection, and security setup remain the
+responsibility of their own maintainers.
+
+Likely starting set for `tier=core`:
 
 - Require signed commits.
 - Require branch protection on `main` (≥1 review, status checks must pass).
@@ -312,7 +359,8 @@ for `tier=core`:
 
 Each rule rolled out one at a time, with maintainer notice before each.
 **Output:** tier becomes load-bearing — the label correlates with enforced
-behavior.
+behavior on Core repos, while Incubator repos retain full autonomy over their
+own CI and policies.
 
 ### Phase 5 (future, optional) — Renames
 
