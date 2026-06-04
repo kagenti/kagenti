@@ -2,10 +2,10 @@
 
 This guide covers installing and using the Kagenti sandboxing feature powered by
 [OpenShell](https://github.com/NVIDIA/OpenShell). Kagenti maintains a
-[distribution fork](https://github.com/kagenti/OpenShell) with pre-built
-binaries and Kagenti-specific patches. Sandboxes provide kernel-level isolation
-for autonomous AI agents with credential protection and network policy
-enforcement.
+[distribution fork](https://github.com/kagenti/OpenShell) (`mvp-v2` branch) with
+Kagenti-specific multitenancy patches. The upstream CLI works as-is — no
+fork-specific build is needed. Sandboxes provide kernel-level isolation for
+autonomous AI agents with credential protection and network policy enforcement.
 
 ## Prerequisites
 
@@ -16,17 +16,17 @@ enforcement.
 
 ## Install the OpenShell CLI
 
-Download the latest release for your platform from
-<https://github.com/kagenti/OpenShell/releases>:
+Install the upstream OpenShell CLI (fully compatible with the Kagenti gateway):
 
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/kagenti/OpenShell/releases/latest/download/openshell-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv openshell /usr/local/bin/
+# Via the official install script
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+```
 
-# Linux (x86_64)
-curl -L https://github.com/kagenti/OpenShell/releases/latest/download/openshell-x86_64-unknown-linux-musl.tar.gz | tar xz
-sudo mv openshell /usr/local/bin/
+Or via PyPI:
+
+```bash
+uv tool install openshell
 ```
 
 Verify the installation:

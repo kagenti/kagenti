@@ -5,7 +5,7 @@ tenant: ""
 images:
   gateway:
     repository: ghcr.io/kagenti/openshell/gateway
-    tag: v0.0.36-kagenti.8
+    tag: latest
     pullPolicy: IfNotPresent
   computeDriver:
     repository: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
@@ -28,10 +28,10 @@ keycloakClusterIP: ""
 
 # -- Supervisor image injected as an init container by the compute driver
 # to copy the openshell-sandbox binary into each sandbox pod.
-# Built from kagenti/OpenShell@mvp as a multi-arch image (linux/amd64 + linux/arm64).
+# Built from kagenti/OpenShell@mvp-v2 as a multi-arch image (linux/amd64 + linux/arm64).
 supervisorImage:
   repository: ghcr.io/kagenti/openshell/supervisor
-  tag: v0.0.36-kagenti.8
+  tag: latest
   binaryPath: /openshell-sandbox
 
 # -- Image pull policy for sandbox pods (init + agent containers).
