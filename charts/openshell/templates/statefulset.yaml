@@ -37,9 +37,6 @@ spec:
         - name: gateway
           image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
           imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
-          args:
-            - "--sandbox-namespace"
-            - {{ include "openshell.driverNamespace" . | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
