@@ -108,13 +108,12 @@ build_gateway() {
     local src="$REPOS_DIR/OpenShell"
     if [[ ! -d "$src" ]]; then
         echo "ERROR: Gateway source not found at $src" >&2
-        echo "Clone it: git clone https://github.com/kagenti/OpenShell.git -b mvp $src" >&2
+        echo "Clone it: git clone https://github.com/kagenti/OpenShell.git -b mvp-v2 $src" >&2
         return 1
     fi
     echo "Building gateway image: $GATEWAY_IMAGE:$TAG"
     docker build --load -t "$GATEWAY_IMAGE:$TAG" \
-        --target gateway \
-        -f "$src/deploy/docker/Dockerfile.images" \
+        -f "$src/deploy/docker/Dockerfile.gateway" \
         "$src"
 }
 
