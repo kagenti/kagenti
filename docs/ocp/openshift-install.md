@@ -392,7 +392,7 @@ triggering infinite retries even though traces are successfully ingested.
 Run before installation to check your environment:
 
 ```shell
-./deployments/scripts/preflight-check.sh
+./scripts/ocp/preflight-check.sh
 ```
 
 Validates: required tools, cluster connectivity, OCP version, network configuration for Istio Ambient mode.
