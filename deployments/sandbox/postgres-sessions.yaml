@@ -47,7 +47,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: postgres
-        image: registry.redhat.io/rhel9/postgresql-16:1-123
+        image: registry.redhat.io/rhel9/postgresql-16:latest
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
