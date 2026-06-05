@@ -253,6 +253,10 @@ class TestSandboxAnnotation:
         assert sandbox_id.strip(), "openshell.io/sandbox-id annotation is empty"
 
 
+@pytest.mark.xfail(
+    reason="Requires supervisor binary in sandbox to initiate auth handshake",
+    strict=False,
+)
 class TestSandboxAuthFlow:
     """Verify end-to-end IssueSandboxToken flow via gateway logs."""
 
