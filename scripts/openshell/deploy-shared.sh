@@ -94,7 +94,7 @@ while [[ $# -gt 0 ]]; do
     --litellm)          STEP_LITELLM=true; shift ;;
     --pre-pull)         STEP_PREPULL=true; shift ;;
     --with-backend)     STEP_BACKEND=true; shift ;;
-    --backend|--skip-backend) STEP_BACKEND=false; shift ;;
+    --backend|--skip-backend) STEP_BACKEND=false; shift ;;  # compat aliases (no-op, kept for existing scripts)
     --kind-cluster)     KIND_CLUSTER="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)
@@ -115,7 +115,7 @@ echo "  cert-manager CA:    $STEP_TLS"
 echo "  Keycloak realm:     $STEP_KEYCLOAK"
 echo "  LiteLLM proxy:      $STEP_LITELLM"
 echo "  Image pre-pull:      $STEP_PREPULL"
-echo "  Backend + sessions: $STEP_BACKEND"
+echo "  Backend + sessions: $STEP_BACKEND$( $STEP_BACKEND || echo ' (use --with-backend to enable)' )"
 echo "  Keycloak namespace: $KEYCLOAK_NS"
 echo "  Dry run:            $DRY_RUN"
 echo ""
