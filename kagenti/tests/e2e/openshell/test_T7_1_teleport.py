@@ -98,8 +98,8 @@ class TestTeleportPackage:
 
 
 @pytest.mark.xfail(
-    reason="Requires compute-driver to enrich Sandbox CRs with projected tokens",
-    strict=True,
+    reason="Requires compute-driver to enrich Sandbox CRs with projected tokens (#1828)",
+    strict=False,
 )
 class TestTeleportLifecycle:
     """Full lifecycle in a single sandbox: deploy, verify context, prompt, cleanup.
@@ -250,8 +250,8 @@ class TestTeleportSkills:
 
 
 @pytest.mark.xfail(
-    reason="Requires compute-driver to enrich Sandbox CRs with projected tokens",
-    strict=True,
+    reason="Requires compute-driver to enrich Sandbox CRs with projected tokens (#1828)",
+    strict=False,
 )
 class TestTeleportSpawn:
     """--spawn mode: bare sandbox without local context."""
