@@ -259,7 +259,7 @@ else
     # CI runners. Try 3 times with recovery between attempts.
     CERT_READY=false
     for attempt in 1 2 3; do
-      CERT_WAIT_TIMEOUT=$((TIMEOUT / 3))
+      CERT_WAIT_TIMEOUT=90
       if kubectl wait --for=condition=Ready certificate --all \
           -n "$TENANT" --timeout="${CERT_WAIT_TIMEOUT}s" 2>/dev/null; then
         CERT_READY=true

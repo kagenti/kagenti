@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
-    timeout-minutes: 45
+    timeout-minutes: 55
     continue-on-error: true
 
     steps:
