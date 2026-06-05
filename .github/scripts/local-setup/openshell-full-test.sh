@@ -324,6 +324,7 @@ fi
 
 scripts/openshell/deploy-shared.sh "${SHARED_ARGS[@]}"
 
+
 # ============================================================================
 # PHASE 5: Deploy Tenants
 # ============================================================================
@@ -334,10 +335,18 @@ if [ "$SKIP_AGENTS" = "false" ]; then
     TENANT_ARGS+=(--agents)
 fi
 
-for tenant in team1 team2; do
-    log_step "Deploying tenant: $tenant"
-    scripts/openshell/deploy-tenant.sh "$tenant" "${TENANT_ARGS[@]}"
-done
+log_step "Deploying tenant: team1"
+scripts/openshell/deploy-tenant.sh "team1" "${TENANT_ARGS[@]}"
+
+# Team2 is only needed for tenant-isolation tests (T4_2). Skip in CI to avoid
+# resource exhaustion on single-node Kind clusters — isolation tests use
+# pytest.mark.skip when the namespace is absent.
+if [ "${OPENSHELL_DEPLOY_TEAM2:-false}" = "true" ]; then
+    log_step "Deploying tenant: team2 (gateway only)"
+    scripts/openshell/deploy-tenant.sh "team2"
+else
+    log_step "Skipping team2 (set OPENSHELL_DEPLOY_TEAM2=true to enable)"
+fi
 
 # ============================================================================
 set -euo pipefail

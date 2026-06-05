@@ -279,10 +279,17 @@ fi
 if $STEP_TLS; then
   log_info "Step 3: cert-manager CA chain for OpenShell TLS"
 
-  # Verify cert-manager is installed
+  # Verify cert-manager is installed and webhook is ready
   if ! kubectl get deployment cert-manager-webhook -n cert-manager &>/dev/null; then
     log_error "cert-manager is not installed. Install cert-manager first."
     exit 1
+  fi
+
+  if ! $DRY_RUN; then
+    log_info "Waiting for cert-manager webhook to be available..."
+    kubectl wait --for=condition=available deployment/cert-manager -n cert-manager --timeout=120s
+    kubectl wait --for=condition=available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+    kubectl wait --for=condition=available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
   fi
 
   # 3a: Bootstrap self-signed ClusterIssuer

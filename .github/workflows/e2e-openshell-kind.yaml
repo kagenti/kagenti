@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
-    timeout-minutes: 45
+    timeout-minutes: 55  # Observed worst-case: ~44min (deploy ~27min + tests ~8min + overhead)
     continue-on-error: true
 
     steps:
