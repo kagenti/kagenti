@@ -14,6 +14,7 @@ filesystem_policy:
     - /app
     - /root
     - /var/log
+    - /.cache
 process:
   run_as_user: ""
   run_as_group: ""
@@ -40,6 +41,13 @@ network_policies:
       - host: "*.redhatworkshops.io"
         port: 443
       - host: "*.rh-aiservices-bu.com"
+        port: 443
+    binaries:
+      - path: /**
+  weather-api:
+    name: "Allow OpenWeatherMap API"
+    endpoints:
+      - host: "api.openweathermap.org"
         port: 443
     binaries:
       - path: /**

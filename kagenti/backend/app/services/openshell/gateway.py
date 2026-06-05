@@ -56,7 +56,7 @@ class OpenShellGatewayClient:
         self._tls_cache[namespace] = (time.monotonic(), creds)
         return creds
 
-    def _get_oidc_token(self, namespace: str) -> str:
+    async def _get_oidc_token(self, namespace: str) -> str:
         """Get a JWT for the gateway from Keycloak using client credentials."""
         cached = self._token_cache.get(namespace)
         if cached and time.monotonic() < cached[0]:
@@ -80,15 +80,16 @@ class OpenShellGatewayClient:
         token_url = f"{keycloak_url}/realms/openshell/protocol/openid-connect/token"
 
         try:
-            resp = httpx.post(
-                token_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
-                timeout=10.0,
-            )
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    token_url,
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                    },
+                    timeout=10.0,
+                )
             resp.raise_for_status()
             token_data = resp.json()
             token = token_data["access_token"]
@@ -156,7 +157,7 @@ class OpenShellGatewayClient:
         )
 
         metadata = []
-        token = self._get_oidc_token(namespace)
+        token = await self._get_oidc_token(namespace)
         if token:
             metadata.append(("authorization", f"Bearer {token}"))
 
