@@ -1,22 +1,23 @@
 # Link Health Report
 
-> Last scan: 2026-06-03 07:01 ET | Scan ID: 2026-06-03-001
+> Last scan: 2026-06-05 07:01 ET | Scan ID: 2026-06-05-001
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Repos scanned | 17 |
-| Total links checked | 2266 |
-| Broken (internal) | 37 |
-| Broken (external) | 22 |
-| New since last scan | +0 |
-| Fixed since last scan | -0 |
+| Total links checked | 2361 |
+| Broken (internal) | 36 |
+| Broken (external) | 23 |
+| New since last scan | +2 |
+| Fixed since last scan | -2 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 06-05 | 36 | 23 | 0 |
 | 06-03 | 37 | 22 | 0 |
 | 06-01 | 37 | 22 | +2 |
 | 05-29 | 36 | 21 | +3 |
@@ -26,18 +27,17 @@
 | 05-21 | 45 | 22 | +2 |
 | 05-20 | 41 | 24 | -2 |
 | 05-18 | 43 | 24 | 0 |
-| 05-18 | 43 | 24 | +6 |
 
 ## Broken Links by Repo
 
 | Repo | Internal | External | Issues |
 |------|----------|----------|--------|
-| OpenShell | 0 | 5 | |
+| OpenShell | 0 | 6 | |
 | adk | 25 | 4 | |
 | agent-examples | 0 | 3 | |
 | agentic-control-plane | 0 | 1 | |
 | ecosystem-guide | 0 | 2 | |
-| kagenti | 10 | 7 | |
+| kagenti | 9 | 7 | |
 | kagenti-operator | 2 | 0 | |
 
 ---
