@@ -59,13 +59,36 @@ kind: Sandbox
 metadata:
   name: {name}
   namespace: {namespace}
+  labels:
+    openshell.ai/sandbox-id: {name}
 spec:
   podTemplate:
+    metadata:
+      annotations:
+        openshell.io/sandbox-id: {name}
+      labels:
+        openshell.ai/sandbox-id: {name}
     spec:
+      serviceAccountName: openshell-sandbox
       containers:
       - name: sandbox
         image: {BASE_IMAGE}
         command: ["sleep", "300"]
+        env:
+        - name: OPENSHELL_K8S_SA_TOKEN_FILE
+          value: /var/run/secrets/openshell/token
+        volumeMounts:
+        - name: openshell-sa-token
+          mountPath: /var/run/secrets/openshell
+          readOnly: true
+      volumes:
+      - name: openshell-sa-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: openshell-gateway
+              expirationSeconds: 3600
+              path: token
 """
     result = subprocess.run(
         ["kubectl", "apply", "-f", "-"],

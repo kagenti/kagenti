@@ -324,12 +324,6 @@ fi
 
 scripts/openshell/deploy-shared.sh "${SHARED_ARGS[@]}"
 
-# Scale down the generic agent-sandbox-controller so it doesn't conflict with
-# the compute-driver's Sandbox CR reconciliation. The compute-driver (sidecar
-# in the gateway pod) creates pods with projected SA tokens and sandbox-id
-# annotations; the generic controller creates bare pods without auth config.
-kubectl scale deployment agent-sandbox-controller -n agent-sandbox-system --replicas=0 2>/dev/null || true
-log_step "Scaled down agent-sandbox-controller (compute-driver handles Sandbox CRs)"
 
 # ============================================================================
 # PHASE 5: Deploy Tenants
