@@ -24,7 +24,7 @@ from kagenti.tests.e2e.openshell.conftest import (
     sandbox_crd_installed,
 )
 
-pytestmark = pytest.mark.openshell
+pytestmark = [pytest.mark.openshell, pytest.mark.mvp]
 
 SANDBOX_NS = os.getenv("OPENSHELL_AGENT_NAMESPACE", "team1")
 SANDBOX_NAME = "test-sandbox-poc"

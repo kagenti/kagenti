@@ -95,6 +95,17 @@ if settings.kagenti_feature_flag_skills:
         logging.getLogger(__name__).warning(
             "SKILLS flag enabled but skills modules not installed — skipping"
         )
+
+_acp_modules_loaded = False
+if settings.kagenti_feature_flag_acp:
+    try:
+        from app.routers import acp  # noqa: E402
+
+        _acp_modules_loaded = True
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "ACP flag enabled but acp modules not installed — skipping"
+        )
 # pylint: enable=wrong-import-position,no-name-in-module,import-error
 
 # Configure logging
@@ -134,6 +145,15 @@ async def lifespan(app: FastAPI):
         try:
             await reconciliation_task
         except asyncio.CancelledError:
+            pass
+
+    # Close OpenShell gateway gRPC channels
+    if _acp_modules_loaded:
+        try:
+            from app.services.openshell.gateway import get_openshell_client
+
+            await get_openshell_client().close()
+        except Exception:
             pass
 
     # Shutdown sandbox services (only if enabled and loaded)
@@ -204,6 +224,10 @@ if _integrations_modules_loaded:
 if _skills_modules_loaded:
     app.include_router(skills.router, prefix="/api/v1")
     logger.info("Feature flag SKILLS enabled — skills routes registered")
+
+if _acp_modules_loaded:
+    app.include_router(acp.router, prefix="/api/v1")
+    logger.info("Feature flag ACP enabled — ACP WebSocket routes registered")
 # pylint: enable=used-before-assignment
 
 

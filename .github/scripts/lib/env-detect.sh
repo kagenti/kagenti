@@ -26,7 +26,7 @@ else
     echo "Running locally"
 
     # Detect if running from a git worktree - if so, find the main repo root
-    # This is needed because files like .secret_values.yaml may only exist in main repo
+    # This is needed because files like charts/kagenti/.secrets.yaml may only exist in main repo
     if [[ "$REPO_ROOT" == *"/.worktrees/"* ]]; then
         # Extract path before .worktrees - this is the main repo root
         export MAIN_REPO_ROOT="${REPO_ROOT%%/.worktrees/*}"

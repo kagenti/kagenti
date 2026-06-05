@@ -63,11 +63,18 @@ class TestResolveAgentUrl:
         assert url == "http://my-agent.team1.svc.cluster.local:8080"
 
     @patch("app.utils.routes.settings")
-    def test_service_not_found(self, mock_settings, kubernetes_service):
-        """Missing Service falls back to default port."""
+    def test_service_no_ports_reads_sandbox_containerport(self, mock_settings, kubernetes_service):
+        """Service with empty ports → read containerPort from the owning Sandbox."""
         mock_settings.is_running_in_cluster = True
-        kubernetes_service._core_api.read_namespaced_service.side_effect = ApiException(
-            status=404, reason="Not Found"
+        svc = MagicMock()
+        svc.to_dict.return_value = {"spec": {"ports": []}}
+        kubernetes_service._core_api.read_namespaced_service.return_value = svc
+        kubernetes_service.get_sandbox = MagicMock(
+            return_value={
+                "spec": {
+                    "podTemplate": {"spec": {"containers": [{"ports": [{"containerPort": 8080}]}]}}
+                }
+            }
         )
 
         from app.utils.routes import resolve_agent_url
@@ -76,17 +83,59 @@ class TestResolveAgentUrl:
         assert url == "http://my-agent.team1.svc.cluster.local:8080"
 
     @patch("app.utils.routes.settings")
-    def test_service_no_ports(self, mock_settings, kubernetes_service):
-        """Service with empty ports list falls back to default port."""
+    def test_service_no_ports_reads_sandbox_env(self, mock_settings, kubernetes_service):
+        """No containerPort → fall back to the PORT env var on the Sandbox."""
         mock_settings.is_running_in_cluster = True
-        mock_result = MagicMock()
-        mock_result.to_dict.return_value = {"spec": {"ports": []}}
-        kubernetes_service._core_api.read_namespaced_service.return_value = mock_result
+        svc = MagicMock()
+        svc.to_dict.return_value = {"spec": {"ports": []}}
+        kubernetes_service._core_api.read_namespaced_service.return_value = svc
+        kubernetes_service.get_sandbox = MagicMock(
+            return_value={
+                "spec": {
+                    "podTemplate": {
+                        "spec": {"containers": [{"env": [{"name": "PORT", "value": "9000"}]}]}
+                    }
+                }
+            }
+        )
+
+        from app.utils.routes import resolve_agent_url
+
+        url = resolve_agent_url("my-agent", "team1", kubernetes_service)
+        assert url == "http://my-agent.team1.svc.cluster.local:9000"
+
+    @patch("app.utils.routes.settings")
+    def test_service_missing_no_sandbox_falls_back(self, mock_settings, kubernetes_service):
+        """No Service and no Sandbox → DEFAULT_OFF_CLUSTER_PORT (8080)."""
+        mock_settings.is_running_in_cluster = True
+        kubernetes_service._core_api.read_namespaced_service.side_effect = ApiException(
+            status=404, reason="Not Found"
+        )
+        kubernetes_service.get_sandbox = MagicMock(
+            side_effect=ApiException(status=404, reason="Not Found")
+        )
 
         from app.utils.routes import resolve_agent_url
 
         url = resolve_agent_url("my-agent", "team1", kubernetes_service)
         assert url == "http://my-agent.team1.svc.cluster.local:8080"
+
+    @patch("app.utils.routes.settings")
+    def test_service_missing_off_cluster(self, mock_settings, kubernetes_service):
+        """No Service, no Sandbox, off-cluster → DEFAULT_OFF_CLUSTER_PORT with domain."""
+        mock_settings.is_running_in_cluster = False
+        mock_settings.domain_name = "localtest.me"
+        kubernetes_service._core_api.read_namespaced_service.side_effect = ApiException(
+            status=404, reason="Not Found"
+        )
+        kubernetes_service.get_sandbox = MagicMock(
+            side_effect=ApiException(status=404, reason="Not Found")
+        )
+
+        from app.utils.routes import resolve_agent_url
+
+        url = resolve_agent_url("my-agent", "team1", kubernetes_service)
+        assert url == "http://my-agent.team1.localtest.me:8080"
 
     @patch("app.utils.routes.settings")
     def test_off_cluster_custom_port(self, mock_settings, kubernetes_service):

@@ -69,7 +69,7 @@ data:
 
     # --- Function Definition ---
     get_route_host() {
-        local TIMEOUT_SECONDS=5
+        local TIMEOUT_SECONDS=30
         local CHECK_INTERVAL_SECONDS=1
         local NAMESPACE="$1"
         local ROUTE_NAME="$2"
@@ -113,7 +113,7 @@ data:
       "kagenti-system,phoenix,true,TRACES_DASHBOARD_URL"
       {{- end }}
       {{- if .Values.components.mlflow.enabled }}
-      "kagenti-system,mlflow,true,MLFLOW_DASHBOARD_URL"
+      "{{ .Values.components.mlflow.routeNamespace | default .Release.Namespace }},mlflow,true,MLFLOW_DASHBOARD_URL,{{ .Values.components.mlflow.routePath | default "/mlflow" }}"
       {{- end }}
       "kagenti-system,kagenti-api,true,API_URL"
       "istio-system,kiali,true,NETWORK_TRAFFIC_DASHBOARD_URL"
@@ -125,13 +125,14 @@ data:
 
     echo "--- Starting Route Processing ---"
     for item in "${ROUTES_DATA[@]}"; do
-      IFS=',' read -r namespace route_name enabled key <<< "$item"
+      IFS=',' read -r namespace route_name enabled key path_suffix <<< "$item"
       echo
       echo "Checking: namespace='$namespace', route='$route_name', enabled='$enabled', key='$key'"
       if [[ "$enabled" == "true" ]]; then
         echo "-> Enabled. Attempting to get host URL..."
         route_url=$(get_route_host "$namespace" "$route_name")
         if [[ $? -eq 0 && -n "$route_url" ]]; then
+          route_url="${route_url}${path_suffix}"
           echo "   Success. Found URL: $route_url"
           output_keys+=("$key")
           output_values+=("$route_url")
@@ -194,7 +195,7 @@ spec:
       serviceAccountName: {{ include "kagenti.fullname" . }}-route-processor-sa
       containers:
       - name: script-runner
-        image: registry.redhat.io/openshift4/ose-cli:latest
+        image: {{ .Values.common.oseCLIImage | default "registry.redhat.io/openshift4/ose-cli:v4.15" }}
         command: ["/bin/bash", "-c", "/scripts/process_routes.sh"]
         volumeMounts:
         - name: script-volume

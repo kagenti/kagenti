@@ -446,18 +446,19 @@ Kagenti provides a unified framework for identity and authorization in agentic s
 
 | Component | Purpose | Repository |
 |-----------|---------|------------|
-| **[Client Registration](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/client-registration)** | Automatic OAuth2/OIDC client provisioning using SPIFFE ID | `AuthBridge/client-registration` |
-| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/authproxy)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
+| **[AuthProxy](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge)** | Inbound JWT validation (JWKS) and outbound token exchange | `AuthBridge/AuthProxy` |
 | **[SPIRE](https://spiffe.io/docs/latest/spire-about/)** | Workload identity and attestation | External |
 | **[Keycloak](https://www.keycloak.org/)** | Identity provider and access management | External |
 
-### Client Registration
+### Keycloak Client Registration (Operator-Managed)
 
-Automatically registers Kubernetes workloads as Keycloak clients at pod startup:
+Keycloak client registration is handled by the kagenti-operator's ClientRegistrationReconciler controller:
 
+- Watches for Deployments/StatefulSets labeled with `kagenti.io/type: agent` or `tool`
 - Uses **SPIFFE ID** as client identifier (e.g., `spiffe://localtest.me/ns/team/sa/my-agent`)
-- Eliminates manual client creation and secret distribution
-- Writes credentials to shared volume for application use
+- Reads Keycloak admin credentials from the operator namespace (`kagenti-system`)
+- Creates a secret in the agent namespace containing client credentials
+- Eliminates the need for admin credentials in agent namespaces
 
 ### AuthProxy
 
@@ -497,7 +498,7 @@ An Envoy-based sidecar that handles both **inbound JWT validation** and **outbou
 - **Inbound JWT Validation** — Validates token signature, expiration, and issuer using JWKS keys fetched from Keycloak. Optionally validates the audience claim. Returns HTTP 401 for missing or invalid tokens.
 - **Outbound Token Exchange** — Performs [OAuth 2.0 Token Exchange (RFC 8693)](https://datatracker.ietf.org/doc/html/rfc8693) to replace the caller's token with one scoped to the target service audience
 - **Transparent to applications** — Traffic interception via iptables; no application code changes required
-- **Configuration** — Inbound validation is configured via `ISSUER` (required) and `EXPECTED_AUDIENCE` (optional) environment variables. Outbound exchange uses `TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET`, and `TARGET_AUDIENCE`.
+- **Configuration** — Inbound validation is configured via `ISSUER` (required) and `EXPECTED_AUDIENCE` (optional) environment variables. Outbound exchange uses `TOKEN_URL`, `CLIENT_ID`, `CLIENT_SECRET` (provided by the operator via secret), and `TARGET_AUDIENCE`.
 
 ### SPIRE (Workload Identity)
 
@@ -518,7 +519,7 @@ An Envoy-based sidecar that handles both **inbound JWT validation** and **outbou
 | Feature | Description |
 |---------|-------------|
 | **User Management** | Create and manage Kagenti users |
-| **Client Registration** | OAuth clients for agents and UI (e.g. automated Keycloak Client registration via [Client Registration](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge/client-registration) component) |
+| **Client Registration** | OAuth clients for agents and UI (automated registration via kagenti-operator's ClientRegistrationReconciler) |
 | **Token Exchange** | Exchange tokens between audiences ([RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693)) |
 | **SSO** | Single sign-on across Kagenti components |
 
@@ -555,9 +556,6 @@ For detailed overview of Identity and Authorization Patterns, see the [Identity 
 ### Tornjak (SPIRE Management UI)
 
 ```bash
-# API
-curl http://spire-tornjak-api.localtest.me:8080/
-
 # UI
 open http://spire-tornjak-ui.localtest.me:8080/
 ```

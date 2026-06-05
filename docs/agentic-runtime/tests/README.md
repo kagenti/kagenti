@@ -12,7 +12,7 @@ This directory contains detailed documentation for each E2E test category. Each 
 |---|----------|-----------|-------|------|------|-------|
 | 01 | [Platform Health](01-platform-health.md) | `test_01_platform_health.py` | 7 | 7 | 0 | Gateway, operator, agent pods |
 | 02 | [A2A Connectivity](02-a2a-connectivity.md) | `test_02_a2a_connectivity.py` | 8 | 7 | 1 | JSON-RPC, agent card discovery |
-| 03 | [Credential Security](03-credential-security.md) | `test_03_credential_security.py` | 15 | 15 | 0 | secretKeyRef, policy mounting |
+| 03 | [Credential Security](03-credential-security.md) | `test_T1_6_credential_security.py` | 15 | 15 | 0 | secretKeyRef, policy mounting |
 | 04 | [Sandbox Lifecycle](04-sandbox-lifecycle.md) | `test_04_sandbox_lifecycle.py` | 7 | 7 | 0 | Sandbox CR CRUD, status observability |
 | 05 | [Multi-Turn Conversation](05-multiturn-conversation.md) | `test_05_multiturn_conversation.py` | 12 | 9 | 3 | Sequential messages, context isolation |
 | 06 | [Conversation Resume](06-conversation-resume.md) | `test_06_conversation_resume.py` | 5 | 0 | 5 | Pod restart, PVC session restore |

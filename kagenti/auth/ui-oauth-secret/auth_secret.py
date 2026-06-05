@@ -40,6 +40,15 @@ DEFAULT_DEMO_PASSWORD_OVERRIDE_ENV_VARS = (
     "KEYCLOAK_DEMO1_PASSWORD",
     "KEYCLOAK_DEMO2_PASSWORD",
 )
+DEFAULT_DEMO_USER_ROLES = {
+    "bob": "kagenti-viewer",
+    "alice": "kagenti-operator",
+}
+KAGENTI_REALM_ROLES = {
+    "kagenti-viewer": "Read-only access to Kagenti resources",
+    "kagenti-operator": "Operator access (create/update Kagenti resources)",
+    "kagenti-admin": "Full administrative access to Kagenti",
+}
 
 
 class ConfigurationError(Exception):
@@ -136,6 +145,29 @@ def create_or_update_secret(
             error_msg = f"Failed to create secret '{secret_name}': {e}"
             logger.error(error_msg)
             raise KubernetesResourceError(error_msg) from e
+
+
+def ensure_kagenti_realm_roles(keycloak_admin: KeycloakAdmin, realm: str) -> None:
+    """Idempotently create the kagenti-viewer/operator/admin realm roles.
+
+    Mirrors the create-first, catch-409 pattern used for realm creation:
+    only a 409 (already exists) is silently treated as success — any other
+    error is re-raised so misconfiguration (auth/network) surfaces clearly.
+    """
+    for role_name, description in KAGENTI_REALM_ROLES.items():
+        try:
+            keycloak_admin.create_realm_role(
+                {"name": role_name, "description": description}
+            )
+            logger.info(f"Created realm role '{role_name}' in '{realm}'")
+        except KeycloakPostError as e:
+            if hasattr(e, "response_code") and e.response_code == 409:
+                logger.info(
+                    f"Realm role '{role_name}' already exists in '{realm}', "
+                    f"skipping creation"
+                )
+            else:
+                raise
 
 
 def main() -> None:
@@ -323,6 +355,10 @@ def main() -> None:
                 )
                 raise
 
+            # Ensure Kagenti realm roles exist before any user is created
+            # so role assignments downstream can refer to them.
+            ensure_kagenti_realm_roles(keycloak_admin, keycloak_realm)
+
             # Create a default user so the UI has someone to log in as.
             # Uses the same credentials as the Keycloak admin.
             # Only creates if absent; never resets an existing user's password.
@@ -384,11 +420,10 @@ def main() -> None:
                         f"Could not assign realm-admin role (non-fatal): {role_err}"
                     )
 
-                # Ensure 'admin' realm role. The Kagenti backend maps this
-                # to kagenti-admin (which inherits kagenti-operator and
-                # kagenti-viewer) via a temporary mapping in auth.py until
-                # proper realm roles are provisioned by a dedicated
-                # Keycloak setup job.
+                # Ensure 'admin' realm role exists, then assign both 'admin'
+                # (legacy stopgap mapped to kagenti-admin in auth.py) and
+                # 'kagenti-admin' (created earlier by
+                # ensure_kagenti_realm_roles) in a single API call.
                 try:
                     try:
                         keycloak_admin.create_realm_role(
@@ -406,15 +441,18 @@ def main() -> None:
                         )
 
                     admin_realm_role = keycloak_admin.get_realm_role("admin")
-                    keycloak_admin.assign_realm_roles(user_id, [admin_realm_role])
+                    kagenti_admin_role = keycloak_admin.get_realm_role("kagenti-admin")
+                    keycloak_admin.assign_realm_roles(
+                        user_id, [admin_realm_role, kagenti_admin_role]
+                    )
                     logger.info(
-                        f"Ensured 'admin' realm role for "
-                        f"'{keycloak_admin_username}' in realm "
+                        f"Ensured 'admin' and 'kagenti-admin' realm roles "
+                        f"for '{keycloak_admin_username}' in realm "
                         f"'{keycloak_realm}'"
                     )
                 except Exception as role_err:
                     logger.warning(
-                        f"Could not assign admin realm role (non-fatal): {role_err}"
+                        f"Could not assign admin realm roles (non-fatal): {role_err}"
                     )
             except Exception as e:
                 logger.error(
@@ -443,7 +481,7 @@ def main() -> None:
                         {"username": demo_username, "exact": True}
                     )
                     if not existing:
-                        keycloak_admin.create_user(
+                        demo_user_id = keycloak_admin.create_user(
                             {
                                 "username": demo_username,
                                 "enabled": True,
@@ -468,10 +506,28 @@ def main() -> None:
                             f"in realm '{keycloak_realm}'"
                         )
                     else:
+                        demo_user_id = existing[0]["id"]
                         logger.info(
                             f"Demo user '{demo_username}' already exists "
                             f"in realm '{keycloak_realm}', skipping"
                         )
+
+                    # Assign the per-user Kagenti realm role. Idempotent —
+                    # Keycloak ignores duplicate role assignments.
+                    role_name = DEFAULT_DEMO_USER_ROLES.get(demo_username)
+                    if role_name:
+                        try:
+                            role = keycloak_admin.get_realm_role(role_name)
+                            keycloak_admin.assign_realm_roles(demo_user_id, [role])
+                            logger.info(
+                                f"Assigned realm role '{role_name}' to "
+                                f"'{demo_username}' in '{keycloak_realm}'"
+                            )
+                        except Exception as role_err:
+                            logger.warning(
+                                f"Could not assign '{role_name}' to "
+                                f"'{demo_username}' (non-fatal): {role_err}"
+                            )
                 except Exception as e:
                     logger.warning(f"Failed to create demo user '{demo_username}': {e}")
 
@@ -480,6 +536,11 @@ def main() -> None:
                 f"AUTO_BOOTSTRAP_REALM is disabled; assuming realm "
                 f"'{keycloak_realm}' already exists"
             )
+            # Even with bootstrap disabled, ensure the kagenti-* realm
+            # roles exist so the backend's RBAC can assign and validate
+            # them. Idempotent — a 409 from a pre-provisioned role is
+            # treated as success.
+            ensure_kagenti_realm_roles(keycloak_admin, keycloak_realm)
 
         # Register client
         # Configure as public client with PKCE for SPA best practices

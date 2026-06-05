@@ -176,6 +176,7 @@ jobs:
           yq e ".uiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           yq e ".agentOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           yq e ".apiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".mlflowOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
 
@@ -189,5 +190,6 @@ jobs:
           cd ${{ env.CHARTS_PATH }}/kagenti-deps
           echo "Fetching Helm chart dependencies..."
           helm dependency update
+          yq e ".spiffeIdp.image.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}

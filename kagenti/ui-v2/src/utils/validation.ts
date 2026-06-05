@@ -51,3 +51,32 @@ export const isValidImageTag = (tag: string): boolean => {
   if (!tag) return false;
   return /^[a-zA-Z0-9_][a-zA-Z0-9._-]*$/.test(tag);
 };
+
+/**
+ * Return true if url is a syntactically valid absolute URL.
+ * Requires a protocol (http/https). Used to gate skillberry registry fetches.
+ */
+export const isValidUrl = (url: string): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Derive the skillberry-store web UI URL from the API URL.
+ * Substitutes port 8002 (UI) for the stored API port and appends the skill path.
+ * Returns '' if registryUrl is not a valid URL.
+ */
+export const getSkillberryUiUrl = (registryUrl: string, skillName: string): string => {
+  try {
+    const url = new URL(registryUrl);
+    url.port = '8002';
+    return `${url.origin}/skills/${skillName}`;
+  } catch {
+    return '';
+  }
+};

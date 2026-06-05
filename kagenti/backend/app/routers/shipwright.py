@@ -60,6 +60,9 @@ async def list_shipwright_builds(
 
     Uses the `kagenti.io/type` label (agent | tool). Intended for CLI and automation.
     """
+    if not kube.api_group_exists("shipwright.io"):
+        return ShipwrightBuildListResponse(items=[])
+
     namespaces_to_scan: List[str] = []
     if all_namespaces:
         namespaces_to_scan = kube.list_enabled_namespaces()

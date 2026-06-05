@@ -25,13 +25,16 @@ if [[ -z "$EXT_ROOT" ]]; then
   EXT_ROOT="$CLONE_DIR"
 fi
 
-# Images to build
+# Images to build. After kagenti-extensions#411 the unified binary was
+# split into three mode-specific binaries, each with its own combined
+# image (spiffe-helper bundled inside, gated by SPIRE_ENABLED). The
+# old client-registration and standalone spiffe-helper images are gone
+# (operator-managed and bundled, respectively).
 IMAGES=(
-  "authbridge-envoy:authbridge:cmd/authbridge/Dockerfile"
-  "authbridge-light:authbridge:cmd/authbridge/Dockerfile.light"
-  "proxy-init:authbridge/authproxy:Dockerfile.init"
-  "client-registration:authbridge/client-registration:Dockerfile"
-  "spiffe-helper:authbridge/spiffe-helper:Dockerfile"
+  "authbridge:authbridge:cmd/authbridge-proxy/Dockerfile"
+  "authbridge-envoy:authbridge:cmd/authbridge-envoy/Dockerfile"
+  "authbridge-lite:authbridge:cmd/authbridge-lite/Dockerfile"
+  "proxy-init:authbridge/proxy-init:Dockerfile.init"
 )
 
 REGISTRY="ghcr.io/kagenti/kagenti-extensions"

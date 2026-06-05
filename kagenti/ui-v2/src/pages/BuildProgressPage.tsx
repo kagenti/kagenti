@@ -1,7 +1,7 @@
 // Copyright 2025 IBM Corp.
 // Licensed under the Apache License, Version 2.0
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   PageSection,
@@ -14,37 +14,19 @@ import {
   EmptyStateIcon,
   EmptyStateBody,
   Button,
-  DescriptionList,
-  DescriptionListGroup,
-  DescriptionListTerm,
-  DescriptionListDescription,
   Label,
-  Card,
-  CardTitle,
-  CardBody,
-  Alert,
-  Progress,
-  ProgressMeasureLocation,
-  ProgressVariant,
   Split,
   SplitItem,
   Flex,
   FlexItem,
-  Text,
-  TextContent,
-  ClipboardCopy,
   Divider,
+  Alert,
 } from '@patternfly/react-core';
-import {
-  CubesIcon,
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-  InProgressIcon,
-  ClockIcon,
-} from '@patternfly/react-icons';
+import { CubesIcon } from '@patternfly/react-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { shipwrightService, ShipwrightBuildInfo } from '@/services/api';
+import { BuildProgressView, getStatusIcon } from '@/components';
 
 // Polling interval in milliseconds
 const POLL_INTERVAL = 5000;
@@ -103,6 +85,15 @@ export const BuildProgressPage: React.FC = () => {
       finalizeMutation.mutate();
     }
   }, [buildInfo?.buildRunPhase, isAutoFinalizing, finalizeMutation]);
+
+  const finalizeError = useMemo(
+    () => finalizeMutation.isError
+      ? (finalizeMutation.error instanceof Error
+          ? finalizeMutation.error
+          : new Error('An unexpected error occurred'))
+      : null,
+    [finalizeMutation.isError, finalizeMutation.error]
+  );
 
   if (!namespace || !name) {
     return (
@@ -165,52 +156,6 @@ export const BuildProgressPage: React.FC = () => {
     );
   }
 
-  // Calculate progress based on phase
-  const getProgressInfo = () => {
-    switch (buildInfo.buildRunPhase) {
-      case 'Pending':
-        return { value: 10, variant: undefined, label: 'Pending...' };
-      case 'Running':
-        return { value: 50, variant: undefined, label: 'Building...' };
-      case 'Succeeded':
-        return { value: 100, variant: ProgressVariant.success, label: 'Build Succeeded' };
-      case 'Failed':
-        return { value: 100, variant: ProgressVariant.danger, label: 'Build Failed' };
-      default:
-        return { value: 0, variant: undefined, label: 'Waiting for BuildRun...' };
-    }
-  };
-
-  const progressInfo = getProgressInfo();
-
-  // Get status icon
-  const getStatusIcon = () => {
-    switch (buildInfo.buildRunPhase) {
-      case 'Succeeded':
-        return <CheckCircleIcon color="var(--pf-v5-global--success-color--100)" />;
-      case 'Failed':
-        return <ExclamationCircleIcon color="var(--pf-v5-global--danger-color--100)" />;
-      case 'Running':
-        return <InProgressIcon color="var(--pf-v5-global--info-color--100)" />;
-      case 'Pending':
-        return <ClockIcon color="var(--pf-v5-global--warning-color--100)" />;
-      default:
-        return <ClockIcon />;
-    }
-  };
-
-  // Format duration
-  const formatDuration = (startTime?: string, endTime?: string) => {
-    if (!startTime) return '-';
-    const start = new Date(startTime);
-    const end = endTime ? new Date(endTime) : new Date();
-    const seconds = Math.floor((end.getTime() - start.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
-  };
-
   return (
     <>
       <PageSection variant="light">
@@ -224,7 +169,7 @@ export const BuildProgressPage: React.FC = () => {
           <SplitItem isFilled>
             <Title headingLevel="h1">
               <Flex alignItems={{ default: 'alignItemsCenter' }}>
-                <FlexItem>{getStatusIcon()}</FlexItem>
+                <FlexItem>{getStatusIcon(buildInfo.buildRunPhase)}</FlexItem>
                 <FlexItem>Building: {name}</FlexItem>
               </Flex>
             </Title>
@@ -238,186 +183,15 @@ export const BuildProgressPage: React.FC = () => {
       </PageSection>
 
       <PageSection>
-        {/* Auto-finalize status */}
-        {isAutoFinalizing && (
-          <Alert
-            variant="info"
-            title="Creating Agent"
-            isInline
-            style={{ marginBottom: '16px' }}
-          >
-            <Flex alignItems={{ default: 'alignItemsCenter' }}>
-              <FlexItem>
-                <Spinner size="md" />
-              </FlexItem>
-              <FlexItem>Build succeeded! Creating the Agent deployment...</FlexItem>
-            </Flex>
-          </Alert>
-        )}
-
-        {/* Finalize error */}
-        {finalizeMutation.isError && (
-          <Alert
-            variant="danger"
-            title="Failed to create Agent"
-            isInline
-            style={{ marginBottom: '16px' }}
-          >
-            {finalizeMutation.error instanceof Error
-              ? finalizeMutation.error.message
-              : 'An unexpected error occurred'}
-            <Button
-              variant="link"
-              onClick={() => finalizeMutation.mutate()}
-              style={{ marginLeft: '16px' }}
-            >
-              Retry
-            </Button>
-          </Alert>
-        )}
-
-        {/* Build Progress Card */}
-        <Card style={{ marginBottom: '24px' }}>
-          <CardTitle>Build Progress</CardTitle>
-          <CardBody>
-            <Progress
-              value={progressInfo.value}
-              title={progressInfo.label}
-              variant={progressInfo.variant}
-              measureLocation={ProgressMeasureLocation.top}
-            />
-
-            <DescriptionList style={{ marginTop: '24px' }}>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Build Strategy</DescriptionListTerm>
-                <DescriptionListDescription>{buildInfo.strategy}</DescriptionListDescription>
-              </DescriptionListGroup>
-              {buildInfo.buildRunName && (
-                <DescriptionListGroup>
-                  <DescriptionListTerm>BuildRun</DescriptionListTerm>
-                  <DescriptionListDescription>{buildInfo.buildRunName}</DescriptionListDescription>
-                </DescriptionListGroup>
-              )}
-              <DescriptionListGroup>
-                <DescriptionListTerm>Duration</DescriptionListTerm>
-                <DescriptionListDescription>
-                  {formatDuration(buildInfo.buildRunStartTime, buildInfo.buildRunCompletionTime)}
-                </DescriptionListDescription>
-              </DescriptionListGroup>
-              {buildInfo.buildRunPhase === 'Failed' && buildInfo.buildRunFailureMessage && (
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Error</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Alert variant="danger" isInline isPlain title={buildInfo.buildRunFailureMessage} />
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-              )}
-            </DescriptionList>
-
-            {/* Retry button for failed builds */}
-            {buildInfo.buildRunPhase === 'Failed' && (
-              <Button
-                variant="primary"
-                onClick={() => retryMutation.mutate()}
-                isLoading={retryMutation.isPending}
-                style={{ marginTop: '16px' }}
-              >
-                Retry Build
-              </Button>
-            )}
-          </CardBody>
-        </Card>
-
-        {/* Source Configuration Card */}
-        <Card style={{ marginBottom: '24px' }}>
-          <CardTitle>Source Configuration</CardTitle>
-          <CardBody>
-            <DescriptionList>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Git URL</DescriptionListTerm>
-                <DescriptionListDescription>
-                  <a href={buildInfo.gitUrl} target="_blank" rel="noopener noreferrer">
-                    {buildInfo.gitUrl}
-                  </a>
-                </DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Revision</DescriptionListTerm>
-                <DescriptionListDescription>{buildInfo.gitRevision}</DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Context Directory</DescriptionListTerm>
-                <DescriptionListDescription>{buildInfo.contextDir || '.'}</DescriptionListDescription>
-              </DescriptionListGroup>
-              <DescriptionListGroup>
-                <DescriptionListTerm>Output Image</DescriptionListTerm>
-                <DescriptionListDescription>
-                  <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied">
-                    {buildInfo.outputImage}
-                  </ClipboardCopy>
-                </DescriptionListDescription>
-              </DescriptionListGroup>
-            </DescriptionList>
-          </CardBody>
-        </Card>
-
-        {/* Agent Configuration Card */}
-        {buildInfo.agentConfig && (
-          <Card>
-            <CardTitle>Agent Configuration</CardTitle>
-            <CardBody>
-              <TextContent style={{ marginBottom: '16px' }}>
-                <Text>
-                  The following configuration will be applied when the Agent is created:
-                </Text>
-              </TextContent>
-              <DescriptionList>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Protocol</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Label color="blue">{buildInfo.agentConfig.protocol}</Label>
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>Framework</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <Label color="purple">{buildInfo.agentConfig.framework}</Label>
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                <DescriptionListGroup>
-                  <DescriptionListTerm>External Access</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    {buildInfo.agentConfig.createHttpRoute ? (
-                      <Label color="green">HTTPRoute will be created</Label>
-                    ) : (
-                      <Label color="grey">No external access</Label>
-                    )}
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
-                {buildInfo.agentConfig.envVars && buildInfo.agentConfig.envVars.length > 0 && (
-                  <DescriptionListGroup>
-                    <DescriptionListTerm>Environment Variables</DescriptionListTerm>
-                    <DescriptionListDescription>
-                      {buildInfo.agentConfig.envVars.length} variable(s) configured
-                    </DescriptionListDescription>
-                  </DescriptionListGroup>
-                )}
-                {buildInfo.agentConfig.servicePorts && buildInfo.agentConfig.servicePorts.length > 0 && (
-                  <DescriptionListGroup>
-                    <DescriptionListTerm>Service Ports</DescriptionListTerm>
-                    <DescriptionListDescription>
-                      {buildInfo.agentConfig.servicePorts.map((port) => (
-                        <Label key={port.name} style={{ marginRight: '4px' }}>
-                          {port.name}: {port.port} → {port.targetPort}
-                        </Label>
-                      ))}
-                    </DescriptionListDescription>
-                  </DescriptionListGroup>
-                )}
-              </DescriptionList>
-            </CardBody>
-          </Card>
-        )}
+        <BuildProgressView
+          buildInfo={buildInfo}
+          resourceType="agent"
+          isAutoFinalizing={isAutoFinalizing}
+          finalizeError={finalizeError}
+          isRetryPending={retryMutation.isPending}
+          onRetryBuild={() => retryMutation.mutate()}
+          onRetryFinalize={() => finalizeMutation.mutate()}
+        />
 
         <Divider style={{ margin: '24px 0' }} />
 

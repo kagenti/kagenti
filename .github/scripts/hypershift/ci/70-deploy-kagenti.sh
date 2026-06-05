@@ -108,7 +108,7 @@ done
 #   a5607f9               — commit SHA (7-40 hex chars)
 #
 # ── NO HARDCODED OVERRIDES ──
-# Chart deps are up-to-date (kagenti-webhook-chart v0.4.0-alpha.9 via PR #1051).
+# Chart deps track the pinned kagenti-operator-chart version in Chart.yaml.
 # Use /run-e2e --build org/repo=ref to override ad-hoc.
 # ──────────────────────────────────────────────────────────────────────────────
 

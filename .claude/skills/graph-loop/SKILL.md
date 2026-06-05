@@ -172,6 +172,16 @@ Every agent must have tests for each of these (19 capabilities, 4 tiers):
 | 3 | **HITL: MCP approval** | `test_hitl_mcp__<agent>` | MCP server requires approval before executing |
 | 4 | **Audit logging** | `test_audit_logging__<agent>` | Actions produce OTel spans |
 
+**Tier 7: Teleport (requires LLM + Sandbox CRD)**
+
+| # | Capability | Test pattern | Validates |
+|---|---|---|---|
+| 1 | **Teleport: Package** | `test_teleport__package` | Context bundled into ConfigMap |
+| 2 | **Teleport: Deploy** | `test_teleport__deploy` | Sandbox created with context |
+| 3 | **Teleport: Context** | `test_teleport__context_unpacked` | CLAUDE.md unpacked in pod |
+| 4 | **Teleport: Prompt** | `test_teleport__prompt_with_context` | Claude uses teleported context |
+| 5 | **Teleport: Cleanup** | `test_teleport__cleanup` | Resources cleaned up |
+
 MISS = test doesn't exist yet (gap to file as issue).
 SKIP with clear reason = acceptable temporarily.
 SKIP without reason = failure.

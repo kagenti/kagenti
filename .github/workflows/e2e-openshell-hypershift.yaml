@@ -16,7 +16,8 @@ on:
     types: [created]
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 env:
   OCP_VERSION: '4.20.11'
@@ -32,7 +33,6 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
-      statuses: write
     outputs:
       authorized: ${{ steps.check.outputs.has-permission }}
       pr_number: ${{ steps.pr-info.outputs.number }}
@@ -80,32 +80,15 @@ jobs:
               comment_id: context.payload.comment.id, content: 'rocket'
             });
 
-      - name: Create pending commit status
-        if: steps.check.outputs.has-permission == 'true' && github.event_name != 'workflow_dispatch'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
-        with:
-          script: |
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner, repo: context.repo.repo,
-              sha: '${{ steps.pr-info.outputs.sha }}',
-              state: 'pending',
-              target_url: runUrl,
-              description: 'OpenShell E2E tests running on HyperShift',
-              context: 'OpenShell PoC (HyperShift)'
-            });
-
   e2e-openshell:
     name: OpenShell PoC (HyperShift)
     runs-on: ubuntu-latest
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
-    timeout-minutes: 90
+    timeout-minutes: 120
     continue-on-error: true
     outputs:
       test_outcome: ${{ steps.run-tests.outcome }}
-    permissions:
-      contents: read
     env:
       CLUSTER_SUFFIX: ${{ needs.authorize.outputs.cluster_suffix || 'osmanual' }}
       MANAGED_BY_TAG: ${{ secrets.MANAGED_BY_TAG }}
@@ -121,11 +104,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+
       - name: Install tools (kubectl, Helm, oc, hcp)
         run: |
           bash .github/scripts/hypershift/ci/20-install-tools.sh
           bash .github/scripts/common/10-setup-dependencies.sh
-          pip install boto3 botocore
+          uv pip install --system boto3==1.43.6 botocore==1.43.6
 
       - name: Install Helm v3
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2  # v5.0.0
@@ -145,7 +131,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/40-clone-hypershift-automation.sh
 
       - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
 
       - name: Install dependencies
         run: uv sync --frozen
@@ -186,8 +172,6 @@ jobs:
     needs: [authorize, e2e-openshell]
     if: always() && needs.authorize.outputs.authorized == 'true'
     timeout-minutes: 30
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -231,15 +215,11 @@ jobs:
     if: always() && needs.authorize.outputs.authorized == 'true' && github.event_name != 'workflow_dispatch'
     permissions:
       pull-requests: write
-      statuses: write
     steps:
       - name: Post result comment
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
-            // With continue-on-error, 'result' is always 'success'.
-            // Use step outcome via job outputs; default to 'failure' if
-            // the output is empty (step skipped or not reached).
             const outcome = '${{ needs.e2e-openshell.outputs.test_outcome }}' || 'failure';
             const passed = outcome === 'success';
             const emoji = passed ? '✅' : '❌';
@@ -249,14 +229,4 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: ${{ needs.authorize.outputs.pr_number }},
               body: `### ${emoji} [Experimental] OpenShell E2E Tests ${status}\n\n**Commit:** \`${{ needs.authorize.outputs.pr_sha }}\`\n**Workflow:** [View logs](${runUrl})\n\n---\n<sub>Non-voting. Re-run: \`/run-e2e-openshell\`</sub>`
-            });
-
-            // Update commit status so it appears in PR checks
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner, repo: context.repo.repo,
-              sha: '${{ needs.authorize.outputs.pr_sha }}',
-              state: passed ? 'success' : 'failure',
-              target_url: runUrl,
-              description: `OpenShell E2E ${status}`,
-              context: 'OpenShell PoC (HyperShift)'
             });

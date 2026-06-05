@@ -31,7 +31,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: KC_HOSTNAME
-            value: "http://keycloak.localtest.me:8080/"
+            value: "http://keycloak.localtest.me:8080"
         documentIndex: 2
       - contains:
           path: spec.template.spec.containers[0].env
@@ -112,7 +112,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: KC_HOSTNAME
-            value: "http://keycloak.localtest.me:8080/"
+            value: "http://keycloak.localtest.me:8080"
         documentIndex: 2
 
   - it: appends new env var from extraEnvVars

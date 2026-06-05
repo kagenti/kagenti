@@ -216,6 +216,11 @@ metadata:
   name: authbridge-runtime-config
 data:
   config.yaml: |
+    # Pin this E2E namespace to envoy-sidecar so the TX e2e exercises the
+    # Envoy ext_proc path explicitly (the rest of the test reads JWT SVID
+    # files via `kubectl exec -c envoy-proxy`, which only exists in this
+    # mode). Without the pin, the operator falls back to the cluster
+    # default (proxy-sidecar) and container names diverge.
     mode: envoy-sidecar
     bypass:
       inbound_paths:
@@ -271,13 +276,10 @@ data:
 EOF
 
 # --- keycloak-admin-secret ---
-log_info "Creating keycloak-admin-secret"
-KC_ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n "$KC_NAMESPACE" -o go-template='{{.data.username | base64decode}}' 2>/dev/null || echo "admin")
-KC_ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n "$KC_NAMESPACE" -o go-template='{{.data.password | base64decode}}' 2>/dev/null || echo "admin")
-kubectl create secret generic keycloak-admin-secret \
-  --from-literal=KEYCLOAK_ADMIN_USERNAME="$KC_ADMIN_USER" \
-  --from-literal=KEYCLOAK_ADMIN_PASSWORD="$KC_ADMIN_PASS" \
-  -n "$TX_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+# Note: keycloak-admin-secret is now managed by the operator in kagenti-system namespace.
+# The operator reads credentials from there to register OAuth clients for workloads.
+# No longer created in agent namespaces for security reasons.
+log_info "Skipping keycloak-admin-secret creation (managed by operator in kagenti-system)"
 
 # --- Add namespace to operator's NAMESPACES2WATCH ---
 log_info "Adding $TX_NAMESPACE to operator NAMESPACES2WATCH"

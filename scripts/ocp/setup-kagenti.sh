@@ -17,11 +17,14 @@
 #   ./scripts/ocp/setup-kagenti.sh --realm nerc                 # Custom Keycloak realm (default: kagenti)
 #   ./scripts/ocp/setup-kagenti.sh --with-kiali                  # Enable Kiali + Prometheus
 #   ./scripts/ocp/setup-kagenti.sh --with-builds                # Enable Tekton + OpenShift Builds
+#   ./scripts/ocp/setup-kagenti.sh --with-mcp-gateway           # Install MCP Gateway (broker-router + controller)
 #   ./scripts/ocp/setup-kagenti.sh --with-kuadrant              # Enable Kuadrant (auto-enables MCP Gateway)
+#   ./scripts/ocp/setup-kagenti.sh --with-agent-sandbox         # Install agent-sandbox controller
 #   ./scripts/ocp/setup-kagenti.sh --with-all                   # Enable all optional components
 #   ./scripts/ocp/setup-kagenti.sh --skip-ovn-patch             # Skip OVN gateway patch
-#   ./scripts/ocp/setup-kagenti.sh --skip-mcp-gateway           # Skip MCP Gateway install
+#   ./scripts/ocp/setup-kagenti.sh --skip-mcp-gateway           # Skip MCP Gateway (ignored when --with-kuadrant is set, since Kuadrant requires it)
 #   ./scripts/ocp/setup-kagenti.sh --skip-mlflow                # Disable Kagenti-Operator <-> MLflow integration
+#   ./scripts/ocp/setup-kagenti.sh --otel-operator-managed      # Let the operator handle OTel collector config
 #   ./scripts/ocp/setup-kagenti.sh --operator-repo ~/kagenti-operator  # Use local operator chart
 #   ./scripts/ocp/setup-kagenti.sh --operator-image quay.io/user/kagenti-operator:dev  # Custom operator image
 #   ./scripts/ocp/setup-kagenti.sh --operator-repo ~/kagenti-operator --operator-image quay.io/user/op:dev  # Both
@@ -48,21 +51,24 @@ KAGENTI_GITHUB_URL="https://github.com/kagenti/kagenti.git"
 KC_REALM="${KEYCLOAK_REALM:-kagenti}"
 KC_NAMESPACE="${KEYCLOAK_NAMESPACE:-keycloak}"
 SKIP_OVN_PATCH=false
-SKIP_MCP_GATEWAY=false
+SKIP_MCP_GATEWAY=true
 SKIP_UI=false
 SKIP_MLFLOW=false
 SHOW_SECRETS=false
-MCP_GATEWAY_VERSION="0.5.1"
+MCP_GATEWAY_VERSION="0.6.0"
 OPERATOR_REPO=""
 OPERATOR_IMAGE=""
 DRY_RUN=false
 WITH_KIALI=false
 WITH_BUILDS=false
 WITH_KUADRANT=false
+WITH_AGENT_SANDBOX=false
+AGENT_SANDBOX_VERSION="v0.4.6"
 KUADRANT_VERSION="1.4.2"
 MLFLOW_NAMESPACE="redhat-ods-applications"
 MLFLOW_INSTANCE_NAME="mlflow"
 MLFLOW_TRACES_ENDPOINT=""
+OTEL_OPERATOR_MANAGED=false
 
 # Colors
 RED='\033[0;31m'
@@ -86,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --skip-mcp-gateway)   SKIP_MCP_GATEWAY=true; shift ;;
     --skip-ui)            SKIP_UI=true; shift ;;
     --skip-mlflow)        SKIP_MLFLOW=true; shift ;;
+    --otel-operator-managed) OTEL_OPERATOR_MANAGED=true; shift ;;
     --show-secrets)       SHOW_SECRETS=true; shift ;;
     --operator-repo)      OPERATOR_REPO="$2"; shift 2 ;;
     --operator-image)     OPERATOR_IMAGE="$2"; shift 2 ;;
@@ -93,7 +100,9 @@ while [[ $# -gt 0 ]]; do
     --with-kiali)         WITH_KIALI=true; shift ;;
     --with-builds)        WITH_BUILDS=true; shift ;;
     --with-kuadrant)      WITH_KUADRANT=true; shift ;;
-    --with-all)           WITH_KIALI=true; WITH_BUILDS=true; WITH_KUADRANT=true; shift ;;
+    --with-mcp-gateway)   SKIP_MCP_GATEWAY=false; shift ;;
+    --with-agent-sandbox) WITH_AGENT_SANDBOX=true; shift ;;
+    --with-all)           WITH_KIALI=true; WITH_BUILDS=true; WITH_KUADRANT=true; WITH_AGENT_SANDBOX=true; SKIP_MCP_GATEWAY=false; shift ;;
     --dry-run)            DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -103,14 +112,17 @@ while [[ $# -gt 0 ]]; do
       echo "  --realm REALM             Keycloak realm (default: kagenti, or \$KEYCLOAK_REALM)"
       echo "  --keycloak-namespace NS   Keycloak namespace (default: keycloak, or \$KEYCLOAK_NAMESPACE)"
       echo "  --skip-ovn-patch          Skip OVN gateway routing patch"
-      echo "  --skip-mcp-gateway        Skip MCP Gateway installation"
+      echo "  --skip-mcp-gateway        Skip MCP Gateway (ignored when --with-kuadrant is set)"
       echo "  --skip-ui                 Skip Kagenti UI and backend installation"
       echo "  --skip-mlflow             Skip MLflow integration (OTel traces + operator auto-config)"
+      echo "  --otel-operator-managed   Let the kagenti-operator handle OTel collector config (skip Helm OTel wiring)"
       echo "  --show-secrets            Print Keycloak admin credentials to stdout (omitted by default for CI safety)"
       echo "  --with-kiali              Enable Kiali + Prometheus (user workload monitoring)"
       echo "  --with-builds             Enable Tekton + OpenShift Builds (Shipwright)"
+      echo "  --with-mcp-gateway        Install MCP Gateway (broker-router + controller)"
       echo "  --with-kuadrant           Enable Kuadrant operator (auto-enables MCP Gateway)"
-      echo "  --with-all                Enable all optional components (kiali, builds, kuadrant)"
+      echo "  --with-agent-sandbox      Install agent-sandbox controller (kubernetes-sigs)"
+      echo "  --with-all                Enable all optional components"
       echo "  --operator-repo PATH      Local path to kagenti-operator repo (overrides Chart.yaml dependency)"
       echo "  --operator-image IMG:TAG  Custom operator image (e.g. quay.io/user/kagenti-operator:dev)"
       echo "  --mcp-gateway-version VER MCP Gateway chart version (default: $MCP_GATEWAY_VERSION)"
@@ -123,8 +135,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Flag dependencies ──────────────────────────────────────────────────────
-# Kuadrant provides AuthPolicy for MCP Gateway — don't skip it
+# Kuadrant provides AuthPolicy for MCP Gateway — enable it automatically
 if $WITH_KUADRANT && $SKIP_MCP_GATEWAY; then
+  log_warn "--skip-mcp-gateway ignored: Kuadrant requires MCP Gateway"
   SKIP_MCP_GATEWAY=false
 fi
 
@@ -216,6 +229,7 @@ _clone_kagenti() {
 }
 
 KAGENTI_SOURCE=""
+KAGENTI_REPO_ORIGINAL="$KAGENTI_REPO"
 if [ -z "$KAGENTI_REPO" ]; then
   # No --kagenti-repo given: always clone fresh from upstream main
   KAGENTI_SOURCE="$KAGENTI_GITHUB_URL"
@@ -340,9 +354,8 @@ _mlflow_wait_ready() {
   while ! $KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" &>/dev/null; do
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
-      log_error "MLflow Service '$MLFLOW_INSTANCE_NAME' not found in $MLFLOW_NAMESPACE after 5m"
-      log_error "Check that the mlflowoperator reconciled the CR: kubectl get mlflow -n $MLFLOW_NAMESPACE"
-      exit 1
+      log_warn "MLflow Service '$MLFLOW_INSTANCE_NAME' not found in $MLFLOW_NAMESPACE after 5m — skipping"
+      return 1
     fi
     sleep 5
   done
@@ -373,9 +386,28 @@ _mlflow_wait_ready() {
     sleep 5
   done
 
-  # Resolve the gateway URL from the MLflow CR status.url (mirrors the
-  # kagenti-operator's resolveTrackingURI logic). TLS is verified via the
-  # container's system CA pool (Let's Encrypt trusted by default).
+  # Check if the CR reports Available status — RHOAI MLflow operator sets this
+  # condition but never populates status.url (no Route/Ingress is created).
+  local cr_available=""
+  cr_available=$($KUBECTL get mlflow "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "")
+
+  if [ "$cr_available" = "True" ]; then
+    log_success "MLflow CR reports Available — skipping status.url wait"
+    # Resolve the service port from the actual Service object
+    local svc_port
+    svc_port=$($KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+      -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8443")
+    local proto="https"
+    if [ "$svc_port" = "80" ] || [ "$svc_port" = "5000" ] || [ "$svc_port" = "8080" ]; then
+      proto="http"
+    fi
+    MLFLOW_TRACES_ENDPOINT="${proto}://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:${svc_port}/v1/traces"
+    log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
+    return 0
+  fi
+
+  # Fall back to waiting for status.url (non-RHOAI operators may populate this).
   log_info "Waiting for MLflow gateway URL (status.url)..."
   local gateway_url=""
   tries=0
@@ -385,8 +417,17 @@ _mlflow_wait_ready() {
     [ -n "$gateway_url" ] && break
     tries=$((tries + 1))
     if [ $tries -ge 60 ]; then
-      log_error "MLflow CR status.url not populated after 5m"
-      exit 1
+      log_warn "MLflow CR status.url not populated after 5m — using in-cluster endpoint"
+      local svc_port
+      svc_port=$($KUBECTL get service "$MLFLOW_INSTANCE_NAME" -n "$MLFLOW_NAMESPACE" \
+        -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8443")
+      local proto="https"
+      if [ "$svc_port" = "80" ] || [ "$svc_port" = "5000" ] || [ "$svc_port" = "8080" ]; then
+        proto="http"
+      fi
+      MLFLOW_TRACES_ENDPOINT="${proto}://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:${svc_port}/v1/traces"
+      log_success "MLflow traces endpoint (in-cluster): $MLFLOW_TRACES_ENDPOINT"
+      return 0
     fi
     sleep 5
   done
@@ -395,16 +436,28 @@ _mlflow_wait_ready() {
 }
 
 _mlflow_grant_otel_rbac() {
-  # The RHOAI MLflow operator creates the mlflow-operator-mlflow-integration ClusterRole
-  # with pseudo-resources (mlflow.kubeflow.org/*) checked via SubjectAccessReview.
+  # The RHOAI MLflow operator creates ClusterRoles for MLflow access control.
   # The otel-collector SA needs a RoleBinding in each agent namespace (workspace)
   # so the collector can send traces with the correct workspace context.
-  local cr_name="mlflow-operator-mlflow-integration"
-  if ! $KUBECTL get clusterrole "$cr_name" &>/dev/null; then
-    log_error "ClusterRole '$cr_name' not found — is the RHOAI MLflow operator running?"
-    log_error "The mlflowoperator should create this ClusterRole automatically."
-    return 1
-  fi
+  # Prefer mlflow-operator-mlflow-integration (has get/list/create/update on
+  # experiments — required by the /v1/traces OTLP endpoint), fall back to edit.
+  local cr_name=""
+  local candidates=("mlflow-operator-mlflow-integration" "mlflow-operator-mlflow-edit")
+  local tries=0
+  while [ -z "$cr_name" ]; do
+    for candidate in "${candidates[@]}"; do
+      if $KUBECTL get clusterrole "$candidate" &>/dev/null; then
+        cr_name="$candidate"
+        break
+      fi
+    done
+    tries=$((tries + 1))
+    if [ $tries -ge 24 ]; then
+      log_warn "No MLflow ClusterRole found (tried: ${candidates[*]}) after 2m — MLflow OTEL RBAC skipped"
+      return 0
+    fi
+    sleep 5
+  done
   log_success "ClusterRole $cr_name exists"
 
   local agent_ns
@@ -416,6 +469,18 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
     print(ns)
 " 2>/dev/null || echo -e "team1\nteam2")
 
+  # Grant in MLflow namespace (authentication: SA must be permitted to access MLflow)
+  log_info "Creating MLflow RBAC for otel-collector in $MLFLOW_NAMESPACE..."
+  if ! $DRY_RUN; then
+    $KUBECTL create rolebinding otel-collector-mlflow \
+      --clusterrole="$cr_name" \
+      --serviceaccount=kagenti-system:otel-collector \
+      -n "$MLFLOW_NAMESPACE" \
+      --dry-run=client -o yaml | $KUBECTL apply -f -
+  fi
+  log_success "RoleBinding otel-collector-mlflow created in $MLFLOW_NAMESPACE"
+
+  # Grant in each agent namespace (workspace authorization)
   while IFS= read -r ns; do
     [ -z "$ns" ] && continue
     log_info "Creating MLflow RBAC for otel-collector in $ns..."
@@ -432,17 +497,9 @@ for ns in v.get('agentNamespaces', ['team1', 'team2']):
   done <<< "$agent_ns"
 }
 
-log_info "Step 2.5: MLflow DSC preflight + provisioning"
-if [ "$SKIP_MLFLOW" = true ]; then
-  log_success "Skipping MLflow DSC preflight (--skip-mlflow)"
-elif ! $KUBECTL get crd datascienceclusters.datasciencecluster.opendatahub.io &>/dev/null; then
-  log_warn "RHOAI not installed (DataScienceCluster CRD not found) — skipping MLflow provisioning"
-  SKIP_MLFLOW=true
-else
-  _mlflow_check_dsc
-  _mlflow_create_cr
-  _mlflow_wait_ready
-fi
+# MLflow provisioning is deferred to Step 3d (after kagenti-deps installs the
+# RHOAI operator via OLM Subscription and the DataScienceCluster CRD becomes
+# available). See _deferred_mlflow() below.
 echo ""
 
 # ============================================================================
@@ -541,55 +598,51 @@ _wait_kagenti_deps_ready() {
   wait $pid_istio || log_warn "Istio readiness check failed"
 }
 
+# Wait for a CRD to be registered by an operator.
+# Periodically auto-approves pending InstallPlans (OLM batching workaround).
+_wait_for_crd() {
+  local crd="$1" timeout_secs="${2:-300}" label="${3:-$1}"
+  local tries=0 max_tries=$(( timeout_secs / 5 ))
+  log_info "Waiting for $label CRD..."
+  while ! $KUBECTL get crd "$crd" &>/dev/null; do
+    tries=$((tries + 1))
+    if [ $tries -ge $max_tries ]; then
+      log_error "$label CRD ($crd) not found after $(( timeout_secs / 60 ))m"
+      return 1
+    fi
+    if (( tries % 6 == 0 )); then
+      _auto_approve_installplans
+    fi
+    sleep 5
+  done
+  log_success "$label CRD available"
+}
+
+# Auto-approve pending OLM InstallPlans in operator namespaces.
+# OLM sometimes batches multiple operators into a single InstallPlan that
+# requires manual approval even when the Subscription has automatic approval.
+_auto_approve_installplans() {
+  for ns in openshift-operators zero-trust-workload-identity-manager redhat-ods-operator; do
+    if ! $KUBECTL get ns "$ns" &>/dev/null 2>&1; then continue; fi
+    local ip approved
+    for ip in $($KUBECTL get installplan -n "$ns" -o name 2>/dev/null); do
+      approved=$($KUBECTL get "$ip" -n "$ns" -o jsonpath='{.spec.approved}' 2>/dev/null || echo "true")
+      if [ "$approved" = "false" ]; then
+        $KUBECTL patch "$ip" -n "$ns" --type=merge -p '{"spec":{"approved":true}}' 2>/dev/null || true
+        log_info "  Auto-approved $ip in $ns"
+      fi
+    done
+  done
+}
+
 # Apply operand CRs that --no-hooks skipped.
 # Called on both fresh install AND upgrade so reruns fix missing CRs.
 _apply_operand_crs() {
   if $DRY_RUN; then return; fi
 
-  # Wait for the Keycloak CRD before applying — the operator subscription was
-  # just installed and needs time to register the CRD.
-  log_info "Waiting for Keycloak CRD..."
-  local tries=0
-  while ! $KUBECTL get crd keycloaks.k8s.keycloak.org &>/dev/null; do
-    tries=$((tries + 1))
-    if [ $tries -ge 60 ]; then
-      log_error "Keycloak CRD not found after 5m — cannot proceed without Keycloak"
-      return 1
-    fi
-    sleep 5
-  done
-  log_success "Keycloak CRD available"
-
-  # Wait for ZTWIM operator CRDs — the Subscription was just created and
-  # OLM needs time to install the operator CSV which registers the CRDs.
-  log_info "Waiting for ZTWIM (SPIRE) CRDs..."
-  tries=0
-  while ! $KUBECTL get crd spiffecsidrivers.operator.openshift.io &>/dev/null; do
-    tries=$((tries + 1))
-    if [ $tries -ge 120 ]; then
-      log_error "ZTWIM CRDs not found after 10m — check operator subscription"
-      $KUBECTL get subscription -n zero-trust-workload-identity-manager 2>/dev/null || true
-      $KUBECTL get csv -n zero-trust-workload-identity-manager 2>/dev/null || true
-      return 1
-    fi
-    sleep 5
-  done
-  log_success "ZTWIM CRDs available"
-
-  # Wait for Sail Operator CRDs — Istio/ztunnel/CNI operands depend on this.
-  log_info "Waiting for Sail Operator CRDs..."
-  tries=0
-  while ! $KUBECTL get crd istios.sailoperator.io &>/dev/null; do
-    tries=$((tries + 1))
-    if [ $tries -ge 120 ]; then
-      log_error "Sail Operator CRDs not found after 10m — check operator subscription"
-      $KUBECTL get subscription -n openshift-operators 2>/dev/null || true
-      $KUBECTL get csv -n openshift-operators 2>/dev/null | grep -i sail || true
-      return 1
-    fi
-    sleep 5
-  done
-  log_success "Sail Operator CRDs available"
+  _wait_for_crd "keycloaks.k8s.keycloak.org" 300 "Keycloak" || return 1
+  _wait_for_crd "spiffecsidrivers.operator.openshift.io" 600 "ZTWIM (SPIRE)" || return 1
+  _wait_for_crd "istios.sailoperator.io" 600 "Sail Operator" || return 1
 
   log_info "Applying operand CRs..."
   helm get hooks kagenti-deps -n kagenti-system 2>/dev/null | python3 -c "
@@ -623,10 +676,16 @@ _helm_kagenti_deps() {
   done
 
   # Build MLflow OTEL flags: enable the pipeline and point it at the DSC-managed endpoint.
-  local _mlflow_vals_file=""
-  if [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
-    _mlflow_vals_file=$(mktemp /tmp/kagenti-mlflow-vals-XXXXXX.yaml)
-    cat > "$_mlflow_vals_file" <<EOF
+  # When --otel-operator-managed is set, the operator handles ConfigMap assembly
+  # and MLflow endpoint discovery at startup, so we skip injecting OTel values.
+  KAGENTI_DEPS_MLFLOW_VALS_FILE=""
+  if [ "$OTEL_OPERATOR_MANAGED" = true ]; then
+    [ -n "$MLFLOW_TRACES_ENDPOINT" ] && \
+      log_warn "--otel-operator-managed set; ignoring MLFLOW_TRACES_ENDPOINT=$MLFLOW_TRACES_ENDPOINT"
+    log_info "OTel collector config managed by kagenti-operator — skipping Helm OTel MLflow values"
+  elif [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
+    KAGENTI_DEPS_MLFLOW_VALS_FILE=$(mktemp /tmp/kagenti-mlflow-vals-XXXXXX.yaml)
+    cat > "$KAGENTI_DEPS_MLFLOW_VALS_FILE" <<EOF
 otel:
   mlflow:
     enabled: true
@@ -641,28 +700,36 @@ EOF
 
   # Keycloak public URL is needed by the realm-init audience mapper.
   # Construct from DOMAIN (known since Step 2) so it's correct on first install.
-  local _kc_public_url="https://keycloak-${KC_NAMESPACE}.${DOMAIN}"
+  KAGENTI_DEPS_KC_URL="https://keycloak-${KC_NAMESPACE}.${DOMAIN}"
+
+  # Common helm --set flags shared across install, upgrade, and reconciliation
+  KAGENTI_DEPS_HELM_ARGS=(
+    -n kagenti-system
+    --set spire.trustDomain="${DOMAIN}"
+    --set "keycloak.publicUrl=${KAGENTI_DEPS_KC_URL}"
+    --set "components.kiali.enabled=${WITH_KIALI}"
+    --set components.rhoai.enabled=true
+    --set components.mlflow.enabled=false
+    --set "components.tekton.enabled=${WITH_BUILDS}"
+    --set "components.shipwright.enabled=${WITH_BUILDS}"
+    --set mlflow.auth.enabled=false
+    ${KAGENTI_DEPS_MLFLOW_VALS_FILE:+-f "$KAGENTI_DEPS_MLFLOW_VALS_FILE"}
+    --no-hooks
+  )
+  if [ "$OTEL_OPERATOR_MANAGED" = true ]; then
+    KAGENTI_DEPS_HELM_ARGS+=(--set otelBootstrap.operatorManaged=true)
+  fi
 
   if helm status kagenti-deps -n kagenti-system &>/dev/null; then
     # Upgrade path: skip hooks (the kiali hook will fail on any cluster where
     # cluster-monitoring-config is managed by another operator)
     log_info "kagenti-deps already installed — upgrading (hooks skipped)"
     run_cmd helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
-      -n kagenti-system \
-      --set spire.trustDomain="${DOMAIN}" \
-      --set "keycloak.publicUrl=${_kc_public_url}" \
-      --set "components.kiali.enabled=${WITH_KIALI}" \
-      --set components.rhoai.enabled=true \
-      --set components.mlflow.enabled=false \
-      --set "components.tekton.enabled=${WITH_BUILDS}" \
-      --set "components.shipwright.enabled=${WITH_BUILDS}" \
-      --set mlflow.auth.enabled=false \
-      ${_mlflow_vals_file:+-f "$_mlflow_vals_file"} \
-      --no-hooks
+      --reset-values \
+      "${KAGENTI_DEPS_HELM_ARGS[@]}"
     # Apply operand CRs on upgrade too — catches CRs missed by a previous
     # failed install (e.g. Keycloak CRD wasn't ready yet on first run)
     _apply_operand_crs
-    [ -n "$_mlflow_vals_file" ] && rm -f "$_mlflow_vals_file"
     _wait_kagenti_deps_ready
     return $?
   fi
@@ -672,20 +739,9 @@ EOF
   log_info "Installing kagenti-deps..."
   run_cmd helm dependency update "$KAGENTI_REPO/charts/kagenti-deps/"
   run_cmd helm install kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
-    -n kagenti-system --create-namespace \
-    --set spire.trustDomain="${DOMAIN}" \
-    --set "keycloak.publicUrl=${_kc_public_url}" \
-    --set "components.kiali.enabled=${WITH_KIALI}" \
-    --set components.rhoai.enabled=true \
-    --set components.mlflow.enabled=false \
-    --set "components.tekton.enabled=${WITH_BUILDS}" \
-    --set "components.shipwright.enabled=${WITH_BUILDS}" \
-    --set mlflow.auth.enabled=false \
-    ${_mlflow_vals_file:+-f "$_mlflow_vals_file"} \
-    --no-hooks
+    --create-namespace "${KAGENTI_DEPS_HELM_ARGS[@]}"
 
   _apply_operand_crs
-  [ -n "$_mlflow_vals_file" ] && rm -f "$_mlflow_vals_file"
   _wait_kagenti_deps_ready
 }
 _helm_kagenti_deps
@@ -799,6 +855,9 @@ spec:
     kind: ClusterIssuer
 EOF
 
+  _adopt_for_helm clusterissuer istio-mesh-root-selfsigned
+  _adopt_for_helm certificate istio-mesh-root-ca cert-manager
+
   log_info "Waiting for root CA secret..."
   if ! _wait_secret_ready istio-mesh-root-ca-secret cert-manager; then return 0; fi
   log_success "Root CA secret ready"
@@ -848,6 +907,10 @@ spec:
     name: istio-mesh-ca
     kind: ClusterIssuer
 EOF
+
+  _adopt_for_helm clusterissuer istio-mesh-ca
+  _adopt_for_helm certificate istio-cacerts-default istio-system
+  _adopt_for_helm certificate istio-cacerts-openshift-gateway openshift-ingress
 
   log_info "Waiting for intermediate CA secrets..."
   _wait_secret_ready istio-cacerts-default-cert istio-system
@@ -924,6 +987,323 @@ ${ROOT_CERT}"
   log_success "Shared trust reconciliation complete"
 }
 _ensure_rhoai_shared_trust
+
+# Reconcile: now that all CRDs are present (Istio, cert-manager) and Step 3b
+# resources are adopted for Helm, upgrade to render resources gated by
+# .Capabilities.APIVersions.Has (e.g. AuthorizationPolicy, shared-trust certs).
+log_info "Reconciling CRD-dependent resources..."
+run_cmd helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
+  --reset-values \
+  "${KAGENTI_DEPS_HELM_ARGS[@]}"
+[ -n "$KAGENTI_DEPS_MLFLOW_VALS_FILE" ] && rm -f "$KAGENTI_DEPS_MLFLOW_VALS_FILE"
+log_success "kagenti-deps reconciled"
+echo ""
+
+# ============================================================================
+# Step 3c: Install agent-sandbox (optional, --with-agent-sandbox)
+# ============================================================================
+if $WITH_AGENT_SANDBOX; then
+  log_info "Step 3c: agent-sandbox (kubernetes-sigs)"
+
+  if $KUBECTL get crd sandboxes.agents.x-k8s.io &>/dev/null \
+     && $KUBECTL get deployment agent-sandbox-controller -n agent-sandbox-system &>/dev/null; then
+    log_success "agent-sandbox already installed — skipping"
+  else
+    log_info "Installing agent-sandbox ${AGENT_SANDBOX_VERSION} (controller)..."
+    run_cmd $KUBECTL apply -f \
+      "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/manifest.yaml"
+
+    log_info "Installing agent-sandbox ${AGENT_SANDBOX_VERSION} (extensions)..."
+    run_cmd $KUBECTL apply -f \
+      "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/extensions.yaml"
+
+    if ! $DRY_RUN; then
+      log_info "Waiting for agent-sandbox CRDs to become established..."
+      $KUBECTL wait --for=condition=Established crd \
+        sandboxes.agents.x-k8s.io \
+        --timeout=60s
+    fi
+    _wait_deployment_ready agent-sandbox-controller agent-sandbox-system agent-sandbox
+    log_success "agent-sandbox installed"
+  fi
+  echo ""
+fi
+
+# ============================================================================
+# Step 3d: Deferred MLflow provisioning
+# ============================================================================
+# MLflow provisioning runs AFTER kagenti-deps because the RHOAI operator
+# (installed via OLM Subscription in Step 3) must register its CRDs before we
+# can create DataScienceCluster and MLflow resources.
+_deferred_mlflow() {
+  if [ "$SKIP_MLFLOW" = true ]; then
+    log_success "Skipping MLflow (--skip-mlflow)"
+    return 0
+  fi
+  if $DRY_RUN; then
+    log_info "[dry-run] Would provision MLflow via deferred RHOAI flow"
+    return 0
+  fi
+
+  # Wait for RHOAI operator to register the DataScienceCluster CRD.
+  if ! _wait_for_crd "datascienceclusters.datasciencecluster.opendatahub.io" 600 "DataScienceCluster"; then
+    log_warn "RHOAI operator not installed — skipping MLflow provisioning"
+    SKIP_MLFLOW=true
+    return 0
+  fi
+
+  # Wait for RHOAI operator deployment to be fully ready before creating DSC.
+  # CRD registration happens via OLM CSV install and does NOT require the operator
+  # pods to be running. Without this wait, DSC reconciliation silently fails.
+  _wait_deployment_ready rhods-operator redhat-ods-operator "RHOAI operator" || {
+    log_warn "RHOAI operator deployment not ready — skipping MLflow"
+    SKIP_MLFLOW=true
+    return 0
+  }
+
+  # Create or patch DSC with mlflowoperator=Managed
+  log_info "Ensuring DataScienceCluster has mlflowoperator=Managed..."
+  if $KUBECTL get datasciencecluster default-dsc &>/dev/null; then
+    local state
+    state=$($KUBECTL get datasciencecluster default-dsc \
+      -o jsonpath='{.spec.components.mlflowoperator.managementState}' 2>/dev/null || echo "")
+    if [ "$state" != "Managed" ]; then
+      $KUBECTL patch datasciencecluster default-dsc --type=merge \
+        -p '{"spec":{"components":{"mlflowoperator":{"managementState":"Managed"}}}}' || true
+      log_success "DSC patched: mlflowoperator=Managed"
+    else
+      log_success "DSC already has mlflowoperator=Managed"
+    fi
+  else
+    # Create DSC with only CRD-schema fields. The RHOAI operator webhook
+    # auto-injects mlflowoperator (defaulting to Removed). We then patch it
+    # to Managed in a second step — putting mlflowoperator directly in the
+    # create spec is silently ignored because it's not in the CRD schema.
+    $KUBECTL apply -f - <<'DSCEOF'
+apiVersion: datasciencecluster.opendatahub.io/v1
+kind: DataScienceCluster
+metadata:
+  name: default-dsc
+spec:
+  components:
+    dashboard:
+      managementState: Removed
+    kserve:
+      managementState: Managed
+    kueue:
+      managementState: Removed
+    modelregistry:
+      managementState: Removed
+    ray:
+      managementState: Removed
+    trainingoperator:
+      managementState: Removed
+    trustyai:
+      managementState: Removed
+    workbenches:
+      managementState: Removed
+DSCEOF
+    log_success "DataScienceCluster created"
+    # Wait for webhook to inject mlflowoperator field, then patch to Managed
+    sleep 5
+    $KUBECTL patch datasciencecluster default-dsc --type=merge \
+      -p '{"spec":{"components":{"mlflowoperator":{"managementState":"Managed"}}}}' || true
+    log_success "DSC patched: mlflowoperator=Managed"
+  fi
+
+  # Wait for MLflow CRD — the RHOAI operator reconciles the DSC and installs
+  # the MLflow operator component, which registers the MLflow CRD.
+  if ! _wait_for_crd "mlflows.mlflow.opendatahub.io" 600 "MLflow"; then
+    log_warn "MLflow CRD not registered after 10m — skipping MLflow"
+    SKIP_MLFLOW=true
+    return 0
+  fi
+
+  # Create MLflow CR and wait for it to be ready
+  _mlflow_create_cr
+  if ! _mlflow_wait_ready; then
+    log_warn "MLflow not ready — OTEL trace export will be skipped"
+    SKIP_MLFLOW=true
+    return 0
+  fi
+
+  # Upgrade kagenti-deps to wire OTEL collector to the MLflow endpoint.
+  # When --otel-operator-managed, the operator discovers the endpoint from the
+  # MLflow CR at startup and assembles the ConfigMap — no Helm upgrade needed.
+  if [ "$OTEL_OPERATOR_MANAGED" = true ]; then
+    log_info "OTel collector config managed by kagenti-operator — skipping Helm OTEL endpoint upgrade"
+  elif [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
+    log_info "Upgrading kagenti-deps with MLflow OTEL endpoint..."
+
+    # Adopt cert-manager resources created by _ensure_rhoai_shared_trust (Step 3b)
+    # so Helm can import them during the upgrade without ownership conflicts.
+    _adopt_for_helm ClusterIssuer istio-mesh-root-selfsigned
+    _adopt_for_helm ClusterIssuer istio-mesh-ca
+    _adopt_for_helm Certificate istio-mesh-root-ca cert-manager
+    _adopt_for_helm Certificate istio-cacerts-default istio-system
+    _adopt_for_helm Certificate istio-cacerts-openshift-gateway openshift-ingress
+
+    local _mlflow_vals_file
+    _mlflow_vals_file=$(mktemp /tmp/kagenti-mlflow-vals-XXXXXX.yaml)
+    cat > "$_mlflow_vals_file" <<EOF
+otel:
+  mlflow:
+    enabled: true
+  collector:
+    mlflowConfig:
+      exporters:
+        otlphttp/mlflow:
+          traces_endpoint: "${MLFLOW_TRACES_ENDPOINT}"
+EOF
+    helm upgrade kagenti-deps "$KAGENTI_REPO/charts/kagenti-deps/" \
+      -f "$_mlflow_vals_file" \
+      --reset-values \
+      "${KAGENTI_DEPS_HELM_ARGS[@]}"
+    rm -f "$_mlflow_vals_file"
+    log_success "kagenti-deps upgraded with MLflow OTEL endpoint"
+  fi
+
+  # Expose MLflow UI via an OpenShift OAuth proxy so browser users can
+  # authenticate through OpenShift SSO. The proxy injects the user's token
+  # as a bearer token which MLflow's kubernetes-auth plugin validates via
+  # SubjectAccessReview.
+  log_info "Ensuring MLflow OAuth proxy exists for browser access..."
+  if ! $KUBECTL get deployment mlflow-oauth-proxy -n "$MLFLOW_NAMESPACE" &>/dev/null; then
+    local oauth_proxy_image
+    oauth_proxy_image=$(oc adm release info --image-for=oauth-proxy 2>/dev/null)
+    if [ -z "$oauth_proxy_image" ]; then
+      log_warn "Could not resolve oauth-proxy image — skipping MLflow OAuth proxy"
+      return 0
+    fi
+    # Cookie secret for oauth-proxy session encryption
+    local cookie_secret
+    cookie_secret=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+    $KUBECTL apply -f - <<OAUTH_EOF
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"mlflow"}}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-oauth-proxy-cookie
+  namespace: ${MLFLOW_NAMESPACE}
+type: Opaque
+data:
+  cookie-secret: ${cookie_secret}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-oauth-proxy
+  template:
+    metadata:
+      labels:
+        app: mlflow-oauth-proxy
+    spec:
+      serviceAccountName: mlflow-oauth-proxy
+      containers:
+      - name: oauth-proxy
+        image: ${oauth_proxy_image}
+        args:
+        - --https-address=:8443
+        - --provider=openshift
+        - --openshift-service-account=mlflow-oauth-proxy
+        - --upstream=https://${MLFLOW_INSTANCE_NAME}.${MLFLOW_NAMESPACE}.svc.cluster.local:8443
+        - --upstream-ca=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+        - --tls-cert=/etc/tls/private/tls.crt
+        - --tls-key=/etc/tls/private/tls.key
+        - --cookie-secret-file=/etc/oauth/cookie-secret
+        - --pass-access-token=true
+        - --pass-user-bearer-token=true
+        ports:
+        - containerPort: 8443
+          name: https
+        volumeMounts:
+        - name: tls
+          mountPath: /etc/tls/private
+          readOnly: true
+        - name: cookie-secret
+          mountPath: /etc/oauth
+          readOnly: true
+      volumes:
+      - name: tls
+        secret:
+          secretName: mlflow-oauth-proxy-tls
+      - name: cookie-secret
+        secret:
+          secretName: mlflow-oauth-proxy-cookie
+          items:
+          - key: cookie-secret
+            path: cookie-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-oauth-proxy
+  namespace: ${MLFLOW_NAMESPACE}
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: mlflow-oauth-proxy-tls
+spec:
+  selector:
+    app: mlflow-oauth-proxy
+  ports:
+  - name: https
+    port: 8443
+    targetPort: https
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mlflow
+  namespace: ${MLFLOW_NAMESPACE}
+spec:
+  to:
+    kind: Service
+    name: mlflow-oauth-proxy
+  port:
+    targetPort: https
+  tls:
+    termination: reencrypt
+OAUTH_EOF
+  fi
+
+  # Wait for the oauth-proxy to become ready
+  local tries=0
+  while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
+    -l app=mlflow-oauth-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Running; do
+    tries=$((tries + 1))
+    if [ $tries -ge 24 ]; then
+      log_warn "MLflow OAuth proxy not ready after 2m — dashboard link may not work"
+      break
+    fi
+    sleep 5
+  done
+
+  local mlflow_host=""
+  mlflow_host=$($KUBECTL get route mlflow -n "$MLFLOW_NAMESPACE" \
+    -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+  if [ -n "$mlflow_host" ]; then
+    local mlflow_url="https://${mlflow_host}/mlflow/"
+    $KUBECTL patch configmap kagenti-ui-config -n kagenti-system \
+      --type merge -p "{\"data\":{\"MLFLOW_DASHBOARD_URL\":\"${mlflow_url}\"}}" 2>/dev/null || true
+    log_success "MLflow dashboard URL: $mlflow_url"
+  else
+    log_warn "Could not resolve MLflow Route host — UI link will be empty"
+  fi
+}
+log_info "Step 3d: MLflow provisioning (deferred)"
+_deferred_mlflow
 echo ""
 
 # ============================================================================
@@ -950,7 +1330,8 @@ KAGENTI_UI_FLAGS=()
 if $SKIP_UI; then
   log_info "Kagenti UI: skipped (--skip-ui)"
   KAGENTI_UI_FLAGS+=(--set components.ui.enabled=false)
-else
+elif [ -z "$KAGENTI_REPO_ORIGINAL" ]; then
+  # No --kagenti-repo provided: detect latest release tag from remote
   log_info "Detecting latest kagenti release tag..."
   LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
   if [ -z "$LATEST_TAG" ]; then
@@ -960,6 +1341,16 @@ else
   log_success "Using tag: v${LATEST_TAG}"
   KAGENTI_UI_FLAGS+=(--set "ui.frontend.tag=v${LATEST_TAG}")
   KAGENTI_UI_FLAGS+=(--set "ui.backend.tag=v${LATEST_TAG}")
+else
+  # Local or explicit repo: read ui.frontend.tag from the chart (all component tags share the same release version)
+  LATEST_TAG=$(grep -A4 'frontend:' "$KAGENTI_REPO/charts/kagenti/values.yaml" | grep -m1 'tag:' | awk '{print $2}')
+  if [ -n "$LATEST_TAG" ]; then
+    log_success "Using tag from local chart: ${LATEST_TAG}"
+    KAGENTI_UI_FLAGS+=(--set "ui.frontend.tag=${LATEST_TAG}")
+    KAGENTI_UI_FLAGS+=(--set "ui.backend.tag=${LATEST_TAG}")
+  else
+    log_info "Using image tags from chart values (--kagenti-repo provided)"
+  fi
 fi
 
 # Override operator chart dependency with local repo if provided
@@ -998,24 +1389,6 @@ fi
 
 log_info "Keycloak: realm=$KC_REALM namespace=$KC_NAMESPACE"
 
-# Read the actual Keycloak admin credentials from the operator-managed secret.
-# The RHBK operator creates keycloak-initial-admin with a random password.
-# The kagenti chart creates keycloak-admin-secret in agent namespaces for the
-# client-registration sidecar — these must match, otherwise client-registration
-# can't authenticate to the master realm to register per-agent OAuth clients.
-KC_ADMIN_FLAGS=()
-_kc_admin_user=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
-  -o jsonpath='{.data.username}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-_kc_admin_pass=$($KUBECTL get secret keycloak-initial-admin -n "$KC_NAMESPACE" \
-  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-if [ -n "$_kc_admin_user" ] && [ -n "$_kc_admin_pass" ]; then
-  KC_ADMIN_FLAGS+=(--set "keycloak.adminUsername=${_kc_admin_user}")
-  KC_ADMIN_FLAGS+=(--set "keycloak.adminPassword=${_kc_admin_pass}")
-  log_success "Keycloak admin credentials read from keycloak-initial-admin"
-else
-  log_warn "Could not read keycloak-initial-admin — agent client-registration may fail"
-fi
-
 # Build operator image override flags
 OPERATOR_IMAGE_FLAGS=()
 if [ -n "$OPERATOR_IMAGE" ]; then
@@ -1027,14 +1400,23 @@ if [ -n "$OPERATOR_IMAGE" ]; then
   log_info "Operator image: ${OPERATOR_IMAGE}"
 fi
 
+# Build-from-source flags: configure the OCP internal registry and build strategy
+BUILD_FLAGS=()
+if [ "$WITH_BUILDS" = true ]; then
+  BUILD_FLAGS+=(--set "ui.backend.defaultRegistryUrl=image-registry.openshift-image-registry.svc:5000")
+  BUILD_FLAGS+=(--set "ui.backend.shipwrightDefaultStrategy=buildah")
+  log_info "Build from source: internal registry + buildah strategy"
+fi
+
 run_cmd $KUBECTL create namespace mcp-system --dry-run=client -o yaml | $KUBECTL apply -f -
 
 run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -n kagenti-system --create-namespace \
+  --reset-values \
   -f "$SECRETS_FILE" \
   ${KAGENTI_UI_FLAGS[@]+"${KAGENTI_UI_FLAGS[@]}"} \
   ${OPERATOR_IMAGE_FLAGS[@]+"${OPERATOR_IMAGE_FLAGS[@]}"} \
-  ${KC_ADMIN_FLAGS[@]+"${KC_ADMIN_FLAGS[@]}"} \
+  ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \
@@ -1042,7 +1424,11 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set mlflow.auth.enabled=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}" \
   --set "keycloak.realm=${KC_REALM}" \
-  --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)"
+  --set "mcpGateway.openshiftDomain=${DOMAIN}" \
+  --set "components.mlflow.enabled=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
+  --set "components.mlflow.routeNamespace=${MLFLOW_NAMESPACE}" \
+  --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
+  --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
 log_success "Kagenti installed"
 
@@ -1051,6 +1437,35 @@ if [ "$SKIP_MLFLOW" = true ]; then
   log_success "Skipping MLflow RBAC grant (--skip-mlflow)"
 else
   _mlflow_grant_otel_rbac
+
+  # Create default MLflow experiment in the workspace namespace.
+  # The otel-collector sends traces with x-mlflow-experiment-id header; the experiment
+  # must exist or MLflow will reject the traces.
+  # Uses kubectl run with a curl pod since the installer runs outside the cluster.
+  if ! $DRY_RUN; then
+    _EXP_WS="${MLFLOW_WORKSPACE:-team1}"
+    _EXP_NAME="kagenti-traces"
+    _EXP_TOKEN=$($KUBECTL create token otel-collector -n kagenti-system --duration=600s 2>/dev/null || true)
+    if [ -n "$_EXP_TOKEN" ]; then
+      _EXP_RESP=$($KUBECTL run mlflow-exp-create --rm -i --restart=Never \
+        --image=curlimages/curl -n kagenti-system \
+        --env="TOK=$_EXP_TOKEN" \
+        -- sh -c 'curl -sk -X POST \
+        -H "Authorization: Bearer $TOK" \
+        -H "x-mlflow-workspace: '"$_EXP_WS"'" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"'"$_EXP_NAME"'\"}" \
+        "https://mlflow.'"${MLFLOW_NAMESPACE}"'.svc.cluster.local:8443/api/2.0/mlflow/experiments/create"' 2>/dev/null || true)
+      if echo "$_EXP_RESP" | grep -q "experiment_id"; then
+        _EXP_ID=$(echo "$_EXP_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['experiment_id'])" 2>/dev/null || true)
+        log_success "Created MLflow experiment '$_EXP_NAME' (id=$_EXP_ID) in workspace $_EXP_WS"
+      elif echo "$_EXP_RESP" | grep -q "RESOURCE_ALREADY_EXISTS"; then
+        log_success "MLflow experiment '$_EXP_NAME' already exists in workspace $_EXP_WS"
+      else
+        log_warn "Failed to create MLflow experiment: $_EXP_RESP"
+      fi
+    fi
+  fi
 fi
 echo ""
 
@@ -1075,14 +1490,19 @@ if $WITH_KUADRANT; then
   if ! $DRY_RUN; then
     _wait_deployment_ready kuadrant-operator-controller-manager "$KUADRANT_NS" "Kuadrant operator"
 
-    log_info "Creating Kuadrant CR..."
-    $KUBECTL apply -f - <<EOF
-apiVersion: kuadrant.io/v1beta1
+    if $KUBECTL get crd kuadrants.kuadrant.io &>/dev/null; then
+      log_info "Creating Kuadrant CR..."
+      _kuadrant_api=$($KUBECTL get crd kuadrants.kuadrant.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' | awk '{print $NF}')
+      $KUBECTL apply -f - <<EOF
+apiVersion: kuadrant.io/${_kuadrant_api}
 kind: Kuadrant
 metadata:
   name: kuadrant
   namespace: ${KUADRANT_NS}
 EOF
+    else
+      log_info "Kuadrant CRD not present (v1.4+) — skipping CR creation"
+    fi
   fi
 
   log_success "Kuadrant installed"
@@ -1098,13 +1518,40 @@ log_info "Step 5b: Install MCP Gateway"
 
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
-elif helm status mcp-gateway -n mcp-system &>/dev/null; then
-  log_info "MCP Gateway already installed — skipping"
 else
-  log_info "Installing MCP Gateway v${MCP_GATEWAY_VERSION}..."
-  run_cmd helm install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
-    --create-namespace --namespace mcp-system --version "$MCP_GATEWAY_VERSION"
-  log_success "MCP Gateway installed"
+  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+  # version that used a different API group). A stuck finalizer prevents the controller
+  # from creating the broker-router deployment on reinstall.
+  if ! $DRY_RUN; then
+    for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
+      _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
+        | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for item in data.get('items', []):
+    if item.get('metadata', {}).get('deletionTimestamp'):
+        print(item['metadata']['name'])
+" 2>/dev/null || echo "")
+      if [ -n "$_stuck" ]; then
+        echo "$_stuck" | while read -r _name; do
+          log_warn "Removing stuck finalizer from MCPGatewayExtension/${_name} (${_crd_group})"
+          $KUBECTL patch "mcpgatewayextensions.${_crd_group}/${_name}" -n mcp-system \
+            --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true
+        done
+        sleep 2
+      fi
+    done
+  fi
+
+  MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"
+  log_info "Installing/upgrading MCP Gateway v${MCP_GATEWAY_VERSION} (publicHost=${MCP_GW_PUBLIC_HOST})..."
+  run_cmd helm upgrade --install mcp-gateway oci://ghcr.io/kuadrant/charts/mcp-gateway \
+    --create-namespace --namespace mcp-system --version "$MCP_GATEWAY_VERSION" \
+    --set "gateway.publicHost=${MCP_GW_PUBLIC_HOST}"
+  log_success "MCP Gateway installed/upgraded"
+
+  log_info "Waiting for MCP Gateway broker-router deployment..."
+  _wait_deployment_ready mcp-gateway mcp-system "MCP Gateway broker-router"
 fi
 echo ""
 
@@ -1188,5 +1635,8 @@ echo ""
 echo "  Note: Some pods (SPIRE agents, operator-managed workloads)"
 echo "  may still be starting. Allow a few minutes for all components"
 echo "  to become fully available."
+echo ""
+echo "  Run .github/scripts/local-setup/show-services.sh for"
+echo "  service endpoints and credentials."
 echo "============================================"
 echo ""

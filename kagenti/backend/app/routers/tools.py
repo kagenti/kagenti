@@ -50,10 +50,6 @@ from app.core.constants import (
     # SPIRE identity constants
     KAGENTI_SPIRE_LABEL,
     KAGENTI_SPIRE_ENABLED_VALUE,
-    # Per-sidecar injection labels
-    KAGENTI_ENVOY_PROXY_INJECT_LABEL,
-    KAGENTI_SPIFFE_HELPER_INJECT_LABEL,
-    KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL,
     KAGENTI_OUTBOUND_PORTS_EXCLUDE,
     KAGENTI_INBOUND_PORTS_EXCLUDE,
 )
@@ -72,7 +68,10 @@ from app.models.shipwright import (
     ShipwrightBuildListResponse,
 )
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.services.shipwright_builds import collect_kagenti_shipwright_builds
+from app.services.shipwright_builds import (
+    cleanup_existing_build,
+    collect_kagenti_shipwright_builds,
+)
 from app.services.shipwright import (
     build_shipwright_build_manifest,
     build_shipwright_buildrun_manifest,
@@ -229,13 +228,19 @@ class CreateToolRequest(BaseModel):
 
     # AuthBridge sidecar injection (default disabled for tools)
     authBridgeEnabled: bool = False
-    # SPIRE identity (spiffe-helper sidecar injection)
+    # SPIRE identity (gates spiffe-helper inside the combined authbridge container)
     spireEnabled: bool = False
 
-    # Per-sidecar injection controls (None = use webhook defaults)
-    envoyProxyInject: Optional[bool] = None
-    spiffeHelperInject: Optional[bool] = None
-    clientRegistrationInject: Optional[bool] = None
+    # Per-workload AuthBridge mode override. Tools don't create an
+    # AgentRuntime CR (they use the deprecated kagenti.io/authbridge-mode
+    # pod annotation, see tools.py:1041-1046), so this field flows
+    # through the annotation path, not via Spec.AuthBridgeMode.
+    #
+    # mtlsMode is intentionally NOT exposed for tools: it lives on the
+    # AgentRuntime CR's Spec, and there's no equivalent pod annotation
+    # for it. Once tools start producing AgentRuntime CRs (tracked as
+    # an operator-side follow-up), mtlsMode can be added here too.
+    authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
 
     # Port exclusion annotations
     outboundPortsExclude: Optional[str] = None
@@ -260,9 +265,7 @@ class FinalizeToolBuildRequest(BaseModel):
     createHttpRoute: Optional[bool] = None
     authBridgeEnabled: Optional[bool] = None
     imagePullSecret: Optional[str] = None
-    envoyProxyInject: Optional[bool] = None
-    spiffeHelperInject: Optional[bool] = None
-    clientRegistrationInject: Optional[bool] = None
+    authBridgeMode: Optional[Literal["proxy-sidecar", "envoy-sidecar", "lite", "waypoint"]] = None
     outboundRoutes: Optional[List[OutboundRoute]] = None
     outboundPortsExclude: Optional[str] = None
     inboundPortsExclude: Optional[str] = None
@@ -388,7 +391,13 @@ def _build_tool_env_vars(
                     }
 
                 env_vars.append(env_entry)
-    return env_vars
+
+    # Deduplicate environment variables, keeping the last occurrence.
+    # Precedence (last wins): DEFAULT_ENV_VARS (with service_ports override) < user envVars.
+    seen = {}
+    for env in env_vars:
+        seen[env["name"]] = env
+    return list(seen.values())
 
 
 def _format_timestamp(timestamp) -> Optional[str]:
@@ -529,9 +538,7 @@ def _build_tool_shipwright_build_manifest(
         "workloadType": request.workloadType,
         "authBridgeEnabled": request.authBridgeEnabled,
         "spireEnabled": request.spireEnabled,
-        "envoyProxyInject": request.envoyProxyInject,
-        "spiffeHelperInject": request.spiffeHelperInject,
-        "clientRegistrationInject": request.clientRegistrationInject,
+        "authBridgeMode": request.authBridgeMode,
     }
     if request.outboundRoutes:
         resource_config["outboundRoutes"] = [r.model_dump() for r in request.outboundRoutes]
@@ -598,6 +605,9 @@ async def list_tool_shipwright_builds(
     kube: KubernetesService = Depends(get_kubernetes_service),
 ) -> ShipwrightBuildListResponse:
     """List Shipwright Build resources for tools only (kagenti.io/type=tool)."""
+    if not kube.api_group_exists("shipwright.io"):
+        return ShipwrightBuildListResponse(items=[])
+
     namespaces_to_scan: List[str] = []
     if all_namespaces:
         namespaces_to_scan = kube.list_enabled_namespaces()
@@ -975,11 +985,9 @@ def _build_tool_deployment_manifest(
     shipwright_build_name: Optional[str] = None,
     auth_bridge_enabled: bool = False,
     spire_enabled: bool = False,
-    envoy_proxy_inject: Optional[bool] = None,
-    spiffe_helper_inject: Optional[bool] = None,
-    client_registration_inject: Optional[bool] = None,
     outbound_ports_exclude: Optional[str] = None,
     inbound_ports_exclude: Optional[str] = None,
+    auth_bridge_mode: Optional[str] = None,
 ) -> dict:
     """
     Build a Kubernetes Deployment manifest for an MCP tool.
@@ -1034,15 +1042,6 @@ def _build_tool_deployment_manifest(
     if spire_enabled:
         labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
         pod_labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
-    if envoy_proxy_inject is False:
-        labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
-        pod_labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
-    if spiffe_helper_inject is False:
-        labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-        pod_labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-    if client_registration_inject is True:
-        labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
-        pod_labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
 
     # Build annotations
     annotations = {}
@@ -1055,6 +1054,12 @@ def _build_tool_deployment_manifest(
         pod_annotations[KAGENTI_OUTBOUND_PORTS_EXCLUDE] = outbound_ports_exclude
     if inbound_ports_exclude:
         pod_annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = inbound_ports_exclude
+    if auth_bridge_mode:
+        # The deprecated kagenti.io/authbridge-mode annotation is the
+        # only per-pod mode override path for workloads without an
+        # AgentRuntime CR (tools today). The operator's resolution
+        # chain still honors it.
+        pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
     manifest = {
         "apiVersion": "apps/v1",
@@ -1140,11 +1145,9 @@ def _build_tool_statefulset_manifest(
     storage_size: str = "1Gi",
     auth_bridge_enabled: bool = False,
     spire_enabled: bool = False,
-    envoy_proxy_inject: Optional[bool] = None,
-    spiffe_helper_inject: Optional[bool] = None,
-    client_registration_inject: Optional[bool] = None,
     outbound_ports_exclude: Optional[str] = None,
     inbound_ports_exclude: Optional[str] = None,
+    auth_bridge_mode: Optional[str] = None,
 ) -> dict:
     """
     Build a Kubernetes StatefulSet manifest for an MCP tool.
@@ -1203,15 +1206,6 @@ def _build_tool_statefulset_manifest(
     if spire_enabled:
         labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
         pod_labels[KAGENTI_SPIRE_LABEL] = KAGENTI_SPIRE_ENABLED_VALUE
-    if envoy_proxy_inject is False:
-        labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
-        pod_labels[KAGENTI_ENVOY_PROXY_INJECT_LABEL] = "false"
-    if spiffe_helper_inject is False:
-        labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-        pod_labels[KAGENTI_SPIFFE_HELPER_INJECT_LABEL] = "false"
-    if client_registration_inject is True:
-        labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
-        pod_labels[KAGENTI_CLIENT_REGISTRATION_INJECT_LABEL] = "true"
 
     # Build annotations
     annotations = {}
@@ -1224,6 +1218,12 @@ def _build_tool_statefulset_manifest(
         pod_annotations[KAGENTI_OUTBOUND_PORTS_EXCLUDE] = outbound_ports_exclude
     if inbound_ports_exclude:
         pod_annotations[KAGENTI_INBOUND_PORTS_EXCLUDE] = inbound_ports_exclude
+    if auth_bridge_mode:
+        # The deprecated kagenti.io/authbridge-mode annotation is the
+        # only per-pod mode override path for workloads without an
+        # AgentRuntime CR (tools today). The operator's resolution
+        # chain still honors it.
+        pod_annotations["kagenti.io/authbridge-mode"] = auth_bridge_mode
 
     manifest = {
         "apiVersion": "apps/v1",
@@ -1407,6 +1407,9 @@ async def create_tool(
                     detail="gitUrl is required for source deployment",
                 )
 
+            # Clean up any existing Build/BuildRuns to prevent 409 on re-import
+            cleanup_existing_build(kube, namespace=request.namespace, build_name=request.name)
+
             # Step 1: Create Shipwright Build CR
             clone_secret = resolve_clone_secret(kube.core_api, request.namespace)
             build_manifest = _build_tool_shipwright_build_manifest(
@@ -1524,11 +1527,9 @@ async def create_tool(
                     description=description,
                     auth_bridge_enabled=request.authBridgeEnabled,
                     spire_enabled=request.spireEnabled,
-                    envoy_proxy_inject=request.envoyProxyInject,
-                    spiffe_helper_inject=request.spiffeHelperInject,
-                    client_registration_inject=request.clientRegistrationInject,
                     outbound_ports_exclude=request.outboundPortsExclude,
                     inbound_ports_exclude=request.inboundPortsExclude,
+                    auth_bridge_mode=request.authBridgeMode,
                 )
                 kube.create_statefulset(request.namespace, workload_manifest)
                 logger.info(
@@ -1548,11 +1549,9 @@ async def create_tool(
                     description=description,
                     auth_bridge_enabled=request.authBridgeEnabled,
                     spire_enabled=request.spireEnabled,
-                    envoy_proxy_inject=request.envoyProxyInject,
-                    spiffe_helper_inject=request.spiffeHelperInject,
-                    client_registration_inject=request.clientRegistrationInject,
                     outbound_ports_exclude=request.outboundPortsExclude,
                     inbound_ports_exclude=request.inboundPortsExclude,
+                    auth_bridge_mode=request.authBridgeMode,
                 )
                 kube.create_deployment(request.namespace, workload_manifest)
                 logger.info(
@@ -1909,21 +1908,11 @@ async def finalize_tool_shipwright_build(
         elif stored_routes:
             final_outbound_routes = [OutboundRoute(**r) for r in stored_routes]
 
-        # Per-sidecar injection controls
-        envoy_proxy_inject = (
-            request.envoyProxyInject
-            if request.envoyProxyInject is not None
-            else tool_config_dict.get("envoyProxyInject")
-        )
-        spiffe_helper_inject = (
-            request.spiffeHelperInject
-            if request.spiffeHelperInject is not None
-            else tool_config_dict.get("spiffeHelperInject")
-        )
-        client_registration_inject = (
-            request.clientRegistrationInject
-            if request.clientRegistrationInject is not None
-            else tool_config_dict.get("clientRegistrationInject")
+        # Per-workload AuthBridge mode override
+        auth_bridge_mode = (
+            request.authBridgeMode
+            if request.authBridgeMode is not None
+            else tool_config_dict.get("authBridgeMode")
         )
 
         # Port exclusion and policy overrides
@@ -1992,11 +1981,9 @@ async def finalize_tool_shipwright_build(
                 storage_size=storage_size,
                 auth_bridge_enabled=auth_bridge_enabled,
                 spire_enabled=spire_enabled,
-                envoy_proxy_inject=envoy_proxy_inject,
-                spiffe_helper_inject=spiffe_helper_inject,
-                client_registration_inject=client_registration_inject,
                 outbound_ports_exclude=outbound_ports_exclude,
                 inbound_ports_exclude=inbound_ports_exclude,
+                auth_bridge_mode=auth_bridge_mode,
             )
             kube.create_statefulset(namespace, workload_manifest)
             logger.info(
@@ -2017,11 +2004,9 @@ async def finalize_tool_shipwright_build(
                 shipwright_build_name=name,
                 auth_bridge_enabled=auth_bridge_enabled,
                 spire_enabled=spire_enabled,
-                envoy_proxy_inject=envoy_proxy_inject,
-                spiffe_helper_inject=spiffe_helper_inject,
-                client_registration_inject=client_registration_inject,
                 outbound_ports_exclude=outbound_ports_exclude,
                 inbound_ports_exclude=inbound_ports_exclude,
+                auth_bridge_mode=auth_bridge_mode,
             )
             kube.create_deployment(namespace, workload_manifest)
             logger.info(

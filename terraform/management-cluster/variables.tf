@@ -21,7 +21,7 @@ variable "aws_region" {
 variable "ocp_version" {
   description = "OpenShift version for the management cluster"
   type        = string
-  default     = "4.20.11"
+  default     = "4.20.21"
 }
 
 variable "vpc_cidr" {

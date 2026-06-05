@@ -1,7 +1,6 @@
 # ADK agent with OpenShell supervisor as entrypoint
 # Supervisor applies Landlock + seccomp + netns + OPA before exec'ing the agent
-# hadolint ignore=DL3007
-FROM ghcr.io/nvidia/openshell/supervisor:latest AS supervisor
+FROM ghcr.io/nvidia/openshell/supervisor:latest@sha256:70ad41288b905ae7b20d90da3a7709974ab9bc5fa9c699cdc32ea31facc552ed AS supervisor
 
 FROM python:3.12-slim@sha256:4386a385d81dba9f72ed72a6fe4237755d7f5440c84b417650f38336bbc43117
 
@@ -24,7 +23,7 @@ COPY agent.py .
 RUN chown -R sandbox:sandbox /app
 
 # Copy supervisor binary from OpenShell image
-COPY --from=supervisor /usr/local/bin/openshell-sandbox /usr/local/bin/openshell-sandbox
+COPY --from=supervisor /openshell-sandbox /usr/local/bin/openshell-sandbox
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/openshell-sandbox"]
