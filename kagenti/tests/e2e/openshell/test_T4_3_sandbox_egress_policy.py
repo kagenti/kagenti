@@ -47,11 +47,7 @@ SSL_CERT_FILE = os.getenv(
     os.path.join(XDG_CONFIG_HOME, "openshell", "ca-bundle.crt"),
 )
 
-KEYCLOAK_URL = os.getenv(
-    "OPENSHELL_KEYCLOAK_URL",
-    "https://keycloak-keycloak.apps.kagenti2.kubestellar.org"
-    "/realms/openshell/protocol/openid-connect/token",
-)
+KEYCLOAK_URL = os.getenv("OPENSHELL_KEYCLOAK_URL", "")
 KEYCLOAK_USER = os.getenv("OPENSHELL_KEYCLOAK_USER", "alice")
 KEYCLOAK_PASS = os.getenv("OPENSHELL_KEYCLOAK_PASS", "alice123")
 OPENSHELL_GATEWAY = os.getenv("OPENSHELL_GATEWAY", "openshell-team1")
@@ -142,6 +138,8 @@ def _openshell_gateway_authenticated() -> bool:
 
 
 def _refresh_openshell_token() -> bool:
+    if not KEYCLOAK_URL:
+        return False
     try:
         result = subprocess.run(
             [

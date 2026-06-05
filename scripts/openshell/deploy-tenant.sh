@@ -295,12 +295,11 @@ else
             kubectl delete certificaterequest -n "$TENANT" -l cert-manager.io/certificate-name="$cert" \
               --ignore-not-found 2>/dev/null || true
           done
-          # Trigger re-reconciliation by touching the Certificate annotation
+          # Trigger re-reconciliation with a unique annotation (avoids API server
+          # watch-cache coalescing that can occur with set-then-remove patterns)
           for cert in $NOT_READY; do
             kubectl annotate certificate "$cert" -n "$TENANT" \
-              --overwrite cert-manager.io/issue-temporary-certificate="" 2>/dev/null || true
-            kubectl annotate certificate "$cert" -n "$TENANT" \
-              --overwrite cert-manager.io/issue-temporary-certificate- 2>/dev/null || true
+              --overwrite openshell.io/retry="attempt-${attempt}-$(date +%s)" 2>/dev/null || true
           done
           log_info "Waiting 10s for cert-manager to re-reconcile..."
           sleep 10

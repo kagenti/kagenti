@@ -255,7 +255,7 @@ class TestSandboxAnnotation:
 
 @pytest.mark.xfail(
     reason="Requires supervisor binary in sandbox to initiate auth handshake",
-    strict=False,
+    strict=True,
 )
 class TestSandboxAuthFlow:
     """Verify end-to-end IssueSandboxToken flow via gateway logs."""

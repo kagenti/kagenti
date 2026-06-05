@@ -154,19 +154,23 @@ CREDENTIALS_DRIVER_TAG="$TAG"
 
 if [[ "$PREBUILT" == "true" && "$TAG" == "local" ]]; then
     CHART_VALUES="$REPO_ROOT/charts/openshell/values.yaml"
-    if [[ -f "$CHART_VALUES" ]]; then
+    if [[ ! -f "$CHART_VALUES" ]]; then
+        echo "ERROR: $CHART_VALUES not found — cannot determine image tags" >&2
+        exit 1
+    fi
+    if command -v yq &>/dev/null; then
+        GATEWAY_TAG=$(yq '.images.gateway.tag' "$CHART_VALUES")
+        COMPUTE_DRIVER_TAG=$(yq '.images.computeDriver.tag' "$CHART_VALUES")
+        CREDENTIALS_DRIVER_TAG=$(yq '.images.credentialsDriver.tag' "$CHART_VALUES")
+    else
         GATEWAY_TAG=$(grep -A2 'gateway:' "$CHART_VALUES" | grep 'tag:' | head -1 | awk '{print $2}')
         COMPUTE_DRIVER_TAG=$(grep -A2 'computeDriver:' "$CHART_VALUES" | grep 'tag:' | head -1 | awk '{print $2}')
         CREDENTIALS_DRIVER_TAG=$(grep -A2 'credentialsDriver:' "$CHART_VALUES" | grep 'tag:' | head -1 | awk '{print $2}')
-        echo "Using image tags from $CHART_VALUES:"
-        echo "  gateway:            $GATEWAY_TAG"
-        echo "  compute-driver:     $COMPUTE_DRIVER_TAG"
-        echo "  credentials-driver: $CREDENTIALS_DRIVER_TAG"
-    else
-        GATEWAY_TAG="latest"
-        COMPUTE_DRIVER_TAG="latest"
-        CREDENTIALS_DRIVER_TAG="latest"
     fi
+    echo "Using image tags from $CHART_VALUES:"
+    echo "  gateway:            $GATEWAY_TAG"
+    echo "  compute-driver:     $COMPUTE_DRIVER_TAG"
+    echo "  credentials-driver: $CREDENTIALS_DRIVER_TAG"
 fi
 
 pull_tagged_image() {
