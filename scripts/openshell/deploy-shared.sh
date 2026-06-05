@@ -9,7 +9,7 @@
 #   4. Keycloak realm (openshell realm, PKCE client, test users)
 #   5. LiteLLM model proxy (optional, when --litellm is passed)
 #   6. Container image pre-pull (optional, when --pre-pull is passed)
-#   7. kagenti-backend + PostgreSQL sessions DB (default on, --skip-backend)
+#   7. kagenti-backend + PostgreSQL sessions DB (off by default, --with-backend)
 #
 # Idempotent: safe to re-run. Checks existing state before each step.
 #
@@ -45,7 +45,7 @@ STEP_TLS=true
 STEP_KEYCLOAK=true
 STEP_LITELLM=false
 STEP_PREPULL=false
-STEP_BACKEND=true
+STEP_BACKEND=false
 KIND_CLUSTER="${CLUSTER_NAME:-kagenti}"
 DRY_RUN=false
 
@@ -74,8 +74,7 @@ Options:
   --skip-keycloak     Skip Keycloak realm setup
   --litellm           Deploy LiteLLM model proxy (requires MAAS_* env vars)
   --pre-pull          Pre-pull container images into the cluster
-  --backend           Deploy kagenti-backend (default: enabled, use --skip-backend to disable)
-  --skip-backend      Skip kagenti-backend deployment
+  --with-backend      Deploy kagenti-backend + PostgreSQL sessions DB (default: off)
   --kind-cluster NAME Kind cluster name for pre-pull (default: kagenti)
   --keycloak-ns NS    Keycloak namespace (default: keycloak)
   --dry-run           Print commands without executing
@@ -94,8 +93,8 @@ while [[ $# -gt 0 ]]; do
     --keycloak-ns)      KEYCLOAK_NS="$2"; shift 2 ;;
     --litellm)          STEP_LITELLM=true; shift ;;
     --pre-pull)         STEP_PREPULL=true; shift ;;
-    --backend)          STEP_BACKEND=true; shift ;;
-    --skip-backend)     STEP_BACKEND=false; shift ;;
+    --with-backend)     STEP_BACKEND=true; shift ;;
+    --backend|--skip-backend) STEP_BACKEND=false; shift ;;  # compat aliases (no-op, kept for existing scripts)
     --kind-cluster)     KIND_CLUSTER="$2"; shift 2 ;;
     --dry-run)          DRY_RUN=true; shift ;;
     *)
@@ -116,7 +115,7 @@ echo "  cert-manager CA:    $STEP_TLS"
 echo "  Keycloak realm:     $STEP_KEYCLOAK"
 echo "  LiteLLM proxy:      $STEP_LITELLM"
 echo "  Image pre-pull:      $STEP_PREPULL"
-echo "  Backend + sessions: $STEP_BACKEND"
+echo "  Backend + sessions: $STEP_BACKEND$( $STEP_BACKEND || echo ' (use --with-backend to enable)' )"
 echo "  Keycloak namespace: $KEYCLOAK_NS"
 echo "  Dry run:            $DRY_RUN"
 echo ""
