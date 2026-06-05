@@ -337,9 +337,15 @@ fi
 log_step "Deploying tenant: team1"
 scripts/openshell/deploy-tenant.sh "team1" "${TENANT_ARGS[@]}"
 
-# Deploy team2 without agents to conserve CI resources (used for isolation tests only)
-log_step "Deploying tenant: team2 (gateway only)"
-scripts/openshell/deploy-tenant.sh "team2"
+# Team2 is only needed for tenant-isolation tests (T4_2). Skip in CI to avoid
+# resource exhaustion on single-node Kind clusters — isolation tests use
+# pytest.mark.skip when the namespace is absent.
+if [ "${OPENSHELL_DEPLOY_TEAM2:-false}" = "true" ]; then
+    log_step "Deploying tenant: team2 (gateway only)"
+    scripts/openshell/deploy-tenant.sh "team2"
+else
+    log_step "Skipping team2 (set OPENSHELL_DEPLOY_TEAM2=true to enable)"
+fi
 
 # ============================================================================
 set -euo pipefail
