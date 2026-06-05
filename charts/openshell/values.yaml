@@ -62,17 +62,6 @@ driver:
   # Target namespace for sandbox pods (defaults to .Values.tenant)
   namespace: ""
 
-# -- TLS configuration (cert-manager)
-tls:
-  # cert-manager issuer that signs leaf certificates
-  issuerRef: openshell-ca-issuer
-  # Kind of the issuer (ClusterIssuer or Issuer)
-  issuerKind: ClusterIssuer
-  # Certificate duration
-  duration: 8760h # one year
-  # Renew before expiry
-  renewBefore: 720h
-
 # -- Trusted CA bundle ConfigMap name (OpenShift: label a CM with
 # config.openshift.io/inject-cabundle=true to get the cluster CAs injected).
 # When set, the CA bundle is mounted into the gateway so it can verify
