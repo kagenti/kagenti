@@ -219,6 +219,7 @@ spec:
             secretKeyRef:
               name: litellm-virtual-keys
               key: api-key
+              optional: true
         volumeMounts:
         - name: teleport-context
           mountPath: /workspace/.claude-context
@@ -328,6 +329,7 @@ spec:
             secretKeyRef:
               name: litellm-virtual-keys
               key: api-key
+              optional: true
 EOSANDBOX
 
   log_info "Waiting for sandbox pod (up to ${TIMEOUT}s)..."
@@ -347,7 +349,18 @@ EOSANDBOX
   done
 
   if [ -z "$pod_name" ]; then
-    log_error "Sandbox pod not created after ${TIMEOUT}s"
+    local all_pods
+    all_pods=$(kubectl get pods -n "$NS" --no-headers 2>/dev/null | grep "$sb_name" || true)
+    if [ -n "$all_pods" ]; then
+      log_error "Sandbox pod exists but not Running after ${TIMEOUT}s:"
+      log_error "  $all_pods"
+      kubectl describe pod -n "$NS" -l "kagenti.io/teleport-session=$SESSION_ID" 2>/dev/null \
+        | grep -A5 "Events:" >&2 || true
+    else
+      log_error "Sandbox pod not created after ${TIMEOUT}s"
+      log_error "  Sandbox CR: $(kubectl get sandbox "$sb_name" -n "$NS" -o jsonpath='{.status}' 2>/dev/null || echo 'not found')"
+      log_error "  Controller: kubectl logs -n agent-sandbox-system deploy/agent-sandbox-controller --tail=10"
+    fi
     exit 1
   fi
 

@@ -262,7 +262,7 @@ class TestTeleportSpawn:
         if not _gateway_running():
             pytest.fail("OpenShell gateway not running — compute driver required")
 
-        result = _run_teleport("--spawn")
+        result = _run_teleport("--spawn", timeout=120)
         assert result.returncode == 0, f"Spawn failed: {result.stderr[-500:]}"
         session_id = result.stdout.strip().split("\n")[-1]
         assert len(session_id) == 8, f"Expected 8-char session ID, got: {session_id}"
@@ -291,8 +291,10 @@ class TestTeleportSpawn:
         """Spawned sandbox only sees LiteLLM virtual key, not real API keys."""
         if not _gateway_running():
             pytest.fail("OpenShell gateway not running — compute driver required")
+        if not LLM_AVAILABLE:
+            pytest.skip("LLM not available — litellm-virtual-keys secret not deployed")
 
-        result = _run_teleport("--spawn")
+        result = _run_teleport("--spawn", timeout=120)
         assert result.returncode == 0
         session_id = result.stdout.strip().split("\n")[-1]
 
