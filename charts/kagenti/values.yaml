@@ -103,7 +103,7 @@ ui:
   frontend:
     enabled: true
     image: ghcr.io/kagenti/kagenti/ui-v2
-    tag: v0.7.0-alpha.2
+    tag: v0.7.0-alpha.3
     resources:
       limits:
         cpu: 100m
@@ -117,7 +117,7 @@ ui:
   # Backend configuration
   backend:
     image: ghcr.io/kagenti/kagenti/backend
-    tag: v0.7.0-alpha.2
+    tag: v0.7.0-alpha.3
     # Default registry for source-based builds (Kind: registry.cr-system.svc.cluster.local:5000)
     defaultRegistryUrl: ""
     # Default Shipwright build strategy for internal registries
@@ -138,7 +138,7 @@ ui:
 # ------------------------------------------------------------------
 uiOAuthSecret:
   image: ghcr.io/kagenti/kagenti/ui-oauth-secret
-  tag: v0.7.0-alpha.2
+  tag: v0.7.0-alpha.3
   # When true, mount the in-cluster serviceaccount CA
   # into the ui-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -150,7 +150,7 @@ uiOAuthSecret:
 # ------------------------------------------------------------------
 agentOAuthSecret:
   image: ghcr.io/kagenti/kagenti/agent-oauth-secret
-  tag: v0.7.0-alpha.2
+  tag: v0.7.0-alpha.3
   # When true, mount the in-cluster serviceaccount CA
   # into the agent-oauth-secret job via the SSL_CERT_FILE environment variable.
   # When false, the serviceaccount CA is only for the API server
@@ -168,7 +168,7 @@ agentOAuthSecret:
 apiOAuthSecret:
   enabled: false
   image: ghcr.io/kagenti/kagenti/api-oauth-secret
-  tag: v0.7.0-alpha.2
+  tag: v0.7.0-alpha.3
   # Client ID for the API service account
   clientId: kagenti-api
   # Name of the K8s secret to store credentials
@@ -255,7 +255,7 @@ authBridge:
 spiffeIdp:
   image:
     repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
-    tag: v0.7.0-alpha.2
+    tag: v0.7.0-alpha.3
     pullPolicy: IfNotPresent
 
 # ------------------------------------------------------------------
@@ -266,7 +266,7 @@ kagenti-operator-chart:
     container:
       cmd: /manager
       image:
-        tag: 0.3.0-alpha.2
+        tag: 0.3.0-alpha.4
       args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
@@ -302,10 +302,10 @@ kagenti-operator-chart:
   # sidecar. Client registration is operator-managed.
   defaults:
     images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.4
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.4
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.4
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.4
+      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.7
+      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.7
+      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.7
+      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.7
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
@@ -336,7 +336,7 @@ phoenix:
 # ------------------------------------------------------------------
 phoenixOAuthSecret:
   image: ghcr.io/kagenti/kagenti/phoenix-oauth-secret
-  tag: v0.7.0-alpha.2
+  tag: v0.7.0-alpha.3
   # Keycloak client ID for Phoenix
   clientId: phoenix
   # Kubernetes secret name to store OAuth credentials
@@ -364,7 +364,7 @@ mlflow:
 # ------------------------------------------------------------------
 mlflowOAuthSecret:
   image: ghcr.io/kagenti/kagenti/mlflow-oauth-secret
-  tag: v0.7.0-alpha.2
+  tag: v0.7.0-alpha.3
   # Keycloak client ID for MLflow
   clientId: mlflow
   # Kubernetes secret name to store OAuth credentials
