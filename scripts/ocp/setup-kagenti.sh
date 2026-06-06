@@ -782,7 +782,7 @@ _wait_secret_ready() {
   return 0
 }
 
-_ensure_rhoai_shared_trust() {
+_ensure_rhoai_shared_trust_prerequisites() {
   if $DRY_RUN; then return; fi
 
   # --- Wait for cert-manager ---
@@ -917,76 +917,9 @@ EOF
   _wait_secret_ready istio-cacerts-og-cert openshift-ingress
   log_success "Intermediate CA secrets ready"
 
-  # --- Detect stale intermediate CAs (root CA regenerated but intermediates not re-signed) ---
-  log_info "Checking intermediate CA consistency..."
-  local ROOT_FP CHANGED=false
-  ROOT_FP=$($KUBECTL get secret istio-mesh-root-ca-secret -n cert-manager \
-    -o jsonpath='{.data.tls\.crt}' | base64 -d | \
-    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
-
-  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
-    local secret="${item%%:*}" ns="${item##*:}"
-    local INTER_FP
-    INTER_FP=$($KUBECTL get secret "$secret" -n "$ns" \
-      -o jsonpath='{.data.ca\.crt}' | base64 -d | \
-      openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
-    if [ "$ROOT_FP" != "$INTER_FP" ]; then
-      log_warn "Root CA mismatch in $ns/$secret — forcing re-issuance"
-      $KUBECTL delete secret "$secret" -n "$ns"
-      CHANGED=true
-    fi
-  done
-
-  if $CHANGED; then
-    log_info "Waiting for re-issued intermediate CAs..."
-    _wait_secret_ready istio-cacerts-default-cert istio-system
-    _wait_secret_ready istio-cacerts-og-cert openshift-ingress
-    log_success "Intermediate CAs re-issued"
-  else
-    log_success "Intermediate CAs consistent with root"
-  fi
-
-  # --- Transform cert-manager secrets into Istio cacerts format ---
-  log_info "Creating Istio cacerts secrets..."
-  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
-    local secret="${item%%:*}" ns="${item##*:}"
-    local CA_CERT CA_KEY ROOT_CERT CERT_CHAIN
-    CA_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.crt}' | base64 -d)
-    CA_KEY=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.key}' | base64 -d)
-    ROOT_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.ca\.crt}' | base64 -d)
-    CERT_CHAIN="${CA_CERT}
-${ROOT_CERT}"
-    $KUBECTL create secret generic cacerts -n "$ns" \
-      --from-literal=ca-cert.pem="${CA_CERT}" \
-      --from-literal=ca-key.pem="${CA_KEY}" \
-      --from-literal=root-cert.pem="${ROOT_CERT}" \
-      --from-literal=cert-chain.pem="${CERT_CHAIN}" \
-      --dry-run=client -o yaml | $KUBECTL apply -f -
-  done
-  log_success "Istio cacerts secrets created"
-
-  # --- Restart istiods to pick up shared CA ---
-  log_info "Restarting istiods..."
-  if $KUBECTL get deployment/istiod -n istio-system &>/dev/null; then
-    $KUBECTL rollout restart deployment/istiod -n istio-system
-    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
-  else
-    log_warn "deployment/istiod not found in istio-system — check kagenti-deps hooks"
-  fi
-  $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
-  $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s || true
-
-  # --- Delete stale istio-ca-root-cert ConfigMaps and restart ztunnel ---
-  log_info "Cleaning up stale CA ConfigMaps and restarting ztunnel..."
-  for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
-    $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
-  done
-
-  $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
-  $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
-  log_success "Shared trust reconciliation complete"
+  log_success "Shared trust prerequisites ready (operator handles cacerts + restarts)"
 }
-_ensure_rhoai_shared_trust
+_ensure_rhoai_shared_trust_prerequisites
 
 # Reconcile: now that all CRDs are present (Istio, cert-manager) and Step 3b
 # resources are adopted for Helm, upgrade to render resources gated by
@@ -1135,7 +1068,7 @@ DSCEOF
   elif [ -n "$MLFLOW_TRACES_ENDPOINT" ]; then
     log_info "Upgrading kagenti-deps with MLflow OTEL endpoint..."
 
-    # Adopt cert-manager resources created by _ensure_rhoai_shared_trust (Step 3b)
+    # Adopt cert-manager resources created by _ensure_rhoai_shared_trust_prerequisites (Step 3b)
     # so Helm can import them during the upgrade without ownership conflicts.
     _adopt_for_helm ClusterIssuer istio-mesh-root-selfsigned
     _adopt_for_helm ClusterIssuer istio-mesh-ca
