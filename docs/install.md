@@ -42,7 +42,8 @@ brew install podman    # recommended for macOS
 # or: brew install --cask docker   # Docker Desktop
 
 # If using Podman, create and start a machine with sufficient resources:
-podman machine init --memory 18432 --cpus 6
+podman machine init
+podman machine set --memory 18432 --cpus 8 --rootful=true
 podman machine start
 ```
 
@@ -50,10 +51,43 @@ podman machine start
 
 | Tool | Purpose |
 |------|---------|
-| Docker Desktop / Rancher Desktop / Podman | Container runtime (16GB RAM, 4 cores recommended) |
+| Docker Desktop / Rancher Desktop / Podman | Container runtime — see [Local machine resources](#local-machine-resources) below |
 | [Kind](https://kind.sigs.k8s.io) | Local Kubernetes cluster |
 | [Ollama](https://ollama.com/download) | Local LLM inference |
 | [GitHub Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) | **(Optional)** Only needed to deploy agents/tools from private GitHub repos or pull from private registries. Recommended scopes: `repo` for private repositories and `read:packages` for private registries (e.g., GHCR). |
+
+#### Local machine resources
+
+Kind runs the entire platform on **one control-plane node**. That node’s CPU and memory
+limits come from your container runtime (Podman machine, Docker Desktop, etc.) — not
+from the Kind config file alone.
+
+| Profile | RAM | CPUs | Typical install |
+|---------|-----|------|-----------------|
+| **Recommended** | 16–18 GiB | **8** | `--with-istio --with-spire --with-ui --with-backend` plus AuthBridge demos |
+| **Minimum (no builds)** | 16 GiB | **6** | Core + UI; deploy agents from prebuilt images only |
+| **Not recommended** | 16 GiB | **4** | Often installs, but Shipwright/Tekton build pods stay `Pending` with `Insufficient cpu`; see below |
+
+**4 CPUs is usually not enough** for the common demo path (Istio, SPIRE, Keycloak,
+Kuadrant, UI, backend, and **build-from-source** agents via Shipwright). Platform pods
+alone can request ~3.5–4 cores before any agent build runs.
+
+If you must stay on 4 CPUs:
+
+- Skip optional components you do not need (`--with-mlflow`, `--with-kuadrant`, etc.)
+- Deploy agents with **Deploy from image** instead of **Build from source** in the UI
+- Or temporarily scale down non-essential deployments before triggering a Shipwright build
+
+To resize Podman after the machine already exists:
+
+```bash
+podman machine stop
+podman machine set --cpus 8
+podman machine start
+# Recreate the Kind cluster so the node sees the new CPU limit
+kind delete cluster --name kagenti
+scripts/kind/setup-kagenti.sh --with-istio --with-spire --with-ui --with-backend
+```
 
 ### OpenShift-Specific Requirements
 
@@ -370,13 +404,22 @@ kubectl get secret keycloak-initial-admin -n keycloak \
 
 ---
 
-## Keycloak Admin Credentials for Agent Namespaces
+## Keycloak Admin Credentials (operator)
 
-The [AuthBridge](https://github.com/kagenti/kagenti-extensions/tree/main/authbridge) stack (separate sidecars or a single [combined `authbridge` container](authbridge-combined-sidecar.md)) needs Keycloak admin credentials for automatic OAuth2 client registration. These credentials are stored in a Kubernetes Secret called `keycloak-admin-secret` in each agent namespace.
+The kagenti-operator’s client-registration controller reads Keycloak admin credentials
+from a Secret named **`keycloak-admin-secret` in the operator namespace**
+(typically **`kagenti-system`**), not in each agent namespace. Operator 0.2+ moved
+credentials out of agent namespaces for isolation.
+
+AuthBridge and agent OAuth client registration depend on this secret. If it is missing,
+operator logs show `waiting for keycloak-admin-secret` and agent sidecars may return
+503 until registration completes.
 
 ### Automatic Provisioning
 
-The installer automatically creates `keycloak-admin-secret` in every agent namespace (e.g., `team1`, `team2`). By default it uses `admin`/`admin`, matching the default Keycloak admin account.
+The Helm chart creates `keycloak-admin-secret` in **`kagenti-system`** when
+`keycloak.adminExistingSecret` is unset. Defaults match the Keycloak admin account
+(`admin`/`admin` unless overridden).
 
 ### Customizing Credentials
 
@@ -412,10 +455,10 @@ helm upgrade --install kagenti ./charts/kagenti/ \
 
 ### Manual Creation
 
-If you need to create or update the secret manually in an agent namespace:
+If you need to create or update the secret manually in the **operator namespace**:
 
 ```bash
-kubectl create secret generic keycloak-admin-secret -n <agent-namespace> \
+kubectl create secret generic keycloak-admin-secret -n kagenti-system \
   --from-literal=KEYCLOAK_ADMIN_USERNAME=admin \
   --from-literal=KEYCLOAK_ADMIN_PASSWORD=admin \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -424,8 +467,10 @@ kubectl create secret generic keycloak-admin-secret -n <agent-namespace> \
 ### Verifying
 
 ```bash
-kubectl get secret keycloak-admin-secret -n team1
+kubectl get secret keycloak-admin-secret -n kagenti-system
 ```
+
+`NotFound` in `team1` is expected — the secret is not replicated there.
 
 > **Security note:** For production deployments, use a dedicated Keycloak service account with limited permissions instead of the admin account. See the [Identity Guide](./identity-guide.md) for details.
 
