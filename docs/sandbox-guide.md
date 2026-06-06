@@ -222,6 +222,125 @@ openshell sandbox connect
 openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
 ```
 
+## Network Egress Policies
+
+By default, sandboxes have no outbound network access except to
+`inference.local` (the LLM proxy). To allow a sandbox to reach external
+services (e.g., GitHub for `git clone`, package registries, APIs), declare
+a network policy.
+
+### Create a sandbox with an egress policy
+
+Write a policy YAML that lists allowed endpoints:
+
+```yaml
+# github-egress.yaml
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /bin
+    - /sbin
+  read_write:
+    - /tmp
+    - /sandbox
+network_policies:
+  github:
+    name: "Allow GitHub"
+    endpoints:
+      - host: "github.com"
+        port: 443
+      - host: "api.github.com"
+        port: 443
+```
+
+Create the sandbox with `--policy`:
+
+```bash
+openshell sandbox create --policy github-egress.yaml
+```
+
+Verify egress inside the sandbox:
+
+```bash
+openshell sandbox exec -- curl -sS -o /dev/null -w "%{http_code}" https://github.com
+# 200
+```
+
+Unlisted endpoints remain blocked:
+
+```bash
+openshell sandbox exec -- curl -sS https://example.com
+# curl: (56) CONNECT tunnel failed, response 403
+```
+
+### Dynamically update the policy on a running sandbox
+
+You don't need to recreate a sandbox to change its network policy.
+Updates take effect within seconds.
+
+**Add an endpoint:**
+
+```bash
+openshell policy update <sandbox-name> --add-endpoint pypi.org:443 --wait
+```
+
+**Add multiple endpoints at once:**
+
+```bash
+openshell policy update <sandbox-name> \
+  --add-endpoint registry.npmjs.org:443 \
+  --add-endpoint api.github.com:443 \
+  --wait
+```
+
+**Remove an endpoint:**
+
+```bash
+openshell policy update <sandbox-name> --remove-endpoint pypi.org:443 --wait
+```
+
+**Replace the entire policy from a file:**
+
+```bash
+openshell policy set <sandbox-name> --policy new-policy.yaml --wait
+```
+
+**View the current effective policy:**
+
+```bash
+openshell policy get <sandbox-name> --full
+```
+
+### Policy format reference
+
+The `network_policies` section maps rule names to endpoint lists:
+
+```yaml
+network_policies:
+  <rule-name>:
+    name: "<human-readable description>"
+    endpoints:
+      - host: "<hostname>"
+        port: <port>
+      - host: "*.example.com"   # glob patterns supported
+        port: 443
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `host` | yes | Exact hostname or glob pattern (`*` = single label, `**` = across labels) |
+| `port` | yes | TCP port (usually 443 for HTTPS) |
+| `binaries` | no | If omitted, any process in the sandbox can use this endpoint. If specified, only listed binary paths are allowed. |
+
+When no `binaries` are specified (the common case for egress policies), any
+process in the sandbox can access the endpoint — the endpoint declaration
+itself is the access gate.
+
 ## OpenShift with Self-Signed Certificates
 
 If your OpenShift cluster uses a self-signed or private CA (common in
