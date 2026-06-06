@@ -390,7 +390,7 @@ openshell:
     pullPolicy: IfNotPresent
   computeDriver:
     image: ghcr.io/kagenti/openshell-driver-openshift/compute-driver
-    tag: v0.0.56
+    tag: v0.1.0-rc.4
     pullPolicy: IfNotPresent
   credentialsDriver:
     image: ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver
