@@ -233,7 +233,6 @@ HELM_ARGS=(
   --set "driver.namespace=$TENANT"
   --set "ingress.type=$INGRESS_TYPE"
   --set "ingress.host=$INGRESS_HOST"
-  --set "gatewayJwt.enabled=false"
   --wait
   --timeout "${TIMEOUT}s"
 )
