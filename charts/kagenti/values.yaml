@@ -288,6 +288,33 @@ kagenti-operator-chart:
   # the explicit value is required because neither ZTWIM nor spire-bundle exist at startup.
   signatureVerification:
     spireTrustDomain: localtest.me
+
+# ------------------------------------------------------------------
+#  Kagenti Operator SPIFFE Authentication
+# ------------------------------------------------------------------
+# Configuration for operator SPIFFE authentication to Keycloak
+kagentiOperator:
+  namespace: kagenti-operator-system
+  serviceAccountName: controller-manager
+  spiffeAuth:
+    # Enable SPIFFE authentication for operator (authenticates with JWT-SVID instead of admin credentials)
+    enabled: false
+    # Operator's SPIFFE ID (auto-generated if not set)
+    operatorClientID: ""
+    # Bootstrap job image (curl-based bootstrap script)
+    bootstrapImage: "curlimages/curl:latest"
+
+# ------------------------------------------------------------------
+#  SPIFFE Configuration
+# ------------------------------------------------------------------
+spiffe:
+  # SPIFFE Identity Provider alias in Keycloak
+  idpAlias: "spire-spiffe"
+  # SPIRE OIDC Discovery Provider URL
+  oidcDiscoveryURL: "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080"
+
+# Trust domain (used for SPIFFE IDs)
+spireTrustDomain: localtest.me
   # Pin sidecar image tags injected by the AuthBridge webhook.
   #
   # After kagenti-extensions#411 there are three combined images:
