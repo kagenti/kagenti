@@ -248,6 +248,8 @@ filesystem_policy:
   read_write:
     - /tmp
     - /sandbox
+    - /dev/null
+    - /dev/urandom
 network_policies:
   github:
     name: "Allow GitHub"
@@ -258,17 +260,29 @@ network_policies:
         port: 443
 ```
 
-Create the sandbox with `--policy`:
+Create the sandbox with `--policy` and a command (the entrypoint process is
+required for the network proxy to function):
 
 ```bash
-openshell sandbox create --policy github-egress.yaml
+# With an interactive tool
+openshell sandbox create --policy github-egress.yaml -- claude
+
+# Or as a persistent sandbox for exec sessions
+openshell sandbox create --policy github-egress.yaml -- sleep infinity
 ```
+
+No binary restrictions are needed — `git`, `curl`, `python`, and any other
+tool in the sandbox can use the allowed endpoints. The endpoint declaration
+is the access gate.
 
 Verify egress inside the sandbox:
 
 ```bash
 openshell sandbox exec -- curl -sS -o /dev/null -w "%{http_code}" https://github.com
 # 200
+
+# git clone works with just github.com:443 in the policy
+openshell sandbox exec -- git clone https://github.com/kagenti/kagenti.git /tmp/repo
 ```
 
 Unlisted endpoints remain blocked:
