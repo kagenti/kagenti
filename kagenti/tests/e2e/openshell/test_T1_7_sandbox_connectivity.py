@@ -104,17 +104,22 @@ class TestSandboxExec:
     pod count, and the deployed agents already fill the quota.
     """
 
+    # Gateway images (v0.0.56+) are distroless — no shell or coreutils.
+    # Skip these when looking for a pod to exec into.
+    _DISTROLESS_PREFIXES = ("openshell-server",)
+
     def _find_exec_pod(self) -> tuple[str, str] | None:
         """Find a running pod with a ready container suitable for exec testing.
 
-        Selects the first pod where the target container is actually ready,
-        not just where the pod phase is Running (a pod with a crashlooping
-        container still reports Running if its sidecar is up).
+        Skips distroless pods (gateway) that lack a shell. Selects the first
+        pod where the target container is actually ready.
         """
         pods = kubectl_get_pods_json(SANDBOX_NS)
         running = [p for p in pods if p["status"].get("phase") == "Running"]
         for pod in running:
             name = pod["metadata"]["name"]
+            if any(name.startswith(pfx) for pfx in self._DISTROLESS_PREFIXES):
+                continue
             containers = pod["spec"].get("containers", [])
             if not containers:
                 continue

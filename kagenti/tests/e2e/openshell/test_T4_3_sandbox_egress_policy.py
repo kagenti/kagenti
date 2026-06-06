@@ -67,6 +67,8 @@ filesystem_policy:
   read_write:
     - /tmp
     - /sandbox
+    - /dev/null
+    - /dev/urandom
 network_policies:
   external:
     name: "Allow target APIs"
@@ -92,6 +94,8 @@ filesystem_policy:
   read_write:
     - /tmp
     - /sandbox
+    - /dev/null
+    - /dev/urandom
 """
 
 
