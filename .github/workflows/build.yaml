@@ -54,6 +54,9 @@ jobs:
           - name: spiffe-idp-setup
             context: ./kagenti
             dockerfile: auth/spiffe-idp-setup/Dockerfile
+          - name: operator-spiffe-bootstrap
+            context: ./kagenti
+            dockerfile: auth/operator-spiffe-bootstrap/Dockerfile
 
     steps:
       # 1. Checkout the repository code
