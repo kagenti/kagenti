@@ -1,12 +1,12 @@
-# Use minimal Python base image
+# Use minimal Python base image (same as spiffe-idp-setup)
 FROM python:3.14-slim@sha256:5b3879b6f3cb77e712644d50262d05a7c146b7312d784a18eff7ff5462e77033
 
 # Set work directory
 WORKDIR /app
 
-# Install dependencies from requirements.txt
+# Install dependencies with hash verification
 COPY auth/operator-spiffe-bootstrap/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 # Copy the script
 COPY auth/operator-spiffe-bootstrap/setup_operator_client.py .

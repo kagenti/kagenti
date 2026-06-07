@@ -125,7 +125,7 @@ class KeycloakBootstrap:
             self.token = response.json()["access_token"]
             logger.info("   ✓ Authenticated successfully")
         except requests.RequestException as e:
-            logger.error(f"   ERROR: Authentication failed: {e}")
+            logger.error("   ERROR: Authentication failed (check credentials and Keycloak availability)")
             raise
 
     def ensure_spiffe_idp(self):
