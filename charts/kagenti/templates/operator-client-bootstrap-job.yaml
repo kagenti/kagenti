@@ -14,43 +14,11 @@ metadata:
     helm.sh/hook-weight: "5"
     helm.sh/hook-delete-policy: before-hook-creation
 ---
+# Role in keycloak namespace to read admin secret
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: kagenti-operator-client-bootstrap
-  namespace: {{ .Values.kagentiOperator.namespace | default "kagenti-operator-system" }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "5"
-    helm.sh/hook-delete-policy: before-hook-creation
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  resourceNames: ["keycloak-initial-admin"]
-  verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: kagenti-operator-client-bootstrap
-  namespace: {{ .Values.kagentiOperator.namespace | default "kagenti-operator-system" }}
-  annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "5"
-    helm.sh/hook-delete-policy: before-hook-creation
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: kagenti-operator-client-bootstrap
-subjects:
-- kind: ServiceAccount
-  name: kagenti-operator-client-bootstrap
-  namespace: {{ .Values.kagentiOperator.namespace | default "kagenti-operator-system" }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: kagenti-operator-client-bootstrap-keycloak
   namespace: keycloak
   annotations:
     helm.sh/hook: post-install,post-upgrade
@@ -62,6 +30,7 @@ rules:
   resourceNames: ["keycloak-initial-admin"]
   verbs: ["get"]
 ---
+# RoleBinding grants the ServiceAccount (in kagenti-operator-system) access to the Role (in keycloak)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -74,7 +43,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: kagenti-operator-client-bootstrap-keycloak
+  name: kagenti-operator-client-bootstrap
 subjects:
 - kind: ServiceAccount
   name: kagenti-operator-client-bootstrap
