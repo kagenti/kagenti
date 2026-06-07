@@ -374,8 +374,8 @@ kagentiOperator:
     enabled: false
     # Operator's SPIFFE ID (auto-generated if not set)
     operatorClientID: ""
-    # Bootstrap job image (curl-based bootstrap script)
-    bootstrapImage: "curlimages/curl:latest"
+    # Bootstrap job image (Python-based Keycloak configuration)
+    bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:v0.1.0"
 
 # ------------------------------------------------------------------
 #  SPIFFE Configuration
