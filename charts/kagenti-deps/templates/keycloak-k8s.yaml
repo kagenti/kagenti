@@ -245,13 +245,17 @@ extraEnvVars with the same name override these defaults.
 - name: KC_HEALTH_ENABLED
   value: "true"
 - name: KC_CACHE
-  value: "ispn"
+  value: {{ .Values.keycloak.cache | default "local" | quote }}
+{{- if eq (.Values.keycloak.cache | default "local") "ispn" }}
 - name: POD_IP
   valueFrom:
     fieldRef:
       fieldPath: status.podIP
+- name: KC_CACHE_STACK
+  value: "kubernetes"
 - name: JAVA_OPTS_APPEND
-  value: "-Djgroups.bind.address=$(POD_IP)"
+  value: "-Djgroups.bind.address=$(POD_IP) -Djgroups.dns.query=keycloak-discovery.{{ .Values.keycloak.namespace }}.svc.cluster.local"
+{{- end }}
 {{- if .Values.keycloak.database.enabled }}
 - name: KC_DB_URL_DATABASE
   value: "keycloak"
