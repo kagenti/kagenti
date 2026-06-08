@@ -120,7 +120,7 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
-# Use to latest release
+# Check out the latest release
 git checkout v0.6.0
 
 # Copy and configure secrets (optional)
