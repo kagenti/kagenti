@@ -120,7 +120,10 @@ Kagenti provides a set of components and assets that make it easier to manage AI
 git clone https://github.com/kagenti/kagenti.git
 cd kagenti
 
-# Copy and configure secrets
+# Use to latest release
+git checkout v0.6.0
+
+# Copy and configure secrets (optional)
 cp charts/kagenti/.secrets_template.yaml charts/kagenti/.secrets.yaml
 # Edit charts/kagenti/.secrets.yaml with your values
 
