@@ -655,8 +655,8 @@ EOF
     log_info "MLflow OTEL values: otel.mlflow.enabled=true, endpoint=${MLFLOW_TRACES_ENDPOINT}"
   fi
 
-  # Keycloak public URL is needed by the realm-init audience mapper.
-  # Construct from DOMAIN (known since Step 2) so it's correct on first install.
+  # Keycloak public URL — realm-init audience mapper is now handled by
+  # kagenti-operator, but the value is still passed for chart compatibility.
   KAGENTI_DEPS_KC_URL="https://keycloak-${KC_NAMESPACE}.${DOMAIN}"
 
   # Common helm --set flags shared across install, upgrade, and reconciliation
