@@ -1210,30 +1210,6 @@ spec:
     termination: reencrypt
 OAUTH_EOF
   fi
-
-  # Wait for the oauth-proxy to become ready
-  local tries=0
-  while ! $KUBECTL get pods -n "$MLFLOW_NAMESPACE" \
-    -l app=mlflow-oauth-proxy -o jsonpath='{.items[0].status.phase}' 2>/dev/null | grep -q Running; do
-    tries=$((tries + 1))
-    if [ $tries -ge 24 ]; then
-      log_warn "MLflow OAuth proxy not ready after 2m — dashboard link may not work"
-      break
-    fi
-    sleep 5
-  done
-
-  local mlflow_host=""
-  mlflow_host=$($KUBECTL get route mlflow -n "$MLFLOW_NAMESPACE" \
-    -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-  if [ -n "$mlflow_host" ]; then
-    local mlflow_url="https://${mlflow_host}/mlflow/"
-    $KUBECTL patch configmap kagenti-ui-config -n kagenti-system \
-      --type merge -p "{\"data\":{\"MLFLOW_DASHBOARD_URL\":\"${mlflow_url}\"}}" 2>/dev/null || true
-    log_success "MLflow dashboard URL: $mlflow_url"
-  else
-    log_warn "Could not resolve MLflow Route host — UI link will be empty"
-  fi
 }
 log_info "Step 3d: MLflow provisioning (deferred)"
 _deferred_mlflow
