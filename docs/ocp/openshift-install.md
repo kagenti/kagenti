@@ -90,7 +90,7 @@ Preview what commands would execute without running them:
 | `--kagenti-repo PATH\|URL` | Local path or GitHub URL (default: auto-clone `main`) |
 | `--realm REALM` | Keycloak realm (default: `kagenti`) |
 | `--keycloak-namespace NS` | Keycloak namespace (default: `keycloak`) |
-| `--skip-ovn-patch` | Skip OVN gateway routing patch |
+| `--skip-ovn-patch` | Skip OVN gateway routing patch (operator logs a warning at startup if not applied) |
 | `--skip-mcp-gateway` | Skip MCP Gateway |
 | `--skip-ui` | Skip UI and backend |
 | `--skip-mlflow` | Skip MLflow integration |

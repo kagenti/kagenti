@@ -111,7 +111,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --kagenti-repo PATH|URL   Local path or GitHub URL to kagenti repo (default: clone main to ~/.cache/kagenti)"
       echo "  --realm REALM             Keycloak realm (default: kagenti, or \$KEYCLOAK_REALM)"
       echo "  --keycloak-namespace NS   Keycloak namespace (default: keycloak, or \$KEYCLOAK_NAMESPACE)"
-      echo "  --skip-ovn-patch          Skip OVN gateway routing patch"
+      echo "  --skip-ovn-patch          Skip OVN gateway routing patch (operator logs warning at startup)"
       echo "  --skip-mcp-gateway        Skip MCP Gateway (ignored when --with-kuadrant is set)"
       echo "  --skip-ui                 Skip Kagenti UI and backend installation"
       echo "  --skip-mlflow             Skip MLflow integration (OTel traces + operator auto-config)"
@@ -260,6 +260,7 @@ log_info "Step 1: OVN Gateway Patch"
 
 if $SKIP_OVN_PATCH; then
   log_info "Skipped (--skip-ovn-patch)"
+  log_warn "The kagenti-operator will log a warning at startup if routingViaHost is not enabled"
 else
   # Check if this is an OVNKubernetes cluster
   NETWORK_TYPE=$($KUBECTL get network.operator.openshift.io cluster -o jsonpath='{.spec.defaultNetwork.type}' 2>/dev/null || echo "unknown")
