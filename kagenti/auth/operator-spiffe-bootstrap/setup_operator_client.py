@@ -161,17 +161,25 @@ class KeycloakBootstrap:
             logger.error(f"   ERROR: Failed to check IdP: {e}")
             raise
 
-        # Create IdP
+        # Create IdP using SPIFFE provider type (not OIDC!)
+        # Keycloak has a dedicated SPIFFE provider that doesn't require OAuth2 endpoints
         logger.info(f"   Creating SPIFFE Identity Provider '{SPIFFE_IDP_ALIAS}'...")
+
+        if not SPIFFE_TRUST_DOMAIN:
+            logger.error("   ERROR: SPIFFE_TRUST_DOMAIN not set")
+            sys.exit(1)
+
+        # Construct trust domain URI (e.g., "spiffe://localtest.me")
+        trust_domain_uri = f"spiffe://{SPIFFE_TRUST_DOMAIN}"
+
         idp_config = {
             "alias": SPIFFE_IDP_ALIAS,
-            "providerId": "oidc",
+            "providerId": "spiffe",  # Use SPIFFE provider, not OIDC!
             "enabled": True,
             "config": {
-                "issuer": SPIRE_OIDC_URL,
-                "jwksUrl": f"{SPIRE_OIDC_URL}/keys",
+                "trustDomain": trust_domain_uri,  # SPIFFE uses trustDomain, not issuer
+                "bundleEndpoint": f"{SPIRE_OIDC_URL}/keys",  # SPIFFE uses bundleEndpoint, not jwksUrl
                 "validateSignature": "true",
-                "useJwksUrl": "true",
             }
         }
 
