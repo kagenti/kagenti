@@ -124,9 +124,7 @@ interface AgentCard {
   url: string;
   protocolVersion?: string;
   preferredTransport?: string;
-  capabilities?: {
-    streaming?: boolean;
-  };
+  streaming?: boolean;
   defaultInputModes?: string[];
   defaultOutputModes?: string[];
   skills?: AgentCardSkill[];
@@ -638,9 +636,9 @@ export const AgentDetailPage: React.FC = () => {
                                       <DescriptionListDescription>
                                         <Label
                                           isCompact
-                                          color={agentCard.capabilities?.streaming ? 'green' : 'gold'}
+                                          color={agentCard.streaming ? 'green' : 'gold'}
                                         >
-                                          {agentCard.capabilities?.streaming ? 'Enabled' : 'Disabled'}
+                                          {agentCard.streaming ? 'Enabled' : 'Disabled'}
                                         </Label>
                                       </DescriptionListDescription>
                                     </DescriptionListGroup>
