@@ -209,6 +209,9 @@ async def get_platform_status(
         # (openshift-builds), so we check the API group instead of a specific service.
         ComponentStatus(name="Shipwright", status=_check_api_group(kube, "shipwright.io")),
         ComponentStatus(name="Phoenix", status=_check_service(kube, "kagenti-system", "phoenix")),
+        ComponentStatus(
+            name="MLflow", status=_check_deployment_ready(kube, "kagenti-system", "mlflow")
+        ),
     ]
 
     strategy_names: List[str] = []
