@@ -4,23 +4,34 @@ Python-based bootstrap job that configures Keycloak to enable operator SPIFFE au
 
 ## Purpose
 
-This bootstrap job runs as a Helm post-install/post-upgrade hook to automatically configure Keycloak for operator JWT-SVID authentication, eliminating the need for admin credentials.
+This bootstrap job runs as a Helm post-install/post-upgrade hook to configure the **operator's client** in Keycloak for JWT-SVID authentication. This allows the operator to authenticate using its SPIRE-issued identity instead of admin credentials when registering agent clients.
+
+**Prerequisites**: SPIRE must already be installed (via platform setup). This job only configures Keycloak, not SPIRE.
 
 ## What It Does
 
-1. **Creates SPIFFE Identity Provider** in Keycloak if not exists
+This bootstrap job is **ONLY** responsible for configuring the **operator client** in Keycloak, not SPIRE itself. SPIRE must already be installed via the platform's SPIRE setup.
+
+1. **Ensures SPIFFE Identity Provider exists** in Keycloak
+   - Should already exist from SPIRE installation
+   - Creates it if missing (fallback)
    - Alias: `spire-spiffe`
    - JWKS URL: SPIRE OIDC Discovery Provider
    - Validates JWT-SVID signatures
 
 2. **Creates Operator Client** with federated-jwt authentication
-   - Client ID: Operator's SPIFFE ID (e.g., `spiffe://localtest.me/ns/kagenti-operator-system/sa/controller-manager`)
+   - Client ID is the operator's SPIFFE ID, **derived** from:
+     - Trust domain (e.g., `localtest.me`)
+     - Namespace (e.g., `kagenti-operator-system`)
+     - ServiceAccount name (e.g., `controller-manager`)
+   - Format: `spiffe://<trust-domain>/ns/<namespace>/sa/<service-account>`
+   - Example: `spiffe://localtest.me/ns/kagenti-operator-system/sa/controller-manager`
    - Client Authenticator: `federated-jwt`
-   - Links to SPIFFE IdP for JWT validation
+   - Links to SPIFFE IdP for JWT-SVID validation
 
-3. **Assigns manage-clients Role**
+3. **Assigns manage-clients Role** to operator's service account
    - Scoped permission (not full admin)
-   - Allows operator to register agent clients
+   - Allows operator to register agent clients dynamically
 
 ## Usage
 
@@ -42,8 +53,15 @@ Environment variables (set by Helm template):
 | `KEYCLOAK_ADMIN_SECRET_NAMESPACE` | `keycloak` | Namespace containing secret |
 | `SPIFFE_IDP_ALIAS` | `spire-spiffe` | SPIFFE IdP alias |
 | `SPIRE_OIDC_URL` | `http://spire-spiffe-oidc-discovery-provider...` | SPIRE OIDC Discovery URL |
-| `OPERATOR_CLIENT_ID` | (auto-generated) | Operator's SPIFFE ID |
-| `OPERATOR_NAMESPACE` | `kagenti-operator-system` | Operator namespace |
+| `SPIFFE_TRUST_DOMAIN` | `localtest.me` | SPIFFE trust domain (required) |
+| `OPERATOR_NAMESPACE` | `kagenti-operator-system` | Operator namespace (required) |
+| `OPERATOR_SERVICE_ACCOUNT` | `controller-manager` | Operator ServiceAccount (required) |
+
+The operator's SPIFFE ID is **derived** from these three components:
+```
+spiffe://<SPIFFE_TRUST_DOMAIN>/ns/<OPERATOR_NAMESPACE>/sa/<OPERATOR_SERVICE_ACCOUNT>
+```
+This matches the SPIFFE ID that SPIRE will issue to the operator pod.
 
 ## Dependencies
 
