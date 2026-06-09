@@ -11,7 +11,7 @@
 
 # ClusterAutoscaler - manages overall scaling decisions
 resource "kubernetes_manifest" "cluster_autoscaler" {
-  count = var.autoscaling_enabled ? 1 : 0
+  count = var.autoscaling_enabled && var.kubeconfig_path != "" ? 1 : 0
 
   manifest = {
     apiVersion = "autoscaling.openshift.io/v1"
@@ -49,7 +49,7 @@ resource "kubernetes_manifest" "cluster_autoscaler" {
 
 # Data source to discover MachineSet names (they include random suffix from installer)
 data "kubernetes_resources" "machinesets" {
-  count = var.autoscaling_enabled ? 1 : 0
+  count = var.autoscaling_enabled && var.kubeconfig_path != "" ? 1 : 0
 
   api_version    = "machine.openshift.io/v1beta1"
   kind           = "MachineSet"
@@ -59,7 +59,7 @@ data "kubernetes_resources" "machinesets" {
 
 # Create a map of AZ -> MachineSet name
 locals {
-  machineset_map = var.autoscaling_enabled && length(data.kubernetes_resources.machinesets) > 0 ? {
+  machineset_map = var.autoscaling_enabled && var.kubeconfig_path != "" && length(data.kubernetes_resources.machinesets) > 0 ? {
     for ms in data.kubernetes_resources.machinesets[0].objects :
     # Extract AZ from MachineSet name (format: cluster-random-worker-<region>-<az>)
     # Supports all AWS regions (us-east-1a, eu-west-1a, ap-southeast-1a, etc.)
