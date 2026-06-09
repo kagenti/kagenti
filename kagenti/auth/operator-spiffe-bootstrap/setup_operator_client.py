@@ -21,8 +21,9 @@ Environment Variables:
     KEYCLOAK_ADMIN_PASSWORD_KEY: Key in Secret for password (default: password)
     SPIFFE_IDP_ALIAS: SPIFFE IdP alias in Keycloak (default: spire-spiffe)
     SPIRE_OIDC_URL: SPIRE OIDC Discovery Provider URL (required)
-    OPERATOR_CLIENT_ID: Operator's SPIFFE ID (required)
-    OPERATOR_NAMESPACE: Operator namespace for Kubernetes access (default: kagenti-operator-system)
+    SPIFFE_TRUST_DOMAIN: SPIFFE trust domain (required, e.g., localtest.me)
+    OPERATOR_NAMESPACE: Operator namespace (required, e.g., kagenti-operator-system)
+    OPERATOR_SERVICE_ACCOUNT: Operator ServiceAccount name (required, e.g., controller-manager)
 """
 
 import os
@@ -49,8 +50,12 @@ KEYCLOAK_ADMIN_USERNAME_KEY = os.getenv("KEYCLOAK_ADMIN_USERNAME_KEY", "username
 KEYCLOAK_ADMIN_PASSWORD_KEY = os.getenv("KEYCLOAK_ADMIN_PASSWORD_KEY", "password")
 SPIFFE_IDP_ALIAS = os.getenv("SPIFFE_IDP_ALIAS", "spire-spiffe")
 SPIRE_OIDC_URL = os.getenv("SPIRE_OIDC_URL")
-OPERATOR_CLIENT_ID = os.getenv("OPERATOR_CLIENT_ID")
+# Derive operator SPIFFE ID from trust domain, namespace, and ServiceAccount
+# Format: spiffe://<trust-domain>/ns/<namespace>/sa/<service-account-name>
+# This matches the SPIFFE ID that SPIRE will issue to the operator pod
+SPIFFE_TRUST_DOMAIN = os.getenv("SPIFFE_TRUST_DOMAIN")
 OPERATOR_NAMESPACE = os.getenv("OPERATOR_NAMESPACE", "kagenti-operator-system")
+OPERATOR_SERVICE_ACCOUNT = os.getenv("OPERATOR_SERVICE_ACCOUNT", "controller-manager")
 
 
 class KeycloakBootstrap:
@@ -340,6 +345,23 @@ class KeycloakBootstrap:
 
 def main():
     """Main entry point."""
+    # Validate required environment variables
+    if not SPIRE_OIDC_URL:
+        logger.error("SPIRE_OIDC_URL environment variable is required")
+        sys.exit(1)
+    if not SPIFFE_TRUST_DOMAIN:
+        logger.error("SPIFFE_TRUST_DOMAIN environment variable is required")
+        sys.exit(1)
+
+    # Derive operator SPIFFE ID from components
+    # This must match the SPIFFE ID that SPIRE issues to the operator pod
+    operator_client_id = f"spiffe://{SPIFFE_TRUST_DOMAIN}/ns/{OPERATOR_NAMESPACE}/sa/{OPERATOR_SERVICE_ACCOUNT}"
+    logger.info(f"Derived operator SPIFFE ID: {operator_client_id}")
+
+    # Override global OPERATOR_CLIENT_ID for backward compatibility with KeycloakBootstrap class
+    global OPERATOR_CLIENT_ID
+    OPERATOR_CLIENT_ID = operator_client_id
+
     bootstrap = KeycloakBootstrap()
     bootstrap.run()
 

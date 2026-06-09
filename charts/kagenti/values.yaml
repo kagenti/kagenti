@@ -372,8 +372,6 @@ kagentiOperator:
   spiffeAuth:
     # Enable SPIFFE authentication for operator (authenticates with JWT-SVID instead of admin credentials)
     enabled: false
-    # Operator's SPIFFE ID (auto-generated if not set)
-    operatorClientID: ""
     # Bootstrap job image (Python-based Keycloak configuration)
     bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:v0.1.0"
 

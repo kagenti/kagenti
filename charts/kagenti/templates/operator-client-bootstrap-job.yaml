@@ -94,10 +94,15 @@ spec:
           value: "{{ .Values.spiffe.idpAlias | default "spire-spiffe" }}"
         - name: SPIRE_OIDC_URL
           value: "{{ .Values.spiffe.oidcDiscoveryURL | default "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080" }}"
-        - name: OPERATOR_CLIENT_ID
-          value: {{ .Values.kagentiOperator.spiffeAuth.operatorClientID | default (printf "spiffe://%s/ns/%s/sa/%s" (.Values.spireTrustDomain | default "localtest.me") (.Values.kagentiOperator.namespace | default "kagenti-operator-system") (.Values.kagentiOperator.serviceAccountName | default "controller-manager")) | quote }}
+        # SPIFFE trust domain - used to derive operator's SPIFFE ID
+        - name: SPIFFE_TRUST_DOMAIN
+          value: "{{ .Values.spireTrustDomain | default "localtest.me" }}"
+        # Operator namespace and ServiceAccount - used to derive SPIFFE ID
+        # The bootstrap script constructs: spiffe://<trust-domain>/ns/<namespace>/sa/<service-account>
         - name: OPERATOR_NAMESPACE
           value: "{{ .Values.kagentiOperator.namespace | default "kagenti-operator-system" }}"
+        - name: OPERATOR_SERVICE_ACCOUNT
+          value: "{{ .Values.kagentiOperator.serviceAccountName | default "controller-manager" }}"
         resources:
           requests:
             cpu: 100m
