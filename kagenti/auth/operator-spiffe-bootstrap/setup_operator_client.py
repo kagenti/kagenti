@@ -82,7 +82,7 @@ class KeycloakBootstrap:
 
     def get_admin_credentials(self) -> tuple[str, str]:
         """Retrieve admin credentials from Kubernetes Secret."""
-        logger.info(f"Retrieving admin credentials from Secret {KEYCLOAK_ADMIN_SECRET_NAMESPACE}/{KEYCLOAK_ADMIN_SECRET_NAME}")
+        logger.info("Retrieving admin credentials from configured Kubernetes Secret")
 
         try:
             v1 = client.CoreV1Api()
