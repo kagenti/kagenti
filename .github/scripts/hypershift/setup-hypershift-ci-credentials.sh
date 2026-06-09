@@ -892,6 +892,22 @@ export QUOTA_LOAD_BALANCERS=10
 export QUOTA_S3_BUCKETS=5
 export QUOTA_IAM_ROLES=20
 export QUOTA_ROUTE53_ZONES=5
+
+# =============================================================================
+# OCP E2E test environment
+# =============================================================================
+# CLUSTER_SUFFIX is the only value that changes between clusters.
+# Pass it to hypershift-full-test.sh: CLUSTER_SUFFIX=rong ./hypershift-full-test.sh
+# All cluster-specific URLs are derived from it automatically.
+export CLUSTER_SUFFIX="\${CLUSTER_SUFFIX:-\${USER:0:5}}"
+# KUBECONFIG remains pointing to the management cluster (set at the top of this file).
+# Set it to the hosted cluster explicitly after creation:
+#   export KUBECONFIG="\${HOME}/clusters/hcp/${MANAGED_BY_TAG}-\${CLUSTER_SUFFIX}/auth/kubeconfig"
+export MGMT_KUBECONFIG="\${HOME}/.kube/${MANAGED_BY_TAG}-mgmt.kubeconfig"
+export AGENT_URL="https://weather-service-team1.apps.${MANAGED_BY_TAG}-\${CLUSTER_SUFFIX}.${BASE_DOMAIN}"
+export KEYCLOAK_URL="https://keycloak-keycloak.apps.${MANAGED_BY_TAG}-\${CLUSTER_SUFFIX}.${BASE_DOMAIN}"
+export KEYCLOAK_VERIFY_SSL="false"
+export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ENVFILE
 
 chmod 600 "$ENV_FILE"
