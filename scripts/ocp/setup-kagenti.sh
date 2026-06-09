@@ -1606,10 +1606,10 @@ log_info "Step 5b: Install MCP Gateway"
 if $SKIP_MCP_GATEWAY; then
   log_info "Skipped (--skip-mcp-gateway)"
 else
-  # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
-  # version that used a different API group). A stuck finalizer prevents the controller
-  # from creating the broker-router deployment on reinstall.
   if ! $DRY_RUN; then
+    # Clean up any MCPGatewayExtension stuck in deletion (e.g. leftover from a prior
+    # version that used a different API group). A stuck finalizer prevents the controller
+    # from creating the broker-router deployment on reinstall.
     for _crd_group in mcp.kuadrant.io mcp.kagenti.com; do
       _stuck=$($KUBECTL get mcpgatewayextensions.${_crd_group} -n mcp-system -o json 2>/dev/null \
         | python3 -c "
@@ -1628,6 +1628,39 @@ for item in data.get('items', []):
         sleep 2
       fi
     done
+
+    # Helm does not update CRDs on upgrade — pre-apply them from the chart
+    _mcp_gw_tmp=$(mktemp -d)
+    if helm pull oci://ghcr.io/kuadrant/charts/mcp-gateway \
+         --version "$MCP_GATEWAY_VERSION" --untar -d "$_mcp_gw_tmp" 2>/dev/null; then
+      if [ -d "$_mcp_gw_tmp/mcp-gateway/crds" ]; then
+        log_info "Applying MCP Gateway CRDs..."
+        $KUBECTL apply -f "$_mcp_gw_tmp/mcp-gateway/crds/" 2>/dev/null || true
+      fi
+    fi
+
+    # Kubernetes does not allow changing spec.selector on existing Deployments.
+    # If the chart changed selectors between versions, delete affected Deployments
+    # so Helm can recreate them.
+    for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
+      if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
+        _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
+          -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
+        _chart_name=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null \
+          | python3 -c "
+import sys, yaml
+for doc in yaml.safe_load_all(sys.stdin):
+    if doc and doc.get('kind') == 'Deployment' and doc.get('metadata',{}).get('name') == '$_deploy':
+        import json; print(json.dumps(doc['spec']['selector']['matchLabels']))
+        break
+" 2>/dev/null || echo "")
+        if [ -n "$_chart_name" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_name" ]; then
+          log_warn "Selector changed for $_deploy — deleting to allow upgrade"
+          $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+        fi
+      fi
+    done
+    rm -rf "$_mcp_gw_tmp"
   fi
 
   MCP_GW_PUBLIC_HOST="mcp-gateway-gateway-system.${DOMAIN}"
