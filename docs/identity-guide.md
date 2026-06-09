@@ -953,7 +953,7 @@ spiffe://localtest.me/ns/team/sa/github-tool
 
 # Infrastructure
 spiffe://localtest.me/ns/gateway-system/sa/mcp-gateway
-spiffe://localtest.me/ns/kagenti-system/sa/kagenti-operator
+spiffe://localtest.me/ns/kagenti-operator-system/sa/controller-manager
 ```
 
 Using OpenShift:
