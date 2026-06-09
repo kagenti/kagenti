@@ -60,6 +60,8 @@ INSTALL_EXAMPLES=false
 DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+# Enable operator SPIFFE authentication (JWT-SVID instead of admin credentials)
+# Maps to Helm value: kagentiOperator.spiffeAuth.enabled
 ENABLE_OPERATOR_SPIFFE_AUTH=false
 
 # Versions

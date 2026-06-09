@@ -92,6 +92,9 @@ CLEAN_KAGENTI=false
 KAGENTI_ENV="${KAGENTI_ENV:-dev}"
 CLUSTER_NAME="${CLUSTER_NAME:-kagenti}"
 WHITELIST_MODE=false
+# Enable operator SPIFFE authentication (JWT-SVID instead of admin credentials)
+# Passed to setup-kagenti.sh as --enable-operator-spiffe-auth
+# Maps to Helm value: kagentiOperator.spiffeAuth.enabled
 ENABLE_OPERATOR_SPIFFE_AUTH="${ENABLE_OPERATOR_SPIFFE_AUTH:-false}"
 
 while [[ $# -gt 0 ]]; do
