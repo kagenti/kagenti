@@ -16,7 +16,7 @@ allowedCapabilities: null
 defaultAddCapabilities: null
 fsGroup:
   type: MustRunAs
-readOnlyRootFilesystem: false
+readOnlyRootFilesystem: true
 requiredDropCapabilities:
   - ALL
 runAsUser:
@@ -26,7 +26,7 @@ seLinuxContext:
 seccompProfiles:
   - runtime/default
 supplementalGroups:
-  type: RunAsAny
+  type: MustRunAs
 volumes:
   - configMap
   - emptyDir
