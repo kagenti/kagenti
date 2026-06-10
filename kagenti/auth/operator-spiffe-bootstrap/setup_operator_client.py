@@ -44,8 +44,12 @@ logger = logging.getLogger(__name__)
 # Configuration from environment
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://keycloak-service.keycloak.svc:8080")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "kagenti")
-KEYCLOAK_ADMIN_SECRET_NAME = os.getenv("KEYCLOAK_ADMIN_SECRET_NAME", "keycloak-initial-admin")
-KEYCLOAK_ADMIN_SECRET_NAMESPACE = os.getenv("KEYCLOAK_ADMIN_SECRET_NAMESPACE", "keycloak")
+KEYCLOAK_ADMIN_SECRET_NAME = os.getenv(
+    "KEYCLOAK_ADMIN_SECRET_NAME", "keycloak-initial-admin"
+)
+KEYCLOAK_ADMIN_SECRET_NAMESPACE = os.getenv(
+    "KEYCLOAK_ADMIN_SECRET_NAMESPACE", "keycloak"
+)
 KEYCLOAK_ADMIN_USERNAME_KEY = os.getenv("KEYCLOAK_ADMIN_USERNAME_KEY", "username")
 KEYCLOAK_ADMIN_PASSWORD_KEY = os.getenv("KEYCLOAK_ADMIN_PASSWORD_KEY", "password")
 SPIFFE_IDP_ALIAS = os.getenv("SPIFFE_IDP_ALIAS", "spire-spiffe")
@@ -88,17 +92,19 @@ class KeycloakBootstrap:
             v1 = client.CoreV1Api()
             secret = v1.read_namespaced_secret(
                 name=KEYCLOAK_ADMIN_SECRET_NAME,
-                namespace=KEYCLOAK_ADMIN_SECRET_NAMESPACE
+                namespace=KEYCLOAK_ADMIN_SECRET_NAMESPACE,
             )
 
             username_b64 = secret.data.get(KEYCLOAK_ADMIN_USERNAME_KEY)
             password_b64 = secret.data.get(KEYCLOAK_ADMIN_PASSWORD_KEY)
 
             if not username_b64 or not password_b64:
-                raise ValueError(f"Secret missing required keys: {KEYCLOAK_ADMIN_USERNAME_KEY}, {KEYCLOAK_ADMIN_PASSWORD_KEY}")
+                raise ValueError(
+                    f"Secret missing required keys: {KEYCLOAK_ADMIN_USERNAME_KEY}, {KEYCLOAK_ADMIN_PASSWORD_KEY}"
+                )
 
-            username = base64.b64decode(username_b64).decode('utf-8')
-            password = base64.b64decode(password_b64).decode('utf-8')
+            username = base64.b64decode(username_b64).decode("utf-8")
+            password = base64.b64decode(password_b64).decode("utf-8")
 
             logger.info("✓ Admin credentials retrieved")
             return username, password
@@ -130,7 +136,9 @@ class KeycloakBootstrap:
             self.token = response.json()["access_token"]
             logger.info("   ✓ Authenticated successfully")
         except requests.RequestException as e:
-            logger.error("   ERROR: Authentication failed (check credentials and Keycloak availability)")
+            logger.error(
+                "   ERROR: Authentication failed (check credentials and Keycloak availability)"
+            )
             raise
 
     def ensure_spiffe_idp(self):
@@ -152,10 +160,14 @@ class KeycloakBootstrap:
         try:
             response = self.session.get(idp_url, headers=headers)
             if response.status_code == 200:
-                logger.info(f"   ✓ SPIFFE Identity Provider '{SPIFFE_IDP_ALIAS}' already exists")
+                logger.info(
+                    f"   ✓ SPIFFE Identity Provider '{SPIFFE_IDP_ALIAS}' already exists"
+                )
                 return
             elif response.status_code != 404:
-                logger.error(f"   ERROR: Unexpected response checking IdP: {response.status_code}")
+                logger.error(
+                    f"   ERROR: Unexpected response checking IdP: {response.status_code}"
+                )
                 sys.exit(1)
         except requests.RequestException as e:
             logger.error(f"   ERROR: Failed to check IdP: {e}")
@@ -180,17 +192,19 @@ class KeycloakBootstrap:
                 "trustDomain": trust_domain_uri,  # SPIFFE uses trustDomain, not issuer
                 "bundleEndpoint": f"{SPIRE_OIDC_URL}/keys",  # SPIFFE uses bundleEndpoint, not jwksUrl
                 "validateSignature": "true",
-            }
+            },
         }
 
-        create_url = f"{self.keycloak_url}/admin/realms/{self.realm}/identity-provider/instances"
+        create_url = (
+            f"{self.keycloak_url}/admin/realms/{self.realm}/identity-provider/instances"
+        )
         try:
             response = self.session.post(create_url, headers=headers, json=idp_config)
             response.raise_for_status()
             logger.info("   ✓ SPIFFE Identity Provider created")
         except requests.RequestException as e:
             logger.error(f"   ERROR: Failed to create SPIFFE IdP: {e}")
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 logger.error(f"   Response: {e.response.text}")
             raise
 
@@ -218,7 +232,9 @@ class KeycloakBootstrap:
 
             if clients:
                 client_uuid = clients[0]["id"]
-                logger.info(f"   ✓ Operator client already exists (UUID: {client_uuid})")
+                logger.info(
+                    f"   ✓ Operator client already exists (UUID: {client_uuid})"
+                )
                 return client_uuid
         except requests.RequestException as e:
             logger.error(f"   ERROR: Failed to search for client: {e}")
@@ -237,11 +253,13 @@ class KeycloakBootstrap:
             "attributes": {
                 "jwt.credential.issuer": SPIFFE_IDP_ALIAS,
                 "jwt.credential.sub": OPERATOR_CLIENT_ID,
-            }
+            },
         }
 
         try:
-            response = self.session.post(search_url, headers=headers, json=client_config)
+            response = self.session.post(
+                search_url, headers=headers, json=client_config
+            )
             response.raise_for_status()
             logger.info("   ✓ Operator client created")
 
@@ -256,7 +274,7 @@ class KeycloakBootstrap:
 
         except requests.RequestException as e:
             logger.error(f"   ERROR: Failed to create operator client: {e}")
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 logger.error(f"   Response: {e.response.text}")
             raise
 
@@ -320,12 +338,14 @@ class KeycloakBootstrap:
         # Assign role
         assign_url = f"{self.keycloak_url}/admin/realms/{self.realm}/users/{sa_user_id}/role-mappings/clients/{realm_mgmt_uuid}"
         try:
-            response = self.session.post(assign_url, headers=headers, json=[manage_clients_role])
+            response = self.session.post(
+                assign_url, headers=headers, json=[manage_clients_role]
+            )
             response.raise_for_status()
             logger.info("   ✓ manage-clients role assigned")
         except requests.RequestException as e:
             logger.error(f"   ERROR: Failed to assign role: {e}")
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 logger.error(f"   Response: {e.response.text}")
             raise
 
