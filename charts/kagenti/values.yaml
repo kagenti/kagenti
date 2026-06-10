@@ -28,7 +28,8 @@ featureFlags:
   # External skill registry references (skillberry-store, etc.)
   externalSkills: false
   # Enables AuthBridge tab on Agent details page
-  authbridgeAPI: false
+  # Show this UI by default (we'll remove gate after a version where it can be disabled with a flag)
+  authbridgeAPI: true
   # Enables Platform Status card
   # on http://kagenti-ui.localtest.me:8080/admin
   admin: false
