@@ -1391,35 +1391,60 @@ echo ""
 _wait_shared_trust_reconciliation() {
   if $DRY_RUN; then return; fi
 
-  # Skip if cacerts already exists (e.g. from a previous install)
+  # Wait for cacerts to exist (operator creates it, or fallback will)
   if $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; then
-    log_success "cacerts already exists in istio-system — shared trust OK"
-    return 0
+    log_success "cacerts already exists in istio-system"
+  else
+    local WAIT_TIMEOUT=180  # 3 minutes for the operator to create cacerts
+    local tries=0
+    local max_tries=$(( WAIT_TIMEOUT / 10 ))
+    log_info "Waiting up to ${WAIT_TIMEOUT}s for operator SharedTrustReconciler to create cacerts..."
+
+    while ! $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; do
+      tries=$((tries + 1))
+      if [ $tries -ge $max_tries ]; then
+        log_warn "Operator did not create cacerts within ${WAIT_TIMEOUT}s — falling back to direct creation"
+        _shared_trust_fallback
+        return $?
+      fi
+      sleep 10
+    done
+    log_success "Operator created cacerts in istio-system"
   fi
 
-  local WAIT_TIMEOUT=180  # 3 minutes for the operator to create cacerts
-  local tries=0
-  local max_tries=$(( WAIT_TIMEOUT / 10 ))
-  log_info "Waiting up to ${WAIT_TIMEOUT}s for operator SharedTrustReconciler to create cacerts..."
+  # Verify istiod is serving the shared CA (not its original self-signed one).
+  # Compare the CA cert istiod is using with what's in the cacerts secret.
+  # If they differ, the operator created cacerts but didn't restart istiod.
+  log_info "Verifying istiod is serving the shared CA..."
+  local cacerts_fp istiod_ca_fp
+  cacerts_fp=$($KUBECTL get secret cacerts -n istio-system \
+    -o jsonpath='{.data.ca-cert\.pem}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
 
-  while ! $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; do
-    tries=$((tries + 1))
-    if [ $tries -ge $max_tries ]; then
-      log_warn "Operator did not create cacerts within ${WAIT_TIMEOUT}s — falling back to direct creation"
-      _shared_trust_fallback
-      return $?
-    fi
-    sleep 10
-  done
+  # istiod exposes its CA via the istio-ca-root-cert ConfigMap it generates
+  istiod_ca_fp=$($KUBECTL get configmap istio-ca-root-cert -n istio-system \
+    -o jsonpath='{.data.root-cert\.pem}' 2>/dev/null | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
 
-  log_success "Operator created cacerts in istio-system"
+  if [ -n "$cacerts_fp" ] && [ -n "$istiod_ca_fp" ] && [ "$cacerts_fp" != "$istiod_ca_fp" ]; then
+    log_warn "istiod is still using its self-signed CA — forcing restart"
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
 
-  # Verify istiod was restarted (operator should have done this)
-  local istiod_age
-  istiod_age=$($KUBECTL get pods -n istio-system -l app=istiod \
-    -o jsonpath='{.items[0].status.startTime}' 2>/dev/null || echo "")
-  if [ -n "$istiod_age" ]; then
-    log_success "istiod running — shared trust reconciliation complete"
+    # Restart istiod for openshift-gateway mesh too if present
+    $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+    $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s 2>/dev/null || true
+
+    # Clear stale CA ConfigMaps and restart ztunnel to pick up new CA
+    log_info "Restarting ztunnel to pick up new CA..."
+    for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+      $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+    done
+    $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+    $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+    log_success "Shared trust reconciliation complete (forced istiod + ztunnel restart)"
+  else
+    log_success "istiod is serving the shared CA — shared trust reconciliation complete"
   fi
 }
 
