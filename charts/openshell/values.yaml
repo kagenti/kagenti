@@ -105,13 +105,15 @@ persistence:
   # storageClassName: ""
 
 # -- Pod security context applied to the gateway StatefulSet and certgen Job.
-# On OpenShift, omit runAsUser/fsGroup to let the platform assign UIDs from the
-# namespace range. Set openshift.enabled=true and leave this block empty.
+# These defaults work on vanilla Kubernetes (Kind, EKS, GKE, etc.).
+# On OpenShift, set openshift.enabled=true — the deploy-tenant.sh script
+# automatically overrides podSecurityContext to {} so the platform assigns UIDs.
 podSecurityContext:
   runAsNonRoot: true
-  # runAsUser/fsGroup intentionally omitted by default — OpenShift assigns from
-  # namespace annotation; vanilla K8s works with runAsNonRoot alone since the
-  # container images already run as non-root.
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
 
 # -- Gateway resources
 resources:

@@ -29,9 +29,14 @@ spec:
           hostnames:
             - keycloak.localtest.me
       {{- end }}
+      {{- if not .Values.openshift.enabled }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- else }}
+      securityContext:
+        runAsNonRoot: true
       {{- end }}
       containers:
         - name: gateway
