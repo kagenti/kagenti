@@ -1,6 +1,6 @@
 # Weather agent running inside OpenShell supervisor
 # Supervisor applies Landlock + seccomp, then execs the weather agent
-FROM ghcr.io/nvidia/openshell/supervisor:latest@sha256:70ad41288b905ae7b20d90da3a7709974ab9bc5fa9c699cdc32ea31facc552ed AS supervisor
+FROM ghcr.io/kagenti/openshell/supervisor:v0.0.36-kagenti.8 AS supervisor
 
 FROM ghcr.io/kagenti/agent-examples/weather_service:latest@sha256:59c77636edcb918f8789367e6224c2a9b3753d8fc2e1259d78ab1c0c3efef1c5
 

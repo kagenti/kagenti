@@ -9,8 +9,10 @@ Capability: acp_lifecycle, acp_bridge, acp_session
 Convention: test_T6_{capability}__{description}[agent]
 """
 
+import asyncio
 import json
 import os
+import subprocess
 
 import pytest
 
@@ -333,3 +335,141 @@ class TestT6Error:
             assert resp["error"]["code"] == -32601
         finally:
             await ws.close()
+
+
+@pytest.mark.asyncio
+class TestT6SandboxAgent:
+    """ACP WebSocket tests for sandbox agents (openshell-claude).
+
+    These agents use ExecSandbox gRPC path instead of A2A HTTP.
+    """
+
+    @skip_no_backend
+    async def test_T6_sandbox__initialize(self, backend_url):
+        """ACP initialize works for sandbox agent name."""
+        ws = await _acp_connect(backend_url, AGENT_NS, "openshell-claude")
+        try:
+            resp = await _acp_rpc(ws, "initialize")
+            assert "result" in resp, f"Expected result: {resp}"
+            assert resp["result"]["agentCapabilities"]["streaming"] is True
+        finally:
+            await ws.close()
+
+    @skip_no_backend
+    async def test_T6_sandbox__session_lifecycle(self, backend_url):
+        """Create and close session for sandbox agent."""
+        ws = await _acp_connect(backend_url, AGENT_NS, "openshell-claude")
+        try:
+            await _acp_rpc(ws, "initialize")
+            session = await _acp_rpc(ws, "session/new", rpc_id="new-1")
+            assert "result" in session
+            sid = session["result"]["sessionId"]
+            assert len(sid) == 32
+
+            close = await _acp_rpc(
+                ws, "session/close", {"sessionId": sid}, rpc_id="close-1"
+            )
+            assert close["result"]["closed"] is True
+        finally:
+            await ws.close()
+
+    @skip_no_backend
+    @skip_no_llm
+    @pytest.mark.xfail(
+        reason=(
+            "ExecSandbox gRPC requires gateway-managed sandboxes (CreateSandbox RPC). "
+            "Teleport creates K8s-managed sandboxes (Sandbox CRD via agent-sandbox-controller). "
+            "These are two different systems — full integration requires vendoring CreateSandbox proto. "
+            "Tracked in: docs/research/openshell-fork-analysis.md"
+        ),
+        strict=False,
+    )
+    async def test_T6_sandbox__prompt_response(self, backend_url):
+        """Send prompt to sandbox via ACP → ExecSandbox gRPC → gateway.
+
+        Creates a sandbox via teleport --spawn (K8s CRD path), then sends
+        prompt via the gateway's ExecSandbox RPC. This test validates the
+        full ACP → gRPC → gateway chain. Currently xfail because the gateway
+        only knows about sandboxes it created via CreateSandbox, not those
+        created via the Sandbox CRD.
+        """
+        import asyncio
+        import subprocess
+
+        from kagenti.tests.e2e.openshell.conftest import sandbox_crd_installed
+
+        if not sandbox_crd_installed():
+            pytest.fail("Sandbox CRD not installed")
+
+        # Create a sandbox using the teleport script (run in thread to avoid
+        # blocking the async event loop during the up-to-120s pod creation)
+        repo_root = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+        script = os.path.join(repo_root, "scripts", "openshell", "teleport-session.sh")
+        result = await asyncio.to_thread(
+            subprocess.run,
+            [script, "--spawn", "--namespace", AGENT_NS],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Spawn failed: {result.stderr[-300:]}"
+        session_id = result.stdout.strip().split("\n")[-1]
+        sandbox_name = f"teleport-{session_id}"
+
+        try:
+            ws = await _acp_connect(backend_url, AGENT_NS, sandbox_name)
+            try:
+                await _acp_rpc(ws, "initialize")
+                session = await _acp_rpc(ws, "session/new", rpc_id="new-1")
+                sid = session["result"]["sessionId"]
+
+                await ws.send(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": "prompt-1",
+                            "method": "session/prompt",
+                            "params": {
+                                "sessionId": sid,
+                                "text": "What is 2+2? Reply with just the number.",
+                            },
+                        }
+                    )
+                )
+
+                messages = []
+                for _ in range(10):
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=120)
+                        msg = json.loads(raw)
+                        messages.append(msg)
+                        if msg.get("id") == "prompt-1":
+                            break
+                    except asyncio.TimeoutError:
+                        break
+
+                assert len(messages) > 0, "No response from sandbox agent"
+                has_content = any(
+                    m.get("params", {}).get("sessionUpdate") == "agent_message_chunk"
+                    for m in messages
+                )
+                assert has_content, f"No content in ACP messages: {messages}"
+            finally:
+                await ws.close()
+        finally:
+            try:
+                await asyncio.to_thread(
+                    subprocess.run,
+                    [
+                        script,
+                        "--cleanup",
+                        "--session",
+                        session_id,
+                        "--namespace",
+                        AGENT_NS,
+                    ],
+                    capture_output=True,
+                    timeout=60,
+                )
+            except subprocess.TimeoutExpired:
+                pass  # best-effort cleanup; pod will be GC'd by TTL
