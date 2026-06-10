@@ -72,6 +72,11 @@ MCP_GATEWAY_VERSION="0.6.0"
 KUADRANT_VERSION="1.4.2"
 AGENT_SANDBOX_VERSION="v0.4.6"
 
+# Recommended container-runtime resources for a full (--with-all) install.
+# Keep in sync with the `podman machine init` command in docs/install.md.
+RECOMMENDED_MEMORY_MB=18432   # 18 GB
+RECOMMENDED_CPUS=6
+
 KAGENTI_DEPS_VALUES_FILES=()
 KAGENTI_VALUES_FILES=()
 
@@ -84,6 +89,99 @@ log_error()   { echo -e "${RED}✗${NC} $1"; }
 
 run_cmd() {
   if $DRY_RUN; then echo "  [dry-run] $*"; else "$@"; fi
+}
+
+# Pre-flight check for Podman-backed Kind clusters (chiefly macOS).
+#
+# Two problems this catches early, before the opaque downstream failure:
+#   1. Rootless Podman — Kind's rootless provider needs the systemd property
+#      `Delegate=yes`, which a fresh `podman machine init` does NOT configure,
+#      so `kind create cluster` aborts. We hard-fail here (unless --skip-cluster)
+#      with the exact `--rootful` remedy instead of letting Kind fail cryptically.
+#   2. Under-resourced machine — a full `--with-all` install needs ample
+#      memory/CPU; warn (never fail) when below the recommended thresholds.
+#
+# Only runs when the container engine is Podman. Read-only (inspect only), so it
+# is safe in --dry-run; the rootless case warns instead of exiting under dry-run.
+_check_podman() {
+  # Detect Podman whether CONTAINER_ENGINE=podman or a docker->podman alias.
+  case "$($CONTAINER_ENGINE --version 2>/dev/null)" in
+    *podman*|*Podman*) ;;
+    *) return 0 ;;
+  esac
+
+  if ! command -v python3 &>/dev/null; then
+    log_warn "python3 not found; skipping Podman rootful/resource pre-flight checks"
+    return 0
+  fi
+
+  local inspect
+  if ! inspect="$(podman machine inspect 2>/dev/null)" || [ -z "$inspect" ]; then
+    log_warn "Could not inspect Podman machine; skipping rootful/resource checks"
+    return 0
+  fi
+
+  # Emit: "<rootful> <memoryMB> <cpus>" (rootful = true/false). Empty on parse error.
+  local parsed rootful mem cpus
+  parsed="$(printf '%s' "$inspect" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    m = d[0] if isinstance(d, list) else d
+    r = m.get("Rootful", False)
+    res = m.get("Resources", {}) or {}
+    print(str(bool(r)).lower(), res.get("Memory", 0), res.get("CPUs", 0))
+except Exception:
+    pass
+' 2>/dev/null)"
+
+  if [ -z "$parsed" ]; then
+    log_warn "Could not parse Podman machine info; skipping rootful/resource checks"
+    return 0
+  fi
+  read -r rootful mem cpus <<<"$parsed"
+
+  # ── Rootful check ──────────────────────────────────────────────────────────
+  if [ "$rootful" != "true" ]; then
+    if $SKIP_CLUSTER; then
+      log_warn "Podman machine is running rootless. Kind needs rootful mode (rootless requires systemd Delegate=yes)."
+      log_warn "  Reusing an existing cluster, so continuing — but new Kind clusters will fail under rootless."
+    else
+      log_error "Podman machine is running rootless — Kind cannot create a cluster (its rootless"
+      log_error "  provider requires the systemd property \"Delegate=yes\"). Switch to rootful:"
+      log_error ""
+      log_error "    podman machine stop"
+      log_error "    podman machine set --rootful"
+      log_error "    podman machine start"
+      log_error ""
+      log_error "  Or recreate it: podman machine rm -f && \\"
+      log_error "    podman machine init --rootful --memory $RECOMMENDED_MEMORY_MB --cpus $RECOMMENDED_CPUS && podman machine start"
+      log_error "  (Note: rootful and rootless use separate image storage; preloaded images re-pull.)"
+      if $DRY_RUN; then
+        log_warn "[dry-run] would exit here due to rootless Podman"
+      else
+        exit 1
+      fi
+    fi
+  else
+    log_success "Podman machine is rootful"
+  fi
+
+  # ── Resource check (only for the heaviest profile: --with-all) ──────────────
+  if $WITH_ALL; then
+    local low=false
+    if [ "${mem:-0}" -lt "$RECOMMENDED_MEMORY_MB" ] 2>/dev/null; then low=true; fi
+    if [ "${cpus:-0}" -lt "$RECOMMENDED_CPUS" ] 2>/dev/null; then low=true; fi
+    if $low; then
+      log_warn "Podman machine resources are below the recommended values for --with-all:"
+      log_warn "  detected: ${mem} MB / ${cpus} CPUs   recommended: ${RECOMMENDED_MEMORY_MB} MB / ${RECOMMENDED_CPUS} CPUs"
+      log_warn "  Increase with: podman machine stop && \\"
+      log_warn "    podman machine set --memory $RECOMMENDED_MEMORY_MB --cpus $RECOMMENDED_CPUS && podman machine start"
+      log_warn "  The install may be slow or unstable with fewer resources."
+    else
+      log_success "Podman machine resources OK (${mem} MB / ${cpus} CPUs)"
+    fi
+  fi
 }
 
 # Load a single image into the Kind node via docker save piped to ctr import.
@@ -256,6 +354,9 @@ if ! $SKIP_CLUSTER; then
   fi
   log_success "kind found"
 fi
+
+# Podman-specific pre-flight (rootful + resource checks); no-op for Docker.
+_check_podman
 
 # Validate chart directories exist
 if [ ! -d "$REPO_ROOT/charts/kagenti-deps" ] || [ ! -d "$REPO_ROOT/charts/kagenti" ]; then
