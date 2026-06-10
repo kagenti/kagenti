@@ -441,7 +441,6 @@ kubectl get secret keycloak-admin-secret -n team1
 ```bash
 # SPIRE OIDC (Kind)
 curl http://spire-oidc.localtest.me:8080/keys
-curl http://spire.localtest.me:8080/.well-known/openid-configuration
 
 # Tornjak UI
 open http://spire-tornjak-ui.localtest.me:8080/
