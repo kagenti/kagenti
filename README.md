@@ -169,7 +169,7 @@ To learn how to deploy agents and MCP tools, follow the **[Weather Agent Demo](h
 
 ## Supported Protocols
 
-- **[A2A (Agent-to-Agent)](https://google.github.io/A2A)** — Standard protocol for agent communication
+- **[A2A (Agent-to-Agent)](https://a2a-protocol.org/latest/)** — Standard protocol for agent communication
 - **[MCP (Model Context Protocol)](https://modelcontextprotocol.io)** — Protocol for tool/server integration
 
 ## Contributing
