@@ -1,6 +1,3 @@
-requests==2.34.2 \
-    --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
-kubernetes==32.0.0 \
-    --hash=sha256:60fd8c29e8e43d9c553ca4811895a687426717deba9c0a66fb2dcc3f5ef96692
-urllib3==2.7.0 \
-    --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
+requests==2.34.2
+kubernetes==32.0.0
+urllib3==2.7.0
