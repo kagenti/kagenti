@@ -1,22 +1,23 @@
 # Link Health Report
 
-> Last scan: 2026-06-08 07:01 ET | Scan ID: 2026-06-08-001
+> Last scan: 2026-06-10 07:01 ET | Scan ID: 2026-06-10-001
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Repos scanned | 17 |
-| Total links checked | 2358 |
-| Broken (internal) | 36 |
-| Broken (external) | 22 |
-| New since last scan | +8 |
-| Fixed since last scan | -2 |
+| Total links checked | 2365 |
+| Broken (internal) | 37 |
+| Broken (external) | 23 |
+| New since last scan | +2 |
+| Fixed since last scan | -0 |
 
 ## Trend (last 10 scans)
 
 | Date | Internal | External | Delta |
 |------|----------|----------|-------|
+| 06-10 | 37 | 23 | +2 |
 | 06-08 | 36 | 22 | +6 |
 | 06-05 | 29 | 23 | 0 |
 | 06-03 | 37 | 22 | 0 |
@@ -26,7 +27,6 @@
 | 05-25 | 43 | 23 | +2 |
 | 05-22 | 42 | 22 | -3 |
 | 05-21 | 45 | 22 | +2 |
-| 05-20 | 41 | 24 | -2 |
 
 ## Broken Links by Repo
 
@@ -37,8 +37,9 @@
 | agent-examples | 0 | 3 | 0 |
 | agentic-control-plane | 0 | 1 | 0 |
 | ecosystem-guide | 0 | 2 | 0 |
-| kagenti | 9 | 6 | 8 |
+| kagenti | 9 | 7 | 1 |
 | kagenti-operator | 2 | 0 | 0 |
+| workload-harness | 1 | 0 | 0 |
 
 
 *Issues counts open GitHub issues filed by the scanner; a broken link may not yet have an issue (due to per-run limits) or may share an issue with another link in the same file.*
