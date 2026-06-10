@@ -1637,29 +1637,31 @@ for item in data.get('items', []):
         log_info "Applying MCP Gateway CRDs..."
         $KUBECTL apply -f "$_mcp_gw_tmp/mcp-gateway/crds/" 2>/dev/null || true
       fi
-    fi
 
-    # Kubernetes does not allow changing spec.selector on existing Deployments.
-    # If the chart changed selectors between versions, delete affected Deployments
-    # so Helm can recreate them.
-    for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
-      if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
-        _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
-          -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
-        _chart_name=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null \
-          | python3 -c "
-import sys, yaml
+      # Kubernetes does not allow changing spec.selector on existing Deployments.
+      # If the chart changed selectors between versions, delete affected Deployments
+      # so Helm can recreate them.
+      _chart_yaml=$(helm template mcp-gateway "$_mcp_gw_tmp/mcp-gateway" 2>/dev/null || true)
+      for _deploy in mcp-gateway-controller mcp-gateway-broker-router; do
+        if $KUBECTL get deployment "$_deploy" -n mcp-system &>/dev/null; then
+          _current_selector=$($KUBECTL get deployment "$_deploy" -n mcp-system \
+            -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo "")
+          _chart_selector=$(echo "$_chart_yaml" | python3 -c "
+import sys, yaml, json
 for doc in yaml.safe_load_all(sys.stdin):
     if doc and doc.get('kind') == 'Deployment' and doc.get('metadata',{}).get('name') == '$_deploy':
-        import json; print(json.dumps(doc['spec']['selector']['matchLabels']))
+        print(json.dumps(doc['spec']['selector']['matchLabels'], sort_keys=True, separators=(',',':')))
         break
 " 2>/dev/null || echo "")
-        if [ -n "$_chart_name" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_name" ]; then
-          log_warn "Selector changed for $_deploy — deleting to allow upgrade"
-          $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+          if [ -n "$_chart_selector" ] && [ -n "$_current_selector" ] && [ "$_current_selector" != "$_chart_selector" ]; then
+            log_warn "Selector changed for $_deploy — deleting to allow upgrade"
+            $KUBECTL delete deployment "$_deploy" -n mcp-system --ignore-not-found
+          fi
         fi
-      fi
-    done
+      done
+    else
+      log_warn "Failed to pull MCP Gateway chart v${MCP_GATEWAY_VERSION} — skipping CRD pre-apply and selector check"
+    fi
     rm -rf "$_mcp_gw_tmp"
   fi
 
