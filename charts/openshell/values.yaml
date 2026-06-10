@@ -92,6 +92,27 @@ quota:
   defaultRequestCpu: 100m
   defaultRequestMemory: 128Mi
 
+# -- OpenShift-specific settings.
+# When enabled, creates a SecurityContextConstraints resource scoped to
+# OpenShell service accounts so pods can run without granting broad anyuid.
+openshift:
+  enabled: false
+
+# -- Persistence settings for the gateway StatefulSet PVC.
+# Set storageClassName explicitly on clusters without a default StorageClass.
+persistence:
+  size: 1Gi
+  # storageClassName: ""
+
+# -- Pod security context applied to the gateway StatefulSet and certgen Job.
+# On OpenShift, omit runAsUser/fsGroup to let the platform assign UIDs from the
+# namespace range. Set openshift.enabled=true and leave this block empty.
+podSecurityContext:
+  runAsNonRoot: true
+  # runAsUser/fsGroup intentionally omitted by default — OpenShift assigns from
+  # namespace annotation; vanilla K8s works with runAsNonRoot alone since the
+  # container images already run as non-root.
+
 # -- Gateway resources
 resources:
   gateway:

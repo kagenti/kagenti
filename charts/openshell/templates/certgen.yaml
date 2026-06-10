@@ -71,11 +71,10 @@ spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ $hookName }}
       enableServiceLinks: false
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: certgen
           image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
