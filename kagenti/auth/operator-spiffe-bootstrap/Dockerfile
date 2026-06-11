@@ -7,11 +7,11 @@ FROM python:3.14-slim@sha256:5b3879b6f3cb77e712644d50262d05a7c146b7312d784a18eff
 WORKDIR /app
 
 # Install dependencies with hash verification
-COPY kagenti/auth/operator-spiffe-bootstrap/requirements.txt .
+COPY auth/operator-spiffe-bootstrap/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the script
-COPY kagenti/auth/operator-spiffe-bootstrap/setup_operator_client.py .
+COPY auth/operator-spiffe-bootstrap/setup_operator_client.py .
 
 # Create non-root user for runtime security
 RUN useradd -u 1001 -m appuser && \
