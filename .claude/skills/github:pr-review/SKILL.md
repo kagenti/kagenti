@@ -243,7 +243,10 @@ Always check regardless of area:
 **Scan every PR** for changes under `.claude/` or `.vscode/` (added, modified, or renamed):
 
 ```bash
-grep -nE '^\+\+\+ b/(.*/)?\.(claude|vscode)/' $LOG_DIR/pr-<number>.diff
+# Added / modified files appear as +++ b/ headers.
+# Pure renames have NO +++ b/ line — git emits `rename to <path>` instead — so
+# grep both, or a config file slipped in via a rename would go undetected.
+grep -nE '^\+\+\+ b/(.*/)?\.(claude|vscode)/|^rename to (.*/)?\.(claude|vscode)/' $LOG_DIR/pr-<number>.diff
 ```
 
 **If there is any match, this is a `must-fix` supply-chain finding.** Do the following:
@@ -371,12 +374,17 @@ Do NOT include praise comments — they clutter the review without adding value.
 ### Summary
 [2-3 sentence overview of the review findings]
 
-**Author**: <login> (<association> — maintainer / returning external / first-time)
+**Author**: <login> (<association> — <trust tier>)
 **Areas reviewed**: Python, Helm, CI (list areas actually checked)
 **Agent/IDE config (.claude/.vscode)**: none / FLAGGED (list paths)
 **Commits**: N commits, all signed-off: yes/no
 **CI status**: passing/failing/pending
 ```
+
+Map `<association>` to its §1.6 trust tier so the line is self-explanatory:
+`MEMBER`/`OWNER`/`COLLABORATOR` → **maintainer**, `CONTRIBUTOR` → **returning
+external**, `FIRST_TIME_CONTRIBUTOR`/`FIRST_TIMER`/`NONE` → **first-time** (e.g.
+`**Author**: alice (MEMBER — maintainer)`).
 
 ### 4.3 Verdict
 
