@@ -119,9 +119,15 @@ else
         # versions don't match leading-dot suffixes (e.g. .svc.cluster.local)
         # for plain HTTP URLs routed through HTTP_PROXY.
         NO_PROXY_VAL="127.0.0.1,localhost,${LLM_HOST},.svc,.svc.cluster.local,.local,.cluster.local,weather-tool-mcp.team1.svc.cluster.local,otel-collector.kagenti-system.svc.cluster.local,keycloak.keycloak.svc.cluster.local"
+        # Set HTTP_PROXY="" (not remove it) so the authbridge webhook sees it
+        # already exists and skips injection.  The MCP SDK reads HTTP_PROXY
+        # from env and passes it to httpx as an explicit proxy= arg, which
+        # bypasses NO_PROXY handling entirely.  Empty string = no proxy.
         kubectl set env deployment/weather-service -n team1 \
             LLM_API_BASE="https://${LLM_HOST}/v1" \
             LLM_MODEL="llama-scout-17b" \
+            HTTP_PROXY="" \
+            http_proxy="" \
             NO_PROXY="$NO_PROXY_VAL" \
             no_proxy="$NO_PROXY_VAL" \
             LLM_API_KEY- OPENAI_API_KEY- 2>/dev/null || true
