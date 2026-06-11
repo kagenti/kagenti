@@ -12,22 +12,43 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
-class NoCacheMiddleware(BaseHTTPMiddleware):
-    """Middleware to prevent browser caching of API responses."""
+class NoCacheMiddleware:
+    """Pure ASGI middleware that adds no-cache headers to /api/ responses.
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        response = await call_next(request)
-        # Add no-cache headers to API endpoints to prevent stale data
-        if request.url.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-        return response
+    Implemented as pure ASGI rather than BaseHTTPMiddleware to avoid the
+    BaseHTTPMiddleware.call_next path, which on Python 3.14 surfaces
+    BaseExceptionGroup escapes from inner middleware/routes as
+    `RuntimeError("No response returned.")` and yields HTTP 500 instead
+    of letting the route's own error handlers convert connection
+    failures to 502/504.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/api/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_no_cache(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend(
+                    [
+                        (b"cache-control", b"no-store, no-cache, must-revalidate"),
+                        (b"pragma", b"no-cache"),
+                    ]
+                )
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_no_cache)
 
 
 from app.core.config import settings  # pylint: disable=wrong-import-position
