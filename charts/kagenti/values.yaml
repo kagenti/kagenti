@@ -389,25 +389,26 @@ spiffe:
 
 # Trust domain (used for SPIFFE IDs)
 spireTrustDomain: localtest.me
-  # Pin sidecar image tags injected by the AuthBridge webhook.
-  #
-  # After kagenti-extensions#411 there are three combined images:
-  #   * authbridge      — proxy-sidecar mode (default), full plugin set
-  #                       including the a2a/mcp/inference parsers.
-  #   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
-  #                       proxyInit's iptables setup.
-  #   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
-  #                       (parsers dropped). For size-constrained deployments;
-  #                       not selected by default.
-  # Spiffe-helper is bundled inside each combined image and gated per
-  # workload by the SPIRE_ENABLED env var; it is no longer a separate
-  # sidecar. Client registration is operator-managed.
-  defaults:
-    images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.9
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.9
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.9
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.9
+
+# Pin sidecar image tags injected by the AuthBridge webhook.
+#
+# After kagenti-extensions#411 there are three combined images:
+#   * authbridge      — proxy-sidecar mode (default), full plugin set
+#                       including the a2a/mcp/inference parsers.
+#   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
+#                       proxyInit's iptables setup.
+#   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
+#                       (parsers dropped). For size-constrained deployments;
+#                       not selected by default.
+# Spiffe-helper is bundled inside each combined image and gated per
+# workload by the SPIRE_ENABLED env var; it is no longer a separate
+# sidecar. Client registration is operator-managed.
+defaults:
+  images:
+    authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.9
+    envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.9
+    authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.9
+    proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.9
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
