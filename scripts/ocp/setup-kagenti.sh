@@ -1397,12 +1397,17 @@ data: {}
 CACM
 
     # Patch operator deployment: add volume, volumeMount, and --mlflow-ca-file arg
-    $KUBECTL patch deployment kagenti-controller-manager -n kagenti-system --type=json -p "[
-      {\"op\":\"add\",\"path\":\"/spec/template/spec/volumes/-\",\"value\":{\"name\":\"trusted-ca\",\"configMap\":{\"name\":\"${_CA_CM}\",\"optional\":true,\"items\":[{\"key\":\"ca-bundle.crt\",\"path\":\"tls-ca-bundle.pem\"}]}}},
-      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/-\",\"value\":{\"name\":\"trusted-ca\",\"mountPath\":\"${_CA_MOUNT}\",\"readOnly\":true}},
-      {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--mlflow-ca-file=${_CA_PATH}\"}
-    ]" 2>/dev/null && log_success "Operator patched with trusted CA bundle for MLflow TLS" \
-      || log_warn "Could not patch operator with CA bundle (--mlflow-ca-file may not be supported yet)"
+    # Guard: skip if already patched (idempotent on re-runs)
+    if $KUBECTL get deployment kagenti-controller-manager -n kagenti-system -o jsonpath='{.spec.template.spec.volumes[*].name}' 2>/dev/null | grep -q "trusted-ca"; then
+      log_success "Operator already has trusted-ca volume — skipping patch"
+    else
+      $KUBECTL patch deployment kagenti-controller-manager -n kagenti-system --type=json -p "[
+        {\"op\":\"add\",\"path\":\"/spec/template/spec/volumes/-\",\"value\":{\"name\":\"trusted-ca\",\"configMap\":{\"name\":\"${_CA_CM}\",\"optional\":true,\"items\":[{\"key\":\"ca-bundle.crt\",\"path\":\"tls-ca-bundle.pem\"}]}}},
+        {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/-\",\"value\":{\"name\":\"trusted-ca\",\"mountPath\":\"${_CA_MOUNT}\",\"readOnly\":true}},
+        {\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--mlflow-ca-file=${_CA_PATH}\"}
+      ]" 2>/dev/null && log_success "Operator patched with trusted CA bundle for MLflow TLS" \
+        || log_warn "Could not patch operator with CA bundle (--mlflow-ca-file may not be supported yet)"
+    fi
   fi
 fi
 echo ""
