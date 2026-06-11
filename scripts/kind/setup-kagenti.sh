@@ -1247,6 +1247,10 @@ if $BUILD_IMAGES && ! $DRY_RUN; then
   if $WITH_MLFLOW; then
     _BUILD_IMAGES+=("ghcr.io/kagenti/kagenti/mlflow-oauth-secret:latest|auth/mlflow-oauth-secret/Dockerfile")
   fi
+  # Build operator SPIFFE bootstrap image if SPIFFE auth is enabled
+  if [ "${ENABLE_OPERATOR_SPIFFE_AUTH:-false}" = "true" ]; then
+    _BUILD_IMAGES+=("ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest|auth/operator-spiffe-bootstrap/Dockerfile")
+  fi
 
   for spec in "${_BUILD_IMAGES[@]}"; do
     IFS='|' read -r img dockerfile <<< "$spec"
