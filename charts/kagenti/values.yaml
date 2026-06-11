@@ -376,7 +376,8 @@ kagentiOperator:
     # Operator must be configured to read this value and use JWT-SVID authentication
     enabled: false
     # Bootstrap job image (Python-based Keycloak configuration)
-    bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:v0.1.0"
+    # Uses :latest for development (local builds), override with versioned tag for production
+    bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest"
 
 # ------------------------------------------------------------------
 #  SPIFFE Configuration
