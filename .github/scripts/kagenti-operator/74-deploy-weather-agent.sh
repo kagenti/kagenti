@@ -112,18 +112,18 @@ else
 
         LLM_HOST="litellm-prod.apps.maas.redhatworkshops.io"
 
-        # The authbridge sidecar sets HTTP(S)_PROXY=http://127.0.0.1:8081 on
-        # all containers. External LLM endpoints must bypass this proxy.
-        # Also unset HTTP_PROXY (only HTTPS_PROXY is needed for auth-injected
-        # routes; HTTP_PROXY causes Python clients to route DNS lookups through
-        # the auth sidecar which can't resolve external names).
+        # The authbridge webhook injects HTTP(S)_PROXY=http://127.0.0.1:8081
+        # at pod admission.  We cannot prevent injection, but we can ensure
+        # NO_PROXY covers all traffic that must bypass the auth sidecar.
+        # Include explicit hostnames for MCP/OTEL endpoints because some httpx
+        # versions don't match leading-dot suffixes (e.g. .svc.cluster.local)
+        # for plain HTTP URLs routed through HTTP_PROXY.
+        NO_PROXY_VAL="127.0.0.1,localhost,${LLM_HOST},.svc,.svc.cluster.local,.local,.cluster.local,weather-tool-mcp.team1.svc.cluster.local,otel-collector.kagenti-system.svc.cluster.local,keycloak.keycloak.svc.cluster.local"
         kubectl set env deployment/weather-service -n team1 \
             LLM_API_BASE="https://${LLM_HOST}/v1" \
             LLM_MODEL="llama-scout-17b" \
-            HTTP_PROXY- \
-            http_proxy- \
-            NO_PROXY="127.0.0.1,localhost,${LLM_HOST},.svc,.svc.cluster.local" \
-            no_proxy="127.0.0.1,localhost,${LLM_HOST},.svc,.svc.cluster.local" \
+            NO_PROXY="$NO_PROXY_VAL" \
+            no_proxy="$NO_PROXY_VAL" \
             LLM_API_KEY- OPENAI_API_KEY- 2>/dev/null || true
 
         # HyperShift hosted clusters may lack external DNS resolution (CoreDNS
