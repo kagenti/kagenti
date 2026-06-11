@@ -38,6 +38,7 @@ export REPO=<repo-name>
 - [When to Use](#when-to-use)
 - [Context-Safe Execution](#context-safe-execution-mandatory)
 - [Phase 1: Gather PR Data](#phase-1-gather-pr-data)
+  - [1.6 Author Trust Level](#16-author-trust-level)
 - [Phase 2: Analyze Changes](#phase-2-analyze-changes)
 - [Phase 3: Review Checklist](#phase-3-review-checklist)
 - [Phase 4: Draft Review](#phase-4-draft-review)
@@ -116,6 +117,36 @@ When verifying claims (versions, file existence, code patterns), always use:
 git show upstream/main:<path-to-file>
 ```
 
+### 1.6 Author Trust Level
+
+**The PR author's relationship to the project is itself a risk signal.** Supply-chain
+attacks usually arrive through PRs from people new to the repo. Gather the author's
+GitHub association on every review. The `gh pr view --json` form does **not** expose
+this field — use the REST API:
+
+```bash
+gh api repos/$OWNER/$REPO/pulls/<number> --jq '{author: .user.login, association: .author_association}'
+```
+
+Classify the result:
+
+| `author_association` | Trust | Review posture |
+|----------------------|-------|----------------|
+| `OWNER`, `MEMBER`, `COLLABORATOR` | Maintainer | Normal review |
+| `CONTRIBUTOR` | Returning external | Elevated scrutiny |
+| `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, `NONE` | New / untrusted | **Highest scrutiny** |
+
+For **elevated** or **highest** scrutiny:
+
+- Read **every** changed file in full — no summary-only passes.
+- Pay special attention to build, CI, dependency-manifest, and any config files
+  (see §3.5 and §3.5a).
+- **Never auto-approve.** Always route through the §4.4 confirmation gate, even
+  when the diff is otherwise clean. First-time contributors get the loudest warning.
+
+Record the author and trust level — it appears in the Phase 4 summary (§4.2) and
+drives the verdict (§4.3).
+
 ## Phase 2: Analyze Changes
 
 Use a subagent to categorize the diff by area and produce a summary.
@@ -123,13 +154,18 @@ Use a subagent to categorize the diff by area and produce a summary.
 ```
 Task(subagent_type='Explore'):
   "Read $LOG_DIR/pr-<number>.diff. Categorize changed files into these areas:
-   Python, Helm/K8s, Shell, YAML, Dockerfile, CI/GitHub Actions, Docs, Frontend, Other.
+   Python, Helm/K8s, Shell, YAML, Dockerfile, CI/GitHub Actions, Docs, Frontend,
+   Agent/IDE config (.claude/ or .vscode/), Other.
    For each area return: files changed, lines added/removed.
+   ALWAYS return, verbatim, the full list of any changed paths under .claude/ or
+   .vscode/ (added, modified, or renamed) — even if there are no other findings.
    Return a brief summary of what the PR does overall (2-3 sentences).
    Do NOT return the full diff content."
 ```
 
 The summary tells us which review criteria to apply in Phase 3 (only check areas the PR touches).
+The verbatim `.claude/`/`.vscode/` path list ensures the §3.5a supply-chain gate is never
+silently skipped just because the diff was summarized.
 
 ## Phase 3: Review Checklist
 
@@ -197,6 +233,46 @@ Always check regardless of area:
 | Actions | GitHub Action versions pinned to SHA (not `@main` or `@v1`) |
 | Dependencies | New dependencies reviewed for supply-chain risk |
 | Dockerfiles | Non-root user, pinned base images |
+
+### 3.5a Agent / IDE Config Files (supply-chain gate)
+
+> **Why this exists**: Recent supply-chain attacks smuggle agent/IDE config files
+> into PRs so that merely opening, building, or reviewing the branch runs attacker
+> code on the maintainer's machine. Treat these files as hostile until proven safe.
+
+**Scan every PR** for changes under `.claude/` or `.vscode/` (added, modified, or renamed):
+
+```bash
+grep -nE '^\+\+\+ b/(.*/)?\.(claude|vscode)/' $LOG_DIR/pr-<number>.diff
+```
+
+**If there is any match, this is a `must-fix` supply-chain finding.** Do the following:
+
+1. Add a **must-fix** inline comment on each flagged file telling the reviewer to
+   read the full file contents closely — these are not routine config tweaks.
+2. Read every flagged file in full and call out the high-risk payloads:
+
+   | File / pattern | What to inspect |
+   |----------------|-----------------|
+   | `.claude/settings.json`, `.claude/settings.local.json` | `hooks`, any `command`, `runOptions`, auto-run / permission grants |
+   | `.claude/*.mjs`, `*.js`, `*.sh`, `*.py` | Any executable referenced from config; obfuscated or base64 content |
+   | `.vscode/tasks.json`, `.vscode/launch.json` | `runOptions.runOn: folderOpen`, `command`/`args`, pre-launch tasks |
+   | `.vscode/settings.json`, `extensions.json` | Auto-run settings, recommended extensions from untrusted publishers |
+
+3. The verdict **cannot be APPROVE** while these changes are present unless the
+   user explicitly confirms inspection (see §4.3 and §4.4).
+
+> 🚨 **CONFIRMED MALWARE — STOP IMMEDIATELY** 🚨
+>
+> If a `.claude/settings.json` in the diff contains
+> `"command": "node .claude/setup.mjs"`, this is a **known malware signature**.
+>
+> - Do **NOT** check out the branch, run any command, or open the referenced
+>   `.claude/setup.mjs` (or any other file it points to).
+> - **Halt the review.** Do not draft or submit a GitHub review.
+> - **Report it immediately** to the user: state that the PR is confirmed malware,
+>   and recommend closing the PR and alerting the org / security contact.
+> - Take no further action on the PR content.
 
 ### 3.6 Shell Scripts
 
@@ -287,7 +363,9 @@ Do NOT include praise comments — they clutter the review without adding value.
 ### Summary
 [2-3 sentence overview of the review findings]
 
+**Author**: <login> (<association> — maintainer / returning external / first-time)
 **Areas reviewed**: Python, Helm, CI (list areas actually checked)
+**Agent/IDE config (.claude/.vscode)**: none / FLAGGED (list paths)
 **Commits**: N commits, all signed-off: yes/no
 **CI status**: passing/failing/pending
 ```
@@ -296,12 +374,22 @@ Do NOT include praise comments — they clutter the review without adding value.
 
 Decision tree (follow in order):
 
-1. **Any must-fix issues?** → **REQUEST_CHANGES**
-2. **No must-fix issues?** → **APPROVE**
+1. **Confirmed malware signature present?** (`.claude/settings.json` with
+   `"command": "node .claude/setup.mjs"`, see §3.5a) → **HALT**. Do not submit any
+   review. Report to the user immediately.
+2. **Any `.claude/` or `.vscode/` change?** (see §3.5a) → verdict **cannot be
+   APPROVE**. Default to **REQUEST_CHANGES** with the must-fix supply-chain
+   comment, *unless the user has explicitly confirmed in the current turn* that
+   they inspected and validated the changes (see §4.4).
+3. **Non-maintainer author?** (`CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`,
+   `FIRST_TIMER`, `NONE`, see §1.6) → may still APPROVE on a clean diff, but
+   **never auto-approve** — route through the §4.4 confirmation gate first.
+4. **Any other must-fix issues?** → **REQUEST_CHANGES**.
+5. **Otherwise (trusted maintainer, clean diff)** → **APPROVE**.
 
-That's it. Suggestions and nits are included as inline comments within the
-APPROVE review — they do NOT downgrade the verdict. Never use COMMENT as the event;
-it withholds approval unnecessarily when there are no blocking issues.
+Suggestions and nits are included as inline comments within the APPROVE review —
+they do NOT downgrade the verdict. Never use COMMENT as the event; it withholds
+approval unnecessarily when there are no blocking issues.
 
 ### 4.4 User Approval
 
@@ -312,6 +400,27 @@ AskUserQuestion:
   "Review draft ready. Approve to submit, or edit first?"
   Options: ["Submit as-is", "Edit comments first", "Cancel review"]
 ```
+
+**Inspection gate (MANDATORY).** When the diff touches `.claude/`/`.vscode/`
+(§3.5a) **or** the author is a non-maintainer (§1.6), the normal prompt is
+replaced by an explicit inspection gate. The skill will **not** approve without
+the user's explicit confirmation in this turn:
+
+```
+AskUserQuestion:
+  "⚠️ This PR requires manual inspection before approval.
+   Author: <login> (<association>).
+   Flagged agent/IDE config files: <list, or 'none'>.
+   I will NOT approve until you confirm you inspected and validated these changes."
+  Options:
+    - "I inspected these and they are safe — proceed to APPROVE"
+    - "Request changes / do not approve"
+    - "Cancel review"
+```
+
+For a **first-time contributor**, make the warning the loudest item in the prompt.
+A confirmed-malware signature (§3.5a) never reaches this gate — it halts in §4.3
+step 1.
 
 ## Phase 5: Submit Review
 
