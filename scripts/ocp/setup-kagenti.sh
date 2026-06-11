@@ -1380,6 +1380,150 @@ fi
 echo ""
 
 # ============================================================================
+# Step 4b: Wait for operator SharedTrustReconciler (with fallback)
+# ============================================================================
+# The kagenti-operator's SharedTrustReconciler is responsible for:
+#   1. Creating cacerts secrets in istio-system and openshift-ingress
+#   2. Restarting istiod to pick up the shared CA
+#   3. Restarting ztunnel
+# We give the operator a window to complete. If it doesn't, we fall back to
+# performing the steps directly (same as the pre-PR#1800 behavior).
+_wait_shared_trust_reconciliation() {
+  if $DRY_RUN; then return; fi
+
+  # Wait for cacerts to exist (operator creates it, or fallback will)
+  if $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; then
+    log_success "cacerts already exists in istio-system"
+  else
+    local WAIT_TIMEOUT=180  # 3 minutes for the operator to create cacerts
+    local tries=0
+    local max_tries=$(( WAIT_TIMEOUT / 10 ))
+    log_info "Waiting up to ${WAIT_TIMEOUT}s for operator SharedTrustReconciler to create cacerts..."
+
+    while ! $KUBECTL get secret cacerts -n istio-system -o jsonpath='{.data.ca-cert\.pem}' 2>/dev/null | grep -q .; do
+      tries=$((tries + 1))
+      if [ $tries -ge $max_tries ]; then
+        log_warn "Operator did not create cacerts within ${WAIT_TIMEOUT}s — falling back to direct creation"
+        _shared_trust_fallback
+        return $?
+      fi
+      sleep 10
+    done
+    log_success "Operator created cacerts in istio-system"
+  fi
+
+  # Verify istiod is serving the shared CA (not its original self-signed one).
+  # Compare the CA cert istiod is using with what's in the cacerts secret.
+  # If they differ, the operator created cacerts but didn't restart istiod.
+  log_info "Verifying istiod is serving the shared CA..."
+  local cacerts_fp istiod_ca_fp
+  cacerts_fp=$($KUBECTL get secret cacerts -n istio-system \
+    -o jsonpath='{.data.ca-cert\.pem}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  # istiod exposes its CA via the istio-ca-root-cert ConfigMap it generates
+  istiod_ca_fp=$($KUBECTL get configmap istio-ca-root-cert -n istio-system \
+    -o jsonpath='{.data.root-cert\.pem}' 2>/dev/null | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  if [ -n "$cacerts_fp" ] && [ -n "$istiod_ca_fp" ] && [ "$cacerts_fp" != "$istiod_ca_fp" ]; then
+    log_warn "istiod is still using its self-signed CA — forcing restart"
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
+
+    # Restart istiod for openshift-gateway mesh too if present
+    $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+    $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s 2>/dev/null || true
+
+    # Clear stale CA ConfigMaps and restart ztunnel to pick up new CA
+    log_info "Restarting ztunnel to pick up new CA..."
+    for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+      $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+    done
+    $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+    $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+    log_success "Shared trust reconciliation complete (forced istiod + ztunnel restart)"
+  else
+    log_success "istiod is serving the shared CA — shared trust reconciliation complete"
+  fi
+}
+
+_shared_trust_fallback() {
+  # Detect stale intermediate CAs (root CA regenerated but intermediates not re-signed)
+  log_info "Checking intermediate CA consistency..."
+  local ROOT_FP CHANGED=false
+  ROOT_FP=$($KUBECTL get secret istio-mesh-root-ca-secret -n cert-manager \
+    -o jsonpath='{.data.tls\.crt}' | base64 -d | \
+    openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+
+  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
+    local secret="${item%%:*}" ns="${item##*:}"
+    local INTER_FP
+    INTER_FP=$($KUBECTL get secret "$secret" -n "$ns" \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d | \
+      openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+    if [ "$ROOT_FP" != "$INTER_FP" ]; then
+      log_warn "Root CA mismatch in $ns/$secret — forcing re-issuance"
+      $KUBECTL delete secret "$secret" -n "$ns"
+      CHANGED=true
+    fi
+  done
+
+  if $CHANGED; then
+    log_info "Waiting for re-issued intermediate CAs..."
+    _wait_secret_ready istio-cacerts-default-cert istio-system
+    _wait_secret_ready istio-cacerts-og-cert openshift-ingress
+    log_success "Intermediate CAs re-issued"
+  else
+    log_success "Intermediate CAs consistent with root"
+  fi
+
+  # Transform cert-manager secrets into Istio cacerts format
+  log_info "Creating Istio cacerts secrets (fallback)..."
+  for item in "istio-cacerts-default-cert:istio-system" "istio-cacerts-og-cert:openshift-ingress"; do
+    local secret="${item%%:*}" ns="${item##*:}"
+    local CA_CERT CA_KEY ROOT_CERT CERT_CHAIN
+    CA_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.crt}' | base64 -d)
+    CA_KEY=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.tls\.key}' | base64 -d)
+    ROOT_CERT=$($KUBECTL get secret "$secret" -n "$ns" -o jsonpath='{.data.ca\.crt}' | base64 -d)
+    CERT_CHAIN="${CA_CERT}
+${ROOT_CERT}"
+    $KUBECTL create secret generic cacerts -n "$ns" \
+      --from-literal=ca-cert.pem="${CA_CERT}" \
+      --from-literal=ca-key.pem="${CA_KEY}" \
+      --from-literal=root-cert.pem="${ROOT_CERT}" \
+      --from-literal=cert-chain.pem="${CERT_CHAIN}" \
+      --dry-run=client -o yaml | $KUBECTL apply -f -
+  done
+  log_success "Istio cacerts secrets created (fallback)"
+
+  # Restart istiods to pick up shared CA
+  log_info "Restarting istiods..."
+  if $KUBECTL get deployment/istiod -n istio-system &>/dev/null; then
+    $KUBECTL rollout restart deployment/istiod -n istio-system
+    $KUBECTL rollout status deployment/istiod -n istio-system --timeout=300s || true
+  else
+    log_warn "deployment/istiod not found in istio-system — check kagenti-deps hooks"
+  fi
+  $KUBECTL rollout restart deployment/istiod-openshift-gateway -n openshift-ingress 2>/dev/null || true
+  $KUBECTL rollout status deployment/istiod-openshift-gateway -n openshift-ingress --timeout=300s || true
+
+  # Delete stale istio-ca-root-cert ConfigMaps and restart ztunnel
+  log_info "Cleaning up stale CA ConfigMaps and restarting ztunnel..."
+  for ns in kagenti-system gateway-system keycloak mcp-system istio-system istio-ztunnel; do
+    $KUBECTL delete configmap istio-ca-root-cert -n "$ns" --ignore-not-found || true
+  done
+
+  $KUBECTL rollout restart daemonset/ztunnel -n istio-ztunnel 2>/dev/null || true
+  $KUBECTL rollout status daemonset/ztunnel -n istio-ztunnel --timeout=300s || true
+  log_success "Shared trust reconciliation complete (fallback)"
+}
+
+log_info "Step 4b: Wait for shared trust reconciliation"
+_wait_shared_trust_reconciliation
+echo ""
+
+# ============================================================================
 # Step 5: Install Kuadrant operator (optional, --with-kuadrant)
 # ============================================================================
 log_info "Step 5: Kuadrant"

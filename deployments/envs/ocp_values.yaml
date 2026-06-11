@@ -104,6 +104,9 @@ charts:
         backend:
           defaultRegistryUrl: "image-registry.openshift-image-registry.svc:5000"
           shipwrightDefaultStrategy: "buildah"
+      apiOAuthSecret:
+        enabled: true         # Create kagenti-api-oauth-secret for backend API auth
+        useServiceAccountCA: true
       uiOAuthSecret:
         # for a OCP with self-signed certs for routes it should be true.
         # for a OCP with CA-signed certs for routes it should be false.

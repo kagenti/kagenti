@@ -176,6 +176,46 @@ if [ "$READY_REPLICAS" -eq 0 ]; then
     exit 1
 fi
 
+# ============================================================================
+# Configure OIDC S3 credentials for HyperShift (required for AWS hosted clusters)
+# ============================================================================
+
+OIDC_SECRET_NAME="hypershift-operator-oidc-provider-s3-credentials"
+
+if oc get secret "$OIDC_SECRET_NAME" -n hypershift &>/dev/null; then
+    EXISTING_BUCKET=$(oc get secret "$OIDC_SECRET_NAME" -n hypershift \
+        -o jsonpath='{.data.bucket}' | base64 -d)
+    log_success "OIDC S3 secret already exists (bucket: $EXISTING_BUCKET)"
+elif [ -n "${OIDC_S3_BUCKET:-}" ]; then
+    log_info "Creating OIDC S3 credentials secret (bucket: $OIDC_S3_BUCKET)..."
+
+    if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+        log_error "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set to create OIDC secret"
+        exit 1
+    fi
+
+    OIDC_REGION="${AWS_REGION:-us-east-1}"
+
+    oc create secret generic "$OIDC_SECRET_NAME" \
+        -n hypershift \
+        --from-literal=bucket="$OIDC_S3_BUCKET" \
+        --from-literal=region="$OIDC_REGION" \
+        --from-file=credentials=<(printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
+            "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY")
+
+    log_success "OIDC S3 secret created (bucket: $OIDC_S3_BUCKET, region: $OIDC_REGION)"
+
+    log_info "Restarting HyperShift operator to pick up OIDC configuration..."
+    oc rollout restart deployment/operator -n hypershift
+    oc rollout status deployment/operator -n hypershift --timeout=120s
+    log_success "HyperShift operator restarted"
+else
+    log_warn "OIDC_S3_BUCKET not set — skipping OIDC S3 secret creation"
+    log_warn "HyperShift cannot create hosted clusters on AWS until this is configured."
+    log_warn "To configure later, re-run with:"
+    log_warn "  OIDC_S3_BUCKET=<bucket> AWS_ACCESS_KEY_ID=<key> AWS_SECRET_ACCESS_KEY=<secret> $0"
+fi
+
 # Verify installation
 echo ""
 log_info "Verifying installation..."
