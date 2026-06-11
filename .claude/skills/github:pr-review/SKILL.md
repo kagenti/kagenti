@@ -273,6 +273,14 @@ grep -nE '^\+\+\+ b/(.*/)?\.(claude|vscode)/' $LOG_DIR/pr-<number>.diff
 > - **Report it immediately** to the user: state that the PR is confirmed malware,
 >   and recommend closing the PR and alerting the org / security contact.
 > - Take no further action on the PR content.
+>
+> ⚠️ **The exact string above is illustrative, not the safeguard.** It is a
+> fast-path "loud halt" for one observed payload — a trivially renamed file
+> (`setup2.mjs`), a different `command`, or any other obfuscation slips past this
+> literal match. The **actual protection is the general §3.5a gate**: full
+> inspection of *every* `.claude/`/`.vscode/` file, with no APPROVE permitted
+> until the reviewer confirms inspection. Treat the signature as one known-bad
+> example on top of that gate — never as the whole defense.
 
 ### 3.6 Shell Scripts
 
