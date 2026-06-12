@@ -330,6 +330,66 @@ except Exception as e:
     print(f'OPENAI OTHER: {type(e).__name__}: {e}')
 " 2>&1 || log_warn "LLM endpoint not reachable from pod — agent conversation tests will fail"
             fi
+
+            # ====================================================================
+            # DIAGNOSTIC (#1904): authbridge injection mode + MCP reachability.
+            # Investigation-only — does NOT modify the deployment and authbridge
+            # stays injected. Goal: (a) find what forces envoy-sidecar mode on
+            # HyperShift when the cluster default is proxy-sidecar, and (b) confirm
+            # the iptables intercept breaks the MCP streamable-HTTP connection.
+            # Every command is guarded (|| true) so it never fails the deploy under
+            # `set -euo pipefail`. Remove this block once the root cause is fixed.
+            # ====================================================================
+            log_info "AuthBridge mode diagnostics (#1904) for pod $WEATHER_POD"
+
+            INIT_CONTAINERS=$(kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.spec.initContainers[*].name}' 2>/dev/null || echo "")
+            CONTAINERS=$(kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.spec.containers[*].name}' 2>/dev/null || echo "")
+            log_info "  init=[$INIT_CONTAINERS] containers=[$CONTAINERS]"
+            if echo "$INIT_CONTAINERS" | grep -q proxy-init; then
+                log_warn "  envoy-sidecar mode: proxy-init present -> iptables intercepts ALL egress (NO_PROXY ignored at L4)"
+            else
+                log_info "  proxy-sidecar mode: no proxy-init -> env-var HTTP(S)_PROXY in effect"
+            fi
+
+            # What sets the mode? Dump the config sources the operator webhook reads.
+            echo "--- authbridge-runtime-config (team1) ---"
+            kubectl get cm authbridge-runtime-config -n team1 -o jsonpath='{.data}' 2>&1 || echo "(not found)"
+            echo; echo "--- authbridge ConfigMaps in team1 ---"
+            kubectl get cm -n team1 2>&1 | grep -i authbridge || echo "(none)"
+            echo "--- AgentRuntime CRs (team1) ---"
+            kubectl get agentruntime -n team1 -o jsonpath='{range .items[*]}{.metadata.name}{": authBridgeMode="}{.spec.authBridgeMode}{"\n"}{end}' 2>&1 || echo "(no AgentRuntime CRD/CR)"
+            echo "--- weather-service pod kagenti/authbridge annotations ---"
+            kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.metadata.annotations}' 2>&1 | tr ',' '\n' | grep -i 'kagenti.io\|authbridge' || echo "(none)"
+
+            # Probe the MCP tool directly from inside the agent container. This
+            # reproduces the agent->tool hop independently of the LLM, so it
+            # confirms the intercept even when the LLM path is unhealthy.
+            MCP_URL=$(kubectl get deployment weather-service -n team1 -o jsonpath='{.spec.template.spec.containers[?(@.name=="agent")].env[?(@.name=="MCP_URL")].value}' 2>/dev/null || echo "")
+            [ -z "$MCP_URL" ] && MCP_URL="http://weather-tool-mcp.team1.svc.cluster.local:8000/mcp"
+            log_info "  probing MCP from agent container: $MCP_URL"
+            kubectl exec -n team1 "$WEATHER_POD" -c agent -- python3 -c "
+import os, urllib.request, urllib.error
+url = '$MCP_URL'
+for k in ('HTTP_PROXY','HTTPS_PROXY','NO_PROXY','no_proxy'):
+    v = os.environ.get(k)
+    if v: print(f'  PROXY: {k}={v}')
+body = b'{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"diag\",\"version\":\"0\"}}}'
+req = urllib.request.Request(url, data=body, headers={'Content-Type':'application/json','Accept':'application/json, text/event-stream'})
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        print(f'  MCP OK: status={r.status} content-type={r.headers.get(\"content-type\")}')
+except urllib.error.HTTPError as e:
+    print(f'  MCP HTTP {e.code}: {e.reason}')
+except Exception as e:
+    print(f'  MCP FAIL: {type(e).__name__}: {e}')
+" 2>&1 || log_warn "  MCP probe exec failed"
+
+            # If the authbridge sidecar is present, its logs show the 502/ext_proc behavior.
+            if echo "$CONTAINERS" | grep -q authbridge; then
+                AB_CONTAINER=$(echo "$CONTAINERS" | tr ' ' '\n' | grep authbridge | head -1)
+                log_info "  authbridge sidecar logs ($AB_CONTAINER, tail 60):"
+                kubectl logs "$WEATHER_POD" -n team1 -c "$AB_CONTAINER" --tail=60 2>&1 || true
+            fi
         fi
     fi
 fi
