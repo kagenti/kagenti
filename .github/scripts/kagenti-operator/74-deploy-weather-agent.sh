@@ -145,6 +145,30 @@ else
         else
             log_warn "Cannot resolve $LLM_HOST from CI runner — pod DNS may fail"
         fi
+
+        # FIX-CONFIRMATION (#1904): the proxy-sidecar enforce-redirect egress
+        # guard (proxy-init) DROPs external non-TCP egress and exempts only
+        # CLUSTER_CIDRS (default 10.0.0.0/8). OpenShift cluster DNS is at
+        # 172.30.0.10 (172.30.0.0/16 service net) — OUTSIDE that range — so the
+        # agent's UDP/53 DNS queries get dropped and the MCP FQDN never resolves.
+        # The real fix is upstream (proxy-init CLUSTER_CIDRS or a DNS exemption).
+        # Here we confirm the cause: give the agent a hostAlias for the MCP FQDN
+        # (ClusterIP resolved by the CI runner via kubectl, NOT pod DNS) so it
+        # skips DNS — the same trick used above for the LLM host. We deliberately
+        # alias ONLY the FQDN; the short name stays un-aliased as a DNS control.
+        # If the e2e conversation tests now pass, DNS was the only blocker.
+        MCP_SVC_IP=$(kubectl get svc weather-tool-mcp -n team1 -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+        if [ -n "$MCP_SVC_IP" ]; then
+            log_info "Adding hostAlias for weather-tool-mcp FQDN → $MCP_SVC_IP (DNS-drop workaround, #1904)"
+            kubectl patch deployment weather-service -n team1 --type=json -p "[
+                {\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases/-\",\"value\":{\"ip\":\"${MCP_SVC_IP}\",\"hostnames\":[\"weather-tool-mcp.team1.svc.cluster.local\"]}}
+            ]" 2>/dev/null || \
+            kubectl patch deployment weather-service -n team1 --type=json -p "[
+                {\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"${MCP_SVC_IP}\",\"hostnames\":[\"weather-tool-mcp.team1.svc.cluster.local\"]}]}
+            ]" 2>/dev/null || log_warn "Could not add MCP hostAlias"
+        else
+            log_warn "weather-tool-mcp service has no ClusterIP yet — cannot add MCP hostAlias"
+        fi
         # Set API keys from secret if it exists
         if kubectl get secret openai-secret -n team1 &>/dev/null; then
             kubectl patch deployment weather-service -n team1 --type=json -p '[
@@ -383,6 +407,34 @@ except urllib.error.HTTPError as e:
 except Exception as e:
     print(f'  MCP FAIL: {type(e).__name__}: {e}')
 " 2>&1 || log_warn "  MCP probe exec failed"
+
+            # --- DNS-isolation evidence (#1904) ---
+            # The MCP FQDN probe above now resolves via the hostAlias (no DNS).
+            # These controls isolate the cause to DNS: (1) the nameserver sits
+            # outside the guard's 10.0.0.0/8 exemption; (2) the SAME service by
+            # its short name (no hostAlias) still fails name resolution; (3) the
+            # ClusterIP (no DNS) is REACHED — proving the TCP/proxy path is fine.
+            log_info "  DNS-isolation evidence (#1904):"
+            kubectl exec -n team1 "$WEATHER_POD" -c agent -- sh -c 'grep -E "^nameserver" /etc/resolv.conf 2>/dev/null | sed "s/^/    resolv.conf /"' 2>&1 || true
+            MCP_SVC_IP=$(kubectl get svc weather-tool-mcp -n team1 -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+            log_info "    weather-tool-mcp ClusterIP (via CI runner): ${MCP_SVC_IP:-<none>} (172.30.0.0/16 is OUTSIDE proxy-init CLUSTER_CIDRS default 10.0.0.0/8)"
+            kubectl exec -n team1 "$WEATHER_POD" -c agent -- python3 -c "
+import urllib.request, urllib.error
+def probe(label, url, host=None):
+    hdr={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+    if host: hdr['Host']=host
+    body=b'{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"d\",\"version\":\"0\"}}}'
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url,data=body,headers=hdr),timeout=12) as r:
+            print(f'    {label}: REACHED (status={r.status})')
+    except urllib.error.HTTPError as e:
+        print(f'    {label}: REACHED (HTTP {e.code} — DNS+TCP worked)')
+    except Exception as e:
+        print(f'    {label}: FAIL {type(e).__name__}: {e}')
+probe('by short-name (needs DNS, no hostAlias)','http://weather-tool-mcp:8000/mcp')
+ip='$MCP_SVC_IP'
+if ip: probe('by ClusterIP (no DNS)', f'http://{ip}:8000/mcp', host='weather-tool-mcp.team1.svc.cluster.local')
+" 2>&1 || log_warn "  DNS-isolation probe exec failed"
 
             # If the authbridge sidecar is present, its logs show the 502/ext_proc behavior.
             if echo "$CONTAINERS" | grep -q authbridge; then
