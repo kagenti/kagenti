@@ -287,7 +287,10 @@ done
 
 # ── Expand --with-all (deferred so --skip-* flags are order-independent) ───
 if $WITH_ALL; then
-  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
+  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true
+  # TEMPORARY: Skip UI build to avoid Docker Hub rate limit (nginx base image)
+  # WITH_UI=true
+  WITH_UI=false
   WITH_MCP_GATEWAY=true; WITH_OTEL=true; WITH_BUILDS=true; WITH_KIALI=true
   WITH_AGENT_SANDBOX=true
   $SKIP_MLFLOW    || WITH_MLFLOW=true
@@ -1314,6 +1317,8 @@ KAGENTI_FLAGS=(
   --set "kagenti-operator-chart.featureGates.injectTools=true"
   --set "kagenti-operator-chart.kuadrant.enable=${WITH_KUADRANT}"
   --set "kagentiOperator.spiffeAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
 )
 
 # Allow-list hosts/IPs/CIDRs past the registry-URL SSRF block (for LAN / in-cluster
