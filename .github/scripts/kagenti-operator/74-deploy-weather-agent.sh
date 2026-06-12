@@ -109,16 +109,42 @@ else
     # (Kind manifest points to dockerhost:11434 which doesn't exist on OCP)
     if [ "$IS_OPENSHIFT" = "true" ]; then
         log_info "Patching LLM config for OpenShift (MaaS LiteLLM)..."
-        # The authbridge sidecar sets HTTPS_PROXY=http://127.0.0.1:8081 on all
-        # containers, routing all HTTPS traffic through the proxy for JWT
-        # validation and token exchange. External LLM endpoints must bypass
-        # this proxy — add the MaaS host to NO_PROXY.
+
+        LLM_HOST="litellm-prod.apps.maas.redhatworkshops.io"
+
+        # The authbridge webhook injects HTTP(S)_PROXY=http://127.0.0.1:8081
+        # at pod admission.  We cannot prevent injection, but we can ensure
+        # NO_PROXY covers all traffic that must bypass the auth sidecar.
+        # Include explicit hostnames for MCP/OTEL endpoints because some httpx
+        # versions don't match leading-dot suffixes (e.g. .svc.cluster.local)
+        # for plain HTTP URLs routed through HTTP_PROXY.
+        NO_PROXY_VAL="127.0.0.1,localhost,${LLM_HOST},.svc,.svc.cluster.local,.local,.cluster.local,weather-tool-mcp.team1.svc.cluster.local,otel-collector.kagenti-system.svc.cluster.local,keycloak.keycloak.svc.cluster.local"
+        # Set HTTP_PROXY="" (not remove it) so the authbridge webhook sees it
+        # already exists and skips injection.  The MCP SDK reads HTTP_PROXY
+        # from env and passes it to httpx as an explicit proxy= arg, which
+        # bypasses NO_PROXY handling entirely.  Empty string = no proxy.
         kubectl set env deployment/weather-service -n team1 \
-            LLM_API_BASE="https://litellm-prod.apps.maas.redhatworkshops.io/v1" \
+            LLM_API_BASE="https://${LLM_HOST}/v1" \
             LLM_MODEL="llama-scout-17b" \
-            NO_PROXY="127.0.0.1,localhost,litellm-prod.apps.maas.redhatworkshops.io,.svc,.svc.cluster.local" \
-            no_proxy="127.0.0.1,localhost,litellm-prod.apps.maas.redhatworkshops.io,.svc,.svc.cluster.local" \
+            HTTP_PROXY="" \
+            http_proxy="" \
+            NO_PROXY="$NO_PROXY_VAL" \
+            no_proxy="$NO_PROXY_VAL" \
             LLM_API_KEY- OPENAI_API_KEY- 2>/dev/null || true
+
+        # HyperShift hosted clusters may lack external DNS resolution (CoreDNS
+        # has no upstream forwarder configured). Resolve the LLM host from the
+        # CI runner and inject as a hostAlias so the pod can reach it.
+        LLM_IP=$(getent hosts "$LLM_HOST" 2>/dev/null | awk '{print $1; exit}' || \
+                 python3 -c "import socket; print(socket.getaddrinfo('$LLM_HOST',443)[0][4][0])" 2>/dev/null || echo "")
+        if [ -n "$LLM_IP" ]; then
+            log_info "Adding hostAlias for $LLM_HOST → $LLM_IP (external DNS workaround)"
+            kubectl patch deployment weather-service -n team1 --type=json -p "[
+                {\"op\":\"add\",\"path\":\"/spec/template/spec/hostAliases\",\"value\":[{\"ip\":\"${LLM_IP}\",\"hostnames\":[\"${LLM_HOST}\"]}]}
+            ]" 2>/dev/null || log_warn "Could not add hostAlias (may already exist)"
+        else
+            log_warn "Cannot resolve $LLM_HOST from CI runner — pod DNS may fail"
+        fi
         # Set API keys from secret if it exists
         if kubectl get secret openai-secret -n team1 &>/dev/null; then
             kubectl patch deployment weather-service -n team1 --type=json -p '[
