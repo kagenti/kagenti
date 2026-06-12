@@ -8,4 +8,6 @@ permissions: {}
 
 jobs:
   verify-pr-title:
+    permissions:
+      pull-requests: read
     uses: kagenti/.github/.github/workflows/pr-verifier-required.yml@4e535f2436d167295d39d488ce5c44b5a2d49792
