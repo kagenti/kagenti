@@ -176,15 +176,22 @@ log_success "Weather-service deployed via Deployment + Service (operator-indepen
 # into the pod at admission time.  The pod stays in ContainerCreating until
 # the operator's ClientRegistrationReconciler registers the workload in
 # Keycloak and creates the Secret.  Wait here to avoid a flaky timeout later.
+# When kagenti.io/inject=disabled, the webhook does not inject the volume mount
+# so the pod starts without waiting for the secret.
 # ============================================================================
-log_info "Waiting for operator to create client credentials secret..."
-if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
-    log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
-    kubectl get pods -n kagenti-system 2>&1 || true
-    kubectl get secrets -n team1 2>&1 || true
-    kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
+INJECT_LABEL=$(kubectl get deployment weather-service -n team1 -o jsonpath='{.spec.template.metadata.labels.kagenti\.io/inject}' 2>/dev/null || echo "")
+if [ "$INJECT_LABEL" = "disabled" ]; then
+    log_info "Injection disabled (kagenti.io/inject=disabled) — skipping credentials secret wait"
 else
-    log_success "Client credentials secret created by operator"
+    log_info "Waiting for operator to create client credentials secret..."
+    if ! kubectl -n team1 wait --for=create secret/kagenti-keycloak-client-credentials --timeout=120s 2>/dev/null; then
+        log_warn "Credentials secret not found after 120s — pod may be stuck in ContainerCreating"
+        kubectl get pods -n kagenti-system 2>&1 || true
+        kubectl get secrets -n team1 2>&1 || true
+        kubectl logs -n kagenti-system -l app.kubernetes.io/instance=kagenti --tail=20 2>&1 || true
+    else
+        log_success "Client credentials secret created by operator"
+    fi
 fi
 
 # WORKAROUND: Fix Service targetPort mismatch
