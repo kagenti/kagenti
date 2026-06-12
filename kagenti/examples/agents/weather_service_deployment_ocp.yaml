@@ -26,14 +26,11 @@ spec:
     metadata:
       labels:
         kagenti.io/type: agent
-        kagenti.io/inject: disabled
         protocol.kagenti.io/a2a: ""
         kagenti.io/framework: LangGraph
         app.kubernetes.io/name: weather-service
       annotations:
         kagenti.io/outbound-ports-exclude: "8000"
-        kagenti.io/authbridge-mode: proxy-sidecar
-        kagenti.io/inject: disabled
     spec:
       serviceAccountName: weather-service
       containers:
