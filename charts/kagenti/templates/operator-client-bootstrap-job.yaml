@@ -100,9 +100,9 @@ spec:
         # Operator namespace and ServiceAccount - used to derive SPIFFE ID
         # The bootstrap script constructs: spiffe://<trust-domain>/ns/<namespace>/sa/<service-account>
         - name: OPERATOR_NAMESPACE
-          value: "{{ .Values.kagentiOperator.namespace | default "kagenti-operator-system" }}"
+          value: "{{ .Values.kagentiOperator.namespace | default "kagenti-system" }}"
         - name: OPERATOR_SERVICE_ACCOUNT
-          value: "{{ .Values.kagentiOperator.serviceAccountName | default "controller-manager" }}"
+          value: "{{ .Values.kagentiOperator.serviceAccountName | default "kagenti-controller-manager" }}"
         resources:
           requests:
             cpu: 100m
