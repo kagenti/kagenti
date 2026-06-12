@@ -125,7 +125,6 @@ metadata:
   name: weather-service
   namespace: team1
   labels:
-    kagenti.io/type: agent
     protocol.kagenti.io/a2a: ""
     kagenti.io/framework: LangGraph
     app.kubernetes.io/name: weather-service
@@ -134,12 +133,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
       app.kubernetes.io/name: weather-service
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         protocol.kagenti.io/a2a: ""
         app.kubernetes.io/name: weather-service
     spec:
@@ -167,17 +164,34 @@ metadata:
   name: weather-service
   namespace: team1
   labels:
-    kagenti.io/type: agent
     app.kubernetes.io/name: weather-service
 spec:
   type: ClusterIP
   selector:
-    kagenti.io/type: agent
     app.kubernetes.io/name: weather-service
   ports:
     - name: http
       port: 8080
       targetPort: 8000
+```
+
+```yaml
+# AgentRuntime - Enrolls the workload with the kagenti-operator.
+# The operator applies the kagenti.io/type label and triggers
+# AuthBridge sidecar injection automatically.
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-service
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-service
+spec:
+  type: agent
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-service
 ```
 
 ```yaml
@@ -228,7 +242,7 @@ All agent workloads use consistent labels for discovery:
 
 | Label | Value | Purpose |
 |-------|-------|---------|
-| `kagenti.io/type` | `agent` | Identifies resource as a Kagenti agent |
+| `kagenti.io/type` | `agent` | Identifies resource as a Kagenti agent (operator-managed via AgentRuntime CR) |
 | `protocol.kagenti.io/<name>` | `""` | Protocol support (e.g. `protocol.kagenti.io/a2a`) |
 | `kagenti.io/framework` | `LangGraph`, `CrewAI`, etc. | Agent framework |
 | `app.kubernetes.io/name` | `<agent-name>` | Standard K8s app name |
@@ -339,7 +353,6 @@ metadata:
   name: weather-tool
   namespace: team1
   labels:
-    kagenti.io/type: tool
     protocol.kagenti.io/mcp: ""
     kagenti.io/transport: streamable_http
     app.kubernetes.io/name: weather-tool
@@ -347,12 +360,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: tool
       app.kubernetes.io/name: weather-tool
   template:
     metadata:
       labels:
-        kagenti.io/type: tool
         protocol.kagenti.io/mcp: ""
         kagenti.io/transport: streamable_http
         app.kubernetes.io/name: weather-tool
@@ -363,6 +374,23 @@ spec:
           ports:
             - containerPort: 8000
               name: http
+```
+
+```yaml
+# AgentRuntime - Enrolls the tool with the kagenti-operator
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: AgentRuntime
+metadata:
+  name: weather-tool
+  namespace: team1
+  labels:
+    app.kubernetes.io/name: weather-tool
+spec:
+  type: tool
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: weather-tool
 ```
 
 For detailed tool deployment instructions, see [Importing a New Tool](./new-tool.md).
@@ -454,7 +482,7 @@ Kagenti provides a unified framework for identity and authorization in agentic s
 
 Keycloak client registration is handled by the kagenti-operator's ClientRegistrationReconciler controller:
 
-- Watches for Deployments/StatefulSets labeled with `kagenti.io/type: agent` or `tool`
+- Reconciles AgentRuntime CRs to apply `kagenti.io/type` labels to target workloads and trigger sidecar injection
 - Uses **SPIFFE ID** as client identifier (e.g., `spiffe://localtest.me/ns/team/sa/my-agent`)
 - Reads Keycloak admin credentials from the operator namespace (`kagenti-system`)
 - Creates a secret in the agent namespace containing client credentials
