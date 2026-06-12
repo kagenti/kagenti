@@ -31,6 +31,7 @@ spec:
         app.kubernetes.io/name: weather-service
       annotations:
         kagenti.io/outbound-ports-exclude: "8000"
+        kagenti.io/authbridge-mode: proxy-sidecar
     spec:
       serviceAccountName: weather-service
       containers:

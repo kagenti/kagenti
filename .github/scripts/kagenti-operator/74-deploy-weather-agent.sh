@@ -214,6 +214,17 @@ wait_for_deployment "weather-service" "team1" 180 || {
 }
 log_success "weather-service pod is ready"
 
+# Diagnostic: log injected containers to verify authbridge mode
+WEATHER_POD=$(kubectl get pods -n team1 -l app.kubernetes.io/name=weather-service -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+if [ -n "$WEATHER_POD" ]; then
+    INIT_CONTAINERS=$(kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.spec.initContainers[*].name}' 2>/dev/null || echo "(none)")
+    CONTAINERS=$(kubectl get pod "$WEATHER_POD" -n team1 -o jsonpath='{.spec.containers[*].name}' 2>/dev/null || echo "(none)")
+    log_info "Pod $WEATHER_POD — init: [$INIT_CONTAINERS] containers: [$CONTAINERS]"
+    if echo "$INIT_CONTAINERS" | grep -q proxy-init; then
+        log_warn "proxy-init detected despite proxy-sidecar mode annotation — iptables interception may break MCP streaming"
+    fi
+fi
+
 # Create OpenShift Route for the agent (on OpenShift only)
 # The kagenti-operator doesn't create routes automatically - they're created by the UI backend
 # when using the web interface. For E2E tests, we need to create the route manually.
