@@ -92,6 +92,10 @@ CLEAN_KAGENTI=false
 KAGENTI_ENV="${KAGENTI_ENV:-dev}"
 CLUSTER_NAME="${CLUSTER_NAME:-kagenti}"
 WHITELIST_MODE=false
+# Enable operator SPIFFE authentication (JWT-SVID instead of admin credentials)
+# Passed to setup-kagenti.sh as --enable-operator-spiffe-auth
+# Maps to Helm value: kagentiOperator.spiffeAuth.enabled
+ENABLE_OPERATOR_SPIFFE_AUTH="${ENABLE_OPERATOR_SPIFFE_AUTH:-false}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -231,6 +235,7 @@ echo "    test:               $RUN_TEST"
 echo "    kagenti-uninstall:  $RUN_KAGENTI_UNINSTALL"
 echo "    cluster-destroy:    $RUN_DESTROY"
 echo "  Clean Kagenti:  $CLEAN_KAGENTI"
+echo "  Operator SPIFFE Auth: $ENABLE_OPERATOR_SPIFFE_AUTH"
 echo ""
 
 # ============================================================================
@@ -265,6 +270,7 @@ if [ "$RUN_INSTALL" = "true" ]; then
     SETUP_ARGS=(--with-all --skip-cluster --build-images --cluster-name "$CLUSTER_NAME")
     [ "$SKIP_MLFLOW" = "true" ] && SETUP_ARGS+=(--skip-mlflow)
     [ "$SKIP_KUADRANT" = "true" ] && SETUP_ARGS+=(--skip-kuadrant)
+    [ "$ENABLE_OPERATOR_SPIFFE_AUTH" = "true" ] && SETUP_ARGS+=(--enable-operator-spiffe-auth)
     ./scripts/kind/setup-kagenti.sh "${SETUP_ARGS[@]}"
 
     log_step "Waiting for platform to be ready..."

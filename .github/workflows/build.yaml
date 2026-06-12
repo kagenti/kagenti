@@ -54,6 +54,9 @@ jobs:
           - name: spiffe-idp-setup
             context: ./kagenti
             dockerfile: auth/spiffe-idp-setup/Dockerfile
+          - name: operator-spiffe-bootstrap
+            context: ./kagenti
+            dockerfile: auth/operator-spiffe-bootstrap/Dockerfile
 
     steps:
       # 1. Checkout the repository code
@@ -89,7 +92,11 @@ jobs:
             type=ref,event=tag
             type=sha,prefix={{branch}}-,enable=${{ github.ref_type != 'tag' }}
             # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
-            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{
+              (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) ||
+              github.event_name == 'workflow_dispatch' ||
+              github.ref == 'refs/heads/main'
+            }}
 
       - name: Wait before retry
         if: steps.meta.outcome == 'failure'
@@ -107,7 +114,11 @@ jobs:
             type=ref,event=tag
             type=sha,prefix={{branch}}-,enable=${{ github.ref_type != 'tag' }}
             # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
-            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{
+              (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) ||
+              github.event_name == 'workflow_dispatch' ||
+              github.ref == 'refs/heads/main'
+            }}
 
       - name: Smoke-test build for ${{ matrix.image_config.name }}
         if: matrix.image_config.smoke_cmd

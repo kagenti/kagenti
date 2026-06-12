@@ -59,6 +59,9 @@ INSTALL_EXAMPLES=false
 DRY_RUN=false
 SECRETS_FILE_ARG=""
 CONTAINER_ENGINE="${CONTAINER_ENGINE:-docker}"
+# Enable operator SPIFFE authentication (JWT-SVID instead of admin credentials)
+# Maps to Helm value: kagentiOperator.spiffeAuth.enabled
+ENABLE_OPERATOR_SPIFFE_AUTH=false
 
 # Versions
 CERT_MANAGER_VERSION="v1.17.2"
@@ -221,6 +224,7 @@ while [[ $# -gt 0 ]]; do
     --kagenti-values)   KAGENTI_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --kagenti-deps-values) KAGENTI_DEPS_VALUES_FILES+=("--values" "$2"); shift 2 ;;
     --with-examples)    INSTALL_EXAMPLES=true; shift ;;
+    --enable-operator-spiffe-auth) ENABLE_OPERATOR_SPIFFE_AUTH=true; shift ;;
     --dry-run)          DRY_RUN=true; shift ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
@@ -262,6 +266,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --kagenti-deps-values FILE"
       echo "                      Helm override file to apply to Kagenti-deps chart"
       echo "  --with-examples     Install weather agent and weather tool examples"
+      echo "  --enable-operator-spiffe-auth"
+      echo "                      Enable SPIFFE authentication for operator (requires SPIRE)"
       echo "  --dry-run           Show commands without executing"
       echo "  -h, --help          Show this help"
       exit 0 ;;
@@ -271,7 +277,10 @@ done
 
 # ── Expand --with-all (deferred so --skip-* flags are order-independent) ───
 if $WITH_ALL; then
-  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
+  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true
+  # TEMPORARY: Skip UI build to avoid Docker Hub rate limit (nginx base image)
+  # WITH_UI=true
+  WITH_UI=false
   WITH_MCP_GATEWAY=true; WITH_OTEL=true; WITH_BUILDS=true; WITH_KIALI=true
   WITH_AGENT_SANDBOX=true
   $SKIP_MLFLOW    || WITH_MLFLOW=true
@@ -1241,6 +1250,10 @@ if $BUILD_IMAGES && ! $DRY_RUN; then
   if $WITH_MLFLOW; then
     _BUILD_IMAGES+=("ghcr.io/kagenti/kagenti/mlflow-oauth-secret:latest|auth/mlflow-oauth-secret/Dockerfile")
   fi
+  # Build operator SPIFFE bootstrap image if SPIFFE auth is enabled
+  if [ "${ENABLE_OPERATOR_SPIFFE_AUTH:-false}" = "true" ]; then
+    _BUILD_IMAGES+=("ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest|auth/operator-spiffe-bootstrap/Dockerfile")
+  fi
 
   for spec in "${_BUILD_IMAGES[@]}"; do
     IFS='|' read -r img dockerfile <<< "$spec"
@@ -1273,6 +1286,9 @@ KAGENTI_FLAGS=(
   --set "components.mlflow.enabled=${WITH_MLFLOW}"
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
+  --set "kagentiOperator.spiffeAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
 )
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 

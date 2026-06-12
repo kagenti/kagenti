@@ -288,25 +288,55 @@ kagenti-operator-chart:
   # the explicit value is required because neither ZTWIM nor spire-bundle exist at startup.
   signatureVerification:
     spireTrustDomain: localtest.me
-  # Pin sidecar image tags injected by the AuthBridge webhook.
-  #
-  # After kagenti-extensions#411 there are three combined images:
-  #   * authbridge      — proxy-sidecar mode (default), full plugin set
-  #                       including the a2a/mcp/inference parsers.
-  #   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
-  #                       proxyInit's iptables setup.
-  #   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
-  #                       (parsers dropped). For size-constrained deployments;
-  #                       not selected by default.
-  # Spiffe-helper is bundled inside each combined image and gated per
-  # workload by the SPIRE_ENABLED env var; it is no longer a separate
-  # sidecar. Client registration is operator-managed.
-  defaults:
-    images:
-      authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.7
-      envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.7
-      authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.7
-      proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.7
+
+# ------------------------------------------------------------------
+#  Kagenti Operator SPIFFE Authentication
+# ------------------------------------------------------------------
+# Configuration for operator SPIFFE authentication to Keycloak
+# Shell scripts use ENABLE_OPERATOR_SPIFFE_AUTH env var to set this
+kagentiOperator:
+  namespace: kagenti-system
+  serviceAccountName: kagenti-controller-manager
+  spiffeAuth:
+    # Enable SPIFFE authentication for operator (authenticates with JWT-SVID instead of admin credentials)
+    # When enabled, runs bootstrap job to configure Keycloak with operator's SPIFFE client
+    # Operator must be configured to read this value and use JWT-SVID authentication
+    enabled: false
+    # Bootstrap job image (Python-based Keycloak configuration)
+    # Uses :latest for development (local builds), override with versioned tag for production
+    bootstrapImage: "ghcr.io/kagenti/kagenti/operator-spiffe-bootstrap:latest"
+
+# ------------------------------------------------------------------
+#  SPIFFE Configuration
+# ------------------------------------------------------------------
+spiffe:
+  # SPIFFE Identity Provider alias in Keycloak
+  idpAlias: "spire-spiffe"
+  # SPIRE OIDC Discovery Provider URL
+  oidcDiscoveryURL: "http://spire-spiffe-oidc-discovery-provider.zero-trust-workload-identity-manager.svc:8080"
+
+# Trust domain (used for SPIFFE IDs)
+spireTrustDomain: localtest.me
+
+# Pin sidecar image tags injected by the AuthBridge webhook.
+#
+# After kagenti-extensions#411 there are three combined images:
+#   * authbridge      — proxy-sidecar mode (default), full plugin set
+#                       including the a2a/mcp/inference parsers.
+#   * authbridge-envoy — envoy-sidecar mode, full plugin set, expects
+#                       proxyInit's iptables setup.
+#   * authbridge-lite  — proxy-sidecar shape, auth-only plugins
+#                       (parsers dropped). For size-constrained deployments;
+#                       not selected by default.
+# Spiffe-helper is bundled inside each combined image and gated per
+# workload by the SPIRE_ENABLED env var; it is no longer a separate
+# sidecar. Client registration is operator-managed.
+defaults:
+  images:
+    authbridge: ghcr.io/kagenti/kagenti-extensions/authbridge:v0.6.0-alpha.7
+    envoyProxy: ghcr.io/kagenti/kagenti-extensions/authbridge-envoy:v0.6.0-alpha.7
+    authbridgeLite: ghcr.io/kagenti/kagenti-extensions/authbridge-lite:v0.6.0-alpha.7
+    proxyInit: ghcr.io/kagenti/kagenti-extensions/proxy-init:v0.6.0-alpha.7
 
 # ------------------------------------------------------------------
 #  MCP Gateway Configuration
