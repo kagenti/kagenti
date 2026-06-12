@@ -160,9 +160,10 @@ Alphas are tagged directly from `main`:
 
 - [ ] Confirm CI passes on `main` for each repo being tagged
 - [ ] Determine next alpha number
-- [ ] Pin all image tags (no `tag: latest` allowed, even for alphas):
+- [ ] Pin image tags and chart version (no `tag: latest` allowed, even for alphas):
 
 ```bash
+# Pins image tags AND updates Chart.yaml version/appVersion to match
 bash scripts/pin-release-tags.sh <version>
 bash scripts/check-release-pins.sh
 ```
@@ -171,6 +172,16 @@ bash scripts/check-release-pins.sh
 - [ ] Update `charts/kagenti/Chart.yaml` with new sub-chart versions
 - [ ] Run `helm dependency update charts/kagenti/`
 - [ ] Commit, merge to main, then tag `kagenti/kagenti`
+
+- [ ] At least one RC validated via `release-validation.yaml` (Kind + HyperShift pass)
+- [ ] Minimum 1 week soak since last RC (recommended)
+- [ ] No open release-blocking issues
+- [ ] At least one maintainer sign-off
+- [ ] Dependency repos tagged with GA first
+- [ ] `charts/kagenti/Chart.yaml` updated with GA sub-chart versions
+- [ ] `helm dependency update charts/kagenti/` regenerates `Chart.lock`
+- [ ] **All image tags in `charts/kagenti/values.yaml` pinned to GA tag**
+- [ ] Documentation reviewed and updated
 
 ### 2.2 For First RC (creates release branch)
 
@@ -210,7 +221,7 @@ The first RC marks feature freeze. This is when release branches are created.
 
 2. **Update kagenti/kagenti Chart.yaml** with new sub-chart RC versions
 
-3. **Pin all image tags:**
+3. **Pin image tags and chart version:**
 
    ```bash
    bash scripts/pin-release-tags.sh <version>
@@ -481,9 +492,10 @@ gh run list --repo kagenti/kagenti --branch release-X.Y --limit 3
 git tag --list 'vX.Y.0-rc.*' --sort=-v:refname | head -1
 ```
 
-**Pin image tags for the new RC:**
+**Pin image tags and chart version for the new RC:**
 
 ```bash
+# Pins image tags AND updates Chart.yaml version/appVersion to match
 bash scripts/pin-release-tags.sh <next-rc-version>
 bash scripts/check-release-pins.sh
 git add charts/
@@ -526,9 +538,10 @@ When the latest RC has soaked with no blocking issues.
 
 2. **Update kagenti Chart.yaml** with GA sub-chart versions
 
-3. **Pin image tags to GA version:**
+3. **Pin image tags and chart version to GA:**
 
    ```bash
+   # Pins image tags AND updates Chart.yaml version/appVersion to match
    bash scripts/pin-release-tags.sh vX.Y.0
    bash scripts/check-release-pins.sh
    git add charts/
@@ -562,6 +575,56 @@ Auto-generated is sufficient:
 ```bash
 gh release edit <version> --repo kagenti/kagenti \
   --notes "Alpha release — known issues: <list any>"
+```
+
+### 4.5 Run RC Validation CI (RC and GA only)
+
+After verifying artifacts for an RC tag, ask the user:
+
+```
+RC artifacts verified. Would you like to trigger the RC Validation workflow?
+This runs Kind + HyperShift E2E tests in parallel (~2 hours).
+
+Options:
+1. Run full validation (Kind + HyperShift)
+2. Run Kind only (faster, ~90 min)
+3. Run HyperShift only (~120 min)
+4. Skip — I'll validate manually
+```
+
+If the user chooses to run validation:
+
+```bash
+# Full validation (default)
+gh workflow run release-validation.yaml -f ref=<version>
+
+# Kind only
+gh workflow run release-validation.yaml -f ref=<version> -f skip_hypershift=true
+
+# HyperShift only
+gh workflow run release-validation.yaml -f ref=<version> -f skip_kind=true
+```
+
+If dependency repos were also tagged, include them:
+
+```bash
+gh workflow run release-validation.yaml -f ref=<version> \
+  -f dep_builds='[{"repo":"kagenti/kagenti-extensions","ref":"<ext-version>"}]'
+```
+
+After triggering, show the run URL:
+
+```bash
+sleep 5
+gh run list --workflow=release-validation.yaml --limit 1 --json databaseId,url --jq '.[0].url'
+```
+
+For GA releases, this validation MUST have passed on the final RC before
+tagging GA. Remind the user:
+
+```
+GA prerequisite: Has the RC Validation workflow passed for the latest RC?
+Check with: gh run list --workflow=release-validation.yaml --limit 5
 ```
 
 ### For RC

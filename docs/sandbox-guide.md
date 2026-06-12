@@ -2,10 +2,10 @@
 
 This guide covers installing and using the Kagenti sandboxing feature powered by
 [OpenShell](https://github.com/NVIDIA/OpenShell). Kagenti maintains a
-[distribution fork](https://github.com/kagenti/OpenShell) with pre-built
-binaries and Kagenti-specific patches. Sandboxes provide kernel-level isolation
-for autonomous AI agents with credential protection and network policy
-enforcement.
+[distribution fork](https://github.com/kagenti/OpenShell) (`mvp-v2` branch) with
+Kagenti-specific multitenancy patches. The upstream CLI works as-is — no
+fork-specific build is needed. Sandboxes provide kernel-level isolation for
+autonomous AI agents with credential protection and network policy enforcement.
 
 ## Prerequisites
 
@@ -16,17 +16,17 @@ enforcement.
 
 ## Install the OpenShell CLI
 
-Download the latest release for your platform from
-<https://github.com/kagenti/OpenShell/releases>:
+Install the upstream OpenShell CLI (fully compatible with the Kagenti gateway):
 
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/kagenti/OpenShell/releases/latest/download/openshell-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv openshell /usr/local/bin/
+# Via the official install script
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+```
 
-# Linux (x86_64)
-curl -L https://github.com/kagenti/OpenShell/releases/latest/download/openshell-x86_64-unknown-linux-musl.tar.gz | tar xz
-sudo mv openshell /usr/local/bin/
+Or via PyPI:
+
+```bash
+uv tool install openshell
 ```
 
 Verify the installation:
@@ -222,6 +222,139 @@ openshell sandbox connect
 openshell sandbox exec -n <sandbox-name> -- claude --print "Hello"
 ```
 
+## Network Egress Policies
+
+By default, sandboxes have no outbound network access except to
+`inference.local` (the LLM proxy). To allow a sandbox to reach external
+services (e.g., GitHub for `git clone`, package registries, APIs), declare
+a network policy.
+
+### Create a sandbox with an egress policy
+
+Write a policy YAML that lists allowed endpoints:
+
+```yaml
+# github-egress.yaml
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /bin
+    - /sbin
+  read_write:
+    - /tmp
+    - /sandbox
+    - /dev/null
+    - /dev/urandom
+network_policies:
+  github:
+    name: "Allow GitHub"
+    endpoints:
+      - host: "github.com"
+        port: 443
+      - host: "api.github.com"
+        port: 443
+```
+
+Create the sandbox with `--policy` and a command (the entrypoint process is
+required for the network proxy to function):
+
+```bash
+# With an interactive tool
+openshell sandbox create --policy github-egress.yaml -- claude
+
+# Or as a persistent sandbox for exec sessions
+openshell sandbox create --policy github-egress.yaml -- sleep infinity
+```
+
+No binary restrictions are needed — `git`, `curl`, `python`, and any other
+tool in the sandbox can use the allowed endpoints. The endpoint declaration
+is the access gate.
+
+Verify egress inside the sandbox:
+
+```bash
+openshell sandbox exec -- curl -sS -o /dev/null -w "%{http_code}" https://github.com
+# 200
+
+# git clone works with just github.com:443 in the policy
+openshell sandbox exec -- git clone https://github.com/kagenti/kagenti.git /tmp/repo
+```
+
+Unlisted endpoints remain blocked:
+
+```bash
+openshell sandbox exec -- curl -sS https://example.com
+# curl: (56) CONNECT tunnel failed, response 403
+```
+
+### Dynamically update the policy on a running sandbox
+
+You don't need to recreate a sandbox to change its network policy.
+Updates take effect within seconds.
+
+**Add an endpoint:**
+
+```bash
+openshell policy update <sandbox-name> --add-endpoint pypi.org:443 --wait
+```
+
+**Add multiple endpoints at once:**
+
+```bash
+openshell policy update <sandbox-name> \
+  --add-endpoint registry.npmjs.org:443 \
+  --add-endpoint api.github.com:443 \
+  --wait
+```
+
+**Remove an endpoint:**
+
+```bash
+openshell policy update <sandbox-name> --remove-endpoint pypi.org:443 --wait
+```
+
+**Replace the entire policy from a file:**
+
+```bash
+openshell policy set <sandbox-name> --policy new-policy.yaml --wait
+```
+
+**View the current effective policy:**
+
+```bash
+openshell policy get <sandbox-name> --full
+```
+
+### Policy format reference
+
+The `network_policies` section maps rule names to endpoint lists:
+
+```yaml
+network_policies:
+  <rule-name>:
+    name: "<human-readable description>"
+    endpoints:
+      - host: "<hostname>"
+        port: <port>
+      - host: "*.example.com"   # glob patterns supported
+        port: 443
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `host` | yes | Exact hostname or glob pattern (`*` = single label, `**` = across labels) |
+| `port` | yes | TCP port (usually 443 for HTTPS) |
+| `binaries` | no | If omitted, any process in the sandbox can use this endpoint. If specified, only listed binary paths are allowed. |
+
+When no `binaries` are specified (the common case for egress policies), any
+process in the sandbox can access the endpoint — the endpoint declaration
+itself is the access gate.
+
 ## OpenShift with Self-Signed Certificates
 
 If your OpenShift cluster uses a self-signed or private CA (common in
@@ -260,6 +393,54 @@ Alternatively, if you prefer not to modify system trust, set the
 export SSL_CERT_FILE=/tmp/ocp-ingress-ca.crt
 openshell gateway login
 ```
+
+## Uninstall
+
+To remove OpenShell resources from your cluster, use the cleanup scripts in
+`scripts/openshell/`.
+
+### Remove everything
+
+```bash
+scripts/openshell/cleanup-all.sh
+```
+
+This discovers all deployed tenants and removes them, then removes the shared
+infrastructure. Add `--delete-namespaces` to also delete tenant namespaces.
+
+### Remove a single tenant
+
+```bash
+scripts/openshell/cleanup-tenant.sh team1
+scripts/openshell/cleanup-tenant.sh team1 --delete-namespace
+```
+
+### Remove shared infrastructure only
+
+```bash
+scripts/openshell/cleanup-shared.sh
+```
+
+Skip specific components with `--skip-*` flags (mirrors `deploy-shared.sh`):
+
+```bash
+scripts/openshell/cleanup-shared.sh --skip-keycloak  # Keep the Keycloak realm
+scripts/openshell/cleanup-shared.sh --skip-backend   # Keep kagenti-backend + DB
+```
+
+### Dry run
+
+All cleanup scripts support `--dry-run` to preview what would be deleted:
+
+```bash
+scripts/openshell/cleanup-all.sh --dry-run
+```
+
+### Ordering
+
+Tenants must be cleaned up before shared infrastructure. `cleanup-all.sh`
+handles this automatically. If running scripts manually, always run
+`cleanup-tenant.sh` for each tenant first, then `cleanup-shared.sh`.
 
 ## Troubleshooting
 

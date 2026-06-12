@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     kagenti_feature_flag_sidecars: bool = (
         False  # sidecar agents (looper, hallucination, context guardian)
     )
+    kagenti_feature_flag_acp: bool = False  # ACP WebSocket protocol gateway
+    kagenti_feature_flag_external_skills: bool = False  # External skill registry references
+
+    # AuthBridge runtime config (mounted from Helm-managed ConfigMap)
+    authbridge_runtime_config_path: str = "/etc/kagenti/authbridge/config.yaml"
 
     # Label settings
     kagenti_label_prefix: str = "kagenti.io/"

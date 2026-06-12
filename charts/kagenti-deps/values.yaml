@@ -1,5 +1,12 @@
 # Global settings
 openshift: true
+
+# When true, the kagenti-operator handles OTel collector bootstrap (ingress CA
+# trust and ConfigMap assembly) at startup via its OtelBootstrapRunnable. The
+# Helm-based otel-ingress-ca-job and inline otel-collector-config ConfigMap are
+# skipped. Set to true when the operator chart has otelBootstrap.enable: true.
+otelBootstrap:
+  operatorManaged: false
 # OpenShift version (e.g., "4.20.8") - if provided, skips cluster lookup for version detection
 # This is useful when helm diff/template can't access the cluster for lookups
 ocpVersion: ""
@@ -224,15 +231,6 @@ otel:
           tls:
             insecure: true
       processors:
-        filter/phoenix:
-          traces:
-            span:
-              - 'IsMatch(name, "^a2a\\..*")'
-              - 'attributes["http.method"] != nil'
-              - 'attributes["mcp.method.name"] == "initialize"'
-              - 'attributes["mcp.method.name"] == "notifications/initialized"'
-              - 'attributes["mcp.method.name"] == "notifications/cancelled"'
-              - 'attributes["mcp.method.name"] == "tools/list"'
         transform/genai_to_openinference:
           trace_statements:
             - context: span
@@ -268,7 +266,7 @@ otel:
         pipelines:
           traces/phoenix:
             receivers: [otlp]
-            processors: [memory_limiter, filter/phoenix, transform/genai_to_openinference, batch]
+            processors: [memory_limiter, transform/genai_to_openinference, batch]
             exporters: [otlp/phoenix]
     mlflowConfig:
       exporters:
@@ -291,22 +289,11 @@ otel:
             enabled: true
             num_consumers: 2
             queue_size: 1000
-      processors:
-        filter/mlflow:
-          traces:
-            span:
-              - 'IsMatch(name, "^a2a\\..*")'
-              - 'attributes["http.method"] != nil and IsMatch(name, "^(POST|GET|DELETE)$")'
-              - 'IsMatch(name, "^mcp-router\\..*") and (attributes["http.method"] == "GET" or attributes["http.method"] == "DELETE")'
-              - 'attributes["mcp.method.name"] == "initialize"'
-              - 'attributes["mcp.method.name"] == "notifications/initialized"'
-              - 'attributes["mcp.method.name"] == "notifications/cancelled"'
-              - 'attributes["mcp.method.name"] == "tools/list"'
       service:
         pipelines:
           traces/mlflow:
             receivers: [otlp]
-            processors: [memory_limiter, filter/mlflow, batch]
+            processors: [memory_limiter, batch]
             exporters: [debug, otlphttp/mlflow]
     # MLflow OAuth extension config - auto-merged when mlflow.auth.enabled
     mlflowAuthConfig:

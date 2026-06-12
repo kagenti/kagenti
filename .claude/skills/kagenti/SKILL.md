@@ -69,5 +69,4 @@ export KAGENTI_CONFIG_FILE=deployments/envs/dev_values.yaml
 
 ## Related Documentation
 
-- `deployments/ansible/README.md`
 - `docs/install.md`

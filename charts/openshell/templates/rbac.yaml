@@ -58,3 +58,31 @@ subjects:
   - kind: ServiceAccount
     name: openshell-gateway
     namespace: {{ .Values.tenant }}
+{{- if .Values.gatewayJwt.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openshell-gateway-tokenreview-{{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openshell-gateway-tokenreview-{{ .Values.tenant }}
+  labels:
+    {{- include "openshell.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: openshell-gateway-tokenreview-{{ .Values.tenant }}
+subjects:
+  - kind: ServiceAccount
+    name: openshell-gateway
+    namespace: {{ .Values.tenant }}
+{{- end }}

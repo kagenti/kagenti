@@ -108,17 +108,9 @@ data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for AuthBridge in Namespace: {{ . }}
-#  Consolidated config consumed by the kagenti-operator and injected sidecars:
-#  - kagenti-operator: Client registration controller (reads KEYCLOAK_URL, KEYCLOAK_REALM)
-#  - kagenti-webhook: Injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS
-#  - authbridge sidecars: Read ISSUER, EXPECTED_AUDIENCE for inbound JWT validation
-#
-#  NOTE: KEYCLOAK_NAMESPACE is only used by Helm-hook Jobs (spiffe-idp-setup, agent-oauth-secret)
-#  that run at install time with cross-namespace RBAC to read from the Keycloak namespace.
-#  Legacy: Prior to kagenti-operator#321, client-registration sidecars received credentials from
-#  a per-namespace keycloak-admin-secret replicated by agent-oauth-secret Job. Now the operator
-#  controller reads keycloak-admin-secret from its own namespace (kagenti-system) for security.
+#  AuthBridge Config for operator in Namespace: {{ . }}
+#  The kagenti-operator ClientRegistrationReconciler reads KEYCLOAK_URL and
+#  KEYCLOAK_REALM from this ConfigMap to register workload clients in Keycloak.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -126,23 +118,13 @@ metadata:
   name: authbridge-config
   namespace: {{ . }}
 data:
-  # Keycloak connection (used by operator client registration controller)
   KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
   KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
-  # KEYCLOAK_NAMESPACE: Not used by sidecars or operator. Included for reference by Helm-hook Jobs.
   KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
-  # ISSUER: Used by envoy-proxy go-processor for inbound JWT validation.
-  # Optional - auto-derived from KEYCLOAK_URL + KEYCLOAK_REALM if not set.
-  # Set explicitly when the internal KEYCLOAK_URL differs from the frontend URL
-  # that appears in token "iss" claims (split-horizon DNS).
   ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
   SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
-  # Authentication configuration (used by operator and webhook injector)
   CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
-  # EXPECTED_AUDIENCE: Read by authbridge-unified ext_proc (envoy-proxy sidecar)
-  # for inbound JWT "aud" claim validation. Must match the audience mapper value
-  # configured in Keycloak (kagenti-platform-audience scope).
   EXPECTED_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
   CREDENTIAL_WAIT_TIMEOUT: {{ $root.Values.authBridge.credentialWaitTimeout | quote }}
 ---
@@ -216,6 +198,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
@@ -281,6 +264,7 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
                   allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
@@ -342,50 +326,7 @@ data:
   # No top-level `mode:` — see the matching template-configmap in
   # authbridge-template-configmaps.yaml for the rationale.
   config.yaml: |
-    {{- if $root.Values.spire.enabled }}
-    # Empty spiffe block signals authbridge to construct an in-process
-    # SPIFFE provider (X.509 source for mTLS + lazy JWT source for
-    # tokenexchange). All fields default: socket points at the standard
-    # SPIRE agent socket, mirror writes /opt/svid*.pem on rotation. The
-    # JWT audience is per-tokenexchange (see identity.jwt_audience below).
-    spiffe: {}
-    {{- end }}
-    pipeline:
-      inbound:
-        plugins:
-          - name: jwt-validation
-            config:
-              # `issuer` carries the PUBLIC Keycloak URL because that is what
-              # Keycloak stamps into the `iss` claim of issued tokens (must
-              # match bit-for-bit for validation to pass).
-              issuer: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-              # `keycloak_url` + `keycloak_realm` let jwt-validation derive
-              # `jwks_url` from the INTERNAL Keycloak URL — the sidecar
-              # actually fetches JWKS from inside the cluster, and the
-              # public hostname (in `issuer`) typically resolves to
-              # 127.0.0.1 via the localtest.me wildcard. Mirrors the pair
-              # already passed to token-exchange below. See
-              # kagenti-extensions#383.
-              keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-              keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
-      outbound:
-        plugins:
-          - name: token-exchange
-            config:
-              keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-              keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
-              default_policy: "passthrough"
-              identity:
-                # Map Helm clientAuthType to authbridge identity.type:
-                #   "client-secret"  → "client-secret" (traditional)
-                #   "federated-jwt"  → "spiffe" (SPIFFE JWT-SVID authentication)
-                type: {{ eq $root.Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" $root.Values.authBridge.clientAuthType | quote }}
-                {{- if eq $root.Values.authBridge.clientAuthType "federated-jwt" }}
-                # Audience the JWT-SVID client assertion is minted with —
-                # must equal the audience Keycloak's SPIFFE IdP expects
-                # (the realm issuer URL). Only meaningful when type=spiffe.
-                jwt_audience: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-                {{- end }}
+    {{- include "kagenti.authbridge-runtime-config-yaml" $root | nindent 4 }}
 ---
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————

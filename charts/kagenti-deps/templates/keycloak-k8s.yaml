@@ -239,7 +239,7 @@ extraEnvVars with the same name override these defaults.
 - name: KC_HOSTNAME_STRICT
   value: "false"
 - name: KC_HOSTNAME
-  value: {{ printf "http://keycloak.%s:8080/" .Values.domain | quote }}
+  value: {{ .Values.keycloak.publicUrl | default (printf "http://keycloak.%s:8080/" .Values.domain) | quote }}
 - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
   value: "true"
 - name: KC_HEALTH_ENABLED

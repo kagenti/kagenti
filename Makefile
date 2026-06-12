@@ -142,7 +142,7 @@ help-ui:
 
 	
 # Define the path for the output file
-PRELOAD_FILE := deployments/ansible/kind/preload-images.txt
+PRELOAD_FILE := scripts/kind/preload-images.txt
 
 # The primary task to list and filter images
 .PHONY: preflight-check preload-file

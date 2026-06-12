@@ -11,7 +11,7 @@
  * - Auto-finalize behavior on success
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   DescriptionList,
   DescriptionListGroup,
@@ -100,14 +100,19 @@ export interface BuildProgressViewProps {
 }
 
 /**
- * Get progress info based on build phase
+ * Get progress info based on build phase.
+ * During "Running", computes an animated progress based on elapsed seconds
+ * using an asymptotic curve that approaches ~85% without reaching 100%.
  */
-function getProgressInfo(phase?: BuildRunPhase) {
+function getProgressInfo(phase?: BuildRunPhase, elapsedSeconds?: number) {
   switch (phase) {
     case 'Pending':
       return { value: 10, variant: undefined, label: 'Pending...' };
-    case 'Running':
-      return { value: 50, variant: undefined, label: 'Building...' };
+    case 'Running': {
+      const elapsed = elapsedSeconds ?? 0;
+      const value = Math.round(15 + 70 * (1 - Math.exp(-elapsed / 120)));
+      return { value, variant: undefined, label: 'Building...' };
+    }
     case 'Succeeded':
       return { value: 100, variant: ProgressVariant.success, label: 'Build Succeeded' };
     case 'Failed':
@@ -136,13 +141,14 @@ function getStatusIcon(phase?: BuildRunPhase) {
 }
 
 /**
- * Format duration between two timestamps
+ * Format duration between two timestamps.
+ * Accepts an optional `currentTime` to enable live-ticking when no endTime is set.
  */
-function formatDuration(startTime?: string, endTime?: string): string {
+function formatDuration(startTime?: string, endTime?: string, currentTime?: number): string {
   if (!startTime) return '-';
   const start = new Date(startTime);
-  const end = endTime ? new Date(endTime) : new Date();
-  const seconds = Math.floor((end.getTime() - start.getTime()) / 1000);
+  const end = endTime ? new Date(endTime).getTime() : (currentTime ?? Date.now());
+  const seconds = Math.floor((end - start.getTime()) / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
@@ -168,7 +174,21 @@ export const BuildProgressView: React.FC<BuildProgressViewProps> = ({
   onRetryBuild,
   onRetryFinalize,
 }) => {
-  const progressInfo = getProgressInfo(buildInfo.buildRunPhase);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (buildInfo.buildRunPhase !== 'Running' || buildInfo.buildRunCompletionTime) {
+      return;
+    }
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [buildInfo.buildRunPhase, buildInfo.buildRunCompletionTime]);
+
+  const elapsedSeconds = buildInfo.buildRunStartTime
+    ? Math.floor((now - new Date(buildInfo.buildRunStartTime).getTime()) / 1000)
+    : 0;
+
+  const progressInfo = getProgressInfo(buildInfo.buildRunPhase, elapsedSeconds);
   const resourceLabel = getResourceLabel(resourceType);
 
   // Get config from either resourceConfig or agentConfig (for backwards compatibility)
@@ -239,7 +259,7 @@ export const BuildProgressView: React.FC<BuildProgressViewProps> = ({
             <DescriptionListGroup>
               <DescriptionListTerm>Duration</DescriptionListTerm>
               <DescriptionListDescription>
-                {formatDuration(buildInfo.buildRunStartTime, buildInfo.buildRunCompletionTime)}
+                {formatDuration(buildInfo.buildRunStartTime, buildInfo.buildRunCompletionTime, now)}
               </DescriptionListDescription>
             </DescriptionListGroup>
             {buildInfo.buildRunPhase === 'Failed' && buildInfo.buildRunFailureMessage && (

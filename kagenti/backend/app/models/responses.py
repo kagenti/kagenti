@@ -72,8 +72,8 @@ class DashboardConfigResponse(BaseModel):
     traces: str
     network: str
     mlflow: str
-    mcpInspector: str
-    mcpProxy: str
+    mcpInspector: Optional[str] = None
+    mcpProxy: Optional[str] = None
     keycloakConsole: str
     domainName: str
 

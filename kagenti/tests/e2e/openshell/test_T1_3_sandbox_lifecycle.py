@@ -163,6 +163,8 @@ spec:
             GATEWAY_NS,
             "--tail=50",
         )
+        if result.returncode != 0 and "NotFound" in result.stderr:
+            pytest.skip("openshell-server-0 pod not found — openshell not deployed")
         assert result.returncode == 0
         assert (
             "compute driver" in result.stdout.lower()
@@ -283,6 +285,8 @@ class TestSandboxStatusObservability:
             GATEWAY_NS,
             "--tail=20",
         )
+        if result.returncode != 0 and "NotFound" in result.stderr:
+            pytest.skip("openshell-server-0 pod not found — openshell not deployed")
         assert result.returncode == 0, f"Cannot read gateway logs: {result.stderr}"
         assert len(result.stdout) > 0, "Gateway logs are empty"
 

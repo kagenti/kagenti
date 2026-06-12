@@ -108,13 +108,12 @@ build_gateway() {
     local src="$REPOS_DIR/OpenShell"
     if [[ ! -d "$src" ]]; then
         echo "ERROR: Gateway source not found at $src" >&2
-        echo "Clone it: git clone https://github.com/kagenti/OpenShell.git -b mvp $src" >&2
+        echo "Clone it: git clone https://github.com/kagenti/OpenShell.git -b mvp-v2 $src" >&2
         return 1
     fi
     echo "Building gateway image: $GATEWAY_IMAGE:$TAG"
     docker build --load -t "$GATEWAY_IMAGE:$TAG" \
-        --target gateway \
-        -f "$src/deploy/docker/Dockerfile.images" \
+        -f "$src/deploy/docker/Dockerfile.gateway" \
         "$src"
 }
 
@@ -144,70 +143,89 @@ build_credentials_driver() {
         "$src"
 }
 
-kind_load() {
-    local image="$1"
-    echo "Loading $image:$TAG into Kind cluster '$KIND_CLUSTER'"
-    kind load docker-image "$image:$TAG" --name "$KIND_CLUSTER"
-}
-
-pull_image() {
-    local image="$1"
-    echo "Pulling $image:$TAG"
-    docker pull "$image:$TAG"
-}
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-# When --prebuilt is used, default tag to "latest" (not "local")
+# When --prebuilt is used without an explicit tag, read per-image tags from
+# the Helm chart values.yaml so what gets pulled matches what Helm deploys.
+GATEWAY_TAG="$TAG"
+COMPUTE_DRIVER_TAG="$TAG"
+CREDENTIALS_DRIVER_TAG="$TAG"
+
 if [[ "$PREBUILT" == "true" && "$TAG" == "local" ]]; then
-    TAG="latest"
+    CHART_VALUES="$REPO_ROOT/charts/openshell/values.yaml"
+    if [[ ! -f "$CHART_VALUES" ]]; then
+        echo "ERROR: $CHART_VALUES not found — cannot determine image tags" >&2
+        exit 1
+    fi
+    if command -v yq &>/dev/null; then
+        GATEWAY_TAG=$(yq '.images.gateway.tag' "$CHART_VALUES")
+        COMPUTE_DRIVER_TAG=$(yq '.images.computeDriver.tag' "$CHART_VALUES")
+        CREDENTIALS_DRIVER_TAG=$(yq '.images.credentialsDriver.tag' "$CHART_VALUES")
+    else
+        GATEWAY_TAG=$(grep -A2 'gateway:' "$CHART_VALUES" | grep 'tag:' | head -1 | awk '{print $2}')
+        COMPUTE_DRIVER_TAG=$(grep -A2 'computeDriver:' "$CHART_VALUES" | grep 'tag:' | head -1 | awk '{print $2}')
+        CREDENTIALS_DRIVER_TAG=$(grep -A2 'credentialsDriver:' "$CHART_VALUES" | grep 'tag:' | head -1 | awk '{print $2}')
+    fi
+    echo "Using image tags from $CHART_VALUES:"
+    echo "  gateway:            $GATEWAY_TAG"
+    echo "  compute-driver:     $COMPUTE_DRIVER_TAG"
+    echo "  credentials-driver: $CREDENTIALS_DRIVER_TAG"
 fi
+
+pull_tagged_image() {
+    local image="$1"
+    local tag="$2"
+    echo "Pulling $image:$tag"
+    docker pull "$image:$tag"
+}
 
 IMAGES_BUILT=()
 
 if [[ "$PREBUILT" == "true" ]]; then
-    # Pull pre-built images from ghcr.io
+    # Pull pre-built images from ghcr.io using per-image tags
     if [[ "$GATEWAY_ONLY" == "true" ]]; then
-        pull_image "$GATEWAY_IMAGE"
-        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+        pull_tagged_image "$GATEWAY_IMAGE" "$GATEWAY_TAG"
+        IMAGES_BUILT+=("$GATEWAY_IMAGE:$GATEWAY_TAG")
     elif [[ "$DRIVER_ONLY" == "true" ]]; then
-        pull_image "$COMPUTE_DRIVER_IMAGE"
-        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+        pull_tagged_image "$COMPUTE_DRIVER_IMAGE" "$COMPUTE_DRIVER_TAG"
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE:$COMPUTE_DRIVER_TAG")
     elif [[ "$CREDENTIALS_ONLY" == "true" ]]; then
-        pull_image "$CREDENTIALS_DRIVER_IMAGE"
-        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+        pull_tagged_image "$CREDENTIALS_DRIVER_IMAGE" "$CREDENTIALS_DRIVER_TAG"
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE:$CREDENTIALS_DRIVER_TAG")
     else
-        pull_image "$GATEWAY_IMAGE"
-        IMAGES_BUILT+=("$GATEWAY_IMAGE")
-        pull_image "$COMPUTE_DRIVER_IMAGE"
-        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
-        pull_image "$CREDENTIALS_DRIVER_IMAGE"
-        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+        pull_tagged_image "$GATEWAY_IMAGE" "$GATEWAY_TAG"
+        IMAGES_BUILT+=("$GATEWAY_IMAGE:$GATEWAY_TAG")
+        pull_tagged_image "$COMPUTE_DRIVER_IMAGE" "$COMPUTE_DRIVER_TAG"
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE:$COMPUTE_DRIVER_TAG")
+        pull_tagged_image "$CREDENTIALS_DRIVER_IMAGE" "$CREDENTIALS_DRIVER_TAG"
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE:$CREDENTIALS_DRIVER_TAG")
     fi
 else
     # Build from source
     if [[ "$GATEWAY_ONLY" == "true" ]]; then
         build_gateway
-        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+        IMAGES_BUILT+=("$GATEWAY_IMAGE:$TAG")
     elif [[ "$DRIVER_ONLY" == "true" ]]; then
         build_compute_driver
-        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE:$TAG")
     elif [[ "$CREDENTIALS_ONLY" == "true" ]]; then
         build_credentials_driver
-        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE:$TAG")
     else
         build_gateway
-        IMAGES_BUILT+=("$GATEWAY_IMAGE")
+        IMAGES_BUILT+=("$GATEWAY_IMAGE:$TAG")
         build_compute_driver
-        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE")
+        IMAGES_BUILT+=("$COMPUTE_DRIVER_IMAGE:$TAG")
         build_credentials_driver
-        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE")
+        IMAGES_BUILT+=("$CREDENTIALS_DRIVER_IMAGE:$TAG")
     fi
 fi
 
 if [[ -n "$KIND_CLUSTER" ]]; then
     for img in "${IMAGES_BUILT[@]}"; do
-        kind_load "$img"
+        echo "Loading $img into Kind cluster '$KIND_CLUSTER'"
+        kind load docker-image "$img" --name "$KIND_CLUSTER"
     done
 fi
 
@@ -235,7 +253,10 @@ if [[ "$BUILD_AGENTS" == "true" ]]; then
                     continue
                 fi
                 echo "Building agent: $agent_name (docker)"
-                docker build -t "$agent_name:latest" "$agent_dir" -q
+                if ! docker build -t "$agent_name:latest" "$agent_dir" -q 2>/dev/null; then
+                    echo "WARN: $agent_name build failed (supervisor image may not be available)"
+                    continue
+                fi
                 if [[ -n "$KIND_CLUSTER" ]]; then
                     kind load docker-image "$agent_name:latest" --name "$KIND_CLUSTER" 2>/dev/null
                 fi

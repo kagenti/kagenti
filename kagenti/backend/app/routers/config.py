@@ -34,6 +34,7 @@ class FeatureFlagsResponse(BaseModel):
     triggers: bool = Field(description="Event-driven trigger system")
     agentSandbox: bool = Field(description="agent-sandbox (k8s-sigs) as a workload type")
     skills: bool = Field(description="Skill management system (CRUD + catalog UI)")
+    externalSkills: bool = Field(description="External skill registry references")
     authbridgeAPI: bool = Field(description="AuthBridge statistics (API and UI)")
     admin: bool = Field(description="Platform Status card and /platform-status endpoint")
 
@@ -83,6 +84,7 @@ async def get_feature_flags(
         triggers=settings.kagenti_feature_flag_triggers,
         agentSandbox=settings.kagenti_feature_flag_agent_sandbox,
         skills=settings.kagenti_feature_flag_skills,
+        externalSkills=settings.kagenti_feature_flag_external_skills,
         authbridgeAPI=settings.kagenti_feature_flag_authbridge_api,
         admin=settings.kagenti_feature_flag_admin,
     )
@@ -107,8 +109,8 @@ async def get_dashboard_config() -> DashboardConfigResponse:
         traces=settings.traces_dashboard_url,
         network=settings.network_dashboard_url or f"http://kiali.{domain}:8080",
         mlflow=settings.mlflow_dashboard_url,
-        mcpInspector=settings.mcp_inspector_url or f"http://mcp-inspector.{domain}:8080",
-        mcpProxy=settings.mcp_proxy_full_address or f"http://mcp-proxy.{domain}:8080",
+        mcpInspector=settings.mcp_inspector_url or None,
+        mcpProxy=settings.mcp_proxy_full_address or None,
         keycloakConsole=(
             settings.keycloak_console_url
             or f"{settings.effective_keycloak_url}/admin/{settings.effective_keycloak_realm}/console/"
@@ -205,6 +207,9 @@ async def get_platform_status(
         # (openshift-builds), so we check the API group instead of a specific service.
         ComponentStatus(name="Shipwright", status=_check_api_group(kube, "shipwright.io")),
         ComponentStatus(name="Phoenix", status=_check_service(kube, "kagenti-system", "phoenix")),
+        ComponentStatus(
+            name="MLflow", status=_check_deployment_ready(kube, "kagenti-system", "mlflow")
+        ),
     ]
 
     strategy_names: List[str] = []
@@ -230,3 +235,23 @@ async def get_platform_status(
     )
 
     return PlatformStatusResponse(components=components, registry=registry)
+
+
+class MCPGatewayStatusResponse(BaseModel):
+    """Status of the MCP Gateway component."""
+
+    status: Literal["Ready", "Degraded", "Missing"]
+
+
+@router.get(
+    "/mcp-gateway-status",
+    response_model=MCPGatewayStatusResponse,
+    dependencies=[Depends(require_roles(ROLE_VIEWER))],
+)
+async def get_mcp_gateway_status(
+    kube: KubernetesService = Depends(get_kubernetes_service),
+) -> MCPGatewayStatusResponse:
+    """Return the health status of the MCP Gateway deployment."""
+    # TODO: parameterize namespace/deployment if install location ever varies
+    status = _check_deployment_ready(kube, "gateway-system", "mcp-gateway-istio")
+    return MCPGatewayStatusResponse(status=status)

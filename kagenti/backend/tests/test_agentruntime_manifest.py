@@ -62,34 +62,38 @@ def test_create_agent_request_accepts_disabled_with_envoy():
     assert r.mtlsMode == "disabled"
 
 
-def test_create_agent_request_rejects_envoy_with_strict():
-    """The operator webhook will reject this; mirror the check here."""
+def test_create_agent_request_allows_envoy_with_strict():
+    """envoy-sidecar + strict is now supported end-to-end. Locked in
+    here so a future regression that re-introduces the rejection gets
+    caught by tests instead of breaking the user-facing form.
+
+    Pairs with kagenti-operator#381 (operator wires Spec.MTLSMode
+    into a per-agent envoy-config CM with TLS blocks) and
+    kagenti-extensions#441 (proxy-sidecar permissive consistency).
+    """
     from app.routers.agents import CreateAgentRequest
 
-    with pytest.raises(ValidationError) as exc_info:
-        CreateAgentRequest(
-            name="a",
-            namespace="ns",
-            authBridgeMode="envoy-sidecar",
-            mtlsMode="strict",
-        )
-    msg = str(exc_info.value)
-    # Forward-pointing error message is part of the contract — UI
-    # surfaces this string to users.
-    assert "envoy-sidecar" in msg
-    assert "follow-up" in msg
+    r = CreateAgentRequest(
+        name="a",
+        namespace="ns",
+        authBridgeMode="envoy-sidecar",
+        mtlsMode="strict",
+    )
+    assert r.authBridgeMode == "envoy-sidecar"
+    assert r.mtlsMode == "strict"
 
 
-def test_create_agent_request_rejects_envoy_with_permissive():
+def test_create_agent_request_allows_envoy_with_permissive():
     from app.routers.agents import CreateAgentRequest
 
-    with pytest.raises(ValidationError):
-        CreateAgentRequest(
-            name="a",
-            namespace="ns",
-            authBridgeMode="envoy-sidecar",
-            mtlsMode="permissive",
-        )
+    r = CreateAgentRequest(
+        name="a",
+        namespace="ns",
+        authBridgeMode="envoy-sidecar",
+        mtlsMode="permissive",
+    )
+    assert r.authBridgeMode == "envoy-sidecar"
+    assert r.mtlsMode == "permissive"
 
 
 def test_create_agent_request_proxy_sidecar_allows_strict():
@@ -119,15 +123,17 @@ def test_create_agent_request_lite_allows_strict():
     assert r.mtlsMode == "strict"
 
 
-def test_finalize_shipwright_request_mirrors_validator():
-    """Same cross-field rule on the build-finalize boundary."""
+def test_finalize_shipwright_request_allows_full_matrix():
+    """The Shipwright finalize boundary used to reject envoy-sidecar
+    + non-disabled mtlsMode. Both have been lifted now that the
+    operator + extensions support the full matrix."""
     from app.routers.agents import FinalizeShipwrightBuildRequest
 
-    # Allowed
+    # Always allowed
     FinalizeShipwrightBuildRequest(authBridgeMode="proxy-sidecar", mtlsMode="strict")
-    # Rejected
-    with pytest.raises(ValidationError):
-        FinalizeShipwrightBuildRequest(authBridgeMode="envoy-sidecar", mtlsMode="strict")
+    # Newly allowed
+    FinalizeShipwrightBuildRequest(authBridgeMode="envoy-sidecar", mtlsMode="strict")
+    FinalizeShipwrightBuildRequest(authBridgeMode="envoy-sidecar", mtlsMode="permissive")
 
 
 def test_create_agent_request_default_mtls_mode_is_none():
@@ -138,6 +144,25 @@ def test_create_agent_request_default_mtls_mode_is_none():
     from app.routers.agents import CreateAgentRequest
 
     r = CreateAgentRequest(name="a", namespace="ns")
+    assert r.mtlsMode is None
+
+
+def test_create_agent_request_envoy_with_unset_mtls_mode():
+    """envoy-sidecar with mtlsMode unset is the CLI / direct-API path
+    (no mtlsMode on the wire → resolution chain falls through to the
+    namespace ConfigMap or the operator default). Locks in that the
+    validator doesn't gate on mtlsMode being present — only on its
+    value when it IS present. Catches a regression if a future
+    tightening accidentally rejects unset mtlsMode for envoy-sidecar.
+    """
+    from app.routers.agents import CreateAgentRequest
+
+    r = CreateAgentRequest(
+        name="a",
+        namespace="ns",
+        authBridgeMode="envoy-sidecar",
+    )
+    assert r.authBridgeMode == "envoy-sidecar"
     assert r.mtlsMode is None
 
 

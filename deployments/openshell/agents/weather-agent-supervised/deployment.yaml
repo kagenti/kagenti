@@ -26,6 +26,7 @@ spec:
         kagenti.io/inject: disabled
         app.kubernetes.io/name: weather-agent-supervised
     spec:
+      terminationGracePeriodSeconds: 10
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -99,6 +100,11 @@ spec:
               threading.Thread(target=forward, args=(u, c), daemon=True).start()
         ports:
         - containerPort: 8080
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
       volumes:
       - name: policy
         configMap:

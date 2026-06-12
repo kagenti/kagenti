@@ -11,31 +11,43 @@ filesystem_policy:
     - /sbin
   read_write:
     - /tmp
-    - /.cache
-    - /root/.cache
-    - /home/sandbox/.cache
-    - /var/log
-    - /root
     - /app
+    - /root
+    - /var/log
+    - /.cache
 process:
   run_as_user: ""
   run_as_group: ""
 network_policies:
-  internal:
-    name: "Allow internal cluster services"
+  litellm:
+    name: "Allow LiteLLM model proxy"
     endpoints:
-      - host: "*.svc.cluster.local"
-        port: 8080
-      - host: "*.svc.cluster.local"
-        port: 8000
-      - host: "*.svc.cluster.local"
-        port: 443
-  external:
-    name: "Allow external APIs"
+      - host: "litellm-model-proxy.team1.svc.cluster.local"
+        port: 4000
+    binaries:
+      - path: /**
+  otel:
+    name: "Allow OpenTelemetry collector"
+    endpoints:
+      - host: "otel-collector.kagenti-system.svc.cluster.local"
+        port: 4318
+      - host: "otel-collector.kagenti-system.svc.cluster.local"
+        port: 4317
+    binaries:
+      - path: /**
+  litemaas:
+    name: "Allow LiteMaaS LLM endpoint"
     endpoints:
       - host: "*.redhatworkshops.io"
         port: 443
       - host: "*.rh-aiservices-bu.com"
         port: 443
-      - host: "*.openweathermap.org"
+    binaries:
+      - path: /**
+  weather-api:
+    name: "Allow OpenWeatherMap API"
+    endpoints:
+      - host: "api.openweathermap.org"
         port: 443
+    binaries:
+      - path: /**

@@ -2,8 +2,8 @@
 
 This guide explains how to use the Kagenti UI to:
 
-1. import the example [`summarizer`](../agent-examples/skills/summarizer) skill,
-2. import the example [`generic_agent`](../agent-examples/a2a/generic_agent) agent,
+1. import the example [`summarizer`](https://github.com/kagenti/agent-examples/tree/main/skills/summarizer) skill,
+2. import the example [`generic_agent`](https://github.com/kagenti/agent-examples/tree/main/a2a/generic_agent) agent,
 3. link the skill to the agent from the UI,
 4. and verify in chat that the skill is available and being used.
 
@@ -23,9 +23,25 @@ The example generic agent loads skill instructions and exposes them through its 
 Before starting, make sure:
 
 - Kagenti is installed and the UI is reachable, as described in [`docs/install.md`](../install.md)
+- **the Skills feature flag is enabled** — Skills are disabled by default and must be explicitly enabled during installation (see [Enabling Skills](../skills.md#enabling-skills))
+- **the build system is deployed** — Agent builds require Shipwright and the in-cluster registry (`registry.cr-system.svc.cluster.local:5000`). Deploy with `--with-builds` or the build push step will fail with `no such host`. If you need to add it to an existing cluster: `scripts/kind/setup-kagenti.sh --with-builds --skip-cluster`
 - you have access to a Kagenti-enabled namespace, for example `team1`
 - the cluster can build example agents from GitHub
 - you have LLM credentials ready for the generic agent
+- `featureFlags.skills` is enabled — use `--with-skills` with the Kind setup script:
+
+  ```bash
+  scripts/kind/setup-kagenti.sh --with-skills --with-builds
+  ```
+
+  Or enable on a running cluster:
+
+  ```bash
+  helm upgrade kagenti ./charts/kagenti/ \
+    --reuse-values \
+    --set featureFlags.skills=true \
+    -n kagenti-system
+  ```
 
 For the example generic agent, configure the LLM environment variables with values appropriate for your setup. At minimum, the generic agent needs:
 
@@ -205,6 +221,41 @@ For a live demo, use this sequence:
 
 ## Troubleshooting
 
+### The Skills section is not visible in the UI
+
+The Skills feature is disabled by default. If the Skills navigation item or the **Import Skill** button is missing, the feature flag was not enabled at install time. See [Enabling Skills](../skills.md#enabling-skills) for how to enable it with the setup script (`--with-skills`) or how to enable it on an existing cluster with `helm upgrade` without a full redeploy.
+
+### The build fails with `no such host` when pushing the image
+
+The in-cluster registry was not deployed. Re-run setup with `--with-builds`:
+
+```bash
+scripts/kind/setup-kagenti.sh --with-backend --with-ui --with-skills --with-builds --build-images --skip-cluster
+```
+
+`--with-builds` deploys Shipwright and the container registry at `registry.cr-system.svc.cluster.local:5000` that agent builds push to.
+
+### The Linked Skills section is missing from the Import Agent form
+
+The Linked Skills section was added after the `v0.7.0-alpha.2` release. If the running UI image predates that, the section will not appear at all. Rebuild the UI from local source and reload it into Kind:
+
+```bash
+export KAGENTI_FEATURE_FLAG_SKILLS=true
+scripts/kind/setup-kagenti.sh --with-backend --with-ui --with-skills --build-images --skip-cluster
+```
+
+### "Agent already exists" error when reimporting after a failed build
+
+If a previous import attempt failed mid-way (for example, the build pod errored out), leftover Shipwright and Kubernetes resources remain in the namespace and block a fresh import. Delete them before retrying, replacing `<agent-name>` and `<namespace>` with your values:
+
+```bash
+kubectl delete buildrun -n <namespace> -l app=<agent-name>
+kubectl delete build <agent-name> -n <namespace>
+kubectl delete configmap <agent-name>-card-unsigned -n <namespace>
+```
+
+Then retry the import in the UI.
+
 ### The summarizer skill does not appear in the Linked Skills section
 
 Check that:
@@ -254,3 +305,4 @@ After the demo, delete the agent and skill from the Kagenti UI:
 - [`docs/demos/demo-generic-agent.md`](./demo-generic-agent.md)
 - [`docs/install.md`](../install.md)
 - [`docs/local-models.md`](../local-models.md)
+- [`docs/skills.md`](../skills.md) — Skills feature flag, enabling instructions, and troubleshooting

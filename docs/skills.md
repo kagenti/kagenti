@@ -8,48 +8,66 @@ Skills are a key component of the Kagenti workload runtime, working alongside Ag
 
 ## Enabling Skills
 
-Skills are currently a feature flag in Kagenti and must be explicitly enabled before use. The method for enabling skills depends on your deployment approach:
+Skills are a feature-flagged capability in Kagenti and must be explicitly enabled before use. Two flags control the feature:
 
-### Using Kind and OpenShift Setup Script
+| Flag | Controls |
+|------|----------|
+| `featureFlags.skills` | Core skills management: import, list, delete skills; link skills to agents |
+| `featureFlags.externalSkills` | External skill registry references (e.g. skillberry-store). Requires `skills` to also be true. |
 
-When using the `scripts/kind/setup-kagenti.sh` script, skills can be enabled by setting the environment variable before running the script:
+The easiest way to enable both is the `--with-skills` flag described below.
+
+### Using the Kind Setup Script
+
+Pass `--with-skills` to enable both flags at once. It automatically enables `--with-backend` and `--with-ui`:
 
 ```bash
-# Enable skills with the setup script
-export KAGENTI_FEATURE_FLAG_SKILLS=true
-./scripts/kind/setup-kagenti.sh --with-backend --with-ui
+scripts/kind/setup-kagenti.sh --with-skills
 ```
 
-**Note**: The `--with-backend` and `--with-ui` flags are required to deploy the Kagenti backend and UI components where the skills feature is used.
+To combine with other options, for example builds and locally-built images:
 
-### Using Ansible Installer
+```bash
+scripts/kind/setup-kagenti.sh --with-skills --with-builds --build-images --skip-cluster
+```
 
-When using the Ansible installer, enable skills by modifying your values file (e.g., `deployments/envs/.secret_values.yaml` or a custom values file):
+### Using the Kagenti Installer
 
-```yaml
-charts:
-  kagenti:
-    values:
-      featureFlags:
-        skills: true
+When using the installer, enable skills by modifying your values file (e.g., `charts/kagenti/.secrets.yaml` or a custom values file):
+
+```bash
+cat <<EOF > /tmp/enable-flag-skills.yaml
+featureFlags:
+  skills: true
+  externalSkills: true
+EOF
 ```
 
 Then run the installer:
 
 ```bash
-cd deployments/ansible
-./run-install.sh
+./scripts/kind/setup-kagenti.sh --with-all --kagenti-values /tmp/enable-flag-skills.yaml
 ```
 
 ### Using Helm
 
-When installing or upgrading Kagenti with Helm, enable skills by setting the feature flag in your values:
+When installing or upgrading Kagenti with Helm directly:
 
 ```bash
-# Using --set flag
 helm upgrade --install kagenti ./charts/kagenti/ \
   -n kagenti-system --create-namespace \
-  --set featureFlags.skills=true
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true
+```
+
+To enable on an already-running cluster without full redeploy:
+
+```bash
+helm upgrade kagenti ./charts/kagenti/ \
+  --reuse-values \
+  --set featureFlags.skills=true \
+  --set featureFlags.externalSkills=true \
+  -n kagenti-system
 ```
 
 ### Verifying Skills Are Enabled
@@ -60,10 +78,29 @@ After enabling the feature flag and restarting/upgrading your deployment:
 2. **Look for Skills Section**: The Skills management interface should now be visible in the navigation menu
 3. **Verify Backend**: Check the backend logs to confirm skills routes are registered:
    ```bash
-   kubectl logs -n kagenti-system -l app=kagenti-backend | grep "skills routes registered"
+   kubectl logs -n kagenti-system -l app.kubernetes.io/name=kagenti-backend | grep "skills routes registered"
    ```
 
 Once enabled, the Skills management interface will be accessible through the UI, allowing you to configure and deploy skills for your agents.
+
+## Troubleshooting
+
+### Skills not appearing after setup
+
+If the skills feature was not enabled during initial setup (e.g., the `KAGENTI_FEATURE_FLAG_SKILLS` env var was set but `--with-skills` was not passed, or `--with-all` was used with an older script version), you can enable it without redeploying the full cluster:
+
+```bash
+helm upgrade kagenti charts/kagenti -n kagenti-system \
+  --set featureFlags.skills=true \
+  --set openshift=false \
+  -f charts/kagenti/values.yaml
+```
+
+This triggers a rolling restart of the backend and UI pods with the flag enabled. Verify afterwards:
+
+```bash
+kubectl logs -n kagenti-system -l app.kubernetes.io/name=kagenti-backend | grep "skills routes registered"
+```
 
 ## Accessing Skills via REST API
 
