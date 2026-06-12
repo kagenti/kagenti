@@ -277,7 +277,10 @@ done
 
 # ── Expand --with-all (deferred so --skip-* flags are order-independent) ───
 if $WITH_ALL; then
-  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true; WITH_UI=true
+  WITH_ISTIO=true; WITH_SPIRE=true; WITH_BACKEND=true
+  # TEMPORARY: Skip UI build to avoid Docker Hub rate limit (nginx base image)
+  # WITH_UI=true
+  WITH_UI=false
   WITH_MCP_GATEWAY=true; WITH_OTEL=true; WITH_BUILDS=true; WITH_KIALI=true
   WITH_AGENT_SANDBOX=true
   $SKIP_MLFLOW    || WITH_MLFLOW=true
@@ -1284,6 +1287,8 @@ KAGENTI_FLAGS=(
   --set "ui.auth.enabled=$($WITH_SPIRE && echo true || echo false)"
   --set "mlflow.auth.enabled=${WITH_MLFLOW}"
   --set "kagentiOperator.spiffeAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
+  --set "kagenti-operator-chart.spiffe.operatorAuth.enabled=${ENABLE_OPERATOR_SPIFFE_AUTH}"
 )
 KAGENTI_FLAGS=( "${KAGENTI_FLAGS[@]}" ${KAGENTI_VALUES_FILES[@]+"${KAGENTI_VALUES_FILES[@]}"} )
 
