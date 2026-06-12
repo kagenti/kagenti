@@ -89,6 +89,23 @@ charts:
       agentNamespaces:
         - team1
         - team2
+      # OCP/HyperShift: the hosted cluster's Services + DNS resolver live in the
+      # service network (172.31.0.0/16 on this hosted shape; 172.30.0.0/16 on
+      # default OCP), which is OUTSIDE the operator's Kind-shaped 10/8 default.
+      # enforce-redirect leaves in-cluster DNS direct only for CLUSTER_CIDRS, so
+      # with the 10/8 default the agent's UDP/53 to the 172.31.x resolver is
+      # DROPped -> name resolution fails -> agent->MCP egress fails. Override the
+      # operator's proxy.clusterCIDRs with the real pod + service ranges so DNS
+      # stays direct while non-DNS in-cluster TCP is still captured. (Validation
+      # of the CLUSTER_CIDRS theory for PR #1911; the durable fix exempts the
+      # resolv.conf nameservers directly in proxy-init.)
+      kagenti-operator-chart:
+        defaults:
+          proxy:
+            clusterCIDRs:
+              - "10.0.0.0/8"
+              - "172.30.0.0/16"
+              - "172.31.0.0/16"
 
   mcpGateway:
     enabled: true
