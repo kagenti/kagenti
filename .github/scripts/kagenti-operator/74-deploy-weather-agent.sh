@@ -155,9 +155,13 @@ else
             log_warn "openai-secret not found in team1 — LLM calls will fail without API key"
         fi
 
-        # Note: proxy-init is only injected in envoy-proxy mode. The default
+        # Note: proxy-init is only injected in envoy-sidecar mode. The default
         # authbridge proxy-sidecar mode uses HTTPS_PROXY env vars instead.
         # See NO_PROXY override above for external LLM endpoints.
+        # When proxy-init IS active, iptables intercepts ALL outbound TCP —
+        # env vars are bypassed at L4. The pod template annotation
+        # kagenti.io/outbound-ports-exclude: "8000" excludes the MCP tool
+        # port from iptables rules so streaming connections work directly.
     fi
 fi
 
