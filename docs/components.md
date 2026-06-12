@@ -6,7 +6,7 @@ This document provides detailed information about each component of the Kagenti 
 
 - [Overview](#overview)
 - [Architecture Diagram](#architecture-diagram)
-- [Agent Lifecycle Operator](#agent-lifecycle-operator)
+- [Agent Deployment Architecture](#agent-deployment-architecture)
 - [MCP Gateway](#mcp-gateway)
 - [Plugins adapter](#plugins-adapter)
 - [Kagenti UI](#kagenti-ui)
