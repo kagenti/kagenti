@@ -123,10 +123,13 @@ CI pipeline Core uses, the proposal includes a **shared, opt-in CI workflow
 library** maintained alongside the platform:
 
 - A set of reusable GitHub Actions workflows (e.g., lint, security scan,
-  container build, e2e against a Kind cluster) lives in a well-known
-  location — likely `kagenti/kagenti/.github/workflows/` exposed as
-  `workflow_call` reusables, or a dedicated `kagenti/ci-workflows` repo if it
-  grows large enough to justify its own home.
+  container build, e2e against a Kind cluster) lives in
+  `kagenti/.github/.github/workflows/`, exposed as `workflow_call` reusables.
+  This is the org's special `.github` repo, and GitHub's tooling — reusable-
+  workflow resolution and (where supported) org-level *required workflows* /
+  rulesets — recognizes workflows under that path, which a `kagenti/kagenti/.github/workflows/`
+  or standalone `kagenti/ci-workflows` location would not get for free.
+  (Per @rubambiza on the PR thread.)
 - Incubator repos opt in by adding a one-line `uses:` reference in their own
   workflow file. They control which checks run and on what triggers.
 - The shared workflows are versioned (tagged) so an Incubator repo can pin to
@@ -166,6 +169,20 @@ Set once via org settings or `gh api`. Org-admin-controlled, so a repo
 maintainer cannot unilaterally re-tier their repo — which is what makes the
 maintainer-vote process load-bearing.
 
+**API access (verified against the GitHub REST docs):**
+
+- **Reading** property values is available to any org member:
+  `GET /orgs/kagenti/properties/values` returns every repo with its `tier`.
+  So read-only automation (the reconciliation script below) needs only an
+  org-member token — no admin rights.
+- **Writing** values (`PATCH /orgs/kagenti/properties/values`, ≤30 repos per
+  call) and **defining the schema** require an **org admin** or a token with the
+  fine-grained `custom_properties_org_values_editor` permission. Re-tiering is
+  therefore admin-gated by construction, which is exactly the property we want.
+
+This split is what keeps the model honest: anyone can *observe* the source of
+truth; only an org owner (acting on a passed vote) can *change* it.
+
 Queryable: `gh search repos --owner kagenti props:"tier:core"`.
 
 Custom Properties feed into **org-level rulesets** (Phase 4), which is how the
@@ -178,7 +195,11 @@ Each repo gets one of:
 - `kagenti-core`
 - `kagenti-incubator`
 
-Plus an optional maturity hint: `stable`, `alpha`, `archived`.
+Topics carry the tier and nothing else. We deliberately **do not** add maturity
+hints (`stable`, `alpha`) on top of the tier: an Incubator repo commits to *no*
+API stability, so a `stable` hint on an Incubator repo would contradict the
+tier rather than refine it. (`archived` is conveyed by GitHub's built-in archive
+flag and the `tier=archived` Custom Property, not by a topic.)
 
 Topics are **publicly visible and filterable** (e.g.,
 `https://github.com/orgs/kagenti/repositories?q=topic:kagenti-core`).
@@ -200,6 +221,14 @@ Each entry lists: repo name, one-line description, key topics, and link.
 A reconciliation script in `kagenti/automation` reads Custom Properties via the
 GitHub API, regenerates both index pages, and opens a PR if drift is detected.
 Runs weekly on a schedule and on the `repository.edited` webhook.
+
+The script is **read-only** against the org: it calls
+`GET /orgs/kagenti/properties/values` and opens a normal PR with the
+regenerated index. Reading property values needs only an org-member token, so
+the script can run as a GitHub Action with a standard token — it does **not**
+need org-owner rights or an owner PAT. Writing/re-tiering stays a manual,
+admin-gated step (see Layer 1); the script never mutates the source of truth,
+only mirrors it into the index.
 
 ### Why three layers and not one
 
@@ -230,21 +259,29 @@ The 17 public repos in the Kagenti org as of 2026-06-03:
 | `kagenti-extensions` | Houses AuthBridge and related stable extensions. *(May be renamed to `kagenti-authbridge` in a future update — separate decision.)* |
 | `.github` | Org profile and landing surface; Core by definition. |
 
-### Incubator (11)
+### Incubator (9)
 
 | Repo | Rationale |
 |---|---|
-| `agentic-control-plane` | Active research, narrow audience. |
 | `plugins-adapter` | Single-purpose component, no release cadence. |
 | `workload-harness` | Test/benchmarking tool, internal-feeling. |
 | `adk-starter` | Template/scaffold; by nature a starter, not a stable surface. |
-| `capture-the-flag` | Demo / security-test scenarios. |
 | `ecosystem-guide` | Reference content; could be promoted later if positioned as authoritative. |
 | `OpenShell` | New, low star count, "private runtime" — fits experimental. |
 | `openshell-driver-openshift` | OpenShell satellite; tier follows OpenShell. |
 | `openshell-credentials-keycloak` | OpenShell satellite; tier follows OpenShell. |
 | `automation` | Org-internal tooling. |
-| `agent-skills` | Org-internal automation skills. |
+| `agent-skills` | Org-internal automation skills today; a subset is being built for broader adoption, so this is a likely promotion candidate once that surface stabilizes. |
+
+### Archived (2)
+
+These are no longer active and should get the GitHub archive flag and
+`tier=archived` rather than an active tier.
+
+| Repo | Rationale |
+|---|---|
+| `agentic-control-plane` | No longer active (per @kellyaa). |
+| `capture-the-flag` | Demo / security-test scenarios that have served their purpose (per @rubambiza). |
 
 ### Out of scope
 
@@ -264,18 +301,31 @@ The PR must demonstrate the following checklist:
 - [ ] CI green on `main` for the last 30 days.
 - [ ] Test suite exists and runs in CI.
 - [ ] At least one tagged release.
-- [ ] ≥2 active maintainers (commits in last 90 days), listed in `MAINTAINERS.md`
-      or `CODEOWNERS`.
+- [ ] ≥2 active maintainers (commits in last 90 days), listed in `CODEOWNERS`.
+      We standardize on `CODEOWNERS` (rather than `MAINTAINERS.md`) so GitHub
+      routes review requests only to the relevant repo's owners — keeping
+      maintainers off notifications for repos they don't own.
 - [ ] `SECURITY.md` present, documenting disclosure policy.
 - [ ] Documented deprecation policy for breaking changes.
 - [ ] No critical (priority/severity = high) open issues older than 90 days.
 
-**Vote:** 7-day comment period on the tracking issue, open to all **Core repo
-maintainers** (one voice per person, not per repo). Lazy consensus applies:
-the change passes unless a Core maintainer raises an objection during the
-comment period. Objections are resolved on the issue; if unresolved at the end
-of the period, a simple-majority vote of Core maintainers is called. The
-outcome is recorded in the issue.
+**Who votes:** the **voting body** is the maintainers (per `CODEOWNERS`) of all
+`tier=core` repos, one voice per person regardless of how many repos they
+maintain.
+
+> **Bootstrap exception.** This definition is circular for the *first*
+> classification — before Phase 1 runs, no repo carries `tier=core` yet, so
+> there are no Core repo maintainers to vote. For that initial round only, the
+> voting body is the **org's existing maintainer/owner set** (the people listed
+> as org owners plus current repo maintainers). Once Phase 1 stamps the initial
+> tiers, every subsequent promotion/demotion uses the Core-repo-maintainer
+> definition above.
+
+**Vote:** 7-day comment period on the tracking issue, open to that voting body.
+Lazy consensus applies: the change passes unless a voting member raises an
+objection during the comment period. Objections are resolved on the issue; if
+unresolved at the end of the period, a simple-majority vote of the voting body
+is called. The outcome is recorded in the issue.
 
 On approval, an org admin updates the Custom Property and topics; the
 reconciliation script picks up the change on its next run (or sooner if
@@ -307,10 +357,25 @@ Each phase is a separate decision. Nothing kicks off until Phase 0 (this
 proposal) is approved. Phases are sequential; later phases assume earlier ones
 are in place.
 
-### Phase 0 — Approve the proposal
+### Phase 0 — Approve the proposal and verify feature availability
 
-Maintainer review and merge of this document. **Output:** tier model, criteria,
-and process are written down.
+Maintainer review and merge of this document, plus a **feature-availability
+check** against the kagenti org's current GitHub plan before any later phase
+commits to a mechanism:
+
+- **Custom Properties** — confirm the org can define a schema and set values
+  (admin or `custom_properties_org_values_editor`).
+- **Topic filtering** — confirm `topic:` org search works (it does for public
+  repos on all plans, but verify our setup).
+- **Org rulesets (Phase 4)** — confirm org-level rulesets can target the org's
+  **public** repos on the current plan. We hit a wall here before — rulesets on
+  some repos were blocked, plausibly a plan limitation — so this is verified
+  *now*, not assumed. If rulesets turn out to require a paid plan we don't have,
+  Phase 4 falls back to per-repo branch-protection settings on Core repos and
+  the rest of the model is unaffected.
+
+**Output:** tier model, criteria, and process are written down, and we know
+which of the three signaling layers are actually available to us.
 
 ### Phase 1 — Stamp existing repos
 
@@ -320,14 +385,14 @@ the classification table. No renames, no content changes.
 
 ### Phase 2 — Stand up the index and shared CI workflows
 
-Create `kagenti/.github/profile/README.md` and
+Update `kagenti/.github/profile/README.md` and create
 `kagenti/kagenti/docs/governance/repositories.md` with Core and Incubator
 sections. First edit done manually.
 
 In the same phase, publish the **shared CI workflow library** (lint, security
-scan, container build, e2e against Kind) as `workflow_call` reusables in a
-known location, with `docs/ci/shared-workflows.md` describing how Incubator
-repos opt in. **Output:** the org landing page and main docs reflect the tier
+scan, container build, e2e against Kind) as `workflow_call` reusables under
+`kagenti/.github/.github/workflows/`, with `docs/ci/shared-workflows.md`
+describing how Incubator repos opt in. **Output:** the org landing page and main docs reflect the tier
 model; Incubator maintainers have a clear, optional on-ramp to the same CI
 that Core uses.
 
@@ -349,6 +414,11 @@ Use Custom Properties as inputs to GitHub org rulesets. **Rulesets in this
 phase apply only to `tier=core` repos.** Incubator repos are explicitly
 excluded — their CI, branch protection, and security setup remain the
 responsibility of their own maintainers.
+
+This phase depends on the Phase 0 confirmation that org rulesets are available
+on our plan. If they are not, the same starting set below is applied as
+per-repo branch-protection rules on the (small) set of Core repos instead — more
+manual, but the Core/Incubator boundary and the rest of the model still hold.
 
 Likely starting set for `tier=core`:
 
@@ -398,15 +468,11 @@ achieved within one org via the chosen approach.
 
 These are not blockers for approval but should be tracked:
 
-1. **Maturity hints (`stable`, `alpha`, `archived`).** Useful or noise on top of
-   the tier? Recommendation: ship with tier-only topics and add maturity hints
-   later if pain emerges.
-2. **`ecosystem-guide`.** Currently classified as Incubator; could be Core if
+1. **`ecosystem-guide`.** Currently classified as Incubator; could be Core if
    positioned as authoritative reference content. Defer to maintainer judgment.
-3. **`MAINTAINERS.md` vs. `CODEOWNERS`.** The promotion checklist accepts
-   either. We may want to standardize on one in a future hygiene pass.
-4. **Reconciliation script ownership.** Lives in `kagenti/automation`. Who
-   maintains it? Default: same Core repo maintainer pool.
+2. **Reconciliation script ownership.** Lives in `kagenti/automation`. @rubambiza
+   has offered to own it and would like a co-owner; the script's `CODEOWNERS`
+   entry should name both. Defaulting otherwise to the Core repo maintainer pool.
 
 ---
 
@@ -423,3 +489,6 @@ These are not blockers for approval but should be tracked:
   Custom Properties.
 - **Lazy consensus**: a vote where silence over the comment period counts as
   approval.
+- **Voting body**: the maintainers of all `tier=core` repos (one voice per
+  person). For the first classification only, the org's existing
+  maintainer/owner set stands in, since no Core repos exist yet.
