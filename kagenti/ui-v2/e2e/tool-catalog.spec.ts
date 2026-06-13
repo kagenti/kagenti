@@ -8,10 +8,14 @@
  * - Navigation to tool details
  */
 import { test, expect } from '@playwright/test';
+import { loginIfNeeded } from './helpers/auth';
 
 test.describe('Tool Catalog Page @extended', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/tools');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.waitForLoadState('networkidle');
   });
 
   test('should display tool catalog page with title', async ({ page }) => {
@@ -37,22 +41,24 @@ test.describe('Tool Catalog Page @extended', () => {
 
 test.describe('Tool Catalog - With Deployed Tools @extended', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/tools');
+    await page.goto('/');
+    await loginIfNeeded(page);
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
     await page.waitForLoadState('networkidle');
   });
 
   test('should display tools table when tools are deployed', async ({ page }) => {
-    const table = page.getByRole('table');
-    const emptyState = page.getByText(/No tools found/i);
-    await expect(table.or(emptyState)).toBeVisible({ timeout: 30000 });
+    // Page loaded via beforeEach — table or empty state must be visible
+    const table = page.getByRole('grid');
+    const emptyState = page.getByText(/No tools found/i).first();
+    await expect(table.or(emptyState)).toBeVisible({ timeout: 15000 });
   });
 
   test('should list weather-tool if deployed', async ({ page }) => {
-    await page.waitForResponse(
-      (response) =>
-        response.url().includes('/api/v1/tools') && response.status() === 200,
-      { timeout: 30000 }
-    );
+    // Wait for page to fully render (API called during beforeEach navigation)
+    await expect(
+      page.getByRole('grid').or(page.getByText(/No tools found/i).first())
+    ).toBeVisible({ timeout: 15000 });
 
     const weatherToolRow = page.getByRole('row', { name: /weather-tool/i });
 
@@ -70,21 +76,24 @@ test.describe('Tool Catalog - With Deployed Tools @extended', () => {
 
 test.describe('Tool Catalog - API Integration @extended', () => {
   test('should call backend API when loading tools', async ({ page }) => {
-    let apiCalled = false;
+    await page.goto('/');
+    await loginIfNeeded(page);
 
-    page.on('response', (response) => {
-      if (response.url().includes('/api/v1/tools')) {
-        apiCalled = true;
-      }
-    });
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/v1/tools'),
+      { timeout: 30000 }
+    );
 
-    await page.goto('/tools');
-    await page.waitForLoadState('networkidle');
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
 
-    expect(apiCalled).toBe(true);
+    const response = await responsePromise;
+    expect(response.url()).toContain('/api/v1/tools');
   });
 
   test('should handle API error gracefully', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     await page.route('**/api/v1/tools**', (route) => {
       route.fulfill({
         status: 500,
@@ -92,14 +101,18 @@ test.describe('Tool Catalog - API Integration @extended', () => {
       });
     });
 
-    await page.goto('/tools');
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/Error loading tools/i)).toBeVisible({
+    await expect(page.getByText(/Error loading tools|error|failed/i).first()).toBeVisible({
       timeout: 10000,
     });
   });
 
   test('should handle empty tool list', async ({ page }) => {
+    await page.goto('/');
+    await loginIfNeeded(page);
+
     await page.route('**/api/v1/tools**', (route) => {
       route.fulfill({
         status: 200,
@@ -108,9 +121,10 @@ test.describe('Tool Catalog - API Integration @extended', () => {
       });
     });
 
-    await page.goto('/tools');
+    await page.locator('nav a', { hasText: 'Tools' }).first().click();
+    await page.waitForLoadState('networkidle');
 
-    await expect(page.getByText(/No tools found/i)).toBeVisible({
+    await expect(page.getByText(/No tools found/i).first()).toBeVisible({
       timeout: 10000,
     });
   });

@@ -1,0 +1,58 @@
+[
+  {
+    "step": "intro",
+    "time": 0
+  },
+  {
+    "step": "login",
+    "time": 6.845
+  },
+  {
+    "step": "sandbox_navigate",
+    "time": 7.246
+  },
+  {
+    "step": "sandbox_sidebar",
+    "time": 7.335
+  },
+  {
+    "step": "sandbox_new_session",
+    "time": 8.75
+  },
+  {
+    "step": "sandbox_chat_send",
+    "time": 8.827
+  },
+  {
+    "step": "sandbox_chat_response",
+    "time": 10.835
+  },
+  {
+    "step": "stats_tab_visible",
+    "time": 12.008
+  },
+  {
+    "step": "stats_tokens_skipped",
+    "time": 12.053
+  },
+  {
+    "step": "stats_verified",
+    "time": 12.606
+  },
+  {
+    "step": "sandbox_sessions_table",
+    "time": 12.661
+  },
+  {
+    "step": "sandbox_table_search",
+    "time": 13.414
+  },
+  {
+    "step": "sandbox_return_chat",
+    "time": 13.466
+  },
+  {
+    "step": "end",
+    "time": 13.467
+  }
+]
