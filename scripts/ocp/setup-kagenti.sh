@@ -1340,6 +1340,16 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   --set "kagenti-operator-chart.mlflow.enable=$([ "$SKIP_MLFLOW" = true ] && echo false || echo true)" \
   --set "featureFlags.agentSandbox=${WITH_AGENT_SANDBOX}"
 
+# Helm upgrade can miss additional CRDs, install them now.
+# There are three ways this script is configured with chart location
+# - No --kagenti-repo given: always clone fresh from upstream main
+# - --kagenti-repo is GitHub/git URL (cloned into cache)
+# - Local path provided — "use as-is"
+# In all three cases, KAGENTI_CACHE_DIR should point to downloaded Kagenti source
+KAGENTI_CACHE_DIR="${HOME}/.cache/kagenti"
+CRD_SRC_DIR="$KAGENTI_CACHE_DIR/charts/kagenti/charts/kagenti-operator-chart/crds"
+run_cmd kubectl apply --server-side --force-conflicts -f "${CRD_SRC_DIR}/"
+
 log_success "Kagenti installed"
 
 # Grant otel-collector SA MLflow RBAC in agent namespaces (created by kagenti chart above)
