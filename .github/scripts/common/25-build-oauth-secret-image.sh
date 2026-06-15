@@ -142,3 +142,10 @@ else
 fi
 
 log_success "ui-oauth-secret image built and loaded"
+
+# Build mlflow-oauth-secret image if the script exists (added in PR,
+# workflow step only available after merge to main)
+MLFLOW_SCRIPT="$SCRIPT_DIR/26-build-mlflow-oauth-secret-image.sh"
+if [ -x "$MLFLOW_SCRIPT" ]; then
+    bash "$MLFLOW_SCRIPT"
+fi

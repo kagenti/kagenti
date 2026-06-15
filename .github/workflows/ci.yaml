@@ -2,6 +2,8 @@ name: CI
 
 on:
   # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
@@ -27,11 +29,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff pytest pre-commit uv
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          uv tool install ruff==0.15.12
+          uv tool install pytest==9.0.3
+          uv tool install pre-commit==4.6.0
+          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
 
       - name: Lint with ruff
         run: |
@@ -73,7 +79,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
@@ -132,7 +138,13 @@ jobs:
           version: v3.20.1
 
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git
+        # Pin the version — without --version, helm pulls the plugin's main
+        # branch, whose install hook currently references a release tag
+        # (v1.1.0) that does not exist on GitHub, causing checksum validation
+        # to fail with "no properly formatted SHA checksum lines found".
+        # v1.0.3 is the latest published release with a resolvable linux-amd64
+        # tarball asset.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest.git --version v1.0.3
 
       - name: Build chart dependencies
         run: helm dependency build charts/kagenti-deps

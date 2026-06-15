@@ -405,7 +405,6 @@ Before creating hosted clusters, you need:
    - AWS CLI configured
    - kubectl and oc CLI
    - jq for JSON processing
-   - Ansible (installed automatically by setup script)
 
 ### Setting Up HyperShift Credentials
 
@@ -504,7 +503,7 @@ After creating a cluster, run the full E2E test suite:
 
 **Test workflow:**
 1. Sets up kubeconfig for hosted cluster
-2. Deploys Kagenti platform via Ansible
+2. Deploys Kagenti platform
 3. Runs E2E test suite (`kagenti/tests/e2e/`)
 4. Optionally destroys cluster after tests
 

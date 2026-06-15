@@ -42,26 +42,49 @@ def _is_job_pod(pod) -> bool:
     return False
 
 
+KAGENTI_NAMESPACES = {
+    "kagenti-system",
+    "kagenti-webhook-system",
+    "keycloak",
+    "team1",
+    "team2",
+    "mcp-system",
+    "spire-mgmt",
+    "zero-trust-workload-identity-manager",
+    "spire-system",
+    "gateway-system",
+    "istio-system",
+    "istio-cni",
+    "istio-ztunnel",
+    "cert-manager",
+}
+
+
+def _in_kagenti_namespace(namespace: str) -> bool:
+    return namespace in KAGENTI_NAMESPACES
+
+
 class TestPlatformHealth:
     """Test overall platform health checks."""
 
     @pytest.mark.critical
     def test_no_failed_pods(self, k8s_client):
         """
-        Verify there are no failed pods in the cluster.
+        Verify there are no failed pods in Kagenti-managed namespaces.
 
         Checks that all pods are in Running or Succeeded phase.
         Excludes Job pods since they can fail and be retried (expected behavior).
+        Scoped to Kagenti namespaces to avoid false positives from
+        unrelated system pods on OpenShift.
         """
-        # Get all pods across all namespaces
         pods = k8s_client.list_pod_for_all_namespaces(watch=False)
 
-        # Find pods that are not in Running or Succeeded state
-        # Exclude Job pods - they can fail during retries which is normal
         failed_pods = [
             f"{pod.metadata.namespace}/{pod.metadata.name} ({pod.status.phase})"
             for pod in pods.items
-            if pod.status.phase not in ["Running", "Succeeded"] and not _is_job_pod(pod)
+            if _in_kagenti_namespace(pod.metadata.namespace)
+            and pod.status.phase not in ["Running", "Succeeded"]
+            and not _is_job_pod(pod)
         ]
 
         assert len(failed_pods) == 0, (
@@ -71,7 +94,7 @@ class TestPlatformHealth:
     @pytest.mark.critical
     def test_no_crashlooping_pods(self, k8s_client):
         """
-        Verify there are no crashlooping pods.
+        Verify there are no crashlooping pods in Kagenti-managed namespaces.
 
         Checks that no pods are currently in a CrashLoopBackOff state
         or have recently restarted (within the last 5 minutes).
@@ -87,14 +110,15 @@ class TestPlatformHealth:
         recent_restart_threshold = timedelta(minutes=5)
 
         for pod in pods.items:
+            if not _in_kagenti_namespace(pod.metadata.namespace):
+                continue
+
             # Skip Job pods — they restart on failure by design
             if _is_job_pod(pod):
                 continue
 
-            # Check if pod is in CrashLoopBackOff state
             if pod.status.container_statuses:
                 for container in pod.status.container_statuses:
-                    # Check for CrashLoopBackOff state
                     if container.state and container.state.waiting:
                         if container.state.waiting.reason == "CrashLoopBackOff":
                             crashlooping_pods.append(
@@ -104,7 +128,6 @@ class TestPlatformHealth:
                             )
                             continue
 
-                    # Check for recent restarts (not just total count)
                     if (
                         container.restart_count > 0
                         and container.state
@@ -113,7 +136,6 @@ class TestPlatformHealth:
                         started_at = container.state.running.started_at
                         if started_at:
                             time_since_start = now - started_at
-                            # If pod restarted recently (within 5 min) and has multiple restarts, flag it
                             if (
                                 time_since_start < recent_restart_threshold
                                 and container.restart_count > 2
@@ -132,7 +154,7 @@ class TestPlatformHealth:
     @pytest.mark.critical
     def test_all_jobs_completed(self, k8s_batch_client):
         """
-        Verify that all Jobs in the cluster have completed successfully.
+        Verify that all Jobs in Kagenti-managed namespaces have completed.
 
         Checks that every Job has at least one successful completion
         (status.succeeded >= 1). Jobs that are still actively running
@@ -140,33 +162,31 @@ class TestPlatformHealth:
         allowed to fail since they run during install and may encounter
         transient Keycloak availability issues.
         """
-        # Helm hook jobs that may fail due to timing/ordering — not app failures
         HELM_HOOK_JOBS = {
             "kagenti-agent-oauth-secret-job",
             "kagenti-ui-oauth-secret-job",
         }
 
-        # Get all jobs across all namespaces
         jobs = k8s_batch_client.list_job_for_all_namespaces(watch=False)
 
         failed_jobs = []
         for job in jobs.items:
             namespace = job.metadata.namespace
+            if not _in_kagenti_namespace(namespace):
+                continue
+
             job_name = job.metadata.name
 
             succeeded = job.status.succeeded or 0
             failed = job.status.failed or 0
             active = job.status.active or 0
 
-            # Skip jobs that are still running
             if active > 0:
                 continue
 
-            # Skip known Helm hook jobs that may fail transiently
             if job_name in HELM_HOOK_JOBS:
                 continue
 
-            # Job is not running - check if it succeeded
             if succeeded < 1:
                 failed_jobs.append(
                     f"{namespace}/{job_name} (succeeded={succeeded}, failed={failed})"

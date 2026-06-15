@@ -21,20 +21,6 @@ metadata:
     "helm.sh/resource-policy": keep
 data: {}
 {{- end }}
-{{- if and $.Values.openshift ($.Values.otel.mlflow).enabled }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: otel-service-ca
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
-  annotations:
-    service.beta.openshift.io/inject-cabundle: "true"
-    "helm.sh/resource-policy": keep
-data: {}
-{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -60,6 +46,8 @@ spec:
       app: otel-collector
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include "kagenti.otel.collectorConfig" . | sha256sum }}
       labels:
         app: otel-collector
     spec:
@@ -102,17 +90,13 @@ spec:
           volumeMounts:
             - name: otel-collector-config
               mountPath: /etc/otelcol-config
-            {{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+            {{- $mlflowOIDC := and $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
+            {{- if and $.Values.openshift $mlflowOIDC }}
             - name: trusted-ca
               mountPath: /etc/pki/ca-trust/extracted/pem
               readOnly: true
             - name: ingress-ca
               mountPath: /etc/pki/ingress-ca
-              readOnly: true
-            {{- end }}
-            {{- if and $.Values.openshift ($.Values.otel.mlflow).enabled }}
-            - name: service-ca
-              mountPath: /etc/pki/service-ca
               readOnly: true
             {{- end }}
           ports:
@@ -129,9 +113,9 @@ spec:
         - name: otel-collector-config
           configMap:
             name: otel-collector-config
-        {{- if and $.Values.openshift $.Values.components.mlflow.enabled $.Values.mlflow.auth.enabled }}
-        # OpenShift trusted CA bundle — created by Tekton/platform operators.
-        # Optional so the pod starts while waiting for the ConfigMap to appear.
+        {{- if and $.Values.openshift $mlflowOIDC }}
+        # OpenShift trusted CA bundle for Keycloak TLS verification (self-managed MLflow OIDC path).
+        # RHOAI path uses SA-projected service-ca.crt instead.
         - name: trusted-ca
           configMap:
             name: config-trusted-cabundle
@@ -140,24 +124,12 @@ spec:
               - key: ca-bundle.crt
                 path: tls-ca-bundle.pem
         # OpenShift ingress CA for Keycloak JWKS verification via ingress route
-        # Copied from openshift-config-managed/default-ingress-cert by pre-install Job
         - name: ingress-ca
           configMap:
             name: otel-ingress-ca
             items:
               - key: ca-bundle.crt
                 path: ingress-ca.pem
-        {{- end }}
-        {{- if and $.Values.openshift ($.Values.otel.mlflow).enabled }}
-        # OpenShift service-serving CA for RHOAI MLflow endpoint TLS verification.
-        # The service-ca-operator auto-injects the CA bundle via annotation.
-        - name: service-ca
-          configMap:
-            name: otel-service-ca
-            optional: true
-            items:
-              - key: service-ca.crt
-                path: service-ca.pem
         {{- end }}
 ---
 apiVersion: v1
@@ -185,6 +157,9 @@ spec:
       port: 8335
       targetPort: 8335
   type: ClusterIP
+{{- /* ConfigMap is operator-managed when otelBootstrap.operatorManaged=true;
+       Service and Deployment above remain Helm-managed in all modes. */}}
+{{- if not .Values.otelBootstrap.operatorManaged }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -196,4 +171,22 @@ metadata:
 data:
   base.yaml: |
     {{- include "kagenti.otel.collectorConfig" . | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- if and .Values.components.otel.enabled (.Capabilities.APIVersions.Has "security.istio.io/v1") }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: otel-collector-from-mcp-system
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kagenti.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  action: ALLOW
+  rules:
+  - {}
 {{- end }}

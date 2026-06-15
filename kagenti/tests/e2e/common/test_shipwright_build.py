@@ -164,7 +164,7 @@ class TestShipwrightAvailability:
 class TestShipwrightBuildLifecycle:
     """Test Shipwright Build and BuildRun lifecycle."""
 
-    @pytest.mark.requires_features(["tekton"])  # Shipwright requires Tekton
+    @pytest.mark.requires_features(["shipwright"])
     def test_create_build(self, k8s_custom_client, shipwright_available, cleanup_build):
         """Verify a Shipwright Build can be created."""
         if not shipwright_available:
@@ -214,7 +214,7 @@ class TestShipwrightBuildLifecycle:
         assert created is not None
         assert created["metadata"]["name"] == TEST_BUILD_NAME
 
-    @pytest.mark.requires_features(["tekton"])
+    @pytest.mark.requires_features(["shipwright"])
     def test_create_buildrun(
         self, k8s_custom_client, shipwright_available, cleanup_build
     ):
@@ -290,7 +290,7 @@ class TestShipwrightBuildLifecycle:
         assert created["metadata"]["name"].startswith(f"{TEST_BUILD_NAME}-run-")
         assert created["spec"]["build"]["name"] == TEST_BUILD_NAME
 
-    @pytest.mark.requires_features(["tekton"])
+    @pytest.mark.requires_features(["shipwright"])
     def test_buildrun_status_progression(
         self, k8s_custom_client, shipwright_available, cleanup_build
     ):
@@ -393,7 +393,7 @@ class TestShipwrightBuildLifecycle:
 class TestBuildAnnotations:
     """Test agent configuration storage in Build annotations."""
 
-    @pytest.mark.requires_features(["tekton"])
+    @pytest.mark.requires_features(["shipwright"])
     def test_agent_config_in_annotations(
         self, k8s_custom_client, shipwright_available, cleanup_build
     ):

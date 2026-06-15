@@ -1,0 +1,254 @@
+name: Cleanup Container Images
+
+on:
+  # Daily cleanup at 03:17 UTC (off-peak, avoids :00/:30 contention)
+  schedule:
+    - cron: '17 3 * * *'
+
+  # Manual trigger with configurable options
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (show what would be deleted without actually deleting)'
+        required: false
+        type: boolean
+        default: false
+      retention_days:
+        description: 'Delete SHA-tagged images older than this many days'
+        required: false
+        type: number
+        default: 7
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Cleanup stale SHA-tagged container images
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const packages = [
+              'ui-v2',
+              'backend',
+              'ui-oauth-secret',
+              'agent-oauth-secret',
+              'api-oauth-secret',
+              'mlflow-oauth-secret',
+              'spiffe-idp-setup',
+            ];
+
+            const { owner, repo } = context.repo;
+            const retentionDays = ${{ inputs.retention_days || 7 }};
+            const dryRun = ${{ inputs.dry_run || false }};
+            const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+            // Cap deletions to stay well within the 5000 req/hour rate limit.
+            const maxDeletesPerRun = 4000;
+
+            // Pattern: any branch prefix followed by a 7-12 char hex SHA
+            const shaTagPattern = /^.+-[0-9a-f]{7,12}$/;
+            // Tags to never delete
+            const protectedTagPattern = /^(v\d|latest$)/;
+
+            console.log(`Retention: ${retentionDays} days (cutoff: ${cutoffDate.toISOString()})`);
+            console.log(`Max deletions this run: ${maxDeletesPerRun}`);
+            console.log(`Dry run: ${dryRun}`);
+            console.log('===');
+
+            let totalDeleted = 0;
+            let totalSkipped = 0;
+            let hitCap = false;
+
+            async function sleepMs(ms) {
+              return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            async function checkRateLimit() {
+              const { data } = await github.rest.rateLimit.get();
+              const remaining = data.resources.core.remaining;
+              const resetAt = data.resources.core.reset * 1000;
+              if (remaining < 100) {
+                const waitMs = Math.max(resetAt - Date.now(), 0) + 5000;
+                console.log(`Rate limit low (${remaining} remaining). Waiting ${Math.ceil(waitMs / 1000)}s until reset...`);
+                await sleepMs(waitMs);
+              }
+            }
+
+            // Resolve child digests referenced by protected manifest lists.
+            // Multi-arch images are OCI Image Indexes whose platform-specific
+            // child manifests appear as untagged versions in the Packages API.
+            // We must not delete those or the tagged image breaks.
+            async function getProtectedDigests(pkg, protectedTags) {
+              const digests = new Set();
+              if (protectedTags.length === 0) return digests;
+
+              const registryRepo = `${owner}/${repo}/${pkg}`;
+              const tokenRes = await fetch(
+                `https://ghcr.io/token?service=ghcr.io&scope=repository:${registryRepo}:pull`,
+                { headers: { 'Authorization': `Basic ${Buffer.from(`x:${process.env.GITHUB_TOKEN}`).toString('base64')}` } }
+              );
+              if (!tokenRes.ok) {
+                console.log(`Warning: could not get registry token for ${pkg}, skipping untagged cleanup`);
+                return null;
+              }
+              const { token } = await tokenRes.json();
+
+              // TODO: add pacing if protected tag count grows large (>20)
+              for (const tag of protectedTags) {
+                try {
+                  const res = await fetch(
+                    `https://ghcr.io/v2/${registryRepo}/manifests/${encodeURIComponent(tag)}`,
+                    {
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json'
+                      }
+                    }
+                  );
+                  if (!res.ok) continue;
+                  const manifest = await res.json().catch(() => null);
+                  if (!manifest) {
+                    console.log(`Warning: malformed manifest response for ${tag}`);
+                    continue;
+                  }
+                  if (manifest.manifests) {
+                    for (const m of manifest.manifests) {
+                      digests.add(m.digest);
+                    }
+                  }
+                } catch (e) {
+                  console.log(`Warning: could not resolve manifest for ${tag}: ${e.message}`);
+                }
+              }
+              return digests;
+            }
+
+            // Rotate package order by day-of-year so cap pressure is spread
+            // fairly across all packages during backlog drain.
+            const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+            const startIdx = dayOfYear % packages.length;
+            const rotatedPackages = [...packages.slice(startIdx), ...packages.slice(0, startIdx)];
+            console.log(`Package order (rotated by day ${dayOfYear}): ${rotatedPackages.join(', ')}`);
+
+            for (const pkg of rotatedPackages) {
+              if (hitCap) break;
+              const package_name = `${repo}/${pkg}`;
+              console.log(`\nPackage: ${package_name}`);
+              console.log('---');
+
+              await checkRateLimit();
+
+              // Phase 1: iterate versions, classify tagged vs untagged
+              const taggedToDelete = [];
+              const untaggedCandidates = [];
+              const protectedTags = [];
+              let skipped = 0;
+              let page = 1;
+              const perPage = 100;
+
+              while (true) {
+                const versions = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
+                  package_type: 'container',
+                  package_name: package_name,
+                  org: owner,
+                  page: page,
+                  per_page: perPage,
+                });
+
+                if (versions.data.length === 0) break;
+
+                for (const version of versions.data) {
+                  const tags = version.metadata?.container?.tags || [];
+                  const createdAt = new Date(version.created_at);
+
+                  if (tags.length === 0) {
+                    if (createdAt < cutoffDate) {
+                      untaggedCandidates.push({ id: version.id, name: version.name, label: `untagged ${version.id}`, createdAt });
+                    }
+                    continue;
+                  }
+
+                  if (tags.some(tag => protectedTagPattern.test(tag))) {
+                    protectedTags.push(...tags.filter(tag => protectedTagPattern.test(tag)));
+                    skipped++;
+                    continue;
+                  }
+
+                  if (!tags.every(tag => shaTagPattern.test(tag))) {
+                    skipped++;
+                    continue;
+                  }
+
+                  if (createdAt >= cutoffDate) {
+                    skipped++;
+                    continue;
+                  }
+
+                  taggedToDelete.push({ id: version.id, label: tags.join(', '), createdAt });
+                }
+
+                if (versions.data.length < perPage) break;
+                page++;
+              }
+
+              // Phase 2: resolve protected manifest child digests, filter untagged
+              const protectedDigests = await getProtectedDigests(pkg, [...new Set(protectedTags)]);
+
+              const toDelete = [...taggedToDelete];
+              let untaggedProtected = 0;
+
+              if (protectedDigests === null) {
+                // Token fetch failed — skip all untagged to be safe
+                console.log(`Skipping ${untaggedCandidates.length} untagged versions (could not resolve protected digests)`);
+              } else {
+                for (const item of untaggedCandidates) {
+                  if (protectedDigests.has(item.name)) {
+                    untaggedProtected++;
+                  } else {
+                    toDelete.push(item);
+                  }
+                }
+              }
+
+              console.log(`Found ${toDelete.length} to delete (${taggedToDelete.length} tagged, ${toDelete.length - taggedToDelete.length} untagged orphans), ${skipped + untaggedProtected} preserved (${untaggedProtected} untagged referenced by protected tags)`);
+              totalSkipped += skipped + untaggedProtected;
+
+              // Phase 3: delete with rate-limit awareness
+              for (const item of toDelete) {
+                if (totalDeleted >= maxDeletesPerRun) {
+                  hitCap = true;
+                  console.log(`Reached per-run cap (${maxDeletesPerRun}). Remaining cleanup deferred to next run.`);
+                  break;
+                }
+
+                if (dryRun) {
+                  console.log(`[DRY RUN] Would delete ${item.label} (${item.createdAt.toISOString()})`);
+                } else {
+                  if (totalDeleted > 0 && totalDeleted % 50 === 0) {
+                    await checkRateLimit();
+                  }
+                  await github.rest.packages.deletePackageVersionForOrg({
+                    package_type: 'container',
+                    package_name: package_name,
+                    org: owner,
+                    package_version_id: item.id,
+                  });
+                  console.log(`Deleted ${item.label} (${item.createdAt.toISOString()})`);
+                }
+                totalDeleted++;
+              }
+            }
+
+            console.log('\n===');
+            console.log(`Total: ${totalDeleted} deleted, ${totalSkipped} preserved`);
+            if (hitCap) {
+              console.log('Note: per-run cap reached. Run again or wait for next scheduled run to continue.');
+            }

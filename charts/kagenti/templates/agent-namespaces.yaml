@@ -1,6 +1,7 @@
 # This template configures the agent namespaces based on the list provided in values.yaml.
 # For each namespace, it creates the namespace itself, applies necessary labels,
 # and creates secrets for GitHub, OpenAI, and Slack.
+{{- include "kagenti.authBridge.validateSpiffeIdentity" . -}}
 {{- if .Values.agentNamespaces }}
 {{- $root := . }}
 {{- range $root.Values.agentNamespaces }}
@@ -19,6 +20,10 @@ metadata:
     istio.io/dataplane-mode: ambient
     istio.io/use-waypoint: waypoint
     shared-gateway-access: "true"
+    {{- if $root.Values.openshift }}
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    {{- end }}
   {{- include "kagenti.labels" $root | nindent 4 }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
@@ -102,36 +107,10 @@ type: kubernetes.io/dockerconfigjson
 data:
   .dockerconfigjson: {{ (printf "{\"auths\":{\"quay.io\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $.Values.secrets.quayUser $.Values.secrets.quayToken (printf "%s:%s" $.Values.secrets.quayUser $.Values.secrets.quayToken | b64enc)) | b64enc }}
 ---
-{{- if not $root.Values.keycloak.adminExistingSecret }}
 # ——————————————————————————————————————————————————————————————————————————————
-#  Secret for Keycloak Admin Credentials in Namespace: {{ . }}
-#  Used by the client-registration sidecar to register agents as OAuth clients.
-# ——————————————————————————————————————————————————————————————————————————————
-apiVersion: v1
-kind: Secret
-metadata:
-  name: keycloak-admin-secret
-  namespace: {{ . }}
-  labels:
-    {{- include "kagenti.labels" $root | nindent 4 }}
-type: Opaque
-stringData:
-  KEYCLOAK_ADMIN_USERNAME: {{ $root.Values.keycloak.adminUsername | quote }}
-  KEYCLOAK_ADMIN_PASSWORD: {{ $root.Values.keycloak.adminPassword | quote }}
----
-{{- end }}
-
-# ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for AuthBridge in Namespace: {{ . }}
-#  Consolidated config consumed by injected sidecars:
-#  - kagenti-webhook (injects CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS, JWT_AUDIENCE into client-registration)
-#  - client-registration sidecar (reads KEYCLOAK_URL, KEYCLOAK_REALM, CLIENT_AUTH_TYPE, SPIFFE_IDP_ALIAS, JWT_AUDIENCE)
-#  - envoy-proxy go-processor (reads ISSUER for inbound JWT validation)
-#
-#  NOTE: KEYCLOAK_NAMESPACE is NOT used by injected sidecars (credentials come from
-#  local keycloak-admin-secret, replicated to this namespace by agent-oauth-secret Job).
-#  KEYCLOAK_NAMESPACE is only used by Helm-hook Jobs (spiffe-idp-setup, agent-oauth-secret)
-#  that run at install time with cross-namespace RBAC to read from the Keycloak namespace.
+#  AuthBridge Config for operator in Namespace: {{ . }}
+#  The kagenti-operator ClientRegistrationReconciler reads KEYCLOAK_URL and
+#  KEYCLOAK_REALM from this ConfigMap to register workload clients in Keycloak.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
@@ -139,22 +118,15 @@ metadata:
   name: authbridge-config
   namespace: {{ . }}
 data:
-  # Keycloak connection (used by client-registration sidecar)
   KEYCLOAK_URL: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
   KEYCLOAK_REALM: {{ $root.Values.keycloak.realm | quote }}
-  # KEYCLOAK_NAMESPACE: Not used by sidecars. Included for reference by Helm-hook Jobs.
-  # Sidecars get credentials from local keycloak-admin-secret (replicated by agent-oauth-secret Job).
   KEYCLOAK_NAMESPACE: "{{ $root.Values.keycloak.namespace }}"
-  # ISSUER: Used by envoy-proxy go-processor for inbound JWT validation.
-  # Optional - auto-derived from KEYCLOAK_URL + KEYCLOAK_REALM if not set.
-  # Set explicitly when the internal KEYCLOAK_URL differs from the frontend URL
-  # that appears in token "iss" claims (split-horizon DNS).
   ISSUER: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
   SPIRE_ENABLED: {{ if $root.Values.spire.enabled }}"true"{{ else }}"false"{{ end }}
-  # Authentication configuration (used by webhook injector and client-registration)
   CLIENT_AUTH_TYPE: "{{ $root.Values.authBridge.clientAuthType }}"
   SPIFFE_IDP_ALIAS: "{{ $root.Values.authBridge.spiffeIdpAlias }}"
-  JWT_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  EXPECTED_AUDIENCE: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
+  CREDENTIAL_WAIT_TIMEOUT: {{ $root.Values.authBridge.credentialWaitTimeout | quote }}
 ---
 # ——————————————————————————————————————————————————————————————————————————————
 #  ConfigMap for Envoy in Namespace: {{ . }}
@@ -226,9 +198,11 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
+                  allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
+                    response_header_mode: SEND
                     request_body_mode: NONE
                     response_body_mode: NONE
               - name: envoy.filters.http.router
@@ -246,6 +220,15 @@ data:
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst
         filter_chains:
+        # AuthBridge config and stats passthrough
+        - filter_chain_match:
+            destination_port: 9093
+          filters:
+          - name: envoy.filters.network.tcp_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+              stat_prefix: outbound_passthrough_9093
+              cluster: original_destination
         - filters:
           - name: envoy.filters.network.http_connection_manager
             typed_config:
@@ -281,9 +264,11 @@ data:
                     envoy_grpc:
                       cluster_name: ext_proc_cluster
                     timeout: 300s
+                  message_timeout: 310s
+                  allow_mode_override: true
                   processing_mode:
                     request_header_mode: SEND
-                    response_header_mode: SKIP
+                    response_header_mode: SEND
                     request_body_mode: NONE
                     response_body_mode: NONE
               - name: envoy.filters.http.router
@@ -314,44 +299,34 @@ data:
                     port_value: 9090
 ---
 # ——————————————————————————————————————————————————————————————————————————————
-#  ConfigMap for Unified AuthBridge in Namespace: {{ . }}
-#  YAML config for the authbridge-unified binary (cmd/authbridge).
-#  Used when the operator's UnifiedAuthBridge feature gate is enabled.
-#  The binary reads this at startup; credential files are loaded at runtime
-#  from /shared/ (written by client-registration sidecar).
+#  ConfigMap for AuthBridge in Namespace: {{ . }}
+#  YAML config for the authbridge binaries (authbridge-proxy / -envoy /
+#  -lite — see kagenti-extensions#411). Supports envoy-sidecar,
+#  proxy-sidecar (default), and lite shapes. The operator resolves the
+#  per-workload mode via the chain
+#    AgentRuntime.Spec.AuthBridgeMode → this ConfigMap's `mode:` field
+#    → deprecated kagenti.io/authbridge-mode annotation → cluster default
+#  (kagenti-operator#361) and layers it onto each per-agent ConfigMap.
+#  Listener addresses are injected as env vars and expanded via ${...}
+#  at startup.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: authbridge-unified-config
+  name: authbridge-runtime-config
   namespace: {{ . }}
   labels:
     {{- include "kagenti.labels" $root | nindent 4 }}
 data:
+  # Per-plugin config. Plugin-level defaults (audience_file,
+  # bypass_paths, identity file paths, etc.) are applied by the
+  # authbridge binary itself — see
+  # authbridge/authlib/plugins/CONVENTIONS.md in kagenti-extensions.
+  #
+  # No top-level `mode:` — see the matching template-configmap in
+  # authbridge-template-configmaps.yaml for the rationale.
   config.yaml: |
-    mode: envoy-sidecar
-    inbound:
-      issuer: "{{ $root.Values.keycloak.publicUrl }}/realms/{{ $root.Values.keycloak.realm }}"
-    outbound:
-      keycloak_url: "http://keycloak-service.{{ $root.Values.keycloak.namespace }}.svc:8080"
-      keycloak_realm: {{ $root.Values.keycloak.realm | quote }}
-      default_policy: "passthrough"
-    identity:
-      # Map Helm clientAuthType to authbridge identity.type:
-      #   "client-secret"  → "client-secret" (traditional)
-      #   "federated-jwt"  → "spiffe" (SPIFFE JWT-SVID authentication)
-      type: {{ eq $root.Values.authBridge.clientAuthType "federated-jwt" | ternary "spiffe" $root.Values.authBridge.clientAuthType | quote }}
-      client_id_file: "/shared/client-id.txt"
-      client_secret_file: "/shared/client-secret.txt"
-{{- if eq $root.Values.authBridge.clientAuthType "federated-jwt" }}
-      jwt_svid_path: "/opt/jwt_svid.token"
-{{- end }}
-    bypass:
-      inbound_paths:
-        - "/.well-known/*"
-        - "/healthz"
-        - "/readyz"
-        - "/livez"
+    {{- include "kagenti.authbridge-runtime-config-yaml" $root | nindent 4 }}
 ---
 {{- if $.Values.openshift }}
 # ——————————————————————————————————————————————————————————————————————————————
@@ -379,10 +354,12 @@ subjects:
 # ——————————————————————————————————————————————————————————————————————————————
 #  SCC RoleBinding for AuthBridge in Namespace: {{ . }}
 #  Grants the kagenti-authbridge custom SCC to all service accounts so that
-#  the webhook-injected AuthBridge stack can run:
-#    - proxy-init init container (NET_ADMIN/NET_RAW, root) for iptables
-#    - envoy-proxy sidecar (UID 1337)
-#    - spiffe-helper / client-registration sidecars (UID 1000)
+#  the webhook-injected AuthBridge stack can run. After kagenti-extensions#411
+#  there's a single combined sidecar per mode (spiffe-helper bundled inside,
+#  client-registration is operator-managed):
+#    - proxy-sidecar (default): authbridge container (UID 1337)
+#    - envoy-sidecar: proxy-init init container (NET_ADMIN/NET_RAW, root)
+#      for iptables, then authbridge-envoy container (UID 1337)
 #  Agent SAs are created dynamically by the operator (name = agent name),
 #  so we use the namespace service accounts group.
 #

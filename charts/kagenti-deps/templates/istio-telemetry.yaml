@@ -1,4 +1,4 @@
-{{- if and .Values.components.otel.enabled (not .Values.openshift) }}
+{{- if and .Values.components.otel.enabled (not .Values.openshift) (.Capabilities.APIVersions.Has "telemetry.istio.io/v1") }}
 apiVersion: telemetry.istio.io/v1
 kind: Telemetry
 metadata:

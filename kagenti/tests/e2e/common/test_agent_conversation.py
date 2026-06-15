@@ -117,6 +117,48 @@ _DIAG_TEXT_LIMIT = 200
 _DIAG_ARTIFACT_LIMIT = 100
 _DIAG_ERROR_LIMIT = 500
 
+# Run the agent->MCP egress diagnostic at most once per session.
+_MCP_DIAG_RAN = False
+
+
+def _run_mcp_diagnostics():
+    """Best-effort dump of the agent->MCP egress path (issue #1904) when the agent
+    returns a FAILED "Cannot connect to MCP" task.
+
+    Shows what breaks vs works on the actual cluster — AuthBridge mode, the
+    proxy-init DNS exemption (``resolvers=`` on the resolv.conf fix vs ``CIDRs=``
+    on the old build), the agent's resolv.conf, a DNS-isolation probe (MCP by
+    FQDN which needs DNS vs by ClusterIP which does not), and authbridge proxy
+    logs. Runs at most once per session and never raises, so it cannot change a
+    test outcome.
+    """
+    global _MCP_DIAG_RAN
+    if _MCP_DIAG_RAN:
+        return
+    _MCP_DIAG_RAN = True
+
+    import subprocess
+
+    script = pathlib.Path(__file__).resolve().parent.parent / "diagnose_agent_mcp.sh"
+    namespace = os.getenv("AGENT_NAMESPACE", "team1")
+    if not script.exists():
+        logger.warning("MCP diagnostic script not found at %s", script)
+        return
+    try:
+        result = subprocess.run(
+            ["bash", str(script), namespace],
+            capture_output=True,
+            text=True,
+            timeout=150,
+        )
+        logger.error(
+            "agent->MCP egress diagnostics (#1904):\n%s\n%s",
+            result.stdout,
+            result.stderr,
+        )
+    except Exception as e:  # diagnostics are best-effort; never fail the test
+        logger.warning("could not run agent->MCP diagnostics: %s", e)
+
 
 def _extract_text_from_parts(parts):
     """Extract concatenated text from a list of A2A Part objects."""
@@ -305,18 +347,17 @@ class TestWeatherAgentConversation:
                 # be initializing, or the LLM/tool may return transient errors.
                 _TRANSIENT_ERRORS = (
                     "Cannot connect",
+                    "Connection error",
                     "Expecting value",
                     "Error calling tool",
                     "timed out",
                     "Read timed out",
                     "ConnectionPool",
                 )
-                if (
-                    any(err in error_text for err in _TRANSIENT_ERRORS)
-                    and attempt < _LLM_QUERY_MAX_ATTEMPTS
-                ):
+                is_transient = any(err in error_text for err in _TRANSIENT_ERRORS)
+                if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                     logger.warning(
-                        "MCP connectivity error on attempt %d/%d, retrying in %ds...\n  %s",
+                        "LLM connectivity error on attempt %d/%d, retrying in %ds...\n  %s",
                         attempt,
                         _LLM_QUERY_MAX_ATTEMPTS,
                         _LLM_QUERY_RETRY_DELAY_S,
@@ -324,6 +365,7 @@ class TestWeatherAgentConversation:
                     )
                     await asyncio.sleep(_LLM_QUERY_RETRY_DELAY_S)
                     continue
+                _run_mcp_diagnostics()
                 pytest.fail(
                     f"Agent returned a FAILED task\n"
                     f"  Agent URL: {agent_url}\n"
@@ -465,18 +507,20 @@ class TestWeatherAgentConversation:
 
                 if last_result["task_failed"]:
                     error_text = last_result["full_response"][:_DIAG_ERROR_LIMIT]
-                    if (
-                        "Cannot connect" in error_text
-                        and attempt < _LLM_QUERY_MAX_ATTEMPTS
-                    ):
+                    is_transient = any(
+                        err in error_text
+                        for err in ("Cannot connect", "Connection error")
+                    )
+                    if is_transient and attempt < _LLM_QUERY_MAX_ATTEMPTS:
                         logger.warning(
-                            "Turn %d: MCP connectivity error on attempt %d/%d, retrying...",
+                            "Turn %d: LLM connectivity error on attempt %d/%d, retrying...",
                             turn,
                             attempt,
                             _LLM_QUERY_MAX_ATTEMPTS,
                         )
                         await asyncio.sleep(_LLM_QUERY_RETRY_DELAY_S)
                         continue
+                    _run_mcp_diagnostics()
                     pytest.fail(
                         f"Turn {turn}: Agent returned FAILED task\n"
                         f"  Error: {error_text}\n"

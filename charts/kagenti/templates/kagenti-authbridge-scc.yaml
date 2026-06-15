@@ -2,17 +2,23 @@
 # ——————————————————————————————————————————————————————————————————————————————
 #  Custom SCC for AuthBridge sidecars in agent namespaces.
 #
-#  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods:
-#    - proxy-init (init): iptables interception (needs NET_ADMIN/NET_RAW, root, non-privileged)
-#    - envoy-proxy (sidecar): Envoy for auth token injection (requests UID 1337)
-#    - spiffe-helper (sidecar): SPIRE identity (UBI image, no hardcoded UID)
-#    - client-registration (sidecar): Keycloak registration (no hardcoded UID)
+#  The kagenti-webhook injects an AuthBridge sidecar stack into agent pods.
+#  After kagenti-extensions#411 there's a single combined sidecar per mode
+#  (spiffe-helper bundled inside, client-registration is operator-managed):
+#    - proxy-sidecar (default): container "authbridge-proxy"
+#      from the "authbridge" image (UID 1337)
+#    - envoy-sidecar:
+#        - proxy-init (init): iptables interception
+#          (NET_ADMIN/NET_RAW, root, non-privileged)
+#        - container "envoy-proxy" from the "authbridge-envoy" image:
+#          Envoy + ext_proc + spiffe-helper (UID 1337)
 #
 #  This SCC grants the minimum permissions needed for AuthBridge sidecars:
 #    - proxy-init needs root + NET_ADMIN/NET_RAW capabilities (not privileged mode)
-#    - envoy-proxy requests UID 1337 (for iptables exclusion coordination)
-#    - spiffe-helper and client-registration run as image-default UIDs (no override)
-#  RunAsAny is required because proxy-init needs root and envoy needs UID 1337.
+#    - the combined authbridge / authbridge-envoy sidecar runs as UID 1337
+#      (matches Envoy's traditional UID for iptables exclusion coordination
+#      and is preserved by authbridge-proxy for image consistency)
+#  RunAsAny is required because proxy-init needs root and the sidecar needs UID 1337.
 #  Bound to agent namespaces via the `groups` field below.
 # ——————————————————————————————————————————————————————————————————————————————
 apiVersion: security.openshift.io/v1

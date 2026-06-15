@@ -28,6 +28,8 @@
 #     --skip-test                  Skip running E2E tests
 #     --skip-kagenti-uninstall     Skip Kagenti uninstall (default: skipped)
 #     --skip-cluster-destroy       Skip cluster destruction (keep for debugging)
+#     --skip-mlflow                Skip MLflow deployment (saves ~2 GB memory)
+#     --skip-kuadrant              Skip Kuadrant deployment (saves ~1 GB memory)
 #
 #   Other options:
 #     --clean-kagenti    Uninstall Kagenti before installing (fresh install)
@@ -45,6 +47,9 @@
 #
 #   # Fresh kagenti on existing cluster
 #   ./.github/scripts/local-setup/kind-full-test.sh --skip-cluster-create --clean-kagenti --skip-cluster-destroy
+#
+#   # Lightweight install (4 vCPU / 12-16 GB VM)
+#   ./.github/scripts/local-setup/kind-full-test.sh --skip-mlflow --skip-kuadrant --skip-cluster-destroy
 #
 #   # Final cleanup - only destroy
 #   ./.github/scripts/local-setup/kind-full-test.sh --include-cluster-destroy
@@ -80,6 +85,8 @@ SKIP_AGENTS=false
 SKIP_TEST=false
 SKIP_KAGENTI_UNINSTALL=false
 SKIP_DESTROY=false
+SKIP_MLFLOW=false
+SKIP_KUADRANT=false
 INCLUDE_KAGENTI_UNINSTALL=false
 CLEAN_KAGENTI=false
 KAGENTI_ENV="${KAGENTI_ENV:-dev}"
@@ -142,6 +149,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-cluster-destroy)
             SKIP_DESTROY=true
+            shift
+            ;;
+        --skip-mlflow)
+            SKIP_MLFLOW=true
+            shift
+            ;;
+        --skip-kuadrant)
+            SKIP_KUADRANT=true
             shift
             ;;
         --clean-kagenti)
@@ -240,14 +255,17 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     if [ "$CLEAN_KAGENTI" = "true" ]; then
         log_step "Uninstalling Kagenti (--clean-kagenti)..."
-        ./deployments/ansible/cleanup-install.sh || true
+        ./scripts/kind/cleanup-kagenti.sh || true
     fi
 
     log_step "Creating secrets..."
     ./.github/scripts/common/20-create-secrets.sh
 
-    log_step "Running Ansible installer..."
-    ./.github/scripts/kagenti-operator/30-run-installer.sh --env "$KAGENTI_ENV"
+    log_step "Running Kagenti installer..."
+    SETUP_ARGS=(--with-all --skip-cluster --build-images --cluster-name "$CLUSTER_NAME")
+    [ "$SKIP_MLFLOW" = "true" ] && SETUP_ARGS+=(--skip-mlflow)
+    [ "$SKIP_KUADRANT" = "true" ] && SETUP_ARGS+=(--skip-kuadrant)
+    ./scripts/kind/setup-kagenti.sh "${SETUP_ARGS[@]}"
 
     log_step "Waiting for platform to be ready..."
     ./.github/scripts/common/40-wait-platform-ready.sh
@@ -274,8 +292,9 @@ fi
 # with the old chart binaries. Build from source to match.
 # ============================================================================
 if [ -z "${KAGENTI_DEP_BUILDS:-}" ] || [ "${KAGENTI_DEP_BUILDS:-}" = "[]" ]; then
-    # Default: build webhook from extensions main (proxy-init fix not yet released)
-    # TODO: Remove after bumping kagenti-webhook-chart to >= v0.4.0-alpha.9
+    # Default: build proxy-init from kagenti-extensions main so the packaged
+    # chart deps pick up the latest init-container fixes even when the chart
+    # is pinned to an older release.
     export KAGENTI_DEP_BUILDS='[{"repo":"kagenti/kagenti-extensions","ref":"main"}]'
 fi
 if [ "${KAGENTI_DEP_BUILDS:-}" != "[]" ] && [ "$RUN_INSTALL" = "true" ]; then
@@ -340,8 +359,8 @@ fi
 
 if [ "$RUN_KAGENTI_UNINSTALL" = "true" ]; then
     log_phase "PHASE 5: Uninstall Kagenti Platform"
-    log_step "Running cleanup-install.sh..."
-    ./deployments/ansible/cleanup-install.sh || {
+    log_step "Running cleanup-kagenti.sh..."
+    ./scripts/kind/cleanup-kagenti.sh --cluster-name "$CLUSTER_NAME" || {
         log_error "Kagenti uninstall failed (non-fatal)"
     }
 else
@@ -360,6 +379,9 @@ else
     echo ""
     echo "Cluster kept for debugging. To destroy later:"
     echo "  ./.github/scripts/kind/destroy-cluster.sh"
+    echo ""
+    echo "To view service URLs and login credentials:"
+    echo "  ./.github/scripts/local-setup/show-services.sh"
     echo ""
 fi
 

@@ -35,7 +35,7 @@ mcp-controller-666f8cf9bf-dcpbc      1/1     Running   0          30h
 ### Register Weather MCP Server
 
 The Weather Service Tool can be installed using the Kagenti UI [as usual](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-3-import-the-weather-tool-via-kagenti-ui). Once it is
-installed, to register it with the Gateway, create an [`HTTPRoute`](https://gateway-api.sigs.k8s.io/api-types/httproute/):
+installed, to register it with the Gateway, create an [`HTTPRoute`](https://gateway-api.sigs.k8s.io/reference/api-types/httproute/):
 
 ```
 echo 'apiVersion: gateway.networking.k8s.io/v1
@@ -58,13 +58,13 @@ spec:
         value: /
     backendRefs:
     - name: weather-tool-mcp
-      port: 8000' | kubectl apply -f -
+      port: 9090' | kubectl apply -f -
 ```
 
 and then create an `MCPServerRegistration` Custom Resource:
 
 ```
-echo 'apiVersion: mcp.kagenti.com/v1alpha1
+echo 'apiVersion: mcp.kuadrant.io/v1alpha1
 kind: MCPServerRegistration
 metadata:
   name: weather-tool-servers
@@ -89,9 +89,33 @@ However, we need to define a new environment variable so the Agent can access
 various tools managed by the Gateway. Namely, we need to set `MCP_URL` to
 `http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp`.
 
-The `weather-service` deployment can be edited manually or patched via a command like `kubectl set env deployment/weather-service -n default MCP_URL="http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp"`, with the namespace adjusted as appropriate.
+#### Deployments (non-sandbox)
 
-Once the Gateway implementation has stabilized, `MCP_URL` can be set to this
+If the agent is running as a standard Kubernetes `Deployment`, patch the env var directly:
+
+```bash
+kubectl set env deployment/weather-service -n <namespace> MCP_URL="http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp"
+```
+
+#### Sandboxes (when sandbox feature flag is enabled)
+
+When the sandbox feature flag is on, agents run as `Sandbox` resources rather than plain `Deployment`s. The `Sandbox` spec must be updated directly — `kubectl set env` does not apply to `Sandbox` objects.
+
+Patch the `Sandbox` spec and reapply. This requires `MCP_URL` to already exist in the env array — if it is missing, add it first via `kubectl edit sandbox weather-service -n <namespace>`.
+
+```bash
+kubectl get sandbox weather-service -n <namespace> -o json \
+  | jq '(.spec.podTemplate.spec.containers[] | select(.name == "agent").env[] | select(.name == "MCP_URL")).value = "http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp"' \
+  | kubectl apply -f -
+```
+
+**Note:** Due to a known upstream limitation ([kubernetes-sigs/agent-sandbox#581](https://github.com/kubernetes-sigs/agent-sandbox/issues/581)), updating the `Sandbox` spec does not automatically restart running pods. After applying the spec change, manually delete the pod to force a restart:
+
+```bash
+kubectl delete pod -n <namespace> -l app.kubernetes.io/name=weather-service
+```
+
+Once the Gateway implementation has stabilized, `MCP_URL` will be set to this
 value by default, so we do not need to set this environment variable for every
 agent. To check if the weather service is working, simply use the chatbot
 exposed by the Weather Service Agent to query for weather information. Instructions for chatting with the agent can be referred to [here](https://github.com/kagenti/kagenti-extensions/blob/main/authbridge/demos/weather-agent/demo-ui.md#step-7-chat-via-kagenti-ui).
@@ -110,7 +134,9 @@ steps are weaved into the normal Slack agent instructions.
 
 The Slack agent can be installed as usual with a few exceptions:
 - Do not import the `mcp-slack` environment variable
-- Create a new env var called `MCP_URL` and set it to `http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp`.
+- Set `MCP_URL` to `http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080/mcp`
+
+If the agent runs as a `Sandbox` (when the sandbox feature flag is enabled), follow the same patch-and-restart procedure described in the [Weather Agent sandbox section](#sandboxes-when-sandbox-feature-flag-is-enabled) above.
 
 ### Slack Tool
 
@@ -122,7 +148,7 @@ Make sure to run `kagenti/demo-setup/keycloak-config/slack/set_up_slack_demo.py`
 
 Now, we need to obtain an access token the MCP Broker can use to initialize with the Slack MCP server to list available tools.
 
-In the Kagenti UI, login to Keycloak admin console as `admin/admin`, and then perform the following steps:
+In the Kagenti UI, login to Keycloak admin console with credentials from `.github/scripts/local-setup/show-services.sh`, and then perform the following steps:
 - Go to Clients
 - Go to `kagenti` client which should open settings
 - Under Settings > Capability Config and enable Direct access grants
@@ -147,7 +173,7 @@ echo $ACCESS_TOKEN
 Now, store the access token as a secret to be used by Broker to access the Slack MCP server:
 ```
 kubectl create secret generic slack-server-access-token --from-literal=token="Bearer $ACCESS_TOKEN" --namespace=default
-kubectl label secret slack-server-access-token mcp.kagenti.com/credential=true
+kubectl label secret slack-server-access-token mcp.kuadrant.io/credential=true
 ```
 
 Next, we create the HttpRoute resource for the Slack MCP server:
@@ -180,7 +206,7 @@ EOF
 Finally, we create the MCPServerRegistration resource with the access token:
 ```
 kubectl apply -f - <<EOF
-apiVersion: mcp.kagenti.com/v1alpha1
+apiVersion: mcp.kuadrant.io/v1alpha1
 kind: MCPServerRegistration
 metadata:
   name: slack-tool-servers

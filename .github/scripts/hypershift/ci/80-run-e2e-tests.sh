@@ -23,6 +23,11 @@ uv sync --extra test
 # Use hypershift-full-test.sh with whitelist mode (--include-test)
 # hypershift-full-test.sh handles AGENT_URL detection from route and calls 90-run-e2e-tests.sh
 # Note: CLUSTER_SUFFIX is set by the workflow (e.g., pr594), don't override it
+#
+# Use CI-specific config that disables features not installed on ephemeral clusters
+# (RHOAI, MLflow, Shipwright, Kiali) so tests are correctly skipped.
+export KAGENTI_CONFIG_FILE="deployments/envs/ocp_ci_values.yaml"
+
 exec "$REPO_ROOT/.github/scripts/local-setup/hypershift-full-test.sh" \
     --include-test \
     --env ocp

@@ -1,5 +1,12 @@
 # Global settings
 openshift: true
+
+# When true, the kagenti-operator handles OTel collector bootstrap (ingress CA
+# trust and ConfigMap assembly) at startup via its OtelBootstrapRunnable. The
+# Helm-based otel-ingress-ca-job and inline otel-collector-config ConfigMap are
+# skipped. Set to true when the operator chart has otelBootstrap.enable: true.
+otelBootstrap:
+  operatorManaged: false
 # OpenShift version (e.g., "4.20.8") - if provided, skips cluster lookup for version detection
 # This is useful when helm diff/template can't access the cluster for lookups
 ocpVersion: ""
@@ -107,11 +114,11 @@ keycloak:
 spiffeIdp:
   # SPIFFE IdP setup job configuration
   # NOTE: Job is NOT included in Helm chart to avoid race conditions
-  # - Ansible installer creates job automatically after patching SPIRE ConfigMap
+  # - Installer creates job automatically after patching SPIRE ConfigMap
   # - Standalone Helm users must create job manually (see docs)
   image:
     repository: ghcr.io/kagenti/kagenti/spiffe-idp-setup
-    tag: latest
+    tag: v0.6.0-rc.1
     pullPolicy: IfNotPresent
 
 
@@ -181,6 +188,7 @@ otel:
       tag: "0.122.1"
     service: otel-collector.kagenti-system.svc.cluster.local
     port: 4317
+
     # Base collector configuration rendered as the ConfigMap base.yaml.
     # Override any key via values files or --set flags.
     config:
@@ -223,10 +231,6 @@ otel:
           tls:
             insecure: true
       processors:
-        filter/phoenix:
-          traces:
-            span:
-              - 'IsMatch(name, "^a2a\\..*")'
         transform/genai_to_openinference:
           trace_statements:
             - context: span
@@ -262,14 +266,15 @@ otel:
         pipelines:
           traces/phoenix:
             receivers: [otlp]
-            processors: [memory_limiter, filter/phoenix, transform/genai_to_openinference, batch]
+            processors: [memory_limiter, transform/genai_to_openinference, batch]
             exporters: [otlp/phoenix]
     mlflowConfig:
       exporters:
         otlphttp/mlflow:
           # Default points to the in-cluster MLflow deployed by kagenti-deps.
-          # Override with the DSC-managed MLflow service when otel.mlflow.enabled=true:
-          # https://<mlflow-svc>.<namespace>.svc.cluster.local:8443/v1/traces
+          # For RHOAI (otel.mlflow.enabled=true), setup-kagenti.sh overrides this
+          # with the MLflow CR gateway URL (status.url + /v1/traces). TLS is
+          # verified via the container's system CA pool (Let's Encrypt trusted by default).
           traces_endpoint: http://mlflow:5000/v1/traces
           tls:
             insecure: true
@@ -284,16 +289,11 @@ otel:
             enabled: true
             num_consumers: 2
             queue_size: 1000
-      processors:
-        filter/mlflow:
-          traces:
-            span:
-              - 'IsMatch(name, "^a2a\\..*")'
       service:
         pipelines:
           traces/mlflow:
             receivers: [otlp]
-            processors: [memory_limiter, filter/mlflow, batch]
+            processors: [memory_limiter, batch]
             exporters: [debug, otlphttp/mlflow]
     # MLflow OAuth extension config - auto-merged when mlflow.auth.enabled
     mlflowAuthConfig:
@@ -310,6 +310,13 @@ otel:
     # Uses the collector's ServiceAccount token for authentication against
     # RHOAI MLflow's Kubernetes authorization plugin.
     rhoaiMlflowAuthConfig:
+      exporters:
+        otlphttp/mlflow:
+          compression: none
+          retry_on_failure:
+            enabled: false
+          tls:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
       extensions:
         bearertokenauth/mlflow:
           filename: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -337,7 +344,7 @@ certManager:
 # ------------------------------------------------------------------
 rhoai:
   namespace: redhat-ods-operator
-  channel: fast-3.x
+  channel: stable-3.4
   installPlanApproval: Automatic
 
 # When true, skip servicemeshoperator3 Subscription creation (RHOAI provides it)

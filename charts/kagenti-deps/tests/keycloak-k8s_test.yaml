@@ -19,7 +19,7 @@ tests:
         documentIndex: 2
       - equal:
           path: spec.template.spec.containers[0].args
-          value: ["start"]
+          value: ["start", "--import-realm"]
         documentIndex: 2
       - contains:
           path: spec.template.spec.containers[0].env
@@ -31,7 +31,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: KC_HOSTNAME
-            value: "http://keycloak.localtest.me:8080/"
+            value: "http://keycloak.localtest.me:8080"
         documentIndex: 2
       - contains:
           path: spec.template.spec.containers[0].env
@@ -75,7 +75,7 @@ tests:
         documentIndex: 2
       - equal:
           path: spec.template.spec.containers[0].args
-          value: ["start-dev"]
+          value: ["start-dev", "--import-realm"]
         documentIndex: 2
       - notContains:
           path: spec.template.spec.containers[0].env
@@ -112,7 +112,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: KC_HOSTNAME
-            value: "http://keycloak.localtest.me:8080/"
+            value: "http://keycloak.localtest.me:8080"
         documentIndex: 2
 
   - it: appends new env var from extraEnvVars

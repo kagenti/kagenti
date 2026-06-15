@@ -38,6 +38,7 @@ jobs:
           - name: backend
             context: ./kagenti
             dockerfile: backend/Dockerfile
+            smoke_cmd: "python -c \"from app.main import app; print('smoke-test: ok')\""
           - name: ui-oauth-secret
             context: ./kagenti
             dockerfile: auth/ui-oauth-secret/Dockerfile
@@ -108,6 +109,23 @@ jobs:
             # Add 'latest' tag for version tags, workflow_dispatch, and pushes to main
             type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
 
+      - name: Smoke-test build for ${{ matrix.image_config.name }}
+        if: matrix.image_config.smoke_cmd
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: ${{ matrix.image_config.context }}
+          file: ${{ matrix.image_config.context }}/${{ matrix.image_config.dockerfile }}
+          load: true
+          tags: ${{ matrix.image_config.name }}:smoke-test
+          build-args: |
+            RELEASE_TAG=${{ github.ref_name }}
+
+      - name: Run smoke test for ${{ matrix.image_config.name }}
+        if: matrix.image_config.smoke_cmd
+        run: |
+          docker run --rm ${{ matrix.image_config.name }}:smoke-test \
+            ${{ matrix.image_config.smoke_cmd }}
+
       - name: Build and push ${{ matrix.image_config.name }}
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
@@ -117,6 +135,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta_retry.outputs.tags || steps.meta.outputs.tags }}
           labels: ${{ steps.meta_retry.outputs.labels || steps.meta.outputs.labels }}
+          build-args: |
+            RELEASE_TAG=${{ github.ref_name }}
 
   package-charts:
     # Package and push Helm charts once, after all images are built.
@@ -156,6 +176,7 @@ jobs:
           yq e ".uiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           yq e ".agentOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           yq e ".apiOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
+          yq e ".mlflowOAuthSecret.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}
 
@@ -169,5 +190,6 @@ jobs:
           cd ${{ env.CHARTS_PATH }}/kagenti-deps
           echo "Fetching Helm chart dependencies..."
           helm dependency update
+          yq e ".spiffeIdp.image.tag = \"${REF_NAME}\"" -i values.yaml
           helm package . --destination . --version ${chartVersion} --app-version ${chartVersion}
           helm push "./${chartPackageName}" oci://${{ env.REGISTRY }}/${{ env.REPO }}

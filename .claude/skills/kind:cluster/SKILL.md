@@ -55,7 +55,7 @@ CLUSTER_NAME=my-cluster ./.github/scripts/kind/create-cluster.sh
 ```
 
 This deploys:
-- Kagenti platform via Ansible installer
+- Kagenti platform via bash installer
 - All platform components (Istio, Keycloak, SPIRE, etc.)
 - Ollama LLM (pulls qwen2.5:0.5b model)
 - Weather agent and tool demo
@@ -124,7 +124,7 @@ Then run the suggested command and visit:
 
 ## Cluster Configuration
 
-Default Kind config: `deployments/ansible/kind/kind-config-registry.yaml`
+Default Kind config: `scripts/kind/kind-config-registry.yaml`
 
 Custom config:
 ```bash
@@ -246,4 +246,4 @@ kubectl port-forward -n kagenti-system svc/http-istio 8080:80
 ## Related Documentation
 
 - `.github/scripts/local-setup/README.md` - Local setup documentation
-- `deployments/ansible/README.md` - Ansible deployment guide
+- `deployments/README.md` - Deployment guide

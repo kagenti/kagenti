@@ -81,7 +81,7 @@ MODES:
 
 PHASES:
     cluster-create    Create HyperShift cluster (~15 min)
-    kagenti-install   Install Kagenti platform via Ansible
+    kagenti-install   Install Kagenti platform
     agents            Build and deploy test agents (weather-tool, weather-agent)
     test              Run backend E2E tests (pytest)
     ui-tests          Run UI E2E tests (Playwright)
@@ -953,17 +953,17 @@ if [ "$RUN_INSTALL" = "true" ]; then
 
     if [ "$CLEAN_KAGENTI" = "true" ]; then
         log_step "Uninstalling Kagenti (--clean-kagenti)..."
-        ./deployments/ansible/cleanup-install.sh || true
+        ./scripts/ocp/cleanup-kagenti.sh --yes || true
     fi
 
     log_step "Installing Kagenti platform..."
-    INSTALLER_ARGS=(--env "$KAGENTI_ENV")
+    SETUP_ARGS=(--kagenti-repo "$REPO_ROOT")
     if [ "$NO_RHOAI" = "true" ]; then
-        INSTALLER_ARGS+=(--extra-vars '{"rhoai": {"enabled": false}}')
-    elif [ -n "$RHOAI_PROFILE" ]; then
-        INSTALLER_ARGS+=(--extra-vars "{\"rhoai\": {\"enabled\": true, \"profile\": \"$RHOAI_PROFILE\"}}")
+        # --skip-mlflow disables kagenti-operator MLflow integration (--enable-mlflow flag + RBAC).
+        # RHOAI MLflow CR creation and OTEL endpoint setup still auto-detect via CRD presence.
+        SETUP_ARGS+=(--skip-mlflow)
     fi
-    ./.github/scripts/kagenti-operator/30-run-installer.sh "${INSTALLER_ARGS[@]}"
+    ./scripts/ocp/setup-kagenti.sh "${SETUP_ARGS[@]}"
 
     log_step "Waiting for CRDs..."
     ./.github/scripts/kagenti-operator/41-wait-crds.sh
@@ -987,6 +987,11 @@ if [ "$RUN_AGENTS" = "true" ]; then
 
     log_step "Deploying weather-agent..."
     ./.github/scripts/kagenti-operator/74-deploy-weather-agent.sh
+
+    # ── Wait for pods and verify connectivity ──
+    log_step "Waiting for agent pods to be ready..."
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=weather-tool -n team1 --timeout=120s 2>/dev/null || true
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=weather-service -n team1 --timeout=120s 2>/dev/null || true
 else
     log_phase "PHASE 3: Skipping Agent Deployment"
 fi
@@ -1095,8 +1100,8 @@ fi
 
 if [ "$RUN_KAGENTI_UNINSTALL" = "true" ]; then
     log_phase "PHASE 5: Uninstall Kagenti Platform"
-    log_step "Running cleanup-install.sh..."
-    ./deployments/ansible/cleanup-install.sh || {
+    log_step "Running cleanup-kagenti.sh..."
+    ./scripts/ocp/cleanup-kagenti.sh --yes || {
         log_error "Kagenti uninstall failed (non-fatal)"
     }
 else

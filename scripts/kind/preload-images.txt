@@ -1,0 +1,10 @@
+docker.io/istio/install-cni:1.28.0-distroless
+docker.io/istio/pilot:1.28.0-distroless
+docker.io/istio/proxyv2:1.28.0-distroless
+docker.io/istio/ztunnel:1.28.0
+docker.io/kindest/kindnetd:v20251212-v0.29.0-alpha-105-g20ccfc88
+docker.io/kindest/local-path-provisioner:v20251212-v0.29.0-alpha-105-g20ccfc88
+docker.io/nginx/nginx-prometheus-exporter:1.4.2
+docker.io/nginxinc/nginx-unprivileged:1.29.1-alpine
+docker.io/prom/prometheus:v3.5.0
+otel/opentelemetry-collector-contrib:0.122.1

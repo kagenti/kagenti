@@ -38,10 +38,11 @@ jobs:
   authorize:
     name: Authorize
     runs-on: ubuntu-latest
-    # Only run for PR comments starting with /run-e2e
+    # Only run for /run-e2e (not /run-e2e-openshell which is a different workflow)
     if: |
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/run-e2e')
+      startsWith(github.event.comment.body, '/run-e2e') &&
+      !startsWith(github.event.comment.body, '/run-e2e-')
     permissions:
       pull-requests: write
       contents: read
@@ -329,9 +330,21 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           KAGENTI_DEP_BUILDS: ${{ needs.authorize.outputs.dep_builds }}
 
+      - name: Build platform images from source (backend, ui-v2, agent-oauth-secret)
+        if: success()
+        run: bash .github/scripts/common/26-build-platform-images.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
       - name: Build ui-oauth-secret image from PR and restart job
         if: success()
         run: bash .github/scripts/common/25-build-oauth-secret-image.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
+
+      - name: Build mlflow-oauth-secret image from PR and restart job
+        if: success()
+        run: bash .github/scripts/common/26-build-mlflow-oauth-secret-image.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
@@ -340,6 +353,12 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.11'
+
+      - name: Print version matrix
+        if: success()
+        run: bash .github/scripts/common/86-print-version-matrix.sh
+        env:
+          KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
 
       - name: Pre-flight checks
         if: success()
@@ -352,7 +371,7 @@ jobs:
         run: bash .github/scripts/hypershift/ci/80-run-e2e-tests.sh
         env:
           KUBECONFIG: ${{ steps.create-cluster.outputs.cluster_kubeconfig }}
-          KAGENTI_CONFIG_FILE: deployments/envs/ocp_values.yaml
+          KAGENTI_CONFIG_FILE: deployments/envs/ocp_ci_values.yaml
 
       - name: Run UI E2E tests
         if: success()

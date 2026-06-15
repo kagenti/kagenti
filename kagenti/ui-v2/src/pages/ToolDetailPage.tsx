@@ -3,7 +3,6 @@
 
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { copyToClipboard } from '../utils/clipboard';
 import {
   PageSection,
   Title,
@@ -29,7 +28,6 @@ import {
   Alert,
   Grid,
   GridItem,
-  ClipboardCopy,
   Split,
   SplitItem,
   Flex,
@@ -485,9 +483,13 @@ export const ToolDetailPage: React.FC = () => {
                       <DescriptionListGroup>
                         <DescriptionListTerm>MCP Server URL</DescriptionListTerm>
                         <DescriptionListDescription>
-                          <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
-                            {toolExternalUrl}
-                          </ClipboardCopy>
+                          {hasRoute ? (
+                            <a href={toolExternalUrl} target="_blank" rel="noopener noreferrer">
+                              {toolExternalUrl}
+                            </a>
+                          ) : (
+                            <code>{toolExternalUrl}</code>
+                          )}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                     </DescriptionList>
@@ -638,9 +640,9 @@ export const ToolDetailPage: React.FC = () => {
                             <DescriptionListGroup>
                               <DescriptionListTerm>Git URL</DescriptionListTerm>
                               <DescriptionListDescription>
-                                <code style={{ fontSize: '0.85em' }}>
+                                <a href={shipwrightBuildStatus.gitUrl} target="_blank" rel="noopener noreferrer">
                                   {shipwrightBuildStatus.gitUrl}
-                                </code>
+                                </a>
                               </DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
@@ -848,9 +850,7 @@ export const ToolDetailPage: React.FC = () => {
                   <DescriptionListGroup>
                     <DescriptionListTerm>MCP Server URL (in-cluster)</DescriptionListTerm>
                     <DescriptionListDescription>
-                      <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" onCopy={copyToClipboard}>
-                        {mcpInClusterUrl}
-                      </ClipboardCopy>
+                      <code>{mcpInClusterUrl}</code>
                     </DescriptionListDescription>
                   </DescriptionListGroup>
                   <DescriptionListGroup>
@@ -955,7 +955,12 @@ export const ToolDetailPage: React.FC = () => {
               </p>
             )}
 
-            <Form>
+            <Form onSubmit={(e) => {
+              e.preventDefault();
+              if (!invokeMutation.isPending) {
+                handleInvoke();
+              }
+            }}>
               {selectedTool.input_schema?.properties &&
               Object.keys(selectedTool.input_schema.properties).length > 0 ? (
                 Object.entries(selectedTool.input_schema.properties).map(([key, prop]) => {

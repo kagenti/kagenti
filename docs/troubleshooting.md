@@ -6,7 +6,7 @@
 
 Sometimes it can take a long time to pull container images. Try re-running the installer. Use `kubectl get deployments --all-namespaces` to identify failing deployments.
 
-See `deployments/ansible/README.md` for troubleshooting and image preloading guidance.
+Try re-running the installer. Use `kubectl get deployments --all-namespaces` to identify failing deployments.
 
 ### Docker daemon issues when using Colima instead of Docker Desktop
 
@@ -95,13 +95,13 @@ kubectl rollout restart -n kagenti-system deployment http-istio
 
 ### Need to edit ENV values
 
-If you need to update the values in `deployments/envs/.secret_values.yaml` file, e.g., `githubToken`,
+If you need to update the values in `charts/kagenti/.secrets.yaml` file, e.g., `githubToken`,
 delete the secret in all your auto-created namespaces, then re-run the installer:
 
 ```shell
 kubectl get secret --all-namespaces
 kubectl -n my-namespace delete github-token-secret
-deployments/ansible/run-install.sh --env dev
+scripts/kind/setup-kagenti.sh
 ```
 
 ### Agent log shows communication errors
@@ -149,7 +149,7 @@ the cluster or delete and re-install keycloak as follows:
 ```shell
 # Delete and re-apply keycloak resources
 helm uninstall keycloak -n keycloak
-deployments/ansible/run-install.sh --env dev
+scripts/kind/setup-kagenti.sh
 
 # Restart related services
 kubectl rollout restart daemonset -n istio-system ztunnel

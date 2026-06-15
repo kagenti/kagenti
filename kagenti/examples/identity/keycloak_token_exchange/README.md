@@ -155,7 +155,7 @@ Port forward Keycloak
 kubectl port-forward statefulset/keycloak -n keycloak 8080:8080
 ```
 
-1. Access Keycloak `http://localhost:8080` (admin/admin)
+1. Access Keycloak `http://localhost:8080` (credentials from `keycloak-initial-admin` secret)
 2. Create a new realm `Demo` [this is case-sensitive]
 3. Select that realm, go to `Users` on the sidebar, and create a new user. 
 4. Once that user is created, set a password by going to `Users > <username> > Credentials` where Credentials is in the top breadcrumbs. Set the password. Keep note of the credentials you used. 

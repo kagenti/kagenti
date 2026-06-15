@@ -120,7 +120,7 @@ export const ToolCatalogPage: React.FC = () => {
   };
 
   const renderLabels = (tool: Tool) => {
-    const labels = [];
+    const labels: React.ReactNode[] = [];
     if (tool.labels.protocol) {
       tool.labels.protocol.forEach((p) => {
         labels.push(
@@ -129,13 +129,6 @@ export const ToolCatalogPage: React.FC = () => {
           </Label>
         );
       });
-    }
-    if (tool.labels.framework) {
-      labels.push(
-        <Label key="framework" color="purple" isCompact>
-          {tool.labels.framework}
-        </Label>
-      );
     }
     if (tool.workloadType) {
       labels.push(

@@ -157,18 +157,24 @@ async def send_message(
     agent_url = resolve_agent_url(name, namespace, kube)
     session_id = request.session_id or uuid4().hex
 
-    # Build A2A message payload
+    # Build A2A message payload. When the frontend supplied a session_id
+    # (subsequent turns of the same conversation), forward it as
+    # message.contextId so the agent joins the existing A2A task chain
+    # instead of spinning up a fresh context per message.
+    message: dict = {
+        "role": "user",
+        "parts": [{"kind": "text", "text": request.message}],
+        "messageId": uuid4().hex,
+    }
+    if request.session_id:
+        message["contextId"] = request.session_id
+    params: dict = {"message": message}
+
     message_payload = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
         "method": "message/send",
-        "params": {
-            "message": {
-                "role": "user",
-                "parts": [{"kind": "text", "text": request.message}],
-                "messageId": uuid4().hex,
-            },
-        },
+        "params": params,
     }
 
     # Prepare headers with optional Authorization
@@ -192,6 +198,15 @@ async def send_message(
             content = ""
             if "result" in result:
                 result_data = result["result"]
+                # Adopt the agent-assigned contextId only on the very first
+                # turn (when the caller had no session_id yet). Subsequent
+                # turns must reuse the caller's session_id — some agent SDKs
+                # mint a fresh contextId every response, and adopting that
+                # would churn the UI state and split events across buckets.
+                if not request.session_id:
+                    agent_ctx = result_data.get("contextId") or result_data.get("sessionId")
+                    if agent_ctx:
+                        session_id = agent_ctx
                 # Handle Task response
                 if "status" in result_data and "message" in result_data.get("status", {}):
                     parts = result_data["status"]["message"].get("parts", [])
@@ -282,216 +297,160 @@ def _extract_text_from_parts(parts: list) -> str:
     return content
 
 
-async def _stream_a2a_response(
-    agent_url: str,
-    message: str,
+async def _stream_from_response(
+    client: httpx.AsyncClient,
+    response: httpx.Response,
     session_id: str,
-    authorization: Optional[str] = None,
     username: Optional[str] = None,
+    caller_supplied_session_id: bool = False,
 ):
-    """Generator for streaming A2A responses with event metadata."""
+    """Stream SSE events from an already-connected agent response.
+
+    Owns closing both the response and client when done.
+    """
     import json
 
-    # Build A2A streaming message payload
-    message_payload = {
-        "jsonrpc": "2.0",
-        "id": str(uuid4()),
-        "method": "message/stream",
-        "params": {
-            "message": {
-                "role": "user",
-                "parts": [{"kind": "text", "text": message}],
-                "messageId": uuid4().hex,
-            },
-        },
-    }
-
-    logger.info(f"Starting A2A stream to {agent_url} with session_id={session_id}")
-    logger.debug(f"Message payload: {json.dumps(message_payload, indent=2)}")
-
-    # Prepare headers with optional Authorization
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-    }
-    if authorization:
-        headers["Authorization"] = authorization
-        logger.info("Forwarding Authorization header to agent")
-
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                agent_url,
-                json=message_payload,
-                headers=headers,
-            ) as response:
-                response.raise_for_status()
-                logger.debug("Connected to agent, status=%d", response.status_code)
+        if response.status_code >= 400:
+            try:
+                await response.aread()
+                detail = response.text[:500]
+            except Exception:
+                detail = str(response.status_code)
+            logger.error("Agent error: %d: %s", response.status_code, detail.replace("\n", " "))
+            payload = {"error": f"Agent error: {response.status_code}", "session_id": session_id}
+            yield f"data: {json.dumps(payload)}\n\n"
+            return
 
-                # Resolve sidecar manager once before the loop (not per-chunk)
-                _sidecar_mgr = None
-                if getattr(settings, "kagenti_feature_flag_sidecars", False):
-                    try:
-                        from app.services.sidecar_manager import get_sidecar_manager
+        logger.debug("Connected to agent, status=%d", response.status_code)
 
-                        _sidecar_mgr = get_sidecar_manager()
-                    except ImportError:
-                        pass
+        _sidecar_mgr = None
+        if getattr(settings, "kagenti_feature_flag_sidecars", False):
+            try:
+                from app.services.sidecar_manager import get_sidecar_manager
 
-                async for line in response.aiter_lines():
-                    if not line:
+                _sidecar_mgr = get_sidecar_manager()
+            except ImportError:
+                pass
+
+        async for line in response.aiter_lines():
+            if not line:
+                continue
+
+            if line.startswith("data: "):
+                data = line[6:]
+                if data == "[DONE]":
+                    done_payload = {"done": True, "session_id": session_id}
+                    if username:
+                        done_payload["username"] = username
+                    yield f"data: {json.dumps(done_payload)}\n\n"
+                    break
+
+                try:
+                    chunk = json.loads(data)
+
+                    if _sidecar_mgr is not None:
+                        try:
+                            _sidecar_mgr.fan_out_event(session_id, chunk)
+                        except Exception:
+                            logger.debug("Sidecar fan-out failed", exc_info=True)
+
+                    if "result" not in chunk:
                         continue
 
-                    # Parse SSE format
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            done_payload = {"done": True, "session_id": session_id}
-                            if username:
-                                done_payload["username"] = username
-                            yield f"data: {json.dumps(done_payload)}\n\n"
-                            break
+                    result = chunk["result"]
+                    # Adopt the agent's contextId only on the first turn (when
+                    # the caller had no session_id yet). Some A2A SDKs mint a
+                    # fresh contextId on every response even when the client
+                    # supplied one; adopting that new ID every turn would
+                    # churn the UI's sessionId state and split telemetry
+                    # across a new authbridge bucket per message.
+                    if not caller_supplied_session_id:
+                        agent_ctx = result.get("contextId") or result.get("sessionId")
+                        if agent_ctx and agent_ctx != session_id:
+                            session_id = agent_ctx
+                    payload = {"session_id": session_id}
+                    if username:
+                        payload["username"] = username
 
-                        try:
-                            chunk = json.loads(data)
+                    if "artifact" in result:
+                        artifact = result.get("artifact", {})
+                        parts = artifact.get("parts", [])
+                        content = _extract_text_from_parts(parts)
+                        payload["event"] = {
+                            "type": "artifact",
+                            "taskId": result.get("taskId", ""),
+                            "name": artifact.get("name"),
+                            "index": artifact.get("index"),
+                        }
+                        if content:
+                            payload["content"] = content
+                        yield f"data: {json.dumps(payload)}\n\n"
 
-                            # Fan out event to sidecars (resolved once above)
-                            if _sidecar_mgr is not None:
-                                try:
-                                    _sidecar_mgr.fan_out_event(session_id, chunk)
-                                except Exception:
-                                    logger.debug("Sidecar fan-out failed", exc_info=True)
+                    elif "status" in result and "taskId" in result:
+                        status = result["status"]
+                        is_final = result.get("final", False)
+                        state = status.get("state", "UNKNOWN")
 
-                            if "result" not in chunk:
-                                continue
+                        status_message = ""
+                        if "message" in status and status["message"]:
+                            parts = status["message"].get("parts", [])
+                            status_message = _extract_text_from_parts(parts)
 
-                            result = chunk["result"]
-                            payload = {"session_id": session_id}
-                            if username:
-                                payload["username"] = username
+                        event_type = "status"
+                        if state == "INPUT_REQUIRED":
+                            event_type = "hitl_request"
 
-                            # TaskArtifactUpdateEvent
-                            if "artifact" in result:
-                                logger.debug("Processing TaskArtifactUpdateEvent")
-                                artifact = result.get("artifact", {})
-                                parts = artifact.get("parts", [])
+                        payload["event"] = {
+                            "type": event_type,
+                            "taskId": result.get("taskId", ""),
+                            "state": state,
+                            "final": is_final,
+                            "message": status_message if status_message else None,
+                        }
+                        if is_final or state in ["COMPLETED", "FAILED"]:
+                            if status_message:
+                                payload["content"] = status_message
+                        yield f"data: {json.dumps(payload)}\n\n"
+
+                    elif "id" in result and "status" in result:
+                        task_status = result["status"]
+                        state = task_status.get("state", "UNKNOWN")
+                        payload["event"] = {
+                            "type": "status",
+                            "taskId": result.get("id", ""),
+                            "state": state,
+                            "final": state in ["COMPLETED", "FAILED"],
+                        }
+                        if state in ["COMPLETED", "FAILED"]:
+                            if "message" in task_status and task_status["message"]:
+                                parts = task_status["message"].get("parts", [])
                                 content = _extract_text_from_parts(parts)
-
-                                payload["event"] = {
-                                    "type": "artifact",
-                                    "taskId": result.get("taskId", ""),
-                                    "name": artifact.get("name"),
-                                    "index": artifact.get("index"),
-                                }
                                 if content:
                                     payload["content"] = content
+                        yield f"data: {json.dumps(payload)}\n\n"
 
-                                logger.debug("Yielding artifact event")
-                                yield f"data: {json.dumps(payload)}\n\n"
+                    elif "parts" in result:
+                        content = _extract_text_from_parts(result["parts"])
+                        message_id = result.get("messageId", "")
+                        payload["event"] = {
+                            "type": "status",
+                            "taskId": message_id,
+                            "state": "WORKING",
+                            "final": False,
+                            "message": content if content else None,
+                        }
+                        if content:
+                            payload["content"] = content
+                        yield f"data: {json.dumps(payload)}\n\n"
 
-                            # TaskStatusUpdateEvent
-                            elif "status" in result and "taskId" in result:
-                                status = result["status"]
-                                is_final = result.get("final", False)
-                                state = status.get("state", "UNKNOWN")
+                    else:
+                        logger.warning("Unknown result structure: keys=%s", list(result.keys()))
 
-                                logger.debug(
-                                    "TaskStatusUpdateEvent: state=%s final=%s", state, is_final
-                                )
+                except json.JSONDecodeError as e:
+                    logger.warning("Failed to parse SSE data: %.200s, error: %s", data, e)
+                    continue
 
-                                # Extract status message text if present
-                                status_message = ""
-                                if "message" in status and status["message"]:
-                                    parts = status["message"].get("parts", [])
-                                    status_message = _extract_text_from_parts(parts)
-
-                                # Detect HITL (Human-in-the-Loop) requests
-                                event_type = "status"
-                                if state == "INPUT_REQUIRED":
-                                    event_type = "hitl_request"
-                                    logger.info("HITL request detected")
-
-                                payload["event"] = {
-                                    "type": event_type,
-                                    "taskId": result.get("taskId", ""),
-                                    "state": state,
-                                    "final": is_final,
-                                    "message": status_message if status_message else None,
-                                }
-
-                                # For final states, also include content for backward compatibility
-                                if is_final or state in ["COMPLETED", "FAILED"]:
-                                    if status_message:
-                                        payload["content"] = status_message
-
-                                logger.info(
-                                    f"Yielding status event: state={state}, final={is_final}"
-                                )
-                                yield f"data: {json.dumps(payload)}\n\n"
-
-                            # Task object (initial task response)
-                            elif "id" in result and "status" in result:
-                                task_status = result["status"]
-                                state = task_status.get("state", "UNKNOWN")
-
-                                logger.info(
-                                    f"Processing Task object: id={result.get('id')}, state={state}"
-                                )
-
-                                payload["event"] = {
-                                    "type": "status",
-                                    "taskId": result.get("id", ""),
-                                    "state": state,
-                                    "final": state in ["COMPLETED", "FAILED"],
-                                }
-
-                                # Extract message content for final states
-                                if state in ["COMPLETED", "FAILED"]:
-                                    if "message" in task_status and task_status["message"]:
-                                        parts = task_status["message"].get("parts", [])
-                                        content = _extract_text_from_parts(parts)
-                                        if content:
-                                            payload["content"] = content
-
-                                logger.info(f"Yielding task event: state={state}")
-                                yield f"data: {json.dumps(payload)}\n\n"
-
-                            # Direct message (A2AMessage)
-                            elif "parts" in result:
-                                logger.info("Processing direct message (A2AMessage) with parts")
-                                content = _extract_text_from_parts(result["parts"])
-                                message_id = result.get("messageId", "")
-
-                                # Create an event for visibility in the events panel
-                                payload["event"] = {
-                                    "type": "status",
-                                    "taskId": message_id,
-                                    "state": "WORKING",
-                                    "final": False,
-                                    "message": content if content else None,
-                                }
-                                if content:
-                                    payload["content"] = content
-
-                                logger.info(
-                                    f"Yielding direct message event: messageId={message_id}"
-                                )
-                                yield f"data: {json.dumps(payload)}\n\n"
-
-                            else:
-                                logger.warning(
-                                    f"Unknown result structure: keys={list(result.keys())}"
-                                )
-
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"Failed to parse SSE data: {data[:200]}, error: {e}")
-                            continue
-
-    except httpx.HTTPStatusError as e:
-        error_msg = f"Agent error: {e.response.status_code}"
-        logger.error(f"{error_msg}: {e.response.text[:500]}")
-        yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
     except httpx.RequestError as e:
         error_msg = f"Connection error: {str(e)}"
         logger.error(error_msg)
@@ -500,6 +459,9 @@ async def _stream_a2a_response(
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg, exc_info=True)
         yield f"data: {json.dumps({'error': error_msg, 'session_id': session_id})}\n\n"
+    finally:
+        await response.aclose()
+        await client.aclose()
 
 
 @router.post("/{namespace}/{name}/stream", dependencies=[Depends(require_roles(ROLE_OPERATOR))])
@@ -519,6 +481,9 @@ async def stream_message(
 
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
+
+    Returns HTTP 401 directly when the agent rejects the token, enabling
+    the frontend to trigger token refresh and retry transparently.
     """
     agent_url = resolve_agent_url(name, namespace, kube)
     session_id = request.session_id or uuid4().hex
@@ -526,8 +491,59 @@ async def stream_message(
     # Extract Authorization header if present
     authorization = http_request.headers.get("Authorization")
 
+    # Pre-flight: open the streaming connection and check for auth errors
+    # before committing to the StreamingResponse (which locks HTTP 200).
+    # This allows the frontend to see a real HTTP 401 and trigger token
+    # refresh (e.g., when a new agent's audience scope was added after login).
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    if authorization:
+        headers["Authorization"] = authorization
+
+    # See /send handler: forward the client's session_id as message.contextId
+    # so multi-turn conversations stay in one A2A context.
+    stream_message: dict = {
+        "role": "user",
+        "parts": [{"kind": "text", "text": request.message}],
+        "messageId": uuid4().hex,
+    }
+    if request.session_id:
+        stream_message["contextId"] = request.session_id
+    stream_params: dict = {"message": stream_message}
+
+    message_payload = {
+        "jsonrpc": "2.0",
+        "id": str(uuid4()),
+        "method": "message/stream",
+        "params": stream_params,
+    }
+
+    client = httpx.AsyncClient(timeout=120.0)
+    try:
+        response = await client.send(
+            client.build_request("POST", agent_url, json=message_payload, headers=headers),
+            stream=True,
+        )
+    except httpx.RequestError as e:
+        await client.aclose()
+        logger.error("Cannot connect to agent at %s: %s", agent_url, e)
+        raise HTTPException(status_code=503, detail="Cannot connect to agent")
+
+    if response.status_code == 401:
+        await response.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=401, detail="Agent rejected token (audience mismatch)")
+
     return StreamingResponse(
-        _stream_a2a_response(agent_url, request.message, session_id, authorization, user.username),
+        _stream_from_response(
+            client,
+            response,
+            session_id,
+            user.username,
+            caller_supplied_session_id=bool(request.session_id),
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

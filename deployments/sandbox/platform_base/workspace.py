@@ -45,8 +45,17 @@ class WorkspaceManager:
     # ------------------------------------------------------------------
 
     def get_workspace_path(self, context_id: str) -> str:
-        """Return the workspace path for *context_id* without creating it."""
-        return os.path.join(self.workspace_root, context_id)
+        """Return the workspace path for *context_id* without creating it.
+
+        Raises ValueError if context_id would escape workspace_root.
+        """
+        workspace_path = os.path.join(self.workspace_root, context_id)
+        resolved = os.path.realpath(workspace_path)
+        if not resolved.startswith(os.path.realpath(self.workspace_root)):
+            raise ValueError(
+                f"context_id escapes workspace root: {context_id!r}"
+            )
+        return workspace_path
 
     def ensure_workspace(self, context_id: str) -> str:
         """Create (or re-use) the workspace for *context_id*.

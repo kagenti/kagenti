@@ -206,18 +206,18 @@ def _keycloak_ssl_verify() -> "bool | str":
     return True
 
 
-@pytest.fixture(scope="session")
-def keycloak_agent_token(k8s_client) -> Optional[str]:
-    """
-    Acquire a Bearer token from the kagenti realm for authenticating
-    to agents via AuthBridge.
+def _acquire_agent_token(k8s_client) -> Optional[str]:
+    """Mint a fresh Bearer token for authenticating to agents via AuthBridge.
 
-    Reads credentials from the ``kagenti-test-user`` secret (created/
-    updated by ``87-setup-test-credentials.sh`` or the agent-oauth-secret
-    Helm Job) and acquires a token via Direct Access Grant.
+    Reads credentials from the ``kagenti-test-user`` secret and performs a
+    Direct Access Grant (or client_credentials when a confidential client is
+    configured). Broken out of the fixture below so tests can re-mint on a
+    transient 401 — e.g. when the audience scope was attached to
+    ``kagenti-e2e-tests`` after the session-scoped fixture had already cached
+    a tokenless-of-aud value.
 
-    Returns:
-        Access token string, or None if the secret is absent.
+    Returns the access token string, or None when credentials are absent or
+    Keycloak rejects the request.
     """
     import time
 
@@ -243,6 +243,29 @@ def keycloak_agent_token(k8s_client) -> Optional[str]:
     password = base64.b64decode(secret.data["password"]).decode("utf-8")
     realm = base64.b64decode(secret.data["realm"]).decode("utf-8")
 
+    # Use the confidential kagenti-e2e-tests client when available.
+    # This client inherits realm default scopes (including agent audience scopes
+    # created by client-registration), so the token will contain the aud claim
+    # that AuthBridge requires for inbound JWT validation.
+    # Falls back to admin-cli (public client) when client credentials are absent.
+    client_id = "admin-cli"
+    token_data: dict = {
+        "grant_type": "password",
+        "username": username,
+        "password": password,
+    }
+    if "client_id" in secret.data and "client_secret" in secret.data:
+        client_id = base64.b64decode(secret.data["client_id"]).decode("utf-8")
+        client_secret = base64.b64decode(secret.data["client_secret"]).decode("utf-8")
+        token_data["client_id"] = client_id
+        token_data["client_secret"] = client_secret
+        print(f"\n[keycloak_agent_token] Using confidential client '{client_id}'")
+    else:
+        token_data["client_id"] = client_id
+        print(
+            f"\n[keycloak_agent_token] Using public client '{client_id}' (no client credentials in secret)"
+        )
+
     keycloak_base_url = os.environ.get("KEYCLOAK_URL", "http://localhost:8081")
     token_url = f"{keycloak_base_url}/realms/{realm}/protocol/openid-connect/token"
     verify_ssl = _keycloak_ssl_verify()
@@ -250,12 +273,7 @@ def keycloak_agent_token(k8s_client) -> Optional[str]:
     try:
         response = requests.post(
             token_url,
-            data={
-                "grant_type": "password",
-                "client_id": "admin-cli",
-                "username": username,
-                "password": password,
-            },
+            data=token_data,
             timeout=10,
             verify=verify_ssl,
         )
@@ -263,7 +281,7 @@ def keycloak_agent_token(k8s_client) -> Optional[str]:
             token = response.json()["access_token"]
             print(
                 f"\n[keycloak_agent_token] Acquired token for realm={realm} "
-                f"user={username} (token length={len(token)})"
+                f"user={username} client={client_id} (token length={len(token)})"
             )
             return token
         print(
@@ -274,3 +292,23 @@ def keycloak_agent_token(k8s_client) -> Optional[str]:
         print(f"\n[keycloak_agent_token] Token request error: {e}")
 
     return None
+
+
+@pytest.fixture(scope="session")
+def keycloak_agent_token(k8s_client) -> Optional[str]:
+    """Acquire a Bearer token from the kagenti realm for authenticating to
+    agents via AuthBridge. Cached for the session; tests that need a fresh
+    token after a 401 should call ``_acquire_agent_token`` directly (exposed
+    via the ``keycloak_agent_token_refresh`` fixture).
+    """
+    return _acquire_agent_token(k8s_client)
+
+
+@pytest.fixture(scope="session")
+def keycloak_agent_token_refresh(k8s_client):
+    """Returns a zero-arg callable that mints a fresh agent token on each
+    invocation. Tests wrap their A2A call in a retry loop: on a 401 they call
+    this to pick up any audience scopes that landed on ``kagenti-e2e-tests``
+    after the session fixture cached its tokenless-of-aud bootstrap value.
+    """
+    return lambda: _acquire_agent_token(k8s_client)

@@ -4,12 +4,12 @@
 # Supports both branch refs (on upstream) and PR numbers (works with forks).
 #
 # Usage:
-#   DEP_REPO=kagenti/kagenti-extensions \
-#   DEP_REF=fix/proxy-init-drop-privileged \
-#   DEP_CONTEXT=kagenti-webhook \
-#   DEP_IMAGE_NAME=kagenti-webhook \
-#   DEP_DEPLOY_NS=kagenti-webhook-system \
-#   DEP_HELM_SET="kagenti-webhook-chart.image" \
+#   DEP_REPO=kagenti/kagenti-operator \
+#   DEP_REF=feat/my-branch \
+#   DEP_CONTEXT=. \
+#   DEP_IMAGE_NAME=kagenti-agent-operator \
+#   DEP_DEPLOY_NS=kagenti-system \
+#   DEP_HELM_SET="kagenti-operator-chart.controllerManager.container.image" \
 #   ./30-build-dep-image.sh
 #
 # Ref formats:
@@ -31,8 +31,8 @@ source "$SCRIPT_DIR/../lib/logging.sh"
 : "${DEP_REPO:?DEP_REPO is required (e.g., kagenti/kagenti-extensions)}"
 : "${DEP_REF:?DEP_REF is required (e.g., fix/my-branch or pr/234)}"
 : "${DEP_CONTEXT:?DEP_CONTEXT is required (subdirectory with Dockerfile)}"
-: "${DEP_IMAGE_NAME:?DEP_IMAGE_NAME is required (e.g., kagenti-webhook)}"
-: "${DEP_DEPLOY_NS:?DEP_DEPLOY_NS is required (e.g., kagenti-webhook-system)}"
+: "${DEP_IMAGE_NAME:?DEP_IMAGE_NAME is required (e.g., proxy-init)}"
+: "${DEP_DEPLOY_NS:?DEP_DEPLOY_NS is required (e.g., kagenti-system)}"
 # Optional
 DEP_DOCKERFILE="${DEP_DOCKERFILE:-Dockerfile}"
 

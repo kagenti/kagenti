@@ -10,8 +10,10 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
-  # Python (root) — Ansible + E2E test dependencies
+  # Python (root) — E2E test dependencies
   - package-ecosystem: pip
     directory: /
     schedule:
@@ -21,6 +23,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   # Python (backend) — FastAPI backend dependencies
   - package-ecosystem: pip
@@ -32,6 +36,15 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
+    ignore:
+      # cryptography 47+ crashes with SIGILL on ARM64 Kind clusters.
+      # Pin is intentional — block major bumps above the current upper bound.
+      # Effect: only minor+patch bumps allowed until the SIGILL is resolved upstream.
+      # TODO: remove once upstream fix lands (https://github.com/pyca/cryptography/issues/14764)
+      - dependency-name: "cryptography"
+        update-types: [version-update:semver-major]
 
   # npm (UI) — React frontend dependencies
   - package-ecosystem: npm
@@ -43,6 +56,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
     ignore:
       # keycloak-js 26.x requires Web Crypto API (crypto.randomUUID, crypto.subtle)
       # which is unavailable over plain HTTP. Block until all environments use HTTPS.
@@ -79,6 +94,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   # Docker — CI support images
   - package-ecosystem: docker
@@ -90,6 +107,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   # Docker — application images
   - package-ecosystem: docker
@@ -101,6 +120,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   - package-ecosystem: docker
     directory: /kagenti/ui-v2
@@ -111,6 +132,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   - package-ecosystem: docker
     directory: /kagenti/auth/agent-oauth-secret
@@ -121,6 +144,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   - package-ecosystem: docker
     directory: /kagenti/auth/api-oauth-secret
@@ -131,6 +156,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   - package-ecosystem: docker
     directory: /kagenti/auth/mlflow-oauth-secret
@@ -141,6 +168,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
 
   - package-ecosystem: docker
     directory: /kagenti/auth/ui-oauth-secret
@@ -151,3 +180,5 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]

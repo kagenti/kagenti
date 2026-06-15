@@ -1,4 +1,4 @@
-{{- if and .Values.openshift .Values.components.otel.enabled .Values.components.mlflow.enabled .Values.mlflow.auth.enabled }}
+{{- if and (not .Values.otelBootstrap.operatorManaged) .Values.openshift .Values.components.otel.enabled .Values.components.mlflow.enabled .Values.mlflow.auth.enabled }}
 # Copy OpenShift ingress CA certificate for OTEL collector OAuth2 client
 # The ingress CA is needed to verify TLS when connecting to external Keycloak URL
 ---

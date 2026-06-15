@@ -85,8 +85,7 @@ oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 oc login https://api.your-cluster.example.com:6443 -u kubeadmin -p <password>
 
 # Install Kagenti platform
-./.github/scripts/kagenti-operator/30-run-installer.sh --env ocp
-./.github/scripts/kagenti-operator/41-wait-crds.sh
+./scripts/ocp/setup-kagenti.sh --kagenti-repo .
 
 # Deploy agents and tools, run E2E tests
 ./.github/scripts/kagenti-operator/71-build-weather-tool.sh
@@ -112,7 +111,7 @@ export KAGENTI_CONFIG_FILE=deployments/envs/ocp_values.yaml
 ```bash
 # Requires: AWS admin + OCP cluster-admin on management cluster
 ./.github/scripts/hypershift/setup-hypershift-ci-credentials.sh    # Creates IAM + .env.kagenti-hypershift-custom
-./.github/scripts/hypershift/local-setup.sh                        # Installs hcp CLI + ansible
+./.github/scripts/hypershift/local-setup.sh                        # Installs hcp CLI
 ```
 
 #### Naming & Credential Scoping
@@ -495,7 +494,7 @@ source .env.kagenti-hypershift-custom && ./.github/scripts/local-setup/show-serv
 
 | Script | Purpose |
 |--------|---------|
-| `30-run-installer.sh [--env <dev\|ocp>]` | Run Ansible installer (default: dev) |
+| `30-run-installer.sh [--env <dev\|ocp>]` | Run platform installer (default: dev) |
 | `41-wait-crds.sh` | Wait for Kagenti CRDs |
 | `71-build-weather-tool.sh` | Build weather-tool image via Shipwright |
 | `72-deploy-weather-tool.sh` | Deploy weather-tool Deployment + Service |
@@ -509,7 +508,7 @@ source .env.kagenti-hypershift-custom && ./.github/scripts/local-setup/show-serv
 | `create-cluster.sh [suffix]` | Create HyperShift cluster (~10-15 min) |
 | `destroy-cluster.sh [suffix]` | Destroy HyperShift cluster (~10 min) |
 | `setup-hypershift-ci-credentials.sh` | One-time AWS/OCP credential setup |
-| `local-setup.sh` | Install hcp CLI and ansible collections |
+| `local-setup.sh` | Install hcp CLI |
 | `preflight-check.sh` | Verify prerequisites (called by setup script) |
 | `debug-aws-hypershift.sh [suffix]` | Find orphaned AWS resources for a cluster (read-only) |
 | `check-quotas.sh` | Check AWS service quotas and current usage |

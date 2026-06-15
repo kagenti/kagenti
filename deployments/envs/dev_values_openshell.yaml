@@ -1,0 +1,107 @@
+# Kagenti OpenShell PoC configuration
+#
+# Purpose: Minimal platform footprint for OpenShell Gateway testing.
+# Enables: Gateway API, cert-manager, Istio (ambient), Keycloak, SPIRE,
+#          Kagenti Operator, LiteLLM, container registry.
+# Disables: UI, Backend API, Shipwright, Tekton, Phoenix, Kiali.
+
+####################################################################
+# kagenti-deps
+####################################################################
+gatewayApi:
+  enabled: true
+
+certManager:
+  enabled: true
+
+# Disabled — OpenShell uses Gateway API directly, not Tekton pipelines
+tekton:
+  enabled: false
+
+# Disabled — agents are pre-built images, no in-cluster builds needed
+shipwright:
+  enabled: false
+
+charts:
+  ####################################################################
+  # kagenti-deps
+  ####################################################################
+  kagenti-deps:
+    enabled: true
+    values:
+      openshift: false
+      components:
+        ingressGateway:
+          enabled: true
+        containerRegistry:
+          enabled: true
+        keycloak:
+          enabled: true
+        spire:
+          enabled: true
+        # Disabled for OpenShell PoC
+        otel:
+          enabled: false
+        phoenix:
+          enabled: false
+        mlflow:
+          enabled: false
+        mcpInspector:
+          enabled: false
+        metricsServer:
+          enabled: false
+        kiali:
+          enabled: false
+
+  ####################################################################
+  # kagenti
+  ####################################################################
+  kagenti:
+    enabled: true
+    values:
+      openshift: false
+      components:
+        agentNamespaces:
+          enabled: true
+        platformOperator:
+          enabled: true
+        # Disabled — OpenShell PoC does not use the web UI
+        ui:
+          enabled: false
+        # Disabled — agents are invoked via OpenShell Gateway, not the backend API
+        backend:
+          enabled: false
+        phoenix:
+          enabled: false
+
+  ####################################################################
+  # istio — required for ambient mTLS and the ingress gateway
+  ####################################################################
+  istio:
+    enabled: true
+
+  ####################################################################
+  # spire — workload identity (SPIFFE)
+  ####################################################################
+  spire:
+    enabled: true
+    version: "0.28.4"
+    crd:
+      version: "0.5.0"
+    values:
+      global:
+        spire:
+          jwtIssuer: "spiffe://localtest.me"
+      spiffe-oidc-discovery-provider:
+        config:
+          set_key_use: true
+      spire-server:
+        controllerManager:
+          identities:
+            clusterSPIFFEIDs:
+              default:
+                jwtTTL: "5m"
+
+kind_images_preload: false
+# docker or podman
+container_engine: docker

@@ -176,6 +176,7 @@ def cleanup_tool_build(k8s_custom_client):
         pass
 
 
+@pytest.mark.requires_features(["shipwright"])
 class TestToolShipwrightBuildIntegration:
     """Integration tests for tool Shipwright build workflow."""
 

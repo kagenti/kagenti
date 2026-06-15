@@ -21,6 +21,14 @@ import type {
   FileEntry,
   FileContent,
   PodStorageStats,
+  Skill,
+  SkillDetail,
+  SkillFile,
+  CreateSkillRequest,
+  CreateSkillResponse,
+  CreateExternalSkillRequest,
+  AuthBridgeConfig,
+  AuthBridgeStats,
 } from '@/types';
 
 // API configuration
@@ -60,6 +68,13 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
   }
+}
+
+function extractErrorMessage(errorData: Record<string, unknown>, fallback: string): string {
+  const detail = errorData.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((e: { msg?: string }) => e.msg).join(', ');
+  return fallback;
 }
 
 /**
@@ -112,7 +127,7 @@ async function apiFetch<T>(
         if (!retryResponse.ok) {
           const errorData = await retryResponse.json().catch(() => ({}));
           throw new Error(
-            errorData.detail || `API error: ${retryResponse.status} ${retryResponse.statusText}`
+            extractErrorMessage(errorData, `API error: ${retryResponse.status} ${retryResponse.statusText}`)
           );
         }
         return retryResponse.json();
@@ -129,7 +144,7 @@ async function apiFetch<T>(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new ApiError(
-      errorData.detail || `API error: ${response.status} ${response.statusText}`,
+      extractErrorMessage(errorData, `API error: ${response.status} ${response.statusText}`),
       response.status
     );
   }
@@ -200,8 +215,9 @@ export const agentService = {
         configMapKeyRef?: { name: string; key: string };
       };
     }>;
+    skills?: string[];
     // Workload type
-    workloadType?: 'deployment' | 'statefulset' | 'job';
+    workloadType?: 'deployment' | 'statefulset' | 'job' | 'sandbox';
     // New fields for deployment method
     deploymentMethod?: 'source' | 'image';
     // Build from source fields
@@ -224,14 +240,16 @@ export const agentService = {
     authBridgeEnabled?: boolean;
     // SPIRE identity
     spireEnabled?: boolean;
-    // Per-sidecar injection controls
-    envoyProxyInject?: boolean;
-    spiffeHelperInject?: boolean;
-    clientRegistrationInject?: boolean;
+    // Per-workload AuthBridge mode (maps to AgentRuntime.Spec.AuthBridgeMode)
+    authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+    // Per-workload mTLS posture (maps to AgentRuntime.Spec.MTLSMode).
+    // Backend rejects mtlsMode != 'disabled' when authBridgeMode === 'envoy-sidecar'.
+    mtlsMode?: 'disabled' | 'permissive' | 'strict';
     outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
     defaultOutboundPolicy?: string;
+    persistentStorage?: { enabled: boolean; size: string };
     shipwrightConfig?: ShipwrightBuildConfig;
   }): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
     return apiFetch('/agents', {
@@ -323,6 +341,7 @@ export interface AgentConfigFromBuild {
       configMapKeyRef?: { name: string; key: string };
     };
   }>;
+  skills?: string[];
   servicePorts?: Array<{
     name: string;
     port: number;
@@ -429,6 +448,7 @@ export const shipwrightService = {
           configMapKeyRef?: { name: string; key: string };
         };
       }>;
+      skills?: string[];
       servicePorts?: Array<{
         name: string;
         port: number;
@@ -437,13 +457,12 @@ export const shipwrightService = {
       }>;
       createHttpRoute?: boolean;
       authBridgeEnabled?: boolean;
-      envoyProxyInject?: boolean;
-      spiffeHelperInject?: boolean;
-      clientRegistrationInject?: boolean;
+      authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
+      mtlsMode?: 'disabled' | 'permissive' | 'strict';
       outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
-    outboundPortsExclude?: string;
-    inboundPortsExclude?: string;
-    defaultOutboundPolicy?: string;
+      outboundPortsExclude?: string;
+      inboundPortsExclude?: string;
+      defaultOutboundPolicy?: string;
       imagePullSecret?: string;
     }
   ): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
@@ -529,10 +548,9 @@ export const toolService = {
     authBridgeEnabled?: boolean;
     // SPIRE identity
     spireEnabled?: boolean;
-    // Per-sidecar injection controls
-    envoyProxyInject?: boolean;
-    spiffeHelperInject?: boolean;
-    clientRegistrationInject?: boolean;
+    // Per-workload AuthBridge mode (maps to AgentRuntime.Spec.AuthBridgeMode
+    // for agents; deprecated kagenti.io/authbridge-mode pod annotation for tools)
+    authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
     outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
     outboundPortsExclude?: string;
     inboundPortsExclude?: string;
@@ -667,13 +685,11 @@ export const toolShipwrightService = {
       }>;
       createHttpRoute?: boolean;
       authBridgeEnabled?: boolean;
-      envoyProxyInject?: boolean;
-      spiffeHelperInject?: boolean;
-      clientRegistrationInject?: boolean;
+      authBridgeMode?: 'proxy-sidecar' | 'envoy-sidecar' | 'lite' | 'waypoint';
       outboundRoutes?: Array<{ host: string; target_audience: string; token_scopes: string }>;
-    outboundPortsExclude?: string;
-    inboundPortsExclude?: string;
-    defaultOutboundPolicy?: string;
+      outboundPortsExclude?: string;
+      inboundPortsExclude?: string;
+      defaultOutboundPolicy?: string;
       imagePullSecret?: string;
     }
   ): Promise<{ success: boolean; name: string; namespace: string; message: string }> {
@@ -694,18 +710,49 @@ export interface DashboardConfig {
   traces: string;
   network: string;
   mlflow: string;
-  mcpInspector: string;
-  mcpProxy: string;
+  mcpInspector: string | null;
+  mcpProxy: string | null;
   keycloakConsole: string;
   domainName: string;
 }
 
 /**
+ * Platform status types
+ */
+export interface ComponentStatus {
+  name: string;
+  status: 'Ready' | 'Degraded' | 'Missing' | 'Unknown';
+}
+
+export interface RegistryBuildInfo {
+  clusterBuildStrategyPresent: boolean;
+  clusterBuildStrategies: string[];
+  registryEndpoint: string;
+}
+
+export interface PlatformStatusResponse {
+  components: ComponentStatus[];
+  registry: RegistryBuildInfo;
+}
+
+/**
  * Config service
  */
+export interface MCPGatewayStatusResponse {
+  status: 'Ready' | 'Degraded' | 'Missing';
+}
+
 export const configService = {
   async getDashboards(): Promise<DashboardConfig> {
     return apiFetch('/config/dashboards');
+  },
+
+  async getPlatformStatus(): Promise<PlatformStatusResponse> {
+    return apiFetch('/config/platform-status');
+  },
+
+  async getMCPGatewayStatus(): Promise<MCPGatewayStatusResponse> {
+    return apiFetch('/config/mcp-gateway-status');
   },
 };
 
@@ -1448,3 +1495,70 @@ export async function getPodEvents(
     `/sandbox/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(agentName)}/events`,
   );
 }
+
+/**
+ * Skill service
+ */
+export const skillService = {
+  async list(namespace: string, query?: string): Promise<Skill[]> {
+    const params = new URLSearchParams({ namespace });
+    if (query) {
+      params.append('q', query);
+    }
+    const response = await apiFetch<ApiListResponse<Skill>>(`/skills?${params.toString()}`);
+    return response.items;
+  },
+
+  async get(namespace: string, name: string): Promise<SkillDetail> {
+    return apiFetch(`/skills/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`);
+  },
+
+  async getFile(namespace: string, name: string, filePath: string): Promise<SkillFile> {
+    return apiFetch(
+      `/skills/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/files/${encodeURIComponent(filePath)}`
+    );
+  },
+
+  async create(data: CreateSkillRequest): Promise<CreateSkillResponse> {
+    return apiFetch('/skills', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async incrementUsage(namespace: string, name: string): Promise<Skill> {
+    return apiFetch(
+      `/skills/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/usage`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  async delete(namespace: string, name: string): Promise<{ success: boolean; message: string }> {
+    return apiFetch(
+      `/skills/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  },
+
+  async createExternal(data: CreateExternalSkillRequest): Promise<CreateSkillResponse> {
+    return apiFetch('/skills/external', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+};
+
+export const authBridgeService = {
+  async getConfig(namespace: string, name: string): Promise<AuthBridgeConfig> {
+    return apiFetch(`/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/identity-config`);
+  },
+
+  async getStatus(namespace: string, name: string): Promise<AuthBridgeStats> {
+    return apiFetch(`/agents/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/identity-status`);
+  },
+};
+

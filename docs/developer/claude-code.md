@@ -39,7 +39,6 @@ Claude Code skills interact with various CLI tools. Install these before using t
 |------|---------|
 | oc | OpenShift CLI |
 | AWS CLI | AWS resource management |
-| ansible-galaxy | Ansible collections |
 
 <details>
 <summary><b>macOS</b></summary>
@@ -61,7 +60,6 @@ pre-commit install
 
 # HyperShift / OpenShift (optional)
 brew install openshift-cli awscli
-pip install ansible
 ```
 </details>
 
@@ -101,7 +99,6 @@ pre-commit install
 # oc CLI: https://console.redhat.com/openshift/downloads
 # AWS CLI
 sudo snap install aws-cli --classic
-pip install ansible
 ```
 </details>
 
@@ -136,7 +133,6 @@ pre-commit install
 
 # HyperShift / OpenShift (optional)
 sudo dnf install -y openshift-clients awscli2
-pip install ansible
 ```
 </details>
 

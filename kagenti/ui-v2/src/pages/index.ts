@@ -12,5 +12,8 @@ export { ObservabilityPage } from './ObservabilityPage';
 export { ImportAgentPage } from './ImportAgentPage';
 export { ImportToolPage } from './ImportToolPage';
 export { AdminPage } from './AdminPage';
+export { SkillCatalogPage } from './SkillCatalogPage';
+export { SkillDetailPage } from './SkillDetailPage';
+export { ImportSkillPage } from './ImportSkillPage';
 export { NotFoundPage } from './NotFoundPage';
 export { SandboxCreatePage } from './SandboxCreatePage';

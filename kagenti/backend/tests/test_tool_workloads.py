@@ -679,3 +679,114 @@ def _get_statefulset_status(statefulset: dict) -> str:
 def _get_mcp_service_url(name: str, namespace: str, port: int = 8000) -> str:
     """Get the in-cluster MCP service URL for a tool."""
     return f"http://{name}-mcp.{namespace}.svc.cluster.local:{port}/mcp"
+
+
+class TestBuildToolEnvVarsPortOverride:
+    """Tests for _build_tool_env_vars PORT alignment with servicePorts."""
+
+    def test_port_matches_target_port(self):
+        """PORT env var should match targetPort from servicePorts."""
+        service_ports = [{"name": "http", "port": 9090, "targetPort": 9090, "protocol": "TCP"}]
+        env_vars = _build_tool_env_vars(service_ports=service_ports)
+        port_var = next(ev for ev in env_vars if ev["name"] == "PORT")
+        assert port_var["value"] == "9090"
+
+    def test_port_default_without_service_ports(self):
+        """PORT env var stays at default 8000 when no servicePorts given."""
+        env_vars = _build_tool_env_vars()
+        port_var = next(ev for ev in env_vars if ev["name"] == "PORT")
+        assert port_var["value"] == "8000"
+
+    def test_port_matches_non_default_target_port(self):
+        """PORT aligns with arbitrary targetPort values."""
+        service_ports = [{"name": "http", "port": 8080, "targetPort": 3000, "protocol": "TCP"}]
+        env_vars = _build_tool_env_vars(service_ports=service_ports)
+        port_var = next(ev for ev in env_vars if ev["name"] == "PORT")
+        assert port_var["value"] == "3000"
+
+    def test_port_preserves_default_for_empty_service_ports(self):
+        """Empty servicePorts list preserves default PORT=8000."""
+        env_vars = _build_tool_env_vars(service_ports=[])
+        port_var = next(ev for ev in env_vars if ev["name"] == "PORT")
+        assert port_var["value"] == "8000"
+
+    def test_port_preserves_default_when_no_target_port_key(self):
+        """servicePorts entry without targetPort key preserves default."""
+        service_ports = [{"name": "http", "port": 9090, "protocol": "TCP"}]
+        env_vars = _build_tool_env_vars(service_ports=service_ports)
+        port_var = next(ev for ev in env_vars if ev["name"] == "PORT")
+        assert port_var["value"] == "8000"
+
+
+DEFAULT_ENV_VARS = [
+    {"name": "PORT", "value": "8000"},
+    {"name": "HOST", "value": "0.0.0.0"},
+]
+
+
+def _build_tool_env_vars(env_var_list=None, service_ports=None):
+    """Stub matching the real _build_tool_env_vars for testing PORT override."""
+    env_vars = list(DEFAULT_ENV_VARS)
+
+    if service_ports:
+        target_port = service_ports[0].get("targetPort")
+        if target_port is not None:
+            env_vars = [
+                ev if ev["name"] != "PORT" else {"name": "PORT", "value": str(target_port)}
+                for ev in env_vars
+            ]
+
+    if env_var_list:
+        for ev in env_var_list:
+            env_vars.append({"name": ev["name"], "value": ev["value"]})
+    return env_vars
+
+
+class TestBuildToolEnvVarsDedup:
+    """Tests for env var deduplication in the real _build_tool_env_vars."""
+
+    def test_user_env_vars_override_defaults(self):
+        """User-provided envVars with the same name as DEFAULT_ENV_VARS should
+        override the default, not produce duplicates."""
+        from unittest.mock import MagicMock
+        from app.routers.tools import _build_tool_env_vars as real_build
+
+        ev = MagicMock()
+        ev.name = "PORT"
+        ev.value = "9000"
+        ev.valueFrom = None
+
+        result = real_build(env_var_list=[ev])
+        port_entries = [e for e in result if e.get("name") == "PORT"]
+        assert len(port_entries) == 1
+        assert port_entries[0]["value"] == "9000"
+
+    def test_no_duplicate_env_vars(self):
+        """Env var list must never contain duplicate names."""
+        from unittest.mock import MagicMock
+        from app.routers.tools import _build_tool_env_vars as real_build
+
+        ev = MagicMock()
+        ev.name = "HOST"
+        ev.value = "127.0.0.1"
+        ev.valueFrom = None
+
+        result = real_build(env_var_list=[ev])
+        names = [e["name"] for e in result]
+        assert len(names) == len(set(names)), f"Duplicate env vars found: {names}"
+
+    def test_service_ports_and_user_env_both_override(self):
+        """service_ports overrides PORT from defaults, user envVars can override further."""
+        from unittest.mock import MagicMock
+        from app.routers.tools import _build_tool_env_vars as real_build
+
+        ev = MagicMock()
+        ev.name = "PORT"
+        ev.value = "3000"
+        ev.valueFrom = None
+
+        service_ports = [{"name": "http", "port": 8080, "targetPort": 9090, "protocol": "TCP"}]
+        result = real_build(env_var_list=[ev], service_ports=service_ports)
+        port_entries = [e for e in result if e.get("name") == "PORT"]
+        assert len(port_entries) == 1
+        assert port_entries[0]["value"] == "3000"

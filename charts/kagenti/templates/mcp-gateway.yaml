@@ -1,4 +1,7 @@
 {{- if .Values.components.mcpGateway.enabled }}
+# Gateway resource for mcp-gateway. The mcp-gateway controller (v0.6.0+)
+# manages the broker-router deployment and routes automatically via the
+# MCPGatewayExtension CR created by the mcp-gateway Helm chart.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -9,13 +12,21 @@ metadata:
   labels:
     gateway.io/name: mcp-gateway
     istio: ingressgateway
+    # Keep generated gateway pods out of ambient capture.
+    istio.io/dataplane-mode: none
     {{- include "kagenti.labels" . | nindent 4 }}
-
 spec:
   gatewayClassName: istio
   listeners:
-    - name: mcp # going to the Broker, and no hostname field
+    - name: mcp
+      {{- if .Values.openshift }}
+      {{- if not .Values.mcpGateway.openshiftDomain }}
+      {{- fail "mcpGateway.openshiftDomain is required on OpenShift (set by scripts/ocp/setup-kagenti.sh)" }}
+      {{- end }}
+      hostname: "mcp-gateway-{{ .Values.mcpGateway.namespaces.gatewaySystem }}.{{ .Values.mcpGateway.openshiftDomain }}"
+      {{- else }}
       hostname: "{{ .Values.mcpGateway.hostname }}"
+      {{- end }}
       port: 8080
       protocol: HTTP
       allowedRoutes:
@@ -24,69 +35,10 @@ spec:
     - name: mcps
       port: 8080
       protocol: HTTP
-      hostname: '*.mcp.local' # this hostname can be any wildcard. It is here to simplify routing, ensure the MCP Server routes attach to this listener only, can be protected by the AuthPolicy and routed to via envoy and the MCPRouter.
+      hostname: '*.mcp.local'
       allowedRoutes:
         namespaces:
-          from: All #any namespace can register an MCP server route
----
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: ReferenceGrant
-metadata:
-  name: allow-mcp-gateway-extension
-  namespace: "{{ .Values.mcpGateway.namespaces.gatewaySystem }}"
-spec:
-  from:
-    - group: mcp.kagenti.com
-      kind: MCPGatewayExtension
-      namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
-  to:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  namespace: "{{ .Values.mcpGateway.namespaces.mcpSystem }}"
-  name: mcp-route
-  labels:
-    {{- include "kagenti.labels" . | nindent 4 }}
-spec:
-  parentRefs:
-    - name: http
-      namespace: kagenti-system
-    - name: mcp-gateway
-      namespace: "{{ .Values.mcpGateway.namespaces.gatewaySystem }}"
-  hostnames:
-  - "{{ .Values.mcpGateway.hostname }}"
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /mcp
-      filters:
-        - type: ResponseHeaderModifier
-          responseHeaderModifier:
-            add:
-              - name: Access-Control-Allow-Origin
-                value: "*"
-              - name: Access-Control-Allow-Methods
-                value: "GET, POST, PUT, DELETE, OPTIONS, HEAD"
-              - name: Access-Control-Allow-Headers
-                value: "Content-Type, Authorization, Accept, Origin, X-Requested-With"
-              - name: Access-Control-Max-Age
-                value: "3600"
-              - name: Access-Control-Allow-Credentials
-                value: "true"
-      backendRefs:
-        - name: mcp-gateway-broker
-          port: 8080
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /.well-known/oauth-protected-resource
-      backendRefs:
-        - name: mcp-gateway-broker
-          port: 8080
+          from: All
 ---
 {{- if .Values.openshift }}
 apiVersion: route.openshift.io/v1

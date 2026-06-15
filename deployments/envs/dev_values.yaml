@@ -35,7 +35,7 @@ charts:
         phoenix:
           enabled: false
         mlflow:
-          enabled: false  # Disabled for Kind - requires full OTEL instrumentation
+          enabled: true
         mcpInspector:
           enabled: true
         metricsServer:
@@ -74,7 +74,7 @@ charts:
       ui:
         auth:
           enabled: true
-      # Disable MLflow auth job since MLflow component is disabled in kagenti-deps
+      # MLflow auth disabled for Kind (no Keycloak OAuth needed locally)
       mlflow:
         auth:
           enabled: false
@@ -92,10 +92,19 @@ charts:
     enabled: true
 
   ####################################################################
+  # kuadrant operator - AuthPolicy for MCP Gateway
+  ####################################################################
+  kuadrant:
+    enabled: true
+
+  ####################################################################
   # spire
   ####################################################################
   spire:
     enabled: true
+    version: "0.28.4"
+    crd:
+      version: "0.5.0"
     values:
       global:
         spire:

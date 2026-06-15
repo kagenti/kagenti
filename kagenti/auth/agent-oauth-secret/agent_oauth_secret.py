@@ -334,10 +334,14 @@ class KeycloakSetup:
             )
             typer.echo(f'Created user "{username}" (id: {user_id})')
         except KeycloakPostError:
-            typer.echo(f'User "{username}" already exists')
-            # Get existing user ID for group assignment
+            typer.echo(f'User "{username}" already exists, updating password')
             users = self.keycloak_admin.get_users({"username": username})
             user_id = users[0]["id"] if users else None
+            if user_id:
+                self.keycloak_admin.set_user_password(
+                    user_id, password, temporary=False
+                )
+                typer.echo(f'Password updated for "{username}"')
 
         # Add user to mlflow groups (required by mlflow-oidc-auth)
         if user_id:

@@ -99,16 +99,31 @@ spec:
       dockerfilePath: $DOCKERFILE
 EOF
 
-    # Start build
-    BUILD_NAME=$(oc start-build "$NAME" -n "$NS" -o name 2>&1)
-    log_info "$BUILD_NAME started"
+    # Start build with retry — ephemeral HyperShift clusters can have
+    # intermittent DNS failures ("Could not resolve host: github.com")
+    # when build pods try to clone the source repo.
+    build_ok=false
+    for attempt in 1 2 3; do
+        BUILD_NAME=$(oc start-build "$NAME" -n "$NS" -o name 2>&1)
+        log_info "$BUILD_NAME started (attempt $attempt/3)"
 
-    # Wait for build to complete
-    run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" || {
-        log_error "$NAME build failed"
+        if run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" 2>/dev/null; then
+            build_ok=true
+            break
+        fi
+
+        phase=$(oc get "$BUILD_NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+        if [ "$phase" = "Failed" ] && [ "$attempt" -lt 3 ]; then
+            log_warn "$NAME build failed (attempt $attempt) — retrying..."
+            oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -5 || true
+        fi
+    done
+
+    if ! $build_ok; then
+        log_error "$NAME build failed after 3 attempts"
         oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -30 || true
         exit 1
-    }
+    fi
     log_success "$NAME image built"
 
     # Patch deployment to use the new image
@@ -142,5 +157,78 @@ for COMPONENT_SPEC in "${COMPONENTS[@]}"; do
         }
     fi
 done
+
+# ── Build agent-oauth-secret (Job, not Deployment) ──
+# Jobs require delete + helm upgrade to re-trigger with the new image.
+AGENT_OAUTH_NAME="agent-oauth-secret"
+AGENT_OAUTH_JOB="kagenti-agent-oauth-secret-job"
+
+log_info "Building $AGENT_OAUTH_NAME..."
+oc create imagestream "$AGENT_OAUTH_NAME" -n "$NS" 2>/dev/null || true
+
+cat <<EOF | kubectl apply -f -
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: $AGENT_OAUTH_NAME
+  namespace: $NS
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: $AGENT_OAUTH_NAME:worktree
+  source:
+    type: Git
+    git:
+      uri: $GIT_REPO_URL
+      ref: $GIT_BRANCH
+    contextDir: $CONTEXT_DIR
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: auth/agent-oauth-secret/Dockerfile
+EOF
+
+build_ok=false
+for attempt in 1 2 3; do
+    BUILD_NAME=$(oc start-build "$AGENT_OAUTH_NAME" -n "$NS" -o name 2>&1)
+    log_info "$BUILD_NAME started (attempt $attempt/3)"
+
+    if run_with_timeout 600 "oc wait --for=jsonpath='{.status.phase}'=Complete $BUILD_NAME -n $NS --timeout=600s" 2>/dev/null; then
+        build_ok=true
+        break
+    fi
+
+    phase=$(oc get "$BUILD_NAME" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    if [ "$phase" = "Failed" ] && [ "$attempt" -lt 3 ]; then
+        log_warn "$AGENT_OAUTH_NAME build failed (attempt $attempt) — retrying..."
+        oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -5 || true
+    fi
+done
+
+if ! $build_ok; then
+    log_error "$AGENT_OAUTH_NAME build failed after 3 attempts"
+    oc logs "$BUILD_NAME" -n "$NS" 2>&1 | tail -30 || true
+    exit 1
+fi
+log_success "$AGENT_OAUTH_NAME image built"
+
+# Re-trigger the Job with the freshly built image
+log_info "Restarting $AGENT_OAUTH_JOB with source-built image..."
+kubectl delete job "$AGENT_OAUTH_JOB" -n "$NS" --ignore-not-found
+sleep 2
+helm upgrade kagenti "$REPO_ROOT/charts/kagenti" -n "$NS" \
+    --reuse-values --no-hooks \
+    --set "agentOAuthSecret.image=${REGISTRY}/${AGENT_OAUTH_NAME}" \
+    --set "agentOAuthSecret.tag=worktree" \
+    --set "agentOAuthSecret.imagePullPolicy=Always" || { log_error "Helm upgrade failed"; exit 1; }
+
+kubectl wait --for=condition=complete "job/$AGENT_OAUTH_JOB" \
+    -n "$NS" --timeout=120s || {
+    log_error "$AGENT_OAUTH_JOB did not complete"
+    kubectl logs "job/$AGENT_OAUTH_JOB" -n "$NS" || true
+    exit 1
+}
+log_success "$AGENT_OAUTH_JOB completed with source-built image"
 
 log_success "Platform images built and deployed from source"
