@@ -61,15 +61,17 @@ must use the new args format.
 
 | Component | Image | Tag | Source |
 |-----------|-------|-----|--------|
-| Gateway | `ghcr.io/kagenti/openshell/gateway` | `mvp-v2-3a1bbea7` | mvp-v2 branch (upstream v0.0.49+) |
-| Supervisor | `ghcr.io/kagenti/openshell/supervisor` | `mvp-v2-3a1bbea7` | mvp-v2 branch (upstream v0.0.49+) |
-| Compute Driver | `ghcr.io/kagenti/openshell-driver-openshift/compute-driver` | `mvp-a5f33f4` | mvp branch |
+| Gateway | `ghcr.io/kagenti/openshell/gateway` | `v0.0.56-rc.1` | v0.0.56 tag (upstream v0.0.56+) |
+| Supervisor | `ghcr.io/kagenti/openshell/supervisor` | `v0.0.56-rc.1` | v0.0.56 tag (upstream v0.0.56+) |
+| Compute Driver | `ghcr.io/kagenti/openshell-driver-openshift/compute-driver` | `v0.1.0-rc.6` | v0.1.0-rc.6 tag |
 | Credentials Driver | `ghcr.io/kagenti/openshell-credentials-keycloak/credentials-driver` | `main-d7d8306` | main branch |
 
-> **Update (2026-06-04)**: Gateway and supervisor upgraded to `mvp-v2` branch
-> which is based on upstream v0.0.49+. The `mvp-v2` branch was created by
-> pdettori with all kagenti patches rebased and Rust compilation fixes applied.
-> Old `mvp` branch (v0.0.36-kagenti.8) preserved for rollback.
+> **Update (2026-06-10)**: Gateway and supervisor upgraded to `v0.0.56-rc.1`
+> (from `mvp-v2-3a1bbea`). Compute driver upgraded to `v0.1.0-rc.6` with
+> projected SA token support and sandbox JWT auth bootstrap. The certgen
+> pre-install hook now generates TLS certificates (cert-manager Certificate
+> resources removed in PR #1833). PR #1689 merged with security hardening,
+> teleport/spawn, and async OIDC token fetch.
 
 ---
 
@@ -134,11 +136,11 @@ authentication. No upstream equivalent exists.
 matches one DNS label only. `*.svc.cluster.local` matches `foo.svc.cluster.local`
 but NOT `litellm-model-proxy.team1.svc.cluster.local` (two labels before `.svc`).
 
-**Status (mvp-v2)**: Upstream v0.0.49 rego supports `**` for cross-label matching.
-With the mvp-v2 upgrade, this should work. Our policy-data.yaml files use explicit
-endpoints (not wildcards) as a belt-and-suspenders fix.
+**Status (v0.0.56)**: Upstream v0.0.49+ rego supports `**` for cross-label matching.
+Verified working with v0.0.56. Our policy-data.yaml files use explicit endpoints
+(not wildcards) as a belt-and-suspenders fix.
 
-**Fix in PR #1689**: Replaced wildcard policies with explicit service endpoints
+**Fixed in PR #1689**: Replaced wildcard policies with explicit service endpoints
 (e.g., `litellm-model-proxy.team1.svc.cluster.local:4000`).
 
 ### Issue #1669: port vs ports Normalization
@@ -163,7 +165,7 @@ agent Dockerfiles used `python:3.12-slim` (Debian bookworm, glibc 2.36).
 
 **Fixed in PR #1689**: Upgraded to `python:3.13-slim` (Debian trixie, glibc 2.40).
 
-### Issue #1815: Supervisor scratch image breaks init container (mvp-v2)
+### Issue #1815: Supervisor scratch image breaks init container (CLOSED)
 
 **Symptom**: Supervised agents fail to start — init container crashes with
 `sh: not found` or `cp: not found`.
@@ -172,17 +174,21 @@ agent Dockerfiles used `python:3.12-slim` (Debian bookworm, glibc 2.36).
 containers with `command: ["sh", "-c", "cp /openshell-sandbox /opt/openshell/bin/"]`.
 The mvp-v2 supervisor image is a scratch/distroless image — no shell, no cp.
 
-**Affects**: Supervised agents (ADK, weather) that use the supervisor binary.
-Does NOT affect teleport sandboxes (use base image directly).
+**Status**: CLOSED. Agent Dockerfiles `COPY --from=supervisor` at build time,
+bypassing the init container copy. Compute driver v0.1.0-rc.5+ also handles
+this differently.
 
-**Fix needed**: Either:
-1. Update compute driver to use a different copy mechanism (e.g., multi-stage
-   Dockerfile with `COPY --from=supervisor`)
-2. Or build supervisor image with a minimal shell (busybox)
-3. Or use the agent Dockerfile pattern (already copies supervisor at build time)
+### Issue #1879: Helm chart fails on OpenShift (SCC + StorageClass)
 
-**Workaround**: Agent Dockerfiles in PR #1689 already `COPY --from=supervisor`
-at build time, so they don't depend on the init container copy.
+**Symptom**: OpenShell deployment fails on OpenShift — certgen job rejected by
+restricted-v2 SCC, StatefulSet PVC pending without default StorageClass.
+
+**Root cause**: Chart hardcoded `runAsUser: 1000`, `fsGroup: 1000`, and
+`seccompProfile: RuntimeDefault` which conflict with OpenShift's restricted-v2
+SCC. StatefulSet PVC had no `storageClassName` field.
+
+**Status**: PR #1881 open — adds values-driven `podSecurityContext`, optional
+SCC template, `storageClassName` field, and namespace creation ordering fix.
 
 ### Issue: ExecSandbox vs Sandbox CRD Mismatch
 
