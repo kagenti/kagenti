@@ -200,3 +200,4 @@ kagenti/kubectl-kagenti/kubectl-kagenti
 .cves/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+charts/*/charts/
