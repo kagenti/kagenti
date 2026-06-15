@@ -2,10 +2,10 @@
 
 # 26.5.2 is the version Kagenti uses; we base our image on that
 # but allow it to be customized with KEYCLOAK_IMAGE argument.
-ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.5.2
+ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.5.2@sha256:fb31a59deb46f746f2aaa25adc5da39ceccac4fd22d36a519562b0bf02e8df20
 
 # Stage 1: build the SPI JAR.
-FROM maven:3.9-eclipse-temurin-17 AS jar-builder
+FROM maven:3.9-eclipse-temurin-17@sha256:e8ef73dbd33b69fe497fd96b3bbbd85aff84ac4c564a5784ab02ad941b32c12b AS jar-builder
 WORKDIR /build
 COPY pom.xml .
 COPY src ./src
