@@ -32,7 +32,7 @@ featureFlags:
   authbridgeAPI: true
   # Enables Platform Status card
   # on http://kagenti-ui.localtest.me:8080/admin
-  admin: false
+  admin: true
 
 # ------------------------------------------------------------------
 #  Control Panel: Enable or disable components here
