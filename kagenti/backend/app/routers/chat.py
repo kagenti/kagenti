@@ -8,7 +8,9 @@ Provides endpoints for chatting with A2A agents using the Agent-to-Agent protoco
 """
 
 import logging
+import re
 from typing import Optional, List
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 import httpx
@@ -19,13 +21,55 @@ from pydantic import BaseModel
 from app.core.auth import require_roles, get_required_user, ROLE_VIEWER, ROLE_OPERATOR, TokenData
 from app.core.config import settings
 from app.services.kubernetes import KubernetesService, get_kubernetes_service
-from app.utils.routes import resolve_agent_url
+from app.utils.routes import resolve_agent_url, sanitize_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # A2A protocol constants
 A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
+
+# RFC 1123 label: lowercase alphanumeric, may contain hyphens, 1-63 chars.
+_K8S_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+# Characters permitted in an agent card path (positive allowlist).
+_SAFE_PATH_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-_.")
+
+
+async def _resolve_invoke_url(name: str, namespace: str, kube: KubernetesService) -> str:
+    """Resolve the A2A JSON-RPC invoke URL for an agent.
+
+    Per the A2A spec the agent card ``url`` field is the endpoint that accepts
+    JSON-RPC requests.  Some agents mount this handler at a sub-path (e.g.
+    ``/a2a/invoke``) rather than at the service root.  This helper fetches the
+    agent card and returns the advertised ``url`` so that callers POST to the
+    correct path.  Falls back to the bare service URL on any failure.
+    """
+    base_url = resolve_agent_url(name, namespace, kube)
+    if not _K8S_NAME_RE.fullmatch(name) or not _K8S_NAME_RE.fullmatch(namespace):
+        return base_url
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{base_url}{A2A_AGENT_CARD_PATH}")
+            resp.raise_for_status()
+            card_url = resp.json().get("url")
+            if card_url:
+                parsed = urlparse(card_url)
+                path = unquote(parsed.path)
+                if (
+                    path
+                    and path != "/"
+                    and ".." not in path.split("/")
+                    and all(c in _SAFE_PATH_CHARS for c in path)
+                ):
+                    return f"{base_url}{path}"
+    except Exception:
+        logger.debug(
+            "Could not fetch agent card for %s/%s, using base URL",
+            sanitize_log(namespace),
+            sanitize_log(name),
+        )
+    return base_url
 
 
 class ChatMessage(BaseModel):
@@ -154,7 +198,7 @@ async def send_message(
     Forwards the Authorization header from the client to the agent for
     authenticated requests.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = await _resolve_invoke_url(name, namespace, kube)
     session_id = request.session_id or uuid4().hex
 
     # Build A2A message payload. When the frontend supplied a session_id
@@ -485,7 +529,7 @@ async def stream_message(
     Returns HTTP 401 directly when the agent rejects the token, enabling
     the frontend to trigger token refresh and retry transparently.
     """
-    agent_url = resolve_agent_url(name, namespace, kube)
+    agent_url = await _resolve_invoke_url(name, namespace, kube)
     session_id = request.session_id or uuid4().hex
 
     # Extract Authorization header if present
