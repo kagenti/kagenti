@@ -25,7 +25,7 @@ dependencies = [
     "grpcio>=1.62.0",
     "protobuf>=4.25.0",
     # cryptography 47+ crashes with SIGILL on ARM64 Kind clusters
-    "cryptography<47",
+    "cryptography<50",
 ]
 
 [project.optional-dependencies]
