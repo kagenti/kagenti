@@ -65,7 +65,6 @@ metadata:
   name: nemoclaw-openclaw
   namespace: team1
   labels:
-    kagenti.io/type: agent
     kagenti.io/framework: NemoClaw
     kagenti.io/workload-type: deployment
     app.kubernetes.io/name: nemoclaw-openclaw
@@ -81,12 +80,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
       app.kubernetes.io/name: nemoclaw-openclaw
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         kagenti.io/inject: disabled
         kagenti.io/framework: NemoClaw
         app.kubernetes.io/name: nemoclaw-openclaw

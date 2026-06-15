@@ -17,7 +17,6 @@ metadata:
   name: claude-sdk-agent
   namespace: team1
   labels:
-    kagenti.io/type: agent
     protocol.kagenti.io/a2a: ""
     kagenti.io/framework: AnthropicSDK
     kagenti.io/workload-type: deployment
@@ -31,12 +30,10 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      kagenti.io/type: agent
       app.kubernetes.io/name: claude-sdk-agent
   template:
     metadata:
       labels:
-        kagenti.io/type: agent
         kagenti.io/inject: disabled
         protocol.kagenti.io/a2a: ""
         kagenti.io/framework: AnthropicSDK
