@@ -200,3 +200,10 @@ kagenti/kubectl-kagenti/kubectl-kagenti
 .cves/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# spex: generated/local files
+.claude/skills/
+.claude/settings.local.json
+.specify/
+!.specify/memory/constitution.md
+brainstorm/
