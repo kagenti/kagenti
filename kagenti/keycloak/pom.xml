@@ -18,7 +18,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Match this to your Red Hat Build of Keycloak / Keycloak version. -->
-        <keycloak.version>26.6.0</keycloak.version>
+        <keycloak.version>26.5.2</keycloak.version>
     </properties>
 
     <dependencies>

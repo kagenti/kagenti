@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.6.0
+# 26.5.2 is the version Kagenti uses; we base our image on that
+# but allow it to be customized with KEYCLOAK_IMAGE argument.
+ARG KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.5.2
 
 # Stage 1: build the SPI JAR.
 FROM maven:3.9-eclipse-temurin-17 AS jar-builder

@@ -1,5 +1,6 @@
 SPI_VERSION      := 0.1.0
-KEYCLOAK_VERSION := 26.6.0
+# Kagenti uses 26.5.2.  26.6.0 is newer but has more security advisories.
+KEYCLOAK_VERSION := 26.5.2
 
 JAR := target/github-org-authenticator-$(SPI_VERSION).jar
 

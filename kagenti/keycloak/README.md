@@ -16,7 +16,7 @@ REGISTRY=quay.io/your-username make push
 2. Run `kc.sh build` (RHBK) or restart your Keycloak distribution so the SPI
    is registered.
 
-Note: The `keycloak.version` property in `pom.xml` defaults to `26.6.0`. Set it to
+Note: The `keycloak.version` property in `pom.xml` defaults to `26.5.2`. Set it to
 match your Red Hat Build of Keycloak / Keycloak version before building.
 
 ## How to install on kind
